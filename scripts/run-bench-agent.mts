@@ -18,6 +18,7 @@ await esbuild.build({
     '@shared': resolve('./src/shared'),
     '@copse/agent': resolve('./packages/agent/src'),
     '@copse/llm': resolve('./packages/llm/src'),
+    '@copse/plan-usage': resolve('./packages/plan-usage/src'),
   },
   define: { __COPSE_TEST_DIRECTIVES__: 'true' },
 })

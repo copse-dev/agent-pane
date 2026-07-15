@@ -6,6 +6,7 @@ import {
   formatTokenCount,
   formatUsd,
 } from '@shared/usage/format-usage-summary.ts'
+import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import { qsRequired } from '../../dom/helpers.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
 
@@ -16,6 +17,128 @@ const PERIOD_LABELS: Record<UsagePeriodKey, string> = {
   month: 'Last 30 days',
   period90d: 'Last 90 days',
   allTime: 'All time',
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  huggingface: 'Hugging Face',
+  cursor: 'Cursor',
+}
+
+function formatReset(resetsAt: string | null): string {
+  if (!resetsAt) return 'reset unknown'
+  const ms = Date.parse(resetsAt)
+  if (!Number.isFinite(ms)) return 'reset unknown'
+  const delta = ms - Date.now()
+  if (delta <= 0) return 'resetting soon'
+  const hours = Math.round(delta / (60 * 60 * 1000))
+  if (hours < 48) return `resets in ${String(hours)}h`
+  const days = Math.round(hours / 24)
+  return `resets in ${String(days)}d`
+}
+
+function renderPlanProvider(host: HTMLElement, result: ProviderPlanResult): void {
+  const card = document.createElement('div')
+  card.className = 'usage-plan-provider'
+  card.dataset['provider'] = result.provider
+  card.dataset['status'] = result.status
+
+  const title = document.createElement('h4')
+  title.className = 'usage-plan-provider-title'
+  title.textContent = PROVIDER_LABELS[result.provider] ?? result.provider
+  card.append(title)
+
+  if (result.status === 'unavailable') {
+    const hint = document.createElement('p')
+    hint.className = 'usage-plan-status field-hint'
+    hint.textContent = result.reason
+    card.append(hint)
+    host.append(card)
+    return
+  }
+
+  if (result.status === 'error') {
+    const hint = document.createElement('p')
+    hint.className = 'usage-plan-status usage-plan-status-error field-hint'
+    hint.textContent = `Couldn’t load plan usage: ${result.message}`
+    card.append(hint)
+    host.append(card)
+    return
+  }
+
+  if (result.usage.plan) {
+    const plan = document.createElement('p')
+    plan.className = 'usage-plan-name field-hint'
+    plan.textContent = result.usage.plan
+    card.append(plan)
+  }
+
+  for (const window of result.usage.windows) {
+    const row = document.createElement('div')
+    row.className = 'usage-plan-window'
+    const used = Math.round(window.usedPercent)
+    const severity =
+      typeof window.severity === 'string' && window.severity.trim()
+        ? window.severity.trim().toLowerCase()
+        : null
+    const severitySuffix = severity && severity !== 'normal' ? ` · ${severity}` : ''
+    if (severity) row.dataset['severity'] = severity
+    row.innerHTML = `
+      <div class="usage-plan-window-meta">
+        <span class="usage-plan-window-label">${escapeHtml(window.label)}</span>
+        <span class="usage-plan-window-stats">${String(used)}% used · ${formatReset(window.resetsAt)}${escapeHtml(severitySuffix)}</span>
+      </div>
+      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window.label)} ${String(used)} percent used">
+        <div class="usage-plan-bar-fill"${severity ? ` data-severity="${escapeHtml(severity)}"` : ''} style="width: ${String(Math.min(100, used))}%"></div>
+      </div>
+    `
+    card.append(row)
+  }
+
+  host.append(card)
+}
+
+function renderPlanSection(
+  host: HTMLElement,
+  snapshot: PlanUsageSnapshot | null,
+  error: string | null,
+): void {
+  host.replaceChildren()
+
+  const heading = document.createElement('h3')
+  heading.className = 'usage-plan-heading'
+  heading.textContent = 'Subscription plan limits'
+  host.append(heading)
+
+  const intro = document.createElement('p')
+  intro.className = 'field-hint'
+  intro.textContent =
+    'Live Claude / Codex / Hugging Face / Cursor plan windows when those accounts are signed in. Failures here never block Copse — the local ledger below still tracks this app’s usage.'
+  host.append(intro)
+
+  if (error) {
+    const err = document.createElement('p')
+    err.className = 'usage-plan-status usage-plan-status-error field-hint'
+    err.textContent = error
+    host.append(err)
+    return
+  }
+
+  if (!snapshot) {
+    const loading = document.createElement('p')
+    loading.className = 'field-hint'
+    loading.textContent = 'Loading plan usage…'
+    host.append(loading)
+    return
+  }
+
+  const list = document.createElement('div')
+  list.className = 'usage-plan-providers'
+  for (const provider of snapshot.providers) {
+    renderPlanProvider(list, provider)
+  }
+  host.append(list)
 }
 
 function renderModelTable(
@@ -138,16 +261,21 @@ export function createUsageSection(
   const root = document.createElement('div')
   root.className = 'usage-section-root'
   root.innerHTML = `
-    <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
-      <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
-      <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>
-      <button type="button" class="usage-period-btn" data-period="period90d" role="tab" aria-selected="false">90 days</button>
-      <button type="button" class="usage-period-btn" data-period="allTime" role="tab" aria-selected="false">All time</button>
+    <div class="usage-plan-section" id="usage-plan-section"></div>
+    <div class="usage-ledger-section">
+      <h3 class="usage-ledger-heading">Local usage ledger</h3>
+      <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
+        <button type="button" class="usage-period-btn active" data-period="day" role="tab" aria-selected="true">Day</button>
+        <button type="button" class="usage-period-btn" data-period="month" role="tab" aria-selected="false">Month</button>
+        <button type="button" class="usage-period-btn" data-period="period90d" role="tab" aria-selected="false">90 days</button>
+        <button type="button" class="usage-period-btn" data-period="allTime" role="tab" aria-selected="false">All time</button>
+      </div>
+      <div class="usage-period-label" id="usage-period-label">${PERIOD_LABELS.day}</div>
+      <div class="usage-period-body" id="usage-period-body"></div>
     </div>
-    <div class="usage-period-label" id="usage-period-label">${PERIOD_LABELS.day}</div>
-    <div class="usage-period-body" id="usage-period-body"></div>
   `
 
+  const planEl = qsRequired(root, '#usage-plan-section')
   const bodyEl = qsRequired(root, '#usage-period-body')
   const labelEl = qsRequired(root, '#usage-period-label')
   const tabBtns = root.querySelectorAll<HTMLButtonElement>('.usage-period-btn')
@@ -177,8 +305,21 @@ export function createUsageSection(
     })
   })
 
+  async function refreshPlan(): Promise<void> {
+    renderPlanSection(planEl, null, null)
+    try {
+      const snapshot = await api.usage.getPlanUsage()
+      renderPlanSection(planEl, snapshot, null)
+    } catch (err) {
+      // Plan usage is best-effort — never block the ledger on IPC failure.
+      const message = err instanceof Error ? err.message : 'Failed to load subscription plan usage.'
+      renderPlanSection(planEl, null, message)
+    }
+  }
+
   async function refresh(): Promise<void> {
     bodyEl.textContent = 'Loading usage…'
+    const planPromise = refreshPlan()
     try {
       cachedSummary = await api.usage.getSummary()
       showPeriod(activePeriod)
@@ -186,6 +327,7 @@ export function createUsageSection(
       bodyEl.textContent =
         err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
     }
+    await planPromise
   }
 
   const unsubUsage = store?.on('usage_updated', () => {

@@ -49,6 +49,12 @@ export interface ContextSnapshot {
 export interface ThreadReview {
   status: 'running' | 'done' | 'error' | 'skipped'
   summary: string
+  /**
+   * Structured signal from the review subagent (`REVIEW_JSON.issuesFound`).
+   * Absent on older persisted reviews; when explicitly `false` the renderer
+   * collapses the review card by default.
+   */
+  issuesFound?: boolean
 }
 
 /**
@@ -160,6 +166,12 @@ export interface Message {
   toolCalls: ToolCall[]
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
+  /**
+   * Primary-chat model that produced this assistant message (picker id for the
+   * turn). Surfaced in the transcript only when the thread used more than one
+   * primary model — subagent models live on {@link SubagentSession.model}.
+   */
+  model?: string
   /**
    * Post-turn review verdict for the editing turn this message concluded. Set on
    * the turn's final assistant message so the review joins the transcript inline
