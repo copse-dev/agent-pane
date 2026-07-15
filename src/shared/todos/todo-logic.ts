@@ -1,5 +1,14 @@
 import type { TodoItem, TodoStatus, TodoUpdateInput } from '@shared/types/todo.ts'
 
+// Turn-start steering helpers moved into `@copse/agent` (M0.2) so first-party
+// hooks stay Electron-free. Re-exported here so existing `@shared/todos` imports
+// keep working.
+export {
+  shouldSteerTodos,
+  formatTodosForPrompt,
+  TODO_STEERING_PROMPT,
+} from '@copse/agent/todo-steering.ts'
+
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 
 export function todoProgress(todos: readonly TodoItem[]): { done: number; total: number } {
@@ -12,30 +21,6 @@ export function formatTodoProgress(todos: readonly TodoItem[]): string | null {
   const { done, total } = todoProgress(todos)
   if (total === 0) return null
   return `${String(done)}/${String(total)} done`
-}
-
-/** Light steering: multi-step work that benefits from an explicit plan. */
-export function shouldSteerTodos(userMessage: string): boolean {
-  const text = userMessage.trim().toLowerCase()
-  if (text.length < 20) return false
-  const multiStep =
-    /\b(then|after that|also|step \d|first.*second|implement.*test|refactor.*across)\b/.test(text)
-  const complex =
-    /\b(refactor|migrate|implement|add.*and.*test|fix.*across|multi-file|several files)\b/.test(
-      text,
-    )
-  const audit = /\b(deep[- ]?dive|reviewing|review)\b/.test(text)
-  return multiStep || complex || audit
-}
-
-export function formatTodosForPrompt(todos: readonly TodoItem[]): string {
-  if (todos.length === 0) return ''
-  const lines = todos.map((t) => {
-    const model = t.assignedModel ? ` [${t.assignedModel}]` : ''
-    const check = t.check ? ` (check: ${t.check.kind})` : ''
-    return `- [${t.status}] ${t.content}${model}${check} (id: ${t.id})`
-  })
-  return `\n\n## Current plan\n${lines.join('\n')}`
 }
 
 export function applyTodoUpdate(
@@ -143,9 +128,3 @@ export const OPEN_TODOS_PRE_REVIEW_NUDGE = `Before this turn can finish, reconci
 Inspect the diff and transcript — do not leave the plan out of sync with what you actually did.`
 
 export const OPEN_TODOS_REVIEW_REMEDIATION_NUDGE = `Post-turn review flagged follow-up work. Address the review findings below, reconcile todos with update_todos (merge=true), and fix any code issues mentioned.`
-
-export const TODO_STEERING_PROMPT = `When the user asks for multi-step work (refactors, implement-and-test, changes across several files):
-1. Call update_todos once with 3+ concrete steps before executing tools.
-2. Mark one item in_progress at a time; set completed when done (checks run automatically).
-3. Tag mechanical items with assignedModel: "local" only when they include a verifiable check (shell, fileExists, or typecheck).
-4. For simple one-shot questions or single-file edits, do NOT create todos.`
