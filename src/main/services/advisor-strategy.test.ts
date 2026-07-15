@@ -158,12 +158,19 @@ describe('validateAdvisorPair', () => {
     assert.match(a.reason, /local advisor/i)
   })
 
-  it('falls back to the generic client-side note when neither model is annotated', () => {
+  it('falls back to the positive client-side note when neither model is annotated', () => {
     const a = validateAdvisorPair('local:llama-3', 'openrouter:some/model')
     assert.equal(a.ok, true)
     assert.equal(a.native, false)
     assert.equal(a.level, 'info')
-    assert.match(a.reason, /client-side/i)
+    assert.match(a.reason, /any configured executor\/advisor combination works/i)
+  })
+
+  it('explains an ACP-agent advisor instead of comparing annotations', () => {
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'acp:gemini-cli')
+    assert.equal(a.ok, true)
+    assert.equal(a.level, 'info')
+    assert.match(a.reason, /external ACP agent/i)
   })
 })
 

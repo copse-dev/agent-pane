@@ -80,8 +80,17 @@ strategy in three ways:
   catalogued and warn otherwise. Each assessment carries a `level`
   (`good` / `info` / `warn`) that the settings UI renders live under the advisor picker
   (`#advisorPairHint`), re-grading when either the chat model or advisor model changes.
-  Unannotated models (OpenRouter / ACP / uncatalogued ids) stay on the permissive
-  generic note — the annotations steer, they never block.
+  Unannotated models (OpenRouter / newer cloud ids / uncatalogued models) get a
+  positive client-side note — this is a full client-side implementation, so **any**
+  executor/advisor pairing works; the annotations steer, they never block. Native
+  compatibility is mentioned only as a bonus on Claude/Claude pairs, never as a
+  limitation elsewhere.
+- **ACP agents can be the advisor.** An `acp:<id>` advisor selection routes the
+  consultation through `acp-advisor.ts`: a throwaway, bare ACP session — no MCP
+  servers, no native-tool bridge, no fs handlers, and every permission request the
+  agent makes is auto-rejected — that forwards the transcript prompt and returns the
+  agent's text as the advice. One-shot by design: the advisor must never touch the
+  executor thread's pooled ACP session. Loopback-tested in `acp-advisor.test.ts`.
 
 Visual eval: `tests/e2e/advisor-pair-hint.e2e.ts` (screenshots
 `advisor-pair-hint-good.png` / `advisor-pair-hint-warn.png`).

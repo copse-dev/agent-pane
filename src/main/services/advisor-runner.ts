@@ -1,7 +1,9 @@
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage, ModelUsage } from '@shared/types'
+import { parseAcpModelSelection } from '@shared/acp.ts'
 import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { routedModelSetting } from './providers/role-models.ts'
+import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import {
   ADVISOR_MODEL_SETTING,
@@ -56,11 +58,26 @@ const ADVISOR_TIMEOUT_MS = 120_000
 export function getAdvisorRunner(): AdvisorRunner | null {
   if (!activeContext) return null
   const ctx = activeContext
-  return async (_signal: AbortSignal) => {
-    const provider = await buildProvider(ctx.advisorModel)
+  return async (signal: AbortSignal) => {
     const transcript = buildAdvisorTranscript(ctx.getTranscript())
     const prompt = `${ADVISOR_PREAMBLE}\n\n# Executor transcript\n\n${transcript}`
-    const { text, usage } = await completeTextWithUsage(provider, prompt, ADVISOR_TIMEOUT_MS)
+
+    let text: string
+    let usage: ModelUsage
+    const acpSelection = parseAcpModelSelection(ctx.advisorModel)
+    if (acpSelection) {
+      // An `acp:<id>` advisor routes the consultation through the external ACP
+      // agent on a throwaway bare session (see acp-advisor.ts).
+      ;({ text, usage } = await runAcpAdvisorPrompt({
+        agentId: acpSelection.id,
+        model: acpSelection.model,
+        prompt,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(ADVISOR_TIMEOUT_MS)]),
+      }))
+    } else {
+      const provider = await buildProvider(ctx.advisorModel)
+      ;({ text, usage } = await completeTextWithUsage(provider, prompt, ADVISOR_TIMEOUT_MS))
+    }
     // Advisor tokens are billed at the advisor model's rate. For now they fold
     // into the run's aux-model usage; a dedicated advisor cost line (mirroring
     // the native `usage.iterations[].advisor_message`) is a tracked follow-up.
