@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { fetchClaudePlanUsage } from './claude.ts'
+import { fetchClaudePlanUsage, fetchClaudePlanUsageFromCandidates } from './claude.ts'
 import { fetchCodexPlanUsage } from './codex.ts'
-import { parseClaudeCredentialsJson, parseCodexAuthJson } from './credentials.ts'
+import {
+  orderClaudeTokenCandidates,
+  parseClaudeCredentialsJson,
+  parseCodexAuthJson,
+} from './credentials.ts'
 import { getPlanUsageSnapshot } from './snapshot.ts'
 import type { FetchLike } from './types.ts'
 
@@ -26,9 +30,46 @@ describe('parseClaudeCredentialsJson', () => {
     )
   })
 
+  it('parses Keychain JSON string payloads', () => {
+    assert.equal(
+      parseClaudeCredentialsJson(
+        JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-kc' } }),
+      ),
+      'sk-ant-oat01-kc',
+    )
+  })
+
   it('returns null for missing oauth block', () => {
     assert.equal(parseClaudeCredentialsJson({}), null)
     assert.equal(parseClaudeCredentialsJson(null), null)
+  })
+})
+
+describe('orderClaudeTokenCandidates', () => {
+  it('orders keychain → credentials.json → env and dedupes', () => {
+    const ordered = orderClaudeTokenCandidates({
+      keychainJson: JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-kc' } }),
+      credentialsJson: { claudeAiOauth: { accessToken: 'sk-ant-oat01-file' } },
+      envToken: 'sk-ant-oat01-env',
+    })
+    assert.deepEqual(
+      ordered.map((c) => ({ source: c.source, token: c.token })),
+      [
+        { source: 'keychain', token: 'sk-ant-oat01-kc' },
+        { source: 'credentials.json', token: 'sk-ant-oat01-file' },
+        { source: 'env', token: 'sk-ant-oat01-env' },
+      ],
+    )
+  })
+
+  it('dedupes identical tokens across sources', () => {
+    const ordered = orderClaudeTokenCandidates({
+      keychainJson: JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-same' } }),
+      credentialsJson: { claudeAiOauth: { accessToken: 'sk-ant-oat01-same' } },
+      envToken: 'sk-ant-oat01-same',
+    })
+    assert.equal(ordered.length, 1)
+    assert.equal(ordered[0]?.source, 'keychain')
   })
 })
 
@@ -168,6 +209,60 @@ describe('fetchClaudePlanUsage', () => {
       fetch: jsonFetch({ error: { message: 'nope' } }, 401),
     })
     assert.equal(result.status, 'error')
+  })
+})
+
+describe('fetchClaudePlanUsageFromCandidates', () => {
+  it('skips setup-token profile-scope 403 and succeeds with the next token', async () => {
+    const fetchImpl: FetchLike = async (_input, init) => {
+      const auth = init?.headers?.['Authorization'] ?? ''
+      if (auth.includes('sk-ant-oat01-setup')) {
+        return {
+          ok: false,
+          status: 403,
+          text: async () =>
+            JSON.stringify({
+              type: 'error',
+              error: {
+                type: 'permission_error',
+                message: 'OAuth token does not meet scope requirement user:profile',
+              },
+            }),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            five_hour: { utilization: 5, resets_at: '2026-07-15T12:00:00Z' },
+          }),
+      }
+    }
+
+    const result = await fetchClaudePlanUsageFromCandidates(
+      ['sk-ant-oat01-setup', 'sk-ant-oat01-login'],
+      { fetch: fetchImpl },
+    )
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.windows[0]?.usedPercent, 5)
+  })
+
+  it('surfaces the profile-scope hint when every candidate lacks user:profile', async () => {
+    const result = await fetchClaudePlanUsageFromCandidates(['sk-ant-oat01-a', 'sk-ant-oat01-b'], {
+      fetch: jsonFetch(
+        {
+          type: 'error',
+          error: {
+            type: 'permission_error',
+            message: 'OAuth token does not meet scope requirement user:profile',
+          },
+        },
+        403,
+      ),
+    })
+    assert.equal(result.status, 'unavailable')
+    assert.match(result.reason, /Keychain/i)
   })
 })
 

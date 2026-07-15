@@ -1,10 +1,13 @@
-import { fetchClaudePlanUsage } from './claude.ts'
+import { fetchClaudePlanUsageFromCandidates } from './claude.ts'
 import { fetchCodexPlanUsage, type CodexPlanUsageAuth } from './codex.ts'
 import { errorMessage } from './internal-utils.ts'
 import type { PlanUsageFetchOptions, PlanUsageSnapshot, ProviderPlanResult } from './types.ts'
 
 export interface PlanUsageCredentials {
+  /** Single token (also accepted via `claudeOAuthTokens`). */
   claudeOAuthToken?: string | null
+  /** Tried in order; Keychain login tokens should come before env setup-tokens. */
+  claudeOAuthTokens?: ReadonlyArray<string | null | undefined>
   codex?: CodexPlanUsageAuth | null
 }
 
@@ -19,9 +22,14 @@ export async function getPlanUsageSnapshot(
   const now = options.now ?? Date.now
   const checkedAt = new Date(now()).toISOString()
 
+  const claudeTokens =
+    credentials.claudeOAuthTokens && credentials.claudeOAuthTokens.length > 0
+      ? credentials.claudeOAuthTokens
+      : [credentials.claudeOAuthToken]
+
   try {
     const [claude, codex] = await Promise.all([
-      fetchClaudePlanUsage(credentials.claudeOAuthToken, options),
+      fetchClaudePlanUsageFromCandidates(claudeTokens, options),
       fetchCodexPlanUsage(credentials.codex ?? { accessToken: null }, options),
     ])
     return { providers: [claude, codex], checkedAt }

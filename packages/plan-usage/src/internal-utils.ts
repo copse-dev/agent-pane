@@ -54,5 +54,6 @@ export function isClaudeProfileScopeError(message: string): boolean {
 
 export const CLAUDE_PROFILE_SCOPE_HINT =
   'Claude plan usage needs an OAuth token with user:profile scope. ' +
-  'Run `claude /login` (browser flow) and unset CLAUDE_CODE_OAUTH_TOKEN if it ' +
-  'was set by `claude setup-token` (inference-only).'
+  'On macOS, `claude /login` stores that in Keychain (service "Claude Code-credentials"). ' +
+  'Unset CLAUDE_CODE_OAUTH_TOKEN if set by `claude setup-token` (inference-only) — ' +
+  'it shadows the login token.'

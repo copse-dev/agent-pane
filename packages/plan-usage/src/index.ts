@@ -8,12 +8,19 @@ export type {
   ProviderPlanUsage,
 } from './types.ts'
 
-export { fetchClaudePlanUsage, parseClaudeUsage } from './claude.ts'
+export {
+  fetchClaudePlanUsage,
+  fetchClaudePlanUsageFromCandidates,
+  parseClaudeUsage,
+} from './claude.ts'
 export { fetchCodexPlanUsage, parseCodexUsage, type CodexPlanUsageAuth } from './codex.ts'
 export { getPlanUsageSnapshot, type PlanUsageCredentials } from './snapshot.ts'
 export {
+  orderClaudeTokenCandidates,
   parseClaudeCredentialsJson,
   parseCodexAuthJson,
+  type ClaudeTokenCandidate,
+  type ClaudeTokenSource,
   type ParsedCodexAuth,
 } from './credentials.ts'
 export {

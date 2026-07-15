@@ -174,3 +174,47 @@ export async function fetchClaudePlanUsage(
     return { status: 'error', provider: 'claude', message }
   }
 }
+
+/**
+ * Try Claude OAuth tokens in order. Skips `user:profile` scope misses so a
+ * Keychain login token can win after an env setup-token 403s.
+ */
+export async function fetchClaudePlanUsageFromCandidates(
+  tokens: ReadonlyArray<string | null | undefined>,
+  options: PlanUsageFetchOptions = {},
+): Promise<ProviderPlanResult> {
+  const seen = new Set<string>()
+  let sawProfileScopeMiss = false
+  let last: ProviderPlanResult | null = null
+
+  for (const raw of tokens) {
+    const token = raw?.trim()
+    if (!token || seen.has(token)) continue
+    seen.add(token)
+    const result = await fetchClaudePlanUsage(token, options)
+    last = result
+    if (result.status === 'ok') return result
+    if (
+      result.status === 'unavailable' &&
+      (result.reason === CLAUDE_PROFILE_SCOPE_HINT || isClaudeProfileScopeError(result.reason))
+    ) {
+      sawProfileScopeMiss = true
+      continue
+    }
+    // Console API key / empty — try the next candidate.
+    if (result.status === 'unavailable') continue
+    // Hard transport/parse error: stop (don't burn more tokens on a dead network).
+    return result
+  }
+
+  if (sawProfileScopeMiss) {
+    return { status: 'unavailable', provider: 'claude', reason: CLAUDE_PROFILE_SCOPE_HINT }
+  }
+  return (
+    last ?? {
+      status: 'unavailable',
+      provider: 'claude',
+      reason: 'No Claude OAuth token (sign in with `claude /login`)',
+    }
+  )
+}

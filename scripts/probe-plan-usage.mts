@@ -19,9 +19,9 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
-  fetchClaudePlanUsage,
+  fetchClaudePlanUsageFromCandidates,
   fetchCodexPlanUsage,
-  parseClaudeCredentialsJson,
+  orderClaudeTokenCandidates,
   parseCodexAuthJson,
   CLAUDE_USAGE_SCHEMA,
   CODEX_USAGE_SCHEMA,
@@ -31,6 +31,7 @@ import {
   type ProviderPlanResult,
   type UnknownFieldFinding,
 } from '../packages/plan-usage/src/index.ts'
+import { readClaudeKeychainCredentialsJson } from '../src/main/services/plan-usage-bridge.ts'
 
 interface Args {
   provider: 'all' | PlanProviderId
@@ -81,14 +82,16 @@ function readJsonFile(path: string): unknown {
   }
 }
 
-function discoverClaudeToken(): string | null {
-  // Prefer the browser `claude /login` credentials file — it carries
-  // `user:profile` (required by /api/oauth/usage). `CLAUDE_CODE_OAUTH_TOKEN`
-  // from `claude setup-token` is inference-only and 403s on this endpoint.
-  const file = readJsonFile(join(homedir(), '.claude', '.credentials.json'))
-  const fromFile = parseClaudeCredentialsJson(file)
-  if (fromFile) return fromFile
-  return process.env['CLAUDE_CODE_OAUTH_TOKEN']?.trim() || null
+/**
+ * Prefer Keychain (`claude /login`) → credentials.json → env. Env setup-tokens
+ * lack `user:profile` and 403; candidates are tried until one succeeds.
+ */
+function discoverClaudeCandidates(): ReturnType<typeof orderClaudeTokenCandidates> {
+  return orderClaudeTokenCandidates({
+    keychainJson: readClaudeKeychainCredentialsJson(),
+    credentialsJson: readJsonFile(join(homedir(), '.claude', '.credentials.json')),
+    envToken: process.env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
+  })
 }
 
 function discoverCodexAuth(): { accessToken: string; accountId: string | null } | null {
@@ -131,6 +134,7 @@ interface ProviderProbeReport {
   unknownFields: UnknownFieldFinding[]
   raw: unknown
   httpStatus: number | null
+  claudeSources?: string
 }
 
 function unknownFieldsForOkParse(
@@ -149,17 +153,20 @@ function unknownFieldsForOkParse(
 async function probeClaude(args: Args): Promise<ProviderProbeReport> {
   const sink: { body: unknown; status: number } = { body: null, status: 0 }
   let fetchImpl: FetchLike
-  let token: string | null = 'fixture-token'
+  let tokens: Array<string | null> = ['fixture-token']
+  let claudeSources: string | undefined
 
   if (args.fixture) {
     const body = JSON.parse(readFileSync(args.fixture, 'utf8')) as unknown
     fetchImpl = capturingFetch(fixtureFetch(body), sink)
   } else {
-    token = discoverClaudeToken()
+    const candidates = discoverClaudeCandidates()
+    tokens = candidates.map((c) => c.token)
+    claudeSources = candidates.length === 0 ? '(none)' : candidates.map((c) => c.source).join(' → ')
     fetchImpl = capturingFetch(globalThis.fetch.bind(globalThis), sink)
   }
 
-  const parse = await fetchClaudePlanUsage(token, {
+  const parse = await fetchClaudePlanUsageFromCandidates(tokens, {
     fetch: fetchImpl,
     signal: AbortSignal.timeout(12_000),
   })
@@ -169,6 +176,7 @@ async function probeClaude(args: Args): Promise<ProviderProbeReport> {
     unknownFields: unknownFieldsForOkParse(parse, sink.status, sink.body, CLAUDE_USAGE_SCHEMA),
     raw: sink.body,
     httpStatus: sink.status || null,
+    ...(claudeSources ? { claudeSources } : {}),
   }
 }
 
@@ -203,6 +211,9 @@ async function probeCodex(args: Args): Promise<ProviderProbeReport> {
 
 function printHuman(report: ProviderProbeReport, raw: boolean): void {
   console.log(`\n=== ${report.provider} ===`)
+  if (report.claudeSources) {
+    console.log('token sources tried:', report.claudeSources)
+  }
   console.log('parse:', JSON.stringify(report.parse, null, 2))
   if (report.unknownFields.length === 0) {
     console.log('unknown fields: (none)')
@@ -228,7 +239,11 @@ Options:
   --no-strict                   Exit 0 even when unknown fields are found
   --help                        Show this help
 
-Exit 1 on schema drift (unknown keys/enums). Exit 2 when auth/fetch/parse fails.`)
+Exit 1 on schema drift (unknown keys/enums). Exit 2 when auth/fetch/parse fails.
+
+Claude auth order (macOS): Keychain "Claude Code-credentials" →
+~/.claude/.credentials.json → CLAUDE_CODE_OAUTH_TOKEN. Unset the env var if
+it came from \`claude setup-token\` (inference-only; 403s without user:profile).`)
 }
 
 async function main(): Promise<number> {
@@ -266,6 +281,7 @@ async function main(): Promise<number> {
             provider: r.provider,
             parse: r.parse,
             unknownFields: r.unknownFields,
+            ...(r.claudeSources ? { claudeSources: r.claudeSources } : {}),
             ...(args.raw ? { raw: r.raw } : {}),
           })),
         },

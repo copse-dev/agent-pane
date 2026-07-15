@@ -1,9 +1,10 @@
+import { execFileSync } from 'node:child_process'
 import { homedir } from 'node:os'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   getPlanUsageSnapshot,
-  parseClaudeCredentialsJson,
+  orderClaudeTokenCandidates,
   parseCodexAuthJson,
   type PlanUsageCredentials,
   type PlanUsageSnapshot,
@@ -13,6 +14,8 @@ import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
 
+const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
+
 function readJsonFile(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as unknown
@@ -21,24 +24,39 @@ function readJsonFile(path: string): unknown {
   }
 }
 
-/** Discover Claude / Codex tokens from env + local CLI credential files. */
+/** macOS Keychain payload written by `claude /login` (includes user:profile). */
+export function readClaudeKeychainCredentialsJson(): string | null {
+  if (process.platform !== 'darwin') return null
+  try {
+    const raw = execFileSync(
+      'security',
+      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'],
+      { encoding: 'utf8', timeout: 5_000 },
+    ).trim()
+    return raw || null
+  } catch {
+    return null
+  }
+}
+
+/** Discover Claude / Codex tokens from Keychain, files, and env. */
 export function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
+  readKeychain: () => string | null = readClaudeKeychainCredentialsJson,
 ): PlanUsageCredentials {
-  // Prefer `~/.claude/.credentials.json` (browser `claude /login`) over
-  // `CLAUDE_CODE_OAUTH_TOKEN` from `setup-token` — the latter is inference-only
-  // and 403s on /api/oauth/usage (missing user:profile scope).
-  const claudeFile = readJsonFile(join(home, '.claude', '.credentials.json'))
-  const fromFile = parseClaudeCredentialsJson(claudeFile)
-  const fromEnv = env['CLAUDE_CODE_OAUTH_TOKEN']?.trim()
-  const claudeOAuthToken = fromFile || fromEnv || undefined
+  const candidates = orderClaudeTokenCandidates({
+    keychainJson: readKeychain(),
+    credentialsJson: readJsonFile(join(home, '.claude', '.credentials.json')),
+    envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
+  })
 
   const codexFile = readJsonFile(join(home, '.codex', 'auth.json'))
   const parsedCodex = parseCodexAuthJson(codexFile)
 
-  const credentials: PlanUsageCredentials = {}
-  if (claudeOAuthToken) credentials.claudeOAuthToken = claudeOAuthToken
+  const credentials: PlanUsageCredentials = {
+    claudeOAuthTokens: candidates.map((c) => c.token),
+  }
   if (parsedCodex) {
     credentials.codex = {
       accessToken: parsedCodex.accessToken,
