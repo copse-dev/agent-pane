@@ -135,6 +135,17 @@ test('text chunks create one assistant message and accumulate tokens', () => {
   assert.equal(at(messages(), 0).content, 'Hello world')
 })
 
+test('assistant messages stamp the thread primary-chat model', () => {
+  const { send, messages } = setup([
+    {
+      ...thread('t1'),
+      model: 'claude-sonnet-4-6',
+    },
+  ])
+  send({ type: 'text', text: 'Hello' })
+  assert.equal(at(messages(), 0).model, 'claude-sonnet-4-6')
+})
+
 test('whitespace-only text before any message is ignored', () => {
   const { send, messages } = setup()
   send({ type: 'text', text: '   ' })
