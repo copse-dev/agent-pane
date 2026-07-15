@@ -26,7 +26,7 @@ describe('discoverPlanUsageCredentials', () => {
     assert.equal(creds.codex.accountId, 'acct')
   })
 
-  it('prefers CLAUDE_CODE_OAUTH_TOKEN over the credentials file', () => {
+  it('prefers credentials file over CLAUDE_CODE_OAUTH_TOKEN (setup-token lacks user:profile)', () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
     mkdirSync(join(home, '.claude'), { recursive: true })
     writeFileSync(
@@ -36,7 +36,7 @@ describe('discoverPlanUsageCredentials', () => {
     const creds = discoverPlanUsageCredentials(home, {
       CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-env',
     })
-    assert.equal(creds.claudeOAuthToken, 'sk-ant-oat01-env')
+    assert.equal(creds.claudeOAuthToken, 'sk-ant-oat01-file')
   })
 
   it('returns empty credentials when nothing is present', () => {

@@ -9,7 +9,7 @@ export type {
 } from './types.ts'
 
 export { fetchClaudePlanUsage, parseClaudeUsage } from './claude.ts'
-export { fetchCodexPlanUsage, type CodexPlanUsageAuth } from './codex.ts'
+export { fetchCodexPlanUsage, parseCodexUsage, type CodexPlanUsageAuth } from './codex.ts'
 export { getPlanUsageSnapshot, type PlanUsageCredentials } from './snapshot.ts'
 export {
   parseClaudeCredentialsJson,

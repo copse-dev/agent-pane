@@ -7,11 +7,13 @@ import { getPlanUsageSnapshot } from './snapshot.ts'
 import type { FetchLike } from './types.ts'
 
 function jsonFetch(body: unknown, status = 200): FetchLike {
-  return async () => ({
-    ok: status >= 200 && status < 300,
-    status,
-    text: async () => JSON.stringify(body),
-  })
+  const text = JSON.stringify(body)
+  return () =>
+    Promise.resolve({
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.resolve(text),
+    })
 }
 
 describe('parseClaudeCredentialsJson', () => {
@@ -54,6 +56,25 @@ describe('fetchClaudePlanUsage', () => {
   it('returns unavailable for console API keys', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-api03-xyz')
     assert.equal(result.status, 'unavailable')
+  })
+
+  it('maps user:profile scope 403 to an actionable unavailable reason', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch(
+        {
+          type: 'error',
+          error: {
+            type: 'permission_error',
+            message: 'OAuth token does not meet scope requirement user:profile',
+          },
+          request_id: 'req_test',
+        },
+        403,
+      ),
+    })
+    assert.equal(result.status, 'unavailable')
+    assert.match(result.reason, /claude \/login/i)
+    assert.match(result.reason, /user:profile/)
   })
 
   it('parses five_hour and seven_day windows', async () => {
@@ -182,6 +203,59 @@ describe('fetchCodexPlanUsage', () => {
     assert.equal(primary.label, '5-hour')
     assert.equal(secondary.label, 'Weekly')
     assert.equal(primary.usedPercent, 25)
+  })
+
+  it('parses additional_rate_limits metered features', async () => {
+    const result = await fetchCodexPlanUsage(
+      { accessToken: 'tok' },
+      {
+        fetch: jsonFetch({
+          plan_type: 'prolite',
+          rate_limit: {
+            primary_window: {
+              used_percent: 1,
+              limit_window_seconds: 604_800,
+              reset_at: 1_784_000_000,
+              reset_after_seconds: 100,
+            },
+          },
+          additional_rate_limits: [
+            {
+              metered_feature: 'codex_spark',
+              rate_limit: {
+                primary_window: {
+                  used_percent: 40,
+                  limit_window_seconds: 18_000,
+                  reset_at: 1_784_100_000,
+                },
+              },
+            },
+          ],
+          credits: {
+            has_credits: false,
+            unlimited: false,
+            balance: '0',
+            overage_limit_reached: false,
+            approx_local_messages: 0,
+            approx_cloud_messages: 0,
+          },
+          user_id: 'u',
+          account_id: 'a',
+          email: 'x@y.z',
+          spend_control: null,
+          promo: null,
+          rate_limit_reset_credits: null,
+        }),
+        now: () => 1_783_000_000_000,
+      },
+    )
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.plan, 'prolite')
+    assert.ok(result.usage.windows.some((w) => w.id === 'primary'))
+    const spark = result.usage.windows.find((w) => w.id === 'codex-spark_primary')
+    assert.ok(spark)
+    assert.equal(spark.usedPercent, 40)
+    assert.match(spark.label, /codex_spark/i)
   })
 
   it('returns unavailable without token', async () => {

@@ -66,20 +66,49 @@ describe('findUnknownFields (Codex)', () => {
   it('accepts a typical wham/usage payload', () => {
     const findings = findUnknownFields(
       {
-        plan_type: 'plus',
+        user_id: 'u',
+        account_id: 'a',
+        email: 'x@y.z',
+        plan_type: 'prolite',
         rate_limit: {
           primary_window: {
             used_percent: 10,
-            limit_window_seconds: 18_000,
-            reset_at: 1_784_000_000,
-          },
-          secondary_window: {
-            used_percent: 5,
             limit_window_seconds: 604_800,
-            reset_at: 1_784_500_000,
+            reset_at: 1_784_000_000,
+            reset_after_seconds: 99,
           },
-          credits: { has_credits: false, unlimited: false, balance: '0' },
+          credits: {
+            has_credits: false,
+            unlimited: false,
+            balance: '0',
+            overage_limit_reached: false,
+            approx_local_messages: 0,
+            approx_cloud_messages: 0,
+          },
         },
+        additional_rate_limits: [
+          {
+            metered_feature: 'codex_spark',
+            rate_limit: {
+              primary_window: {
+                used_percent: 1,
+                limit_window_seconds: 18_000,
+                reset_at: 1,
+              },
+            },
+          },
+        ],
+        credits: {
+          has_credits: false,
+          unlimited: false,
+          balance: '0',
+          overage_limit_reached: false,
+          approx_local_messages: 0,
+          approx_cloud_messages: 0,
+        },
+        spend_control: null,
+        promo: null,
+        rate_limit_reset_credits: null,
       },
       CODEX_USAGE_SCHEMA,
     )

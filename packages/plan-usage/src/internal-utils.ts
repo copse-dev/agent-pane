@@ -36,7 +36,7 @@ export async function readJsonBody(
 ): Promise<unknown> {
   const raw = await response.text()
   if (!response.ok) {
-    const snippet = raw.trim().slice(0, 180)
+    const snippet = raw.trim().slice(0, 240)
     throw new Error(`${label} HTTP ${String(response.status)}${snippet ? `: ${snippet}` : ''}`)
   }
   if (!raw.trim()) throw new Error(`${label} returned an empty body`)
@@ -46,3 +46,13 @@ export async function readJsonBody(
     throw new Error(`${label} returned non-JSON`)
   }
 }
+
+/** Detect Anthropic's setup-token / stale-token scope error for /api/oauth/usage. */
+export function isClaudeProfileScopeError(message: string): boolean {
+  return /user:profile/i.test(message) && /scope/i.test(message)
+}
+
+export const CLAUDE_PROFILE_SCOPE_HINT =
+  'Claude plan usage needs an OAuth token with user:profile scope. ' +
+  'Run `claude /login` (browser flow) and unset CLAUDE_CODE_OAUTH_TOKEN if it ' +
+  'was set by `claude setup-token` (inference-only).'

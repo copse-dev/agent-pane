@@ -26,9 +26,13 @@ export function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
 ): PlanUsageCredentials {
-  const fromEnv = env['CLAUDE_CODE_OAUTH_TOKEN']?.trim()
+  // Prefer `~/.claude/.credentials.json` (browser `claude /login`) over
+  // `CLAUDE_CODE_OAUTH_TOKEN` from `setup-token` — the latter is inference-only
+  // and 403s on /api/oauth/usage (missing user:profile scope).
   const claudeFile = readJsonFile(join(home, '.claude', '.credentials.json'))
-  const claudeOAuthToken = fromEnv || parseClaudeCredentialsJson(claudeFile)
+  const fromFile = parseClaudeCredentialsJson(claudeFile)
+  const fromEnv = env['CLAUDE_CODE_OAUTH_TOKEN']?.trim()
+  const claudeOAuthToken = fromFile || fromEnv || undefined
 
   const codexFile = readJsonFile(join(home, '.codex', 'auth.json'))
   const parsedCodex = parseCodexAuthJson(codexFile)

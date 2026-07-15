@@ -22,8 +22,10 @@ app's local token ledger is unrelated and unaffected.
   ChatGPT / Codex access token (+ account id when present).
 - **`getPlanUsageSnapshot`** — fan-out over both providers; always resolves to a
   `PlanUsageSnapshot` (per-provider ok / unavailable / error).
-- **Credential parsers** — pure JSON parsers for `~/.claude/.credentials.json`
-  and `~/.codex/auth.json` shapes (filesystem I/O stays in the host).
+- **Credentials:** prefers `~/.claude/.credentials.json` from browser `claude /login`
+  (needs `user:profile` for plan usage). `CLAUDE_CODE_OAUTH_TOKEN` from
+  `setup-token` is inference-only and will 403 — the package returns an actionable
+  unavailable reason in that case.
 
 ## Design
 

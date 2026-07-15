@@ -82,10 +82,13 @@ function readJsonFile(path: string): unknown {
 }
 
 function discoverClaudeToken(): string | null {
-  const fromEnv = process.env['CLAUDE_CODE_OAUTH_TOKEN']?.trim()
-  if (fromEnv) return fromEnv
+  // Prefer the browser `claude /login` credentials file — it carries
+  // `user:profile` (required by /api/oauth/usage). `CLAUDE_CODE_OAUTH_TOKEN`
+  // from `claude setup-token` is inference-only and 403s on this endpoint.
   const file = readJsonFile(join(homedir(), '.claude', '.credentials.json'))
-  return parseClaudeCredentialsJson(file)
+  const fromFile = parseClaudeCredentialsJson(file)
+  if (fromFile) return fromFile
+  return process.env['CLAUDE_CODE_OAUTH_TOKEN']?.trim() || null
 }
 
 function discoverCodexAuth(): { accessToken: string; accountId: string | null } | null {
@@ -94,10 +97,11 @@ function discoverCodexAuth(): { accessToken: string; accountId: string | null } 
 }
 
 /** Capture the JSON body while still driving the real package fetch/parse path. */
-function capturingFetch(inner: FetchLike, sink: { body: unknown }): FetchLike {
+function capturingFetch(inner: FetchLike, sink: { body: unknown; status: number }): FetchLike {
   return async (input, init) => {
     const response = await inner(input, init)
     const text = await response.text()
+    sink.status = response.status
     try {
       sink.body = JSON.parse(text) as unknown
     } catch {
@@ -111,12 +115,12 @@ function capturingFetch(inner: FetchLike, sink: { body: unknown }): FetchLike {
   }
 }
 
-function fixtureFetch(body: unknown): FetchLike {
+function fixtureFetch(body: unknown, status = 200): FetchLike {
   const text = JSON.stringify(body)
   return () =>
     Promise.resolve({
-      ok: true,
-      status: 200,
+      ok: status >= 200 && status < 300,
+      status,
       text: () => Promise.resolve(text),
     })
 }
@@ -126,10 +130,24 @@ interface ProviderProbeReport {
   parse: ProviderPlanResult
   unknownFields: UnknownFieldFinding[]
   raw: unknown
+  httpStatus: number | null
+}
+
+function unknownFieldsForOkParse(
+  parse: ProviderPlanResult,
+  httpStatus: number,
+  body: unknown,
+  schema: typeof CLAUDE_USAGE_SCHEMA,
+): UnknownFieldFinding[] {
+  // Only schema-diff successful usage payloads. Error bodies (403/401 JSON)
+  // would otherwise flood the report with type/error/request_id noise.
+  if (parse.status !== 'ok' || httpStatus < 200 || httpStatus >= 300) return []
+  if (body === null || typeof body !== 'object') return []
+  return findUnknownFields(body, schema)
 }
 
 async function probeClaude(args: Args): Promise<ProviderProbeReport> {
-  const sink: { body: unknown } = { body: null }
+  const sink: { body: unknown; status: number } = { body: null, status: 0 }
   let fetchImpl: FetchLike
   let token: string | null = 'fixture-token'
 
@@ -145,15 +163,17 @@ async function probeClaude(args: Args): Promise<ProviderProbeReport> {
     fetch: fetchImpl,
     signal: AbortSignal.timeout(12_000),
   })
-  const unknownFields =
-    sink.body !== null && typeof sink.body === 'object'
-      ? findUnknownFields(sink.body, CLAUDE_USAGE_SCHEMA)
-      : []
-  return { provider: 'claude', parse, unknownFields, raw: sink.body }
+  return {
+    provider: 'claude',
+    parse,
+    unknownFields: unknownFieldsForOkParse(parse, sink.status, sink.body, CLAUDE_USAGE_SCHEMA),
+    raw: sink.body,
+    httpStatus: sink.status || null,
+  }
 }
 
 async function probeCodex(args: Args): Promise<ProviderProbeReport> {
-  const sink: { body: unknown } = { body: null }
+  const sink: { body: unknown; status: number } = { body: null, status: 0 }
   let fetchImpl: FetchLike
   let auth: { accessToken: string | null; accountId?: string | null } = {
     accessToken: 'fixture-token',
@@ -172,11 +192,13 @@ async function probeCodex(args: Args): Promise<ProviderProbeReport> {
     fetch: fetchImpl,
     signal: AbortSignal.timeout(12_000),
   })
-  const unknownFields =
-    sink.body !== null && typeof sink.body === 'object'
-      ? findUnknownFields(sink.body, CODEX_USAGE_SCHEMA)
-      : []
-  return { provider: 'codex', parse, unknownFields, raw: sink.body }
+  return {
+    provider: 'codex',
+    parse,
+    unknownFields: unknownFieldsForOkParse(parse, sink.status, sink.body, CODEX_USAGE_SCHEMA),
+    raw: sink.body,
+    httpStatus: sink.status || null,
+  }
 }
 
 function printHuman(report: ProviderProbeReport, raw: boolean): void {

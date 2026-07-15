@@ -72,11 +72,14 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
 
 /**
  * Allowed JSON shape for ChatGPT/Codex usage (`/wham/usage` or `/api/codex/usage`).
- * Keep in sync with `codex.ts`.
+ * Keep in sync with `codex.ts`. Expanded from live prolite probe (2026-07-15).
  */
 export const CODEX_USAGE_SCHEMA: SchemaNode = {
   type: 'object',
   keys: {
+    user_id: { type: 'any' },
+    account_id: { type: 'any' },
+    email: { type: 'any' },
     plan_type: { type: 'any' },
     planType: { type: 'any' },
     rate_limit: { type: 'ref', ref: 'rateLimit' },
@@ -88,14 +91,17 @@ export const CODEX_USAGE_SCHEMA: SchemaNode = {
     codeReviewRateLimit: { type: 'ref', ref: 'rateLimit' },
     additional_rate_limits: {
       type: 'array',
-      item: { type: 'ref', ref: 'rateLimit' },
+      item: { type: 'ref', ref: 'additionalLimit' },
     },
     additionalRateLimits: {
       type: 'array',
-      item: { type: 'ref', ref: 'rateLimit' },
+      item: { type: 'ref', ref: 'additionalLimit' },
     },
     rate_limit_reached_type: { type: 'any' },
     rateLimitReachedType: { type: 'any' },
+    spend_control: { type: 'any' },
+    promo: { type: 'any' },
+    rate_limit_reset_credits: { type: 'any' },
   },
   defs: {
     rateLimit: {
@@ -121,6 +127,19 @@ export const CODEX_USAGE_SCHEMA: SchemaNode = {
         limitReached: { type: 'any' },
       },
     },
+    additionalLimit: {
+      type: 'object',
+      keys: {
+        metered_feature: { type: 'any' },
+        meteredFeature: { type: 'any' },
+        rate_limit: { type: 'ref', ref: 'rateLimit' },
+        rateLimit: { type: 'ref', ref: 'rateLimit' },
+        // Flat window fields sometimes appear on the entry itself.
+        primary_window: { type: 'ref', ref: 'window' },
+        secondary_window: { type: 'ref', ref: 'window' },
+        limit_name: { type: 'any' },
+      },
+    },
     window: {
       type: 'object',
       keys: {
@@ -133,6 +152,8 @@ export const CODEX_USAGE_SCHEMA: SchemaNode = {
         resets_at: { type: 'any' },
         resetsAt: { type: 'any' },
         resetAt: { type: 'any' },
+        reset_after_seconds: { type: 'any' },
+        resetAfterSeconds: { type: 'any' },
       },
     },
     credits: {
@@ -142,6 +163,12 @@ export const CODEX_USAGE_SCHEMA: SchemaNode = {
         hasCredits: { type: 'any' },
         unlimited: { type: 'any' },
         balance: { type: 'any' },
+        overage_limit_reached: { type: 'any' },
+        overageLimitReached: { type: 'any' },
+        approx_local_messages: { type: 'any' },
+        approxLocalMessages: { type: 'any' },
+        approx_cloud_messages: { type: 'any' },
+        approxCloudMessages: { type: 'any' },
       },
     },
   },

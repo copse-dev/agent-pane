@@ -1,6 +1,8 @@
 import {
   clampPercent,
+  CLAUDE_PROFILE_SCOPE_HINT,
   errorMessage,
+  isClaudeProfileScopeError,
   isRecord,
   readJsonBody,
   toIsoTimestamp,
@@ -165,6 +167,10 @@ export async function fetchClaudePlanUsage(
     const body = await readJsonBody(response, 'Claude plan usage')
     return { status: 'ok', provider: 'claude', usage: parseClaudeUsage(body, now()) }
   } catch (err) {
-    return { status: 'error', provider: 'claude', message: errorMessage(err) }
+    const message = errorMessage(err)
+    if (isClaudeProfileScopeError(message)) {
+      return { status: 'unavailable', provider: 'claude', reason: CLAUDE_PROFILE_SCOPE_HINT }
+    }
+    return { status: 'error', provider: 'claude', message }
   }
 }
