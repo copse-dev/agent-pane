@@ -9,7 +9,7 @@ import {
   isSshWorkspaceExecutionEnabled,
 } from './execution-target.ts'
 import { wrapRemoteShellWithPgid } from './ssh-spawn.ts'
-import { remoteEnvAllowList, REMOTE_PGID_PREFIX } from './remote-env.ts'
+import { mergeRemoteEnv, remoteEnvAllowList, REMOTE_PGID_PREFIX } from './remote-env.ts'
 
 describe('wrapRemoteShellWithPgid', () => {
   it('wraps with cd, setsid, and pgid marker', () => {
@@ -26,6 +26,25 @@ describe('remoteEnvAllowList', () => {
     const env = remoteEnvAllowList({ PATH: '/bin', ANTHROPIC_API_KEY: 'secret' })
     assert.equal(env['PATH'], '/bin')
     assert.equal(env['ANTHROPIC_API_KEY'], undefined)
+  })
+
+  it('forwards only explicit Git backup variables, never arbitrary caller environment', () => {
+    const env = mergeRemoteEnv({
+      GIT_INDEX_FILE: '/tmp/copse-backup.index',
+      GIT_AUTHOR_NAME: 'Copse',
+      GIT_AUTHOR_EMAIL: 'copse@localhost',
+      GIT_COMMITTER_NAME: 'Copse',
+      GIT_COMMITTER_EMAIL: 'copse@localhost',
+      ANTHROPIC_API_KEY: 'secret',
+      CUSTOM_SECRET: 'secret',
+    })
+    assert.equal(env['GIT_INDEX_FILE'], '/tmp/copse-backup.index')
+    assert.equal(env['GIT_AUTHOR_NAME'], 'Copse')
+    assert.equal(env['GIT_AUTHOR_EMAIL'], 'copse@localhost')
+    assert.equal(env['GIT_COMMITTER_NAME'], 'Copse')
+    assert.equal(env['GIT_COMMITTER_EMAIL'], 'copse@localhost')
+    assert.equal(env['ANTHROPIC_API_KEY'], undefined)
+    assert.equal(env['CUSTOM_SECRET'], undefined)
   })
 })
 

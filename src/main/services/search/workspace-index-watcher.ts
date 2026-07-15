@@ -15,6 +15,9 @@ let rebuildQueued = false
 
 export function startWorkspaceIndexWatcher(root: string): void {
   stopWorkspaceIndexWatcher()
+  // fs.watch observes only local files. Remote indexing is refreshed when
+  // Copse writes, and external remote edits require a future SSH watcher.
+  if (isActiveSshWorkspace()) return
   watchedRoot = root
 
   try {
