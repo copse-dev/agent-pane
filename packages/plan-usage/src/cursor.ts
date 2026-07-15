@@ -68,7 +68,13 @@ function numberField(raw: Record<string, unknown>, ...keys: string[]): number | 
 
 /**
  * Parse Cursor `POST /api/dashboard/get-current-period-usage` (+ optional
- * hard-limit) into plan windows. Spend fields are USD cents.
+ * hard-limit) into plan windows.
+ *
+ * Prefer `totalPercentUsed` / `autoPercentUsed` / `apiPercentUsed` over
+ * `totalSpend / limit`. During promo periods (e.g. half-rate) those percent
+ * fields already reflect effective quota burn; dollar spend does not — and the
+ * API never labels the promo in text (`displayMessage` can still quote the
+ * raw dollar ratio).
  */
 export function parseCursorUsage(
   periodRaw: unknown,
@@ -83,34 +89,61 @@ export function parseCursorUsage(
 
   const windows: PlanWindow[] = []
   let plan: string | null = null
-
-  if (typeof root['displayMessage'] === 'string' && root['displayMessage'].trim()) {
-    plan = root['displayMessage'].trim()
-  }
+  let totalPercent: number | null = null
 
   if (planUsage) {
-    const totalSpend = numberField(planUsage, 'totalSpend', 'total_spend')
     const limit = numberField(planUsage, 'limit')
-    const totalPercent = numberField(planUsage, 'totalPercentUsed', 'total_percent_used')
-    let usedPercent: number | null = null
-    if (totalSpend !== null && limit !== null && limit > 0) {
-      usedPercent = (totalSpend / limit) * 100
-    } else if (totalPercent !== null) {
-      usedPercent = totalPercent
-    }
-    if (usedPercent !== null) {
-      const limitLabel =
-        limit !== null ? `Included usage (${formatCursorCents(limit)} pool)` : 'Included usage'
+    totalPercent = numberField(planUsage, 'totalPercentUsed', 'total_percent_used')
+    const autoPercent = numberField(planUsage, 'autoPercentUsed', 'auto_percent_used')
+    const apiPercent = numberField(planUsage, 'apiPercentUsed', 'api_percent_used')
+    const totalSpend = numberField(planUsage, 'totalSpend', 'total_spend')
+
+    // Fallback only when Cursor omits the percent fields entirely.
+    const spendRatioPercent =
+      totalPercent === null && totalSpend !== null && limit !== null && limit > 0
+        ? (totalSpend / limit) * 100
+        : null
+
+    const poolHint = limit !== null ? ` (${formatCursorCents(limit)} pool)` : ''
+
+    if (totalPercent !== null || spendRatioPercent !== null) {
       windows.push({
-        id: 'plan',
-        label: limitLabel,
-        usedPercent: clampPercent(usedPercent),
+        id: 'total',
+        label: `Total included${poolHint}`,
+        usedPercent: clampPercent(totalPercent ?? spendRatioPercent ?? 0),
         resetsAt,
       })
-      if (!plan && limit !== null) {
-        plan = `Included ${formatCursorCents(limit)}`
-      }
     }
+    if (autoPercent !== null) {
+      windows.push({
+        id: 'auto',
+        label: 'First-party models',
+        usedPercent: clampPercent(autoPercent),
+        resetsAt,
+      })
+    }
+    if (apiPercent !== null) {
+      windows.push({
+        id: 'api',
+        label: limit !== null ? `API (incl. ≥${formatCursorCents(limit)})` : 'API',
+        usedPercent: clampPercent(apiPercent),
+        resetsAt,
+      })
+    }
+  }
+
+  // Prefer messages that track *PercentUsed (promo-aware). `displayMessage`
+  // often quotes dollar-burn % and diverges during half-rate.
+  const autoMsg = root['autoModelSelectedDisplayMessage']
+  if (typeof autoMsg === 'string' && autoMsg.trim()) {
+    plan = autoMsg.trim()
+  } else if (totalPercent !== null) {
+    plan = `You've used ${String(Math.round(totalPercent))}% of your included usage`
+  } else if (typeof root['displayMessage'] === 'string' && root['displayMessage'].trim()) {
+    plan = root['displayMessage'].trim()
+  } else if (planUsage) {
+    const limit = numberField(planUsage, 'limit')
+    if (limit !== null) plan = `Included ${formatCursorCents(limit)}`
   }
 
   if (spendLimit) {
@@ -124,7 +157,7 @@ export function parseCursorUsage(
       const used = Math.max(0, individualLimit - individualRemaining)
       windows.push({
         id: 'spend_limit',
-        label: `On-demand limit (${formatCursorCents(individualLimit)})`,
+        label: `On-demand (${formatCursorCents(used)} / ${formatCursorCents(individualLimit)})`,
         usedPercent: clampPercent((used / individualLimit) * 100),
         resetsAt,
       })

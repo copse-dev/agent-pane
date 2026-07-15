@@ -261,17 +261,29 @@ function mockSnapshot(): PlanUsageSnapshot {
         provider: 'cursor',
         usage: {
           provider: 'cursor',
-          plan: "You've used 4% of your included usage · Hard limit $50",
+          plan: "You've used 2% of your included total usage · Hard limit $50",
           windows: [
             {
-              id: 'plan',
-              label: 'Included usage ($400 pool)',
-              usedPercent: 4,
+              id: 'total',
+              label: 'Total included ($400 pool)',
+              usedPercent: 2,
+              resetsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+            {
+              id: 'auto',
+              label: 'First-party models',
+              usedPercent: 3,
+              resetsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+            {
+              id: 'api',
+              label: 'API (incl. ≥$400)',
+              usedPercent: 0,
               resetsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
             },
             {
               id: 'spend_limit',
-              label: 'On-demand limit ($50)',
+              label: 'On-demand ($0 / $50)',
               usedPercent: 0,
               resetsAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString(),
             },

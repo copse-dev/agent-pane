@@ -597,8 +597,8 @@ describe('fetchCursorPlanUsage', () => {
     displayThreshold: 200,
     enabled: true,
     displayMessage: "You've used 4% of your included usage",
-    autoModelSelectedDisplayMessage: 'auto',
-    namedModelSelectedDisplayMessage: 'named',
+    autoModelSelectedDisplayMessage: "You've used 2% of your included total usage",
+    namedModelSelectedDisplayMessage: "You've used 0% of your included API usage",
     autoBucketModels: ['default'],
   }
 
@@ -612,16 +612,57 @@ describe('fetchCursorPlanUsage', () => {
       now: () => Date.parse('2026-07-15T12:00:00Z'),
     })
     assert.equal(result.status, 'ok')
-    assert.match(result.usage.plan ?? '', /4%/)
+    // Prefer autoModelSelectedDisplayMessage (promo-aware) over displayMessage's dollar %.
+    assert.match(result.usage.plan ?? '', /2% of your included total/)
     assert.match(result.usage.plan ?? '', /Hard limit \$50/)
-    assert.equal(result.usage.windows.length, 2)
-    const plan = result.usage.windows.find((w) => w.id === 'plan')
+    assert.equal(result.usage.windows.length, 4)
+    const total = result.usage.windows.find((w) => w.id === 'total')
+    const auto = result.usage.windows.find((w) => w.id === 'auto')
+    const api = result.usage.windows.find((w) => w.id === 'api')
     const spend = result.usage.windows.find((w) => w.id === 'spend_limit')
-    assert.ok(plan)
+    assert.ok(total)
+    assert.ok(auto)
+    assert.ok(api)
     assert.ok(spend)
-    assert.ok(plan.usedPercent > 3.9 && plan.usedPercent < 4.1)
+    // totalPercentUsed — not totalSpend/limit (which would be ~4% here).
+    assert.equal(total.usedPercent, 1.05)
+    assert.equal(auto.usedPercent, 1.58)
+    assert.equal(api.usedPercent, 0)
     assert.equal(spend.usedPercent, 0)
-    assert.equal(plan.resetsAt, '2026-08-14T23:54:27.000Z')
+    assert.match(spend.label, /\$0 \/ \$50/)
+    assert.equal(total.resetsAt, '2026-08-14T23:54:27.000Z')
+  })
+
+  it('prefers *PercentUsed over dollar burn during half-rate-style divergence', () => {
+    const usage = parseCursorUsage(
+      {
+        billingCycleEnd: '1786751667000',
+        planUsage: {
+          totalSpend: 2486,
+          includedSpend: 2486,
+          remaining: 37514,
+          limit: 40000,
+          autoPercentUsed: 2.486,
+          apiPercentUsed: 0,
+          totalPercentUsed: 1.6573333333333333,
+        },
+        spendLimitUsage: {
+          individualLimit: 5000,
+          individualRemaining: 5000,
+          limitType: 'user',
+        },
+        displayMessage: "You've used 6% of your included usage",
+        autoModelSelectedDisplayMessage: "You've used 2% of your included total usage",
+      },
+      Date.parse('2026-07-15T12:00:00Z'),
+      { hardLimit: 50 },
+    )
+    assert.match(usage.plan ?? '', /2% of your included total/)
+    assert.doesNotMatch(usage.plan ?? '', /6%/)
+    const total = usage.windows.find((w) => w.id === 'total')
+    assert.ok(total)
+    // Dollar burn would be ~6.22%; dashboard Total uses totalPercentUsed (~1.66).
+    assert.equal(total.usedPercent, 1.66)
   })
 
   it('builds Workos cookie from a raw JWT sub claim', () => {
@@ -637,7 +678,7 @@ describe('fetchCursorPlanUsage', () => {
       hardLimit: 50,
     })
     assert.equal(usage.provider, 'cursor')
-    assert.equal(usage.windows[0]?.id, 'plan')
+    assert.equal(usage.windows[0]?.id, 'total')
   })
 
   it('returns unavailable without a session', async () => {
