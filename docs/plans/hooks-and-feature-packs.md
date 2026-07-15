@@ -215,10 +215,53 @@ flowchart TB
     spine -.-> ui
 ```
 
+### Glossary
+
+Terms invented by this design — use them exactly; do not coin synonyms in code or PRs:
+
+- **Canonical event** — a named point where the harness calls the registry. Harness code
+  fires canonical events only; it never knows dialects or executors exist.
+- **Executor** — how a hook runs: `function` (in-process, first-party, fail-hard) or
+  `command` (spawned process, dialect-owned failure semantics).
+- **Dialect** — an on-disk hook config format (Cursor / Claude / Copse), identified by
+  source path, translated by its **adapter**.
+- **Turn tree** — everything descending from one human-originated submission (typed
+  message or human send-now/release). The auto-continuation budget is scoped to it.
+- **Epoch** — the turn-tree id carried by every async hook dispatch; outputs from a
+  non-current epoch are **stale** (decision 16).
+- **Held** — a queued message with `autoDispatch: false`: skipped by `drainMessageQueue`,
+  submitted only by explicit human action, which starts a fresh turn tree.
+- **Pack** — a manifest-bundled feature (tools + hooks + prompt + UI + settings +
+  storage) that enables/disables atomically.
+
+### Canonical events (v1 enumeration)
+
+The registry's event names and firing sites. A1 implements the type; each event lands in
+the phase listed. Names are final — changing one is a decisions-log edit, not a refactor.
+
+| Event                                | Kind                   | Fires at (site)                                                          | Phase |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------ | ----- |
+| `turnStart`                          | blocking, assembly     | `runAgent` after system prompt build, before loop (steering, pins)       | M0    |
+| `beforeFinalize`                     | blocking, assembly     | `runAgentLoop` finalize checks (closeout / stuck / open-todos nudges)    | M0    |
+| `beforeSubmitPrompt`                 | blocking, decision     | Compose path, before `agent:run`                                         | B1    |
+| `toolGate`                           | blocking, decision     | `ensureToolPermitted` (maps beforeShell/MCP/ReadFile + `PreToolUse`)     | A2    |
+| `afterFileEdit`                      | blocking or async      | Diff-queue / write tools                                                 | B2    |
+| `stop`                               | async (detached)       | Turn end or abort, after agent work halts                                | B3    |
+| `afterToolUse`                       | async, observation     | After each tool result (generic; shell/MCP variants are payload flavors) | D2    |
+| `subagentStart`                      | blocking, decision     | `runSubagent` before spawn                                               | D1    |
+| `subagentStop`                       | async (detached)       | `runSubagent` completion                                                 | D1    |
+| `sessionStart`                       | async, fire-and-forget | New thread / first turn (sets `sessionEnv`)                              | H4    |
+| `compaction`                         | async, observation     | History trim / todo-boundary compaction                                  | later |
+| `permissionDecision`                 | async, observation     | After `decideShellPermission` verdict (feeds #840's audit trail)         | F2    |
+| `beforeDiffApply` / `afterDiffApply` | blocking / async       | Diff-queue approval flow (Copse-native)                                  | F2    |
+
 ### Canonical decision vocabulary
 
 The registry's normalized hook output (A1). Adapters translate each dialect's wire format
-to/from this; the harness consumes only this:
+to/from this; the harness consumes only this. **Encode the constraints in types, not
+review comments**: blocking and async hooks must have _separate outcome types_ so an
+async hook cannot return `decision`, `updatedInput`, or `injectContext` at the type
+level (decisions 4 and 11 become compiler errors instead of bugs):
 
 ```ts
 interface HookOutcome {
@@ -294,10 +337,41 @@ permission gate, context trimming, the step machine, diff queue.
 
 ## Issue breakdown
 
-Phases B–H all depend on A1–A2. Critical path: **A1 → A2 → {B\*, C1} → C2 → C3**; D/E/F/G/H/P
+**Milestone 0 (below) is the entry point and ships first.** After it, phases B–H depend
+on A1–A2. Critical path: **M0 → A1(full) → A2 → {B\*, C1} → C2 → C3**; D/E/F/G/H/P
 parallelize after. Each E/P issue carries the acceptance criterion _“old inline mechanism
 deleted”_ (dead-code gate enforces it) and _“feature UI chunks byte-identical; existing
 WDIO specs pass unmodified.”_
+
+**Issue filing policy:** this document is canonical; GitHub issues are filed **lazily,
+per active milestone/phase** (file M0's three issues now; file a phase's issues when an
+agent picks the phase up). Every filed issue links to its row here and states "on
+conflict, the plan doc wins — update the doc in the same PR as the behavior change."
+This avoids 30 stale issues drifting from the design.
+
+### Milestone 0 — MVP: todos out of the core files
+
+The thin vertical slice: a **function-executor-only registry** plus the two assembly
+events, used to extract every inline todo behavior. No dialects, no command executor, no
+async dispatch, no queue/budget/epoch, no spine changes, no UI changes — those all come
+later and plug into the same seam. Proves the architecture is extensible before anything
+external depends on it.
+
+| #    | Issue                             | Scope                                                                                                                                                                                                                                                                                                                   |
+| ---- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0.1 | Registry core (function executor) | In `packages/agent` (Electron-free): typed canonical events (`turnStart`, `beforeFinalize` only), function executor, fail-hard semantics, static registration list, separate blocking/async outcome types (async unused for now but the split exists from day one). Emitting with zero registered hooks changes nothing |
+| M0.2 | Extract turn-start policy         | Todo steering, prior-todos pin, GitHub-link steering, commit steering → named `turnStart` hooks; the `messages[0]` string surgery leaves `runAgent`. Behavior byte-identical, pinned by existing tests                                                                                                                  |
+| M0.3 | Extract finalize policy           | Open-todos closeout nudge selection (`OPEN_TODOS_FINALIZE_*`, `MAX_TODO_CLOSEOUT_ATTEMPTS` gating) and stuck-finalize nudge → `beforeFinalize` hooks; the inline blocks leave `run-agent-loop.ts`. Behavior byte-identical                                                                                              |
+
+M0 acceptance: inline mechanisms deleted (dead-code gate); `npm run check` green;
+`todo_update` chunks and plan-panel behavior untouched (pure data plumbing — the
+AGENTS.md "demonstrably invisible" exception applies, no visual eval needed);
+extensibility proven by registering one additional no-op hook in a test without touching
+loop code.
+
+What M0 deliberately does **not** move: the in-loop truncation/reasoning-runaway/loop
+nudges (E1 — they need a step-boundary event that M0 doesn't add) and todo compaction
+pinning. Scope discipline matters more than completeness here.
 
 ### Phase 0 — in flight
 
@@ -385,6 +459,59 @@ WDIO specs pass unmodified.”_
 Sequencing risk: packs are the second floor. P1 must not start before A1/A2 and C3 are
 merged, or it freezes their shapes prematurely. P4 (todos) is the forcing function for
 every primitive the pack layer needs.
+
+## Execution guidance (for agents implementing this plan)
+
+Rules that steer implementation toward correctness. They are process, but each one
+exists because it converts a class of likely mistake into a mechanical failure:
+
+1. **This document is law; change it in the same PR.** If implementation reveals a
+   decision is wrong, edit the decisions log alongside the code — never silently
+   diverge. Reviewers should reject a semantic change without a matching doc edit.
+2. **Contract tests before (or with) behavior.** Every decision with a behavioral
+   surface gets a test file named for it, in the house style of
+   `permission-platform.test.ts` pinning the permission matrix. Minimum set:
+   held-items-never-drain (decision 5), stale-epoch-never-aborts (decision 16),
+   budget-ledger increments (decision 5), failClosed both-modes (decision 9),
+   hook-run-survives-full-save (decision 6), async-outcome-type-excludes-decisions
+   (decision 11 — a type-level test via `@ts-expect-error` is acceptable here).
+3. **Make illegal states unrepresentable.** Separate blocking/async outcome types;
+   a branded `TurnTreeId`; `held` as part of the queued-message type. Prefer a compile
+   error over a review comment over a runtime check, in that order.
+4. **Module layout is fixed.** Registry + canonical events + first-party hooks live in
+   `packages/agent` (Electron-free — function hooks receive app services via context,
+   never import them). Command executor, dialect adapters, spawning, and sandbox live in
+   `src/main/services/hooks/`. Renderer hook cards / held-queue UI in
+   `src/renderer/views/`. Anything that violates the `packages/agent` purity boundary is
+   wrong even if it works.
+5. **Test tiers per [`docs/testing-strategy.md`](../testing-strategy.md):** unit tests
+   for policy, adapters (against the golden vendor fixtures from G4), budget, epoch;
+   component tests for renderer queue/held/card states; e2e only for gate wiring
+   end-to-end and the G1 visual specs.
+6. **One issue, one PR**, doc section linked, acceptance criteria copied into the PR
+   description verbatim.
+
+### Known implementation traps
+
+Collected from design review — each of these was _almost_ a bug in the plan itself:
+
+- **`drainMessageQueue` auto-submits plain queued messages at idle.** Any "queued for
+  the human" semantics must use the held state; a plain enqueue is an auto-submit.
+- **`sendQueuedMessageNow` aborts the active local run.** Check epoch staleness _before_
+  reaching that path, or a late hook kills an unrelated turn.
+- **`writeThread` regenerates `events.jsonl` from `thread.messages` alone.** Appending a
+  spine line without full-save round-tripping means it vanishes on the next save.
+- **Cursor `failClosed` exists.** "Cursor hooks fail open" is only the default; the
+  adapter must honour the per-hook flag or imported security hooks silently weaken.
+- **The OS sandbox is macOS-only.** `isProjectSandboxEnabled()` is hard-false elsewhere;
+  every "sandboxed by default" statement is a _default_, not a guarantee — write code
+  and docs accordingly.
+- **Hook stdout is the response channel and stderr is currently discarded.** A script's
+  debug print corrupts its own response into fail-open `allow`; the spine's `parse_ok`
+  exists to make that visible. Capture stderr.
+- **In-loop nudges are not continuations.** They live inside one `runAgentLoop` call
+  under `maxSteps`/LLM caps; only machine-initiated _new turns_ touch the budget.
+  Conflating the two either starves the loop or unbounds it.
 
 ## Codebase impact
 
