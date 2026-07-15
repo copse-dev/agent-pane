@@ -8,6 +8,7 @@ import {
   runPermissionHooks,
   userHooksConfigPath,
   projectHooksConfigPath,
+  resetCursorHookSessionErrorsForTest,
 } from './cursor-hooks.ts'
 import { beginHookRunRecording, endHookRunRecording } from '../hook-run-recorder.ts'
 import { getThreadMeta } from '../thread-store.ts'
@@ -24,6 +25,7 @@ describe('cursor-hooks', () => {
     tempProject = await mkdtemp(join(tmpdir(), 'copse-cursor-hooks-proj-'))
     originalHome = process.env['HOME']
     process.env['HOME'] = tempHome
+    resetCursorHookSessionErrorsForTest()
   })
 
   afterEach(async () => {
@@ -51,7 +53,7 @@ describe('cursor-hooks', () => {
     return path
   }
 
-  it('lists user hooks and skips unknown events', async () => {
+  it('lists user hooks and skips unknown events with a warning', async () => {
     await writeUserHooks({
       version: 1,
       hooks: {
@@ -60,13 +62,87 @@ describe('cursor-hooks', () => {
       },
     })
 
-    const hooks = await listCursorHooks({ workspaceRoot: null, projectTrusted: false })
+    const { hooks, warnings } = await listCursorHooks({
+      workspaceRoot: null,
+      projectTrusted: false,
+    })
     assert.equal(hooks.length, 1)
     const [hook] = hooks
     assert.ok(hook)
     assert.equal(hook.event, 'beforeShellExecution')
     assert.equal(hook.command, './audit.sh')
     assert.equal(hook.scope, 'user')
+    assert.equal(hook.supported, true)
+    assert.equal(hook.lastError, undefined)
+    assert.equal(warnings.length, 1)
+    const [warning] = warnings
+    assert.ok(warning)
+    assert.match(warning.message, /notARealEvent/)
+    assert.equal(warning.source, userHooksConfigPath())
+    assert.equal(warning.scope, 'user')
+  })
+
+  it('marks declared-but-unwired events as unsupported', async () => {
+    await writeUserHooks({
+      hooks: {
+        beforeShellExecution: [{ command: './gate.sh' }],
+        stop: [{ command: './notify.sh' }],
+      },
+    })
+
+    const { hooks, warnings } = await listCursorHooks({
+      workspaceRoot: null,
+      projectTrusted: false,
+    })
+    assert.equal(warnings.length, 0)
+    const stopHook = hooks.find((h) => h.event === 'stop')
+    assert.ok(stopHook)
+    assert.equal(stopHook.supported, false)
+    const gateHook = hooks.find((h) => h.event === 'beforeShellExecution')
+    assert.ok(gateHook)
+    assert.equal(gateHook.supported, true)
+  })
+
+  it('warns on malformed entries (bad shape / empty command) without dropping valid ones', async () => {
+    await writeUserHooks({
+      hooks: {
+        beforeShellExecution: [{ command: './ok.sh' }, { command: '' }, { notCommand: true }],
+        beforeMCPExecution: 'not-an-array',
+      },
+    })
+
+    const { hooks, warnings } = await listCursorHooks({
+      workspaceRoot: null,
+      projectTrusted: false,
+    })
+    assert.equal(hooks.length, 1)
+    assert.equal(hooks[0]?.command, './ok.sh')
+    assert.equal(warnings.length, 3)
+    const messages = warnings.map((w) => w.message)
+    assert.ok(messages.some((m) => /entry 2/.test(m) && /"command"/.test(m)))
+    assert.ok(messages.some((m) => /entry 3/.test(m) && /"command"/.test(m)))
+    assert.ok(messages.some((m) => /beforeMCPExecution.*array/.test(m)))
+  })
+
+  it('warns when hooks.json exists but has no hooks object', async () => {
+    await writeUserHooks({ version: 1 })
+
+    const { hooks, warnings } = await listCursorHooks({
+      workspaceRoot: null,
+      projectTrusted: false,
+    })
+    assert.equal(hooks.length, 0)
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0]?.message ?? '', /no "hooks" object/)
+  })
+
+  it('reports no warnings when no hooks.json exists', async () => {
+    const { hooks, warnings } = await listCursorHooks({
+      workspaceRoot: null,
+      projectTrusted: false,
+    })
+    assert.equal(hooks.length, 0)
+    assert.equal(warnings.length, 0)
   })
 
   it('discovers project hooks only when the workspace is trusted', async () => {
@@ -76,11 +152,11 @@ describe('cursor-hooks', () => {
       workspaceRoot: tempProject,
       projectTrusted: false,
     })
-    assert.equal(untrusted.length, 0)
+    assert.equal(untrusted.hooks.length, 0)
 
     const trusted = await listCursorHooks({ workspaceRoot: tempProject, projectTrusted: true })
-    assert.equal(trusted.length, 1)
-    const [projectHook] = trusted
+    assert.equal(trusted.hooks.length, 1)
+    const [projectHook] = trusted.hooks
     assert.ok(projectHook)
     assert.equal(projectHook.scope, 'project')
   })
@@ -137,12 +213,122 @@ describe('cursor-hooks', () => {
     assert.equal(decision.permission, 'allow')
   })
 
-  it('ignores a malformed hooks.json without throwing', async () => {
+  it('ignores a malformed hooks.json without throwing, but surfaces a warning', async () => {
     await mkdir(join(tempHome, '.cursor'), { recursive: true })
     await writeFile(userHooksConfigPath(), '{ this is not json', 'utf-8')
 
-    const hooks = await listCursorHooks({ workspaceRoot: null, projectTrusted: false })
+    const { hooks, warnings } = await listCursorHooks({
+      workspaceRoot: null,
+      projectTrusted: false,
+    })
     assert.deepEqual(hooks, [])
+    assert.equal(warnings.length, 1)
+    assert.match(warnings[0]?.message ?? '', /not valid JSON/)
+    assert.equal(warnings[0]?.source, userHooksConfigPath())
+  })
+
+  describe('per-hook runtime error state (session-deduped)', () => {
+    function listUserHooks(): ReturnType<typeof listCursorHooks> {
+      return listCursorHooks({ workspaceRoot: null, projectTrusted: false })
+    }
+
+    it('records the first invalid-JSON failure and exposes it via listCursorHooks', async () => {
+      const script = await writeHookScript('bad-json.sh', 'definitely not json')
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      await runPermissionHooks(
+        'beforeShellExecution',
+        { command: 'ls' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+
+      const { hooks } = await listUserHooks()
+      assert.equal(hooks.length, 1)
+      assert.match(hooks[0]?.lastError ?? '', /invalid JSON/)
+    })
+
+    it('records a non-zero exit (crash) as a failure', async () => {
+      const path = join(tempHome, 'crash.sh')
+      await writeFile(path, '#!/bin/sh\ncat > /dev/null\nexit 2\n', 'utf-8')
+      await chmod(path, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: path }] } })
+
+      await runPermissionHooks(
+        'beforeShellExecution',
+        { command: 'ls' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+
+      const { hooks } = await listUserHooks()
+      assert.match(hooks[0]?.lastError ?? '', /exited with code 2/)
+    })
+
+    it('keeps the first failure per hook per session (dedupe)', async () => {
+      const path = join(tempHome, 'flaky.sh')
+      await writeFile(path, '#!/bin/sh\ncat > /dev/null\nprintf "not json"\n', 'utf-8')
+      await chmod(path, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: path }] } })
+
+      await runPermissionHooks(
+        'beforeShellExecution',
+        { command: 'ls' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+      // Second run fails differently (crash); the recorded error must not change.
+      await writeFile(path, '#!/bin/sh\ncat > /dev/null\nexit 3\n', 'utf-8')
+      await runPermissionHooks(
+        'beforeShellExecution',
+        { command: 'ls' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+
+      const { hooks } = await listUserHooks()
+      assert.match(hooks[0]?.lastError ?? '', /invalid JSON/)
+    })
+
+    it('is keyed by command+event: the same command failing on one event does not flag another', async () => {
+      const script = await writeHookScript('shared-ok.sh', '{"permission":"allow"}')
+      const bad = join(tempHome, 'shared-bad.sh')
+      await writeFile(bad, '#!/bin/sh\ncat > /dev/null\nexit 1\n', 'utf-8')
+      await chmod(bad, 0o755)
+      await writeUserHooks({
+        hooks: {
+          beforeShellExecution: [{ command: bad }],
+          beforeMCPExecution: [{ command: script }],
+        },
+      })
+
+      await runPermissionHooks(
+        'beforeShellExecution',
+        { command: 'ls' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+      await runPermissionHooks(
+        'beforeMCPExecution',
+        { tool_name: 'mcp__x__y', tool_input: {} },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+
+      const { hooks } = await listUserHooks()
+      const shellHook = hooks.find((h) => h.event === 'beforeShellExecution')
+      const mcpHook = hooks.find((h) => h.event === 'beforeMCPExecution')
+      assert.match(shellHook?.lastError ?? '', /exited with code 1/)
+      assert.equal(mcpHook?.lastError, undefined)
+    })
+
+    it('a clean run records no error', async () => {
+      const script = await writeHookScript('clean.sh', '{"permission":"allow"}')
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      await runPermissionHooks(
+        'beforeShellExecution',
+        { command: 'ls' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+
+      const { hooks } = await listUserHooks()
+      assert.equal(hooks[0]?.lastError, undefined)
+    })
   })
 
   // Decision 6 (docs/plans/hooks-and-feature-packs.md): every command-hook

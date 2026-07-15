@@ -157,6 +157,9 @@ export async function listClaudeHooks(opts: {
       command: h.command,
       source: h.source,
       scope: h.scope,
+      // Only PreToolUse is wired today, and that is all `discoverClaudeHooks`
+      // returns — so every discovered Claude hook is currently supported.
+      supported: true,
     }
     if (h.matcher !== undefined) summary.matcher = h.matcher
     return summary
