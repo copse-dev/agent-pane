@@ -573,13 +573,14 @@ dialog.settings-overlay::backdrop {
 .usage-section-root {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  /* Separate plan limits from local ledger as distinct sections. */
+  gap: calc(var(--spacing-xl) + var(--spacing-md));
 }
 .usage-plan-section,
 .usage-ledger-section {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: var(--spacing-md);
 }
 .usage-plan-heading,
 .usage-ledger-heading {
@@ -591,12 +592,12 @@ dialog.settings-overlay::backdrop {
 .usage-plan-providers {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--spacing-xl);
 }
 .usage-plan-provider {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--spacing-sm);
 }
 .usage-plan-provider-title {
   margin: 0;
