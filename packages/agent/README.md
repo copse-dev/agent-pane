@@ -65,10 +65,11 @@ formatting); the loop itself is main-process-only.
   (the app pushes `todo_update` through the same sink), so it is
   `AgentHost<TChunk = AgentStreamChunk>`; the app instantiates
   `AgentHost<StreamChunk>`.
-- **The todo finalize gate moved in.** `hasOpenTodos` and
-  `OPEN_TODOS_FINALIZE_NUDGE` had exactly one consumer — the loop — so they
-  moved from `@shared/todos/todo-logic.ts` into `agent-loop-guards.ts`
-  alongside the sibling nudge constants.
+- **The todo finalize gate moved in.** `hasOpenTodos` and the
+  `OPEN_TODOS_FINALIZE_*` nudges moved from `@shared/todos/todo-logic.ts` into
+  `agent-loop-guards.ts`. M0.3's `todo-finalize-closeout` hook owns nudge
+  selection; the closeout loop in `run-agent-loop.ts` still consumes
+  `hasOpenTodos` / the still-open note.
 - **Two `EXPLORE_TOOL_NAMES` exist** (run-subagent's tool allowlist and
   agent-loop-guards' duplicate-detection set). The barrel explicitly re-exports
   the subagent allowlist — the one app code imports; deep imports see both.
