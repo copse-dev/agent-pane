@@ -803,7 +803,12 @@ export async function runAgent(
               setAgentRunTodos(todosAfterReview)
             }
 
-            sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
+            sendChunk({
+              type: 'post_turn_review',
+              status: 'done',
+              summary: review.summary,
+              issuesFound: review.verdict.issuesFound,
+            })
 
             const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
             if (!review.verdict.requestFollowUp || lastCycle || controller.signal.aborted) {
@@ -932,7 +937,12 @@ export async function retryPostTurnReview(
         })
       },
     })
-    sendChunk({ type: 'post_turn_review', status: 'done', summary: review.summary })
+    sendChunk({
+      type: 'post_turn_review',
+      status: 'done',
+      summary: review.summary,
+      issuesFound: review.issuesFound,
+    })
   } catch (err) {
     const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
     sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
