@@ -76,6 +76,72 @@ describe('fetchClaudePlanUsage', () => {
     assert.equal(weekly.label, 'Weekly')
   })
 
+  it('prefers limits[] so Fable (and other scoped models) appear', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        // Legacy keys present but null / stale — live data is in limits[].
+        five_hour: null,
+        seven_day: null,
+        seven_day_opus: null,
+        seven_day_sonnet: null,
+        limits: [
+          {
+            kind: 'session',
+            percent: 12,
+            resets_at: '2026-07-15T12:00:00Z',
+          },
+          {
+            kind: 'weekly_all',
+            percent: 40,
+            resets_at: '2026-07-20T12:00:00Z',
+          },
+          {
+            kind: 'weekly_scoped',
+            percent: 55,
+            resets_at: '2026-07-18T12:00:00Z',
+            scope: { model: { display_name: 'Fable' } },
+          },
+          {
+            kind: 'weekly_scoped',
+            percent: 8,
+            resets_at: '2026-07-19T12:00:00Z',
+            scope: { model: { display_name: 'Opus' } },
+          },
+        ],
+      }),
+      now: () => Date.parse('2026-07-15T08:00:00Z'),
+    })
+    assert.equal(result.status, 'ok')
+    assert.deepEqual(
+      result.usage.windows.map((w) => ({ id: w.id, label: w.label, usedPercent: w.usedPercent })),
+      [
+        { id: 'five_hour', label: '5-hour', usedPercent: 12 },
+        { id: 'seven_day', label: 'Weekly', usedPercent: 40 },
+        { id: 'seven_day_fable', label: 'Weekly Fable', usedPercent: 55 },
+        { id: 'seven_day_opus', label: 'Weekly Opus', usedPercent: 8 },
+      ],
+    )
+  })
+
+  it('skips inactive limits[] entries', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        limits: [
+          { kind: 'session', percent: 1, resets_at: '2026-07-15T12:00:00Z' },
+          {
+            kind: 'weekly_scoped',
+            percent: 99,
+            is_active: false,
+            scope: { model: { display_name: 'Fable' } },
+          },
+        ],
+      }),
+    })
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.windows.length, 1)
+    assert.equal(result.usage.windows[0]?.id, 'five_hour')
+  })
+
   it('returns error on HTTP failure without throwing', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({ error: { message: 'nope' } }, 401),

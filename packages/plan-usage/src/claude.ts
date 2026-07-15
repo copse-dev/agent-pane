@@ -18,37 +18,100 @@ const CLAUDE_BETA = 'oauth-2025-04-20'
 /** Anthropic rate-limits bare User-Agents harder; mirror Claude Code's UA family. */
 const CLAUDE_USER_AGENT = 'claude-code/2.1.72'
 
-const WINDOW_SPECS = [
+/** Legacy flat keys — still present on older payloads, but often null now. */
+const LEGACY_WINDOW_SPECS = [
   { id: 'five_hour', label: '5-hour', key: 'five_hour' },
   { id: 'seven_day', label: 'Weekly', key: 'seven_day' },
   { id: 'seven_day_opus', label: 'Weekly Opus', key: 'seven_day_opus' },
   { id: 'seven_day_sonnet', label: 'Weekly Sonnet', key: 'seven_day_sonnet' },
 ] as const
 
-function parseWindow(raw: unknown, id: string, label: string, nowMs: number): PlanWindow | null {
+function slug(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function normalizePercent(value: number): number {
+  // Anthropic usually reports 0–100; normalize rare 0–1 fractions.
+  return clampPercent(value > 0 && value <= 1 ? value * 100 : value)
+}
+
+function parseLegacyWindow(
+  raw: unknown,
+  id: string,
+  label: string,
+  nowMs: number,
+): PlanWindow | null {
   if (!isRecord(raw)) return null
   const utilization = raw['utilization']
   if (typeof utilization !== 'number' || !Number.isFinite(utilization)) return null
-  // Anthropic usually reports 0–100; normalize rare 0–1 fractions.
-  const usedPercent = clampPercent(
-    utilization > 0 && utilization <= 1 ? utilization * 100 : utilization,
-  )
   return {
     id,
     label,
-    usedPercent,
+    usedPercent: normalizePercent(utilization),
     resetsAt: toIsoTimestamp(raw['resets_at'], nowMs),
   }
 }
 
-function parseClaudeUsage(body: unknown, nowMs: number): ProviderPlanUsage {
-  if (!isRecord(body)) throw new Error('Claude usage payload was not an object')
-
+/**
+ * Prefer the structured `limits[]` array (current Anthropic shape). That is
+ * where model-scoped weekly caps live — Opus, Sonnet, **Fable**, and whatever
+ * comes next — via `kind: "weekly_scoped"` + `scope.model.display_name`.
+ * Hard-coding `seven_day_opus` alone misses Fable (and future models).
+ */
+function parseLimitsArray(raw: unknown, nowMs: number): PlanWindow[] {
+  if (!Array.isArray(raw)) return []
   const windows: PlanWindow[] = []
-  for (const spec of WINDOW_SPECS) {
-    const window = parseWindow(body[spec.key], spec.id, spec.label, nowMs)
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue
+    // Skip inactive buckets when the server marks them.
+    if (entry['is_active'] === false) continue
+    const percent = entry['percent'] ?? entry['utilization']
+    if (typeof percent !== 'number' || !Number.isFinite(percent)) continue
+    const kind = typeof entry['kind'] === 'string' ? entry['kind'] : null
+    const resetsAt = toIsoTimestamp(entry['resets_at'] ?? entry['resetsAt'], nowMs)
+    const usedPercent = normalizePercent(percent)
+
+    if (kind === 'session') {
+      windows.push({ id: 'five_hour', label: '5-hour', usedPercent, resetsAt })
+      continue
+    }
+    if (kind === 'weekly_all') {
+      windows.push({ id: 'seven_day', label: 'Weekly', usedPercent, resetsAt })
+      continue
+    }
+    if (kind === 'weekly_scoped') {
+      const scope = entry['scope']
+      const model = isRecord(scope) ? scope['model'] : null
+      const name =
+        isRecord(model) && typeof model['display_name'] === 'string'
+          ? model['display_name'].trim()
+          : ''
+      const label = name ? `Weekly ${name}` : 'Weekly (scoped)'
+      const id = name ? `seven_day_${slug(name)}` : 'seven_day_scoped'
+      windows.push({ id, label, usedPercent, resetsAt })
+    }
+  }
+  return windows
+}
+
+function parseLegacyFlatKeys(body: Record<string, unknown>, nowMs: number): PlanWindow[] {
+  const windows: PlanWindow[] = []
+  for (const spec of LEGACY_WINDOW_SPECS) {
+    const window = parseLegacyWindow(body[spec.key], spec.id, spec.label, nowMs)
     if (window) windows.push(window)
   }
+  return windows
+}
+
+/** Exported for unit tests. */
+export function parseClaudeUsage(body: unknown, nowMs: number): ProviderPlanUsage {
+  if (!isRecord(body)) throw new Error('Claude usage payload was not an object')
+
+  const fromLimits = parseLimitsArray(body['limits'], nowMs)
+  const windows = fromLimits.length > 0 ? fromLimits : parseLegacyFlatKeys(body, nowMs)
   if (windows.length === 0) {
     throw new Error('Claude usage payload had no recognizable windows')
   }

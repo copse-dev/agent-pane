@@ -68,6 +68,12 @@ function mockSnapshot(): PlanUsageSnapshot {
               usedPercent: 18,
               resetsAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
             },
+            {
+              id: 'seven_day_fable',
+              label: 'Weekly Fable',
+              usedPercent: 33,
+              resetsAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+            },
           ],
           checkedAt,
         },

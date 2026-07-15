@@ -12,7 +12,11 @@ app's local token ledger is unrelated and unaffected.
 ## What's in it
 
 - **`fetchClaudePlanUsage`** — `GET https://api.anthropic.com/api/oauth/usage`
-  (undocumented; same endpoint Claude Code `/usage` uses). Needs a Claude.ai
+  (undocumented; same endpoint Claude Code `/usage` uses). Prefers the structured
+  `limits[]` array (`session` / `weekly_all` / `weekly_scoped`) so model-scoped
+  weekly caps — Opus, Sonnet, **Fable**, future models — are auto-detected from
+  `scope.model.display_name`. Falls back to legacy flat keys (`five_hour`,
+  `seven_day`, `seven_day_opus`, …) when `limits[]` is absent. Needs a Claude.ai
   OAuth token (`sk-ant-oat01-…`), not a console API key.
 - **`fetchCodexPlanUsage`** — `GET …/wham/usage` (ChatGPT backend). Needs a
   ChatGPT / Codex access token (+ account id when present).
