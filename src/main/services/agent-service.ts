@@ -24,7 +24,7 @@ import { hasLastUsage } from './providers/provider-usage.ts'
 import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
-import { buildCommitSteeringPrompt, shouldSteerCommit } from '@shared/git/commit-attribution.ts'
+import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import {
   buildProvider,
   buildSubagentRoute,
@@ -79,19 +79,12 @@ import {
   getAgentRunTodos,
   setAgentRunTodos,
 } from './agent-run-todos.ts'
-import {
-  buildGithubLinkSteeringPrompt,
-  shouldSteerGithubLinks,
-} from '@shared/git/github-link-steering.ts'
 import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './github/git-service.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import {
-  shouldSteerTodos,
-  formatTodosForPrompt,
   findNewlyInProgressLocal,
   findNewlyCompleted,
   shouldRouteToLocal,
-  TODO_STEERING_PROMPT,
 } from '@shared/todos/todo-logic.ts'
 import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
@@ -413,28 +406,26 @@ export async function runAgent(
 
     // Steering checks are local-only (they decide which prompt blocks to add), so
     // they run on the raw text — redaction must not change which steering fires.
+    // M0.2: policy lives in named `turnStart` hooks; this site only fires the
+    // event and applies the merged `injectContext` to messages[0].
     const userTextForSteering =
       typeof userPrompt === 'string'
         ? userPrompt
         : resolveParentGoal(undefined, messages, userPrompt)
-    const steeringBlocks: string[] = []
-    if (shouldSteerTodos(userTextForSteering)) steeringBlocks.push(TODO_STEERING_PROMPT)
-    if (shouldSteerGithubLinks(userTextForSteering)) {
-      const repoSlug = await getGithubRepoSlug()
-      steeringBlocks.push(buildGithubLinkSteeringPrompt(repoSlug))
-    }
-    if (shouldSteerCommit(userTextForSteering)) steeringBlocks.push(buildCommitSteeringPrompt())
-    if (steeringBlocks.length && messages[0]?.role === 'system') {
-      messages[0] = {
-        role: 'system',
-        content: messages[0].content + `\n\n${steeringBlocks.join('\n\n')}`,
-      }
-    }
     const priorTodos = options?.priorTodos ?? []
-    if (priorTodos.length && messages[0]?.role === 'system') {
+    const turnStart = await createHookRegistry().emit(
+      'turnStart',
+      { userText: userTextForSteering, priorTodos },
+      {
+        signal: controller.signal,
+        resolveGithubRepoSlug: () => getGithubRepoSlug(),
+      },
+    )
+    const injected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
+    if (injected && messages[0]?.role === 'system') {
       messages[0] = {
         role: 'system',
-        content: messages[0].content + formatTodosForPrompt(priorTodos),
+        content: messages[0].content + `\n\n${injected}`,
       }
     }
 
