@@ -73,6 +73,7 @@ import {
 } from '../services/editors/editor-launcher.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
+import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
@@ -996,6 +997,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:clearMockScript', (event) => {
       assertMainFrameSender(event, win)
       clearMockScript()
+    })
+    ipcMain.handle('test:requestSshPrompt', (event, prompt: unknown, kind: unknown) => {
+      assertMainFrameSender(event, win)
+      const [parsedPrompt, parsedKind] = parseIpcArgs(
+        z.tuple([z.string().min(1).max(2_000), z.enum(['confirm', 'secret'])]),
+        [prompt, kind],
+      )
+      return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
     })
   }
 }
