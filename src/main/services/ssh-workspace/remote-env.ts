@@ -22,6 +22,20 @@ const REMOTE_ENV_ALLOW = new Set([
   'NPM_CONFIG_CACHE',
 ])
 
+/**
+ * Per-command values Copse needs for remote Git backup commits. These are kept
+ * separate from the inherited allow-list: callers cannot accidentally forward
+ * arbitrary local environment state to the SSH host.
+ */
+const REMOTE_EXPLICIT_ENV_ALLOW = new Set([
+  ...REMOTE_ENV_ALLOW,
+  'GIT_INDEX_FILE',
+  'GIT_AUTHOR_NAME',
+  'GIT_AUTHOR_EMAIL',
+  'GIT_COMMITTER_NAME',
+  'GIT_COMMITTER_EMAIL',
+])
+
 export function remoteEnvAllowList(base: NodeJS.ProcessEnv = process.env): Record<string, string> {
   const out: Record<string, string> = {}
   for (const key of REMOTE_ENV_ALLOW) {
@@ -41,7 +55,7 @@ export function mergeRemoteEnv(explicit: NodeJS.ProcessEnv | undefined): Record<
   const out = { ...allowed }
   for (const [key, value] of Object.entries(explicit)) {
     if (value === undefined) continue
-    if (REMOTE_ENV_ALLOW.has(key) || key.startsWith('LC_')) {
+    if (REMOTE_EXPLICIT_ENV_ALLOW.has(key) || key.startsWith('LC_')) {
       out[key] = value
     }
   }

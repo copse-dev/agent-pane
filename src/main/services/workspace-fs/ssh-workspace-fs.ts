@@ -149,9 +149,15 @@ export class SshWorkspaceFs implements WorkspaceFsPathProbe {
   }
 
   async readdirWithTypes(path: string): Promise<Array<{ name: string; isDir: boolean }>> {
-    const result = await this.exec(
+    const gnuFind = await this.exec(
       `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -printf '%y\\t%f\\n' 2>/dev/null`,
     )
+    const result =
+      gnuFind.code === 0
+        ? gnuFind
+        : await this.exec(
+            `find ${this.quote(path)} -mindepth 1 -maxdepth 1 -exec sh -c 'for p do if [ -d "$p" ]; then printf "d\\t%s\\n" "\${p##*/}"; else printf "f\\t%s\\n" "\${p##*/}"; fi; done' sh {} +`,
+          )
     if (result.code !== 0) throw remoteFsError(path, result)
     return result.stdout
       .split('\n')
