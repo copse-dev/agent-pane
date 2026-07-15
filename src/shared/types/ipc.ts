@@ -151,6 +151,10 @@ export interface IpcInvokeMap {
     result: undefined
   }
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
+  'usage:getPlanUsage': {
+    args: []
+    result: import('@copse/plan-usage').PlanUsageSnapshot
+  }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
