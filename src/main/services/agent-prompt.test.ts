@@ -50,6 +50,14 @@ describe('agent-prompt', () => {
     }
   })
 
+  it('keeps commits off the default branch with a consistent working-branch name', () => {
+    for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
+      assert.match(prompt, /Never commit or push directly to the repository's default branch/)
+      assert.match(prompt, /copse\/<short-kebab-summary>/)
+      assert.match(prompt, /Preserve an existing non-default working branch/)
+    }
+  })
+
   it('replaces the two-strike retry rule with the re-diagnosis rule', () => {
     for (const prompt of [BASE_SYSTEM_PROMPT, BASE_SYSTEM_PROMPT_DIRECT_READS]) {
       assert.match(prompt, /If a retry would not be informed by new information/)

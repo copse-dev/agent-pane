@@ -184,6 +184,9 @@ Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron sp
 target state, asserts the DOM/layout behavior, and saves a screenshot — not just `npm run check` or a
 manual VNC glance.
 
+- Primary-chat model labels (`.message-model`) appear only when a thread's assistant turns used more
+  than one picker model — keep them muted chrome (`--font-size-xs`, tertiary text), never inside
+  `.message-text`. Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
 - For the footer fix, [`tests/e2e/settings-footer.e2e.ts`](../tests/e2e/settings-footer.e2e.ts)
   scrolls content beneath the bar and asserts (a) the footer's bottom is flush with the scrollport
   bottom (gap ≤ 1px) and (b) `elementFromPoint` at the bottom edge resolves to the footer, not

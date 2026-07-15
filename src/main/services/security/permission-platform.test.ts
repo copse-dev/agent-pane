@@ -85,7 +85,7 @@ for (const platform of ['Linux', 'Windows'] as const) {
       assert.equal(d.action, 'prompt')
     })
 
-    it('prompts when the classifier is below the confidence threshold', () => {
+    it('prompts for a low-confidence sandbox classifier verdict (never auto-runs without an OS sandbox)', () => {
       const d = decideShellPermission(SANDBOXED, {
         ...opts,
         classification: { scope: 'sandbox', confidence: 0.5, reason: 'unsure' },
