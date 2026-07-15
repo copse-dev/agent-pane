@@ -28,6 +28,8 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   // Reading back stored OKF memories is non-mutating; `remember` (a write) stays
   // denied by default in read-only mode.
   'recall',
+  // Snapshotting the user's open Shells tabs is read-only.
+  'read_terminal',
 ])
 
 export const READONLY_MODE_BLOCK_MESSAGE =

@@ -7,6 +7,7 @@ import {
   createRegistry,
   registerSkillTools,
   syncOkfMemoryTools,
+  syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from './registry-bootstrap.ts'
 import { ToolRegistry } from './tool-registry.ts'
@@ -118,6 +119,28 @@ describe('syncOkfMemoryTools', () => {
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
+  })
+})
+
+describe('syncReadTerminalTools', () => {
+  afterEach(() => {
+    setSetting('readTerminalEnabled', true)
+  })
+
+  it('registers by default and removes when disabled', () => {
+    const registry = new ToolRegistry()
+
+    setSetting('readTerminalEnabled', true)
+    syncReadTerminalTools(registry)
+    assert.equal(registry.has('read_terminal'), true)
+
+    setSetting('readTerminalEnabled', false)
+    syncReadTerminalTools(registry)
+    assert.equal(registry.has('read_terminal'), false)
+
+    setSetting('readTerminalEnabled', true)
+    syncReadTerminalTools(registry)
+    assert.equal(registry.has('read_terminal'), true)
   })
 })
 

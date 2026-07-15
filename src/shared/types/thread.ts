@@ -140,7 +140,7 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
  * `content`; `file`/`thread` chips render as a trailing row.
  */
 export interface TranscriptAttachment {
-  kind: 'paste' | 'file' | 'thread'
+  kind: 'paste' | 'file' | 'thread' | 'shell'
   label: string
 }
 

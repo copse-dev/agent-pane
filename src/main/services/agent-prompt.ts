@@ -130,6 +130,15 @@ You also have built-in browser tools (loopback/localhost auto-runs; other origin
 Prefer browser_snapshot over browser_screenshot for reading and interacting; take a fresh snapshot after navigation or a click before acting on refs.
 This built-in browser uses the app's bundled Chromium — use it for local web/UI verification and screenshots. Do NOT install or spin up a separate browser stack (Playwright, Puppeteer, Selenium, or a standalone Chromium download); start the project's dev server and open its URL with browser_navigate.`
 
+// Appended when `readTerminalEnabled` is on. The tool itself is only offered on
+// turns where this chat has an open Shells tab (see parentTools).
+export const READ_TERMINAL_BLOCK = `
+
+You can read the user's open Shells tabs (interactive terminals in the right panel) with read_terminal when that tool is available:
+- list: see open shells for this chat (labels + ids; the focused tab is marked active)
+- read: snapshot recent scrollback (defaults to the active tab; pass id / max_lines to target another or pull more history)
+This is for user-run terminals, not your own run_shell / run_background output. Prefer read_terminal over asking the user to paste when a relevant shell is open. Users may also @shell a tab into the message explicitly.`
+
 // Optional steering, toggled by the experimental `okfMemoriesEnabled` setting.
 // Only appended when the remember/recall tools are actually registered.
 export const MEMORY_TOOLS_BLOCK = `

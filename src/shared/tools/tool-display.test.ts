@@ -148,6 +148,7 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('read_file'), 'Read file')
     assert.equal(getToolDisplayName('list_dir'), 'List directory')
     assert.equal(getToolDisplayName('run_shell'), 'Run command')
+    assert.equal(getToolDisplayName('read_terminal'), 'Read shell')
   })
 
   it('formats unknown tools from snake_case', () => {

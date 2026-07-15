@@ -5,6 +5,7 @@ import {
   BASE_SYSTEM_PROMPT_DIRECT_READS,
   EXTERNAL_API_SAFETY_BLOCK,
   BROWSER_TOOLS_BLOCK,
+  READ_TERMINAL_BLOCK,
 } from './agent-prompt.ts'
 import { BROWSER_TOOLS_DEFAULT_ENABLED } from './browser/browser-origin-policy.ts'
 
@@ -70,5 +71,10 @@ describe('agent-prompt', () => {
     assert.match(BROWSER_TOOLS_BLOCK, /browser_navigate/)
     assert.match(BROWSER_TOOLS_BLOCK, /do NOT install/i)
     assert.match(BROWSER_TOOLS_BLOCK, /Playwright/)
+  })
+
+  it('read_terminal block covers list/read and @shell', () => {
+    assert.match(READ_TERMINAL_BLOCK, /read_terminal/)
+    assert.match(READ_TERMINAL_BLOCK, /@shell/)
   })
 })

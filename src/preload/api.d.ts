@@ -400,10 +400,19 @@ export interface ApiClient {
     list: () => Promise<ProjectInstructionSummary[]>
   }
   terminal: {
-    create: (cols: number, rows: number) => Promise<string>
+    create: (
+      cols: number,
+      rows: number,
+      meta?: { label?: string; threadId?: string | null },
+    ) => Promise<string>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
     destroy: (sessionId: string) => Promise<void>
+    setMeta: (
+      sessionId: string,
+      meta: { label?: string; threadId?: string | null },
+    ) => Promise<void>
+    setActive: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
   }

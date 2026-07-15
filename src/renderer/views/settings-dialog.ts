@@ -124,6 +124,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  // On by default: agent may read open Shells tabs via read_terminal / @shell.
+  { name: 'readTerminalEnabled', kind: 'checkbox', default: true, save: true },
   // On by default: clicked links open in the in-app browser pane. Off routes
   // external links to the system browser and marks them with an external icon.
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
@@ -445,6 +447,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Lets the agent open and inspect pages in the app's bundled browser instead of
                 installing a separate browser (e.g. Playwright). Localhost auto-runs; other origins
                 prompt.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="readTerminalEnabled" />
+                Let the agent read open Shells tabs
+              </label>
+              <p class="field-hint">
+                When on (the default), the agent gets a <code>read_terminal</code> tool while this
+                chat has an open Shells tab, and you can <code>@shell</code> a tab into the message.
+                Turn off to keep interactive terminals private from the agent.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="openLinksInBuiltInBrowser" />

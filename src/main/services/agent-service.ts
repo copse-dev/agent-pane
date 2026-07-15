@@ -65,6 +65,7 @@ import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
+import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
 import {
@@ -192,6 +193,7 @@ function parentTools(
   registry: ToolRegistry,
   subagentsEnabled: boolean,
   readonlyMode: boolean,
+  threadId: string,
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   if (!subagentsEnabled) {
@@ -221,6 +223,10 @@ function parentTools(
           : undefined,
       }),
     )
+  }
+  // Only advertise read_terminal while this chat has an open Shells tab.
+  if (!hasTerminalSessions(threadId)) {
+    tools = tools.filter((t) => t.name !== 'read_terminal')
   }
   return tools
 }
@@ -399,7 +405,7 @@ export async function runAgent(
     // messages) while the review is still running.
     let deferredDone: Extract<StreamChunk, { type: 'done' }> | null = null
 
-    const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills })
+    const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills, threadId })
 
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -550,7 +556,7 @@ export async function runAgent(
       return { todos, ...(extraMessage ? { extraMessage } : {}) }
     })
 
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode)
+    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, threadId)
 
     // The parent tool executor, shared by the main loop and any post-turn parent
     // continuation turns (pre-review todo gate, review remediation) so both route

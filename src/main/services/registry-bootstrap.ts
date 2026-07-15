@@ -57,6 +57,11 @@ import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
+import {
+  READ_TERMINAL_ENABLED_DEFAULT,
+  READ_TERMINAL_ENABLED_SETTING,
+} from '@shared/terminal/read-terminal.ts'
+import { readTerminalTool } from '../tools/read-terminal-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -152,6 +157,9 @@ export function createRegistry(): ToolRegistry {
   if (getSetting<boolean>(BACKGROUND_TASKS_ENABLED_SETTING, false)) {
     registry.register(runBackgroundTool)
   }
+  // User Shells → agent read (on by default). The tool is still withheld per
+  // turn when no shell is open for the chat thread (see parentTools).
+  syncReadTerminalTools(registry)
   // Experimental PII redaction (off by default). Adds the reveal_pii tool that
   // turns a redacted placeholder back into its real value, gated by user
   // approval. Only registered when redaction is on — otherwise no placeholders
@@ -212,6 +220,19 @@ export function syncPiiTools(registry: ToolRegistry): void {
     if (!registry.has('reveal_pii')) registry.register(revealPiiTool)
   } else {
     registry.unregister('reveal_pii')
+  }
+}
+
+/**
+ * Register or unregister `read_terminal` to match `readTerminalEnabled`.
+ * Default on; the kill switch hides the tool without an app restart. Per-turn
+ * availability still requires an open Shells tab for the chat thread.
+ */
+export function syncReadTerminalTools(registry: ToolRegistry): void {
+  if (getSetting<boolean>(READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT)) {
+    if (!registry.has('read_terminal')) registry.register(readTerminalTool)
+  } else {
+    registry.unregister('read_terminal')
   }
 }
 

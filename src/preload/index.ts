@@ -477,12 +477,16 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('instructions:list'),
   },
   terminal: {
-    create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),
+    create: (cols: number, rows: number, meta?: { label?: string; threadId?: string | null }) =>
+      ipcRenderer.invoke('terminal:create', cols, rows, meta),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) =>
       ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
     destroy: (sessionId: string) => ipcRenderer.invoke('terminal:destroy', sessionId),
+    setMeta: (sessionId: string, meta: { label?: string; threadId?: string | null }) =>
+      ipcRenderer.invoke('terminal:setMeta', sessionId, meta),
+    setActive: (sessionId: string) => ipcRenderer.invoke('terminal:setActive', sessionId),
     onOutput: (handler: (sessionId: string, data: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, id: string, data: string): void => {
         handler(id, data)

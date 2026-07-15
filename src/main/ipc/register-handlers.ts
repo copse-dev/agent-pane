@@ -83,9 +83,11 @@ import {
   registerSkillTools,
   syncOkfMemoryTools,
   syncPiiTools,
+  syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
+import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import {
   OKF_MEMORIES_ENABLED_SETTING,
   MEMORY_TYPE,
@@ -537,6 +539,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Same for the experimental PII redaction reveal tool.
     if (k === PII_REDACTION_ENABLED_SETTING) {
       syncPiiTools(registry)
+    }
+    if (k === READ_TERMINAL_ENABLED_SETTING) {
+      syncReadTerminalTools(registry)
     }
     // Toggle the DevTools shortcut registration when the setting changes.
     if (k === 'devtoolsShortcutEnabled') {

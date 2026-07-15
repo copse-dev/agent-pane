@@ -182,6 +182,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   comparisonJudgeModel: z.string().max(256),
   roadmapPlansEnabled: z.boolean(),
   backgroundTasksEnabled: z.boolean(),
+  /** When false, hide read_terminal and @shell (on by default). */
+  readTerminalEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),
   devtoolsShortcutEnabled: z.boolean(),
   customInstructions: z.string().max(8192),

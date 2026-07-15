@@ -23,7 +23,9 @@ import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop
 import {
   initMentionPicker,
   relativeDate,
+  shellIcon,
   threadIcon,
+  type AttachedShellRef,
   type AttachedThreadRef,
 } from './mention-picker.ts'
 import { initSkillPicker } from './skill-picker.ts'
@@ -209,12 +211,20 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // `@`-referenced past threads (#644): the agent gets a path reference + steering
   // preamble, nothing inlined. Composer-only state, like file/image chips.
   let attachedThreads: AttachedThreadRef[] = []
+  // `@shell` snapshots: scrollback inlined like a paste/file block.
+  let attachedShells: AttachedShellRef[] = []
 
   const currentThreadRefs = (): ThreadRefAttachment[] =>
     attachedThreads.map((t) => ({
       title: t.title || 'Untitled thread',
       date: relativeDate(t.updatedAt),
       spinePath: t.spinePath,
+    }))
+
+  const currentShellBlocks = (): { label: string; content: string }[] =>
+    attachedShells.map((s) => ({
+      label: `Shell: ${s.label}`,
+      content: s.content,
     }))
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
@@ -357,7 +367,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       composer.value.trim().length > 0 ||
       attachedFiles.length > 0 ||
       attachedImages.length > 0 ||
-      attachedThreads.length > 0
+      attachedThreads.length > 0 ||
+      attachedShells.length > 0
     // Show the pre-send breakdown while composing (or on fresh threads with no live
     // snapshot); keep the measured live snapshot once a run has produced one.
     const showBreakdown =
@@ -412,7 +423,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       invocation && (skillsCache ?? []).some((skill) => skill.name === invocation.skillName)
         ? [invocation.skillName]
         : []
-    const draftText = buildTextWithAttachments(rawText, attachedFiles, [], {
+    const draftText = buildTextWithAttachments(rawText, attachedFiles, currentShellBlocks(), {
       threadRefs: currentThreadRefs(),
     })
     const model = getActiveThread(store)?.model
@@ -548,7 +559,8 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       !rawText &&
       attachedFiles.length === 0 &&
       attachedImages.length === 0 &&
-      attachedThreads.length === 0
+      attachedThreads.length === 0 &&
+      attachedShells.length === 0
     )
       return
     const id = getActiveThreadId()
@@ -606,13 +618,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         ...attachedImages.map((img) => ({ type: 'image' as const, dataUrl: img.dataUrl })),
         {
           type: 'text' as const,
-          text: buildTextWithAttachments(text, attachedFiles, [], {
+          text: buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
             threadRefs: currentThreadRefs(),
           }),
         },
       ]
     } else {
-      fullContent = buildTextWithAttachments(text, attachedFiles, [], {
+      fullContent = buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
         threadRefs: currentThreadRefs(),
       })
     }
@@ -649,6 +661,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         kind: 'thread' as const,
         label: t.title || 'Untitled thread',
       })),
+      ...attachedShells.map((s) => ({
+        kind: 'shell' as const,
+        label: s.label,
+      })),
     ]
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     const messageId = addMessage(
@@ -675,6 +691,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     attachedFiles = []
     attachedImages = []
     attachedThreads = []
+    attachedShells = []
     clear(chips)
     scheduleContextEstimate(0)
   }
@@ -712,6 +729,27 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     remove.textContent = '✕'
     remove.addEventListener('click', () => {
       attachedThreads = attachedThreads.filter((t) => t.threadId !== ref.threadId)
+      chip.remove()
+      scheduleContextEstimate()
+    })
+    chip.append(remove)
+    chips.append(chip)
+    scheduleContextEstimate()
+  }
+
+  function addShellChip(ref: AttachedShellRef): void {
+    if (attachedShells.some((s) => s.tabId === ref.tabId)) return
+    attachedShells.push(ref)
+    const chip = document.createElement('span')
+    chip.className = 'attachment-chip shell-chip'
+    const title = document.createElement('span')
+    title.className = 'attachment-chip-label'
+    title.textContent = ref.label
+    chip.append(shellIcon('shell-chip-icon'), title)
+    const remove = document.createElement('button')
+    remove.textContent = '✕'
+    remove.addEventListener('click', () => {
+      attachedShells = attachedShells.filter((s) => s.tabId !== ref.tabId)
       chip.remove()
       scheduleContextEstimate()
     })
@@ -814,6 +852,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     api,
     onAttach: addChip,
     onAttachThread: addThreadChip,
+    onAttachShell: addShellChip,
   })
 
   let skillsCache: SkillSummary[] | null = null

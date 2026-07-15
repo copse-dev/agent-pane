@@ -34,6 +34,8 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   rename_file: 'Rename file',
   make_directory: 'Create directory',
   run_shell: 'Run command',
+  run_background: 'Background task',
+  read_terminal: 'Read shell',
   ask_user: 'Ask user',
   update_todos: 'Update plan',
 }
@@ -76,7 +78,7 @@ const TOOL_GROUPS: Record<string, { tools: string[]; label: string }> = {
     tools: ['write_file', 'str_replace', 'delete_file', 'rename_file', 'make_directory'],
     label: 'Writing files',
   },
-  shell: { tools: ['run_shell'], label: 'Running commands' },
+  shell: { tools: ['run_shell', 'run_background', 'read_terminal'], label: 'Running commands' },
 }
 
 const TOOL_TO_GROUP = new Map<string, string>(
