@@ -7,6 +7,7 @@ import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import { slowCodeSearch } from '../services/search/slow-code-search.ts'
+import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 
 export const searchCodeTool = defineTool({
   name: 'search_code',
@@ -44,7 +45,7 @@ export const searchCodeTool = defineTool({
     }
     const searchRoot = path ? await resolveReadablePath(path) : root
 
-    if (!(await isRgAvailableForTarget())) {
+    if (!(await isRgAvailableForTarget()) && !isActiveSshWorkspace()) {
       return slowCodeSearch({
         searchRoot,
         pattern: searchPattern,

@@ -5,6 +5,7 @@ import { assertMainFrameSender, parseIpcArgs, zPathString } from './ipc-guards.t
 import { isResolvedPathInsideWorkspace, resolveWorkspacePath } from '../services/workspace.ts'
 import { gatewayReadFile } from '../project-sandbox/sandbox-fs-client.ts'
 import { FS_WATCH_MAX_CONTENT_BYTES } from '../services/fs-watch-limits.ts'
+import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 
 const watchers = new Map<string, fs.FSWatcher>()
 
@@ -12,6 +13,9 @@ export function initFsWatcher(win: BrowserWindow): void {
   ipcMain.handle('fs:watch', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const rel = parseIpcArgs(zPathString, [path])
+    // Node's fs.watch can only observe the local machine. Remote workspaces do
+    // not claim live external-edit updates until they have a remote watcher.
+    if (isActiveSshWorkspace()) return
     const abs = await resolveWorkspacePath(rel)
     if (watchers.has(abs)) return
     let debounce: ReturnType<typeof setTimeout>
@@ -27,6 +31,7 @@ export function initFsWatcher(win: BrowserWindow): void {
   ipcMain.handle('fs:unwatch', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const rel = parseIpcArgs(zPathString, [path])
+    if (isActiveSshWorkspace()) return
     const abs = await resolveWorkspacePath(rel)
     watchers.get(abs)?.close()
     watchers.delete(abs)

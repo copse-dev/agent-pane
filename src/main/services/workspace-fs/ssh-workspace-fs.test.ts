@@ -45,4 +45,20 @@ describe('SshWorkspaceFs', () => {
     assert.equal(text, 'remote hello\n')
     await getSshConnectionManager().disconnect('dev')
   })
+
+  it('falls back to POSIX find when the host lacks GNU find -printf', async () => {
+    resetSshConnectionManagerForTests()
+    setSshTransportFactory(
+      () =>
+        new FakeSshTransport([
+          { when: /find .* -printf/, stderr: 'find: -printf: unknown primary', code: 1 },
+          { when: /find .* -exec sh -c/, stdout: 'd\tsrc\nf\tREADME.md\n' },
+        ]),
+    )
+    const fs = new SshWorkspaceFs('dev', '/home/me/project')
+    assert.deepEqual(await fs.readdirWithTypes('/home/me/project'), [
+      { name: 'src', isDir: true },
+      { name: 'README.md', isDir: false },
+    ])
+  })
 })
