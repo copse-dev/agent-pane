@@ -147,6 +147,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
   let currentPath = '/'
   let loading = false
   let addingHost = false
+  let idTouched = false
 
   function setAddingHost(next: boolean): void {
     addingHost = next
@@ -156,6 +157,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
     openBtn.hidden = next
     if (next) {
       Object.assign(draft, emptySshHostDraft())
+      idTouched = false
       idInput.value = ''
       labelInput.value = ''
       hostInput.value = ''
@@ -220,12 +222,13 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
 
     labelInput.addEventListener('input', () => {
       draft.label = labelInput.value
-      if (!idInput.value && !idInput.disabled) {
+      if (!idTouched && !idInput.disabled) {
         idInput.value = slugifyHostId(draft.label)
         draft.id = idInput.value
       }
     })
     idInput.addEventListener('input', () => {
+      idTouched = true
       draft.id = idInput.value
     })
     hostInput.addEventListener('input', () => {
