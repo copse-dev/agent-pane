@@ -18,6 +18,7 @@ import type {
   HookEventPayloads,
 } from './canonical-events.ts'
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
+import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
 
 /** One hook's contribution to a fired event, tagged with its author. */
 export interface HookOutcomeRecord {
@@ -154,10 +155,14 @@ export function mergeBlockingOutcomes(records: readonly HookOutcomeRecord[]): Bl
 
 /**
  * First-party hooks registered on every fresh registry. M0.2 fills in the
- * turn-start steering / pin hooks; M0.3 will add finalize closeout hooks.
- * `beforeFinalize` still has no subscribers, so emitting it is a no-op.
+ * turn-start steering / pin hooks; M0.3 adds the finalize closeout nudge hook.
+ * Registration order within each event is load-bearing (assembly / attempt
+ * mapping); cross-event order is not.
  */
-export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [...TURN_START_HOOKS]
+export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [
+  ...TURN_START_HOOKS,
+  ...BEFORE_FINALIZE_HOOKS,
+]
 
 /** Build a registry pre-loaded with the static first-party hook list. */
 export function createHookRegistry(
