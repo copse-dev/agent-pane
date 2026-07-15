@@ -145,6 +145,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
+  { name: 'cursorHooksEnabled', kind: 'checkbox', default: false, save: false },
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
   { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
@@ -708,6 +709,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <code>.cursor/hooks.json</code> and <code>.claude/settings.json</code> (project).
                 Permission hooks can block or gate the agent's tool calls.
               </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="cursorHooksEnabled" />
+                Run Cursor hooks
+              </label>
+              <p class="field-hint">
+                Off by default. Enabling this runs user/project scripts on the agent's hot path —
+                each gated tool call spawns matching hook commands with local execution authority.
+                Project hooks additionally require workspace trust, the same bar as running the
+                repo's build scripts. Hooks fail open: a crashing hook never blocks the agent.
+              </p>
               <div id="sources-hooks-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
               </div>
@@ -1250,7 +1261,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     title: string,
     badge: string | null,
     detail: string | null,
-    opts: { badgeClass?: string | undefined } = {},
+    opts: {
+      badgeClass?: string | undefined
+      /** Extra badges rendered after the scope badge (e.g. unsupported / error). */
+      extraBadges?: Array<{ text: string; className: string }>
+    } = {},
   ): HTMLElement {
     const row = document.createElement('div')
     row.className = 'sources-row'
@@ -1266,6 +1281,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       badgeEl.textContent = badge
       header.append(badgeEl)
     }
+    for (const extra of opts.extraBadges ?? []) {
+      const badgeEl = document.createElement('span')
+      badgeEl.className = `sources-badge ${extra.className}`
+      badgeEl.textContent = extra.text
+      header.append(badgeEl)
+    }
     row.append(header)
     if (detail) {
       const detailEl = document.createElement('div')
@@ -1273,6 +1294,42 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       detailEl.textContent = detail
       row.append(detailEl)
     }
+    return row
+  }
+
+  /** One Sources → Hooks row: event + scope/unsupported/error badges + command. */
+  function makeHookRow(h: import('@shared/types/hooks.ts').HookSummary): HTMLElement {
+    const extraBadges: Array<{ text: string; className: string }> = []
+    if (h.supported === false) {
+      extraBadges.push({ text: 'unsupported', className: 'sources-badge-unsupported' })
+    }
+    if (h.lastError) {
+      extraBadges.push({ text: 'error', className: 'sources-badge-error' })
+    }
+    const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
+    const detail = `${h.family === 'claude' ? 'Claude Code' : 'Cursor'} · ${h.command}`
+    const row = makeSourceRow(title, h.scope, detail, {
+      badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
+      extraBadges,
+    })
+    if (h.lastError) {
+      const errorEl = document.createElement('div')
+      errorEl.className = 'sources-row-error'
+      errorEl.textContent = `Last run failed: ${h.lastError}`
+      row.append(errorEl)
+    }
+    return row
+  }
+
+  /** A hooks.json authoring problem (unknown event, bad entry, malformed file). */
+  function makeHookWarningRow(
+    w: import('@shared/types/hooks.ts').HookValidationWarning,
+  ): HTMLElement {
+    const row = makeSourceRow(w.message, w.scope, w.source, {
+      badgeClass: w.scope === 'project' ? 'sources-badge-project' : undefined,
+      extraBadges: [{ text: 'warning', className: 'sources-badge-warning' }],
+    })
+    row.classList.add('sources-row-warning')
     return row
   }
 
@@ -1322,13 +1379,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       fillSourceList(
         '#sources-hooks-list',
-        hooks.map((h) => {
-          const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
-          const detail = `${h.family === 'claude' ? 'Claude Code' : 'Cursor'} · ${h.command}`
-          return makeSourceRow(title, h.scope, detail, {
-            badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
-          })
-        }),
+        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
         'No Cursor or Claude Code hooks configured.',
       )
 
@@ -1768,6 +1819,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
         safetyExternalDenyThreshold: Number.isFinite(externalDeny) ? externalDeny : 1,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
+        cursorHooksEnabled: data.get('cursorHooksEnabled') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
