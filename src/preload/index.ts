@@ -422,6 +422,7 @@ contextBridge.exposeInMainWorld('api', {
     record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
       ipcRenderer.invoke('usage:record', input),
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
+    getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
