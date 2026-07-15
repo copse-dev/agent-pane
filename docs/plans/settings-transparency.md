@@ -73,8 +73,10 @@ to the prompt.
   files, with an instruction `scope` surfaced in the Sources panel.
 - **Cursor "Rules for AI" import** (#638) — the user's personal Cursor steering. Bigger: it
   lives in Cursor's SQLite app state, not a file. Needs its own design.
-- **Claude Code hooks & settings** (#639) — support `.claude/settings.json` hooks (distinct
-  event schema from Cursor's `hooks.json`; needs an adapter) and then broader settings
-  (permissions, env) parity.
+- **Claude Code hooks & settings** (#639, _hooks landed — settings/env parity still open_) —
+  `PreToolUse` command hooks from `~/.claude/settings.json`, project
+  `.claude/settings.json`, and `.claude/settings.local.json` (see
+  [`docs/claude-hooks.md`](../claude-hooks.md)). Broader Claude settings
+  (`permissions`, `env`) parity remains.
 
 Landed as PR #635.
