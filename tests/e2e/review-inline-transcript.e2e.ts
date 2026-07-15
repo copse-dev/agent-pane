@@ -32,6 +32,7 @@ describe('post-turn review inline in transcript', () => {
       const card = document.querySelector('[data-review-card]')
       const assistant = document.querySelector('[data-message-id="msg-assistant-review"]')
       const followup = document.querySelector('[data-message-id="msg-user-followup"]')
+      const details = card instanceof HTMLDetailsElement ? card : null
       return {
         cardInList: !!list && !!card && list.contains(card),
         cardAfterAssistant: !!assistant && !!card && assistant.nextElementSibling === card,
@@ -40,6 +41,9 @@ describe('post-turn review inline in transcript', () => {
           !!followup &&
           (card.compareDocumentPosition(followup) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
         hasPinnedHost: !!document.querySelector('.conversation-review-host'),
+        issuesFound: card?.getAttribute('data-issues-found') ?? null,
+        collapsedCleanReview: details !== null && details.open === false,
+        hasSummaryHeader: !!card?.querySelector('summary.review-panel-header'),
       }
     })
 
@@ -51,6 +55,10 @@ describe('post-turn review inline in transcript', () => {
     expect(layout.followupBelowCard).toBe(true)
     // …and the old pinned sibling host is gone.
     expect(layout.hasPinnedHost).toBe(false)
+    // Clean reviews (issuesFound: false) collapse by default (#480).
+    expect(layout.issuesFound).toBe('false')
+    expect(layout.collapsedCleanReview).toBe(true)
+    expect(layout.hasSummaryHeader).toBe(true)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'review-inline-transcript.png'))
   })
