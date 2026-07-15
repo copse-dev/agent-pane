@@ -78,20 +78,86 @@ describe('validateAdvisorPair', () => {
   it('flags same-model pairings as pointless', () => {
     const a = validateAdvisorPair('claude-opus-4-8', 'claude-opus-4-8')
     assert.equal(a.ok, false)
+    assert.equal(a.level, 'warn')
     assert.match(a.reason, /same model/i)
-  })
-
-  it('allows a local executor with a cloud advisor as a client-side pairing', () => {
-    const a = validateAdvisorPair('local:llama-3', 'claude-opus-4-8')
-    assert.equal(a.ok, true)
-    assert.equal(a.native, false)
-    assert.match(a.reason, /client-side/i)
   })
 
   it('marks documented Claude pairings as native-compatible', () => {
     const a = validateAdvisorPair('claude-sonnet-4-6', 'claude-opus-4-8')
     assert.equal(a.ok, true)
     assert.equal(a.native, true)
+    assert.equal(a.level, 'good')
+  })
+
+  it('recommends a local executor with a frontier cloud advisor (the flagship pairing)', () => {
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-opus-4-8')
+    assert.equal(a.ok, true)
+    assert.equal(a.native, false)
+    assert.equal(a.level, 'good')
+    assert.match(a.reason, /recommended pairing/i)
+  })
+
+  it('warns on a fast-tier cloud advisor for a local executor', () => {
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-haiku-4-5')
+    assert.equal(a.ok, true)
+    assert.equal(a.level, 'warn')
+    assert.match(a.reason, /frontier advisor/i)
+  })
+
+  it('grades cloud pairings by annotated tier', () => {
+    // Stronger advisor: fine even across providers (no native table entry).
+    const stronger = validateAdvisorPair('gpt-4o-mini', 'claude-opus-4-8')
+    assert.equal(stronger.level, 'good')
+    assert.match(stronger.reason, /stronger tier/i)
+
+    // Equal tiers: a second opinion, not lift.
+    const equal = validateAdvisorPair('gpt-4o', 'claude-sonnet-4-6')
+    assert.equal(equal.level, 'info')
+    assert.match(equal.reason, /same capability tier/i)
+
+    // Weaker advisor: warned, still allowed (client-side is permissive).
+    const weaker = validateAdvisorPair('claude-opus-4-8', 'claude-haiku-4-5')
+    assert.equal(weaker.ok, true)
+    assert.equal(weaker.level, 'warn')
+    assert.match(weaker.reason, /weaker tier/i)
+  })
+
+  it('keeps a cloud advisor informative when the executor has no annotation', () => {
+    const a = validateAdvisorPair('openrouter:qwen/qwen3-235b-a22b:free', 'claude-opus-4-8')
+    assert.equal(a.ok, true)
+    assert.equal(a.level, 'info')
+    assert.match(a.reason, /frontier-tier/i)
+  })
+
+  it('compares catalogued local models by size when both executor and advisor are local', () => {
+    const bigger = validateAdvisorPair(
+      'lmstudio:qwen/qwen3-4b-2507',
+      'lmstudio:qwen/qwen2.5-coder-32b',
+    )
+    assert.equal(bigger.level, 'info')
+    assert.match(bigger.reason, /larger local model/i)
+
+    const smaller = validateAdvisorPair(
+      'lmstudio:qwen/qwen2.5-coder-32b',
+      'lmstudio:qwen/qwen3-4b-2507',
+    )
+    assert.equal(smaller.level, 'warn')
+    assert.match(smaller.reason, /not larger/i)
+  })
+
+  it('warns on a local advisor for a cloud executor', () => {
+    const a = validateAdvisorPair('claude-sonnet-4-6', 'lmstudio:qwen/qwen2.5-coder-32b')
+    assert.equal(a.ok, true)
+    assert.equal(a.level, 'warn')
+    assert.match(a.reason, /local advisor/i)
+  })
+
+  it('falls back to the generic client-side note when neither model is annotated', () => {
+    const a = validateAdvisorPair('local:llama-3', 'openrouter:some/model')
+    assert.equal(a.ok, true)
+    assert.equal(a.native, false)
+    assert.equal(a.level, 'info')
+    assert.match(a.reason, /client-side/i)
   })
 })
 

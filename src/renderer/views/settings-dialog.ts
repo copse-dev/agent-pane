@@ -15,7 +15,7 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
-import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
@@ -940,7 +940,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </p>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="advisor-strategy-fieldset">
               <legend>Advisor strategy</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="advisorStrategyEnabled" />
@@ -961,6 +961,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Model used for advisor consultations. Pick a configured cloud provider; defaults to
                 <code>claude-opus-4-8</code>.
               </p>
+              <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>
             </fieldset>
 
             <fieldset>
@@ -1719,6 +1720,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshSources()
   })
 
+  // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
+  // (executor, advisor) pairing from the model capability annotations — cloud
+  // tiers and the local catalog — whenever either picker changes, so the user
+  // learns up front whether the advisor is actually stronger than the executor.
+  function updateAdvisorPairHint(): void {
+    const form = qsRequired<HTMLFormElement>(overlay, 'form')
+    const hint = qsRequired(overlay, '#advisorPairHint')
+    const executor = (form.elements.namedItem('model') as HTMLSelectElement).value
+    const advisor = (form.elements.namedItem('advisorModel') as HTMLSelectElement).value
+    if (!executor || !advisor) {
+      hint.hidden = true
+      return
+    }
+    const assessment = validateAdvisorPair(executor, advisor)
+    hint.textContent = assessment.reason
+    hint.setAttribute('data-level', assessment.level)
+    hint.hidden = false
+  }
+
   overlay.addEventListener('settings-open', () => {
     // A fresh open always starts on a section, never in a leftover search.
     searchContentLoaded = false
@@ -1770,6 +1790,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
+      updateAdvisorPairHint()
       const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
@@ -1849,6 +1870,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const settingsForm = overlay.querySelector('form')
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
+  settingsForm.addEventListener('change', (e) => {
+    const target = e.target
+    if (
+      target instanceof HTMLSelectElement &&
+      (target.name === 'model' || target.name === 'advisorModel')
+    ) {
+      updateAdvisorPairHint()
+    }
+  })
   settingsForm.addEventListener('submit', (e) => {
     e.preventDefault()
     void (async (): Promise<void> => {
