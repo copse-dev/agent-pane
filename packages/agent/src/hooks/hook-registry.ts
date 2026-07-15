@@ -17,6 +17,7 @@ import type {
   HookEventName,
   HookEventPayloads,
 } from './canonical-events.ts'
+import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 
 /** One hook's contribution to a fired event, tagged with its author. */
 export interface HookOutcomeRecord {
@@ -152,12 +153,11 @@ export function mergeBlockingOutcomes(records: readonly HookOutcomeRecord[]): Bl
 }
 
 /**
- * First-party hooks registered on every fresh registry. Empty in M0.1 — the
- * turn-start steering hooks land in M0.2 and the finalize closeout hooks in M0.3.
- * Firing `turnStart` / `beforeFinalize` against this empty list is a no-op, which
- * is exactly the behavior-preserving guarantee this milestone ships.
+ * First-party hooks registered on every fresh registry. M0.2 fills in the
+ * turn-start steering / pin hooks; M0.3 will add finalize closeout hooks.
+ * `beforeFinalize` still has no subscribers, so emitting it is a no-op.
  */
-export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = []
+export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [...TURN_START_HOOKS]
 
 /** Build a registry pre-loaded with the static first-party hook list. */
 export function createHookRegistry(

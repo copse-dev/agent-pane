@@ -1,7 +1,8 @@
 # Hooks platform & feature packs
 
-Status: **planned** — design settled (July 2026); no implementation started. This document
-is the source of truth for the phased issue breakdown below. It extends
+Status: **in progress** — design settled (July 2026); M0.1 registry core and M0.2
+turn-start extraction landed. This document is the source of truth for the phased
+issue breakdown below. It extends
 [`docs/cursor-hooks.md`](../cursor-hooks.md) (current Cursor-hooks support) and folds in
 PR #879 (Claude `PreToolUse` hooks) and the direction of PR #840 (permission-decision
 audit trail).
@@ -27,18 +28,18 @@ Two motivations, one architecture:
 
 ## Current state (audit)
 
-| Piece                      | Where                                                                             | Status                                                                  |
-| -------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Cursor permission hooks    | `src/main/services/skills/cursor-hooks.ts`, `permission-gate.ts`                  | Wired: shell / MCP / read-path. Fail-open, tighten-only, 5s timeout     |
-| Cursor lifecycle events    | `CURSOR_HOOK_EVENTS` in `src/shared/types/cursor-hooks.ts`                        | `beforeSubmitPrompt`, `afterFileEdit`, `stop` parsed for discovery only |
-| Claude `PreToolUse` hooks  | PR #879 (`claude-hooks.ts`, shared `HookSummary`/`HookFamily`)                    | In flight; same gate, `.claude/settings.json` discovery                 |
-| Permission audit trail     | PR #840 (`decision-log-store.ts`)                                                 | In flight; becomes a subscriber of the `permissionDecision` event (F2)  |
-| Loop nudges                | `packages/agent/src/agent-loop-guards.ts`, `run-agent-loop.ts`                    | Inline; migrate in Phase E                                              |
-| Intent steering            | `agent-service.ts` + `todo-logic` / `github-link-steering` / `commit-attribution` | Inline; migrate in Phase E                                              |
-| Post-turn orchestration    | `post-turn-orchestration.ts` + deferred-`done` in `agent-service.ts`              | Inline; migrate in Phase E                                              |
-| Queued messages / send-now | `thread-helpers.ts` (`setQueuePaused`), renderer queue views                      | Exists; becomes the async hook output channel (C2)                      |
-| ACP plan ↔ todo mapping    | `src/main/services/acp/session-update-adapter.ts`                                 | Exists; precedent + data model for the declarative pack panel (P2)      |
-| Plugin manifest            | `cursor-plugins.ts` (`plugin.json`: skills + MCP)                                 | Exists; feature-pack manifest extends this shape                        |
+| Piece                      | Where                                                                                                                                                             | Status                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Cursor permission hooks    | `src/main/services/skills/cursor-hooks.ts`, `permission-gate.ts`                                                                                                  | Wired: shell / MCP / read-path. Fail-open, tighten-only, 5s timeout     |
+| Cursor lifecycle events    | `CURSOR_HOOK_EVENTS` in `src/shared/types/cursor-hooks.ts`                                                                                                        | `beforeSubmitPrompt`, `afterFileEdit`, `stop` parsed for discovery only |
+| Claude `PreToolUse` hooks  | PR #879 (`claude-hooks.ts`, shared `HookSummary`/`HookFamily`)                                                                                                    | In flight; same gate, `.claude/settings.json` discovery                 |
+| Permission audit trail     | PR #840 (`decision-log-store.ts`)                                                                                                                                 | In flight; becomes a subscriber of the `permissionDecision` event (F2)  |
+| Loop nudges                | `packages/agent/src/agent-loop-guards.ts`, `run-agent-loop.ts`                                                                                                    | Inline; migrate in Phase E                                              |
+| Intent steering            | `turnStart` hooks in `packages/agent` (`todo-steering`, `todo-pin`, `github-link-steering`, `commit-steering`); `messages[0]` surgery stays in `agent-service.ts` | Extracted in M0.2                                                       |
+| Post-turn orchestration    | `post-turn-orchestration.ts` + deferred-`done` in `agent-service.ts`                                                                                              | Inline; migrate in Phase E                                              |
+| Queued messages / send-now | `thread-helpers.ts` (`setQueuePaused`), renderer queue views                                                                                                      | Exists; becomes the async hook output channel (C2)                      |
+| ACP plan ↔ todo mapping    | `src/main/services/acp/session-update-adapter.ts`                                                                                                                 | Exists; precedent + data model for the declarative pack panel (P2)      |
+| Plugin manifest            | `cursor-plugins.ts` (`plugin.json`: skills + MCP)                                                                                                                 | Exists; feature-pack manifest extends this shape                        |
 
 ## Decisions log
 
@@ -431,11 +432,11 @@ name) and todo compaction pinning. Scope discipline matters more than completene
 
 ### Phase E — first-party migration (payback phase — not optional)
 
-| #   | Issue                           | Scope                                                                                                                                            |
-| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| E1  | Migrate loop nudges to registry | `LOOP_NUDGE`, `STUCK_FINALIZE`, truncation-continue, reasoning-runaway → named function hooks; behavior byte-identical (pin with existing tests) |
-| E2  | Migrate intent steering         | Todos / GitHub-link / commit steering → turn-start function hooks; leaves `runAgent`                                                             |
-| E3  | Migrate post-turn orchestration | Review remediation + todo closeout onto turn-boundary events + C3 budget; **deletes the deferred-`done` lifecycle handling**                     |
+| #   | Issue                           | Scope                                                                                                                                                                           |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1  | Migrate loop nudges to registry | `LOOP_NUDGE`, `STUCK_FINALIZE`, truncation-continue, reasoning-runaway → named function hooks; behavior byte-identical (pin with existing tests)                                |
+| E2  | Migrate intent steering         | **Done by M0.2** (todo / GitHub-link / commit steering + prior-todos pin are named `turnStart` hooks). Kept as a checklist row so Phase E's "payback" inventory stays complete. |
+| E3  | Migrate post-turn orchestration | Review remediation + todo closeout onto turn-boundary events + C3 budget; **deletes the deferred-`done` lifecycle handling**                                                    |
 
 ### Phase F — Copse dialect, native events, sandbox
 
