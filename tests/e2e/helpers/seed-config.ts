@@ -2178,3 +2178,64 @@ export function seedMarkdownTableCodeFirstColumnFixture(workspaceRoot: string): 
     ],
   })
 }
+
+/**
+ * Two assistant turns on different primary-chat models. Labels must appear on
+ * both bubbles (hidden when a thread stays on one model). Visual eval for
+ * per-message model provenance in the transcript.
+ */
+export function seedMultiModelChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-multi-model-chat-project'
+  const threadId = 'e2e-multi-model-chat-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Multi-model chat',
+        status: 'idle',
+        model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+        messages: [
+          {
+            id: 'msg-user-1',
+            role: 'user',
+            content: 'Summarize the permission policy.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-1',
+            role: 'assistant',
+            content:
+              'The shell permission gate auto-runs sandbox-contained commands on macOS and prompts for hard-external work.',
+            model: 'claude-sonnet-4-6',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-user-2',
+            role: 'user',
+            content: 'Now explain it more briefly.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-2',
+            role: 'assistant',
+            content: 'Sandbox-safe commands auto-run; anything that reaches outside prompts first.',
+            model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
