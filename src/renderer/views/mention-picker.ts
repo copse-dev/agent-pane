@@ -162,7 +162,11 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
 
   function removeMentionText(): void {
     const val = input.value
-    input.value = val.slice(0, mentionStart) + val.slice(input.selectionStart)
+    // Prefer the @-token span over selectionStart — clicking the picker can
+    // collapse the caret before we run, which would leave `@shell` in place.
+    const after = val.slice(mentionStart)
+    const token = after.match(/^@[^\s]*/)?.[0] ?? ''
+    input.value = val.slice(0, mentionStart) + val.slice(mentionStart + token.length)
   }
 
   async function selectItem(idx: number): Promise<void> {
