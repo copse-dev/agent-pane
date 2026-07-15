@@ -1598,6 +1598,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     applySearch('')
     showSection(pendingSection ?? 'general')
     pendingSection = null
+    searchInput.focus()
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()
