@@ -19,8 +19,8 @@ import { Readable, Writable } from 'node:stream'
  * it down — WITHOUT ever sending a `session/prompt`. No model tokens are spent
  * and (for well-behaved adapters) no auth is required, so this is the cheap,
  * near-deterministic half of the ACP evaluation harness. The behavioural half
- * (write routing, permission payloads, `_meta` under real turns) is Tier 2 and
- * lives elsewhere.
+ * (write routing, permission payloads, `_meta` under real turns) is Tier 2 —
+ * see `acp-behavior-probe.ts` / `npm run probe:acp:behavior` (issue #832).
  *
  * Why this exists: the spec makes almost every feature an OPTIONAL capability or
  * an explicitly UNSTABLE extension (`loadSession`, `promptCapabilities`,
