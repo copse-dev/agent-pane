@@ -9,6 +9,7 @@ import {
   type CursorHookSummary,
   type CursorPermissionHookEvent,
 } from '@shared/types/cursor-hooks.ts'
+import type { HookSummary } from '@shared/types/hooks.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { recordCommandHookRun } from '../hook-run-recorder.ts'
 
@@ -102,13 +103,28 @@ async function discoverHooks(opts: {
   return results.flat()
 }
 
-/** Diagnostics / future Settings UI — discovered hooks, regardless of enablement. */
+/** Diagnostics / Settings → Sources — discovered Cursor hooks, regardless of enablement. */
 export async function listCursorHooks(opts: {
   workspaceRoot: string | null
   projectTrusted: boolean
 }): Promise<CursorHookSummary[]> {
   const hooks = await discoverHooks(opts)
   return hooks.map(({ event, command, source, scope }) => ({ event, command, source, scope }))
+}
+
+/** Cursor hooks as the shared {@link HookSummary} shape used by `hooks:list`. */
+export async function listCursorHooksAsSummaries(opts: {
+  workspaceRoot: string | null
+  projectTrusted: boolean
+}): Promise<HookSummary[]> {
+  const hooks = await listCursorHooks(opts)
+  return hooks.map((h) => ({
+    family: 'cursor' as const,
+    event: h.event,
+    command: h.command,
+    source: h.source,
+    scope: h.scope,
+  }))
 }
 
 export type CursorHookPermission = 'allow' | 'deny' | 'ask'
