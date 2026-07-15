@@ -72,7 +72,11 @@ strategy in three ways:
   comparisons stay correct forever. Top/mid/low bands are derived from the annotated
   distribution (`intellectBand`) and re-band automatically when the scale grows. Cost
   is deliberately a separate axis — pricing stays on the LiteLLM-synced catalog and
-  never feeds the intellect numbers.
+  never feeds the intellect numbers. **The scale is the app's single capability
+  vocabulary**: the model classifier (`suggest_model`, issue #557) places task demand
+  on the same scale (its per-band representative models live in
+  `BAND_REPRESENTATIVE_MODEL`, scale-validated in tests so extending the scale forces
+  the picks to be revisited), and roadmap complexity maps bands → low/medium/high.
 - **`validateAdvisorPair()` grades pairings from the annotations**, not just the native
   table: local executor + top-of-scale cloud advisor is flagged as the recommended
   pairing; cloud/cloud pairings compare intellect numbers (a weaker-annotated advisor

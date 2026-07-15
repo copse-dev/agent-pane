@@ -1,6 +1,6 @@
 import {
   parseComplexityWord,
-  tierToComplexity,
+  bandToComplexity,
   type RoadmapComplexity,
 } from '@shared/roadmap/complexity.ts'
 import {
@@ -25,7 +25,7 @@ import { getKnowledgeNote, updateKnowledgeNote } from './storage/knowledge-store
 const CLASSIFY_TIMEOUT_MS = 10_000
 
 function heuristicComplexity(prompt: string): RoadmapComplexity {
-  return tierToComplexity(classifyModelForTask({ task: prompt }).tier)
+  return bandToComplexity(classifyModelForTask({ task: prompt }).band)
 }
 
 export async function classifyRoadmapComplexity(prompt: string): Promise<RoadmapComplexity> {
