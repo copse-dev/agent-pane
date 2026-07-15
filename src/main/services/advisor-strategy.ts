@@ -1,7 +1,7 @@
 import type { LLMMessage, UserContent } from '@shared/types'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
-import { cloudModelTier, compareModelTiers, type ModelTier } from '@copse/llm/model-tiers.ts'
+import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm/model-intellect.ts'
 
 /**
  * Experimental, opt-in "advisor strategy" feature (tracked in
@@ -147,12 +147,13 @@ export interface AdvisorPairAssessment {
 }
 
 /**
- * What the model annotations know about a model's capability: a tier for the
- * tracked cloud models (`model-tiers.ts`), sizing for catalogued local models
- * (`local-model-catalog.ts`), or nothing (OpenRouter / ACP / uncatalogued ids).
+ * What the model annotations know about a model's capability: an intellect
+ * number for the tracked cloud models (`model-intellect.ts`), sizing for
+ * catalogued local models (`local-model-catalog.ts`), or nothing
+ * (OpenRouter / ACP / uncatalogued ids).
  */
 type CapabilityAnnotation =
-  | { kind: 'cloud'; tier: ModelTier }
+  | { kind: 'cloud'; intellect: number }
   | { kind: 'local'; paramsB: number | null }
   | { kind: 'unknown' }
 
@@ -161,8 +162,8 @@ function annotationFor(model: string): CapabilityAnnotation {
     const bareId = model.startsWith('lmstudio:') ? model.slice('lmstudio:'.length) : model
     return { kind: 'local', paramsB: getLocalModelCapability(bareId)?.paramsB ?? null }
   }
-  const tier = cloudModelTier(model)
-  return tier ? { kind: 'cloud', tier } : { kind: 'unknown' }
+  const intellect = modelIntellect(model)
+  return intellect !== null ? { kind: 'cloud', intellect } : { kind: 'unknown' }
 }
 
 /**
@@ -199,33 +200,36 @@ export function validateAdvisorPair(
   const advisor = annotationFor(advisorModel)
 
   if (advisor.kind === 'cloud' && executor.kind === 'local') {
-    // The pairing the strategy exists for: work stays on device, frontier
-    // intelligence is pulled in at the moments that matter.
-    if (advisor.tier === 'frontier') {
+    // The pairing the strategy exists for: work stays on device, top-of-scale
+    // intelligence is pulled in at the moments that matter. Bands are derived
+    // from the annotated distribution, so this judgement self-corrects when a
+    // stronger model extends the scale.
+    const band = intellectBand(advisor.intellect)
+    if (band === 'top') {
       return {
         ok: true,
         native,
         level: 'good',
         reason:
-          'Recommended pairing: an on-device executor consulting a frontier cloud advisor — the setup this strategy is designed for.',
+          'Recommended pairing: an on-device executor consulting a top-of-scale cloud advisor — the setup this strategy is designed for.',
       }
     }
     return {
       ok: true,
       native,
-      level: advisor.tier === 'fast' ? 'warn' : 'info',
-      reason: `On-device executor with a ${advisor.tier}-tier cloud advisor. A frontier advisor gives the most lift.`,
+      level: band === 'low' ? 'warn' : 'info',
+      reason: `On-device executor with a cloud advisor annotated intellect ${String(advisor.intellect)} of ${String(topAnnotatedIntellect())} — a stronger advisor gives more lift.`,
     }
   }
 
   if (advisor.kind === 'cloud' && executor.kind === 'cloud') {
-    const diff = compareModelTiers(advisor.tier, executor.tier)
+    const diff = advisor.intellect - executor.intellect
     if (diff > 0) {
       return {
         ok: true,
         native,
         level: 'good',
-        reason: `Advisor is annotated a stronger tier than the executor (${advisor.tier} vs ${executor.tier}).`,
+        reason: `Advisor is annotated stronger than the executor (intellect ${String(advisor.intellect)} vs ${String(executor.intellect)}).`,
       }
     }
     if (diff === 0) {
@@ -233,14 +237,14 @@ export function validateAdvisorPair(
         ok: true,
         native,
         level: 'info',
-        reason: `Advisor and executor are annotated at the same capability tier (${advisor.tier}) — expect a second opinion rather than stronger guidance.`,
+        reason: `Advisor and executor are annotated at the same intellect (${String(advisor.intellect)}) — expect a second opinion rather than stronger guidance.`,
       }
     }
     return {
       ok: true,
       native,
       level: 'warn',
-      reason: `Advisor is annotated a weaker tier than the executor (${advisor.tier} vs ${executor.tier}) — its advice is unlikely to add lift.`,
+      reason: `Advisor is annotated weaker than the executor (intellect ${String(advisor.intellect)} vs ${String(executor.intellect)}) — its advice is unlikely to add lift.`,
     }
   }
 
@@ -250,7 +254,7 @@ export function validateAdvisorPair(
       ok: true,
       native,
       level: 'info',
-      reason: `Cloud advisor annotated ${advisor.tier}-tier; the executor isn’t in the capability annotations, so no strength comparison is possible.`,
+      reason: `Cloud advisor annotated intellect ${String(advisor.intellect)} of ${String(topAnnotatedIntellect())}; the executor isn’t in the capability annotations, so no strength comparison is possible.`,
     }
   }
 

@@ -7,8 +7,9 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 /**
  * Visual eval for the live advisor-pair assessment (docs/plans/advisor-strategy.md):
  * the hint under the advisor model picker grades the (executor, advisor) pairing
- * from the model capability annotations — cloud tiers (`model-tiers.ts`) and the
- * local capability catalog — and re-grades when either picker changes.
+ * from the model capability annotations — the open-ended cloud intellect scale
+ * (`model-intellect.ts`) and the local capability catalog — and re-grades when
+ * either picker changes.
  */
 describe('advisor pair assessment hint', () => {
   before(() => {
@@ -28,7 +29,7 @@ describe('advisor pair assessment hint', () => {
     await $('#advisorPairHint').waitForDisplayed({ timeout: 15_000 })
   }
 
-  it('recommends a local executor consulting a frontier cloud advisor', async () => {
+  it('recommends a local executor consulting a top-of-scale cloud advisor', async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-advisor-pair-good', {
       model: 'lmstudio:qwen/qwen3.6-35b-a3b',
@@ -45,7 +46,7 @@ describe('advisor pair assessment hint', () => {
     await saveElementScreenshot('#advisor-strategy-fieldset', 'advisor-pair-hint-good.png')
   })
 
-  it('warns when the advisor is annotated a weaker tier than the executor', async () => {
+  it('warns when the advisor is annotated weaker than the executor', async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-advisor-pair-warn', {
       model: 'claude-opus-4-8',
@@ -56,7 +57,7 @@ describe('advisor pair assessment hint', () => {
 
     const hint = $('#advisorPairHint')
     assert.equal(await hint.getAttribute('data-level'), 'warn')
-    assert.match(await hint.getText(), /weaker tier/i)
+    assert.match(await hint.getText(), /annotated weaker/i)
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
     await saveElementScreenshot('#advisor-strategy-fieldset', 'advisor-pair-hint-warn.png')

@@ -64,18 +64,24 @@ strategy in three ways:
   role indirection layer covers it: assigning a model to the `advisor` role in the
   `roleModels` setting overrides the legacy `advisorModel` setting
   (`ROUTED_SETTING_TO_ROLE` in `role-models.ts`, read by `resolveAdvisorModelId()`).
-- **Cloud capability tiers** (`packages/llm/src/model-tiers.ts`) annotate every tracked
-  cloud model as `fast` / `balanced` / `frontier`. The model classifier's representative
-  tier models now derive from the same annotations instead of a private copy.
+- **An open-ended cloud intellect scale** (`packages/llm/src/model-intellect.ts`)
+  annotates every tracked cloud model with an ordinal capability number. A scalar, not
+  named tiers, because "frontier" is a moving target and static tier labels rot: a new
+  frontier model _extends the top of the scale_ (e.g. a next-generation model lands at
+  10, its successor at 11) and existing entries are never re-numbered, so relative
+  comparisons stay correct forever. Top/mid/low bands are derived from the annotated
+  distribution (`intellectBand`) and re-band automatically when the scale grows. Cost
+  is deliberately a separate axis — pricing stays on the LiteLLM-synced catalog and
+  never feeds the intellect numbers.
 - **`validateAdvisorPair()` grades pairings from the annotations**, not just the native
-  table: local executor + frontier cloud advisor is flagged as the recommended pairing;
-  cloud/cloud pairings compare tiers (a weaker-tier advisor warns); local advisors
-  compare catalog sizing (`paramsB`) when both models are catalogued and warn otherwise.
-  Each assessment carries a `level` (`good` / `info` / `warn`) that the settings UI
-  renders live under the advisor picker (`#advisorPairHint`), re-grading when either the
-  chat model or advisor model changes. Unannotated models (OpenRouter / ACP /
-  uncatalogued ids) stay on the permissive generic note — the annotations steer, they
-  never block.
+  table: local executor + top-of-scale cloud advisor is flagged as the recommended
+  pairing; cloud/cloud pairings compare intellect numbers (a weaker-annotated advisor
+  warns); local advisors compare catalog sizing (`paramsB`) when both models are
+  catalogued and warn otherwise. Each assessment carries a `level`
+  (`good` / `info` / `warn`) that the settings UI renders live under the advisor picker
+  (`#advisorPairHint`), re-grading when either the chat model or advisor model changes.
+  Unannotated models (OpenRouter / ACP / uncatalogued ids) stay on the permissive
+  generic note — the annotations steer, they never block.
 
 Visual eval: `tests/e2e/advisor-pair-hint.e2e.ts` (screenshots
 `advisor-pair-hint-good.png` / `advisor-pair-hint-warn.png`).
