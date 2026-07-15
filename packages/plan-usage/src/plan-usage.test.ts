@@ -198,23 +198,79 @@ describe('fetchClaudePlanUsage', () => {
     )
   })
 
-  it('skips inactive limits[] entries', async () => {
+  it('skips inactive zero-percent limits but keeps inactive non-zero (Fable)', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({
         limits: [
-          { kind: 'session', percent: 1, resets_at: '2026-07-15T12:00:00Z' },
+          { kind: 'session', percent: 0, is_active: false, severity: 'normal' },
+          {
+            kind: 'weekly_all',
+            percent: 99,
+            is_active: true,
+            severity: 'critical',
+            resets_at: '2026-07-17T02:00:00Z',
+          },
           {
             kind: 'weekly_scoped',
-            percent: 99,
+            percent: 89,
             is_active: false,
+            severity: 'warning',
             scope: { model: { display_name: 'Fable' } },
+            resets_at: '2026-07-17T02:00:00Z',
           },
         ],
       }),
     })
     assert.equal(result.status, 'ok')
-    assert.equal(result.usage.windows.length, 1)
-    assert.equal(result.usage.windows[0]?.id, 'five_hour')
+    assert.deepEqual(
+      result.usage.windows.map((w) => ({
+        id: w.id,
+        label: w.label,
+        usedPercent: w.usedPercent,
+        severity: w.severity,
+      })),
+      [
+        {
+          id: 'seven_day',
+          label: 'Weekly',
+          usedPercent: 99,
+          severity: 'critical',
+        },
+        {
+          id: 'seven_day_fable',
+          label: 'Weekly Fable (inactive)',
+          usedPercent: 89,
+          severity: 'warning',
+        },
+      ],
+    )
+  })
+
+  it('labels plan from spend credits when dollar windows are null', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch({
+        five_hour: { utilization: 0, resets_at: '2026-07-15T14:30:00Z' },
+        seven_day: { utilization: 99, resets_at: '2026-07-17T02:00:00Z' },
+        spend: {
+          used: { amount_minor: 5525, currency: 'GBP', exponent: 2 },
+          limit: { amount_minor: 5000, currency: 'GBP', exponent: 2 },
+          percent: 100,
+          severity: 'critical',
+          enabled: false,
+        },
+        limits: [
+          {
+            kind: 'weekly_all',
+            percent: 99,
+            severity: 'critical',
+            is_active: true,
+            resets_at: '2026-07-17T02:00:00Z',
+          },
+        ],
+      }),
+    })
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.plan, 'Extra usage £55.25 / £50 (disabled)')
   })
 
   it('fills five_hour from dollar fields when limits[] only has weekly', async () => {

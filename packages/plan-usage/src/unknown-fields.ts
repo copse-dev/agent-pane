@@ -8,7 +8,7 @@ import { isRecord } from './internal-utils.ts'
  * silently disappear into ignored keys.
  *
  * Expanded from live Max probe (2026-07-15): dollar fields on legacy windows,
- * extra codename buckets, limits[].group/cardinality/scope.surface, spend.
+ * extra codename buckets, limits[].group/severity/scope.surface, spend.
  */
 export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
   type: 'object',
@@ -40,7 +40,29 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
         weekly: { type: 'any' },
       },
     },
-    spend: { type: 'any' },
+    spend: {
+      type: 'object',
+      keys: {
+        used: { type: 'ref', ref: 'money' },
+        limit: { type: 'ref', ref: 'money' },
+        percent: { type: 'any' },
+        severity: { type: 'any' },
+        enabled: { type: 'any' },
+        disabled_reason: { type: 'any' },
+        cap: {
+          type: 'object',
+          keys: {
+            money: { type: 'ref', ref: 'money' },
+            credits: { type: 'any' },
+          },
+        },
+        balance: { type: 'any' },
+        auto_reload: { type: 'any' },
+        disclaimer: { type: 'any' },
+        can_purchase_credits: { type: 'any' },
+        can_toggle: { type: 'any' },
+      },
+    },
     member_dashboard_available: { type: 'any' },
     limits: {
       type: 'array',
@@ -57,6 +79,9 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
           resetsAt: { type: 'any' },
           is_active: { type: 'any' },
           group: { type: 'any' },
+          /** Live field (normal / warning / critical). */
+          severity: { type: 'any' },
+          /** Kept in case older payloads used this name. */
           cardinality: { type: 'any' },
           scope: {
             type: 'object',
@@ -77,6 +102,14 @@ export const CLAUDE_USAGE_SCHEMA: SchemaNode = {
     },
   },
   defs: {
+    money: {
+      type: 'object',
+      keys: {
+        amount_minor: { type: 'any' },
+        currency: { type: 'any' },
+        exponent: { type: 'any' },
+      },
+    },
     legacyWindow: {
       type: 'object',
       // null is allowed at the parent (key present, value null) — handled by walker.

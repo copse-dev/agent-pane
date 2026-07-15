@@ -78,13 +78,19 @@ function renderPlanProvider(host: HTMLElement, result: ProviderPlanResult): void
     const row = document.createElement('div')
     row.className = 'usage-plan-window'
     const used = Math.round(window.usedPercent)
+    const severity =
+      typeof window.severity === 'string' && window.severity.trim()
+        ? window.severity.trim().toLowerCase()
+        : null
+    const severitySuffix = severity && severity !== 'normal' ? ` · ${severity}` : ''
+    if (severity) row.dataset['severity'] = severity
     row.innerHTML = `
       <div class="usage-plan-window-meta">
         <span class="usage-plan-window-label">${escapeHtml(window.label)}</span>
-        <span class="usage-plan-window-stats">${String(used)}% used · ${formatReset(window.resetsAt)}</span>
+        <span class="usage-plan-window-stats">${String(used)}% used · ${formatReset(window.resetsAt)}${escapeHtml(severitySuffix)}</span>
       </div>
       <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(used)}" aria-label="${escapeHtml(window.label)} ${String(used)} percent used">
-        <div class="usage-plan-bar-fill" style="width: ${String(Math.min(100, used))}%"></div>
+        <div class="usage-plan-bar-fill"${severity ? ` data-severity="${escapeHtml(severity)}"` : ''} style="width: ${String(Math.min(100, used))}%"></div>
       </div>
     `
     card.append(row)

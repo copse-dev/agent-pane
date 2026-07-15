@@ -74,6 +74,20 @@ function parseLegacyWindow(
   }
 }
 
+function parseSeverity(raw: unknown): string | null {
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null
+}
+
+function formatMoneyMinor(amountMinor: number, currency: string, exponent: number): string {
+  const scale = 10 ** Math.max(0, Math.min(6, exponent))
+  const major = amountMinor / scale
+  const formatted = Number.isInteger(major) ? String(major) : major.toFixed(exponent)
+  if (currency === 'USD') return `$${formatted}`
+  if (currency === 'GBP') return `£${formatted}`
+  if (currency === 'EUR') return `€${formatted}`
+  return `${formatted} ${currency}`
+}
+
 /**
  * Prefer the structured `limits[]` array (current Anthropic shape). That is
  * where model-scoped weekly caps live — Opus, Sonnet, **Fable**, and whatever
@@ -85,20 +99,35 @@ function parseLimitsArray(raw: unknown, nowMs: number): PlanWindow[] {
   const windows: PlanWindow[] = []
   for (const entry of raw) {
     if (!isRecord(entry)) continue
-    // Skip inactive buckets when the server marks them.
-    if (entry['is_active'] === false) continue
     const percent = entry['percent'] ?? entry['utilization']
     if (typeof percent !== 'number' || !Number.isFinite(percent)) continue
+    const usedPercent = normalizePercent(percent)
+    // Skip inactive empty buckets (e.g. session 0% inactive); keep inactive
+    // non-zero scoped caps (Fable at 89% warning) so they stay visible.
+    if (entry['is_active'] === false && usedPercent === 0) continue
     const kind = typeof entry['kind'] === 'string' ? entry['kind'] : null
     const resetsAt = toIsoTimestamp(entry['resets_at'] ?? entry['resetsAt'], nowMs)
-    const usedPercent = normalizePercent(percent)
+    const severity = parseSeverity(entry['severity'])
+    const inactive = entry['is_active'] === false
 
     if (kind === 'session') {
-      windows.push({ id: 'five_hour', label: '5-hour', usedPercent, resetsAt })
+      windows.push({
+        id: 'five_hour',
+        label: inactive ? '5-hour (inactive)' : '5-hour',
+        usedPercent,
+        resetsAt,
+        severity,
+      })
       continue
     }
     if (kind === 'weekly_all') {
-      windows.push({ id: 'seven_day', label: 'Weekly', usedPercent, resetsAt })
+      windows.push({
+        id: 'seven_day',
+        label: inactive ? 'Weekly (inactive)' : 'Weekly',
+        usedPercent,
+        resetsAt,
+        severity,
+      })
       continue
     }
     if (kind === 'weekly_scoped') {
@@ -108,9 +137,10 @@ function parseLimitsArray(raw: unknown, nowMs: number): PlanWindow[] {
         isRecord(model) && typeof model['display_name'] === 'string'
           ? model['display_name'].trim()
           : ''
-      const label = name ? `Weekly ${name}` : 'Weekly (scoped)'
+      const base = name ? `Weekly ${name}` : 'Weekly (scoped)'
+      const label = inactive ? `${base} (inactive)` : base
       const id = name ? `seven_day_${slug(name)}` : 'seven_day_scoped'
-      windows.push({ id, label, usedPercent, resetsAt })
+      windows.push({ id, label, usedPercent, resetsAt, severity })
     }
   }
   return windows
@@ -138,6 +168,30 @@ function planLabelFromDollars(body: Record<string, unknown>): string | null {
     return `${prefix} ${formatDollarPair(used, limit)}`
   }
   return null
+}
+
+/** Extra-usage / spend credits label when dollar windows are absent. */
+function planLabelFromSpend(body: Record<string, unknown>): string | null {
+  const spend = body['spend']
+  if (!isRecord(spend)) return null
+  const used = spend['used']
+  const limit = spend['limit']
+  if (!isRecord(used) || !isRecord(limit)) return null
+  const usedMinor = used['amount_minor']
+  const limitMinor = limit['amount_minor']
+  const currency = used['currency'] ?? limit['currency']
+  const exponent = used['exponent'] ?? limit['exponent'] ?? 2
+  if (typeof usedMinor !== 'number' || !Number.isFinite(usedMinor)) return null
+  if (typeof limitMinor !== 'number' || !Number.isFinite(limitMinor) || limitMinor <= 0) return null
+  if (typeof currency !== 'string' || !currency.trim()) return null
+  const exp = typeof exponent === 'number' && Number.isFinite(exponent) ? exponent : 2
+  const pair = `${formatMoneyMinor(usedMinor, currency.trim(), exp)} / ${formatMoneyMinor(limitMinor, currency.trim(), exp)}`
+  const enabled = spend['enabled'] === true
+  return enabled ? `Extra usage ${pair}` : `Extra usage ${pair} (disabled)`
+}
+
+function planLabelForClaude(body: Record<string, unknown>): string | null {
+  return planLabelFromDollars(body) ?? planLabelFromSpend(body)
 }
 
 /**
@@ -177,7 +231,7 @@ export function parseClaudeUsage(body: unknown, nowMs: number): ProviderPlanUsag
 
   return {
     provider: 'claude',
-    plan: planLabelFromDollars(body),
+    plan: planLabelForClaude(body),
     windows,
     checkedAt: new Date(nowMs).toISOString(),
   }

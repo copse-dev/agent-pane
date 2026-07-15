@@ -641,6 +641,12 @@ dialog.settings-overlay::backdrop {
   background: var(--accent);
   border-radius: inherit;
 }
+.usage-plan-bar-fill[data-severity='warning'] {
+  background: var(--warning);
+}
+.usage-plan-bar-fill[data-severity='critical'] {
+  background: var(--danger);
+}
 .usage-period-tabs {
   display: flex;
   flex-wrap: wrap;

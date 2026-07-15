@@ -12,6 +12,11 @@ export interface PlanWindow {
   usedPercent: number
   /** ISO-8601 reset time when known; `null` when the provider omits it. */
   resetsAt: string | null
+  /**
+   * Provider urgency hint when present (`normal` / `warning` / `critical` from
+   * Claude `limits[].severity`). Omitted when the provider does not report it.
+   */
+  severity?: string | null
 }
 
 export interface ProviderPlanUsage {

@@ -60,7 +60,6 @@ describe('findUnknownFields (Claude)', () => {
           daily: null,
           weekly: null,
         },
-        spend: { something: true },
         member_dashboard_available: true,
         limits: [
           {
@@ -68,6 +67,7 @@ describe('findUnknownFields (Claude)', () => {
             percent: 99,
             group: 'weekly',
             cardinality: 'all',
+            severity: 'critical',
             resets_at: '2026-07-17T02:00:00.200Z',
           },
           {
@@ -75,9 +75,24 @@ describe('findUnknownFields (Claude)', () => {
             percent: 10,
             group: 'weekly',
             cardinality: 'scoped',
+            severity: 'warning',
             scope: { model: { display_name: 'Fable' }, surface: 'claude_code' },
           },
         ],
+        spend: {
+          used: { amount_minor: 100, currency: 'GBP', exponent: 2 },
+          limit: { amount_minor: 5000, currency: 'GBP', exponent: 2 },
+          percent: 2,
+          severity: 'normal',
+          enabled: false,
+          disabled_reason: null,
+          cap: { money: { amount_minor: 5000, currency: 'GBP', exponent: 2 }, credits: null },
+          balance: null,
+          auto_reload: null,
+          disclaimer: 'x',
+          can_purchase_credits: false,
+          can_toggle: false,
+        },
       },
       CLAUDE_USAGE_SCHEMA,
     )
