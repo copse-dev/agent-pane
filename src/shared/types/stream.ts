@@ -40,6 +40,8 @@ export type StreamChunk =
       type: 'post_turn_review'
       status: 'running' | 'done' | 'error' | 'skipped'
       summary: string
+      /** Present on terminal done chunks from a structured review verdict. */
+      issuesFound?: boolean
     }
   /** Two-model diff-review comparison (running placeholder, then the full result). */
   | { type: 'model_comparison'; comparison: ModelComparison }
