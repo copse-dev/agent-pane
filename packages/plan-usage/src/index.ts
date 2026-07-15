@@ -44,6 +44,7 @@ export {
   CURSOR_PERIOD_USAGE_SCHEMA,
   HUGGINGFACE_USAGE_SCHEMA,
   findUnknownFields,
+  sampleUnknownFieldValue,
   type SchemaNode,
   type UnknownFieldFinding,
 } from './unknown-fields.ts'

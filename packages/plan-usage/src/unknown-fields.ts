@@ -322,6 +322,24 @@ export interface UnknownFieldFinding {
   /** Why it was flagged. */
   kind: 'unknown_key' | 'unknown_enum' | 'unexpected_type'
   detail: string
+  /**
+   * Truncated JSON preview of the value at `path`. Included so opaque keys
+   * (`tangelo`, codename buckets, …) are inspectable without `--raw`.
+   */
+  sample?: string
+}
+
+const SAMPLE_MAX_LEN = 280
+
+/** Compact JSON preview for probe / debugger output. */
+export function sampleUnknownFieldValue(value: unknown, maxLen = SAMPLE_MAX_LEN): string {
+  try {
+    const json = JSON.stringify(value)
+    if (json.length <= maxLen) return json
+    return `${json.slice(0, Math.max(0, maxLen - 1))}…`
+  } catch {
+    return Object.prototype.toString.call(value)
+  }
 }
 
 type ConcreteSchema = Exclude<SchemaNode, { type: 'ref' }>
@@ -357,6 +375,7 @@ function walk(
         path,
         kind: 'unexpected_type',
         detail: `expected string enum, got ${typeof value}`,
+        sample: sampleUnknownFieldValue(value),
       })
       return
     }
@@ -365,6 +384,7 @@ function walk(
         path,
         kind: 'unknown_enum',
         detail: `value ${JSON.stringify(value)} not in [${node.values.join(', ')}]`,
+        sample: sampleUnknownFieldValue(value),
       })
     }
     return
@@ -376,6 +396,7 @@ function walk(
         path,
         kind: 'unexpected_type',
         detail: `expected array, got ${typeof value}`,
+        sample: sampleUnknownFieldValue(value),
       })
       return
     }
@@ -391,6 +412,7 @@ function walk(
       path,
       kind: 'unexpected_type',
       detail: `expected object, got ${Array.isArray(value) ? 'array' : typeof value}`,
+      sample: sampleUnknownFieldValue(value),
     })
     return
   }
@@ -404,6 +426,7 @@ function walk(
         path: childPath,
         kind: 'unknown_key',
         detail: `key ${JSON.stringify(key)} is not in the known schema`,
+        sample: sampleUnknownFieldValue(child),
       })
       continue
     }

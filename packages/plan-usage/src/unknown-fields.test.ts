@@ -88,13 +88,37 @@ describe('findUnknownFields (Claude)', () => {
     const findings = findUnknownFields(
       {
         five_hour: { utilization: 1, resets_at: 'x' },
-        brand_new_bucket: { utilization: 9 },
+        brand_new_bucket: { utilization: 9, resets_at: 'y' },
         limits: [{ kind: 'monthly_mythos', percent: 1 }],
       },
       CLAUDE_USAGE_SCHEMA,
     )
     assert.ok(findings.some((f) => f.path === 'brand_new_bucket' && f.kind === 'unknown_key'))
     assert.ok(findings.some((f) => f.path === 'limits[0].kind' && f.kind === 'unknown_enum'))
+    const bucket = findings.find((f) => f.path === 'brand_new_bucket')
+    assert.ok(bucket)
+    assert.match(bucket.sample ?? '', /utilization/)
+  })
+
+  it('includes a JSON sample for opaque unknown keys', () => {
+    const findings = findUnknownFields(
+      {
+        tangelo_mystery: {
+          utilization: 12,
+          limit_dollars: 40,
+          used_dollars: 4.8,
+          remaining_dollars: 35.2,
+          resets_at: '2026-07-20T00:00:00Z',
+        },
+      },
+      CLAUDE_USAGE_SCHEMA,
+    )
+    const hit = findings.find((f) => f.path === 'tangelo_mystery')
+    assert.ok(hit)
+    assert.equal(hit.kind, 'unknown_key')
+    assert.ok(hit.sample)
+    assert.match(hit.sample, /limit_dollars/)
+    assert.match(hit.sample, /4\.8/)
   })
 
   it('flags unknown nested model fields (how Fable would have shown up early)', () => {

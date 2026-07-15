@@ -485,6 +485,9 @@ function printHuman(report: ProviderProbeReport, raw: boolean): void {
     console.log(`unknown fields (${String(report.unknownFields.length)}):`)
     for (const finding of report.unknownFields) {
       console.log(`  - [${finding.kind}] ${finding.path}: ${finding.detail}`)
+      if (finding.sample !== undefined) {
+        console.log(`      sample: ${finding.sample}`)
+      }
     }
   }
   if (raw) {

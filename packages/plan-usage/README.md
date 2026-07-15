@@ -59,7 +59,10 @@ npm run probe:plan-usage -- --fixture ./sample.json --provider cursor
 The probe drives the real fetch/parse path, then diffs the raw JSON against
 `CLAUDE_USAGE_SCHEMA` / `CODEX_USAGE_SCHEMA` / `HUGGINGFACE_USAGE_SCHEMA` /
 `CURSOR_PERIOD_USAGE_SCHEMA`. Unknown keys or `limits[].kind` values exit `1`
-so new fields fail loudly instead of being ignored.
+so new fields fail loudly instead of being ignored. Each unknown finding
+includes a truncated JSON `sample` of the value at that path (so opaque keys
+like Claude codename buckets are inspectable without dumping the full `--raw`
+payload).
 
 ## Remaining step for a true standalone repo
 
