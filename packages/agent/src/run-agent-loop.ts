@@ -48,13 +48,8 @@ import {
   isAgentRunTimeoutAbort,
   isStreamOutputRunaway,
 } from './agent-loop-limits.ts'
-import {
-  hasOpenTodos,
-  OPEN_TODOS_FINALIZE_NUDGE,
-  OPEN_TODOS_FINALIZE_NUDGE_STRICT,
-  OPEN_TODOS_STILL_OPEN_MESSAGE,
-  MAX_TODO_CLOSEOUT_ATTEMPTS,
-} from './agent-loop-guards.ts'
+import { hasOpenTodos, OPEN_TODOS_STILL_OPEN_MESSAGE } from './agent-loop-guards.ts'
+import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -439,16 +434,24 @@ async function runToolEnabledNudgeTurn(
   return { answerText: assistantText.trim(), executedTools: false }
 }
 
-/** Run up to {@link MAX_TODO_CLOSEOUT_ATTEMPTS} tool-enabled nudge turns while
- * open todos remain, escalating the nudge after the first attempt. Returns true
- * once no todos are open. */
+/**
+ * Run tool-enabled closeout turns while open todos remain. Nudge selection and
+ * the attempt budget live in `beforeFinalize` hooks (M0.3); this site only
+ * fires the event and runs the returned `injectContext` as a nudge. Returns
+ * true once no todos are open.
+ */
 async function closeOpenTodosBeforeFinalize(
   ctx: AgentStepContext,
   getOpenTodos: () => readonly TodoItem[],
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < MAX_TODO_CLOSEOUT_ATTEMPTS; attempt++) {
-    if (!hasOpenTodos(getOpenTodos())) return true
-    const nudge = attempt === 0 ? OPEN_TODOS_FINALIZE_NUDGE : OPEN_TODOS_FINALIZE_NUDGE_STRICT
+  const registry = createHookRegistry()
+  const hookContext = ctx.signal !== undefined ? { signal: ctx.signal } : {}
+  for (let attempt = 0; ; attempt++) {
+    const openTodos = getOpenTodos()
+    if (!hasOpenTodos(openTodos)) return true
+    const result = await registry.emit('beforeFinalize', { openTodos, attempt }, hookContext)
+    const nudge = mergeBlockingOutcomes(result.outcomes).injectContext
+    if (!nudge) break
     await runToolEnabledNudgeTurn(ctx, nudge)
     if (ctx.signal?.aborted) break
   }
@@ -959,11 +962,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   }
 
   if (!signal?.aborted && !finishedWithAnswer && !hitRunLimit) {
-    // When open todos remain, run up to MAX_TODO_CLOSEOUT_ATTEMPTS tool-enabled
-    // closeout turns so the model reconciles the plan via update_todos — a
-    // plain-text "all done" no longer satisfies finalize. Only once the plan is
-    // clean (or after closeout gives up) do we fall through to the text-only
-    // finalize that produces the user-facing answer.
+    // When open todos remain, fire `beforeFinalize` (M0.3) to select closeout
+    // nudges so the model reconciles the plan via update_todos — a plain-text
+    // "all done" no longer satisfies finalize. Only once the plan is clean (or
+    // after closeout gives up) do we fall through to the text-only finalize
+    // that produces the user-facing answer.
     const stepCtx: AgentStepContext = {
       provider,
       messages,
