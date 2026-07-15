@@ -46,6 +46,7 @@ interface MessageLike {
   images?: string[]
   commandSummary?: string
   attachments?: TranscriptAttachment[]
+  model?: string
   review?: ThreadReview
 }
 
@@ -157,6 +158,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
   if (msg.attachments !== undefined && msg.attachments.length > 0)
     line.attachments = msg.attachments
+  if (msg.model !== undefined) line.model = msg.model
   if (msg.review !== undefined) line.review = msg.review
 
   for (const tc of msg.toolCalls) {
@@ -297,6 +299,7 @@ function foldOne(
 
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
   if (line.attachments !== undefined) msg.attachments = line.attachments
+  if (line.model !== undefined) msg.model = line.model
   if (line.review !== undefined) msg.review = line.review
   return msg
 }
@@ -318,6 +321,7 @@ export function foldMessage(
     ...(m.images !== undefined ? { images: m.images } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),
     ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
+    ...(m.model !== undefined ? { model: m.model } : {}),
     ...(m.review !== undefined ? { review: m.review } : {}),
   }
 }
