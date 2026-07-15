@@ -1,4 +1,5 @@
 import type { LLMMessage, UserContent } from '@shared/types'
+import { isAcpModel } from '@shared/acp.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm/model-intellect.ts'
@@ -196,6 +197,18 @@ export function validateAdvisorPair(
       reason: 'Native-compatible pairing: also valid for Claude’s server-side advisor tool.',
     }
   }
+  if (isAcpModel(advisorModel)) {
+    // Advice routed through an external ACP agent (acp-advisor.ts). The agent
+    // owns its own model, so there is no annotation to compare against.
+    return {
+      ok: true,
+      native,
+      level: 'info',
+      reason:
+        'Advice comes from the configured external ACP agent, consulted on a bare one-off session. No capability annotations, so no strength comparison.',
+    }
+  }
+
   const executor = annotationFor(executorModel)
   const advisor = annotationFor(advisorModel)
 
@@ -289,7 +302,7 @@ export function validateAdvisorPair(
     native,
     level: 'info',
     reason:
-      'Client-side pairing. Runs as a normal advisor call; not a valid pair for Claude’s native advisor tool.',
+      'Client-side pairing — any configured executor/advisor combination works. Neither model carries capability annotations, so no strength comparison is possible.',
   }
 }
 

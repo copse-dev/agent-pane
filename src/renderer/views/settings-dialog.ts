@@ -898,15 +898,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Adds a no-parameter <code>advisor</code> tool that forwards your full conversation
                 transcript to a larger advisor model for strategic guidance, so the everyday loop can
                 run on a cheaper or on-device model while frontier intelligence is pulled in at the
-                moments that matter (planning, getting unstuck, final review). Shaped to match
-                Claude’s native advisor tool. While off, the tool is not registered.
+                moments that matter (planning, getting unstuck, final review). Runs client-side, so
+                any executor/advisor pairing works — including ACP agents as the advisor. While off,
+                the tool is not registered.
               </p>
               <label class="field-label" for="advisorModel">Advisor model</label>
               <select id="advisorModel" name="advisorModel">
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                Model used for advisor consultations. Pick a configured cloud provider; defaults to
+                Model used for advisor consultations. Any configured provider works; defaults to
                 <code>claude-opus-4-8</code>.
               </p>
               <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>

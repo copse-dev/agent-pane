@@ -64,8 +64,8 @@ describe('advisor pair assessment hint', () => {
   })
 
   it('re-grades live when the advisor picker changes', async () => {
-    // Continues from the warn seed above: swap the advisor to the frontier
-    // default via a real change event and expect the hint to flip to good.
+    // Continues from the warn seed above: swap the advisor to a native-valid
+    // frontier model via a real change event and expect the hint to flip to good.
     await browser.execute(() => {
       const select = document.querySelector<HTMLSelectElement>('#advisorModel')
       if (!select) throw new Error('advisor select missing')
@@ -83,5 +83,47 @@ describe('advisor pair assessment hint', () => {
       timeoutMsg: 'advisor pair hint did not re-grade after a change event',
     })
     assert.match(await hint.getText(), /native-compatible/i)
+  })
+
+  it('shows the positive client-side note for an unannotated pairing', async () => {
+    // Mirrors a real setup: an executor and advisor the annotations don't know
+    // (e.g. a newer OpenAI model + an OpenRouter-hosted model). Works — the
+    // hint must lead with that, not with Claude-native incompatibility.
+    resetUserData()
+    seedEmptyProject(process.cwd(), 'e2e-advisor-pair-any', {
+      model: 'gpt-5.6-sol',
+      advisorModel: 'openrouter:zai-org/glm-5.2',
+    })
+    await browser.reloadSession()
+    await openExperimentalSection()
+
+    const hint = $('#advisorPairHint')
+    assert.equal(await hint.getAttribute('data-level'), 'info')
+    assert.match(await hint.getText(), /any configured executor\/advisor combination works/i)
+
+    await $('#advisorModel').scrollIntoView({ block: 'center' })
+    await saveElementScreenshot('#advisor-strategy-fieldset', 'advisor-pair-hint-any.png')
+  })
+
+  it('explains an ACP-agent advisor without an annotation comparison', async () => {
+    // Continues from the seed above: swap the advisor to an ACP agent via a
+    // real change event and expect the ACP-specific note.
+    await browser.execute(() => {
+      const select = document.querySelector<HTMLSelectElement>('#advisorModel')
+      if (!select) throw new Error('advisor select missing')
+      const option = document.createElement('option')
+      option.value = 'acp:gemini-cli'
+      option.textContent = 'Gemini CLI (ACP)'
+      select.append(option)
+      select.value = 'acp:gemini-cli'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const hint = $('#advisorPairHint')
+    await browser.waitUntil(async () => /external ACP agent/i.test(await hint.getText()), {
+      timeout: 5_000,
+      timeoutMsg: 'advisor pair hint did not show the ACP note',
+    })
+    assert.equal(await hint.getAttribute('data-level'), 'info')
   })
 })
