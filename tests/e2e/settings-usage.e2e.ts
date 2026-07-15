@@ -53,7 +53,7 @@ describe('settings usage panel', () => {
     const plan = (await browser.execute(() => window.api.usage.getPlanUsage())) as {
       providers: Array<{ status: string; provider: string }>
     }
-    assert.equal(plan.providers.length, 2)
+    assert.equal(plan.providers.length, 3)
     assert.ok(plan.providers.every((p) => p.status === 'ok'))
 
     const config = JSON.parse(readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8')) as {
@@ -68,6 +68,9 @@ describe('settings usage panel', () => {
       $('.usage-plan-provider[data-provider="claude"][data-status="ok"]'),
     ).toBeDisplayed()
     await expect($('.usage-plan-provider[data-provider="codex"][data-status="ok"]')).toBeDisplayed()
+    await expect(
+      $('.usage-plan-provider[data-provider="huggingface"][data-status="ok"]'),
+    ).toBeDisplayed()
     await expect($('.usage-plan-bar')).toBeDisplayed()
     await expect($('.usage-period-body .usage-headline')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(1) tbody tr')).toBeDisplayed()

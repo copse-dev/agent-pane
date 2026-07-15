@@ -6,10 +6,12 @@ import {
   getPlanUsageSnapshot,
   orderClaudeTokenCandidates,
   parseCodexAuthJson,
+  parseHuggingFaceToken,
   type PlanUsageCredentials,
   type PlanUsageSnapshot,
 } from '@copse/plan-usage'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
+import { resolveApiKey } from './storage/settings.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
@@ -19,6 +21,14 @@ const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 function readJsonFile(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as unknown
+  } catch {
+    return null
+  }
+}
+
+function readTextFile(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8')
   } catch {
     return null
   }
@@ -39,11 +49,25 @@ export function readClaudeKeychainCredentialsJson(): string | null {
   }
 }
 
-/** Discover Claude / Codex tokens from Keychain, files, and env. */
+function discoverHuggingFaceToken(
+  home: string,
+  env: NodeJS.ProcessEnv,
+  resolveStored: () => string | null,
+): string | undefined {
+  const fromStored = resolveStored()?.trim()
+  if (fromStored) return fromStored
+  const fromEnv = env['HF_TOKEN']?.trim() || env['HUGGINGFACE_API_KEY']?.trim() || undefined
+  if (fromEnv) return fromEnv
+  const hfHome = env['HF_HOME']?.trim() || join(home, '.cache', 'huggingface')
+  return parseHuggingFaceToken(readTextFile(join(hfHome, 'token'))) ?? undefined
+}
+
+/** Discover Claude / Codex / Hugging Face tokens from Keychain, files, and env. */
 export function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
   readKeychain: () => string | null = readClaudeKeychainCredentialsJson,
+  resolveHuggingFaceStored: () => string | null = () => resolveApiKey('huggingface'),
 ): PlanUsageCredentials {
   const candidates = orderClaudeTokenCandidates({
     keychainJson: readKeychain(),
@@ -63,6 +87,8 @@ export function discoverPlanUsageCredentials(
       accountId: parsedCodex.accountId,
     }
   }
+  const hf = discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
+  if (hf) credentials.huggingfaceToken = hf
   return credentials
 }
 
@@ -123,6 +149,23 @@ function mockSnapshot(): PlanUsageSnapshot {
           checkedAt,
         },
       },
+      {
+        status: 'ok',
+        provider: 'huggingface',
+        usage: {
+          provider: 'huggingface',
+          plan: 'Inference Providers ($302 limit · included $2.00)',
+          windows: [
+            {
+              id: 'inference_providers',
+              label: 'Monthly inference',
+              usedPercent: 12,
+              resetsAt: new Date(Date.now() + 16 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+          ],
+          checkedAt,
+        },
+      },
     ],
   }
 }
@@ -147,6 +190,7 @@ export async function loadPlanUsageSnapshot(): Promise<PlanUsageSnapshot> {
       providers: [
         { status: 'error', provider: 'claude', message },
         { status: 'error', provider: 'codex', message },
+        { status: 'error', provider: 'huggingface', message },
       ],
     }
   }

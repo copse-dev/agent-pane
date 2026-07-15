@@ -174,6 +174,70 @@ export const CODEX_USAGE_SCHEMA: SchemaNode = {
   },
 }
 
+/**
+ * Allowed JSON shape for Hugging Face
+ * `GET /api/settings/billing/usage-v2`. Keep in sync with `huggingface.ts`.
+ * Captured from live personal billing (2026-07).
+ */
+export const HUGGINGFACE_USAGE_SCHEMA: SchemaNode = {
+  type: 'object',
+  keys: {
+    usage: {
+      type: 'object',
+      keys: {
+        Spaces: { type: 'any' },
+        Endpoints: { type: 'any' },
+        inferenceProviders: {
+          type: 'object',
+          keys: {
+            includedNanoUsd: { type: 'any' },
+            limitNanoUsd: { type: 'any' },
+            usedNanoUsd: { type: 'any' },
+            numRequests: { type: 'any' },
+            providerDetails: {
+              type: 'array',
+              item: {
+                type: 'object',
+                keys: {
+                  provider: { type: 'any' },
+                  numRequests: { type: 'any' },
+                  totalCostNanoUsd: { type: 'any' },
+                  totalDurationMs: { type: 'any' },
+                },
+              },
+            },
+            periodEnd: { type: 'any' },
+            periodStart: { type: 'any' },
+          },
+        },
+        jobs: {
+          type: 'object',
+          keys: {
+            totalMinutes: { type: 'any' },
+            usedMicroUsd: { type: 'any' },
+            hardwareFlavorBreakdown: { type: 'any' },
+          },
+        },
+        privateStorage: {
+          type: 'object',
+          keys: {
+            totalTB: { type: 'any' },
+            includedTB: { type: 'any' },
+            totalCents: { type: 'any' },
+            amountDueCents: { type: 'any' },
+          },
+        },
+        zeroGpu: {
+          type: 'object',
+          keys: {
+            billedSeconds: { type: 'any' },
+          },
+        },
+      },
+    },
+  },
+}
+
 export type SchemaNode =
   | { type: 'any' }
   | { type: 'enum'; values: readonly string[] }

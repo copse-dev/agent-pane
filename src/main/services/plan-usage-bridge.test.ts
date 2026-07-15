@@ -6,12 +6,14 @@ import { describe, it } from 'node:test'
 import { discoverPlanUsageCredentials, loadPlanUsageSnapshot } from './plan-usage-bridge.ts'
 
 const noKeychain = (): string | null => null
+const noStoredHf = (): string | null => null
 
 describe('discoverPlanUsageCredentials', () => {
-  it('reads Claude and Codex credential files under a fake home', () => {
+  it('reads Claude, Codex, and Hugging Face credential files under a fake home', () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
     mkdirSync(join(home, '.claude'), { recursive: true })
     mkdirSync(join(home, '.codex'), { recursive: true })
+    mkdirSync(join(home, '.cache', 'huggingface'), { recursive: true })
     writeFileSync(
       join(home, '.claude', '.credentials.json'),
       JSON.stringify({ claudeAiOauth: { accessToken: 'sk-ant-oat01-test' } }),
@@ -20,12 +22,14 @@ describe('discoverPlanUsageCredentials', () => {
       join(home, '.codex', 'auth.json'),
       JSON.stringify({ tokens: { access_token: 'codex-tok', account_id: 'acct' } }),
     )
+    writeFileSync(join(home, '.cache', 'huggingface', 'token'), 'hf_from_file\n')
 
-    const creds = discoverPlanUsageCredentials(home, {}, noKeychain)
+    const creds = discoverPlanUsageCredentials(home, {}, noKeychain, noStoredHf)
     assert.deepEqual(creds.claudeOAuthTokens, ['sk-ant-oat01-test'])
     assert.ok(creds.codex)
     assert.equal(creds.codex.accessToken, 'codex-tok')
     assert.equal(creds.codex.accountId, 'acct')
+    assert.equal(creds.huggingfaceToken, 'hf_from_file')
   })
 
   it('orders keychain before credentials.json before env setup-token', () => {
@@ -42,12 +46,26 @@ describe('discoverPlanUsageCredentials', () => {
       home,
       { CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-env' },
       () => keychainJson,
+      noStoredHf,
     )
     assert.deepEqual(creds.claudeOAuthTokens, [
       'sk-ant-oat01-keychain',
       'sk-ant-oat01-file',
       'sk-ant-oat01-env',
     ])
+  })
+
+  it('prefers Settings/stored HF token over env and token file', () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
+    mkdirSync(join(home, '.cache', 'huggingface'), { recursive: true })
+    writeFileSync(join(home, '.cache', 'huggingface', 'token'), 'hf_file')
+    const creds = discoverPlanUsageCredentials(
+      home,
+      { HF_TOKEN: 'hf_env' },
+      noKeychain,
+      () => 'hf_stored',
+    )
+    assert.equal(creds.huggingfaceToken, 'hf_stored')
   })
 
   it('prefers credentials file over CLAUDE_CODE_OAUTH_TOKEN when Keychain is empty', () => {
@@ -63,15 +81,17 @@ describe('discoverPlanUsageCredentials', () => {
         CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-env',
       },
       noKeychain,
+      noStoredHf,
     )
     assert.deepEqual(creds.claudeOAuthTokens, ['sk-ant-oat01-file', 'sk-ant-oat01-env'])
   })
 
   it('returns empty credentials when nothing is present', () => {
     const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-empty-'))
-    const creds = discoverPlanUsageCredentials(home, {}, noKeychain)
+    const creds = discoverPlanUsageCredentials(home, {}, noKeychain, noStoredHf)
     assert.deepEqual(creds.claudeOAuthTokens, [])
     assert.equal(creds.codex, undefined)
+    assert.equal(creds.huggingfaceToken, undefined)
   })
 })
 
@@ -81,8 +101,9 @@ describe('loadPlanUsageSnapshot', () => {
     process.env['COPSE_PLAN_USAGE_MOCK'] = '1'
     try {
       const snap = await loadPlanUsageSnapshot()
-      assert.equal(snap.providers.length, 2)
+      assert.equal(snap.providers.length, 3)
       assert.ok(snap.providers.every((p) => p.status === 'ok'))
+      assert.ok(snap.providers.some((p) => p.provider === 'huggingface'))
     } finally {
       if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev

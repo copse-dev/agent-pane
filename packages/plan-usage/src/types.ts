@@ -1,6 +1,6 @@
-/** Shared types for subscription plan-usage windows (Claude / Codex). */
+/** Shared types for subscription plan-usage windows (Claude / Codex / Hugging Face). */
 
-export type PlanProviderId = 'claude' | 'codex'
+export type PlanProviderId = 'claude' | 'codex' | 'huggingface'
 
 /** One rolling (or fixed) usage window reported by a provider. */
 export interface PlanWindow {

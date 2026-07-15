@@ -6,7 +6,14 @@ import {
   orderClaudeTokenCandidates,
   parseClaudeCredentialsJson,
   parseCodexAuthJson,
+  parseHuggingFaceToken,
 } from './credentials.ts'
+import {
+  fetchHuggingFacePlanUsage,
+  formatNanoUsd,
+  huggingFaceMonthBoundsUnix,
+  parseHuggingFaceUsage,
+} from './huggingface.ts'
 import { getPlanUsageSnapshot } from './snapshot.ts'
 import type { FetchLike } from './types.ts'
 
@@ -359,8 +366,99 @@ describe('fetchCodexPlanUsage', () => {
   })
 })
 
+describe('parseHuggingFaceToken', () => {
+  it('trims bare tokens and rejects JSON', () => {
+    assert.equal(parseHuggingFaceToken('  hf_abc  '), 'hf_abc')
+    assert.equal(parseHuggingFaceToken('{"token":"x"}'), null)
+    assert.equal(parseHuggingFaceToken(''), null)
+  })
+})
+
+describe('fetchHuggingFacePlanUsage', () => {
+  it('maps inferenceProviders nanoUSD into a monthly window', async () => {
+    const result = await fetchHuggingFacePlanUsage('hf_test', {
+      fetch: jsonFetch({
+        usage: {
+          Spaces: [],
+          Endpoints: [],
+          inferenceProviders: {
+            includedNanoUsd: 2_000_000_000,
+            limitNanoUsd: 302_000_000_000,
+            usedNanoUsd: 1_164_299_880,
+            numRequests: 55,
+            providerDetails: [
+              {
+                provider: 'novita',
+                numRequests: 53,
+                totalCostNanoUsd: 1_164_299_880,
+                totalDurationMs: 0,
+              },
+            ],
+            periodEnd: '2026-08-01T00:00:00.000Z',
+            periodStart: '2026-07-01T00:00:00.000Z',
+          },
+          jobs: { totalMinutes: 0, usedMicroUsd: 0, hardwareFlavorBreakdown: [] },
+          privateStorage: {
+            totalTB: 0,
+            includedTB: 0,
+            totalCents: 0,
+            amountDueCents: 0,
+          },
+          zeroGpu: { billedSeconds: 0 },
+        },
+      }),
+      now: () => Date.parse('2026-07-15T12:00:00Z'),
+    })
+    assert.equal(result.status, 'ok')
+    assert.match(result.usage.plan ?? '', /\$302/)
+    assert.match(result.usage.plan ?? '', /\$2\.00/)
+    const window = result.usage.windows[0]
+    assert.ok(window)
+    assert.equal(window.id, 'inference_providers')
+    assert.equal(window.label, 'Monthly inference')
+    assert.ok(window.usedPercent > 0.3 && window.usedPercent < 0.5)
+    assert.equal(window.resetsAt, '2026-08-01T00:00:00.000Z')
+  })
+
+  it('computes UTC month bounds used by the billing query', () => {
+    assert.deepEqual(huggingFaceMonthBoundsUnix(Date.parse('2026-07-15T12:00:00Z')), {
+      start: 1_782_864_000,
+      end: 1_785_542_400,
+    })
+    assert.equal(formatNanoUsd(2_000_000_000), '$2.00')
+  })
+
+  it('returns unavailable without a token', async () => {
+    const result = await fetchHuggingFacePlanUsage(null)
+    assert.equal(result.status, 'unavailable')
+  })
+
+  it('maps 403 to an actionable unavailable reason', async () => {
+    const result = await fetchHuggingFacePlanUsage('hf_bad', {
+      fetch: jsonFetch({ error: 'forbidden' }, 403),
+    })
+    assert.equal(result.status, 'unavailable')
+    assert.match(result.reason, /billing/i)
+  })
+
+  it('parseHuggingFaceUsage tolerates a bare usage object', () => {
+    const usage = parseHuggingFaceUsage(
+      {
+        inferenceProviders: {
+          includedNanoUsd: 1,
+          limitNanoUsd: 100,
+          usedNanoUsd: 50,
+          periodEnd: '2026-08-01T00:00:00.000Z',
+        },
+      },
+      Date.parse('2026-07-15T12:00:00Z'),
+    )
+    assert.equal(usage.windows[0]?.usedPercent, 50)
+  })
+})
+
 describe('getPlanUsageSnapshot', () => {
-  it('never throws when both providers fail hard', async () => {
+  it('never throws when providers fail hard', async () => {
     const boom: FetchLike = async () => {
       throw new Error('network down')
     }
@@ -368,16 +466,17 @@ describe('getPlanUsageSnapshot', () => {
       {
         claudeOAuthToken: 'sk-ant-oat01-x',
         codex: { accessToken: 'tok' },
+        huggingfaceToken: 'hf_x',
       },
       { fetch: boom },
     )
-    assert.equal(snap.providers.length, 2)
+    assert.equal(snap.providers.length, 3)
     assert.ok(snap.providers.every((p) => p.status === 'error'))
   })
 
   it('reports unavailable when no credentials are supplied', async () => {
     const snap = await getPlanUsageSnapshot({})
-    assert.equal(snap.providers.length, 2)
+    assert.equal(snap.providers.length, 3)
     assert.ok(snap.providers.every((p) => p.status === 'unavailable'))
   })
 })

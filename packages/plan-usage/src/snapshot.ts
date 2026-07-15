@@ -1,5 +1,6 @@
 import { fetchClaudePlanUsageFromCandidates } from './claude.ts'
 import { fetchCodexPlanUsage, type CodexPlanUsageAuth } from './codex.ts'
+import { fetchHuggingFacePlanUsage } from './huggingface.ts'
 import { errorMessage } from './internal-utils.ts'
 import type { PlanUsageFetchOptions, PlanUsageSnapshot, ProviderPlanResult } from './types.ts'
 
@@ -9,6 +10,8 @@ export interface PlanUsageCredentials {
   /** Tried in order; Keychain login tokens should come before env setup-tokens. */
   claudeOAuthTokens?: ReadonlyArray<string | null | undefined>
   codex?: CodexPlanUsageAuth | null
+  /** HF user token (`HF_TOKEN`, Settings key, or `hf auth login` cache). */
+  huggingfaceToken?: string | null
 }
 
 /**
@@ -28,11 +31,12 @@ export async function getPlanUsageSnapshot(
       : [credentials.claudeOAuthToken]
 
   try {
-    const [claude, codex] = await Promise.all([
+    const [claude, codex, huggingface] = await Promise.all([
       fetchClaudePlanUsageFromCandidates(claudeTokens, options),
       fetchCodexPlanUsage(credentials.codex ?? { accessToken: null }, options),
+      fetchHuggingFacePlanUsage(credentials.huggingfaceToken, options),
     ])
-    return { providers: [claude, codex], checkedAt }
+    return { providers: [claude, codex, huggingface], checkedAt }
   } catch (err) {
     // Defensive: individual fetchers already catch; this only fires if
     // Promise.all / credential plumbing itself blows up.
@@ -40,6 +44,7 @@ export async function getPlanUsageSnapshot(
     const fallback: ProviderPlanResult[] = [
       { status: 'error', provider: 'claude', message },
       { status: 'error', provider: 'codex', message },
+      { status: 'error', provider: 'huggingface', message },
     ]
     return { providers: fallback, checkedAt }
   }

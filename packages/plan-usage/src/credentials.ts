@@ -58,6 +58,19 @@ export function orderClaudeTokenCandidates(input: {
   return out
 }
 
+/**
+ * Pull a Hugging Face access token from a token file (`~/.cache/huggingface/token`)
+ * or a bare `hf_…` / env string. Returns `null` when empty / missing.
+ */
+export function parseHuggingFaceToken(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  // Token files are plain text; reject obvious JSON/HTML mistakes.
+  if (trimmed.startsWith('{') || trimmed.startsWith('<')) return null
+  return trimmed
+}
+
 export interface ParsedCodexAuth {
   accessToken: string
   accountId: string | null

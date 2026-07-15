@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * Probe Claude / Codex plan-usage endpoints through `@copse/plan-usage`, then
- * diff the raw JSON against the known schemas so new fields (Fable landed this
- * way) fail loudly instead of being silently ignored.
+ * Probe Claude / Codex / Hugging Face plan-usage endpoints through
+ * `@copse/plan-usage`, then diff the raw JSON against the known schemas so
+ * new fields (Fable landed this way) fail loudly instead of being silently
+ * ignored.
  *
  *   npm run probe:plan-usage
  *   npm run probe:plan-usage -- --provider claude
+ *   npm run probe:plan-usage -- --provider huggingface
  *   npm run probe:plan-usage -- --fixture path/to/claude.json --provider claude
  *   npm run probe:plan-usage -- --json
  *
@@ -15,23 +17,43 @@
  *   2 — could not fetch or parse (auth / network / empty)
  */
 
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   fetchClaudePlanUsageFromCandidates,
   fetchCodexPlanUsage,
+  fetchHuggingFacePlanUsage,
   orderClaudeTokenCandidates,
   parseCodexAuthJson,
+  parseHuggingFaceToken,
   CLAUDE_USAGE_SCHEMA,
   CODEX_USAGE_SCHEMA,
+  HUGGINGFACE_USAGE_SCHEMA,
   findUnknownFields,
   type FetchLike,
   type PlanProviderId,
   type ProviderPlanResult,
+  type SchemaNode,
   type UnknownFieldFinding,
 } from '../packages/plan-usage/src/index.ts'
-import { readClaudeKeychainCredentialsJson } from '../src/main/services/plan-usage-bridge.ts'
+
+const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
+
+function readClaudeKeychainCredentialsJson(): string | null {
+  if (process.platform !== 'darwin') return null
+  try {
+    const raw = execFileSync(
+      'security',
+      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'],
+      { encoding: 'utf8', timeout: 5_000 },
+    ).trim()
+    return raw || null
+  } catch {
+    return null
+  }
+}
 
 interface Args {
   provider: 'all' | PlanProviderId
@@ -59,8 +81,8 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--no-strict') args.strict = false
     else if (arg === '--provider') {
       const value = argv[++i]
-      if (value !== 'all' && value !== 'claude' && value !== 'codex') {
-        throw new Error(`--provider must be all|claude|codex (got ${String(value)})`)
+      if (value !== 'all' && value !== 'claude' && value !== 'codex' && value !== 'huggingface') {
+        throw new Error(`--provider must be all|claude|codex|huggingface (got ${String(value)})`)
       }
       args.provider = value
     } else if (arg === '--fixture') {
@@ -97,6 +119,18 @@ function discoverClaudeCandidates(): ReturnType<typeof orderClaudeTokenCandidate
 function discoverCodexAuth(): { accessToken: string; accountId: string | null } | null {
   const file = readJsonFile(join(homedir(), '.codex', 'auth.json'))
   return parseCodexAuthJson(file)
+}
+
+function discoverHuggingFaceToken(): string | null {
+  const fromEnv =
+    process.env['HF_TOKEN']?.trim() || process.env['HUGGINGFACE_API_KEY']?.trim() || null
+  if (fromEnv) return fromEnv
+  const home = process.env['HF_HOME']?.trim() || join(homedir(), '.cache', 'huggingface')
+  try {
+    return parseHuggingFaceToken(readFileSync(join(home, 'token'), 'utf8'))
+  } catch {
+    return null
+  }
 }
 
 /** Capture the JSON body while still driving the real package fetch/parse path. */
@@ -141,7 +175,7 @@ function unknownFieldsForOkParse(
   parse: ProviderPlanResult,
   httpStatus: number,
   body: unknown,
-  schema: typeof CLAUDE_USAGE_SCHEMA,
+  schema: SchemaNode,
 ): UnknownFieldFinding[] {
   // Only schema-diff successful usage payloads. Error bodies (403/401 JSON)
   // would otherwise flood the report with type/error/request_id noise.
@@ -209,6 +243,32 @@ async function probeCodex(args: Args): Promise<ProviderProbeReport> {
   }
 }
 
+async function probeHuggingFace(args: Args): Promise<ProviderProbeReport> {
+  const sink: { body: unknown; status: number } = { body: null, status: 0 }
+  let fetchImpl: FetchLike
+  let token: string | null = 'fixture-token'
+
+  if (args.fixture) {
+    const body = JSON.parse(readFileSync(args.fixture, 'utf8')) as unknown
+    fetchImpl = capturingFetch(fixtureFetch(body), sink)
+  } else {
+    token = discoverHuggingFaceToken()
+    fetchImpl = capturingFetch(globalThis.fetch.bind(globalThis), sink)
+  }
+
+  const parse = await fetchHuggingFacePlanUsage(token, {
+    fetch: fetchImpl,
+    signal: AbortSignal.timeout(12_000),
+  })
+  return {
+    provider: 'huggingface',
+    parse,
+    unknownFields: unknownFieldsForOkParse(parse, sink.status, sink.body, HUGGINGFACE_USAGE_SCHEMA),
+    raw: sink.body,
+    httpStatus: sink.status || null,
+  }
+}
+
 function printHuman(report: ProviderProbeReport, raw: boolean): void {
   console.log(`\n=== ${report.provider} ===`)
   if (report.claudeSources) {
@@ -232,8 +292,9 @@ function usage(): void {
   console.log(`Usage: npm run probe:plan-usage -- [options]
 
 Options:
-  --provider all|claude|codex   Which provider(s) to probe (default: all)
-  --fixture <path.json>         Skip network; feed a saved payload (requires --provider claude|codex)
+  --provider all|claude|codex|huggingface
+                              Which provider(s) to probe (default: all)
+  --fixture <path.json>         Skip network; feed a saved payload (requires --provider)
   --json                        Machine-readable report
   --raw                         Include raw provider JSON in the report
   --no-strict                   Exit 0 even when unknown fields are found
@@ -243,7 +304,10 @@ Exit 1 on schema drift (unknown keys/enums). Exit 2 when auth/fetch/parse fails.
 
 Claude auth order (macOS): Keychain "Claude Code-credentials" →
 ~/.claude/.credentials.json → CLAUDE_CODE_OAUTH_TOKEN. Unset the env var if
-it came from \`claude setup-token\` (inference-only; 403s without user:profile).`)
+it came from \`claude setup-token\` (inference-only; 403s without user:profile).
+
+Hugging Face: HF_TOKEN / HUGGINGFACE_API_KEY → ~/.cache/huggingface/token
+(\`hf auth login\`). Endpoint is personal billing usage-v2 for the current UTC month.`)
 }
 
 async function main(): Promise<number> {
@@ -260,7 +324,7 @@ async function main(): Promise<number> {
     return 0
   }
   if (args.fixture && args.provider === 'all') {
-    console.error('--fixture requires --provider claude|codex')
+    console.error('--fixture requires --provider claude|codex|huggingface')
     return 2
   }
 
@@ -270,6 +334,9 @@ async function main(): Promise<number> {
   }
   if (args.provider === 'all' || args.provider === 'codex') {
     reports.push(await probeCodex(args))
+  }
+  if (args.provider === 'all' || args.provider === 'huggingface') {
+    reports.push(await probeHuggingFace(args))
   }
 
   if (args.json) {

@@ -19,10 +19,11 @@ const PERIOD_LABELS: Record<UsagePeriodKey, string> = {
   allTime: 'All time',
 }
 
-const PROVIDER_LABELS = {
+const PROVIDER_LABELS: Record<string, string> = {
   claude: 'Claude',
   codex: 'Codex',
-} as const
+  huggingface: 'Hugging Face',
+}
 
 function formatReset(resetsAt: string | null): string {
   if (!resetsAt) return 'reset unknown'
@@ -44,7 +45,7 @@ function renderPlanProvider(host: HTMLElement, result: ProviderPlanResult): void
 
   const title = document.createElement('h4')
   title.className = 'usage-plan-provider-title'
-  title.textContent = PROVIDER_LABELS[result.provider]
+  title.textContent = PROVIDER_LABELS[result.provider] ?? result.provider
   card.append(title)
 
   if (result.status === 'unavailable') {
@@ -106,7 +107,7 @@ function renderPlanSection(
   const intro = document.createElement('p')
   intro.className = 'field-hint'
   intro.textContent =
-    'Live Claude / Codex plan windows when those CLIs are signed in. Failures here never block Copse — the local ledger below still tracks this app’s usage.'
+    'Live Claude / Codex / Hugging Face plan windows when those accounts are signed in. Failures here never block Copse — the local ledger below still tracks this app’s usage.'
   host.append(intro)
 
   if (error) {
