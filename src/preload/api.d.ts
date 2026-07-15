@@ -334,6 +334,7 @@ export interface ApiClient {
   usage: {
     record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) => Promise<void>
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
+    getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
   }
   index: {
     query: (pattern: string) => Promise<string[]>
