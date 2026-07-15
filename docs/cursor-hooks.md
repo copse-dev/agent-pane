@@ -72,7 +72,7 @@ disabled the gate skips discovery entirely (no overhead).
 ### Implementation
 
 Discovery, parsing, and the stdio runner live in
-[`src/main/services/cursor-hooks.ts`](../src/main/services/cursor-hooks.ts):
+[`src/main/services/skills/cursor-hooks.ts`](../src/main/services/skills/cursor-hooks.ts):
 
 - `listCursorHooks()` — discovered hooks for the current context (diagnostics / `hooks:list`)
 - `runPermissionHooks(event, payload, opts)` — spawn the hooks for an event and reduce
@@ -158,9 +158,12 @@ trusting the code it can cause to run.
 
 ## Related files
 
-- `src/main/services/cursor-hooks.ts` — discovery, parsing, and the stdio runner
-- `src/main/services/permission-gate.ts` — maps tool calls to permission hooks
+- `src/main/services/skills/cursor-hooks.ts` — discovery, parsing, and the stdio runner
+- `src/main/services/skills/claude-hooks.ts` — Claude Code PreToolUse adapter (#639)
+- `src/main/services/security/permission-gate.ts` — maps tool calls to permission hooks
 - `src/shared/types/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
-- `src/main/services/child-process-env.ts` — secret-scrubbed env for hook processes
+- `src/shared/types/hooks.ts` — shared `HookSummary` for Sources / `hooks:list`
+- `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
+- `docs/claude-hooks.md` — Claude Code hooks contract
 - `docs/cursor-plugins.md` — sibling exploration of Cursor plugin support
 - `docs/supply-chain-security.md` — trust boundaries for executed code
