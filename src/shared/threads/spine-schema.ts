@@ -80,6 +80,11 @@ export interface SpineMessageLine {
   commandSummary?: string
   /** Display-only transcript attachment chips (user messages); short, inlined here. */
   attachments?: TranscriptAttachment[]
+  /**
+   * Primary-chat model for this assistant message (picker id). Optional for
+   * legacy spines written before per-message provenance existed.
+   */
+  model?: string
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
   toolCalls: SpineToolCall[]
