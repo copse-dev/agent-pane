@@ -1,8 +1,8 @@
 # Hooks platform & feature packs
 
-Status: **in progress** — design settled (July 2026); M0.1 registry core and M0.2
-turn-start extraction landed. This document is the source of truth for the phased
-issue breakdown below. It extends
+Status: **in progress** — design settled (July 2026); M0.1–M0.3 (registry core,
+turn-start extraction, finalize closeout extraction) landed. This document is the
+source of truth for the phased issue breakdown below. It extends
 [`docs/cursor-hooks.md`](../cursor-hooks.md) (current Cursor-hooks support) and folds in
 PR #879 (Claude `PreToolUse` hooks) and the direction of PR #840 (permission-decision
 audit trail).
@@ -36,6 +36,7 @@ Two motivations, one architecture:
 | Permission audit trail     | PR #840 (`decision-log-store.ts`)                                                                                                                                 | In flight; becomes a subscriber of the `permissionDecision` event (F2)  |
 | Loop nudges                | `packages/agent/src/agent-loop-guards.ts`, `run-agent-loop.ts`                                                                                                    | Inline; migrate in Phase E                                              |
 | Intent steering            | `turnStart` hooks in `packages/agent` (`todo-steering`, `todo-pin`, `github-link-steering`, `commit-steering`); `messages[0]` surgery stays in `agent-service.ts` | Extracted in M0.2                                                       |
+| Finalize closeout nudges   | `beforeFinalize` hook `todo-finalize-closeout` in `packages/agent`; closeout loop + still-open note stay in `run-agent-loop.ts`                                   | Extracted in M0.3                                                       |
 | Post-turn orchestration    | `post-turn-orchestration.ts` + deferred-`done` in `agent-service.ts`                                                                                              | Inline; migrate in Phase E                                              |
 | Queued messages / send-now | `thread-helpers.ts` (`setQueuePaused`), renderer queue views                                                                                                      | Exists; becomes the async hook output channel (C2)                      |
 | ACP plan ↔ todo mapping    | `src/main/services/acp/session-update-adapter.ts`                                                                                                                 | Exists; precedent + data model for the declarative pack panel (P2)      |

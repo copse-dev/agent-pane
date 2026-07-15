@@ -31,7 +31,7 @@ describe('TURN_START_HOOKS registration', () => {
       ['todo-steering', 'github-link-steering', 'commit-steering', 'todo-pin'],
     )
     assert.deepEqual(
-      FIRST_PARTY_HOOKS.map((h) => h.id),
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
       TURN_START_HOOKS.map((h) => h.id),
     )
   })
