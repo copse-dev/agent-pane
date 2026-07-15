@@ -943,6 +943,7 @@ export function seedReviewInlineFixture(workspaceRoot: string): void {
               status: 'done',
               summary:
                 'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
+              issuesFound: false,
             },
             createdAt: now + 1,
           },
@@ -1452,11 +1453,6 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
     ],
   })
   return { planThreadTitle, noPlanThreadTitle }
-}
-
-/** @deprecated Use seedTodoPlanFixtures — kept for older specs that only need the plan thread. */
-export function seedTodoDisplayFixture(workspaceRoot: string): void {
-  seedTodoPlanFixtures(workspaceRoot)
 }
 
 /** Running thread with a queued follow-up message for edit / send-now e2e. */
