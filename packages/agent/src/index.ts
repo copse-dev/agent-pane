@@ -41,3 +41,16 @@ export * from './review-subagent.ts'
 // Context accounting and the thread working brief.
 export * from './context-breakdown.ts'
 export * from './working-brief.ts'
+
+// Hooks platform (M0): canonical events, the function-executor registry, the
+// blocking/async outcome vocabulary, and the turn-start first-party hooks.
+export * from './hooks/hook-outcome.ts'
+export * from './hooks/canonical-events.ts'
+export * from './hooks/hook-registry.ts'
+export * from './hooks/turn-start-hooks.ts'
+export * from './hooks/before-finalize-hooks.ts'
+
+// Pure turn-start steering helpers (owned here so hooks stay Electron-free).
+export * from './todo-steering.ts'
+export * from './github-link-steering.ts'
+export * from './commit-steering.ts'
