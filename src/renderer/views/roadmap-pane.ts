@@ -335,7 +335,7 @@ export function mountRoadmapPane(
     const q = searchQuery.toLowerCase()
     return (
       (item.title || '').toLowerCase().includes(q) ||
-      (item.body ?? '').toLowerCase().includes(q) ||
+      item.body.toLowerCase().includes(q) ||
       itemNotes(item).toLowerCase().includes(q) ||
       itemIssue(item).toLowerCase().includes(q) ||
       (item.status ?? '').toLowerCase().includes(q)
