@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  activeTodos,
   applyTodoUpdate,
   gateCompletedStatus,
   shouldRouteToLocal,
@@ -61,6 +62,25 @@ describe('todo-logic', () => {
       { id: '3', content: 'c', status: 'cancelled' },
     ])
     assert.deepEqual(p, { done: 1, total: 2 })
+  })
+
+  it('activeTodos drops cancelled items', () => {
+    const visible = activeTodos([
+      { id: '1', content: 'a', status: 'completed' },
+      { id: '2', content: 'b', status: 'cancelled' },
+      { id: '3', content: 'c', status: 'pending' },
+    ])
+    assert.deepEqual(
+      visible.map((t) => t.id),
+      ['1', '3'],
+    )
+  })
+
+  it('todoProgress is 0/0 when every item is cancelled', () => {
+    assert.deepEqual(
+      todoProgress([{ id: '1', content: 'skip', status: 'cancelled' }]),
+      { done: 0, total: 0 },
+    )
   })
 
   it('shouldSteerTodos for multi-step prompts only', () => {

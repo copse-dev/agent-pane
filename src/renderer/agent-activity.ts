@@ -26,7 +26,8 @@ export function runningToolName(thread: Thread): string | null {
 
 export function agentActivityLabel(thread: Thread | undefined, writing: boolean): string | null {
   if (!thread || thread.status !== 'running') return null
-  const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null
+  // formatTodoProgress ignores cancelled items and returns null when none remain.
+  const todoLabel = formatTodoProgress(thread.todos ?? [])
   const tool = runningToolName(thread)
   if (tool) {
     const base = `Running ${getToolDisplayName(tool)}…`

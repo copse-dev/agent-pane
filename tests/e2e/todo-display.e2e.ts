@@ -28,11 +28,12 @@ async function clickThreadByTitle(title: string): Promise<void> {
 
 describe('todo plan display', () => {
   let noPlanThreadTitle: string
+  let allCancelledThreadTitle: string
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    ;({ noPlanThreadTitle } = seedTodoPlanFixtures(process.cwd()))
+    ;({ noPlanThreadTitle, allCancelledThreadTitle } = seedTodoPlanFixtures(process.cwd()))
     seedE2eThreePaneLayout()
     await browser.reloadSession()
   })
@@ -60,7 +61,24 @@ describe('todo plan display', () => {
     const localBadge = await inlinePanel.$('.todo-item[data-todo-id="todo-3"] .todo-badge-local')
     await expect((await localBadge.getText()).toLowerCase()).toBe('local')
 
+    // Cancelled items remain in thread state but are not part of the plan UI.
+    await expect(inlinePanel.$('.todo-item[data-todo-id="todo-cancelled"]')).not.toExist()
+
     await saveAppScreenshot('todo-inline-panel.png')
+  })
+
+  it('hides inline todo panel when every todo is cancelled', async () => {
+    await clickThreadByTitle(allCancelledThreadTitle)
+    await expect($('.chat-row.selected .chat-title')).toHaveText(allCancelledThreadTitle)
+    await browser.waitUntil(
+      async () => !(await $('.conversation-todos-host .todo-panel').isExisting()),
+      {
+        timeout: 5_000,
+        timeoutMsg: 'expected inline todo panel to hide when the plan is all cancelled',
+      },
+    )
+
+    await saveAppScreenshot('todo-all-cancelled-hidden.png')
   })
 
   it('hides inline todo panel when the thread has no plan', async () => {
