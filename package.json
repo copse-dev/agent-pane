@@ -30,7 +30,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node scripts/run-tests.mts",
-    "coverage": "c8 npm test",
+    "coverage": "node scripts/run-tests.mts --bundle-only && c8 node scripts/run-tests.mts --test-only",
     "coverage:check": "node scripts/coverage-gate.mts",
     "coverage:update": "node scripts/coverage-gate.mts --update",
     "coverage:ci": "npm run coverage && npm run coverage:check",
