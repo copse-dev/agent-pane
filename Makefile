@@ -248,12 +248,32 @@ check-node:
 # terminal fails to launch. The flag is scoped to this one invocation, so it
 # doesn't touch your global config. See the "Hardened npm profiles" section of
 # the README.
+#
+# On macOS, `npm ci` after a lockfile change (e.g. switching branches) can die
+# with ENOTEMPTY/EBUSY/EPERM while pruning stale packages — Spotlight, Finder,
+# or an editor briefly holds a file inside a directory npm is rmdir-ing. The
+# tree it leaves behind is half-pruned, so every rerun fails the same way until
+# node_modules is removed by hand. Detect that failure class from npm's output,
+# wipe node_modules, and retry once; any other failure (or a second one) still
+# aborts loudly.
+NPM_CI := npm ci --ignore-scripts=false
+
 .PHONY: deps
 deps: $(DEPS_STAMP)
 
 $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 	@echo "==> Dependencies out of date — running 'npm ci' (scripts forced on)…"
-	@$(USE_NVM); npm ci --ignore-scripts=false
+	@$(USE_NVM); \
+	log="$(STAMP_DIR)/npm-ci.log"; \
+	if ! $(NPM_CI) 2>&1 | tee "$$log"; then \
+	  if grep -qE 'code (ENOTEMPTY|EBUSY|EPERM)' "$$log"; then \
+	    echo "==> npm ci hit a filesystem race pruning node_modules — wiping it and retrying…"; \
+	    rm -rf node_modules; \
+	    $(NPM_CI); \
+	  else \
+	    exit 1; \
+	  fi; \
+	fi
 	touch $(DEPS_STAMP)
 
 # --- build ------------------------------------------------------------------
