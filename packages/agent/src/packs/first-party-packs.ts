@@ -1,35 +1,44 @@
-// First-party packs — P1 scaffold of the feature-pack layer.
+// First-party packs — the static list of feature packs Copse ships.
 //
-// The static list of packs Copse ships. Following decision 15 (VS Code's
-// built-in-extensions model), first-party packs share the manifest, registry,
-// and disable semantics with user packs; they additionally supply typed runtime
-// contributions (native tools, in-process function hooks, real renderer views).
+// Following decision 15 (VS Code's built-in-extensions model), first-party
+// packs share the manifest, registry, and disable semantics with user packs;
+// they additionally supply typed runtime contributions (native tools,
+// in-process function hooks, real renderer views).
 //
-// P1 deliberately ships only a skeleton "noop" pack: it proves the lifecycle end
-// to end (registry grouping, atomic enable/disable, the `createHookRegistry`
-// seam) without extracting any behavior. The real pilot pack — todos — lands in
-// P4 by adding its manifest + typed hooks/tool here; nothing in the loop changes
-// because the loop already sources pack hooks through this list (decision 17's
-// dead-code note: the pack is referenced by the registry, not the loop).
+// **Membership.**
+//  - `noopPack` — the P1 skeleton pack. Contributes nothing, kept so the
+//    lifecycle stays exercised end-to-end (registry grouping, atomic
+//    enable/disable, the `createHookRegistry` seam) even when the todos pack
+//    is disabled.
+//  - `todosPack` — the P4 pilot pack. Bundles the `update_todos` tool, the
+//    turn-start steering + closeout hooks, the plan panel contribution, and
+//    the pack-scoped steering setting. Disabling it removes all four in one
+//    atomic flag flip (P1 atomicity, pinned by
+//    `enable-disable-atomicity.test.ts`).
 import { definePack, type RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
+import { todosPack } from './todos-pack.ts'
 
 /**
  * The P1 skeleton first-party pack. Contributes nothing (empty contributions),
  * so registering it and folding its hooks into `createHookRegistry` is
- * byte-identical to not having it. It exists purely so the lifecycle is wired
- * before P4 fills in the todos pack's tool / hooks / prompt / panel.
+ * byte-identical to not having it. It stays past P4 as a permanent smoke test
+ * of the pack lifecycle: an always-registered, never-contributing pack proves
+ * `disable(id)` is idempotent on a pack with zero contributions.
  */
 export const noopPack: RegisteredPack = definePack({
   name: 'copse.noop',
-  description:
-    'P1 skeleton pack — proves the pack lifecycle; contributes nothing (todos land in P4).',
+  description: 'Skeleton pack — proves the pack lifecycle; contributes nothing.',
   trust: 'first-party',
   storage: { namespace: 'copse.noop' },
 })
 
-/** Every pack Copse ships. P4 appends the todos pack here. */
-export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [noopPack]
+/**
+ * Every pack Copse ships. Order is preserved as the Settings pack-list
+ * enumeration order (P3); the noop skeleton stays first so it is a stable
+ * anchor for the settings e2e, and the pilot todos pack follows.
+ */
+export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [noopPack, todosPack]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */
 export function createFirstPartyPackRegistry(): PackRegistry {

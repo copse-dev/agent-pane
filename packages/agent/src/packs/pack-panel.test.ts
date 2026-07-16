@@ -28,7 +28,7 @@ describe('todosToPanelListRows (data-model seed)', () => {
     ])
   })
 
-  it('keeps cancelled entries (the panel shows them; ACP plan drops them)', () => {
+  it('omits cancelled entries to preserve the existing plan-panel behavior', () => {
     const todos: TodoItem[] = [
       { id: 't1', content: 'obsoleted', status: 'cancelled' },
       { id: 't2', content: 'active', status: 'in_progress' },
@@ -36,7 +36,7 @@ describe('todosToPanelListRows (data-model seed)', () => {
     const rows = todosToPanelListRows(todos)
     assert.deepEqual(
       rows.map((r) => r.status),
-      ['cancelled', 'in_progress'],
+      ['in_progress'],
     )
   })
 
@@ -100,5 +100,14 @@ describe('todosToPanelListData (full projection)', () => {
       data.rows.map((r) => r.id),
       ['t1', 't2'],
     )
+  })
+
+  it('projects an all-cancelled plan to no visible rows', () => {
+    const data = todosToPanelListData([
+      { id: 't1', content: 'obsolete', status: 'cancelled' },
+      { id: 't2', content: 'also obsolete', status: 'cancelled' },
+    ])
+    assert.deepEqual(data.rows, [])
+    assert.equal(data.summary, '0/0 done')
   })
 })

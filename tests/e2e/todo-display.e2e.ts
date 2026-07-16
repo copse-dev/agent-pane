@@ -39,27 +39,38 @@ describe('todo plan display', () => {
     resetUserData()
   })
 
-  it('shows inline todo panel with statuses', async () => {
-    const inlinePanel = await $('.conversation-todos-host .todo-panel')
+  it('shows inline todo panel with statuses (rendered as the copse.todos pack panel)', async () => {
+    // P4: the plan panel is now a level-2 declarative pack contribution from
+    // `copse.todos`. The renderer feeds `thread.todos` (still the durable
+    // history state, decision 17) into `createPackPanelEl`, so the DOM shape
+    // is the generic `.pack-panel-list` family — tagged with the pack ids so
+    // the panel is unambiguously the plan panel from the copse.todos pack.
+    const inlinePanel = await $(
+      `.conversation-todos-host .pack-panel[data-pack-id="copse.todos"][data-contribution-id="plan"]`,
+    )
     await inlinePanel.waitForExist({ timeout: 30_000 })
 
-    const title = (await inlinePanel.$('.todo-panel-title').getText()).toLowerCase()
+    const title = (await inlinePanel.$('.pack-panel-title').getText()).toLowerCase()
     await expect(title).toBe('to-dos')
-    await expect(inlinePanel.$('.todo-panel-count')).toHaveText('5')
-    await expect(inlinePanel.$('.todo-panel-progress')).toHaveText('1/5 done')
+    // The pack-panel summary carries the same "N/M done" progress the todo
+    // panel used to show; count is derived (5 non-cancelled todos in the
+    // fixture, 1 completed).
+    await expect(inlinePanel.$('.pack-panel-summary')).toHaveText('1/5 done')
 
-    const inProgress = await inlinePanel.$('.todo-item[data-todo-id="todo-2"]')
+    const inProgress = await inlinePanel.$('.pack-panel-row[data-row-id="todo-2"]')
     await expect(inProgress).toHaveAttribute('data-status', 'in_progress')
-    await expect(inProgress.$('.todo-status-icon svg[data-icon="arrow-right"]')).toExist()
+    await expect(inProgress.$('.pack-panel-status-icon svg[data-icon="arrow-right"]')).toExist()
 
-    const completed = await inlinePanel.$('.todo-item[data-todo-id="todo-1"]')
+    const completed = await inlinePanel.$('.pack-panel-row[data-row-id="todo-1"]')
     await expect(completed).toHaveAttribute('data-status', 'completed')
 
-    const localBadge = await inlinePanel.$('.todo-item[data-todo-id="todo-3"] .todo-badge-local')
+    const localBadge = await inlinePanel.$(
+      '.pack-panel-row[data-row-id="todo-3"] .pack-panel-badge[data-badge-kind="assigned-model"]',
+    )
     await expect((await localBadge.getText()).toLowerCase()).toBe('local')
 
     // Cancelled items remain in thread state but are not part of the plan UI.
-    await expect(inlinePanel.$('.todo-item[data-todo-id="todo-cancelled"]')).not.toExist()
+    await expect(inlinePanel.$('.pack-panel-row[data-row-id="todo-cancelled"]')).not.toExist()
 
     await saveAppScreenshot('todo-inline-panel.png')
   })
@@ -68,7 +79,7 @@ describe('todo plan display', () => {
     await clickThreadByTitle(allCancelledThreadTitle)
     await expect($('.chat-row.selected .chat-title')).toHaveText(allCancelledThreadTitle)
     await browser.waitUntil(
-      async () => !(await $('.conversation-todos-host .todo-panel').isExisting()),
+      async () => !(await $('.conversation-todos-host .pack-panel').isExisting()),
       {
         timeout: 5_000,
         timeoutMsg: 'expected inline todo panel to hide when the plan is all cancelled',
@@ -82,7 +93,8 @@ describe('todo plan display', () => {
     await clickThreadByTitle(noPlanThreadTitle)
     await expect($('.chat-row.selected .chat-title')).toHaveText(noPlanThreadTitle)
     await browser.waitUntil(
-      async () => !(await $('.conversation-todos-host .todo-panel').isExisting()),
+      async () =>
+        !(await $(`.conversation-todos-host .pack-panel[data-pack-id="copse.todos"]`).isExisting()),
       {
         timeout: 5_000,
         timeoutMsg: 'expected inline todo panel to hide after switching threads',
