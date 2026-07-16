@@ -75,7 +75,7 @@ describe('export thread', () => {
       string,
       unknown
     >
-    assert.equal(header['exportVersion'], 4)
+    assert.equal(header['exportVersion'], 5)
     assert.equal(header['status'], 'error')
     assert.deepEqual(header['todos'], t.todos)
     assert.equal(header['workingBrief'], 'fix the bug')
@@ -184,5 +184,22 @@ describe('export thread', () => {
       review?: { status: string; summary: string }
     }
     assert.deepEqual(line.review, { status: 'done', summary: '1 likely bug.' })
+  })
+
+  it('exports per-message primary-chat model when present', () => {
+    const jsonl = threadToJsonl(
+      thread([
+        {
+          id: 'message-1',
+          role: 'assistant',
+          content: 'done',
+          model: 'claude-sonnet-4-6',
+          toolCalls: [],
+          createdAt: 2,
+        },
+      ]),
+    )
+    const msg = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as { model?: string }
+    assert.equal(msg.model, 'claude-sonnet-4-6')
   })
 })

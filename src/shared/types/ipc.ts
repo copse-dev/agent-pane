@@ -59,7 +59,12 @@ export interface IpcInvokeMap {
 
   // Approval gate (shell / MCP)
   'approval:respond': {
-    args: [id: string, approved: boolean, remember?: boolean]
+    args: [
+      id: string,
+      approved: boolean,
+      remember?: boolean,
+      comparisonModels?: { a: string; b: string; judge: string },
+    ]
     result: undefined
   }
 
@@ -151,6 +156,10 @@ export interface IpcInvokeMap {
     result: undefined
   }
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
+  'usage:getPlanUsage': {
+    args: []
+    result: import('@copse/plan-usage').PlanUsageSnapshot
+  }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
@@ -298,9 +307,10 @@ export interface IpcEventMap {
       threadId?: string
       title: string
       body: string
-      type: 'shell' | 'mcp' | 'web'
+      type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
       allowRemember?: boolean
       rememberLabel?: string
+      comparisonModels?: { a: string; b: string; judge: string }
     },
   ]
   'agent:ask_user_request': [

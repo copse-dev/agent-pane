@@ -120,6 +120,34 @@ export function resetUserData(): void {
   writeSettings({})
 }
 
+/** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in cursor-hooks.ts. */
+const USER_CURSOR_HOOKS_PATH = join(homedir(), '.cursor', 'hooks.json')
+const USER_CURSOR_HOOKS_BACKUP = `${USER_CURSOR_HOOKS_PATH}.e2e-backup`
+
+/**
+ * Seed a user-scope Cursor `hooks.json` for the Sources → Hooks e2e. Any real
+ * file at that path is backed up first; call {@link restoreUserCursorHooks}
+ * in `after` to put it back (or remove the seeded one).
+ */
+export function seedUserCursorHooks(config: unknown): void {
+  mkdirSync(dirname(USER_CURSOR_HOOKS_PATH), { recursive: true })
+  if (existsSync(USER_CURSOR_HOOKS_PATH) && !existsSync(USER_CURSOR_HOOKS_BACKUP)) {
+    copyFileSync(USER_CURSOR_HOOKS_PATH, USER_CURSOR_HOOKS_BACKUP)
+  }
+  const contents = typeof config === 'string' ? config : JSON.stringify(config, null, 2)
+  writeFileSync(USER_CURSOR_HOOKS_PATH, contents, 'utf8')
+}
+
+/** Undo {@link seedUserCursorHooks}: restore the backup or remove the seeded file. */
+export function restoreUserCursorHooks(): void {
+  if (existsSync(USER_CURSOR_HOOKS_BACKUP)) {
+    copyFileSync(USER_CURSOR_HOOKS_BACKUP, USER_CURSOR_HOOKS_PATH)
+    rmSync(USER_CURSOR_HOOKS_BACKUP, { force: true })
+  } else {
+    rmSync(USER_CURSOR_HOOKS_PATH, { force: true })
+  }
+}
+
 /** Fresh profile that triggers the first-run onboarding wizard. */
 export function seedOnboardingFixture(): void {
   resetUserData()
@@ -178,6 +206,7 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     model?: string
+    modelComparisonEnabled?: boolean
     localServerUrl?: string
     localDefaultModel?: string
     subagentModel?: string
@@ -202,6 +231,9 @@ export function seedEmptyProject(
   }
   if (options?.model) {
     settings.model = options.model
+  }
+  if (options?.modelComparisonEnabled !== undefined) {
+    settings.modelComparisonEnabled = options.modelComparisonEnabled
   }
   if (options?.localServerUrl) {
     settings.localServerUrl = options.localServerUrl
@@ -2178,6 +2210,67 @@ export function seedMarkdownTableCodeFirstColumnFixture(workspaceRoot: string): 
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: Date.now(),
         updatedAt: Date.now(),
+      },
+    ],
+  })
+}
+
+/**
+ * Two assistant turns on different primary-chat models. Labels must appear on
+ * both bubbles (hidden when a thread stays on one model). Visual eval for
+ * per-message model provenance in the transcript.
+ */
+export function seedMultiModelChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-multi-model-chat-project'
+  const threadId = 'e2e-multi-model-chat-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Multi-model chat',
+        status: 'idle',
+        model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+        messages: [
+          {
+            id: 'msg-user-1',
+            role: 'user',
+            content: 'Summarize the permission policy.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-1',
+            role: 'assistant',
+            content:
+              'The shell permission gate auto-runs sandbox-contained commands on macOS and prompts for hard-external work.',
+            model: 'claude-sonnet-4-6',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-user-2',
+            role: 'user',
+            content: 'Now explain it more briefly.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-2',
+            role: 'assistant',
+            content: 'Sandbox-safe commands auto-run; anything that reaches outside prompts first.',
+            model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 3,
       },
     ],
   })

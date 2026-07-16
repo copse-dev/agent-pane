@@ -124,6 +124,9 @@ export function mountPrPane(
   let selectedPr: PrRef | null = null
   let prDetails: GhPrDetails | null = null
   let selectedFile: string | null = null
+  // Changed-files list starts collapsed so the PR description gets the full
+  // column until the user actually wants to browse files.
+  let filesExpanded = false
   let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
@@ -204,6 +207,7 @@ export function mountPrPane(
     listBody.append(el('div', { class: 'git-changes-empty pr-empty-state' }, message))
     clear(metaHost)
     clear(descriptionHost)
+    descriptionHost.classList.remove('pr-viewer-description-fill')
     clear(filesHost)
     diffWrap.hidden = true
     emptyState.hidden = false
@@ -558,10 +562,25 @@ export function mountPrPane(
     }
     filesHost.hidden = false
     const header = el(
-      'div',
-      { class: 'pr-files-header' },
-      `Changed files (${String(prDetails.files.length)})`,
+      'button',
+      {
+        type: 'button',
+        class: 'pr-files-header',
+        'aria-expanded': String(filesExpanded),
+      },
+      el(
+        'span',
+        { class: `pr-other-chevron${filesExpanded ? ' expanded' : ''}` },
+        chevronRightIcon('ui-icon ui-icon-sm'),
+      ),
+      el('span', {}, `Changed files (${String(prDetails.files.length)})`),
     )
+    header.addEventListener('click', () => {
+      filesExpanded = !filesExpanded
+      renderFiles()
+    })
+    filesHost.append(header)
+    if (!filesExpanded) return
     const list = el('div', { class: 'pr-files-list' })
     for (const file of prDetails.files) {
       const isSelected = selectedFile === file.path
@@ -581,14 +600,18 @@ export function mountPrPane(
       row.addEventListener('click', () => void selectFile(file.path))
       list.append(row)
     }
-    filesHost.append(header, list)
+    filesHost.append(list)
   }
 
   function clearDiff(): void {
     selectRequestId++
     selectedFile = null
     diffWrap.hidden = true
-    emptyState.hidden = false
+    // With no file selected the diff area is dead space: let the description
+    // take the full column instead of showing a "Select a changed file" prompt.
+    const descriptionFills = Boolean(prDetails?.body.trim())
+    descriptionHost.classList.toggle('pr-viewer-description-fill', descriptionFills)
+    emptyState.hidden = descriptionFills
     emptyState.textContent = prDetails ? 'Select a changed file' : 'Select a pull request'
     if (diffEditor) disposeDiffModels(diffEditor)
   }
@@ -597,6 +620,7 @@ export function mountPrPane(
     if (!selectedPr) return
     const requestId = ++selectRequestId
     selectedFile = path
+    descriptionHost.classList.remove('pr-viewer-description-fill')
     renderFiles()
     const diff = await api.gh.prFileDiff(selectedPr.owner, selectedPr.repo, selectedPr.number, path)
     if (requestId !== selectRequestId || selectedFile !== path) return
@@ -615,6 +639,7 @@ export function mountPrPane(
         if (diff.deleted) {
           // Show a "deleted" badge instead of an empty diff for deleted files.
           clearDiff()
+          descriptionHost.classList.remove('pr-viewer-description-fill')
           emptyState.hidden = false
           emptyState.textContent = 'File was deleted in this pull request'
           return
@@ -631,7 +656,10 @@ export function mountPrPane(
       selectedPr.number === ref.number
     // Switching PRs drops the previous action outcome; re-selecting the same PR
     // (after an action) keeps it so the message survives the details reload.
-    if (!sameAsCurrent) lastActionMessage = null
+    if (!sameAsCurrent) {
+      lastActionMessage = null
+      filesExpanded = false
+    }
     selectedPr = { owner: ref.owner, repo: ref.repo, number: ref.number }
     prDetails = null
     selectedFile = null
@@ -685,8 +713,7 @@ export function mountPrPane(
     renderMeta()
     renderDescription()
     renderFiles()
-    emptyState.hidden = false
-    emptyState.textContent = 'Select a changed file'
+    clearDiff()
   }
 
   function resetOther(): void {
