@@ -444,12 +444,28 @@
   width: max-content;
   max-width: min(420px, 90vw);
   max-height: 280px;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: var(--spacing-xs) 0;
+  padding: var(--spacing-xs);
   box-shadow: var(--shadow-md);
+}
+.model-picker-filter {
+  min-width: 220px;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.model-picker-list {
+  overflow-y: auto;
+  margin-top: var(--spacing-xs);
 }
 .model-picker-group-label {
   padding: 4px var(--spacing-md);
@@ -477,9 +493,19 @@
 .model-picker-option.is-selected {
   color: var(--accent);
 }
+.model-picker-option.is-active {
+  background: rgba(255, 255, 255, 0.1);
+  outline: 1px solid rgba(255, 255, 255, 0.12);
+  outline-offset: -1px;
+}
 .model-picker-option:disabled {
   opacity: 0.5;
   cursor: default;
+}
+.model-picker-empty {
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--text-muted);
+  font-size: 11px;
 }
 .footer-export {
   font-size: 11px;
