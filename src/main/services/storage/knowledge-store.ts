@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
@@ -248,13 +249,40 @@ function isIndexRecord(value: unknown): value is IndexRecord {
 
 /** Fold the append-only index into the current record per id (last wins),
  * dropping tombstoned ids. Missing/corrupt file → empty map. */
+// Cache the index in memory; reload when the file changes.
+let cachedIndex: Map<string, IndexRecord> | null = null
+let cachedIndexMtime: number | null = null
+let cachedIndexSize: number | null = null
+
 function foldIndex(): Map<string, IndexRecord> {
+  const file = indexFile()
+  let stat: { mtimeMs: number; size: number }
+  try {
+    stat = statSync(file)
+  } catch {
+    cachedIndex = null
+    cachedIndexMtime = null
+    cachedIndexSize = null
+    return new Map<string, IndexRecord>()
+  }
+  // Return cached index if the file hasn't changed
+  if (
+    cachedIndex !== null &&
+    cachedIndexMtime === stat.mtimeMs &&
+    cachedIndexSize === stat.size
+  ) {
+    return cachedIndex
+  }
+  // Read and parse the index (cached on success).
   const records = new Map<string, IndexRecord>()
   let raw: string
   try {
-    raw = readFileSync(indexFile(), 'utf8')
+    raw = readFileSync(file, 'utf8')
   } catch {
-    return records
+    cachedIndex = new Map<string, IndexRecord>()
+    cachedIndexMtime = stat.mtimeMs
+    cachedIndexSize = stat.size
+    return cachedIndex
   }
   for (const line of raw.split('\n')) {
     const trimmed = line.trim()
@@ -269,7 +297,17 @@ function foldIndex(): Map<string, IndexRecord> {
   for (const [id, record] of records) {
     if (record.deleted) records.delete(id)
   }
+  cachedIndex = records
+  cachedIndexMtime = stat.mtimeMs
+  cachedIndexSize = stat.size
   return records
+}
+
+/** Clear the index cache (called when the index is modified). */
+export function clearIndexCache(): void {
+  cachedIndex = null
+  cachedIndexMtime = null
+  cachedIndexSize = null
 }
 
 function appendIndex(record: IndexRecord): void {
@@ -426,18 +464,28 @@ export function deleteKnowledgeNote(id: string, now: Date = new Date()): boolean
 export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
   const records = [...foldIndex().values()].sort((a, b) => a.order - b.order)
   const notes: KnowledgeNote[] = []
-  const seen = new Set<string>()
 
-  // Read notes referenced by the index (batch of file reads).
-  for (const record of records) {
-    const note = readSingleNote(join(knowledgeDir(), record.file))
-    if (!note) continue
-    notes.push(note)
-    seen.add(note.id)
+  // Read notes referenced by the index in a batch (single pass over file reads).
+  const knowledgeDirPath = knowledgeDir()
+  const absPaths = records.map((r) => join(knowledgeDirPath, r.file))
+  for (const absPath of absPaths) {
+    try {
+      const raw = readFileSync(absPath, 'utf8')
+      const note = parseNoteFile(raw, absPath)
+      if (note !== null) {
+        notes.push(note)
+      }
+    } catch {
+      // Silently skip unreadable files.
+    }
   }
 
   // Build a lookup of indexed relative paths so we skip them during orphan scan.
+  const seen = new Set<string>()
   const indexedFiles = new Set(records.map((r) => r.file))
+  for (const note of notes) {
+    seen.add(note.id)
+  }
 
   // Scan for orphan files not in the index and heal them in a single pass.
   const orphanFiles = scanNoteFiles(type)
@@ -449,7 +497,7 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
 
   for (const rel of orphanFiles) {
     if (indexedFiles.has(rel)) continue // already indexed — no double-read
-    const abs = join(knowledgeDir(), rel)
+    const abs = join(knowledgeDirPath, rel)
     let raw: string
     try {
       raw = readFileSync(abs, 'utf8')
