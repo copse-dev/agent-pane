@@ -46,13 +46,15 @@ export function sshPtyArgs(host: SshWorkspaceHost, remoteCommand: string): strin
 function baseSshArgs(host: SshWorkspaceHost, controlPath: string): string[] {
   const args = ['-o', `StrictHostKeyChecking=${strictHostKeyOption()}`]
   if (supportsControlMaster()) {
+    // Use `-S` (separate argv) for the socket path — never `-o ControlPath=…`.
+    // OpenSSH re-parses `-o` values as config lines and splits on whitespace, so
+    // macOS userData under `Application Support` would fail with:
+    //   keyword controlpath extra arguments at end of line
     args.push(
       '-o',
       'ControlMaster=auto',
       '-S',
       controlPath,
-      '-o',
-      `ControlPath=${controlPath}`,
       '-o',
       `ControlPersist=${String(CONTROL_PERSIST_SECONDS)}`,
     )
@@ -180,12 +182,11 @@ export class OpenSshTransport implements SshTransport {
           return
         }
 
+        // `-S` alone sets ControlPath; see baseSshArgs for why `-o ControlPath=` is unsafe.
         const masterArgs = [
           '-fNM',
           '-S',
           this.controlPath,
-          '-o',
-          `ControlPath=${this.controlPath}`,
           '-o',
           `ControlPersist=${String(CONTROL_PERSIST_SECONDS)}`,
           '-o',
