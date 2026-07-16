@@ -36,7 +36,10 @@ describe('Open remote folder — path breadcrumbs', () => {
       timeout: 10_000,
       timeoutMsg: 'root breadcrumb did not render',
     })
-    assert.match(await crumbs.getText(), /\//)
+    const crumbText = await crumbs.getText()
+    assert.match(crumbText, /\//)
+    // Root crumb is already `/` — never paint a second slash separator after it.
+    assert.doesNotMatch(crumbText.replace(/\s+/g, ' '), /\/\s*\/\s+\S/)
 
     await saveElementScreenshot('#remote-folder-dialog', 'remote-folder-breadcrumbs.png')
     await dialog.$('.remote-folder-cancel').click()

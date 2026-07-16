@@ -181,6 +181,15 @@ Fix (in [`conversation.css`](../src/renderer/styles/global/conversation.css)):
 Do not put `pre-wrap` back on the message container “for convenience”; it regresses every multi-block
 agent summary.
 
+## Remote folder breadcrumbs
+
+In the Open remote folder dialog, the root crumb's label is `/`. Do **not** also render a `/`
+separator after it — that paints `/ / usr` for `/usr`. Skip the separator when
+`segment.path === '/'` (`remotePathShowsSeparatorAfter` in
+[`remote-folder-path.ts`](../src/renderer/views/remote-folder-path.ts)). Specs:
+[`remote-folder-path.test.ts`](../src/renderer/views/remote-folder-path.test.ts),
+[`tests/e2e/remote-folder-breadcrumbs.e2e.ts`](../tests/e2e/remote-folder-breadcrumbs.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the

@@ -30,3 +30,52 @@ export function remotePathSegments(path: string): RemotePathSegment[] {
   }
   return segments
 }
+
+/**
+ * Whether to render a `/` separator after this crumb. Root's label is already
+ * `/`, so a separator after it reads as the doubled `/ / usr` path.
+ */
+export function remotePathShowsSeparatorAfter(segment: RemotePathSegment): boolean {
+  return segment.path !== '/'
+}
+
+/**
+ * Fill a breadcrumb nav for a remote POSIX path. `onNavigate` is called for
+ * non-current crumbs; separators are omitted after the root `/` crumb.
+ */
+export function fillRemotePathBreadcrumbs(
+  nav: HTMLElement,
+  path: string,
+  onNavigate: (path: string) => void,
+): void {
+  nav.replaceChildren()
+  const segments = remotePathSegments(path)
+  for (let i = 0; i < segments.length; i += 1) {
+    const segment = segments[i]
+    if (!segment) continue
+    const isCurrent = i === segments.length - 1
+    if (isCurrent) {
+      const current = document.createElement('span')
+      current.className = 'remote-folder-crumb remote-folder-crumb-current'
+      current.textContent = segment.label
+      nav.append(current)
+      continue
+    }
+    const crumb = document.createElement('button')
+    crumb.type = 'button'
+    crumb.className = 'remote-folder-crumb'
+    crumb.setAttribute('aria-label', `Go to ${segment.path}`)
+    crumb.textContent = segment.label
+    crumb.addEventListener('click', () => {
+      onNavigate(segment.path)
+    })
+    nav.append(crumb)
+    if (remotePathShowsSeparatorAfter(segment)) {
+      const sep = document.createElement('span')
+      sep.className = 'remote-folder-crumb-sep'
+      sep.setAttribute('aria-hidden', 'true')
+      sep.textContent = '/'
+      nav.append(sep)
+    }
+  }
+}
