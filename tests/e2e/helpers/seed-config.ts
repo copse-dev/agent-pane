@@ -927,6 +927,10 @@ export function seedPortraitRightPanelFixture(
   workspaceRoot: string,
   autoPortraitRightPanel: boolean,
   windowBounds: { width: number; height: number } = { width: 760, height: 1180 },
+  options?: {
+    okfMemoriesEnabled?: boolean
+    roadmapPlansEnabled?: boolean
+  },
 ): void {
   const projectId = 'e2e-portrait-right-panel-project'
   const threadId = 'e2e-portrait-right-panel-thread'
@@ -954,7 +958,16 @@ export function seedPortraitRightPanelFixture(
       },
     ],
   })
-  writeSettings({ autoPortraitRightPanel, windowBounds })
+  writeSettings({
+    autoPortraitRightPanel,
+    windowBounds,
+    ...(options?.okfMemoriesEnabled !== undefined
+      ? { okfMemoriesEnabled: options.okfMemoriesEnabled }
+      : {}),
+    ...(options?.roadmapPlansEnabled !== undefined
+      ? { roadmapPlansEnabled: options.roadmapPlansEnabled }
+      : {}),
+  })
 }
 
 /**

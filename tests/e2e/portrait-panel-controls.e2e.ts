@@ -45,10 +45,15 @@ async function setPortraitWindow(): Promise<void> {
 
 async function openPortraitChrome(): Promise<void> {
   resetUserData()
-  seedPortraitRightPanelFixture(process.cwd(), true, {
-    width: PORTRAIT_WIDTH,
-    height: PORTRAIT_HEIGHT,
-  })
+  seedPortraitRightPanelFixture(
+    process.cwd(),
+    true,
+    {
+      width: PORTRAIT_WIDTH,
+      height: PORTRAIT_HEIGHT,
+    },
+    { okfMemoriesEnabled: true, roadmapPlansEnabled: true },
+  )
   await browser.reloadSession()
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
   await setPortraitWindow()
@@ -56,6 +61,13 @@ async function openPortraitChrome(): Promise<void> {
     async () => (await (await $('#app')).getAttribute('class'))?.includes('is-portrait-chrome'),
     { timeout: 5_000, timeoutMsg: 'expected portrait chrome class on #app' },
   )
+  // Experimental Memories / Roadmap buttons reveal asynchronously after settings.get.
+  await $('.portrait-panel-bar .titlebar-text-btn[aria-label="Open memories"]').waitForDisplayed({
+    timeout: 10_000,
+  })
+  await $('.portrait-panel-bar .titlebar-text-btn[aria-label="Open roadmap"]').waitForDisplayed({
+    timeout: 10_000,
+  })
 }
 
 describe('portrait panel controls row', () => {
@@ -78,6 +90,8 @@ describe('portrait panel controls row', () => {
       { label: 'Open terminal', text: 'Terminal' },
       { label: 'Open changes', text: 'Changes' },
       { label: 'Open pull requests', text: 'PRs' },
+      { label: 'Open memories', text: 'Memories' },
+      { label: 'Open roadmap', text: 'Roadmap' },
       { label: 'Open browser', text: 'Browser' },
     ]
     for (const button of labeled) {
@@ -102,18 +116,34 @@ describe('portrait panel controls row', () => {
         footerBottom: footer.bottom,
         barTop: bar.top,
         barBottom: bar.bottom,
+        settingsTop: settings.top,
+        settingsBottom: settings.bottom,
         settingsHeight: settings.height,
         barHeight: bar.height,
       }
     })
     expect(layout.barTop).toBeGreaterThanOrEqual(layout.footerBottom - 1)
-    // Row height tracks the Settings button band (± a few px for wrap/borders).
-    expect(Math.abs(layout.barHeight - layout.settingsHeight)).toBeLessThan(24)
+    // Same band as Settings — shared `--chrome-action-band-height`.
+    expect(Math.abs(layout.barHeight - layout.settingsHeight)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.barTop - layout.settingsTop)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.barBottom - layout.settingsBottom)).toBeLessThanOrEqual(1)
+
+    // Narrow the projects pane so the full labeled set (incl. Memories/Roadmap)
+    // fits in the chat column for reference screenshots.
+    await browser.execute(() => {
+      document.getElementById('body')?.style.setProperty('--projects-width', '160px')
+      window.dispatchEvent(new Event('resize'))
+    })
+    await browser.pause(100)
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-chrome.png'))
     await savePortraitElementScreenshot('#titlebar', 'portrait-panel-controls-titlebar.png')
     await savePortraitElementScreenshot('#input-bar', 'portrait-panel-controls-footer-row.png')
+    await savePortraitElementScreenshot(
+      '.portrait-panel-bar',
+      'portrait-panel-controls-all-buttons.png',
+    )
 
     // Opening a panel from the bottom row stacks it below chat and keeps the row.
     await portraitBar.$('.titlebar-text-btn[aria-label="Open terminal"]').click()
@@ -130,9 +160,16 @@ describe('portrait panel controls row', () => {
     const stacked = await browser.execute(() => {
       const bar = document.querySelector('.portrait-panel-bar')!.getBoundingClientRect()
       const files = document.getElementById('pane-files')!.getBoundingClientRect()
-      return { barBottom: bar.bottom, filesTop: files.top }
+      const settings = document.querySelector('.projects-settings-btn')!.getBoundingClientRect()
+      return {
+        barBottom: bar.bottom,
+        filesTop: files.top,
+        settingsHeight: settings.height,
+        barHeight: bar.height,
+      }
     })
     expect(stacked.filesTop).toBeGreaterThanOrEqual(stacked.barBottom - 2)
+    expect(Math.abs(stacked.barHeight - stacked.settingsHeight)).toBeLessThanOrEqual(1)
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-with-panel.png'))
