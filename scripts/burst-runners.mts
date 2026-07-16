@@ -302,7 +302,19 @@ function awsArgs(config: AwsConfig, args: string[]): string[] {
 }
 
 function scalewayArgs(config: ScalewayConfig, args: string[]): string[] {
-  return [...args, `zone=${config.zone}`]
+  // -y disables interactive prompts (e.g. terminate asking about block volumes).
+  return ['-y', ...args, `zone=${config.zone}`]
+}
+
+function scalewayTerminateArgs(config: ScalewayConfig, serverId: string): string[] {
+  return scalewayArgs(config, [
+    'instance',
+    'server',
+    'terminate',
+    serverId,
+    'with-ip=true',
+    'with-block-volumes=true',
+  ])
 }
 
 function scalewayJsonArgs(config: ScalewayConfig, args: string[]): string[] {
@@ -732,10 +744,7 @@ function awsHost(instance: InstanceInfo): CloudHost {
 function terminateScalewayServersBestEffort(config: ScalewayConfig, serverIds: string[]): void {
   for (const id of serverIds) {
     try {
-      run(
-        'scw',
-        scalewayArgs(config, ['instance', 'server', 'terminate', id, 'with-ip=true']),
-      )
+      run('scw', scalewayTerminateArgs(config, id))
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err)
       console.error(`==> Warning: failed to terminate ${id} in ${config.zone}: ${detail}`)
@@ -743,13 +752,18 @@ function terminateScalewayServersBestEffort(config: ScalewayConfig, serverIds: s
   }
 }
 
-function launchScalewayServers(config: ScalewayUpConfig): string[] {
+interface ScalewayLaunchResult {
+  ids: string[]
+  quotaExceeded: boolean
+}
+
+function launchScalewayServers(config: ScalewayUpConfig, count: number): ScalewayLaunchResult {
   const tmp = mkdtempSync(join(tmpdir(), 'copse-burst-scw-'))
   const cloudInitPath = join(tmp, 'cloud-init.sh')
   writeFileSync(cloudInitPath, userDataScript(config.ttlMinutes), 'utf8')
   const ids: string[] = []
   try {
-    for (let index = 0; index < config.instanceCount; index += 1) {
+    for (let index = 0; index < count; index += 1) {
       const name = `${config.name}-${Date.now().toString(36)}-${String(index + 1)}`
       const args = scalewayJsonArgs(config, [
         'instance',
@@ -768,20 +782,30 @@ function launchScalewayServers(config: ScalewayUpConfig): string[] {
           ? [`security-group-id=${config.securityGroupId}`]
           : []),
       ])
-      const raw = capture('scw', args)
-      const id = parseScalewayServer(raw).providerId
-      if (!id) die(`Scaleway create did not return a server id: ${raw}`)
-      ids.push(id)
+      try {
+        const raw = capture('scw', args)
+        const id = parseScalewayServer(raw).providerId
+        if (!id) die(`Scaleway create did not return a server id: ${raw}`)
+        ids.push(id)
+      } catch (err) {
+        if (isScalewayQuotaError(err)) {
+          if (ids.length > 0) {
+            console.log(
+              `==> Zone ${config.zone} quota hit after ${String(ids.length)} host(s); keeping them and continuing elsewhere`,
+            )
+          }
+          return { ids, quotaExceeded: true }
+        }
+        if (ids.length > 0) {
+          console.error(
+            `==> Create failed in ${config.zone} after ${String(ids.length)} host(s); terminating partial fleet`,
+          )
+          terminateScalewayServersBestEffort(config, ids)
+        }
+        throw err
+      }
     }
-    return ids
-  } catch (err) {
-    if (ids.length > 0) {
-      console.error(
-        `==> Create failed in ${config.zone} after ${String(ids.length)} host(s); terminating partial fleet`,
-      )
-      terminateScalewayServersBestEffort(config, ids)
-    }
-    throw err
+    return { ids, quotaExceeded: false }
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }
@@ -1171,40 +1195,57 @@ async function scalewayUp(options: Options): Promise<void> {
   requireTool('tar')
   const zones = scalewayZonesForOptions(options)
   const autoZone = option(options, 'zone') === undefined
-  let lastError: unknown
+  const requested = positiveInt(optionWithDefault(options, 'instances', '1'), 'instances')
+  let remaining = requested
+  const batches: { config: ScalewayUpConfig; ids: string[] }[] = []
+
   for (const zone of zones) {
+    if (remaining === 0) break
     const config = buildScalewayUpConfig(options, zone)
-    if (autoZone) {
+    console.log(
+      `==> Trying ${String(remaining)}× ${config.type} in ${zone} for ${config.name}`,
+    )
+    const result = launchScalewayServers(config, remaining)
+    if (result.ids.length > 0) {
+      batches.push({ config, ids: result.ids })
+      remaining -= result.ids.length
       console.log(
-        `==> Trying ${String(config.instanceCount)}× ${config.type} in ${zone} for ${config.name}`,
-      )
-    } else {
-      console.log(
-        `==> Launching ${String(config.instanceCount)} ${config.type} Scaleway host(s) for ${config.name} in ${config.zone}`,
+        `==> Launched in ${zone}: ${result.ids.join(', ')} (${String(remaining)} still needed)`,
       )
     }
-    try {
-      const ids = launchScalewayServers(config)
-      console.log(`==> Launched in ${zone}: ${ids.join(', ')}`)
-      if (config.wait) await waitForScalewayServers(config, ids)
-      const hosts = getScalewayServers(config, ids)
-      printHosts(hosts)
-      await provisionHosts(config, hosts, hasFlag(options, 'serial'))
-      console.log(
-        '==> Scaleway burst runners are starting. Watch GitHub Actions runners or use: npm run runners:burst:scw -- status',
-      )
-      return
-    } catch (err) {
-      lastError = err
-      if (!autoZone || !isScalewayQuotaError(err)) throw err
-      console.error(
-        `==> Zone ${zone} lacks capacity for ${String(config.instanceCount)}× ${config.type}; trying next AZ`,
-      )
+    if (remaining === 0) break
+    if (result.quotaExceeded) {
+      if (!autoZone) break
+      console.log(`==> Zone ${zone} out of capacity; trying next AZ for remaining ${String(remaining)}`)
+      continue
+    }
+    if (result.ids.length === 0) {
+      die(`Scaleway create in ${zone} returned no server ids`)
     }
   }
-  const detail = lastError instanceof Error ? lastError.message : String(lastError)
-  die(
-    `No Scaleway AZ had capacity for ${optionWithDefault(options, 'instances', '1')}× ${optionWithDefault(options, 'scw-type', DEFAULT_SCW_TYPE)}. Last error: ${detail}`,
+
+  if (batches.length === 0) {
+    die(
+      `No Scaleway AZ had capacity for ${String(requested)}× ${optionWithDefault(options, 'scw-type', DEFAULT_SCW_TYPE)}`,
+    )
+  }
+
+  const hosts: CloudHost[] = []
+  for (const batch of batches) {
+    if (batch.config.wait) await waitForScalewayServers(batch.config, batch.ids)
+    hosts.push(...getScalewayServers(batch.config, batch.ids))
+  }
+  printHosts(hosts)
+  await provisionHosts(batches[0]!.config, hosts, hasFlag(options, 'serial'))
+
+  if (remaining > 0) {
+    die(
+      `Only launched ${String(requested - remaining)}/${String(requested)} hosts before Scaleway quotas were exhausted across tried AZs. Provisioned the hosts that did launch; rerun up for the rest or free quota.`,
+    )
+  }
+
+  console.log(
+    '==> Scaleway burst runners are starting. Watch GitHub Actions runners or use: npm run runners:burst:scw -- status',
   )
 }
 
@@ -1227,10 +1268,7 @@ function scalewayDown(options: Options): void {
     if (!zone) die(`host ${host.providerId} is missing zone metadata; pass --zone explicitly`)
     const config = buildScalewayConfig(options, zone)
     console.log(`==> Terminating ${host.providerId} in ${zone}`)
-    run(
-      'scw',
-      scalewayArgs(config, ['instance', 'server', 'terminate', host.providerId, 'with-ip=true']),
-    )
+    run('scw', scalewayTerminateArgs(config, host.providerId))
   }
   if (hasFlag(options, 'wait')) {
     for (const host of hosts) {

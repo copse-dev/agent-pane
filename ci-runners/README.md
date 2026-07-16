@@ -105,9 +105,10 @@ npm run runners:burst:scw -- down --yes --wait
 
 Scaleway sizing guidance:
 
-- Omit `--zone` on `up` to try Paris → Amsterdam → Warsaw → Milan AZs until
-  one has capacity for the full `--instances` count (Scaleway quotas are
-  per-AZ). Pass `--zone` to pin. `status`/`down` without `--zone` scan all.
+- Omit `--zone` on `up` to fill `--instances` across Paris → Amsterdam →
+  Warsaw → Milan AZs (Scaleway quotas are per-AZ). Partial creates are kept
+  when an AZ hits quota; the remainder is requested in the next AZ. Pass
+  `--zone` to pin. `status`/`down` without `--zone` scan all.
 - `PLAY2-MICRO` (4 vCPU / 8 GiB) with one runner is the cheapest general
   e2e/check shape and is roughly one third the hourly cost of AWS `c7i.xlarge`.
 - `BASIC3-X4C-16G` / `PRO2-XS` (4 vCPU / 16 GiB) can run two denser runners.
