@@ -189,6 +189,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Opt-in consent for scanning the shell environment / start-up files for
   // provider API keys (default off; see env-key-detection.ts).
   envKeyAutoDetectEnabled: z.boolean(),
+  // SSH host-key policy for git-over-SSH in runners and the shell tool. See
+  // docs/plans/ssh-remote-repo.md Phase 0.
+  sshStrictHostKeys: z.enum(['accept-new', 'strict']),
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS
@@ -219,11 +222,7 @@ export function parseRendererWritableSetting(
 export const securitySettingsSchema = z.object({
   localServerUrl: z.string().max(2048),
   safetyClassifierEnabled: z.boolean(),
-  // Deprecated compatibility values accepted from older renderer bundles. They
-  // are intentionally not written by current UI and cannot authorize shell runs.
-  safetySandboxAllowThreshold: z.number().min(0).max(1).optional(),
   safetyExternalDenyThreshold: z.number().min(0).max(1),
-  safetyConfidenceThreshold: z.number().min(0).max(1).optional(),
   safetyModel: z.string().max(256),
   // Optional: distinct model for the post-turn review subagent. Empty/absent
   // means reuse the parent chat model.

@@ -192,6 +192,20 @@ test('round-trips a nested subagent session', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips a per-message primary-chat model', () => {
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: 'from sonnet',
+      model: 'claude-sonnet-4-6',
+      toolCalls: [],
+      createdAt: 1,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 test('preserves thread metadata around the messages', () => {
   const m = meta({
     title: 'Kept',

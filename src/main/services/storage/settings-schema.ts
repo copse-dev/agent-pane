@@ -62,12 +62,6 @@ const MAIN_ONLY_SETTING_SCHEMAS = {
   // Security / safety toggles read in the main process.
   localServerUrl: z.string().max(2048),
   safetyClassifierEnabled: z.boolean(),
-  // Deprecated compatibility key. It is retained so older persisted settings can
-  // be read, but is no longer used to authorize shell execution.
-  safetyConfidenceThreshold: z.number().min(0).max(1),
-  // Deprecated compatibility key. It is retained so older persisted settings can
-  // be read, but is no longer used to authorize shell execution.
-  safetySandboxAllowThreshold: z.number().min(0).max(1),
   // Strict-mode hard-deny bar for confident + destructive external commands (1 = off).
   safetyExternalDenyThreshold: z.number().min(0).max(1),
   safetyModel: z.string().max(256),

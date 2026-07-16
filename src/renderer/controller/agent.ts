@@ -35,6 +35,20 @@ import { drainMessageQueue } from './message-queue.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 
+/** Stamp the thread's picker model onto a new primary-chat assistant bubble. */
+function addAssistantMessage(store: AppStore, threadId: string): string {
+  const model = getThreadById(store, threadId)?.model ?? store.getState().settings?.model
+  return addMessage(
+    store,
+    threadId,
+    'assistant',
+    '',
+    undefined,
+    undefined,
+    model !== undefined ? { model } : undefined,
+  )
+}
+
 function recordUsageToLedger(
   api: ApiClient,
   store: AppStore,
@@ -100,7 +114,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
 
         if (plan.startNewMessage) {
           if (plan.finalizeMsgId) store.emit('message_done', plan.finalizeMsgId)
-          st.msgId = addMessage(store, threadId, 'assistant')
+          st.msgId = addAssistantMessage(store, threadId)
         }
         st.toolSinceText = nextState.toolSinceText
         st.currentText = nextState.currentText ?? ''
@@ -120,7 +134,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         // subsequent text chunk lands in the same bubble rather than a new one.
         if (!st.msgId || st.toolSinceText) {
           if (st.toolSinceText && st.msgId) store.emit('message_done', st.msgId)
-          st.msgId = addMessage(store, threadId, 'assistant')
+          st.msgId = addAssistantMessage(store, threadId)
           st.toolSinceText = false
           st.currentText = ''
         }
@@ -130,13 +144,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'text_replace': {
-        if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
+        if (!st.msgId) st.msgId = addAssistantMessage(store, threadId)
         setMessageContent(store, st.msgId, chunk.text)
         st.currentText = chunk.text
         break
       }
       case 'tool_call': {
-        if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
+        if (!st.msgId) st.msgId = addAssistantMessage(store, threadId)
         addToolCall(store, st.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
@@ -222,7 +236,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'subagent_start': {
-        if (!st.msgId) st.msgId = addMessage(store, threadId, 'assistant')
+        if (!st.msgId) st.msgId = addAssistantMessage(store, threadId)
         initSubagent(store, st.msgId, chunk.parentToolCallId, chunk.session)
         st.writing = false
         activity(threadId)
@@ -299,6 +313,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           setMessageReview(store, threadId, anchorId, {
             status: chunk.status,
             summary: chunk.summary,
+            ...(chunk.issuesFound !== undefined ? { issuesFound: chunk.issuesFound } : {}),
           })
         }
         if (chunk.status === 'running') store.emit('agent_activity', threadId, 'Reviewing changes…')
