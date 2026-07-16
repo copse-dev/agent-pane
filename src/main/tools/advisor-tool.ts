@@ -19,6 +19,8 @@ export const advisorTool = defineTool({
     if (!runner) {
       return 'Error: the advisor is not available in this context.'
     }
-    return await runner(signal)
+    // The advice is prose (headings, lists, code): render it through the
+    // Markdown pipeline in the tool card rather than a raw <pre>.
+    return { result: await runner(signal), resultFormat: 'markdown' }
   },
 })

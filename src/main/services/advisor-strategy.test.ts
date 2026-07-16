@@ -3,7 +3,9 @@ import { describe, it } from 'node:test'
 import type { LLMMessage } from '@shared/types'
 import {
   DEFAULT_ADVISOR_MAX_TOKENS,
+  attributeAdvice,
   buildAdvisorTranscript,
+  formatAdvisorModelLabel,
   isNativeAdvisorPair,
   normalizeAdvisorResult,
   renderAdvisorResult,
@@ -50,6 +52,31 @@ describe('renderAdvisorResult', () => {
       encrypted_content: 'opaque',
     })
     assert.ok(!rendered.includes('opaque'))
+  })
+})
+
+describe('formatAdvisorModelLabel', () => {
+  it('renders picker-prefixed ids into friendly labels', () => {
+    assert.equal(formatAdvisorModelLabel('claude-opus-4-8'), 'claude-opus-4-8')
+    assert.equal(
+      formatAdvisorModelLabel('lmstudio:qwen/qwen2.5-coder-32b'),
+      'qwen/qwen2.5-coder-32b (local)',
+    )
+    assert.equal(formatAdvisorModelLabel('openrouter:zai-org/glm-5.2'), 'zai-org/glm-5.2')
+    assert.equal(formatAdvisorModelLabel('acp:gemini-cli'), 'gemini-cli (ACP)')
+    assert.equal(
+      formatAdvisorModelLabel('acp:gemini-cli#gemini-2.5-pro'),
+      'gemini-cli — gemini-2.5-pro (ACP)',
+    )
+  })
+})
+
+describe('attributeAdvice', () => {
+  it('prepends a Markdown attribution line naming the advisor model', () => {
+    assert.equal(
+      attributeAdvice('Do the smallest slice first.', 'claude-opus-4-8'),
+      '**Advisor — claude-opus-4-8**\n\nDo the smallest slice first.',
+    )
   })
 })
 

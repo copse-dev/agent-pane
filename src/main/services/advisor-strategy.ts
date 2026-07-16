@@ -1,5 +1,5 @@
 import type { LLMMessage, UserContent } from '@shared/types'
-import { isAcpModel } from '@shared/acp.ts'
+import { isAcpModel, parseAcpModelSelection } from '@shared/acp.ts'
 import { isLocalModel } from '@copse/llm/estimate-cost.ts'
 import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm/model-intellect.ts'
@@ -69,6 +69,31 @@ export function normalizeAdvisorResult(text: string, stopReason?: string): Advis
     text: text.trim(),
     ...(stopReason ? { stop_reason: stopReason } : {}),
   }
+}
+
+/**
+ * Human label for the advisor model id, used to attribute the advice in the
+ * tool card so the advisor model's output is distinguishable from the
+ * executor's (which drives the surrounding conversation). Handles the picker's
+ * prefixed ids (`acp:<id>`, `lmstudio:<id>`, `openrouter:<id>`); a plain cloud
+ * id renders as-is.
+ */
+export function formatAdvisorModelLabel(model: string): string {
+  const acp = parseAcpModelSelection(model)
+  if (acp) return acp.model ? `${acp.id} — ${acp.model} (ACP)` : `${acp.id} (ACP)`
+  if (model.startsWith('lmstudio:')) return `${model.slice('lmstudio:'.length)} (local)`
+  if (model.startsWith('openrouter:')) return model.slice('openrouter:'.length)
+  return model
+}
+
+/**
+ * Prefix the advice with a Markdown attribution line naming the advisor model,
+ * so the tool card shows which model produced it (the advisor), plainly
+ * distinct from the executor model that drives the conversation. Rendered as
+ * Markdown by the tool card (`resultFormat: 'markdown'`).
+ */
+export function attributeAdvice(advice: string, advisorModel: string): string {
+  return `**Advisor — ${formatAdvisorModelLabel(advisorModel)}**\n\n${advice}`
 }
 
 /**

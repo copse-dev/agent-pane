@@ -8,6 +8,7 @@ import { addSubagentUsage } from './subagent-usage.ts'
 import {
   ADVISOR_MODEL_SETTING,
   DEFAULT_ADVISOR_MODEL,
+  attributeAdvice,
   buildAdvisorTranscript,
   normalizeAdvisorResult,
   renderAdvisorResult,
@@ -83,6 +84,8 @@ export function getAdvisorRunner(): AdvisorRunner | null {
     // the native `usage.iterations[].advisor_message`) is a tracked follow-up.
     addSubagentUsage(usage)
     if (!text.trim()) return 'Advisor returned no guidance.'
-    return renderAdvisorResult(normalizeAdvisorResult(text))
+    // Attribute the advice to the advisor model so the tool card shows whose
+    // output it is (the advisor's, distinct from the executor's conversation).
+    return attributeAdvice(renderAdvisorResult(normalizeAdvisorResult(text)), ctx.advisorModel)
   }
 }

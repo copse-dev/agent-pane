@@ -107,6 +107,20 @@ strategy in three ways:
 Visual eval: `tests/e2e/advisor-pair-hint.e2e.ts` (screenshots
 `advisor-pair-hint-good.png` / `advisor-pair-hint-warn.png`).
 
+### Advisor result rendering
+
+The advice is prose (headings, lists, code), so the `advisor` tool returns
+`{ result, resultFormat: 'markdown' }` and the tool card renders it through the
+Markdown pipeline instead of a raw `<pre>` (the same `resultFormat` seam ACP
+tool output uses). `resultFormat` now flows generically: any tool's
+`ToolExecuteResult` may carry it (`packages/agent/src/wire-types.ts` →
+`run-agent-loop` tool-result chunk → `ToolCall.resultFormat` → renderer). The
+advice is prefixed with a `**Advisor — <model>**` attribution line
+(`attributeAdvice` / `formatAdvisorModelLabel`) so the card shows _which_ model
+produced it — the advisor model's output, plainly distinct from the executor
+model that drives the surrounding conversation. Covered by the component test
+`src/renderer/views/tool-display.test.ts` (attributed-markdown case).
+
 ## Deliberately out of scope (follow-ups on #566)
 
 - **Native `advisor_20260301` server tool** for Claude-cloud executors: attach the tool

@@ -105,7 +105,11 @@ export class ToolRegistry {
     name: string,
     rawArgs: unknown,
     signal: AbortSignal,
-  ): Promise<{ result: string; editStats?: { additions: number; deletions: number } }> {
+  ): Promise<{
+    result: string
+    editStats?: { additions: number; deletions: number }
+    resultFormat?: 'markdown'
+  }> {
     return normalizeToolExecuteResult(await this.execute(name, rawArgs, signal))
   }
 
