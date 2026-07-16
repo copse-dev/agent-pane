@@ -279,16 +279,19 @@
   border-top: 1px solid var(--border);
 }
 /* Portrait / bottom-pinned chrome: labeled panel toggles between the status
-   footer and the stacked right panel. Height matches `.projects-settings-btn`
-   so the row lines up with Settings across the chat section. */
+   footer and the stacked right panel. Same band height as `.projects-settings-btn`
+   (`--chrome-action-band-height`) so the row lines up with Settings. */
 .portrait-panel-bar {
   display: none;
   align-items: center;
-  gap: var(--spacing-sm);
-  flex-wrap: wrap;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
   width: 100%;
   box-sizing: border-box;
-  padding: var(--spacing-sm) var(--spacing-md);
+  height: var(--chrome-action-band-height);
+  padding: 0 var(--spacing-md);
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -297,8 +300,12 @@
   display: flex;
 }
 .portrait-panel-bar .titlebar-text-btn {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  height: 22px;
+  padding: 0 6px;
+  gap: 3px;
+  white-space: nowrap;
 }
 .footer-model-host {
   min-width: 0;
