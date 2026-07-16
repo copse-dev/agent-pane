@@ -183,4 +183,9 @@ export interface Message {
 
 export interface UsageDelta extends ModelUsage {
   model: string
+  /**
+   * When set, the usage ledger records this source instead of `'agent'`.
+   * Must match StreamChunk usage `usageSource` so main+renderer dual-writes dedupe.
+   */
+  usageSource?: 'advisor'
 }
