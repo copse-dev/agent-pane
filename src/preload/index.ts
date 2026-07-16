@@ -407,6 +407,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('remoteAgent:downloadArtifact', agentId, path),
     artifactImageDataUrl: (agentId: string, path: string) =>
       ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
+    models: () => ipcRenderer.invoke('remoteAgent:models'),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
