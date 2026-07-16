@@ -178,6 +178,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         if (!activeProjectId) return false
         return Boolean(projects.find((p) => p.id === activeProjectId)?.sshHost)
       },
+      onClose: (): void => {
+        composer.focus()
+      },
     },
   )
   // Re-sync the picker whenever the active thread changes (new thread,
