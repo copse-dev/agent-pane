@@ -368,7 +368,7 @@ function mountFullLayout(): void {
   const inputBar = mountInputBar(inputRoot, store, api, {
     portraitPanelHost: requireElement('pane-chat'),
   })
-  handleStopShortcut = inputBar.handleStopShortcut
+  handleStopShortcut = inputBar.handleStopShortcut.bind(inputBar)
   const conversationRoot = requireElement('conversation')
   mountConversation(conversationRoot, store, api, inputRoot)
   mountConversationSearch(conversationRoot)
