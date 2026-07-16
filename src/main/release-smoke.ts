@@ -13,7 +13,7 @@ export async function runReleaseSmokeTest(): Promise<void> {
 }
 
 async function smokeTestPty(): Promise<void> {
-  const shell = process.env['SHELL'] || '/bin/zsh'
+  const shell = process.env['SHELL'] || '/bin/bash'
   const marker = 'copse-release-smoke-pty'
   const child = await spawnPtyInProjectSandbox(shell, {
     cols: 80,
@@ -38,7 +38,11 @@ async function smokeTestPty(): Promise<void> {
       }
       resolve(data)
     })
-    child.write(`printf '${marker}'; exit\r`)
+    // Give the login shell a beat to attach before the first write — avoids a
+    // race where the command is dropped on cold PTY startup in CI.
+    setTimeout(() => {
+      child.write(`printf '${marker}\n'; exit\n`)
+    }, 250)
   })
   if (!output.includes(marker)) {
     throw new Error('Packaged PTY smoke test did not receive its command output')

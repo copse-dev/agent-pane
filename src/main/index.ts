@@ -109,7 +109,7 @@ const gotSingleInstanceLock =
   agentEval || acpMode || releaseSmokeTest ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
-} else if (!agentEval && !acpMode) {
+} else if (!agentEval && !acpMode && !releaseSmokeTest) {
   app.on('second-instance', () => {
     const win = getMainWindow()
     if (win) {
