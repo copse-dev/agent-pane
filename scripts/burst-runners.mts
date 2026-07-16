@@ -885,9 +885,20 @@ function provisionHost(config: RunnerConfig, host: CloudHost): void {
     host,
     [
       'cd ~/ci-runners',
-      'export DOCKER_BUILDKIT=1',
-      `sudo docker compose up -d --build --pull always --scale runner=${String(config.runnersPerInstance)}`,
-      'sudo docker compose ps',
+      // Compose build secrets use `environment: BUILD_GH_TOKEN`, which reads the
+      // process env — not service env_file. `sudo` drops it, so source .env as root.
+      `sudo bash -lc ${shellQuote(
+        [
+          'set -euo pipefail',
+          'cd ~/ci-runners',
+          'set -a',
+          '. ./.env',
+          'set +a',
+          'export DOCKER_BUILDKIT=1',
+          `docker compose up -d --build --pull always --scale runner=${String(config.runnersPerInstance)}`,
+          'docker compose ps',
+        ].join(' && '),
+      )}`,
     ].join(' && '),
   )
 }
