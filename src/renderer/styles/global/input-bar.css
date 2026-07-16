@@ -303,7 +303,10 @@
 #app.is-portrait-chrome .portrait-panel-bar {
   display: flex;
 }
-.portrait-panel-bar .titlebar-text-btn {
+.portrait-panel-bar .titlebar-text-btn,
+.portrait-panel-bar .portrait-panel-btn {
+  display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
   box-sizing: border-box;
   height: var(--chrome-action-band-content-height);
@@ -316,16 +319,19 @@
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
-.portrait-panel-bar .titlebar-text-btn:hover {
+.portrait-panel-bar .titlebar-text-btn:hover,
+.portrait-panel-bar .portrait-panel-btn:hover {
   color: var(--text-primary);
   background: var(--bg-hover);
 }
-.portrait-panel-bar .titlebar-text-btn.active {
+.portrait-panel-bar .titlebar-text-btn.active,
+.portrait-panel-bar .portrait-panel-btn.active {
   color: var(--text-primary);
   background: var(--bg-hover);
   border: none;
 }
-.portrait-panel-bar .titlebar-text-btn[data-portrait-overflow] {
+.portrait-panel-bar .titlebar-text-btn[data-portrait-overflow],
+.portrait-panel-bar .portrait-panel-btn[data-portrait-overflow] {
   display: none;
 }
 .portrait-panel-overflow {

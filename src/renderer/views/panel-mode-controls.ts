@@ -196,7 +196,13 @@ export function mountPanelModeControls(
     const btn = el(
       'button',
       {
-        class: ['titlebar-btn', 'titlebar-text-btn', keepLabel ? '' : 'titlebar-compact-icon']
+        // Portrait bar omits `.titlebar-btn` so existing e2e / click helpers that
+        // target `.titlebar-btn[aria-label=…]` stay uniquely on the titlebar.
+        class: [
+          opts.enableOverflow ? 'portrait-panel-btn' : 'titlebar-btn',
+          'titlebar-text-btn',
+          keepLabel ? '' : 'titlebar-compact-icon',
+        ]
           .filter(Boolean)
           .join(' '),
         'aria-label': def.ariaLabel,
