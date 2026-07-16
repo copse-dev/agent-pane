@@ -93,6 +93,9 @@ For primary/secondary action buttons (Save / Cancel style):
 - Separate buttons with `gap: var(--spacing-md)`, not a tight `--spacing-sm`.
 - Keep an action bar clear of the window's bottom edge. Don't let buttons sit flush against the
   bottom; add generous bottom spacing (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`).
+- Inline row actions (Edit / Remove on a list row) need an explicit flex container with
+  `gap: var(--spacing-md)`. Without it, adjacent text buttons render as one jammed word
+  (`EditRemove`) — see `.ssh-host-row-actions` in `ssh-workspace.css`.
 
 ## Text selection: content is selectable, chrome is not
 
