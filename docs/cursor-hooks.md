@@ -51,23 +51,25 @@ Permission responses may also carry `agentMessage` / `userMessage`. Copse logs t
 
 ## What Copse supports
 
-| Capability                   | Status        | Notes                                                                                     |
-| ---------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
-| **Permission hooks**         | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate |
-| **User hooks**               | Supported     | `~/.cursor/hooks.json`, always honoured                                                   |
-| **Project hooks**            | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                    |
-| **Hook discovery / list**    | Supported     | `hooks:list` IPC returns `CursorHookSummary[]` for diagnostics                            |
-| **Lifecycle hooks**          | Not supported | `beforeSubmitPrompt`, `afterFileEdit`, `stop` need agent-loop / write-path wiring         |
-| **`beforeReadFile` content** | Partial       | Hook sees the path but not the file contents (read happens after the gate)                |
-| **Content rewriting**        | Not supported | Hooks can block but not yet mutate prompts, read output, or edits                         |
-| **Plugin-contributed hooks** | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                |
-| **Settings UI**              | Not supported | Toggle exists in storage (`cursorHooksEnabled`); no dedicated Settings section yet        |
+| Capability                   | Status        | Notes                                                                                                                                                              |
+| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Permission hooks**         | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                          |
+| **User hooks**               | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                            |
+| **Project hooks**            | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                             |
+| **Hook discovery / list**    | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                         |
+| **Lifecycle hooks**          | Not supported | `beforeSubmitPrompt`, `afterFileEdit`, `stop` need agent-loop / write-path wiring; they show an "unsupported" badge in Sources                                     |
+| **`beforeReadFile` content** | Partial       | Hook sees the path but not the file contents (read happens after the gate)                                                                                         |
+| **Content rewriting**        | Not supported | Hooks can block but not yet mutate prompts, read output, or edits                                                                                                  |
+| **Plugin-contributed hooks** | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                         |
+| **Settings UI**              | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session) |
 
 ### Enablement
 
 Hooks are **off by default**. Honouring a hook spawns a user/project script on the
-agent's hot path, so it is gated behind the `cursorHooksEnabled` security setting. When
-disabled the gate skips discovery entirely (no overhead).
+agent's hot path, so it is gated behind the `cursorHooksEnabled` security setting
+(Settings → Sources → Hooks). When disabled the gate skips discovery entirely (no
+overhead); the Sources panel still lists discovered hooks so authoring problems are
+visible before enabling.
 
 ### Implementation
 
@@ -151,9 +153,7 @@ trusting the code it can cause to run.
 2. **Surface `agentMessage`** — feed a denying hook's message back into the conversation
    instead of only logging it.
 3. **`beforeReadFile` content** — pass file contents and honour content rewrites/redaction.
-4. **Settings UI** — expose `cursorHooksEnabled` and discovered hooks (event, command,
-   scope) alongside the plugins list.
-5. **Plugin-contributed hooks** — if Cursor adds a `hooks` slot to `plugin.json`, load
+4. **Plugin-contributed hooks** — if Cursor adds a `hooks` slot to `plugin.json`, load
    them via the shared `cursor-plugins` discovery module.
 
 ## Related files
