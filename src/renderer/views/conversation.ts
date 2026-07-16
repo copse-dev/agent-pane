@@ -13,6 +13,10 @@ import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import type { Message, SubagentSession, ToolCall, TranscriptAttachment } from '@shared/types'
+import {
+  formatPrimaryChatModelLabel,
+  shouldShowPrimaryChatModelLabels,
+} from '@shared/threads/message-model.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -1056,7 +1060,31 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
+    // Model labels appear only once the primary chat has used more than one
+    // model; syncing after each append also labels earlier turns when the
+    // second model arrives.
+    syncModelLabels()
     scrollToBottom(msg.role === 'user')
+  }
+
+  /** Show/hide per-message model chrome when the primary chat is multi-model. */
+  function syncModelLabels(): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const show = shouldShowPrimaryChatModelLabels(thread.messages)
+    for (const msg of thread.messages) {
+      if (msg.role !== 'assistant') continue
+      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
+      if (!msgEl) continue
+      const existing = msgEl.querySelector<HTMLElement>('.message-model')
+      if (show && msg.model) {
+        const label = existing ?? el('div', { class: 'message-model' })
+        label.textContent = formatPrimaryChatModelLabel(msg.model)
+        if (!existing) msgEl.prepend(label)
+      } else {
+        existing?.remove()
+      }
+    }
   }
 
   function syncTodoPanel(): void {

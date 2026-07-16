@@ -8,7 +8,12 @@ import {
   FIRST_PARTY_HOOKS,
   type HookOutcomeRecord,
 } from './hook-registry.ts'
-import { HOOK_EVENT_NAMES, HOOK_EVENT_SPECS, type BlockingHook } from './canonical-events.ts'
+import {
+  HOOK_EVENT_NAMES,
+  HOOK_EVENT_SPECS,
+  type BlockingHook,
+  type HookRunRecord,
+} from './canonical-events.ts'
 import type { AsyncHookOutcome } from './hook-outcome.ts'
 
 const emptyContext = {}
@@ -167,6 +172,70 @@ describe('HookRegistry.emit — fail-hard (decision 9)', () => {
         return true
       },
     )
+  })
+})
+
+describe('HookRegistry.emit — spine-recording sink (decision 6)', () => {
+  it('reports every execution to the sink with its outcome and timing', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'opinion', event: 'turnStart', run: () => ({ injectContext: 'A' }) })
+    registry.register({ id: 'abstains', event: 'turnStart', run: () => undefined })
+
+    const records: HookRunRecord[] = []
+    await registry.emit('turnStart', turnStartPayload, {
+      recordHookRun: (record) => records.push(record),
+    })
+
+    assert.deepEqual(
+      records.map((r) => [r.event, r.hookId, r.outcome]),
+      [
+        ['turnStart', 'opinion', { injectContext: 'A' }],
+        ['turnStart', 'abstains', null],
+      ],
+    )
+    for (const record of records) {
+      assert.equal(typeof record.startedAt, 'number')
+      assert.ok(record.durationMs >= 0)
+      assert.equal(record.error, undefined)
+    }
+  })
+
+  it('records a throwing hook before failing hard (execution is never unrecorded)', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'thrower',
+      event: 'turnStart',
+      run: () => {
+        throw new Error('kaboom')
+      },
+    })
+
+    const records: HookRunRecord[] = []
+    await assert.rejects(
+      () =>
+        registry.emit('turnStart', turnStartPayload, {
+          recordHookRun: (record) => records.push(record),
+        }),
+      HookExecutionError,
+    )
+    assert.equal(records.length, 1)
+    const [record] = records
+    assert.ok(record)
+    assert.equal(record.hookId, 'thrower')
+    assert.equal(record.outcome, null)
+    assert.equal(record.error, 'kaboom')
+  })
+
+  it('swallows sink errors — recording can never change loop behavior', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'fine', event: 'turnStart', run: () => ({ injectContext: 'A' }) })
+
+    const result = await registry.emit('turnStart', turnStartPayload, {
+      recordHookRun: () => {
+        throw new Error('sink exploded')
+      },
+    })
+    assert.deepEqual(result.outcomes, [{ hookId: 'fine', outcome: { injectContext: 'A' } }])
   })
 })
 

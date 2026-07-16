@@ -778,6 +778,13 @@
   border-bottom: 1px solid var(--border);
   font-size: var(--font-size-sm);
 }
+/* No file selected: the diff area is hidden, so the description takes the
+   whole column instead of being capped at 28%. */
+.pr-viewer-description.pr-viewer-description-fill {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+}
 .pr-viewer-files {
   flex-shrink: 0;
   max-height: 22%;
@@ -785,11 +792,23 @@
   border-bottom: 1px solid var(--border);
 }
 .pr-files-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.pr-files-header:hover {
+  color: var(--text-primary);
 }
 .pr-files-list {
   padding-bottom: var(--spacing-xs);

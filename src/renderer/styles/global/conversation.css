@@ -222,6 +222,13 @@
 .msg-assistant {
   background: transparent;
 }
+/* Primary-chat model chrome — only present when the thread used more than one
+   picker model. Mirrors the subagent card's muted model line. */
+.message-model {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary, var(--text-secondary));
+  margin-bottom: var(--spacing-xs);
+}
 .msg-error {
   background: rgba(244, 135, 113, 0.1);
   border-left: 3px solid var(--error);

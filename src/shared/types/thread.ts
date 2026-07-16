@@ -167,6 +167,12 @@ export interface Message {
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
   /**
+   * Primary-chat model that produced this assistant message (picker id for the
+   * turn). Surfaced in the transcript only when the thread used more than one
+   * primary model — subagent models live on {@link SubagentSession.model}.
+   */
+  model?: string
+  /**
    * Post-turn review verdict for the editing turn this message concluded. Set on
    * the turn's final assistant message so the review joins the transcript inline
    * (in position, one per reviewed turn) rather than as a single trailing card.

@@ -17,6 +17,11 @@ const SHARED_WORKING_STYLE = `Working style:
 - Do only what was asked. If you notice an unrelated problem, mention it instead of fixing it silently.
 - Match the surrounding code's style, naming, and comment density. Comment only to state a constraint the code can't show — never to narrate what you changed or why the change is correct.`
 
+const GIT_BRANCH_SAFETY = `Git branch safety:
+- Never commit or push directly to the repository's default branch (commonly main or master). Before committing, check the current branch and the repository's default branch.
+- If the default branch is checked out, create and switch to a working branch named copse/<short-kebab-summary> before making the commit. Use that naming convention for new branches.
+- Preserve an existing non-default working branch unless the user explicitly asks to change branches.`
+
 const SHARED_TOOL_TAIL = `- git_status: Show working tree status
 - git_diff: Show unstaged or staged changes
 - git_log: Show recent commit history
@@ -76,7 +81,9 @@ When modifying files:
 Tool choice:
 ${v.toolChoice}
 
-${SHARED_WORKING_STYLE}`
+${SHARED_WORKING_STYLE}
+
+${GIT_BRANCH_SAFETY}`
 }
 
 export const BASE_SYSTEM_PROMPT = buildBasePrompt({
