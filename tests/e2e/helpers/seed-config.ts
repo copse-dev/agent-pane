@@ -120,7 +120,7 @@ export function resetUserData(): void {
   writeSettings({})
 }
 
-/** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in cursor-hooks.ts. */
+/** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in hooks/cursor-adapter.ts. */
 const USER_CURSOR_HOOKS_PATH = join(homedir(), '.cursor', 'hooks.json')
 const USER_CURSOR_HOOKS_BACKUP = `${USER_CURSOR_HOOKS_PATH}.e2e-backup`
 
