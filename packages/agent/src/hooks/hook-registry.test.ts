@@ -154,6 +154,62 @@ describe('HookRegistry.emit — function executor', () => {
   })
 })
 
+describe('HookRegistry.emit — sequential updatedInput pipeline (H1)', () => {
+  it('threads each hook rewrite into the next hook (registration order)', async () => {
+    const registry = new HookRegistry()
+    const seen: string[] = []
+    registry.register({
+      id: 'first',
+      event: 'toolGate',
+      run: (payload) => {
+        seen.push(String(payload.input['command']))
+        return { updatedInput: { command: 'from-first' } }
+      },
+    })
+    registry.register({
+      id: 'second',
+      event: 'toolGate',
+      run: (payload) => {
+        // The second hook must observe the first hook's rewrite, not the original.
+        seen.push(String(payload.input['command']))
+        return { updatedInput: { command: `${String(payload.input['command'])}+second` } }
+      },
+    })
+
+    const payload = { toolName: 'run_shell', input: { command: 'original' } }
+    const result = await registry.emit('toolGate', payload, emptyContext)
+
+    // Each hook saw the prior rewrite; the payload holds the *final* threaded input.
+    assert.deepEqual(seen, ['original', 'from-first'])
+    assert.deepEqual(payload.input, { command: 'from-first+second' })
+    assert.deepEqual(
+      result.outcomes.map((o) => o.outcome.updatedInput),
+      [{ command: 'from-first' }, { command: 'from-first+second' }],
+    )
+  })
+
+  it('merges a partial rewrite, preserving untouched input fields', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'rewrites-command-only',
+      event: 'toolGate',
+      run: () => ({ updatedInput: { command: 'safe' } }),
+    })
+    const payload = { toolName: 'run_shell', input: { command: 'danger', timeout: 30 } }
+    await registry.emit('toolGate', payload, emptyContext)
+    // The rewrite touched `command`; `timeout` is preserved (merge, not replace).
+    assert.deepEqual(payload.input, { command: 'safe', timeout: 30 })
+  })
+
+  it('leaves the payload untouched when no hook rewrites the input', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'no-rewrite', event: 'toolGate', run: () => ({ decision: 'allow' }) })
+    const payload = { toolName: 'run_shell', input: { command: 'ls' } }
+    await registry.emit('toolGate', payload, emptyContext)
+    assert.deepEqual(payload.input, { command: 'ls' })
+  })
+})
+
 describe('HookRegistry.emit — fail-hard (decision 9)', () => {
   it('propagates a throwing hook as HookExecutionError, never swallowing it', async () => {
     const registry = new HookRegistry()

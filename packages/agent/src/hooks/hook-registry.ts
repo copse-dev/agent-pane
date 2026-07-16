@@ -45,6 +45,31 @@ function recordRun(context: HookContext, record: HookRunRecord): void {
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
 
+/**
+ * Thread a tool-gate rewrite into the payload so the **next** hook in the
+ * pipeline sees it (H1 sequential `updatedInput`). Hooks fire in registration
+ * order — function hooks then command hooks — and each may return
+ * `updatedInput`; applying it to `payload.input` between hooks is what makes the
+ * pipeline sequential rather than a parallel batch (the "Response-semantics
+ * parity" row for `updated_input` in docs/plans/hooks-and-feature-packs.md).
+ *
+ * Only `toolGate` carries an `input` field a rewrite edits; every other event's
+ * payload has no `input`, and only a `toolGate` outcome ever sets `updatedInput`
+ * (decisions 4 & 11 keep it off async outcomes at the type level), so this is a
+ * no-op for all other events. Merge (not replace) so a partial rewrite keeps the
+ * untouched fields, matching {@link mergeBlockingOutcomes}. The re-analysis of
+ * the *final* rewritten input against the policy matrix happens host-side
+ * (permission-gate re-runs `analyzeShellCommand` / `decideShellPermission`) —
+ * `packages/agent` stays Electron-free (execution-guidance rule 4).
+ */
+function threadUpdatedInput(payload: unknown, updatedInput: Record<string, unknown>): void {
+  if (typeof payload !== 'object' || payload === null || !('input' in payload)) return
+  const p = payload as { input?: unknown }
+  const current =
+    typeof p.input === 'object' && p.input !== null ? (p.input as Record<string, unknown>) : {}
+  p.input = { ...current, ...updatedInput }
+}
+
 /** One hook's contribution to a fired event, tagged with its author. */
 export interface HookOutcomeRecord {
   hookId: string
@@ -253,7 +278,11 @@ export class HookRegistry {
         durationMs: Date.now() - startedAt,
         outcome: outcome ?? null,
       })
-      if (outcome) outcomes.push({ hookId: hook.id, outcome })
+      if (outcome) {
+        outcomes.push({ hookId: hook.id, outcome })
+        // Sequential pipeline (H1): a rewrite is visible to the next hook.
+        if (outcome.updatedInput) threadUpdatedInput(payload, outcome.updatedInput)
+      }
     }
   }
 
@@ -283,7 +312,13 @@ export class HookRegistry {
       } catch (cause) {
         result = commandRunnerCrashResult(hook, cause)
       }
-      if (result.outcome) outcomes.push({ hookId: hook.id, outcome: result.outcome })
+      if (result.outcome) {
+        outcomes.push({ hookId: hook.id, outcome: result.outcome })
+        // Sequential pipeline (H1): the rewrite this command hook returned is
+        // marshalled into the *next* command hook's stdin — command hooks run
+        // after function hooks, so the pipeline threads across both kinds.
+        if (result.outcome.updatedInput) threadUpdatedInput(payload, result.outcome.updatedInput)
+      }
     }
   }
 
