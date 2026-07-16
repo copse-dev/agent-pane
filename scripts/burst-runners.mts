@@ -756,7 +756,7 @@ function sshTarget(config: RunnerConfig, host: CloudHost): string {
 
 function sshBaseArgs(config: RunnerConfig, host: CloudHost): string[] {
   return [
-    ...(config.keyPath ? ['-i', config.keyPath] : []),
+    ...(config.keyPath ? ['-i', config.keyPath, '-o', 'IdentitiesOnly=yes'] : []),
     '-o',
     'BatchMode=yes',
     '-o',
