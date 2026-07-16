@@ -55,7 +55,9 @@ describe('SshConnectionManager', () => {
       assert.ok(conn.capabilities)
       assert.equal(conn.capabilities.git, true)
       assert.equal(conn.capabilities.rg, false)
-      assert.match(conn.capabilities.warnings.join(' '), /rg/)
+      assert.equal(conn.capabilities.inotifywait, false)
+      // Missing tools are flags only — warnings is for probe/infrastructure failures.
+      assert.equal(conn.capabilities.warnings.length, 0)
 
       const states = manager.listStates()
       assert.equal(states.length, 1)

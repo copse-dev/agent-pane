@@ -17,13 +17,21 @@ function activeSshHostId(store: AppStore): string | null {
   return project?.sshHost ?? null
 }
 
-function capabilityWarnings(state: SshConnectionState): string[] {
-  const warnings: string[] = []
+/** Probe used to echo the same missing-tool lines into `warnings`; skip those. */
+const LEGACY_TOOL_WARNING_RE = /`?(?:git|rg|inotifywait)`?\s+missing/i
+
+/** One user-facing line per missing remote capability (plus any probe failures). */
+export function capabilityWarnings(state: SshConnectionState): string[] {
   const caps = state.capabilities
-  if (!caps) return warnings
+  if (!caps) return []
+  const warnings: string[] = []
+  if (!caps.git) warnings.push('git not found — git pane and backups will not work remotely')
   if (!caps.rg) warnings.push('ripgrep (rg) not found — search will use grep fallback')
   if (!caps.inotifywait) warnings.push('inotifywait not found — file watching is disabled')
-  warnings.push(...caps.warnings)
+  for (const warning of caps.warnings) {
+    if (LEGACY_TOOL_WARNING_RE.test(warning)) continue
+    warnings.push(warning)
+  }
   return warnings
 }
 
@@ -70,7 +78,6 @@ export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatus
     hostEl = el(
       'div',
       { id: BANNER_ID, class: 'ssh-status-banner ssh-status-warn', role: 'status' },
-      el('span', { class: 'ssh-status-icon', 'aria-hidden': 'true' }, '⚠'),
       el('span', { class: 'ssh-status-text' }, warnings.join(' · ')),
     )
     const titlebar = document.getElementById('titlebar')
