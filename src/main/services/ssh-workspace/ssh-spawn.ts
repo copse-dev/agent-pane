@@ -63,7 +63,7 @@ export async function spawnRemoteShellCommand(
   const remoteEnv = mergeRemoteEnv(opts.env)
   const body = buildRemoteShellCommand(shellCommandLine, undefined, remoteEnv)
   const wrapped = wrapRemoteShellWithPgid(opts.remoteRoot, body)
-  const askpass = leaseSshAskpassEnv({})
+  const askpass = leaseSshAskpassEnv(process.env)
   const args = sshExecArgs(host, wrapped)
   const stdout = new PassThrough()
   const proc = spawn('ssh', args, {
@@ -95,7 +95,7 @@ export async function buildRemotePtyLaunch(
   if (!host) throw new Error(`Unknown SSH host: ${hostId}`)
   const remoteEnv = mergeRemoteEnv(env)
   const remoteCmd = buildRemoteShellCommand(`exec ${shell} -l`, remoteRoot, remoteEnv)
-  const askpass = leaseSshAskpassEnv({})
+  const askpass = leaseSshAskpassEnv(process.env)
   return {
     file: 'ssh',
     args: sshPtyArgs(host, remoteCmd),

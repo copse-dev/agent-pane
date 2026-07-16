@@ -22,14 +22,13 @@ export function hostFromSshConfigAlias(alias: SshConfigAlias): SshWorkspaceHost 
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/^-+|-+$/g, '')
   // SSH target must be the config alias so OpenSSH applies the full Host stanza
-  // (ProxyJump, IdentityFile, etc.). HostName/user/port are display metadata only.
-  const host: SshWorkspaceHost = {
+  // (ProxyCommand, ProxyJump, IdentityFile, Port, User, …). Do NOT copy
+  // user/port/identity onto the persisted host — those become CLI `-p`/`-i`/
+  // `user@host` overrides in OpenSshTransport and break ProxyCommand hosts
+  // (wrong %p, wrong identity, "Connection closed by UNKNOWN port 65535").
+  return {
     id: slug || alias.alias,
     label: alias.alias,
     host: alias.alias,
   }
-  if (alias.port !== undefined) host.port = alias.port
-  if (alias.user) host.user = alias.user
-  if (alias.identityFile) host.identityFile = alias.identityFile
-  return host
 }
