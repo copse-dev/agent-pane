@@ -100,6 +100,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
+import { runPostTurnReviewHooks } from './hooks/post-turn-review.ts'
 import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
 import { registerHaltTarget, clearHaltTarget } from './hooks/halt-run.ts'
 import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
@@ -379,6 +380,31 @@ function fireStopHook(
     recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
+  })
+}
+
+/**
+ * Fire `postTurnReview` (F2, Copse-native) after a post-turn review verdict.
+ * **Detached, never awaited (decision 3):** dispatched with `void` so a slow
+ * observer can never delay the run's terminal `done`. Gated behind
+ * `cursorHooksEnabled` (default off), the same flag every other fire site uses.
+ * Any dispatch error is swallowed — an observation hook can never fail the turn.
+ */
+function firePostTurnReviewHook(
+  threadId: string,
+  turnTreeId: TurnTreeId,
+  payload: { issuesFound: boolean; summary: string },
+): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  void runPostTurnReviewHooks(payload, {
+    threadId,
+    turnTreeId,
+    workspaceRoot,
+    projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    agentSession: currentAgentSessionInfo(),
+  }).catch((err: unknown) => {
+    console.warn('[hooks] postTurnReview hook dispatch error:', errorMessage(err))
   })
 }
 
@@ -1192,6 +1218,14 @@ export async function runAgent(
             })
           })
           return remediation
+        },
+        // F2: fire the Copse-native `postTurnReview` observation (detached) for
+        // each review verdict the cycle produces.
+        onReviewVerdict: (review) => {
+          firePostTurnReviewHook(threadId, turnTreeId, {
+            issuesFound: review.verdict.issuesFound,
+            summary: review.summary,
+          })
         },
       })
     }

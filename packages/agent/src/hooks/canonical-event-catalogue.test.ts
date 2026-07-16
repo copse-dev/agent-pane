@@ -34,12 +34,13 @@ const EXPECTED: Record<
   permissionDecision: { dispatch: 'async', role: 'observation' },
   beforeDiffApply: { dispatch: 'blocking', role: 'decision' },
   afterDiffApply: { dispatch: 'async', role: 'observation' },
+  postTurnReview: { dispatch: 'async', role: 'observation' },
 }
 
 describe('canonical event catalogue (A1 v1 enumeration)', () => {
-  it('enumerates exactly the 15 canonical events from the plan', () => {
+  it('enumerates exactly the 16 canonical events from the plan', () => {
     assert.deepEqual([...HOOK_EVENT_NAMES], Object.keys(EXPECTED))
-    assert.equal(HOOK_EVENT_NAMES.length, 15)
+    assert.equal(HOOK_EVENT_NAMES.length, 16)
   })
 
   it('has no duplicate event names', () => {

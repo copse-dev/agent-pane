@@ -255,6 +255,87 @@ export interface DialectAdapter {
     payload: HookEventPayloads['sessionStart'],
   ): DialectInterpretation
   /**
+   * Marshal a canonical `beforeDiffApply` payload into this dialect's stdin wire
+   * shape (F2, Copse-native). Optional: only the Copse dialect declares it
+   * (Cursor / Claude have no diff-queue hook), so foreign adapters omit it and
+   * the runner abstains. Blocking decision — a `deny` / `haltRun` blocks the
+   * queued (or direct) diff apply.
+   */
+  marshalBeforeDiffApplyRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['beforeDiffApply'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `beforeDiffApply` response table (F2). Optional, paired
+   * with {@link marshalBeforeDiffApplyRequest}. `deny` (and `ask`, treated as
+   * deny) / `haltRun` normalizes to a blocking outcome the fire site turns into
+   * a blocked apply.
+   */
+  interpretBeforeDiffApply?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['beforeDiffApply'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `afterDiffApply` payload into this dialect's stdin wire
+   * shape (F2, Copse-native). Optional (Copse-only). Async observation: the diff
+   * already landed / was rejected, so it never gates control flow.
+   */
+  marshalAfterDiffApplyRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['afterDiffApply'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `afterDiffApply` response table (F2). Optional, paired
+   * with {@link marshalAfterDiffApplyRequest}. Observation-only: the outcome is
+   * always null; a `followup_message` routes through the queue as a
+   * {@link DialectInterpretation.queueMessage} (decision 4).
+   */
+  interpretAfterDiffApply?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['afterDiffApply'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `permissionDecision` payload into this dialect's stdin
+   * wire shape (F2, Copse-native). Optional (Copse-only). Async observation
+   * fired after the permission verdict — a clean seam an audit logger (#840) can
+   * consume; it can never change the verdict.
+   */
+  marshalPermissionDecisionRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['permissionDecision'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `permissionDecision` response table (F2). Optional,
+   * paired with {@link marshalPermissionDecisionRequest}. Observation-only: the
+   * outcome is always null; a `followup_message` routes through the queue.
+   */
+  interpretPermissionDecision?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['permissionDecision'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `postTurnReview` payload into this dialect's stdin wire
+   * shape (F2, Copse-native). Optional (Copse-only). Async observation fired
+   * after a post-turn review verdict.
+   */
+  marshalPostTurnReviewRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['postTurnReview'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `postTurnReview` response table (F2). Optional, paired
+   * with {@link marshalPostTurnReviewRequest}. Observation-only: the outcome is
+   * always null; a `followup_message` routes through the queue.
+   */
+  interpretPostTurnReview?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['postTurnReview'],
+  ): DialectInterpretation
+  /**
    * Record the first runtime failure of a hook this session (deduped per
    * dialect-event + command), feeding the Sources per-hook error indicator. The
    * runner passes the interpretation's resolved `spineEvent` so the key matches

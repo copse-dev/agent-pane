@@ -90,6 +90,40 @@ function isSessionStartPayload(payload: unknown): payload is HookEventPayloads['
   return typeof payload === 'object' && payload !== null && 'firstTurn' in payload
 }
 
+function isBeforeDiffApplyPayload(
+  payload: unknown,
+): payload is HookEventPayloads['beforeDiffApply'] {
+  // Shares `filePath` with `afterFileEdit`; the caller gates on `hook.event`
+  // first, so distinguishing from the (applied-bearing) afterDiffApply is enough.
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'filePath' in payload &&
+    !('applied' in payload)
+  )
+}
+
+function isAfterDiffApplyPayload(payload: unknown): payload is HookEventPayloads['afterDiffApply'] {
+  return (
+    typeof payload === 'object' && payload !== null && 'filePath' in payload && 'applied' in payload
+  )
+}
+
+function isPermissionDecisionPayload(
+  payload: unknown,
+): payload is HookEventPayloads['permissionDecision'] {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'toolName' in payload &&
+    'decision' in payload
+  )
+}
+
+function isPostTurnReviewPayload(payload: unknown): payload is HookEventPayloads['postTurnReview'] {
+  return typeof payload === 'object' && payload !== null && 'issuesFound' in payload
+}
+
 /**
  * Resolve a `failed` run to its outcome per the hook's `onFailure` (decision 9):
  * `closed` blocks (Cursor `failClosed: true`), `open` abstains (vendor default).
@@ -191,8 +225,12 @@ async function spawnInterpretResolve(
  * on subagent type) and `subagentStop` (detached completion, `followup_message`
  * routed to the queue channel); D2 adds `afterToolUse` (post-tool observation,
  * dispatched detached — the Cursor `afterShellExecution` / `afterMCPExecution`
- * flavors with a capped output snapshot). Other canonical events land their fire
- * sites in later phases and register no command hooks yet, so they abstain.
+ * flavors with a capped output snapshot). F2 adds the four Copse-native events —
+ * `beforeDiffApply` (blocking diff-apply gate), `afterDiffApply` /
+ * `permissionDecision` / `postTurnReview` (detached observations). Foreign
+ * adapters (Cursor / Claude) declare no marshaller for those, so the runner
+ * abstains for them. Other canonical events land their fire sites in later
+ * phases and register no command hooks yet, so they abstain.
  */
 export function createCommandHookRunner(opts?: {
   /**
@@ -338,6 +376,62 @@ export function createCommandHookRunner(opts?: {
           (spawn) => interpret(spawn, payload),
           context,
           recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'beforeDiffApply' && isBeforeDiffApplyPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalBeforeDiffApplyRequest?.bind(adapter)
+        const interpret = adapter?.interpretBeforeDiffApply?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+        )
+      }
+
+      if (hook.event === 'afterDiffApply' && isAfterDiffApplyPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalAfterDiffApplyRequest?.bind(adapter)
+        const interpret = adapter?.interpretAfterDiffApply?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+        )
+      }
+
+      if (hook.event === 'permissionDecision' && isPermissionDecisionPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalPermissionDecisionRequest?.bind(adapter)
+        const interpret = adapter?.interpretPermissionDecision?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+        )
+      }
+
+      if (hook.event === 'postTurnReview' && isPostTurnReviewPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalPostTurnReviewRequest?.bind(adapter)
+        const interpret = adapter?.interpretPostTurnReview?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
         )
       }
 
