@@ -120,6 +120,34 @@ export function resetUserData(): void {
   writeSettings({})
 }
 
+/** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in cursor-hooks.ts. */
+const USER_CURSOR_HOOKS_PATH = join(homedir(), '.cursor', 'hooks.json')
+const USER_CURSOR_HOOKS_BACKUP = `${USER_CURSOR_HOOKS_PATH}.e2e-backup`
+
+/**
+ * Seed a user-scope Cursor `hooks.json` for the Sources → Hooks e2e. Any real
+ * file at that path is backed up first; call {@link restoreUserCursorHooks}
+ * in `after` to put it back (or remove the seeded one).
+ */
+export function seedUserCursorHooks(config: unknown): void {
+  mkdirSync(dirname(USER_CURSOR_HOOKS_PATH), { recursive: true })
+  if (existsSync(USER_CURSOR_HOOKS_PATH) && !existsSync(USER_CURSOR_HOOKS_BACKUP)) {
+    copyFileSync(USER_CURSOR_HOOKS_PATH, USER_CURSOR_HOOKS_BACKUP)
+  }
+  const contents = typeof config === 'string' ? config : JSON.stringify(config, null, 2)
+  writeFileSync(USER_CURSOR_HOOKS_PATH, contents, 'utf8')
+}
+
+/** Undo {@link seedUserCursorHooks}: restore the backup or remove the seeded file. */
+export function restoreUserCursorHooks(): void {
+  if (existsSync(USER_CURSOR_HOOKS_BACKUP)) {
+    copyFileSync(USER_CURSOR_HOOKS_BACKUP, USER_CURSOR_HOOKS_PATH)
+    rmSync(USER_CURSOR_HOOKS_BACKUP, { force: true })
+  } else {
+    rmSync(USER_CURSOR_HOOKS_PATH, { force: true })
+  }
+}
+
 /** Fresh profile that triggers the first-run onboarding wizard. */
 export function seedOnboardingFixture(): void {
   resetUserData()
