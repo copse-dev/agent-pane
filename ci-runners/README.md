@@ -53,6 +53,79 @@ docker compose ps
 docker compose down      # tear down
 ```
 
+## AWS burst hosts
+
+For short queue-draining bursts, run the same Docker runner fleet on temporary
+x64 EC2 hosts:
+
+Prerequisites:
+
+- AWS CLI installed and authenticated with permission to call EC2 `RunInstances`,
+  `DescribeInstances`, `TerminateInstances`, `CreateTags`/tag-on-create, and SSM
+  `GetParameter` for the Ubuntu AMI lookup.
+- An EC2 key pair and local private key (`--key-name`, `--key-path`).
+- A subnet that can reach GitHub and apt repositories. If you use `--ssh-host
+public` (the default), instances must receive public IPv4 addresses; otherwise
+  run from a host with private VPC access and pass `--ssh-host private`.
+- A security group allowing SSH from the machine running the CLI.
+- `GITHUB_RUNNER_PAT` with GitHub self-hosted runner registration permission
+  for `GITHUB_URL` (org or repo), and `BUILD_GH_TOKEN` with read access to
+  `agent-pane` plus the private `@copse/streaming-markdown` dependency.
+
+```bash
+GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
+  npm run runners:burst -- up \
+    --region us-east-1 \
+    --instances 3 \
+    --instance-type c7i.2xlarge \
+    --runners-per-instance 2 \
+    --ttl-minutes 240 \
+    --key-name copse-ci \
+    --key-path ~/.ssh/copse-ci.pem \
+    --subnet-id subnet-123 \
+    --security-group-id sg-123
+```
+
+The CLI launches Ubuntu 24.04 amd64 hosts, waits for EC2 status checks, SSHes in,
+uploads this `ci-runners/` directory, writes the remote `.env`, and runs
+`docker compose up -d --build --scale runner=N`. It deliberately requires an
+existing subnet, security group, and key pair instead of creating networking; the
+security group must allow SSH from the machine running the command.
+
+Cost/packing guidance:
+
+- EC2 c7i pricing is close to linear by size, so savings come mostly from high
+  utilization and avoiding idle capacity, not from a large-instance discount.
+- Each runner should be budgeted at roughly 2 vCPU and 4-6 GiB RAM. A
+  `c7i.xlarge` (4 vCPU / 8 GiB) with one runner is the smallest safe general
+  e2e/check shape; `c7i.2xlarge` with 2 runners is the balanced default because
+  it halves duplicated Docker builds and setup while keeping the same per-runner
+  CPU/RAM budget. `c7i.4xlarge` with 4 runners is a denser option.
+- 2 vCPU / 4 GiB "medium" shapes can be cheaper for **check-only** bursts, but
+  do not give them the `copse-e2e` label; the current e2e failures look exactly
+  like memory pressure. For check-only, pass something like
+  `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
+- Many `c7i.xlarge` hosts cost about the same per vCPU as fewer larger c7i
+  hosts, but duplicate Docker builds, EBS volumes, and setup. One very large
+  host has coarser scale-down and larger single-host blast radius. Prefer a few
+  medium hosts that each pack whole runners safely.
+- `--ttl-minutes` defaults to 240. Instances launch with
+  `instance-initiated-shutdown-behavior=terminate`, so the scheduled shutdown
+  auto-terminates forgotten burst capacity. Pass `--ttl-minutes 0` only when you
+  have another cleanup mechanism.
+
+Useful follow-ups:
+
+```bash
+npm run runners:burst -- status --region us-east-1
+npm run runners:burst -- down --region us-east-1 --yes --wait
+```
+
+Secrets are read from environment variables (`GITHUB_RUNNER_PAT` and
+`BUILD_GH_TOKEN` by default) rather than command-line flags so they do not appear
+in shell history. `down` terminates instances tagged with the burst fleet name
+(default `copse-burst`).
+
 ## Do we need new PAT tokens?
 
 There are **three distinct token roles**. You do **not** need three separate
