@@ -14,6 +14,7 @@ import {
   switchProjectThread,
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { showErrorToast } from './toast.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 
@@ -93,7 +94,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   })
 
   openRemoteBtn.addEventListener('click', () => {
-    void addRemoteProject(store, api)
+    void addRemoteProject(store, api).catch((err: unknown) => {
+      showErrorToast('Could not open remote folder', err)
+    })
   })
 
   const syncRemoteOpenVisibility = (): void => {

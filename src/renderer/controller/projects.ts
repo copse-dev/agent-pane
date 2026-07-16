@@ -77,6 +77,17 @@ const projectViewState: ProjectViewStateRegistry = new Map()
 let switchGeneration = 0
 let pendingThreadAfterSwitch: string | null = null
 
+type ActivationWaiter = { resolve: () => void; reject: (err: Error) => void }
+const activationWaiters = new Map<string, ActivationWaiter>()
+
+function settleActivationWaiter(projectId: string, error?: Error): void {
+  const waiter = activationWaiters.get(projectId)
+  if (!waiter) return
+  activationWaiters.delete(projectId)
+  if (error) waiter.reject(error)
+  else waiter.resolve()
+}
+
 export function getSidebarThreads(store: AppStore, projectId: string): Thread[] {
   const { activeProjectId, threads } = store.getState()
   if (projectId === activeProjectId) return threads
@@ -107,6 +118,23 @@ async function trySetWorkspace(api: ApiClient, path: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+function abortProjectActivation(
+  store: AppStore,
+  id: string,
+  gen: number,
+  outgoingId: string | null,
+  error: Error,
+): void {
+  if (gen !== switchGeneration) return
+  settleActivationWaiter(id, error)
+  const revertExpanded = outgoingId ?? store.getState().activeProjectId
+  if (revertExpanded) {
+    store.setState({ expandedProjectId: revertExpanded })
+  }
+  store.emit('projects_changed')
+  store.emit('workspace_changed')
 }
 
 async function dropMissingProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
@@ -161,17 +189,45 @@ async function finishActivate(
   if (gen !== switchGeneration) return
 
   if (sshHost) {
+    const enabled = await api.settings.get('sshWorkspaceEnabled')
+    if (enabled !== true) {
+      abortProjectActivation(
+        store,
+        id,
+        gen,
+        outgoingId,
+        new Error('Enable SSH workspaces in Settings before opening a remote folder.'),
+      )
+      return
+    }
     try {
       await ensureSshConnected(api, sshHost)
-    } catch {
+    } catch (err) {
       if (gen !== switchGeneration) return
-      await dropMissingProject(store, api, id)
+      const message = err instanceof Error ? err.message : String(err)
+      abortProjectActivation(
+        store,
+        id,
+        gen,
+        outgoingId,
+        new Error(`SSH connection failed: ${message}`),
+      )
       return
     }
   }
 
   if (!(await trySetWorkspace(api, path))) {
     if (gen !== switchGeneration) return
+    if (sshHost) {
+      abortProjectActivation(
+        store,
+        id,
+        gen,
+        outgoingId,
+        new Error('Could not open the remote workspace folder.'),
+      )
+      return
+    }
     await dropMissingProject(store, api, id)
     return
   }
@@ -210,6 +266,7 @@ async function finishActivate(
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
+  settleActivationWaiter(id)
   resumePendingQueues(store, api)
 }
 
@@ -323,9 +380,11 @@ function activateAndWait(
 
 async function waitForProjectActivation(store: AppStore, projectId: string): Promise<void> {
   if (store.getState().activeProjectId === projectId) return
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
+    activationWaiters.set(projectId, { resolve, reject })
     const unsub = store.on('workspace_changed', () => {
       if (store.getState().activeProjectId === projectId) {
+        activationWaiters.delete(projectId)
         unsub()
         resolve()
       }
@@ -338,14 +397,11 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
   if (proj.sshHost) {
+    const enabled = await api.settings.get('sshWorkspaceEnabled')
+    if (enabled !== true) return
     try {
       await ensureSshConnected(api, proj.sshHost)
     } catch {
-      await dropMissingProject(store, api, id)
-      const nextProjectId = store.getState().activeProjectId
-      if (nextProjectId) {
-        await restoreProject(store, api, nextProjectId)
-      }
       return
     }
   }
@@ -395,6 +451,7 @@ export function resetProjectSwitchStateForTest(): void {
   pendingThreadAfterSwitch = null
   threadCache.clear()
   projectViewState.clear()
+  activationWaiters.clear()
 }
 
 /** Test hook — seed sidebar thread cache for a project. */
