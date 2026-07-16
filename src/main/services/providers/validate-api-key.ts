@@ -3,6 +3,7 @@ import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { getResolvedExtraProvider } from './extra-providers-store.ts'
 import { getSetting } from '../storage/settings.ts'
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
+import { resolveCursorCloudApiBase } from '../remote/cursor-cloud-models.ts'
 
 // Same overridable base the model catalog fetch uses (openrouter-models.ts): the
 // hidden `openRouterApiBase` setting lets e2e point validation at a local
@@ -96,7 +97,10 @@ export async function validateCursorApiKey(key: string): Promise<ApiKeyValidatio
   if (!trimmed) return { ok: false, error: 'Key is empty' }
 
   try {
-    const res = await fetch('https://api.cursor.com/v1/models', {
+    // Same base as create-agent / picker catalog so a custom remoteAgentBaseUrl
+    // (or e2e fixture) validates against the endpoint Copse will actually call.
+    const base = resolveCursorCloudApiBase()
+    const res = await fetch(`${base}/v1/models`, {
       headers: { Authorization: cursorAuthHeader(trimmed) },
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
     })
