@@ -94,7 +94,9 @@ export function assertProviderHostAllowed(baseUrl: string, approved: readonly st
   const approvedSet = new Set(approved.map((entry) => normalizeHostname(entry)))
   if (approvedSet.has(host)) return
 
-  throw new Error(`Provider host "${host}" is not approved. Re-add it in Settings → Providers.`)
+  throw new Error(
+    `Provider host "${host}" is not approved. Add it under Settings → General → Approved provider hosts.`,
+  )
 }
 
 export function isProviderHostAllowed(baseUrl: string, approved: readonly string[]): boolean {

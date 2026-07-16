@@ -56,7 +56,7 @@ import {
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
-import { fetchOpenAiCompatibleModels } from '../services/providers/provider-models.ts'
+import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
@@ -670,7 +670,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const url = parseIpcArgs(z.string().max(2048), [baseUrl])
     const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
-    return fetchOpenAiCompatibleModels(url, apiKey)
+    return fetchOpenAiCompatibleModelsForSettings(url, apiKey)
   })
   ipcMain.handle('settings:refreshHuggingFaceModels', async (event, key: unknown) => {
     assertMainFrameSender(event, win)

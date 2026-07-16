@@ -82,7 +82,7 @@ describe('assertProviderHostAllowed', () => {
   it('blocks an unapproved custom host', () => {
     assert.throws(() => {
       assertProviderHostAllowed('https://evil.example/v1', [])
-    }, /evil\.example.*not approved/)
+    }, /evil\.example.*not approved.*General/)
     assert.equal(isProviderHostAllowed('https://evil.example/v1', []), false)
   })
 })

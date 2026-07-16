@@ -101,7 +101,7 @@ export async function ensureProviderHostApproved(baseUrl: string): Promise<void>
   const host = providerHostKey(baseUrl)
   if (!providerAllowUserApprovalEnabled()) {
     throw new Error(
-      `Provider host "${host}" is not approved. Enable "Ask before allowing new provider hosts" in Settings → Security, or add it under Approved provider hosts.`,
+      `Provider host "${host}" is not approved. Enable "Ask before allowing new model provider hosts" in Settings → General, or add it under Approved provider hosts.`,
     )
   }
 
