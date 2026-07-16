@@ -229,8 +229,8 @@ export const securitySettingsSchema = z.object({
   reviewModel: z.string().max(256).optional(),
   autoRunSandboxCommands: z.boolean(),
   mcpAutoAllowReadOnly: z.boolean(),
-  // Storage-only setting with no Settings UI yet (see docs/cursor-hooks.md). Optional so the
-  // renderer's setSecurity bundle, which never sends it, doesn't fail validation or clobber it.
+  // Toggled from Settings → Sources → Hooks (see docs/cursor-hooks.md). Optional so
+  // older renderer bundles that don't send it don't fail validation or clobber it.
   cursorHooksEnabled: z.boolean().optional(),
   defaultReadonlyMode: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
