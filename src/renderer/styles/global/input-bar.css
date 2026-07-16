@@ -278,6 +278,28 @@
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);
 }
+/* Portrait / bottom-pinned chrome: labeled panel toggles between the status
+   footer and the stacked right panel. Height matches `.projects-settings-btn`
+   so the row lines up with Settings across the chat section. */
+.portrait-panel-bar {
+  display: none;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#app.is-portrait-chrome .portrait-panel-bar {
+  display: flex;
+}
+.portrait-panel-bar .titlebar-text-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+}
 .footer-model-host {
   min-width: 0;
   max-width: min(220px, 40vw);
