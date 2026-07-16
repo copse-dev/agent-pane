@@ -266,11 +266,7 @@ function foldIndex(): Map<string, IndexRecord> {
     return new Map<string, IndexRecord>()
   }
   // Return cached index if the file hasn't changed
-  if (
-    cachedIndex !== null &&
-    cachedIndexMtime === stat.mtimeMs &&
-    cachedIndexSize === stat.size
-  ) {
+  if (cachedIndex !== null && cachedIndexMtime === stat.mtimeMs && cachedIndexSize === stat.size) {
     return cachedIndex
   }
   // Read and parse the index (cached on success).

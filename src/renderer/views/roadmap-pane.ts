@@ -349,13 +349,7 @@ export function mountRoadmapPane(
       const hint = searchQuery
         ? 'No roadmap items match your filter.'
         : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
-      listBody.append(
-        el(
-          'div',
-          { class: 'git-changes-empty roadmap-list-empty' },
-          hint,
-        ),
-      )
+      listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
       return
     }
     for (const item of visible) {
