@@ -51,7 +51,7 @@ describe('HookRegistry.emit — zero registered hooks changes nothing', () => {
   })
 })
 
-describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize lists', () => {
+describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize + E1 step-boundary lists', () => {
   it('registers turn-start and beforeFinalize hooks in their assembly orders', () => {
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
@@ -60,6 +60,13 @@ describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize lists', () => {
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').map((h) => h.id),
       ['todo-finalize-closeout'],
+    )
+  })
+
+  it('registers the four E1 step-boundary nudge hooks', () => {
+    assert.deepEqual(
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'stepBoundary').map((h) => h.id),
+      ['stuck-finalize-nudge', 'loop-nudge', 'truncation-continue', 'reasoning-runaway'],
     )
   })
 })

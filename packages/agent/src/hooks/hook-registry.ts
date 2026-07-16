@@ -44,6 +44,7 @@ function recordRun(context: HookContext, record: HookRunRecord): void {
 }
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
+import { STEP_BOUNDARY_HOOKS } from './step-boundary-hooks.ts'
 
 /**
  * Thread a tool-gate rewrite into the payload so the **next** hook in the
@@ -511,13 +512,15 @@ export function mergeBlockingOutcomes(records: readonly HookOutcomeRecord[]): Bl
 
 /**
  * First-party hooks registered on every fresh registry. M0.2 fills in the
- * turn-start steering / pin hooks; M0.3 adds the finalize closeout nudge hook.
- * Registration order within each event is load-bearing (assembly / attempt
- * mapping); cross-event order is not.
+ * turn-start steering / pin hooks; M0.3 adds the finalize closeout nudge hook;
+ * E1 adds the four in-loop step-boundary nudge hooks. Registration order within
+ * each event is load-bearing (assembly / attempt mapping); cross-event order is
+ * not.
  */
 export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [
   ...TURN_START_HOOKS,
   ...BEFORE_FINALIZE_HOOKS,
+  ...STEP_BOUNDARY_HOOKS,
 ]
 
 /** Build a registry pre-loaded with the static first-party hook list. */
