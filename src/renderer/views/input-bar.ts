@@ -352,7 +352,7 @@ export function mountInputBar(
     if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending()
   }
 
-  function handleStopShortcut(key: 'Escape' | 'Enter'): boolean {
+  const handleStopShortcut = (key: 'Escape' | 'Enter'): boolean => {
     const id = getActiveThreadId()
     const thread = getActiveThread(store)
     if (!id || thread?.status !== 'running') {
