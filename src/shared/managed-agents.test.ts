@@ -106,12 +106,13 @@ describe('buildManagedAgentSystemPrompt', () => {
   it('instructs a new branch and a PR by default, without leaking any token', () => {
     const prompt = buildManagedAgentSystemPrompt({
       mountPath: MANAGED_AGENT_REPO_MOUNT_PATH,
-      branchPrefix: 'claude/',
+      branchPrefix: 'copse/',
       autoCreatePR: true,
       workOnCurrentBranch: false,
     })
     assert.match(prompt, /mounted at `\/workspace\/repo`/)
-    assert.match(prompt, /create a new working branch named `claude\/<short-kebab-summary>`/)
+    assert.match(prompt, /Never commit or push directly to the repository's default branch/)
+    assert.match(prompt, /create a new working branch named `copse\/<short-kebab-summary>`/)
     assert.match(prompt, /open a pull request using the GitHub MCP tools/)
     assert.match(prompt, /the URL of the pull request/)
     // The repo token lives only in the github_repository resource, never the prompt.
@@ -121,15 +122,16 @@ describe('buildManagedAgentSystemPrompt', () => {
   it('honors work-on-current-branch and skip-PR settings', () => {
     const prompt = buildManagedAgentSystemPrompt({
       mountPath: '/workspace/repo',
-      branchPrefix: 'claude/',
+      branchPrefix: 'copse/',
       startingRef: 'develop',
       autoCreatePR: false,
       workOnCurrentBranch: true,
     })
     assert.match(prompt, /check out `develop`/)
-    assert.match(prompt, /do not create a new branch/)
+    assert.match(prompt, /If `develop` is not the default branch, commit your work there/)
+    assert.match(prompt, /If it is the default branch, create a new working branch/)
     assert.match(prompt, /Do not open a pull request/)
-    assert.doesNotMatch(prompt, /create a new working branch/)
+    assert.match(prompt, /named `copse\/<short-kebab-summary>` instead/)
   })
 })
 

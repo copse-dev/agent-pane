@@ -479,9 +479,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="usage">
             <h3>Usage</h3>
             <p class="settings-section-desc">
-              Estimated cloud spend and local (free) model token usage across all workspaces.
-              Costs are approximate and use catalog pricing, including Anthropic prompt-cache rates
-              when cache tokens are reported.
+              Subscription plan windows (Claude / Codex) when those CLIs are signed
+              in, plus estimated cloud spend and local (free) model token usage
+              across all workspaces. Plan fetch is best-effort and never blocks
+              Copse. Costs are approximate and use catalog pricing, including
+              Anthropic prompt-cache rates when cache tokens are reported.
             </p>
             <div id="settings-usage-host" class="settings-mount"></div>
           </section>
