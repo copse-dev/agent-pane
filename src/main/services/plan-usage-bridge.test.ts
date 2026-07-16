@@ -133,16 +133,15 @@ describe('loadPlanUsageSnapshot', () => {
     try {
       const snap = await loadPlanUsageSnapshot()
       assert.equal(snap.providers.length, 4)
-      assert.equal(snap.providers[0]?.provider, 'claude')
-      assert.equal(snap.providers[0]?.status, 'unavailable')
-      assert.match(
-        snap.providers[0]?.status === 'unavailable' ? snap.providers[0].reason : '',
-        /credentials were rejected/i,
-      )
-      assert.equal(snap.providers[1]?.provider, 'codex')
-      assert.equal(snap.providers[1]?.status, 'ok')
-      assert.equal(snap.providers[2]?.provider, 'huggingface')
-      assert.equal(snap.providers[2]?.status, 'error')
+      const claude = snap.providers.find((provider) => provider.provider === 'claude')
+      if (!claude || claude.status !== 'unavailable') assert.fail('Expected Claude unavailable')
+      assert.match(claude.reason, /credentials were rejected/i)
+      const codex = snap.providers.find((provider) => provider.provider === 'codex')
+      if (!codex || codex.status !== 'ok') assert.fail('Expected Codex ok')
+      const huggingface = snap.providers.find((provider) => provider.provider === 'huggingface')
+      if (!huggingface || huggingface.status !== 'error') {
+        assert.fail('Expected Hugging Face error')
+      }
     } finally {
       if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev

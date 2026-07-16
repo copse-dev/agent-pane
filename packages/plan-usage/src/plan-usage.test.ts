@@ -348,7 +348,7 @@ describe('fetchClaudePlanUsage', () => {
 
   it('returns error on HTTP failure without throwing', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
-      fetch: jsonFetch({ error: { message: 'nope' } }, 401),
+      fetch: jsonFetch({ error: { message: 'nope' } }, 500),
     })
     assert.equal(result.status, 'error')
   })
