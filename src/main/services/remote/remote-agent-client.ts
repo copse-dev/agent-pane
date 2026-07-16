@@ -10,9 +10,9 @@ import {
 import {
   DEFAULT_CURSOR_AGENT_BASE_URL,
   REMOTE_AGENT_MODELS,
-  REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
+  remoteAgentModelValue,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
@@ -52,6 +52,13 @@ interface RemoteAgentSession {
   provider: RemoteAgentProvider
   baseUrl: string
   agentId: string
+  /**
+   * Upstream model id used when this agent was created. Absent on sessions
+   * persisted before multi-model support (treated as account default). Cursor
+   * cannot change model on follow-up runs, so a different selection must start
+   * a new agent.
+   */
+  model?: string
   /** Web URL for the remote run (e.g. cursor.com/agents/...), shown in the transcript. */
   url?: string
 }
@@ -220,6 +227,8 @@ async function createRemoteAgent(input: {
   baseUrl: string
   apiKey: string
   prompt: PromptPayload
+  /** When set, passed as `model.id` on Create Agent; omit for account default. */
+  model?: string
 }): Promise<{ agentId: string; runId: string; url?: string }> {
   const repository = await resolveRemoteAgentRepository()
   // Cursor's agent API clones the source repo on its side, so there is no
@@ -234,6 +243,7 @@ async function createRemoteAgent(input: {
   // remote clones from GitHub, so a branch that hasn't been pushed falls back to
   // the repo's default ref (startingRef omitted).
   const startingRef = (await getCurrentBranchName())?.trim() || ''
+  const modelId = input.model?.trim()
   const body = {
     prompt: input.prompt,
     repos: [
@@ -245,6 +255,7 @@ async function createRemoteAgent(input: {
     mode: REMOTE_AGENT_MODE,
     workOnCurrentBranch: getSetting<boolean>('remoteAgentWorkOnCurrentBranch', false),
     autoCreatePR: getSetting<boolean>('remoteAgentAutoCreatePR', true),
+    ...(modelId ? { model: { id: modelId } } : {}),
   }
 
   const response = await input.fetchImpl(joinUrl(input.baseUrl, '/v1/agents'), {
@@ -563,9 +574,14 @@ export async function runRemoteAgentFromSettings(
   // project switch, and the link/PR must land on the project it started in.
   const launchProjectId = getActiveProjectId()
 
+  const selectedModel = options.model?.trim() || undefined
   const priorSession = readSession(options.threadId)
+  // Cursor binds the model at agent create; a different selection (or switching
+  // back to account default) must start a fresh agent rather than follow-up.
   const canReuseSession =
-    priorSession?.provider === options.provider && priorSession.baseUrl === baseUrl
+    priorSession?.provider === options.provider &&
+    priorSession.baseUrl === baseUrl &&
+    (priorSession.model ?? undefined) === selectedModel
 
   const run: { agentId: string; runId: string; url?: string } = canReuseSession
     ? {
@@ -584,6 +600,7 @@ export async function runRemoteAgentFromSettings(
         baseUrl,
         apiKey,
         prompt: await buildFirstHandoffPrompt(prompt, options.priorMessages ?? []),
+        ...(selectedModel ? { model: selectedModel } : {}),
       })
 
   writeSession(options.threadId, {
@@ -591,6 +608,7 @@ export async function runRemoteAgentFromSettings(
     provider: options.provider,
     baseUrl,
     agentId: run.agentId,
+    ...(selectedModel ? { model: selectedModel } : {}),
     ...(run.url ? { url: run.url } : {}),
   })
 
@@ -654,7 +672,7 @@ export async function runRemoteAgentFromSettings(
       if (usage.inputTokens || usage.outputTokens) {
         options.onChunk({
           type: 'usage',
-          model: `${REMOTE_AGENT_MODEL_PREFIX}${options.provider}`,
+          model: remoteAgentModelValue(options.provider, selectedModel),
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
         })
