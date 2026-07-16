@@ -190,6 +190,13 @@ separator after it — that paints `/ / usr` for `/usr`. Skip the separator when
 [`remote-folder-path.test.ts`](../src/renderer/views/remote-folder-path.test.ts),
 [`tests/e2e/remote-folder-breadcrumbs.e2e.ts`](../tests/e2e/remote-folder-breadcrumbs.e2e.ts).
 
+## SSH chrome — no lightning emoji
+
+The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.
+Disconnect banners are text + actions only (no decorative ⚡ icon). Specs:
+[`ssh-status-banner.test.ts`](../src/renderer/views/ssh-status-banner.test.ts),
+[`tests/e2e/ssh-titlebar-target.e2e.ts`](../tests/e2e/ssh-titlebar-target.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the
