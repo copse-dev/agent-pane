@@ -724,12 +724,7 @@ function getScalewayServers(config: ScalewayConfig, serverIds: string[]): CloudH
 function listScalewayServers(config: ScalewayConfig): CloudHost[] {
   const raw = capture(
     'scw',
-    scalewayJsonArgs(config, [
-      'instance',
-      'server',
-      'list',
-      `tags=${scalewayTags(config.name).join(',')}`,
-    ]),
+    scalewayJsonArgs(config, ['instance', 'server', 'list', ...scalewayTagArgs(config.name)]),
   )
   const parsed: unknown = JSON.parse(raw)
   const servers = Array.isArray(parsed) ? parsed : isRecord(parsed) ? parsed['servers'] : undefined
