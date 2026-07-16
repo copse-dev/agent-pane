@@ -5,7 +5,7 @@ export const USAGE_EVENTS_STORAGE_KEY = 'usageEvents'
 /** Keep at least 90 days of events for the longest settings window. */
 export const USAGE_EVENTS_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 
-export type UsageSource = 'agent' | 'small-tasks' | 'safety-classifier'
+export type UsageSource = 'agent' | 'small-tasks' | 'safety-classifier' | 'advisor'
 
 export interface UsageEvent extends ModelUsage {
   at: number

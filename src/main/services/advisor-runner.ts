@@ -1,8 +1,8 @@
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage, StreamChunk } from '@shared/types'
 import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { getSettingTrimmed } from './storage/settings.ts'
-import { addSubagentUsage } from './subagent-usage.ts'
+import { emitAdvisorUsage } from './advisor-usage.ts'
 import {
   ADVISOR_MODEL_SETTING,
   DEFAULT_ADVISOR_MODEL,
@@ -22,11 +22,16 @@ export function resolveAdvisorModelId(): string {
  * the *live* transcript so the advisor sees everything the executor has done so
  * far — the client-side equivalent of the native server forwarding the
  * conversation automatically.
+ *
+ * Usage is reported on the advisor model via `onChunk` (issue #566 dedicated
+ * advisor cost line) — never folded into aux/subagent usage, which would bill
+ * advisor tokens at the wrong model rate.
  */
 export interface AdvisorRunnerContext {
   advisorModel: string
   executorModel: string
   getTranscript: () => LLMMessage[]
+  onChunk: (chunk: StreamChunk) => void
 }
 
 export type AdvisorRunner = (signal: AbortSignal) => Promise<string>
@@ -58,10 +63,7 @@ export function getAdvisorRunner(): AdvisorRunner | null {
     const transcript = buildAdvisorTranscript(ctx.getTranscript())
     const prompt = `${ADVISOR_PREAMBLE}\n\n# Executor transcript\n\n${transcript}`
     const { text, usage } = await completeTextWithUsage(provider, prompt, ADVISOR_TIMEOUT_MS)
-    // Advisor tokens are billed at the advisor model's rate. For now they fold
-    // into the run's aux-model usage; a dedicated advisor cost line (mirroring
-    // the native `usage.iterations[].advisor_message`) is a tracked follow-up.
-    addSubagentUsage(usage)
+    emitAdvisorUsage(ctx.onChunk, ctx.advisorModel, usage)
     if (!text.trim()) return 'Advisor returned no guidance.'
     return renderAdvisorResult(normalizeAdvisorResult(text))
   }

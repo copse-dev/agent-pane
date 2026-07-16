@@ -608,11 +608,13 @@ export async function runAgent(
       if (name === 'advisor') {
         // Client-side advisor: hand the tool the live transcript so it can
         // forward it to a larger advisor model (issue #566). Mirrors the
-        // native tool's automatic transcript forwarding.
+        // native tool's automatic transcript forwarding. Usage is reported on
+        // the advisor model via onChunk (dedicated cost line — not aux usage).
         setAdvisorContext({
           advisorModel: resolveAdvisorModelId(),
           executorModel: model,
           getTranscript: () => trimmed,
+          onChunk: sendChunk,
         })
         try {
           return await registry.executeNormalized(name, args, signal)

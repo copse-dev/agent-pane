@@ -52,6 +52,9 @@ stop_reason? }` union, with an `advisor_redacted_result` branch reserved for par
   when the flag is on (`registry-bootstrap.ts`).
 - **Tests** `advisor-strategy.test.ts` (transcript formatting, result normalization/render,
   native-pair validation).
+- **Dedicated advisor cost line** — advisor tokens emit a `usage` chunk on the advisor
+  model with `usageSource: 'advisor'` (not folded into aux/subagent usage), so the
+  footer/`byModel` breakdown and usage ledger bill them at the advisor rate.
 
 While the flag is off, nothing is registered and no advisor call is ever made.
 
@@ -61,9 +64,6 @@ While the flag is off, nothing is registered and no advisor call is ever made.
   block + `advisor-tool-2026-03-01` beta header in `AnthropicProvider`, parse
   `server_tool_use` / `advisor_tool_result` stream blocks, and handle `pause_turn`
   resumption. Should slot in behind the same internal contract with no behavioural change.
-- **Dedicated advisor cost line.** Advisor tokens currently fold into the run's aux-model
-  usage (via `addSubagentUsage`). Split them onto their own line, mirroring the native
-  `usage.iterations[].advisor_message`, billed at the advisor model's rate.
 - **Model picker UI** for the advisor (today a text field) and pair-validation surfacing.
 - **Prompting/timing** — the docs' suggested system-prompt blocks and turn-2 nudge for
   under-calling (esp. small/local) executors; a per-conversation advisor-call cap and
