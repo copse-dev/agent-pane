@@ -213,6 +213,50 @@ export function recordDroppedAsyncDispatch(input: {
   persist(ctx, line, toolsetBlobs(ctx))
 }
 
+/** Keep the halt reason on the spine bounded — the full text lives in the hook's blob. */
+const MAX_STOP_REASON_CHARS = 500
+
+/**
+ * Record a `haltRun` **effect** as its own `hook_run` line (H3, decisions 12 &
+ * 16). Distinct from the hook's own execution line (which carries `haltRun:
+ * true` = "asked to halt"): this marks whether that halt was *applied* (routed
+ * through the abort path, aborting the active turn tree) or *suppressed* as a
+ * stale no-op (its emitting epoch was no longer current). Zero-duration marker —
+ * the abort itself is instantaneous — so an applied or suppressed halt is always
+ * visible in the transcript, never silent. No-op outside an active recording
+ * window (e.g. a stale halt arriving with no run active).
+ */
+export function recordHaltRun(input: {
+  event: string
+  hookId: string
+  executor: 'function' | 'command'
+  /** true = the halt aborted the run; false = suppressed as stale (decision 16). */
+  applied: boolean
+  reason: string
+}): void {
+  const ctx = current
+  if (!ctx) return
+  const decision: SpineHookRunDecision = {
+    haltRun: true,
+    ...(input.applied ? { haltApplied: true } : { haltSuppressedStale: true }),
+    ...(input.reason ? { stopReason: input.reason.slice(0, MAX_STOP_REASON_CHARS) } : {}),
+  }
+  const line: SpineHookRunLine = {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'hook_run',
+    id: randomUUID(),
+    event: input.event,
+    hookId: input.hookId,
+    executor: input.executor,
+    ...attributionFields(ctx),
+    startedAt: Date.now(),
+    durationMs: 0,
+    parseOk: true,
+    decision,
+  }
+  persist(ctx, line, toolsetBlobs(ctx))
+}
+
 /** One spawned (command) hook execution, as observed by the command runner. */
 export interface CommandHookRunInput {
   /** Dialect event name (e.g. `beforeShellExecution`). */

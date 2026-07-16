@@ -100,6 +100,26 @@ export interface SpineHookRunDecision {
   permission?: 'allow' | 'deny' | 'ask'
   /** The hook asked to halt the whole run (`continue: false`). */
   haltRun?: boolean
+  /**
+   * A `haltRun` was routed through the run's abort path (H3, decision 12): the
+   * active turn tree was aborted, attributed to this hook. Set on the halt
+   * *effect* line the abort path records — distinct from `haltRun`, which only
+   * marks that a hook *asked* to halt.
+   */
+  haltApplied?: boolean
+  /**
+   * A `haltRun` was a **suppressed no-op** because it arrived stale — its
+   * emitting turn tree was no longer current (H3, decision 16). Recorded so a
+   * late async hook's suppressed stop is visible in the transcript rather than
+   * silent, and never mistaken for an applied halt.
+   */
+  haltSuppressedStale?: boolean
+  /**
+   * The halt reason the hook supplied (`continue: false` + `stopReason`), bounded
+   * for the spine. Carried on the halt effect line so a future hook card (G1) can
+   * render *why* the run stopped without re-reading the stdout blob.
+   */
+  stopReason?: string
   /** The hook rewrote the gated tool's input. */
   updatedInput?: boolean
   /** Character counts of text channels (full text: stdout blob / applied context). */

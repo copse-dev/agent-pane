@@ -33,6 +33,7 @@ import { cursorAfterToolUseHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
+import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 
 /**
  * Cap the tool-output snapshot marshalled into a hook's stdin (D2). A tool's
@@ -98,8 +99,11 @@ export type RunAfterToolUseHooksOpts = DialectDiscoverOpts & {
  * matching after-event (any tool other than shell / MCP) or nothing is
  * registered, so the default path is unchanged.
  *
- * Observation-only: no `onAsyncOutcome` sink is wired — Cursor's after-events
- * return nothing (decision 3), so there is no queued follow-up to route.
+ * Cursor's after-events are observation-only (they return nothing), but the
+ * `onAsyncOutcome` sink is still wired so a first-party *async function* hook on
+ * this mid-turn event can route a `queueMessage` (C2) or a `haltRun` (H3,
+ * decision 12 — halt the current turn through the abort path). The Cursor
+ * command hooks produce neither, so this stays a no-op for them.
  */
 export async function runAfterToolUseHooks(
   payload: HookEventPayloads['afterToolUse'],
@@ -126,8 +130,10 @@ export async function runAfterToolUseHooks(
   // Detached dispatch (decision 3): `emitAsync` schedules each hook on the
   // shared dispatcher and returns immediately — it never awaits. The detached
   // run context strips the abort signal, so an in-flight hook is never killed.
-  // Every dispatch carries the emitting `turnTreeId` (decision 16). No async
-  // outcome sink: Cursor's after-events are notification-only.
+  // Every dispatch carries the emitting `turnTreeId` (decision 16). The
+  // `onAsyncOutcome` sink routes a `queueMessage` (C2) / `haltRun` (H3) an async
+  // function hook returns; Cursor's after-events return nothing, so it is a
+  // no-op for them.
   registry.emitAsync('afterToolUse', cappedPayload, {
     dispatcher,
     threadId: opts.threadId,
@@ -135,6 +141,7 @@ export async function runAfterToolUseHooks(
     runCommandHook: createCommandHookRunner(
       opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
     ),
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 

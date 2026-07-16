@@ -1,7 +1,9 @@
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
+import { haltRunFromBlockingHook } from '../hooks/halt-run.ts'
 import { currentAgentSessionInfo } from '../hooks/agent-session.ts'
+import { getActiveRunThread } from '../thread-models.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
@@ -511,6 +513,23 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
     { toolName: check.toolName, args: check.args },
     { workspaceRoot, projectTrusted, agentSession: currentAgentSessionInfo() },
   )
+
+  // H3 (decision 12): a `haltRun` stops the whole turn, not just this tool call.
+  // Route it through the run's abort path — attributed to the hook, spine-recorded
+  // — in addition to blocking the call below. A blocking hook fires synchronously
+  // inside the active run, so it is current by construction (no epoch to be stale
+  // against, decision 16); when no run is active this is a harmless no-op.
+  if (decision.haltRun) {
+    const threadId = getActiveRunThread()
+    if (threadId) {
+      haltRunFromBlockingHook({
+        threadId,
+        event: 'toolGate',
+        hookId: decision.haltRun.hookId,
+        reason: decision.haltRun.reason,
+      })
+    }
+  }
 
   if (decision.permission === 'deny') {
     if (decision.agentMessage) {
