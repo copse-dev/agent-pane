@@ -87,6 +87,9 @@ import {
   setAgentRunTodos,
 } from './agent-run-todos.ts'
 import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './github/git-service.ts'
+import { getWorkspaceRoot } from './workspace.ts'
+import { isWorkspaceTrusted } from './security/workspace-trust.ts'
+import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import {
   findNewlyInProgressLocal,
@@ -98,7 +101,7 @@ import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
-import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
+import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
@@ -225,6 +228,47 @@ function parentTools(
   return tools
 }
 
+/** The composed prompt text a `beforeSubmitPrompt` hook receives (Cursor `prompt`). */
+function promptTextForSubmit(userPrompt: UserContent): string {
+  if (typeof userPrompt === 'string') return userPrompt
+  return userPrompt
+    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n')
+}
+
+/**
+ * Fire `beforeSubmitPrompt` (B1). Returns the user-facing notice to show when a
+ * hook halted the submit (`continue: false`), or null to proceed. Recording is
+ * begun/ended around the fire so a halting hook's `hook_run` line is attributed
+ * to this thread (decision 6); the turn itself re-begins recording with its own
+ * turn id.
+ */
+async function runBeforeSubmitPrompt(
+  threadId: string,
+  userPrompt: UserContent,
+): Promise<string | null> {
+  // Gate on the same master switch as every other hook path (tool gate, stop,
+  // afterFileEdit). Without this, "always-trusted" user `~/.cursor/hooks.json`
+  // beforeSubmitPrompt hooks would spawn on every submit even with the feature
+  // off (the default) — a consent-gate bypass and needless per-submit discovery.
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return null
+  const workspaceRoot = getWorkspaceRoot()
+  beginHookRunRecording(threadId)
+  try {
+    const decision = await runBeforeSubmitPromptHooks(promptTextForSubmit(userPrompt), {
+      workspaceRoot,
+      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    })
+    if (!decision.blocked) return null
+    return (
+      decision.userMessage ?? decision.reason ?? 'A hook blocked this prompt from being submitted.'
+    )
+  } finally {
+    endHookRunRecording(threadId)
+  }
+}
+
 export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
@@ -246,11 +290,24 @@ export async function runAgent(
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
-  const remoteProvider = parseRemoteAgentModel(model)
+  const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
 
   const sendChunk = createAgentChunkSink(threadId, host)
+
+  // B1: fire `beforeSubmitPrompt` on the compose path, before any agent turn
+  // starts (ACP / remote / local). A blocking decision hook may halt the submit
+  // (`continue: false`); when it does we surface its user-facing message through
+  // the existing text/`done` channel and return without starting the turn — the
+  // blocked prompt never enters LLM history. Spine recording is attributed the
+  // same way the turn's own hooks are (decision 6, always-on).
+  const blocked = await runBeforeSubmitPrompt(threadId, userPrompt)
+  if (blocked) {
+    sendChunk({ type: 'text', text: blocked })
+    sendChunk({ type: 'done' })
+    return { usage: { inputTokens: 0, outputTokens: 0 }, messages: priorMessages }
+  }
 
   // Experimental PII redaction: when enabled, swap personal data the user typed
   // for stable placeholders before the prompt leaves the device — for every
@@ -321,7 +378,7 @@ export async function runAgent(
     }
   }
 
-  if (remoteProvider) {
+  if (remoteSelection) {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
@@ -330,7 +387,8 @@ export async function runAgent(
     try {
       const result = await runRemoteAgentFromSettings({
         threadId,
-        provider: remoteProvider,
+        provider: remoteSelection.provider,
+        ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
