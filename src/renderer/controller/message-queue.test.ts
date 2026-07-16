@@ -14,15 +14,36 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import {
   dispatchAgentRun,
   drainMessageQueue,
+  enqueueHookMessage,
   enqueueUserMessage,
+  isHeldMessage,
+  isStaleEpoch,
   movePendingUserMessagesToEnd,
   queuedMessageIds,
   queuedPayloadText,
+  releaseHeldMessage,
   removeQueuedMessage,
   resumePendingQueues,
   sendQueuedMessageNow,
+  startHumanTurnTree,
   updateQueuedMessageText,
 } from './message-queue.ts'
+import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
+
+const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
+
+/** Set the thread's current turn-tree epoch (decision 16 reference point). */
+function setCurrentEpoch(
+  store: ReturnType<typeof createStore>,
+  threadId: string,
+  epoch: string,
+): void {
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((t) => (t.id !== threadId ? t : { ...t, currentEpoch: epoch })),
+  })
+}
 
 function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[] } {
   const runs: Array<[string, string]> = []
@@ -476,4 +497,214 @@ test('resumePendingQueues resets a stale running status when the queue is empty'
   const thread = getThread(store, threadId)
   assert.equal(thread.status, 'idle')
   assert.equal(api.runs.length, 0)
+})
+
+// --- C2 contract tests ------------------------------------------------------
+// Named for the decisions they pin (execution-guidance rule 2), house style of
+// permission-platform.test.ts. See docs/plans/hooks-and-feature-packs.md.
+
+test('held-items-never-drain (decision 5): drainMessageQueue skips a held item at idle', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'user', 'held follow-up')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'held follow-up' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'e1',
+    autoDispatch: false,
+  })
+
+  // Thread is idle — a plain queued item would auto-submit here. A held one must not.
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 0, 'a held item must never auto-drain')
+  const thread = getThread(store, threadId)
+  assert.equal(thread.pendingMessages?.length, 1, 'the held item stays queued')
+  assert.equal(isHeldMessage(at(thread.pendingMessages ?? [], 0)), true)
+})
+
+test('held-items-never-drain (decision 5): drain skips the held head and dispatches the next plain item', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const heldId = addMessage(store, threadId, 'user', 'held')
+  const plainId = addMessage(store, threadId, 'user', 'plain')
+  enqueueUserMessage(store, threadId, {
+    messageId: heldId,
+    payload: { content: 'held' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'e1',
+    autoDispatch: false,
+  })
+  enqueueUserMessage(store, threadId, {
+    messageId: plainId,
+    payload: { content: 'plain' },
+    createdAt: 2,
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 1, 'the plain item drains past the held head')
+  assert.match(firstRun(api)[1], /plain/)
+  const thread = getThread(store, threadId)
+  assert.deepEqual(
+    thread.pendingMessages?.map((p) => p.messageId),
+    [heldId],
+    'the held item remains queued after the plain item drains',
+  )
+})
+
+test('stale-epoch-never-aborts (decision 16): a stale hook send-now downgrades to held, no abort', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setCurrentEpoch(store, threadId, 'epoch-current')
+
+  // A late async hook from a *completed* turn tree requests send-now.
+  enqueueHookMessage(store, api, threadId, {
+    text: 'late hook output',
+    origin: HOOK_ORIGIN,
+    epoch: 'epoch-stale',
+    sendNow: true,
+  })
+
+  assert.deepEqual(api.aborts, [], 'a stale send-now must never abort the active run')
+  assert.equal(api.runs.length, 0)
+  const thread = getThread(store, threadId)
+  const item = at(thread.pendingMessages ?? [], 0)
+  assert.equal(isHeldMessage(item), true, 'the stale send-now is held, not plain-queued')
+  assert.equal(item.origin?.kind, 'hook')
+  assert.equal(item.epoch, 'epoch-stale')
+
+  // And being held, it does not auto-drain when the run finishes.
+  setThreadStatus(store, threadId, 'idle')
+  drainMessageQueue(store, api, threadId)
+  assert.equal(api.runs.length, 0, 'the downgraded item never auto-submits')
+})
+
+test('stale-epoch-never-aborts (decision 16): a current-epoch hook send-now takes the abort path', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  setCurrentEpoch(store, threadId, 'epoch-current')
+
+  enqueueHookMessage(store, api, threadId, {
+    text: 'current hook output',
+    origin: HOOK_ORIGIN,
+    epoch: 'epoch-current',
+    sendNow: true,
+  })
+
+  assert.deepEqual(api.aborts, [threadId], 'a current-epoch send-now aborts the live local run')
+  const thread = getThread(store, threadId)
+  assert.equal(
+    isHeldMessage(at(thread.pendingMessages ?? [], 0)),
+    false,
+    'current item is not held',
+  )
+})
+
+test('isStaleEpoch: no current epoch (no newer turn tree) is never stale; a differing epoch is', () => {
+  assert.equal(isStaleEpoch({}, 'e1'), false)
+  assert.equal(isStaleEpoch({ currentEpoch: 'e1' }, 'e1'), false)
+  assert.equal(isStaleEpoch({ currentEpoch: 'e2' }, 'e1'), true)
+})
+
+test('enqueueHookMessage: origin attribution lands on the queued message (decision 10)', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+
+  // No current epoch set → not stale; plain queued while running.
+  enqueueHookMessage(store, api, threadId, {
+    text: 'hook says hi',
+    origin: HOOK_ORIGIN,
+    epoch: 'e1',
+    sendNow: false,
+  })
+
+  const item = at(getThread(store, threadId).pendingMessages ?? [], 0)
+  assert.deepEqual(item.origin, HOOK_ORIGIN)
+  assert.equal(item.editedByUser, undefined, 'unedited hook message has no editedByUser flag')
+  assert.equal(item.epoch, 'e1')
+})
+
+test('updateQueuedMessageText: editing a hook message keeps origin + sets editedByUser (decision 10)', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setThreadStatus(store, threadId, 'running')
+  enqueueHookMessage(store, api, threadId, {
+    text: 'hook draft',
+    origin: HOOK_ORIGIN,
+    epoch: 'e1',
+    sendNow: false,
+  })
+  const messageId = at(getThread(store, threadId).pendingMessages ?? [], 0).messageId
+
+  updateQueuedMessageText(store, threadId, messageId, 'human-edited text')
+
+  const item = at(getThread(store, threadId).pendingMessages ?? [], 0)
+  assert.deepEqual(item.origin, HOOK_ORIGIN, 'origin stays kind:hook after an edit')
+  assert.equal(item.editedByUser, true)
+  assert.equal(item.payload.content, 'human-edited text')
+})
+
+test('updateQueuedMessageText: editing a human message does not set editedByUser', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'user', 'original')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'original' },
+    createdAt: 1,
+  })
+
+  updateQueuedMessageText(store, threadId, messageId, 'edited')
+
+  const item = at(getThread(store, threadId).pendingMessages ?? [], 0)
+  assert.equal(item.editedByUser, undefined)
+  assert.equal(item.origin, undefined)
+})
+
+test('releaseHeldMessage: un-holds, starts a fresh turn tree, and dispatches at idle', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setCurrentEpoch(store, threadId, 'epoch-stale')
+  const messageId = addMessage(store, threadId, 'user', 'held work')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'held work' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'epoch-stale',
+    autoDispatch: false,
+  })
+
+  releaseHeldMessage(store, api, threadId, messageId)
+
+  assert.equal(api.runs.length, 1, 'release dispatches the held item at idle')
+  assert.match(firstRun(api)[1], /held work/)
+  const thread = getThread(store, threadId)
+  assert.notEqual(thread.currentEpoch, 'epoch-stale', 'release starts a fresh turn tree')
+  assert.equal(thread.currentEpoch !== undefined, true)
+})
+
+test('startHumanTurnTree: records a fresh current epoch on the thread (decision 16)', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  assert.equal(getThread(store, threadId).currentEpoch, undefined)
+
+  const epoch = startHumanTurnTree(store, threadId)
+
+  assert.equal(getThread(store, threadId).currentEpoch, epoch)
+  assert.equal(typeof epoch, 'string')
 })

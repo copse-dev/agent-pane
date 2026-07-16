@@ -45,6 +45,7 @@ import { cursorStopHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
+import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 
 /** What the turn-end / abort fire site learns from the stop hooks. */
 export interface StopResult {
@@ -134,6 +135,13 @@ export async function runStopHooks(
     runCommandHook: createCommandHookRunner(
       opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
     ),
+    // C2: an async *function* hook's `queueMessage` outcome lands in the
+    // renderer's pending queue via this sink (decision 4). Cursor's `stop` is a
+    // notification-only *command* hook, so no outcome flows through it today, but
+    // the seam is live and epoch-tagged for the async function-hook events (and
+    // C3) that produce follow-ups. A stale send-now is downgraded to held on the
+    // renderer side (decision 16).
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 
