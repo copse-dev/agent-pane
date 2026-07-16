@@ -1203,9 +1203,7 @@ async function scalewayUp(options: Options): Promise<void> {
   for (const zone of zones) {
     if (remaining === 0) break
     const config = buildScalewayUpConfig(options, zone)
-    console.log(
-      `==> Trying ${String(remaining)}× ${config.type} in ${zone} for ${config.name}`,
-    )
+    console.log(`==> Trying ${String(remaining)}× ${config.type} in ${zone} for ${config.name}`)
     const result = launchScalewayServers(config, remaining)
     if (result.ids.length > 0) {
       batches.push({ config, ids: result.ids })
@@ -1217,7 +1215,9 @@ async function scalewayUp(options: Options): Promise<void> {
     if (remaining === 0) break
     if (result.quotaExceeded) {
       if (!autoZone) break
-      console.log(`==> Zone ${zone} out of capacity; trying next AZ for remaining ${String(remaining)}`)
+      console.log(
+        `==> Zone ${zone} out of capacity; trying next AZ for remaining ${String(remaining)}`,
+      )
       continue
     }
     if (result.ids.length === 0) {
