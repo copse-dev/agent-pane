@@ -247,12 +247,18 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
       const raw = await api.settings.get('sshWorkspaceHosts')
       const existing = Array.isArray(raw) ? (raw as SshWorkspaceHost[]) : []
       let next = existing
+      let imported = 0
       for (const alias of aliases) {
         if (next.some((h) => h.id === alias.id)) continue
         next = upsertHost(next, alias)
+        imported += 1
       }
       await persistHosts(next)
-      setInlineStatus(status, 'ok', `Imported ${String(aliases.length)} alias(es) from SSH config.`)
+      if (imported === 0) {
+        setInlineStatus(status, 'ok', 'All SSH config aliases are already imported.')
+        return
+      }
+      setInlineStatus(status, 'ok', `Imported ${String(imported)} alias(es) from SSH config.`)
     })()
   })
 

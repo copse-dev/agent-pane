@@ -3,6 +3,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { addProject, addRemoteProject } from '../controller/projects.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
+import { showErrorToast } from './toast.ts'
 
 export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const heading = el('h1', { class: 'welcome-heading' }, 'Copse')
@@ -42,7 +43,9 @@ export function mountWelcome(root: HTMLElement, store: AppStore, api: ApiClient)
   })
 
   openRemoteBtn.addEventListener('click', () => {
-    void addRemoteProject(store, api)
+    void addRemoteProject(store, api).catch((err: unknown) => {
+      showErrorToast('Could not open remote folder', err)
+    })
   })
 
   const syncRemoteOpenVisibility = (): void => {

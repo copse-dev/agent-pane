@@ -76,9 +76,21 @@ describe('getActiveExecutionTarget', () => {
     })
   })
 
-  it('returns local when execution is disabled', async () => {
+  it('returns local when execution is disabled for a local project', async () => {
     await setSetting('sshWorkspaceEnabled', false)
+    storageSet('projects', [{ id: 'p1', path: '/local/project' }])
+    setWorkspaceRootForTest('/local/project')
     assert.deepEqual(getActiveExecutionTarget(), { kind: 'local' })
+  })
+
+  it('throws when execution is disabled for a remote project', async () => {
+    await setSetting('sshWorkspaceEnabled', false)
+    assert.throws(() => getActiveExecutionTarget(), /SSH workspaces are disabled/)
+  })
+
+  it('throws when the remote host is not configured', async () => {
+    storageSet('projects', [{ id: 'p1', path: '/remote/project', sshHost: 'missing' }])
+    assert.throws(() => getActiveExecutionTarget(), /not configured/)
   })
 
   it('isActiveSshWorkspace reflects enabled ssh project', () => {
