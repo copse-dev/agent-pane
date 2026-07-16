@@ -25,7 +25,7 @@
 // Cursor declares an `afterFileEdit` hook (wired here); Claude has no post-edit
 // equivalent, so no Claude hooks participate — matching the vendor audit.
 import { HookRegistry } from '@copse/agent/hooks/hook-registry.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorAfterFileEditHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
@@ -53,7 +53,7 @@ export interface AfterFileEditResult {
  */
 export async function runAfterFileEditHooks(
   filePath: string,
-  opts: DialectDiscoverOpts & { signal?: AbortSignal },
+  opts: DialectDiscoverOpts & { signal?: AbortSignal; agentSession?: AgentSessionInfo },
 ): Promise<AfterFileEditResult> {
   const payload: HookEventPayloads['afterFileEdit'] = { filePath }
 
@@ -74,6 +74,7 @@ export async function runAfterFileEditHooks(
   await registry.emit('afterFileEdit', payload, {
     runCommandHook: createCommandHookRunner(),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 
   return { ran: hooks.length }
