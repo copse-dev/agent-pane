@@ -53,6 +53,15 @@ describe('getActiveExecutionTarget', () => {
     })
   })
 
+  it('uses project.path as remoteRoot even when workspace root differs', () => {
+    setWorkspaceRootForTest('/remote/other')
+    assert.deepEqual(getActiveExecutionTarget(), {
+      kind: 'ssh',
+      hostId: 'dev',
+      remoteRoot: '/remote/project',
+    })
+  })
+
   it('returns local when execution is disabled', async () => {
     await setSetting('sshWorkspaceEnabled', false)
     assert.deepEqual(getActiveExecutionTarget(), { kind: 'local' })
