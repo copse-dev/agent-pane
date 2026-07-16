@@ -20,7 +20,8 @@ import { startWorkspaceIndexWatcher } from './workspace-index-watcher.ts'
  * SSH workspaces skip semantic indexing (v1) and the local fs.watch watcher
  * (remote edits are handled in Phase 3c). The in-memory file index still builds
  * via remote `rg --files` / `find` — that can surface as the footer chip
- * ("Building file index…"), which is not gortex.
+ * ("Building file index…"), which is not gortex. Listings use a longer timeout
+ * than ordinary tool subprocesses (`FILE_INDEX_LIST_TIMEOUT_MS`).
  */
 export function startWorkspaceIndexing(root: string): void {
   void buildIndex(root).catch((err: unknown) => {

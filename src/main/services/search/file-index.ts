@@ -3,6 +3,10 @@ import { isRgAvailableForTarget } from '../tool-availability.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { toRelativePath } from '../workspace.ts'
 import { indexBuildStarted, indexBuildFinished } from './index-status.ts'
+import {
+  FILE_INDEX_LIST_MAX_BYTES,
+  FILE_INDEX_LIST_TIMEOUT_MS,
+} from '../exec/subprocess-output-cap.ts'
 import * as fs from 'node:fs/promises'
 
 interface FileIndex {
@@ -13,6 +17,12 @@ interface FileIndex {
 let index: FileIndex | null = null
 let buildInFlight: Promise<void> | null = null
 
+const LIST_CMD_OPTS = {
+  timeout_ms: FILE_INDEX_LIST_TIMEOUT_MS,
+  stdoutMaxBytes: FILE_INDEX_LIST_MAX_BYTES,
+  lowPriority: true,
+} as const
+
 function isIndexableRelativePath(rel: string): boolean {
   if (!rel || rel.startsWith('..')) return false
   const parts = rel.split('/')
@@ -20,7 +30,7 @@ function isIndexableRelativePath(rel: string): boolean {
 }
 
 async function listFilesViaFind(workspaceRoot: string): Promise<string[]> {
-  const { stdout, code } = await runCommand('find', [workspaceRoot, '-type', 'f'])
+  const { stdout, code } = await runCommand('find', [workspaceRoot, '-type', 'f'], LIST_CMD_OPTS)
   if (code !== 0) return []
   const paths: string[] = []
   for (const full of stdout.split('\n').filter(Boolean)) {
@@ -30,35 +40,46 @@ async function listFilesViaFind(workspaceRoot: string): Promise<string[]> {
   return paths
 }
 
-export async function buildIndex(workspaceRoot: string): Promise<void> {
+async function listFilesViaRg(workspaceRoot: string): Promise<string[]> {
+  // No `--sort path`: sorting waits for the full walk and slows SSH listings.
+  // Sort relative paths in-process after the listing completes.
+  const { stdout } = await runCommand('rg', ['--files', workspaceRoot], LIST_CMD_OPTS)
+  const paths = await Promise.all(
+    stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((p) => toRelativePath(p)),
+  )
+  paths.sort((a, b) => a.localeCompare(b))
+  return paths
+}
+
+async function runBuild(workspaceRoot: string): Promise<void> {
   indexBuildStarted('fileIndex')
-  const build = (async (): Promise<void> => {
+  try {
     let paths: string[]
     if (await isRgAvailableForTarget()) {
-      const { stdout } = await runCommand('rg', ['--files', '--sort', 'path', workspaceRoot])
-      paths = await Promise.all(
-        stdout
-          .split('\n')
-          .filter(Boolean)
-          .map((p) => toRelativePath(p)),
-      )
+      paths = await listFilesViaRg(workspaceRoot)
     } else if (isActiveSshWorkspace()) {
       paths = await listFilesViaFind(workspaceRoot)
     } else {
       paths = await walkPaths(workspaceRoot, workspaceRoot)
+      paths.sort((a, b) => a.localeCompare(b))
     }
     index = { paths, lastBuilt: Date.now() }
-  })()
-  buildInFlight = build
-  try {
-    await build
     indexBuildFinished('fileIndex', true)
   } catch (err) {
     indexBuildFinished('fileIndex', false)
     throw err
   } finally {
-    if (buildInFlight === build) buildInFlight = null
+    buildInFlight = null
   }
+}
+
+export function buildIndex(workspaceRoot: string): Promise<void> {
+  // Single-flight: concurrent open/watcher/diff-queue callers share one listing.
+  buildInFlight ??= runBuild(workspaceRoot)
+  return buildInFlight
 }
 
 /**
