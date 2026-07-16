@@ -290,8 +290,8 @@ function scalewayJsonArgs(config: ScalewayConfig, args: string[]): string[] {
   return [...scalewayArgs(config, args), '-o', 'json']
 }
 
-function requireTool(binary: string): void {
-  const result = spawnSync(binary, ['--version'], { encoding: 'utf8', stdio: 'ignore' })
+function requireTool(binary: string, probeArgs = ['--version']): void {
+  const result = spawnSync(binary, probeArgs, { encoding: 'utf8', stdio: 'ignore' })
   if (result.status !== 0) die(`required tool '${binary}' is not available on PATH`)
 }
 
@@ -882,7 +882,7 @@ function awsDown(options: Options): void {
 }
 
 function scalewayUp(options: Options): void {
-  requireTool('scw')
+  requireTool('scw', ['help'])
   requireTool('ssh')
   requireTool('tar')
   const config = buildScalewayUpConfig(options)
@@ -901,12 +901,12 @@ function scalewayUp(options: Options): void {
 }
 
 function scalewayStatus(options: Options): void {
-  requireTool('scw')
+  requireTool('scw', ['help'])
   printHosts(listScalewayServers(buildScalewayConfig(options)))
 }
 
 function scalewayDown(options: Options): void {
-  requireTool('scw')
+  requireTool('scw', ['help'])
   if (!hasFlag(options, 'yes')) die('down requires --yes')
   const config = buildScalewayConfig(options)
   const hosts = listScalewayServers(config).filter((host) => host.state !== 'terminated')
