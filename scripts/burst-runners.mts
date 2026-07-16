@@ -847,7 +847,7 @@ function printHosts(hosts: CloudHost[]): void {
 
 function awsUp(options: Options): void {
   requireTool('aws')
-  requireTool('ssh')
+  requireTool('ssh', ['-V'])
   requireTool('tar')
   const config = buildAwsUpConfig(options)
   console.log(
