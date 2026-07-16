@@ -133,6 +133,10 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         showToast(status.textContent, { variant: 'error' })
       } finally {
         loading = false
+        if (hosts.length > 0 && currentHostId) {
+          upBtn.disabled = currentPath === '/'
+          openBtn.disabled = false
+        }
       }
     }
 

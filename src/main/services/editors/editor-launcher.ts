@@ -57,7 +57,7 @@ export async function openWorkspaceInExternalEditor(editorId: string, root: stri
   if (sshHostId) {
     const host = findConfiguredSshHost(sshHostId)
     if (!host) throw new Error(`SSH host is not configured: ${sshHostId}`)
-    launch = buildRemoteEditorLaunch(detected, root, host.host)
+    launch = buildRemoteEditorLaunch(detected, root, host.id)
   } else {
     launch = buildEditorLaunch(detected, root)
   }

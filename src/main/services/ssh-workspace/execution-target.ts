@@ -13,36 +13,58 @@ interface StoredProject {
   sshHost?: string
 }
 
+/** Thrown when the active project is remote but execution cannot route over SSH. */
+export class ExecutionTargetMismatchError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ExecutionTargetMismatchError'
+  }
+}
+
 /** Whether SSH workspace execution is enabled (experimental, default off). */
 export function isSshWorkspaceExecutionEnabled(): boolean {
   return getSetting<boolean>('sshWorkspaceEnabled', false)
 }
 
-/**
- * Resolve the execution target for the active project. Returns `local` when
- * execution is disabled, the project has no `sshHost`, or the host is unknown.
- */
-export function getActiveExecutionTarget(): ExecutionTarget {
-  if (!isSshWorkspaceExecutionEnabled()) return { kind: 'local' }
-
-  const root = getWorkspaceRoot()
-  if (!root) return { kind: 'local' }
-
+function findActiveStoredProject(): StoredProject | null {
   const activeProjectId = storageGet('activeProjectId')
-  if (typeof activeProjectId !== 'string') return { kind: 'local' }
+  if (typeof activeProjectId !== 'string') return null
 
   const projects = storageGet('projects')
-  if (!Array.isArray(projects)) return { kind: 'local' }
+  if (!Array.isArray(projects)) return null
 
   const active = projects.find((project): project is StoredProject => {
     if (!project || typeof project !== 'object') return false
     const candidate = project as StoredProject
     return candidate.id === activeProjectId && typeof candidate.path === 'string'
   })
+  return active ?? null
+}
+
+/**
+ * Resolve the execution target for the active project. Returns `local` for
+ * local projects. Remote projects fail closed when SSH execution is disabled
+ * or the host is missing from settings — never silently fall back to local.
+ */
+export function getActiveExecutionTarget(): ExecutionTarget {
+  const active = findActiveStoredProject()
   if (!active?.sshHost) return { kind: 'local' }
 
+  if (!isSshWorkspaceExecutionEnabled()) {
+    throw new ExecutionTargetMismatchError(
+      'SSH workspaces are disabled. Enable them in Settings to use this remote project.',
+    )
+  }
+
   const host = findConfiguredSshHost(active.sshHost)
-  if (!host) return { kind: 'local' }
+  if (!host) {
+    throw new ExecutionTargetMismatchError(
+      `SSH host "${active.sshHost}" is not configured. Add it in Settings → SSH.`,
+    )
+  }
+
+  const root = getWorkspaceRoot()
+  if (!root) return { kind: 'local' }
 
   return { kind: 'ssh', hostId: host.id, remoteRoot: active.path }
 }
@@ -59,5 +81,9 @@ export function isSshExecutionTarget(
 
 /** True when the active project routes shell/fs/git through an SSH workspace. */
 export function isActiveSshWorkspace(): boolean {
-  return isSshWorkspaceExecutionEnabled() && isSshExecutionTarget(getActiveExecutionTarget())
+  try {
+    return isSshExecutionTarget(getActiveExecutionTarget())
+  } catch {
+    return false
+  }
 }
