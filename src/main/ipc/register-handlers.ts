@@ -90,6 +90,7 @@ import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
+import { getPackService } from '../services/packs/pack-service.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -930,6 +931,39 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
   })
+  // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
+  // Settings pack list ("about:addons") calls these to enumerate every
+  // registered pack, toggle enablement atomically (P1 contract), and read /
+  // write pack-scoped settings values under the manifest's declared schema.
+  ipcMain.handle('packs:list', (event) => {
+    assertMainFrameSender(event, win)
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+    const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    await getPackService().setEnabled(id, enabled)
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle(
+    'packs:setSetting',
+    async (event, rawId: unknown, rawKey: unknown, rawValue: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+      const key = parseIpcArgs(zNonEmptyString.max(128), [rawKey])
+      // Pack-scoped setting values are declaratively-shaped by the manifest;
+      // the renderer sends the primitive it read from the form. Cap to a sane
+      // upper bound so a compromised renderer can't stuff arbitrary payloads.
+      const value = parseIpcArgs(
+        z.union([z.boolean(), z.number(), z.string().max(8192), z.null()]),
+        [rawValue],
+      )
+      await getPackService().setSetting(id, key, value)
+      return { packs: getPackService().list() }
+    },
+  )
+
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
       path,

@@ -45,7 +45,7 @@ function recordRun(context: HookContext, record: HookRunRecord): void {
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
 import { STEP_BOUNDARY_HOOKS } from './step-boundary-hooks.ts'
-import { createFirstPartyPackRegistry } from '../packs/first-party-packs.ts'
+import { getDefaultPackRegistry } from '../packs/default-pack-registry.ts'
 import type { PackRegistry } from '../packs/pack-registry.ts'
 
 /**
@@ -537,7 +537,7 @@ export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [
  */
 export function createHookRegistry(
   hooks: readonly BlockingHook[] = FIRST_PARTY_HOOKS,
-  packs: PackRegistry = createFirstPartyPackRegistry(),
+  packs: PackRegistry = getDefaultPackRegistry(),
 ): HookRegistry {
   const registry = new HookRegistry()
   for (const hook of hooks) registry.register(hook)

@@ -552,6 +552,13 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
   },
+  packs: {
+    list: () => ipcRenderer.invoke('packs:list'),
+    setEnabled: (id: string, enabled: boolean) =>
+      ipcRenderer.invoke('packs:setEnabled', id, enabled),
+    setSetting: (id: string, key: string, value: unknown) =>
+      ipcRenderer.invoke('packs:setSetting', id, key, value),
+  },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
   },
