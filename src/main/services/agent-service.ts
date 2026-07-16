@@ -404,6 +404,31 @@ export async function runAgent(
     setActiveRunThread(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
+    // The advisor works both ways for ACP: an external executor can consult it
+    // through the native-tool bridge. Unlike the native loop (context set around
+    // each call), bridged calls arrive over HTTP at any point in the turn, so
+    // the context is scoped to the whole ACP run. The transcript is Copse's
+    // view: prior thread history, this turn's user prompt, and whatever the
+    // agent has streamed so far.
+    let acpAssistantText = ''
+    const acpChunkSink = (chunk: StreamChunk): void => {
+      if (chunk.type === 'text') acpAssistantText += chunk.text
+      sendChunk(chunk)
+    }
+    const advisorBridged = registry.has('advisor')
+    if (advisorBridged) {
+      setAdvisorContext({
+        advisorModel: resolveAdvisorModelId(),
+        executorModel: model,
+        getTranscript: () => [
+          ...priorMessages,
+          { role: 'user', content: outboundPrompt },
+          ...(acpAssistantText.trim()
+            ? [{ role: 'assistant' as const, content: acpAssistantText }]
+            : []),
+        ],
+      })
+    }
     try {
       const result = await runAcpAgentFromSettings({
         threadId,
@@ -411,7 +436,7 @@ export async function runAgent(
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
-        onChunk: sendChunk,
+        onChunk: acpChunkSink,
         registry,
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
@@ -452,6 +477,7 @@ export async function runAgent(
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+      if (advisorBridged) setAdvisorContext(null)
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)

@@ -33,7 +33,10 @@ export const BRIDGE_MCP_SERVER_NAME = 'copse'
  * context-free workspace tools so ACP and native model runs share the same
  * schemas, permission policy, sandbox escape flow, diff queue, and Git/GitHub
  * implementations. Orchestration tools that depend on native-loop context
- * (ask_user, explore/advisor subagents, todos, memories, etc.) stay private.
+ * (ask_user, explore subagents, todos, memories, etc.) stay private. The one
+ * context-dependent exception is `advisor`: agent-service scopes an advisor
+ * context to the whole ACP turn (Copse's view of the transcript), so an
+ * external executor can consult the advisor exactly like a native run.
  * Requests must carry the per-session bearer token; the server binds 127.0.0.1
  * on an ephemeral port and lives only for the pooled ACP session.
  */
@@ -84,6 +87,10 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
+  // The advisor strategy (docs/plans/advisor-strategy.md). Only registered
+  // when `advisorStrategyEnabled` is on, so it is only offered then; the
+  // transcript context is turn-scoped by agent-service around the ACP run.
+  'advisor',
   // Origin-gated web + in-app browser tools.
   'web_search',
   'fetch_url',

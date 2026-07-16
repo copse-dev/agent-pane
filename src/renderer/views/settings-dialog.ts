@@ -951,8 +951,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 transcript to a larger advisor model for strategic guidance, so the everyday loop can
                 run on a cheaper or on-device model while frontier intelligence is pulled in at the
                 moments that matter (planning, getting unstuck, final review). Runs client-side, so
-                any executor/advisor pairing works — including ACP agents as the advisor. While off,
-                the tool is not registered.
+                any executor/advisor pairing works — ACP agents can sit on either side (as the
+                advisor, or as an executor consulting it through the native-tool bridge). While
+                off, the tool is not registered.
               </p>
               <label class="field-label" for="advisorModel">Advisor model</label>
               <select id="advisorModel" name="advisorModel">

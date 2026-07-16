@@ -149,6 +149,35 @@ describe('startAcpNativeBridge', () => {
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
   })
 
+  it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'advisor',
+      description: 'Consult a stronger advisor model',
+      parameters: z.object({}),
+      execute: () => Promise.resolve('Advice: do the smallest slice first.'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal)
+    assert.ok(bridge)
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const list = await rpc(bridge, LIST_TOOLS)
+    const names = (list.json as { result: { tools: { name: string }[] } }).result.tools.map(
+      (tool) => tool.name,
+    )
+    assert.ok(names.includes('advisor'), 'advisor should be offered when registered')
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'advisor', arguments: {} },
+    })
+    const result = (call.json as { result: { content: { text: string }[] } }).result
+    assert.equal(result.content[0]?.text, 'Advice: do the smallest slice first.')
+  })
+
   it('refuses tools outside the curated list even when registered', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal)
