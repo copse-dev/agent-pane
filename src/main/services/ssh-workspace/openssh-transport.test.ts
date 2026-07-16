@@ -70,4 +70,18 @@ describe('sshExecArgs / ControlPath', () => {
       }
     },
   )
+
+  it('does not emit -p/-i/user@ when host only has an ssh-config alias', () => {
+    // Imported ProxyCommand hosts must be invoked as the bare alias so OpenSSH
+    // applies Port/User/IdentityFile/ProxyCommand from ~/.ssh/config.
+    const aliasOnly: SshWorkspaceHost = {
+      id: 'euw-serp-dev-testing16',
+      label: 'euw-serp-dev-testing16',
+      host: 'euw-serp-dev-testing16',
+    }
+    const args = sshExecArgs(aliasOnly, 'true')
+    assert.ok(!args.includes('-p'))
+    assert.ok(!args.includes('-i'))
+    assert.equal(args[args.length - 2], 'euw-serp-dev-testing16')
+  })
 })

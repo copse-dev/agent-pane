@@ -70,7 +70,9 @@ async function runLocalSsh(
   args: string[],
   options: SshExecOptions = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const askpass = leaseSshAskpassEnv({})
+  // Inherit process.env so ProxyCommand (e.g. Boundary) keeps PATH/HOME/SSH_AUTH_SOCK.
+  // Passing `{}` replaces the child env entirely and yields "UNKNOWN port 65535".
+  const askpass = leaseSshAskpassEnv(process.env)
   const maxBytes = options.maxBytes ?? COMMAND_OUTPUT_MAX_BYTES
   const timeoutMs = options.timeoutMs ?? COMMAND_RUNNER_DEFAULT_TIMEOUT_MS
 
@@ -170,7 +172,7 @@ export class OpenSshTransport implements SshTransport {
 
   async connect(): Promise<void> {
     const target = resolveTarget(this.host)
-    const askpass = leaseSshAskpassEnv({})
+    const askpass = leaseSshAskpassEnv(process.env)
     try {
       if (supportsControlMaster()) {
         const check = spawnSync('ssh', ['-O', 'check', '-S', this.controlPath, target], {
@@ -224,7 +226,7 @@ export class OpenSshTransport implements SshTransport {
       return
     }
     const target = resolveTarget(this.host)
-    const askpass = leaseSshAskpassEnv({})
+    const askpass = leaseSshAskpassEnv(process.env)
     try {
       spawnSync('ssh', ['-O', 'exit', '-S', this.controlPath, target], { env: askpass.env })
     } finally {
