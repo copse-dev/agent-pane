@@ -26,7 +26,7 @@ interface StubModel {
 
 interface StubDiffEditor {
   models: { original: StubModel; modified: StubModel } | null
-  revealFirstDiffCalls: number
+  revealLineCalls: number[]
 }
 
 function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Monaco {
@@ -52,9 +52,19 @@ function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Mona
         }
         const self: StubDiffEditor & Record<string, unknown> = {
           models: null,
-          revealFirstDiffCalls: 0,
-          getOriginalEditor: () => noopEditor,
-          getModifiedEditor: () => noopEditor,
+          revealLineCalls: [],
+          getOriginalEditor: () => ({
+            ...noopEditor,
+            revealLineInCenterIfOutsideViewport: (line: number): void => {
+              self.revealLineCalls.push(line)
+            },
+          }),
+          getModifiedEditor: () => ({
+            ...noopEditor,
+            revealLineInCenterIfOutsideViewport: (line: number): void => {
+              self.revealLineCalls.push(line)
+            },
+          }),
           onDidUpdateDiff: (cb: () => void) => {
             listeners.add(cb)
             return {
@@ -90,10 +100,14 @@ function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Mona
             queueMicrotask(notify)
           },
           layout: (): void => {},
-          getLineChanges: () => [{ modifiedStartLineNumber: 1 }],
-          revealFirstDiff: (): void => {
-            self.revealFirstDiffCalls++
-          },
+          getLineChanges: () => [
+            {
+              originalStartLineNumber: 1,
+              originalEndLineNumber: 1,
+              modifiedStartLineNumber: 1,
+              modifiedEndLineNumber: 1,
+            },
+          ],
           dispose: (): void => {},
         }
         capture.editor = self
@@ -164,7 +178,7 @@ async function settle(): Promise<void> {
 async function waitForReveal(capture: { editor: StubDiffEditor | null }): Promise<void> {
   const deadline = Date.now() + 2_000
   while (Date.now() < deadline) {
-    if ((capture.editor?.revealFirstDiffCalls ?? 0) >= 1) return
+    if ((capture.editor?.revealLineCalls.length ?? 0) >= 1) return
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 10)
     })
@@ -199,7 +213,7 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
     assert.equal(models.original.value, 'old\n', 'before content rendered')
     assert.equal(models.modified.value, 'new\n', 'after content rendered')
     assert.ok(
-      (capture.editor?.revealFirstDiffCalls ?? 0) >= 1,
+      (capture.editor?.revealLineCalls.length ?? 0) >= 1,
       'should reveal the first change after the model is ready',
     )
   })

@@ -4,16 +4,49 @@ import type * as Monaco from 'monaco-editor'
 import { revealFirstDiffChange, waitForDidUpdateDiff, waitForViewModelDiff } from './diff-scroll.ts'
 
 describe('diff-scroll reveal readiness', () => {
-  it('revealFirstDiffChange delegates to Monaco revealFirstDiff', () => {
-    let calls = 0
+  it('revealFirstDiffChange scrolls to the first getLineChanges entry', () => {
+    const revealed: number[] = []
     const editor = {
-      revealFirstDiff: (): void => {
-        calls++
-      },
+      getLineChanges: () => [
+        {
+          originalStartLineNumber: 10,
+          originalEndLineNumber: 10,
+          modifiedStartLineNumber: 12,
+          modifiedEndLineNumber: 12,
+        },
+      ],
+      getModifiedEditor: () => ({
+        revealLineInCenterIfOutsideViewport: (line: number): void => {
+          revealed.push(line)
+        },
+      }),
+      getOriginalEditor: () => ({
+        revealLineInCenterIfOutsideViewport: (line: number): void => {
+          revealed.push(line)
+        },
+      }),
     } as unknown as Monaco.editor.IStandaloneDiffEditor
 
     revealFirstDiffChange(editor)
-    assert.equal(calls, 1)
+    assert.deepEqual(revealed, [12, 10])
+  })
+
+  it('revealFirstDiffChange no-ops when line changes are not ready yet', () => {
+    let modifiedCalls = 0
+    const editor = {
+      getLineChanges: () => null,
+      getModifiedEditor: () => ({
+        revealLineInCenterIfOutsideViewport: (): void => {
+          modifiedCalls++
+        },
+      }),
+      getOriginalEditor: () => ({
+        revealLineInCenterIfOutsideViewport: (): void => {},
+      }),
+    } as unknown as Monaco.editor.IStandaloneDiffEditor
+
+    revealFirstDiffChange(editor)
+    assert.equal(modifiedCalls, 0)
   })
 
   it('waitForDidUpdateDiff resolves on the first update event', async () => {

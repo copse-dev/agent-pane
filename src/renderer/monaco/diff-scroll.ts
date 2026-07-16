@@ -91,11 +91,34 @@ export async function refreshGitChangesDiffCollapse(
   await waitForDidUpdateDiff(diffEditor, 250)
 }
 
+function firstPositive(...values: number[]): number | null {
+  return values.find((value) => value > 0) ?? null
+}
+
 /**
- * Scroll to the first change. Prefers Monaco's built-in `revealFirstDiff`, which
- * waits for diff computation — our older getLineChanges()-immediate path no-oped
- * when the editor worker was still booting after lazy Monaco load.
+ * Scroll to the first change. Call only after diff computation has finished
+ * (`waitForViewModelDiff` / `onDidUpdateDiff`). Prefer a sync getLineChanges
+ * scroll over Monaco's `revealFirstDiff()` — that API fire-and-forgets
+ * `waitForDiff()` and surfaces unhandled "Canceled" rejections when
+ * `hideUnchangedRegions` refresh cancels an in-flight compute.
  */
 export function revealFirstDiffChange(diffEditor: Monaco.editor.IStandaloneDiffEditor): void {
-  diffEditor.revealFirstDiff()
+  const [firstChange] = diffEditor.getLineChanges() ?? []
+  if (!firstChange) return
+
+  const modifiedLine = firstPositive(
+    firstChange.modifiedStartLineNumber,
+    firstChange.modifiedEndLineNumber,
+  )
+  const originalLine = firstPositive(
+    firstChange.originalStartLineNumber,
+    firstChange.originalEndLineNumber,
+  )
+
+  if (modifiedLine) {
+    diffEditor.getModifiedEditor().revealLineInCenterIfOutsideViewport(modifiedLine)
+  }
+  if (originalLine) {
+    diffEditor.getOriginalEditor().revealLineInCenterIfOutsideViewport(originalLine)
+  }
 }

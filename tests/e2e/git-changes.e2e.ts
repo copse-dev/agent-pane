@@ -101,14 +101,15 @@ describe('git changes viewer', function () {
 
     // The staged change (`value = 2`) sits mid-file. After lazy Monaco load, a
     // reveal race used to leave the viewport at the top with no visible change —
-    // assert the modified side actually scrolled the edit into view.
+    // assert the edit is in view (inline or side-by-side). Narrow panes use
+    // Monaco's inline diff, so query the whole host rather than `.editor.modified`.
     await browser.waitUntil(
       async () => {
         const visible = await browser.execute(() => {
           const host = document.querySelector('#git-diff-viewer-host')
           if (!host) return false
-          const modified = host.querySelector('.editor.modified .view-lines')
-          return Boolean(modified?.textContent?.includes('value = 2'))
+          const text = host.textContent ?? ''
+          return text.includes('value') && (text.includes('= 2') || text.includes('=2'))
         })
         return visible
       },
