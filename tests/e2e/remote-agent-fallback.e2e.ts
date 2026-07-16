@@ -6,12 +6,12 @@ import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-describe('remote agent model picker', () => {
+describe('remote agent model picker (invalid key)', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-remote-picker', {
-      model: 'remote-agent:cursor',
+      model: 'remote-agent:cursor#composer-2',
     })
     await browser.reloadSession()
   })
@@ -30,7 +30,9 @@ describe('remote agent model picker', () => {
     await $('.model-picker-menu').waitForDisplayed()
     const optionLabels = await $$('.model-picker-option').map((el) => el.getText())
     const selectableRemote = optionLabels.filter(
-      (label) => label.includes('Cursor Cloud Agent') && !label.includes('no valid key'),
+      (label) =>
+        (label.includes('Composer 2') || label.includes('Default')) &&
+        !label.includes('no valid key'),
     )
     expect(selectableRemote).toEqual([])
 
