@@ -235,6 +235,8 @@ export interface ApiClient {
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) => Promise<string>
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+    /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
+    models: () => Promise<Array<{ id: string; label: string }>>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
