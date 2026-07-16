@@ -37,33 +37,54 @@ instead of failing open (see Reliability and trust below).
 ## Hook events and I/O
 
 Each hook receives a base payload — `conversation_id`, `generation_id`,
-`hook_event_name`, `workspace_roots` — plus event-specific fields.
+`hook_event_name`, `workspace_roots` — plus event-specific fields. Every
+agent-session event also carries the **model identity** of the model actually
+running the turn: `model` (slug), `model_id`, and `model_params` (Cursor's
+`{ id, value }[]` array — e.g. `context_window` / `max_output_tokens`), matching
+the vendor contract (B4).
 
-| Event                  | stdin (event fields)      | stdout                                   | Copse                   |
-| ---------------------- | ------------------------- | ---------------------------------------- | ----------------------- |
-| `beforeShellExecution` | `command`, `cwd`          | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured             |
-| `beforeMCPExecution`   | `tool_name`, `tool_input` | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured             |
-| `beforeReadFile`       | `file_path`, `content`    | `{ permission: "allow"\|"deny" }`        | ✅ honoured (path only) |
-| `beforeSubmitPrompt`   | `prompt`, `attachments`   | `{ continue: boolean }`                  | ❌ not wired            |
-| `afterFileEdit`        | `file_path`, `edits`      | none (notification)                      | ❌ not wired            |
-| `stop`                 | `status`                  | none (notification)                      | ❌ not wired            |
+| Event                  | stdin (event fields)      | stdout                                   | Copse         |
+| ---------------------- | ------------------------- | ---------------------------------------- | ------------- |
+| `beforeShellExecution` | `command`, `cwd`          | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeMCPExecution`   | `tool_name`, `tool_input` | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeReadFile`       | `file_path`, `content`    | `{ permission: "allow"\|"deny" }`        | ✅ honoured   |
+| `beforeSubmitPrompt`   | `prompt`, `attachments`   | `{ continue: boolean }`                  | ✅ wired (B1) |
+| `afterFileEdit`        | `file_path`, `edits`      | none (notification)                      | ✅ wired (B2) |
+| `stop`                 | `status`                  | none (notification)                      | ✅ wired (B3) |
 
-Permission responses may also carry `agentMessage` / `userMessage`. Copse logs the
-`agentMessage` from a denying hook; surfacing it into the conversation is future work.
+The real `conversation_id` (thread id) and `generation_id` (turn id) come from
+the active run (B4); they are empty strings only when a hook fires outside any
+agent turn.
+
+Permission responses may also carry `agentMessage` / `userMessage`. A denying
+hook's `agentMessage` is now **surfaced to the agent** as the tool-result reason
+(B4) — a message-bearing `deny` fails the call with that reason so the model sees
+why. A hook `ask` **escalates to Copse's approval prompt** (the same prompt a
+policy `ask` uses): approving lets the call proceed, declining blocks it. A hook
+still can only _tighten_ the gate — an `allow` never auto-approves something
+Copse would otherwise prompt about.
+
+`beforeReadFile` receives the file **content** on stdin (B4), so a redaction /
+secret-detection hook can inspect the bytes and `deny`. Cursor's `beforeReadFile`
+response is `allow` / `deny` only — there is no content-rewrite field in the
+vendor contract — so "redaction" is expressed as _deny on inspection_, not by
+returning modified content.
 
 ## What Copse supports
 
-| Capability                   | Status        | Notes                                                                                                                                                              |
-| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Permission hooks**         | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                          |
-| **User hooks**               | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                            |
-| **Project hooks**            | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                             |
-| **Hook discovery / list**    | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                         |
-| **Lifecycle hooks**          | Not supported | `beforeSubmitPrompt`, `afterFileEdit`, `stop` need agent-loop / write-path wiring; they show an "unsupported" badge in Sources                                     |
-| **`beforeReadFile` content** | Partial       | Hook sees the path but not the file contents (read happens after the gate)                                                                                         |
-| **Content rewriting**        | Not supported | Hooks can block but not yet mutate prompts, read output, or edits                                                                                                  |
-| **Plugin-contributed hooks** | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                         |
-| **Settings UI**              | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session) |
+| Capability                    | Status        | Notes                                                                                                                                                              |
+| ----------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Permission hooks**          | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                          |
+| **User hooks**                | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                            |
+| **Project hooks**             | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                             |
+| **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                         |
+| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt` (B1), `afterFileEdit` (B2), `stop` (B3) are wired; every declared Cursor event now fires                                                      |
+| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin (B4) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)            |
+| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event (B4), sourced from the model actually running                                                   |
+| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                |
+| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                          |
+| **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                         |
+| **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session) |
 
 ### Enablement
 
@@ -166,11 +187,16 @@ trusting the code it can cause to run.
 
 ## Gaps and future work
 
-1. **Lifecycle hooks** — wire `beforeSubmitPrompt` (compose path), `afterFileEdit`
-   (diff queue / write tools), and `stop` (end of an agent run).
-2. **Surface `agentMessage`** — feed a denying hook's message back into the conversation
-   instead of only logging it.
-3. **`beforeReadFile` content** — pass file contents and honour content rewrites/redaction.
+1. **Content rewriting** — `updated_input` on tool gates (rewrite the proposed tool
+   input, re-running policy analysis) is Phase H1, not yet wired.
+2. **Hook cards** — deny/ask decisions and hook executions surface today through the
+   existing text / approval-prompt channels; the dedicated right-aligned hook-card
+   UI family is Phase G1. `userMessage` on a plain deny (no approval prompt) waits
+   for that card surface.
+3. **Claude `SessionStart` model** — the wire payload type carries the running model
+   (`AgentSessionInfo`), but Claude's optional `model` on `sessionStart` needs the
+   `sessionStart` fire site, which is Phase H4; Cursor agent-session events carry
+   model identity now (B4).
 4. **Plugin-contributed hooks** — if Cursor adds a `hooks` slot to `plugin.json`, load
    them via the shared `cursor-plugins` discovery module.
 

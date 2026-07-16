@@ -14,6 +14,7 @@ import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
 import { getSetting } from './storage/settings.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runAfterFileEditHooks } from './hooks/after-file-edit.ts'
+import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -413,6 +414,8 @@ async function fireAfterFileEdit(path: string): Promise<void> {
     await runAfterFileEditHooks(resolveWorkspacePath(path), {
       workspaceRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      // Real conversation/generation ids + running model on the wire payload (B4).
+      agentSession: currentAgentSessionInfo(),
     })
   } catch (err) {
     console.warn(`[hooks] afterFileEdit hook error for ${path}:`, errorMessage(err))

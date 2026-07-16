@@ -27,7 +27,7 @@ import {
 } from '@shared/types/cursor-hooks.ts'
 import type { HooksListResult } from '@shared/types/hooks.ts'
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -495,19 +495,42 @@ function outcomeFromResponse(parsed: unknown): {
   return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
 }
 
+/**
+ * The base agent-session envelope every Cursor hook payload carries (B4). The
+ * real `conversation_id` (thread id) and `generation_id` (turn id) come from the
+ * host-captured {@link AgentSessionInfo}; when there is no active run the ids are
+ * empty strings (the pre-B4 behavior). The running model is stamped as Cursor's
+ * `model` / `model_id` / `model_params` (vendor contract; `model_params` is the
+ * `{ id, value }[]` array shape, not an object) on **every** agent-session
+ * event — Cursor sends model identity on all of them.
+ */
+function agentSessionEnvelope(
+  event: CursorHookEvent,
+  session: AgentSessionInfo | undefined,
+): Record<string, unknown> {
+  const root = getWorkspaceRoot()
+  const base: Record<string, unknown> = {
+    conversation_id: session?.conversationId ?? '',
+    generation_id: session?.generationId ?? '',
+    hook_event_name: event,
+    workspace_roots: root ? [root] : [],
+  }
+  if (session?.model) {
+    base['model'] = session.model.model
+    base['model_id'] = session.model.modelId
+    base['model_params'] = session.model.modelParams
+  }
+  return base
+}
+
 /** The concrete Cursor dialect adapter the runner delegates to. */
 export const cursorAdapter: DialectAdapter = {
   dialect: 'cursor',
 
-  marshalToolGateRequest(_hook, payload) {
+  marshalToolGateRequest(_hook, payload, session) {
     const event = cursorEventForTool(payload.toolName)
     if (!event) return null
-    const base = {
-      conversation_id: '',
-      generation_id: '',
-      hook_event_name: event,
-      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
-    }
+    const base = agentSessionEnvelope(event, session)
     if (event === 'beforeShellExecution') {
       return {
         ...base,
@@ -518,8 +541,15 @@ export const cursorAdapter: DialectAdapter = {
     if (event === 'beforeMCPExecution') {
       return { ...base, tool_name: payload.toolName, tool_input: payload.input }
     }
-    // beforeReadFile: content is passed after the gate today (B4 wires content).
-    return { ...base, file_path: stringField(payload.input, 'path'), content: '' }
+    // beforeReadFile: the host reads the file eagerly for read_file gates and
+    // fills `payload.fileContent` (B4), so a redaction/secret-detection hook can
+    // inspect the bytes and deny. Cursor's beforeReadFile response is allow/deny
+    // only (no content-rewrite in the vendor contract), so "redact" == deny.
+    return {
+      ...base,
+      file_path: stringField(payload.input, 'path'),
+      content: payload.fileContent ?? '',
+    }
   },
 
   interpretToolGate(spawn: HookSpawnResult, payload): DialectInterpretation {
@@ -567,15 +597,12 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
-  marshalBeforeSubmitPromptRequest(_hook, payload) {
+  marshalBeforeSubmitPromptRequest(_hook, payload, session) {
     // Cursor's beforeSubmitPrompt stdin: the composed prompt plus attachments
     // (empty until an attachments payload channel exists) and the standard
-    // agent-session envelope. B4 fills conversation/generation ids + model.
+    // agent-session envelope (real conversation/generation ids + model — B4).
     return {
-      conversation_id: '',
-      generation_id: '',
-      hook_event_name: 'beforeSubmitPrompt',
-      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
+      ...agentSessionEnvelope('beforeSubmitPrompt', session),
       prompt: payload.prompt,
       attachments: [],
     }
@@ -623,17 +650,14 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
-  marshalAfterFileEditRequest(_hook, payload) {
+  marshalAfterFileEditRequest(_hook, payload, session) {
     // Cursor's afterFileEdit stdin: the edited file's absolute path, the edits
-    // (old_string/new_string pairs) and the standard agent-session envelope.
-    // The canonical payload carries only the path in v1, so `edits` is empty —
-    // enough for the common formatter/accounting hook, which keys off file_path;
-    // edit content enrichment rides with B4's conversation/generation ids.
+    // (old_string/new_string pairs) and the standard agent-session envelope
+    // (real conversation/generation ids + model — B4). The canonical payload
+    // carries only the path in v1, so `edits` is empty — enough for the common
+    // formatter/accounting hook, which keys off file_path.
     return {
-      conversation_id: '',
-      generation_id: '',
-      hook_event_name: 'afterFileEdit',
-      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
+      ...agentSessionEnvelope('afterFileEdit', session),
       file_path: payload.filePath,
       edits: [],
     }
@@ -672,14 +696,13 @@ export const cursorAdapter: DialectAdapter = {
     return { ...base, failed: false, parseOk: true }
   },
 
-  marshalStopRequest(_hook, payload) {
+  marshalStopRequest(_hook, payload, session) {
     // Cursor's stop stdin: the terminal `status` plus the standard agent-session
-    // envelope. B4 fills conversation/generation ids + model.
+    // envelope (real conversation/generation ids + model — B4). The fire site
+    // captures the session by value before dispatching detached, so a slow stop
+    // hook still marshals the finished turn's identity (decision 3).
     return {
-      conversation_id: '',
-      generation_id: '',
-      hook_event_name: 'stop',
-      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
+      ...agentSessionEnvelope('stop', session),
       status: payload.status,
     }
   },

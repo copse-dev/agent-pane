@@ -30,7 +30,7 @@
 // concern (subagentStop et al.) and not wired by B3, so no Claude hooks
 // participate — matching the vendor audit.
 import { HookRegistry } from '@copse/agent/hooks/hook-registry.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorStopHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
@@ -59,7 +59,7 @@ export interface StopResult {
  */
 export async function runStopHooks(
   status: HookEventPayloads['stop']['status'],
-  opts: DialectDiscoverOpts & { signal?: AbortSignal },
+  opts: DialectDiscoverOpts & { signal?: AbortSignal; agentSession?: AgentSessionInfo },
 ): Promise<StopResult> {
   const payload: HookEventPayloads['stop'] = { status }
 
@@ -84,6 +84,10 @@ export async function runStopHooks(
   // name.
   await registry.emit('stop', payload, {
     runCommandHook: createCommandHookRunner(),
+    // The fire site captured the session by value before dispatching detached,
+    // so a slow stop hook still marshals the finished turn's identity (B4 +
+    // decision 3) even after the run's recording context is torn down.
+    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 
   return { ran: hooks.length }
