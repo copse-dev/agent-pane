@@ -17,7 +17,7 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   CURSOR_HOOK_EVENTS,
-  isCursorPermissionHookEvent,
+  isCursorWiredHookEvent,
   type CursorHookEvent,
   type CursorHookScope,
   type CursorHooksListResult,
@@ -195,7 +195,7 @@ export async function listCursorHooks(opts: DialectDiscoverOpts): Promise<Cursor
         command,
         source,
         scope,
-        supported: isCursorPermissionHookEvent(event),
+        supported: isCursorWiredHookEvent(event),
         ...(lastError !== undefined ? { lastError } : {}),
       }
     }),
@@ -291,10 +291,60 @@ export async function cursorToolGateHooks(
     })
 }
 
+/**
+ * Discover the Cursor command hooks registered for `beforeSubmitPrompt` (B1), as
+ * registry `CommandHook`s. Same discovery + trust + `failClosed` → `onFailure`
+ * mapping as {@link cursorToolGateHooks}; the compose-path fire site
+ * (`before-submit-prompt.ts`) registers and fires them through the shared
+ * registry → runner → adapter seam.
+ */
+export async function cursorBeforeSubmitPromptHooks(
+  _payload: HookEventPayloads['beforeSubmitPrompt'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'beforeSubmitPrompt'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'beforeSubmitPrompt')
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'beforeSubmitPrompt' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
 interface CursorHookResponse {
   permission?: HookDecision
   agentMessage?: string
   userMessage?: string
+}
+
+/**
+ * Cursor `beforeSubmitPrompt` stdout: `{ continue: boolean }` plus an optional
+ * user-facing message. The vendor documents `user_message` (snake_case); the
+ * permission-hook response uses camelCase `userMessage`/`agentMessage`, so we
+ * accept either spelling and normalize.
+ */
+interface CursorBeforeSubmitPromptResponse {
+  continue?: boolean
+  user_message?: string
+  userMessage?: string
+  agent_message?: string
+  agentMessage?: string
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return undefined
 }
 
 function isHookDecision(value: unknown): value is HookDecision {
@@ -394,9 +444,96 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
+  marshalBeforeSubmitPromptRequest(_hook, payload) {
+    // Cursor's beforeSubmitPrompt stdin: the composed prompt plus attachments
+    // (empty until an attachments payload channel exists) and the standard
+    // agent-session envelope. B4 fills conversation/generation ids + model.
+    return {
+      conversation_id: '',
+      generation_id: '',
+      hook_event_name: 'beforeSubmitPrompt',
+      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
+      prompt: payload.prompt,
+      attachments: [],
+    }
+  },
+
+  interpretBeforeSubmitPrompt(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    const spineEvent = 'beforeSubmitPrompt'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) {
+      // No stdout on a clean exit is an intentional "allow / no opinion"; a
+      // crash with no output is a failure the runner resolves per `onFailure`.
+      if (spawn.exitCode === 0) return { ...base, failed: false, parseOk: true }
+      const detail =
+        spawn.exitCode === null ? 'was killed' : `exited with code ${String(spawn.exitCode)}`
+      return { ...base, failed: true, parseOk: true, runtimeError: detail }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: 'printed invalid JSON — response ignored',
+      }
+    }
+    const { outcome, spineDecision } = beforeSubmitOutcomeFromResponse(parsed)
+    return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
+  },
+
   recordRuntimeFailure(event, command, message) {
     const key = hookErrorKey(event, command)
     if (sessionHookErrors.has(key)) return
     sessionHookErrors.set(key, message)
   },
+}
+
+/**
+ * Normalize a Cursor `beforeSubmitPrompt` response. `continue: false` halts the
+ * submit (decision 12's `haltRun`); the user-facing message becomes the halt
+ * reason and rides along as `userMessage` for surfacing (B1 acceptance: carry
+ * `user_message` on halt). `agentMessage` is carried when present. Any other
+ * `continue` value (true / absent) is an allow — no opinion.
+ */
+function beforeSubmitOutcomeFromResponse(parsed: unknown): {
+  outcome: BlockingHookOutcome | null
+  spineDecision: SpineHookRunDecision
+} {
+  if (typeof parsed !== 'object' || parsed === null) return { outcome: null, spineDecision: {} }
+  const res = parsed as CursorBeforeSubmitPromptResponse
+  const userMessage = firstString(res.user_message, res.userMessage)
+  const agentMessage = firstString(res.agent_message, res.agentMessage)
+  const outcome: BlockingHookOutcome = {}
+  if (res.continue === false) {
+    outcome.haltRun = {
+      reason: userMessage ?? 'Prompt submission was blocked by a beforeSubmitPrompt hook.',
+    }
+  }
+  if (userMessage !== undefined) outcome.userMessage = userMessage
+  if (agentMessage !== undefined) outcome.agentMessage = agentMessage
+  const spineDecision: SpineHookRunDecision = {
+    ...(outcome.haltRun !== undefined ? { haltRun: true } : {}),
+    ...(agentMessage !== undefined ? { agentMessageChars: agentMessage.length } : {}),
+    ...(userMessage !== undefined ? { userMessageChars: userMessage.length } : {}),
+  }
+  return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
 }
