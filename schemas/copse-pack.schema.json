@@ -100,6 +100,26 @@
           "title": {
             "description": "Human title for the Settings pack-list enumeration (P3).",
             "type": "string"
+          },
+          "panel": {
+            "description": "Level-2 refinement (P2). Declares the panel shape the pack emits so the host can validate incoming panel_update payloads. Required when level = 2; the host rejects a level-2 contribution without a panel decl.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "description": "Data shape: a flat ordered list (ACP plan–shaped) or a nested tree.",
+                "enum": ["list", "tree"]
+              },
+              "header": {
+                "description": "Human header rendered above the panel; falls back to the contribution `title`.",
+                "type": "string"
+              },
+              "ariaLabel": {
+                "description": "Optional a11y label; defaults to `header` / contribution `title`.",
+                "type": "string"
+              }
+            }
           }
         }
       }

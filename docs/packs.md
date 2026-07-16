@@ -2,8 +2,9 @@
 
 A **pack** is a manifest-bundled feature. It extends the `plugin.json` shape Copse
 already loads (skills + MCP) with the remaining slots, and the pack registry owns
-its lifecycle. This document describes the landed **P1** layer: the manifest
-shape, the registry, and atomic enable/disable. The design source of truth is
+its lifecycle. This document describes the landed **P1 + P2** layer: the
+manifest shape, the registry, atomic enable/disable, and the level-2 declarative
+panel contribution. The design source of truth is
 [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md)
 ("Feature packs" + decisions 15 & 17); on conflict, that plan wins — update it in
 the same PR.
@@ -66,6 +67,39 @@ registry the loop uses — so a disabled pack removes them from new work without
 touching loop code. In P1 the skeleton contributes no hooks, so the wiring is
 byte-identical to the M0 behavior.
 
+## Level-2 declarative panels (P2)
+
+A pack contributes a **level-2 panel** by declaring a UI contribution at
+`level: 2` with a `panel: { kind: 'list' | 'tree', header?, ariaLabel? }` slot,
+and by emitting `panel_update` chunks
+([`PanelData`](../packages/agent/src/packs/pack-panel.ts)) whose contents the
+host renders with a generic list/tree component
+([`createPackPanelEl`](../src/renderer/views/pack-panel.ts)). Each `panel_update`
+**replaces** the panel's contents, matching ACP `plan`'s whole-list-per-update
+semantics — which is why a list panel is one adapter away from cross-client
+rendering.
+
+- `panel_update` is now part of `AgentStreamChunk`, so first-party function
+  hooks emit it via `FunctionHookContext.emitChunk` (external command hooks
+  never see `emitChunk`, so a user pack cannot smuggle typed feature chunks —
+  decision 15, pinned by `command-hooks-cannot-emit-feature-chunks.test.ts`).
+- The chunk carries `packId` + `contributionId` so two packs cannot collide on
+  the same declared panel slot.
+- Level 2 is deliberately declarative: no freeform React from a pack at this
+  level. Real renderer views are level 3, first-party only (VS Code
+  built-in-extensions model).
+- The data model is seeded from the `todo_update` ↔ ACP `plan` mapping:
+  `todosToPanelListData()` projects a `TodoItem[]` into `PanelListData` with the
+  same header + rows + `"N/M done"` summary the current todo panel shows, so
+  the P4 todos pack can switch from `todo_update` to `panel_update` with no
+  visible regression.
+- Registration enforces the invariant: a `level: 2` contribution _must_ declare
+  its `panel` shape. `PackRegistry.register` throws
+  `InvalidPanelContributionError` on a missing decl (mechanical, not "please
+  remember"). `activePanelContributions()` returns each enabled pack's level-2
+  panels paired with their owning pack id; disabling the pack drops it in one
+  action alongside the pack's tools / hooks / prompt / other UI.
+
 ## Decision 17 — history never consults live registration
 
 **Disabling a pack never breaks history.** Transcript rendering resolves from
@@ -86,9 +120,12 @@ disable is pinned by
 
 ## Module layout (execution-guidance rule 4)
 
-- Pack manifest types, registry, and first-party pack definitions live in
-  `packages/agent/src/packs/` (Electron-free — first-party function hooks receive
-  app services via context, never import them).
+- Pack manifest types, registry, first-party pack definitions, and the level-2
+  panel data model + seed transforms live in `packages/agent/src/packs/`
+  (Electron-free — first-party function hooks receive app services via context,
+  never import them).
+- The generic list/tree panel renderer lives in `src/renderer/views/pack-panel.ts`
+  and consumes the Electron-free `PanelData` types across the package boundary.
 - Host disk-discovery of user packs, persisting the enable/disable set + pack
   storage to `electron-store`, and the Settings pack-list UI are host wiring
   (`src/main/services/`) that lands with P3/P4.

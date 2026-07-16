@@ -64,6 +64,24 @@ export class DuplicatePackError extends Error {
   }
 }
 
+/**
+ * Thrown when a pack registers a level-2 UI contribution without a `panel` decl.
+ * The invariant is mechanical (rather than "please remember to add one"): a
+ * level-2 contribution *is* a declarative panel, so the shape must be pinned at
+ * registration or the host has nothing to validate incoming `panel_update`
+ * payloads against (P2).
+ */
+export class InvalidPanelContributionError extends Error {
+  readonly packId: string
+  readonly contributionId: string
+  constructor(packId: string, contributionId: string, reason: string) {
+    super(`pack "${packId}" contribution "${contributionId}" is invalid: ${reason}`)
+    this.name = 'InvalidPanelContributionError'
+    this.packId = packId
+    this.contributionId = contributionId
+  }
+}
+
 export class PackRegistry {
   // Insertion-ordered so `all()` / the active getters keep a deterministic
   // order (contribution order can be load-bearing, e.g. prompt assembly).
@@ -78,6 +96,15 @@ export class PackRegistry {
   /** Register a pack, grouped by its id. Enabled by default. Duplicate id throws. */
   register(pack: RegisteredPack): void {
     if (this.packs.has(pack.id)) throw new DuplicatePackError(pack.id)
+    for (const contribution of pack.contributions.uiContributions) {
+      if (contribution.level === 2 && !contribution.panel) {
+        throw new InvalidPanelContributionError(
+          pack.id,
+          contribution.id,
+          'level 2 (declarative panel) requires a `panel` decl (kind: list | tree)',
+        )
+      }
+    }
     this.packs.set(pack.id, pack)
   }
 
@@ -154,6 +181,30 @@ export class PackRegistry {
   /** UI contributions that mount for new content right now (enabled packs only). */
   activeUiContributions(): readonly PackUiContribution[] {
     return this.collectActive((c) => c.uiContributions)
+  }
+
+  /**
+   * Active level-2 declarative panels, each paired with its owning pack id (P2).
+   * The host mounts one generic list/tree component per entry into the named
+   * `slot`; disabling the owning pack drops it from this getter in one action,
+   * so panels for new content stop mounting alongside the pack's other
+   * contribution kinds (decision 15 atomicity). Historical content is
+   * unaffected — history renders from spine data, never the registry
+   * (decision 17).
+   */
+  activePanelContributions(): readonly {
+    readonly packId: string
+    readonly contribution: PackUiContribution
+  }[] {
+    const out: { packId: string; contribution: PackUiContribution }[] = []
+    for (const pack of this.enabledPacks()) {
+      for (const contribution of pack.contributions.uiContributions) {
+        if (contribution.level === 2 && contribution.panel) {
+          out.push({ packId: pack.id, contribution })
+        }
+      }
+    }
+    return out
   }
 
   /** Every pack + its enablement, for the Settings pack list (P3). */

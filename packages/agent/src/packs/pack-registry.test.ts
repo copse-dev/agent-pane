@@ -20,7 +20,7 @@ function demoPack(id: string): RegisteredPack {
       toolNames: [`${id}_tool`],
       blockingHooks: [stepHook],
       promptBlocks: [{ id: `${id}-prompt`, text: 'steer', trust: 'trusted' }],
-      uiContributions: [{ id: `${id}-panel`, level: 2, slot: 'sidebar' }],
+      uiContributions: [{ id: `${id}-panel`, level: 2, slot: 'sidebar', panel: { kind: 'list' } }],
     },
   )
 }

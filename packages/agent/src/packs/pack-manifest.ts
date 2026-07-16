@@ -12,6 +12,7 @@
 // only hook *types* (execution-guidance rule 4). The published JSON schema
 // (schemas/copse-pack.schema.json) validates the declarative manifest.
 import type { AsyncHook, BlockingHook } from '../hooks/canonical-events.ts'
+import type { PanelContributionDecl } from './pack-panel.ts'
 
 /** Whether a pack is shipped by Copse or installed by the user (decision 15). */
 export type PackTrust = 'first-party' | 'user'
@@ -33,6 +34,15 @@ export interface PackUiContribution {
   slot?: string
   /** Human title (Settings pack-list enumeration, P3). */
   title?: string
+  /**
+   * Level-2 refinement (P2). When `level: 2`, `panel` declares the shape of the
+   * pack data the host will render generically (`list` vs `tree`). Omitted for
+   * level 1 (declarative cards) and level 3 (real renderer view — the pack ships
+   * the component itself). The host validates incoming `panel_update` payloads
+   * against this shape (P3 wiring); level-2 contributions without a `panel`
+   * decl are rejected at registration time to keep the invariant mechanical.
+   */
+  panel?: PanelContributionDecl
 }
 
 /**
