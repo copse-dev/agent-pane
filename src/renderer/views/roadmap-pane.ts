@@ -75,48 +75,62 @@ export function mountRoadmapPane(
   // renderEditor must not overwrite it from the store.
   let fitCheckInFlight = false
   let loadToken = 0
+  // Search/filter query entered in the list header.
+  let searchQuery = ''
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
+  const searchInput = el('input', {
+    type: 'search',
+    class: 'roadmap-search-input',
+    placeholder: 'Filter roadmap items…',
+    'aria-label': 'Filter roadmap items',
+  })
+  const actionButtons = el('div', { class: 'roadmap-action-buttons' })
+  const newBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn memories-new-btn roadmap-new-btn',
+      'aria-label': 'New roadmap item',
+      title: 'New roadmap item',
+    },
+    '+',
+  )
+  const importBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-import-btn',
+      'aria-label': 'Import from GitHub issues',
+      title: 'Import from GitHub issues',
+    },
+    '⇩',
+  )
+  const refreshBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-refresh-btn',
+      'aria-label': 'Refresh roadmap',
+      title: 'Refresh',
+    },
+    '↻',
+  )
+  actionButtons.append(newBtn, importBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn memories-new-btn roadmap-new-btn',
-        'aria-label': 'New roadmap item',
-        title: 'New roadmap item',
-      },
-      '+',
-    ),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn roadmap-import-btn',
-        'aria-label': 'Import from GitHub issues',
-        title: 'Import from GitHub issues',
-      },
-      '⇩',
-    ),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn roadmap-refresh-btn',
-        'aria-label': 'Refresh roadmap',
-        title: 'Refresh',
-      },
-      '↻',
-    ),
+    searchInput,
+    actionButtons,
   )
-  const newBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-new-btn')
-  const importBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-import-btn')
-  const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-refresh-btn')
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
   listRoot.append(listHeader, listBody)
+
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value.trim()
+    renderList()
+  })
 
   // --- editor column --------------------------------------------------------
   const emptyState = el(
@@ -316,19 +330,35 @@ export function mountRoadmapPane(
     }
   }
 
+  function matchesSearch(item: RoadmapItem): boolean {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      (item.title || '').toLowerCase().includes(q) ||
+      (item.body ?? '').toLowerCase().includes(q) ||
+      itemNotes(item).toLowerCase().includes(q) ||
+      itemIssue(item).toLowerCase().includes(q) ||
+      (item.status ?? '').toLowerCase().includes(q)
+    )
+  }
+
   function renderList(): void {
     clear(listBody)
-    if (items.length === 0) {
+    const visible = items.filter(matchesSearch)
+    if (visible.length === 0) {
+      const hint = searchQuery
+        ? 'No roadmap items match your filter.'
+        : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
       listBody.append(
         el(
           'div',
           { class: 'git-changes-empty roadmap-list-empty' },
-          'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.',
+          hint,
         ),
       )
       return
     }
-    for (const item of items) {
+    for (const item of visible) {
       const isSelected = item.id === selectedId
       const status = itemStatus(item)
       const row = el('button', {

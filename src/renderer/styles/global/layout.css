@@ -441,6 +441,7 @@
   padding: var(--spacing-sm);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .git-changes-bulk-actions {
   display: flex;
