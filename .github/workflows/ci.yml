@@ -96,16 +96,26 @@ jobs:
           sleep 10
           npm run typecheck
       - name: Lint
+        env:
+          # Cap the V8 heap so eslint stays inside the ~6 GB check-runner cgroup
+          # instead of racing other jobs for the whole container.
+          NODE_OPTIONS: --max-old-space-size=3072
         run: |
-          set +e
-          npm run lint
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then exit 0; fi
-          if [ "$status" -ne 137 ]; then exit "$status"; fi
-          echo "::warning::lint OOM-killed (137); retrying once"
-          sleep 10
-          npm run lint
+          # Typecheck just exited; give the cgroup a beat to reclaim before
+          # eslint's peak allocation, then retry a couple of times on 137.
+          sleep 15
+          attempt=1
+          while true; do
+            set +e
+            npm run lint
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then exit 0; fi
+            if [ "$status" -ne 137 ] || [ "$attempt" -ge 3 ]; then exit "$status"; fi
+            echo "::warning::lint OOM-killed (137); retry $attempt/3"
+            attempt=$((attempt + 1))
+            sleep 20
+          done
       - run: npm run format:check
       - run: npm run check:dead-code
       # Guard the e2e oracle that gates the `e2e` job: every spec must stay
