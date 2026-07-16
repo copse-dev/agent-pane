@@ -26,6 +26,7 @@ interface StubModel {
 
 interface StubDiffEditor {
   models: { original: StubModel; modified: StubModel } | null
+  revealLineCalls: number[]
 }
 
 function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Monaco {
@@ -38,13 +39,32 @@ function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Mona
     isDisposed: () => false,
   })
   return {
+    Uri: {
+      parse: (value: string): { toString(): string } => ({
+        toString: () => value,
+      }),
+    },
     editor: {
       createDiffEditor: (): unknown => {
         const listeners = new Set<() => void>()
+        const notify = (): void => {
+          for (const cb of [...listeners]) cb()
+        }
         const self: StubDiffEditor & Record<string, unknown> = {
           models: null,
-          getOriginalEditor: () => noopEditor,
-          getModifiedEditor: () => noopEditor,
+          revealLineCalls: [],
+          getOriginalEditor: () => ({
+            ...noopEditor,
+            revealLineInCenterIfOutsideViewport: (line: number): void => {
+              self.revealLineCalls.push(line)
+            },
+          }),
+          getModifiedEditor: () => ({
+            ...noopEditor,
+            revealLineInCenterIfOutsideViewport: (line: number): void => {
+              self.revealLineCalls.push(line)
+            },
+          }),
           onDidUpdateDiff: (cb: () => void) => {
             listeners.add(cb)
             return {
@@ -54,16 +74,40 @@ function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Mona
             }
           },
           getModel: () => self.models,
-          setModel: (models: { original: StubModel; modified: StubModel } | null) => {
-            self.models = models
+          setModel: (
+            models:
+              | { original: StubModel; modified: StubModel }
+              | { model: { original: StubModel; modified: StubModel } }
+              | null,
+          ) => {
+            if (models && 'model' in models) {
+              self.models = models.model
+            } else if (models && 'original' in models) {
+              self.models = models
+            } else {
+              self.models = null
+            }
             // Mirror Monaco: the diff recomputes asynchronously after setModel.
-            queueMicrotask(() => {
-              for (const cb of [...listeners]) cb()
-            })
+            queueMicrotask(notify)
           },
-          updateOptions: (): void => {},
+          createViewModel: (model: { original: StubModel; modified: StubModel }) => ({
+            model,
+            waitForDiff: async (): Promise<void> => undefined,
+            dispose: (): void => {},
+          }),
+          updateOptions: (): void => {
+            // Collapse refresh listens for a post-toggle update.
+            queueMicrotask(notify)
+          },
           layout: (): void => {},
-          getLineChanges: () => [],
+          getLineChanges: () => [
+            {
+              originalStartLineNumber: 1,
+              originalEndLineNumber: 1,
+              modifiedStartLineNumber: 1,
+              modifiedEndLineNumber: 1,
+            },
+          ],
           dispose: (): void => {},
         }
         capture.editor = self
@@ -125,7 +169,20 @@ function forceVisible(el: HTMLElement): void {
 }
 
 async function settle(): Promise<void> {
-  for (let i = 0; i < 10; i++) await Promise.resolve()
+  for (let i = 0; i < 30; i++) await Promise.resolve()
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0)
+  })
+}
+
+async function waitForReveal(capture: { editor: StubDiffEditor | null }): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (Date.now() < deadline) {
+    if ((capture.editor?.revealLineCalls.length ?? 0) >= 1) return
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 10)
+    })
+  }
 }
 
 describe('git changes pane fetches proposed diff content on cache miss', () => {
@@ -148,12 +205,17 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
 
     mountGitChangesPane(listRoot, viewerRoot, store, api, monaco)
     await settle()
+    await waitForReveal(capture)
 
     assert.deepEqual(contentCalls, ['x.ts'], 'should fetch the uncached proposed content once')
     const models = capture.editor?.models
     assert.ok(models, 'diff editor should have a model set')
     assert.equal(models.original.value, 'old\n', 'before content rendered')
     assert.equal(models.modified.value, 'new\n', 'after content rendered')
+    assert.ok(
+      (capture.editor?.revealLineCalls.length ?? 0) >= 1,
+      'should reveal the first change after the model is ready',
+    )
   })
 
   it('clears the viewer when the queue entry has no retrievable content', async () => {
