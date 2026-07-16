@@ -30,10 +30,12 @@ import {
   openSettingsDialog,
   isSettingsDialogOpen,
   closeSettingsDialog,
+  applyUiAccent,
   applyUiTint,
   isUiTintStrength,
   DEFAULT_TINT_COLOR,
   DEFAULT_TINT_STRENGTH,
+  DEFAULT_ACCENT_COLOR,
 } from './views/settings-dialog.ts'
 import { resolveTheme, applyThemeToDocument, watchSystemTheme } from './dom/theme.ts'
 import {
@@ -209,8 +211,10 @@ async function boot(): Promise<void> {
       store.emit('theme_changed', nextTheme)
     },
   )
-  // Restore the whole-app tint before the layout paints so surfaces come up
-  // already tinted rather than flashing neutral then shifting.
+  // Restore the interaction accent and whole-app tint before the layout paints
+  // so controls and surfaces do not flash their defaults before shifting.
+  const savedAccentColor = await api.settings.get('uiAccentColor')
+  applyUiAccent(typeof savedAccentColor === 'string' ? savedAccentColor : DEFAULT_ACCENT_COLOR)
   const savedTintColor = await api.settings.get('uiTintColor')
   const savedTintStrength = await api.settings.get('uiTintStrength')
   applyUiTint(

@@ -27,18 +27,18 @@
   width: 100%;
   border-radius: 0;
   border: none;
-  border-top: 1px solid var(--border);
+  border-top: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   padding: var(--spacing-md);
   background: var(--bg-base);
   font-family: inherit;
   font-size: inherit;
   outline: none;
   cursor: text;
-  /* A contenteditable grows with its content natively; min-height carries the
-     3-row resting floor (the chat layout clamps the composer height to >=72px
-     and expects it above that); max-height + overflow cap the growth so a long
+  /* A contenteditable grows with its content natively; min-height carries a
+     compact 2-row resting floor; max-height + overflow cap the growth so a long
      draft scrolls internally rather than eating the chat. */
-  min-height: calc(3lh + 2 * var(--spacing-md));
+  min-height: calc(2lh + 2 * var(--spacing-md));
   max-height: 40vh;
   overflow-y: auto;
   /* Typed newlines are text nodes, not <br>s — render them. */
@@ -177,7 +177,7 @@
   right: var(--spacing-md);
   bottom: var(--spacing-md);
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: 6px 16px;
 }
@@ -239,7 +239,7 @@
 }
 .queued-action.queued-send,
 .queued-action.queued-send-now {
-  color: white;
+  color: var(--text-on-accent);
   background: var(--accent);
   border-color: transparent;
 }
@@ -272,11 +272,12 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
-  padding: 2px var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
   font-size: 11px;
   color: var(--text-muted);
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
 .footer-model-host {
   min-width: 0;

@@ -220,7 +220,7 @@ dialog.settings-overlay::backdrop {
 }
 .settings-buttons button[type='submit'] {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: var(--spacing-md) var(--spacing-xl);
 }

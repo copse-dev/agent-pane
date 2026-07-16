@@ -120,12 +120,12 @@
 .memories-btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 .memories-btn-primary:hover:not(:disabled) {
   background: var(--accent);
   filter: brightness(1.08);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 .memories-btn-danger {
   margin-left: auto;

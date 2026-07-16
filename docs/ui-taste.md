@@ -208,3 +208,32 @@ manual VNC glance.
 - Pin `#app` to `window.innerWidth` in [`tests/e2e/helpers/screenshot.ts`](../tests/e2e/helpers/screenshot.ts)
   (`prepareE2eScreenshot`) so captures are not wider than the Electron window — otherwise table
   columns clip off the right edge of the PNG.
+
+## Transcript status callouts
+
+Review and comparison results should read as annotations in the transcript, not rounded cards or
+pills. Use a square, thin status rail and a subtle horizontal color wash that fades into the chat
+background. Reserve the rail hue for state (accent, error, etc.); avoid a full perimeter border,
+rounded container corners, or a solid tinted block around these secondary results.
+
+## Conditional split panes
+
+Do not permanently reserve space for a secondary viewer that has no content yet. When a pane has a
+primary summary and an optional detail surface (for example, PR description plus selected-file
+diff), let the primary surface flex into the unused area. Restore the bounded split only once the
+secondary content is loading or visible, and keep its selector adjacent to the expanded primary
+surface so the next action remains discoverable.
+
+## Accent colour versus interface tint
+
+The accent and tint are separate controls. Accent is semantic interaction emphasis: links, primary
+actions, focus, selected rows, and user-authored message highlights. Interface tint is only a subtle
+wash through otherwise neutral surfaces. Derive hover and link shades from the accent per theme,
+and derive foreground text from the chosen solid accent so custom colours do not leave primary
+buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
+
+## Sidebar selections
+
+Chat rows use flat, square selection and hover fills with a slim inset accent rail. Avoid rounded
+row highlights here: they read like detached pills instead of a selection within a continuous
+sidebar list.
