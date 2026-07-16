@@ -43,6 +43,7 @@ resetSshTransportFactory()
 export class SshConnectionManager {
   private readonly connections = new Map<string, ManagedConnection>()
   private readonly listeners = new Set<ConnectionListener>()
+  private readonly connectInflight = new Map<string, Promise<SshConnection>>()
 
   onChange(listener: ConnectionListener): () => void {
     this.listeners.add(listener)
@@ -81,6 +82,21 @@ export class SshConnectionManager {
     const existing = this.connections.get(hostId)
     if (existing?.status === 'connected') return wrapConnection(existing)
 
+    const inflight = this.connectInflight.get(hostId)
+    if (inflight) return inflight
+
+    const promise = this.connectFresh(hostId)
+    this.connectInflight.set(hostId, promise)
+    try {
+      return await promise
+    } finally {
+      if (this.connectInflight.get(hostId) === promise) {
+        this.connectInflight.delete(hostId)
+      }
+    }
+  }
+
+  private async connectFresh(hostId: string): Promise<SshConnection> {
     const host = findConfiguredSshHost(hostId)
     if (!host) throw new Error(`Unknown SSH host: ${hostId}`)
 

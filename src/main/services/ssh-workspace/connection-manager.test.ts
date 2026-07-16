@@ -69,6 +69,41 @@ describe('SshConnectionManager', () => {
     })
   })
 
+  it('dedupes concurrent connect calls for the same host', async () => {
+    await withTestHost(async () => {
+      let connectCalls = 0
+      setSshTransportFactory(() => ({
+        isConnected: (): boolean => false,
+        connect: async (): Promise<void> => {
+          connectCalls += 1
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        },
+        disconnect: async (): Promise<void> => {
+          await Promise.resolve()
+        },
+        execArgv: async (): Promise<{ stdout: string; stderr: string; code: number }> => ({
+          stdout: '',
+          stderr: '',
+          code: 0,
+        }),
+        execShell: async (): Promise<{ stdout: string; stderr: string; code: number }> => ({
+          stdout: '',
+          stderr: '',
+          code: 0,
+        }),
+      }))
+
+      const manager = new SshConnectionManager()
+      const [first, second] = await Promise.all([
+        manager.connect('dev-box'),
+        manager.connect('dev-box'),
+      ])
+      assert.equal(first.host.id, second.host.id)
+      assert.equal(connectCalls, 1)
+      await manager.disconnect('dev-box')
+    })
+  })
+
   it('surfaces connection errors', async () => {
     await withTestHost(async () => {
       setSshTransportFactory(() => ({
