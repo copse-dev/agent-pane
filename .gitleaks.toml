@@ -14,4 +14,9 @@ paths = ['''^src/shared/threads/decision-log\.test\.ts$''']
 [[allowlists]]
 description = "AWS and private-key redaction fixtures"
 targetRules = ["aws-access-token", "private-key"]
-paths = ['''^src/shared/llm/redact-secrets\.test\.ts$''']
+# History still contains the pre-#715 path; the package extraction moved the
+# fixtures to packages/llm without rewriting git history.
+paths = [
+  '''^src/shared/llm/redact-secrets\.test\.ts$''',
+  '''^packages/llm/src/redact-secrets\.test\.ts$''',
+]
