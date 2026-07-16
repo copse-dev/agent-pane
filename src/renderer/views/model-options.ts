@@ -161,8 +161,22 @@ function extraProviderOptions(
   return entries
 }
 
-export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
+export interface FetchModelOptionsOpts {
+  /**
+   * When true, omit ACP agents from the picker (they run as local stdio processes
+   * and are not supported on SSH workspaces). A stale `acp:*` selection stays
+   * visible but disabled.
+   */
+  sshWorkspace?: boolean
+}
+
+export async function fetchModelOptions(
+  api: ApiClient,
+  current: string,
+  opts: FetchModelOptionsOpts = {},
+): Promise<ModelOption[]> {
   const options: ModelOption[] = []
+  const sshWorkspace = opts.sshWorkspace === true
 
   let available: AvailableProviders = {}
   try {
@@ -201,8 +215,10 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     }
   }
 
-  // ACP agents (external coding agents Copse drives): only listed once configured.
-  options.push(...(await acpAgentOptions(api)))
+  // ACP agents (external coding agents Copse drives): local stdio only — hide on SSH.
+  if (!sshWorkspace) {
+    options.push(...(await acpAgentOptions(api)))
+  }
 
   // Local models: only listed when a local server is reachable and exposes some.
   const lmGroup = 'Local models'
@@ -231,11 +247,15 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
         group: remoteGroup,
       })
     } else if (current.startsWith(ACP_MODEL_PREFIX)) {
-      options.push({
+      const stale: ModelOption = {
         value: current,
-        label: `${modelDisplayLabel(current)} (not configured)`,
+        label: sshWorkspace
+          ? `${modelDisplayLabel(current)} (unavailable on SSH)`
+          : `${modelDisplayLabel(current)} (not configured)`,
         group: ACP_GROUP,
-      })
+      }
+      if (sshWorkspace) stale.disabled = true
+      options.push(stale)
     } else {
       options.push({ value: current, label: `${current} (no key)` })
     }
