@@ -24,6 +24,7 @@ import {
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
+  zHookTestRequest,
   zNonEmptyString,
   zPathString,
   zProjectId,
@@ -87,6 +88,7 @@ import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
+import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -894,6 +896,25 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       hooks: [...cursor.hooks, ...claude, ...copse.hooks],
       warnings: [...cursor.warnings, ...copse.warnings],
     }
+  })
+  ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
+    assertMainFrameSender(event, win)
+    // G2 dry-run tester: run one discovered hook once against a synthetic
+    // payload and report stdin/stdout/stderr/exit/duration. `dryRunHook` is a
+    // side-effect-free probe — it never records the spine, propagates session
+    // env, or applies the outcome (see dry-run.ts). Validate the request shape
+    // so a compromised renderer cannot pass an arbitrary command through here.
+    const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
+    // Rebuild explicitly so an omitted `sandbox` stays omitted (not `undefined`)
+    // under exactOptionalPropertyTypes.
+    return dryRunHook({
+      family: parsed.family,
+      event: parsed.event,
+      command: parsed.command,
+      source: parsed.source,
+      scope: parsed.scope,
+      ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
+    })
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({

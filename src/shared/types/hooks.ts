@@ -65,6 +65,71 @@ export interface HooksListResult {
 }
 
 /**
+ * `hooks:test` request — identify a single discovered hook (as surfaced in
+ * Settings → Sources) to run once against a **synthetic** payload (G2 dry-run
+ * tester). Carries exactly the {@link HookSummary} fields that reconstruct the
+ * hook's spawn (`family` → dialect, `event` → the wire event to synthesize a
+ * payload for, `command`, `source` → the config dir the command resolves
+ * against) plus the `sandbox` escape so the dry run honours F3's
+ * sandboxed-by-default behavior. A dry run never mutates live agent state,
+ * starts a turn, records the spine, or grants a real permission — the returned
+ * {@link BlockingHookOutcome} is *displayed*, never applied.
+ */
+export interface HookTestRequest {
+  family: HookFamily
+  /** Dialect wire event name (exactly as shown in Sources / {@link HookSummary.event}). */
+  event: string
+  /** The shell command to spawn — the hook's id. */
+  command: string
+  /** Absolute path to the config file that declared it (its dir is the cwd). */
+  source: string
+  scope: HookScope
+  /**
+   * Whether the hook opted out of the project sandbox (Copse `sandbox: false`).
+   * Mirrors {@link HookSummary.sandbox}; absent means sandboxed-by-default.
+   */
+  sandbox?: boolean
+}
+
+/**
+ * `hooks:test` result — everything one dry run observed. The four raw streams
+ * the tester surfaces (stdin / stdout / stderr / exit / duration) plus the
+ * derived summary (`parseOk`, a one-line `outcomeSummary`). When the hook's
+ * event cannot be synthesized (unsupported / no dialect marshaller), `ran` is
+ * false and `error` explains why — no process was spawned.
+ */
+export interface HookTestResult {
+  /** True when a synthetic payload was built and the hook was actually spawned. */
+  ran: boolean
+  /** Why the dry run could not run (unsupported event / missing marshaller); set when `!ran`. */
+  error?: string
+  /** Canonical event the synthetic payload targeted (e.g. `toolGate`). */
+  canonicalEvent?: string
+  /** The dialect wire event the payload marshalled to (a `toolGate` flavor may differ). */
+  wireEvent?: string
+  /** The exact JSON string written to the hook's stdin. */
+  stdin?: string
+  /** Raw stdout captured from the hook (the response channel). */
+  stdout?: string
+  /** Raw stderr captured from the hook. */
+  stderr?: string
+  /** Process exit code; null when the hook was killed (timeout) or failed to start. */
+  exitCode?: number | null
+  /** Wall-clock duration of the spawned process in milliseconds. */
+  durationMs?: number
+  /** True when the hook was killed for exceeding the dry-run timeout. */
+  timedOut?: boolean
+  /** True when the process failed to start. */
+  spawnError?: boolean
+  /** Whether the hook actually ran inside the project sandbox (macOS-only; a default, not a guarantee). */
+  sandboxed?: boolean
+  /** Whether the dialect parsed the hook's stdout cleanly. */
+  parseOk?: boolean
+  /** One-line human-readable summary of the normalized outcome (e.g. `allow`, `deny — <msg>`, `no opinion`). */
+  outcomeSummary?: string
+}
+
+/**
  * Main → renderer bridge payload for an async hook's `queueMessage` output — the
  * only async output channel (decision 4). The host translates an async outcome
  * into this and sends it over `agent:hook_queue_message`; the renderer lands it

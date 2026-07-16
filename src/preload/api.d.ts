@@ -2,7 +2,7 @@ import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HooksListResult } from '@shared/types/hooks.ts'
+import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -439,6 +439,8 @@ export interface ApiClient {
   }
   hooks: {
     list: () => Promise<HooksListResult>
+    /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
+    test: (req: HookTestRequest) => Promise<HookTestResult>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
