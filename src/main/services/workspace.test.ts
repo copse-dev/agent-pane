@@ -11,6 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { rmSync } from 'node:fs'
+import { storageSet } from './storage/storage.ts'
 import {
   assertAllowedWorkspaceRoot,
   assertWorkspaceWriteTarget,
@@ -19,6 +20,7 @@ import {
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
   resolveReadablePath,
+  resolveSshHostForWorkspaceRoot,
   resolveWorkspacePath,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
@@ -324,5 +326,15 @@ describe('allowed workspace roots', () => {
       () => assertAllowedWorkspaceRoot('/var/www/other', 'dev'),
       /not an allowed/,
     )
+  })
+
+  it('resolveSshHostForWorkspaceRoot prefers explicit host then matching project path', () => {
+    storageSet('activeProjectId', null)
+    storageSet('projects', [
+      { id: 'p1', path: '/etc/ddg', name: 'ddg', sshHost: 'euw-serp-dev-testing16' },
+    ])
+    assert.equal(resolveSshHostForWorkspaceRoot('/etc/ddg', 'explicit-host'), 'explicit-host')
+    assert.equal(resolveSshHostForWorkspaceRoot('/etc/ddg'), 'euw-serp-dev-testing16')
+    assert.equal(resolveSshHostForWorkspaceRoot('/etc/other'), undefined)
   })
 })

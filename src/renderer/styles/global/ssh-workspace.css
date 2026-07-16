@@ -103,11 +103,48 @@
   gap: var(--spacing-sm);
   margin: var(--spacing-md) 0 var(--spacing-sm);
 }
-.remote-folder-path {
+.remote-folder-up {
+  flex-shrink: 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated, var(--bg));
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.remote-folder-up:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.remote-folder-breadcrumbs {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--spacing-xs);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+.remote-folder-crumb {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+.remote-folder-crumb:hover {
+  text-decoration: underline;
+}
+.remote-folder-crumb-current {
+  color: var(--text-primary);
+  cursor: default;
+}
+.remote-folder-crumb-sep {
+  color: var(--text-muted);
+  user-select: none;
 }
 .remote-folder-list {
   display: flex;

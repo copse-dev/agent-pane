@@ -8,6 +8,7 @@ import {
   getActiveProjectSshHost,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
+  resolveSshHostForWorkspaceRoot,
   resolveWorkspacePath,
   scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
@@ -216,12 +217,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
-  ipcMain.handle('workspace:set', async (event, root: unknown) => {
+  ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
+    const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
     const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
     await seedAllowedWorkspaceRoots(projects)
-    const sshHost = getActiveProjectSshHost()
+    const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)

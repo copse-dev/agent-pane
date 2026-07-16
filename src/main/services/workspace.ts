@@ -174,6 +174,32 @@ export function getActiveProjectSshHost(): string | undefined {
   return undefined
 }
 
+/**
+ * Resolve which SSH host owns a workspace root about to be activated.
+ * Prefer an explicit host from the renderer, then the active project, then any
+ * persisted project whose path matches (so `workspace:set` never falls through
+ * to a local `exists` check for remote roots like `/etc/ddg`).
+ */
+export function resolveSshHostForWorkspaceRoot(
+  root: string,
+  explicitSshHost?: string,
+): string | undefined {
+  if (explicitSshHost) return explicitSshHost
+  const active = getActiveProjectSshHost()
+  if (active) return active
+
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return undefined
+  const normalized = normalizeRemoteWorkspacePath(root)
+  for (const project of projects) {
+    if (!project || typeof project !== 'object') continue
+    const candidate = project as { path?: unknown; sshHost?: unknown }
+    if (typeof candidate.path !== 'string' || typeof candidate.sshHost !== 'string') continue
+    if (normalizeRemoteWorkspacePath(candidate.path) === normalized) return candidate.sshHost
+  }
+  return undefined
+}
+
 export function setWorkspaceRoot(root: string | null): void {
   workspaceRoot = root
   storageSet(WORKSPACE_KEY, root)

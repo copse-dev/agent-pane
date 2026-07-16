@@ -9,6 +9,7 @@ import {
   upsertHost,
   type SshHostDraft,
 } from './setup/ssh-host-helpers.ts'
+import { parentRemotePath, remotePathSegments } from './remote-folder-path.ts'
 
 export interface RemoteFolderPick {
   hostId: string
@@ -22,13 +23,6 @@ function ensureDialog(): HTMLDialogElement {
   dialogEl = el('dialog', { id: 'remote-folder-dialog', class: 'remote-folder-dialog' })
   document.body.append(dialogEl)
   return dialogEl
-}
-
-function parentPath(path: string): string {
-  if (path === '/' || path === '') return '/'
-  const trimmed = path.replace(/\/+$/, '')
-  const idx = trimmed.lastIndexOf('/')
-  return idx <= 0 ? '/' : trimmed.slice(0, idx)
 }
 
 /**
@@ -45,10 +39,17 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
     { type: 'button', class: 'remote-folder-add-host-btn' },
     'Add host',
   )
-  const pathLabel = el('code', { class: 'remote-folder-path' }, '/')
+  const breadcrumbs = el('nav', {
+    class: 'remote-folder-breadcrumbs',
+    'aria-label': 'Remote path',
+  })
   const list = el('div', { class: 'remote-folder-list', role: 'listbox' })
   const status = el('p', { class: 'remote-folder-status field-hint' })
-  const upBtn = el('button', { type: 'button', class: 'remote-folder-up' }, 'Up')
+  const upBtn = el(
+    'button',
+    { type: 'button', class: 'remote-folder-up', 'aria-label': 'Go up one directory' },
+    '← Up',
+  )
   const openBtn = el('button', { type: 'button', class: 'remote-folder-open primary' }, 'Open')
   const cancelBtn = el('button', { type: 'button', class: 'remote-folder-cancel' }, 'Cancel')
 
@@ -123,7 +124,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
   const browsePanel = el(
     'div',
     { class: 'remote-folder-browse' },
-    el('div', { class: 'remote-folder-toolbar' }, upBtn, pathLabel),
+    el('div', { class: 'remote-folder-toolbar' }, upBtn, breadcrumbs),
     list,
   )
 
@@ -324,6 +325,38 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       }
     }
 
+    function renderBreadcrumbs(path: string): void {
+      clear(breadcrumbs)
+      const segments = remotePathSegments(path)
+      for (let i = 0; i < segments.length; i += 1) {
+        const segment = segments[i]
+        if (!segment) continue
+        const isCurrent = i === segments.length - 1
+        if (isCurrent) {
+          breadcrumbs.append(
+            el('span', { class: 'remote-folder-crumb remote-folder-crumb-current' }, segment.label),
+          )
+          continue
+        }
+        const crumb = el(
+          'button',
+          {
+            type: 'button',
+            class: 'remote-folder-crumb',
+            'aria-label': `Go to ${segment.path}`,
+          },
+          segment.label,
+        )
+        crumb.addEventListener('click', () => {
+          void browse(segment.path)
+        })
+        breadcrumbs.append(crumb)
+        breadcrumbs.append(
+          el('span', { class: 'remote-folder-crumb-sep', 'aria-hidden': 'true' }, '/'),
+        )
+      }
+    }
+
     async function browse(path: string): Promise<void> {
       if (!currentHostId || loading || addingHost) return
       loading = true
@@ -334,7 +367,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
       try {
         await api.sshWorkspace.connect(currentHostId)
         currentPath = path
-        pathLabel.textContent = currentPath
+        renderBreadcrumbs(currentPath)
         const entries: SshRemoteDirEntry[] = await api.sshWorkspace.listDirectory(
           currentHostId,
           currentPath,
@@ -359,8 +392,12 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
         upBtn.disabled = currentPath === '/'
         openBtn.disabled = false
       } catch (err) {
+        // Keep the attempted path visible so Up / breadcrumbs still work after errors.
+        // Surface the error in the dialog status only — a global toast would fire on
+        // every failed connect while browsing and trip e2e toast guards.
+        currentPath = path
+        renderBreadcrumbs(currentPath)
         status.textContent = err instanceof Error ? err.message : String(err)
-        showToast(status.textContent, { variant: 'error' })
       } finally {
         loading = false
         if (hosts.length > 0 && currentHostId) {
@@ -376,7 +413,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
     })
 
     upBtn.addEventListener('click', () => {
-      void browse(parentPath(currentPath))
+      void browse(parentRemotePath(currentPath))
     })
 
     openBtn.addEventListener('click', () => {

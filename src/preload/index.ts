@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),
-    set: (root: string) => ipcRenderer.invoke('workspace:set', root),
+    set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
     onOpened: (handler: (root: string) => void) => {
