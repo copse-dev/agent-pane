@@ -19,10 +19,23 @@ import {
   setCursorHookTimeoutForTest,
 } from './cursor-adapter.ts'
 import { runStopHooks } from './stop.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 
-/** Fire the canonical stop event (the production turn-end / abort path). */
+let threadCounter = 0
+
+/**
+ * Fire the canonical stop event (the production turn-end / abort path). Each
+ * call uses a fresh thread id so the shared detached dispatcher's per-thread
+ * `whenIdle` (`settled`) is isolated across tests.
+ */
 function fireStop(status: 'completed' | 'aborted'): ReturnType<typeof runStopHooks> {
-  return runStopHooks(status, { workspaceRoot: null, projectTrusted: false })
+  const threadId = `stop-test-thread-${String(threadCounter++)}`
+  return runStopHooks(status, {
+    threadId,
+    turnTreeId: asTurnTreeId(`${threadId}:turn`),
+    workspaceRoot: null,
+    projectTrusted: false,
+  })
 }
 
 describe('stop (turn-end / abort fire site — B3)', () => {
@@ -58,7 +71,8 @@ describe('stop (turn-end / abort fire site — B3)', () => {
 
   it('does nothing when no stop hooks are registered', async () => {
     const result = await fireStop('completed')
-    assert.deepEqual(result, { ran: 0 })
+    assert.equal(result.ran, 0)
+    await result.settled
   })
 
   it('fires on a normal turn end with status "completed"', async () => {
@@ -68,6 +82,9 @@ describe('stop (turn-end / abort fire site — B3)', () => {
 
     const result = await fireStop('completed')
     assert.equal(result.ran, 1)
+    // Detached: the hook runs off the critical path — await its completion (a
+    // test affordance) before inspecting what it captured.
+    await result.settled
     assert.equal(existsSync(stdinFile), true)
     const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { status?: string }
     assert.equal(stdin.status, 'completed')
@@ -80,6 +97,7 @@ describe('stop (turn-end / abort fire site — B3)', () => {
 
     const result = await fireStop('aborted')
     assert.equal(result.ran, 1)
+    await result.settled
     const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { status?: string }
     assert.equal(stdin.status, 'aborted')
   })
@@ -94,20 +112,22 @@ describe('stop (turn-end / abort fire site — B3)', () => {
     await writeUserHooks({ hooks: { stop: [{ command: script }] } })
 
     const t0 = Date.now()
-    // Mirror the production call site: dispatch without awaiting.
-    const pending = fireStop('completed')
+    // Mirror the production call site: dispatch without awaiting the hook.
+    // `runStopHooks` resolves after discovery + scheduling, never after the
+    // hook completes (decision 3), so awaiting it is prompt.
+    const result = await fireStop('completed')
     const elapsedAfterDispatch = Date.now() - t0
 
     // The dispatch returned promptly; the slow hook is still running.
+    assert.equal(result.ran, 1)
     assert.ok(
       elapsedAfterDispatch < 300,
       `dispatch must not block on the hook; it took ${String(elapsedAfterDispatch)}ms`,
     )
     assert.equal(existsSync(marker), false)
 
-    // Awaiting is a test affordance only; the hook still runs to completion.
-    const result = await pending
-    assert.equal(result.ran, 1)
+    // `settled` is a test affordance to await the detached hook's completion.
+    await result.settled
     assert.equal(existsSync(marker), true)
   })
 
@@ -119,6 +139,7 @@ describe('stop (turn-end / abort fire site — B3)', () => {
 
     const result = await fireStop('completed')
     assert.equal(result.ran, 1)
+    await result.settled
   })
 
   it('is notification-only — even failClosed cannot block a stop (edit/turn already done)', async () => {
@@ -132,6 +153,7 @@ describe('stop (turn-end / abort fire site — B3)', () => {
     // surfaces a decision — it just reports the hook ran.
     const result = await fireStop('completed')
     assert.equal(result.ran, 1)
+    await result.settled
   })
 
   it('a project stop hook is ignored unless the workspace is trusted', async () => {
@@ -147,16 +169,22 @@ describe('stop (turn-end / abort fire site — B3)', () => {
       )
 
       const untrusted = await runStopHooks('completed', {
+        threadId: 'stop-trust-untrusted',
+        turnTreeId: asTurnTreeId('stop-trust-untrusted:turn'),
         workspaceRoot: projectRoot,
         projectTrusted: false,
       })
       assert.equal(untrusted.ran, 0)
+      await untrusted.settled
 
       const trusted = await runStopHooks('completed', {
+        threadId: 'stop-trust-trusted',
+        turnTreeId: asTurnTreeId('stop-trust-trusted:turn'),
         workspaceRoot: projectRoot,
         projectTrusted: true,
       })
       assert.equal(trusted.ran, 1)
+      await trusted.settled
     } finally {
       await rm(projectRoot, { recursive: true, force: true })
     }

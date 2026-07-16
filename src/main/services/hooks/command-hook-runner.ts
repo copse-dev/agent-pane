@@ -25,7 +25,7 @@ import type {
   HookEventPayloads,
 } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
-import { recordCommandHookRun } from '../hook-run-recorder.ts'
+import { recordCommandHookRun, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
 import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
@@ -86,6 +86,7 @@ async function spawnInterpretResolve(
   request: unknown,
   interpret: (spawn: HookSpawnResult) => DialectInterpretation,
   context: HookContext,
+  recordingSnapshot: HookRunRecordingSnapshot | null | undefined,
 ): Promise<CommandHookResult> {
   if (request === null) return ABSTAIN
 
@@ -98,18 +99,24 @@ async function spawnInterpretResolve(
   const interpretation = interpret(spawn)
 
   // Always-on spine recording (decision 6): one hook_run line per execution,
-  // raw stdout AND stderr as blobs, next to the normalized decision.
-  recordCommandHookRun({
-    event: interpretation.spineEvent,
-    hookId: hook.id,
-    startedAt: spawn.startedAt,
-    durationMs: spawn.durationMs,
-    exitCode: spawn.exitCode,
-    parseOk: interpretation.parseOk,
-    decision: interpretation.spineDecision,
-    stdout: spawn.stdout,
-    stderr: spawn.stderr,
-  })
+  // raw stdout AND stderr as blobs, next to the normalized decision. Detached
+  // async hooks pass a `recordingSnapshot` captured at their fire site so the
+  // line survives `endHookRunRecording` (decision 3); blocking hooks pass
+  // `undefined` and record against the live context.
+  recordCommandHookRun(
+    {
+      event: interpretation.spineEvent,
+      hookId: hook.id,
+      startedAt: spawn.startedAt,
+      durationMs: spawn.durationMs,
+      exitCode: spawn.exitCode,
+      parseOk: interpretation.parseOk,
+      decision: interpretation.spineDecision,
+      stdout: spawn.stdout,
+      stderr: spawn.stderr,
+    },
+    recordingSnapshot,
+  )
 
   if (interpretation.failed) {
     if (interpretation.runtimeError !== undefined) {
@@ -129,7 +136,16 @@ async function spawnInterpretResolve(
  * detached — decision 3). Other canonical events land their fire sites in later
  * phases and register no command hooks yet, so they abstain.
  */
-export function createCommandHookRunner(): CommandHookRunner {
+export function createCommandHookRunner(opts?: {
+  /**
+   * Recording context captured synchronously at a detached fire site (`stop`,
+   * `subagentStop`, …). When set, command-hook spine lines record against it so
+   * they survive `endHookRunRecording` (decision 3/6). Omit for blocking hooks,
+   * which record against the live context.
+   */
+  recordingSnapshot?: HookRunRecordingSnapshot | null
+}): CommandHookRunner {
+  const recordingSnapshot = opts?.recordingSnapshot
   return {
     async run<E extends HookEventName>(
       hook: CommandHook<E>,
@@ -150,6 +166,7 @@ export function createCommandHookRunner(): CommandHookRunner {
           adapter.marshalToolGateRequest(hook, payload, session),
           (spawn) => adapter.interpretToolGate(spawn, payload),
           context,
+          recordingSnapshot,
         )
       }
 
@@ -165,6 +182,7 @@ export function createCommandHookRunner(): CommandHookRunner {
           marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
+          recordingSnapshot,
         )
       }
 
@@ -179,6 +197,7 @@ export function createCommandHookRunner(): CommandHookRunner {
           marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
+          recordingSnapshot,
         )
       }
 
@@ -193,6 +212,7 @@ export function createCommandHookRunner(): CommandHookRunner {
           marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
+          recordingSnapshot,
         )
       }
 

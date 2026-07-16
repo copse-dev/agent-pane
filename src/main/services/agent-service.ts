@@ -34,6 +34,7 @@ import {
   beginHookRunRecording,
   endHookRunRecording,
   recordFunctionHookRun,
+  snapshotHookRunContext,
   setHookRunStep,
   setHookRunToolset,
 } from './hook-run-recorder.ts'
@@ -96,6 +97,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import {
@@ -288,7 +290,7 @@ async function runBeforeSubmitPrompt(
  * user/project scripts. Any dispatch error is swallowed — a broken stop hook
  * can never fail the turn that already finished.
  */
-function fireStopHook(status: 'completed' | 'aborted'): void {
+function fireStopHook(threadId: string, status: 'completed' | 'aborted'): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
   const workspaceRoot = getWorkspaceRoot()
   // Capture the agent-session identity **by value** now, synchronously — `stop`
@@ -296,10 +298,24 @@ function fireStopHook(status: 'completed' | 'aborted'): void {
   // down right after, so reading ambient ids at marshal time would come up empty
   // (B4). The snapshot lets the detached hook still stamp the finished turn.
   const agentSession = currentAgentSessionInfo()
+  // C1: carry the emitting turn-tree epoch on every dispatch (decision 16). A
+  // dedicated turn-tree ledger is C3; until then the run's turn id (generation
+  // id) is the closest per-submission identifier, falling back to the thread id
+  // outside an active run. C2/C3 formalize the turn-tree identity + the
+  // staleness check on late outputs.
+  const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  // Snapshot the recording context now, synchronously, for the same reason as
+  // the session identity: `endHookRunRecording` clears the live context right
+  // after this fire site, so the detached stop hook records against the snapshot
+  // (decision 3/6) or its hook_run line would be lost.
+  const recordingSnapshot = snapshotHookRunContext()
   void runStopHooks(status, {
+    threadId,
+    turnTreeId,
     workspaceRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession,
+    recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
   })
@@ -413,7 +429,7 @@ export async function runAgent(
       }
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
-      fireStopHook(controller.signal.aborted ? 'aborted' : 'completed')
+      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed')
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -454,7 +470,7 @@ export async function runAgent(
       }
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
-      fireStopHook(controller.signal.aborted ? 'aborted' : 'completed')
+      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed')
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -977,7 +993,7 @@ export async function runAgent(
     // detached (decision 3). Fired before `endHookRunRecording` so the dispatch
     // begins while this run's recording session is still open; being detached it
     // is never awaited, so it cannot delay the turn's `done` above.
-    fireStopHook(controller.signal.aborted ? 'aborted' : 'completed')
+    fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed')
     runAbort.clear()
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
