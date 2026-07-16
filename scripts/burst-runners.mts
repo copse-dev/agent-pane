@@ -302,11 +302,12 @@ function awsArgs(config: AwsConfig, args: string[]): string[] {
 }
 
 function scalewayArgs(config: ScalewayConfig, args: string[]): string[] {
-  // -y disables interactive prompts (e.g. terminate asking about block volumes).
-  return ['-y', ...args, `zone=${config.zone}`]
+  return [...args, `zone=${config.zone}`]
 }
 
 function scalewayTerminateArgs(config: ScalewayConfig, serverId: string): string[] {
+  // with-block-volumes=true answers the interactive "delete volumes?" prompt.
+  // Do not pass a leading -y: scw treats it as eating the next token ("instance").
   return scalewayArgs(config, [
     'instance',
     'server',
