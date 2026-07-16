@@ -90,6 +90,7 @@ import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './gith
 import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
+import { runStopHooks } from './hooks/stop.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import {
   findNewlyInProgressLocal,
@@ -269,6 +270,27 @@ async function runBeforeSubmitPrompt(
   }
 }
 
+/**
+ * Fire `stop` (B3) the moment agent work stops — turn end or abort. **Detached,
+ * never awaited (decision 3, no drain barrier):** dispatched with `void` so a
+ * slow `stop` hook can never delay the turn's `done`, and abort halts emission
+ * of new events but never waits for in-flight hooks. Gated behind
+ * `cursorHooksEnabled` (default off) at the fire site, the same flag the
+ * tool-gate / afterFileEdit paths use, because honouring hooks spawns
+ * user/project scripts. Any dispatch error is swallowed — a broken stop hook
+ * can never fail the turn that already finished.
+ */
+function fireStopHook(status: 'completed' | 'aborted'): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  void runStopHooks(status, {
+    workspaceRoot,
+    projectTrusted: isWorkspaceTrusted(workspaceRoot),
+  }).catch((err: unknown) => {
+    console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
+  })
+}
+
 export async function runAgent(
   threadId: string,
   userPrompt: UserContent,
@@ -372,6 +394,8 @@ export async function runAgent(
         ],
       }
     } finally {
+      // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
+      fireStopHook(controller.signal.aborted ? 'aborted' : 'completed')
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -411,6 +435,8 @@ export async function runAgent(
         messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
       }
     } finally {
+      // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
+      fireStopHook(controller.signal.aborted ? 'aborted' : 'completed')
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -929,6 +955,11 @@ export async function runAgent(
     sendChunk({ type: 'text', text: msg })
     sendChunk({ type: 'done' })
   } finally {
+    // B3: agent work has stopped (turn end, error, or abort) — fire `stop`
+    // detached (decision 3). Fired before `endHookRunRecording` so the dispatch
+    // begins while this run's recording session is still open; being detached it
+    // is never awaited, so it cannot delay the turn's `done` above.
+    fireStopHook(controller.signal.aborted ? 'aborted' : 'completed')
     runAbort.clear()
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
