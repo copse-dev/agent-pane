@@ -113,6 +113,15 @@ describe('settings search (cross-section block filter)', () => {
     searchInput = document.getElementById('settings-search-input') as HTMLInputElement
   })
 
+  it('focuses the search input when the dialog opens', () => {
+    let focused = false
+    searchInput.focus = (): void => {
+      focused = true
+    }
+    document.getElementById('settings-dialog')?.dispatchEvent(new Event('settings-open'))
+    assert.ok(focused)
+  })
+
   it('lifts a matching block out of another section into the results list', () => {
     // "Interface tint" lives only in Appearance; General is the initially active
     // section, so a hit here proves the search crosses sections.
