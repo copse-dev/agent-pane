@@ -5,7 +5,12 @@ import { leaseSshAskpassEnv } from './askpass.ts'
 import { findConfiguredSshHost } from './hosts.ts'
 import { getSshConnectionManager } from './connection-manager.ts'
 import { buildRemoteShellCommand } from './remote-exec.ts'
-import { mergeRemoteEnv, REMOTE_PGID_PREFIX } from './remote-env.ts'
+import {
+  mergeRemoteEnv,
+  remotePtyEnv,
+  resolveRemoteLoginShell,
+  REMOTE_PGID_PREFIX,
+} from './remote-env.ts'
 import { sshExecArgs, sshPtyArgs } from './openssh-transport.ts'
 import { registerRemoteProcessMeta } from './remote-process-meta.ts'
 
@@ -87,14 +92,16 @@ export async function spawnRemoteShellCommand(
 export async function buildRemotePtyLaunch(
   hostId: string,
   remoteRoot: string,
-  shell: string,
   env?: NodeJS.ProcessEnv,
 ): Promise<{ file: string; args: string[]; env: NodeJS.ProcessEnv; release: () => void }> {
   await ensureHostConnected(hostId)
   const host = findConfiguredSshHost(hostId)
   if (!host) throw new Error(`Unknown SSH host: ${hostId}`)
-  const remoteEnv = mergeRemoteEnv(env)
-  const remoteCmd = buildRemoteShellCommand(`exec ${shell} -l`, remoteRoot, remoteEnv)
+  const conn = getSshConnectionManager().getConnection(hostId)
+  const shell = resolveRemoteLoginShell(conn?.capabilities?.shell)
+  // Login shell on the remote — do not forward local PATH/HOME/SHELL.
+  const remoteEnv = remotePtyEnv(env)
+  const remoteCmd = buildRemoteShellCommand(`exec ${posixQuote(shell)} -l`, remoteRoot, remoteEnv)
   const askpass = leaseSshAskpassEnv(process.env)
   return {
     file: 'ssh',

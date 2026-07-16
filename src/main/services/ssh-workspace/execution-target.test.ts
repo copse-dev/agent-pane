@@ -9,7 +9,13 @@ import {
   isSshWorkspaceExecutionEnabled,
 } from './execution-target.ts'
 import { wrapRemoteShellWithPgid } from './ssh-spawn.ts'
-import { mergeRemoteEnv, remoteEnvAllowList, REMOTE_PGID_PREFIX } from './remote-env.ts'
+import {
+  mergeRemoteEnv,
+  remoteEnvAllowList,
+  remotePtyEnv,
+  resolveRemoteLoginShell,
+  REMOTE_PGID_PREFIX,
+} from './remote-env.ts'
 
 describe('wrapRemoteShellWithPgid', () => {
   it('wraps with cd, setsid, and pgid marker', () => {
@@ -22,9 +28,20 @@ describe('wrapRemoteShellWithPgid', () => {
 })
 
 describe('remoteEnvAllowList', () => {
-  it('includes PATH but not API keys', () => {
-    const env = remoteEnvAllowList({ PATH: '/bin', ANTHROPIC_API_KEY: 'secret' })
-    assert.equal(env['PATH'], '/bin')
+  it('includes locale/term vars but not host-local PATH/SHELL or API keys', () => {
+    const env = remoteEnvAllowList({
+      PATH: '/bin',
+      SHELL: '/bin/zsh',
+      HOME: '/Users/me',
+      LANG: 'en_US.UTF-8',
+      TERM: 'xterm-256color',
+      ANTHROPIC_API_KEY: 'secret',
+    })
+    assert.equal(env['PATH'], undefined)
+    assert.equal(env['SHELL'], undefined)
+    assert.equal(env['HOME'], undefined)
+    assert.equal(env['LANG'], 'en_US.UTF-8')
+    assert.equal(env['TERM'], 'xterm-256color')
     assert.equal(env['ANTHROPIC_API_KEY'], undefined)
   })
 
@@ -45,6 +62,38 @@ describe('remoteEnvAllowList', () => {
     assert.equal(env['GIT_COMMITTER_EMAIL'], 'copse@localhost')
     assert.equal(env['ANTHROPIC_API_KEY'], undefined)
     assert.equal(env['CUSTOM_SECRET'], undefined)
+  })
+})
+
+describe('resolveRemoteLoginShell', () => {
+  it('uses probed absolute shells and falls back to /bin/bash', () => {
+    assert.equal(resolveRemoteLoginShell('/bin/bash'), '/bin/bash')
+    assert.equal(resolveRemoteLoginShell('/usr/bin/zsh'), '/usr/bin/zsh')
+    assert.equal(resolveRemoteLoginShell(null), '/bin/bash')
+    assert.equal(resolveRemoteLoginShell(''), '/bin/bash')
+    assert.equal(resolveRemoteLoginShell('bash'), '/bin/bash')
+    assert.equal(resolveRemoteLoginShell('/bin/bad shell'), '/bin/bash')
+  })
+})
+
+describe('remotePtyEnv', () => {
+  it('keeps terminal locale keys and drops local PATH/HOME/SHELL', () => {
+    const env = remotePtyEnv({
+      PATH: '/opt/homebrew/bin:/bin',
+      HOME: '/Users/me',
+      SHELL: '/bin/zsh',
+      LANG: 'C.UTF-8',
+      TERM: 'xterm-ghostty',
+      COLORTERM: 'truecolor',
+      ANTHROPIC_API_KEY: 'secret',
+    })
+    assert.equal(env['PATH'], undefined)
+    assert.equal(env['HOME'], undefined)
+    assert.equal(env['SHELL'], undefined)
+    assert.equal(env['ANTHROPIC_API_KEY'], undefined)
+    assert.equal(env['LANG'], 'C.UTF-8')
+    assert.equal(env['TERM'], 'xterm-ghostty')
+    assert.equal(env['COLORTERM'], 'truecolor')
   })
 })
 
