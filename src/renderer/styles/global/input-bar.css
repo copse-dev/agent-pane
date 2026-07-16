@@ -287,9 +287,9 @@
   align-items: center;
   gap: 2px;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
+  /* Visible so the `…` menu can open above the band; overflowed buttons are
+     removed via [data-portrait-overflow] rather than clipped. */
+  overflow: visible;
   width: 100%;
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
@@ -299,11 +299,6 @@
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-}
-.portrait-panel-bar::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
 }
 #app.is-portrait-chrome .portrait-panel-bar {
   display: flex;
@@ -329,6 +324,73 @@
   color: var(--text-primary);
   background: var(--bg-hover);
   border: none;
+}
+.portrait-panel-bar .titlebar-text-btn[data-portrait-overflow] {
+  display: none;
+}
+.portrait-panel-overflow {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+.portrait-panel-overflow[hidden] {
+  display: none;
+}
+.portrait-panel-overflow-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: var(--chrome-action-band-content-height);
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.portrait-panel-overflow-trigger:hover,
+.portrait-panel-overflow-trigger[aria-expanded='true'] {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.portrait-panel-overflow-menu {
+  position: absolute;
+  z-index: 40;
+  bottom: calc(100% + 4px);
+  right: 0;
+  width: max-content;
+  min-width: 140px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) 0;
+  box-shadow: var(--shadow-md);
+}
+.portrait-panel-overflow-menu[hidden] {
+  display: none;
+}
+.portrait-panel-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: 6px var(--spacing-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.portrait-panel-overflow-item:hover,
+.portrait-panel-overflow-item.is-active {
+  background: var(--bg-hover);
+}
+.portrait-panel-overflow-item.is-active {
+  color: var(--accent);
 }
 .footer-model-host {
   min-width: 0;

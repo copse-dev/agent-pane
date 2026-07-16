@@ -197,7 +197,8 @@ reachable without a crowded titlebar:
 - A labeled `.portrait-panel-bar` sits under `.input-footer` (between status and the stacked panel),
   matching the Settings button height band and spanning the chat column.
 - When the chat column is too narrow for every labeled mode, trailing buttons collapse into a `…`
-  overflow menu (Panel stays visible). Spec:
+  overflow menu (Panel stays visible; same idea as the footer compact overflow) rather than wrapping
+  or scrolling. Spec:
   [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval
