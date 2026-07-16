@@ -11,7 +11,8 @@ for await (const f of glob('src/**/*.test.ts')) testFiles.push(f)
 for await (const f of glob('packages/*/src/**/*.test.ts')) testFiles.push(f)
 for await (const f of glob('scripts/**/*.test.ts')) testFiles.push(f)
 await rm('dist-test', { recursive: true, force: true })
-await esbuild.build({
+
+const buildOptions: esbuild.BuildOptions = {
   entryPoints: testFiles,
   outdir: 'dist-test',
   bundle: true,
@@ -42,7 +43,21 @@ await esbuild.build({
       },
     },
   ],
-})
+}
+
+// One retry for the transient "The service was stopped" failure that shows up
+// under CI fleet load after a baked-deps seed (esbuild's child dies mid-build;
+// the next API call restarts the service). Fail fast on any other error.
+try {
+  await esbuild.build(buildOptions)
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err)
+  if (!msg.includes('The service was stopped') && !msg.includes('The service is no longer running')) {
+    throw err
+  }
+  console.warn(`[run-tests] esbuild service stopped (${msg}); retrying once`)
+  await esbuild.build(buildOptions)
+}
 // Warm up Electron's binary once, serially, before the parallel test run.
 // Many src/main test files `require('electron')`, and electron@42 lazily
 // extracts its `dist/` on first require when the install did not fully populate
