@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildRemoteArgvCommand, buildRemoteShellCommand } from './remote-exec.ts'
+import {
+  buildRemoteArgvCommand,
+  buildRemotePtyCommand,
+  buildRemoteShellCommand,
+} from './remote-exec.ts'
 
 describe('remote exec quoting', () => {
   it('quotes argv segments and cwd', () => {
@@ -30,5 +34,20 @@ describe('remote exec quoting', () => {
     assert.match(cmd, /env NODE_ENV='test'/)
     assert.doesNotMatch(cmd, /LD_PRELOAD/)
     assert.doesNotMatch(cmd, /FOO=bar/)
+  })
+})
+
+describe('buildRemotePtyCommand', () => {
+  it('uses shell assignments before builtin exec, never env … exec', () => {
+    const cmd = buildRemotePtyCommand('/bin/bash', '/etc/ddg', {
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      LANG: 'C.UTF-8',
+    })
+    assert.equal(
+      cmd,
+      "cd '/etc/ddg' && TERM='xterm-256color' COLORTERM='truecolor' LANG='C.UTF-8' exec '/bin/bash' -l",
+    )
+    assert.doesNotMatch(cmd, /\benv\b/)
   })
 })

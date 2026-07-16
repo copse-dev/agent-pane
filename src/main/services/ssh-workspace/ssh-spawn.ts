@@ -4,7 +4,7 @@ import { posixQuote } from '../security/safe-install.ts'
 import { leaseSshAskpassEnv } from './askpass.ts'
 import { findConfiguredSshHost } from './hosts.ts'
 import { getSshConnectionManager } from './connection-manager.ts'
-import { buildRemoteShellCommand } from './remote-exec.ts'
+import { buildRemotePtyCommand, buildRemoteShellCommand } from './remote-exec.ts'
 import {
   mergeRemoteEnv,
   remotePtyEnv,
@@ -100,8 +100,9 @@ export async function buildRemotePtyLaunch(
   const conn = getSshConnectionManager().getConnection(hostId)
   const shell = resolveRemoteLoginShell(conn?.capabilities?.shell)
   // Login shell on the remote — do not forward local PATH/HOME/SHELL.
+  // Shell assignments + builtin exec (not `env … exec`, which looks up `exec` as a binary).
   const remoteEnv = remotePtyEnv(env)
-  const remoteCmd = buildRemoteShellCommand(`exec ${posixQuote(shell)} -l`, remoteRoot, remoteEnv)
+  const remoteCmd = buildRemotePtyCommand(shell, remoteRoot, remoteEnv)
   const askpass = leaseSshAskpassEnv(process.env)
   return {
     file: 'ssh',
