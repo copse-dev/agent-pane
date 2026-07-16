@@ -98,6 +98,27 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected collapsed unchanged regions in the diff viewer',
     })
+
+    // The staged change sits mid-file. After lazy Monaco load, a reveal race used
+    // to leave the viewport at the top with no visible change. Assert insert/
+    // delete decorations are present (Monaco virtualizes line text, so querying
+    // raw `value = 2` textContent is unreliable in inline mode).
+    await browser.waitUntil(
+      async () => {
+        return browser.execute(() => {
+          const host = document.querySelector('#git-diff-viewer-host')
+          if (!host) return false
+          const hasInsert = host.querySelector('.line-insert, .char-insert') != null
+          const hasDelete = host.querySelector('.line-delete, .char-delete') != null
+          return hasInsert && hasDelete
+        })
+      },
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected insert+delete decorations for the mid-file change',
+      },
+    )
+
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff-collapsed.png'))
 
     const expandBtn = await $('.diff-hidden-lines-widget a[role="button"]')
