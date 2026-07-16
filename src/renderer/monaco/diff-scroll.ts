@@ -33,12 +33,12 @@ export function waitForDidUpdateDiff(
   timeoutMs: number,
 ): Promise<void> {
   return new Promise((resolve) => {
-    const timeout = globalThis.setTimeout(() => {
+    const timeout = setTimeout(() => {
       disposable.dispose()
       resolve()
     }, timeoutMs)
     const disposable = diffEditor.onDidUpdateDiff(() => {
-      globalThis.clearTimeout(timeout)
+      clearTimeout(timeout)
       disposable.dispose()
       resolve()
     })
@@ -54,18 +54,18 @@ export async function waitForViewModelDiff(
   viewModel: Monaco.editor.IDiffEditorViewModel,
   timeoutMs: number,
 ): Promise<void> {
-  let timeoutId = 0
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
   try {
     await Promise.race([
       viewModel.waitForDiff().catch(() => undefined),
       new Promise<void>((resolve) => {
-        timeoutId = globalThis.setTimeout(() => {
+        timeoutId = setTimeout(() => {
           resolve()
         }, timeoutMs)
       }),
     ])
   } finally {
-    globalThis.clearTimeout(timeoutId)
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
   }
 }
 

@@ -148,18 +148,18 @@ export function loadMonaco(): Promise<typeof Monaco> {
  */
 export function ensureMonacoEditorWorker(): Promise<void> {
   if (typeof Worker === 'undefined') return Promise.resolve()
-  let timeoutId = 0
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
   return Promise.race([
     createMonacoWorker('editor').then(
       () => undefined,
       () => undefined,
     ),
     new Promise<void>((resolve) => {
-      timeoutId = globalThis.setTimeout(() => {
+      timeoutId = setTimeout(() => {
         resolve()
       }, 2_000)
     }),
   ]).finally(() => {
-    globalThis.clearTimeout(timeoutId)
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
   })
 }
