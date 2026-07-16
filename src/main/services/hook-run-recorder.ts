@@ -162,6 +162,38 @@ export function recordFunctionHookRun(record: HookRunRecord): void {
   persist(ctx, line, toolsetBlobs(ctx))
 }
 
+/**
+ * Record an async hook dispatch that was **dropped** because the pending-dispatch
+ * FIFO was full (decision 13, "cap ~100 then drop-with-spine-record"). The
+ * dispatch never ran, so there is no process, exit code, or streams — the line
+ * is a zero-duration marker whose `error` names the drop, so an over-cap drop is
+ * visible in the transcript rather than silent. `executor` matches the hook kind
+ * that would have run.
+ */
+export function recordDroppedAsyncDispatch(input: {
+  event: string
+  hookId: string
+  executor: 'function' | 'command'
+}): void {
+  const ctx = current
+  if (!ctx) return
+  const line: SpineHookRunLine = {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'hook_run',
+    id: randomUUID(),
+    event: input.event,
+    hookId: input.hookId,
+    executor: input.executor,
+    ...attributionFields(ctx),
+    startedAt: Date.now(),
+    durationMs: 0,
+    parseOk: true,
+    decision: {},
+    error: 'async dispatch dropped: pending-dispatch FIFO full (decision 13)',
+  }
+  persist(ctx, line, toolsetBlobs(ctx))
+}
+
 /** One spawned (command) hook execution, as observed by the command runner. */
 export interface CommandHookRunInput {
   /** Dialect event name (e.g. `beforeShellExecution`). */

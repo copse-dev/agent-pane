@@ -464,3 +464,23 @@ export interface BlockingHook<E extends HookEventName = HookEventName> {
     context: FunctionHookContext,
   ): MaybePromise<BlockingHookOutcome | undefined>
 }
+
+/**
+ * A registered first-party *async* (detached) function hook (C1). Dispatched
+ * through the detached executor — never awaited (decision 3) — so it can only
+ * return an {@link AsyncHookOutcome}: no `decision` / `updatedInput` /
+ * `injectContext` at the type level (decisions 4 & 11). Its output channel is the
+ * pending-message queue (C2), so C1 collects any outcome to a host callback stub
+ * without wiring the queue. Method syntax matches {@link BlockingHook} so hooks
+ * for different events co-store without a cast.
+ */
+export interface AsyncHook<E extends HookEventName = HookEventName> {
+  /** Stable id for spine attribution, the Sources UI, and dedup. */
+  id: string
+  /** Canonical event this hook subscribes to. */
+  event: E
+  run(
+    payload: HookEventPayloads[E],
+    context: FunctionHookContext,
+  ): MaybePromise<AsyncHookOutcome | undefined>
+}
