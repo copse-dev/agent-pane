@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
-import { $, browser } from '@wdio/globals'
+import { $, $$, browser } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 
@@ -140,7 +140,7 @@ describe('OpenRouter model picker', () => {
     const filter = await $('.model-picker-filter')
 
     assert.deepEqual(
-      await $('.model-picker-option').map(async (option) => ({
+      await $$('.model-picker-option').map(async (option) => ({
         text: await option.getText(),
         active: await option.getAttribute('aria-selected'),
       })),
@@ -153,7 +153,7 @@ describe('OpenRouter model picker', () => {
 
     await filter.keys('ArrowDown')
     assert.deepEqual(
-      await $('.model-picker-option').map(async (option) => ({
+      await $$('.model-picker-option').map(async (option) => ({
         text: await option.getText(),
         active: await option.getAttribute('aria-selected'),
         hasActiveClass: await option
