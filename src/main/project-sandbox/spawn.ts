@@ -17,6 +17,7 @@ import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
 import {
   isSshExecutionTarget,
   resolveExecutionTarget,
+  resolveSshExecutionTargetForCwd,
   type ExecutionTarget,
 } from '../services/ssh-workspace/execution-target.ts'
 import {
@@ -94,10 +95,40 @@ function ensurePathIncludes(dirs: string[]): void {
   }
 }
 
+/**
+ * ASRT returns a bare shell name (`bash`) as argv[0]. GUI Electron apps often
+ * have a PATH that omits `/bin`, so spawn('bash') → ENOENT. Keep the bare name
+ * for ASRT, but rewrite to an absolute path at spawn time.
+ */
+export function resolveSandboxShellExecutable(file: string): string {
+  if (process.platform === 'win32' || file.includes('/')) return file
+  if (file === 'bash') return '/bin/bash'
+  if (file === 'sh') return '/bin/sh'
+  return file
+}
+
+/** Ensure the child env can resolve `/bin` shells even when opts.env was snapshotted earlier. */
+export function withSandboxShellPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (process.platform === 'win32') return env
+  const required = ['/usr/bin', '/bin']
+  const parts = (env['PATH'] ?? '').split(':').filter(Boolean)
+  const missing = required.filter((dir) => !parts.includes(dir))
+  if (missing.length === 0) return env
+  return { ...env, PATH: [...missing, ...parts].join(':') }
+}
+
 export function shellForSandboxWrap(shellPath: string = DEFAULT_SANDBOX_SHELL): string {
   if (process.platform === 'win32' || !shellPath.includes('/')) return shellPath
   ensurePathIncludes([dirname(shellPath), '/usr/bin', '/bin'])
   return basename(shellPath)
+}
+
+function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
+  const target = resolveExecutionTarget(explicit)
+  if (isSshExecutionTarget(target)) return target
+  // Activation races can leave activeProjectId without sshHost while cwd is already
+  // a remote project path — recover instead of applying a local seatbelt to /etc/….
+  return resolveSshExecutionTargetForCwd(cwd) ?? target
 }
 
 export async function spawnInProjectSandbox(
@@ -112,7 +143,7 @@ export async function spawnInProjectSandbox(
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
-  const target = resolveExecutionTarget(opts.executionTarget)
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   if (isSshExecutionTarget(target)) {
     const command = shellCommand(executable, args)
     return spawnRemoteShellCommand(command, {
@@ -146,9 +177,9 @@ export async function spawnInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return spawn(file, argv.slice(1), {
+  return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
+    env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -165,7 +196,7 @@ export async function spawnShellInProjectSandbox(
     executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
-  const target = resolveExecutionTarget(opts.executionTarget)
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   if (isSshExecutionTarget(target)) {
     return spawnRemoteShellCommand(shellCommandLine, {
       hostId: target.hostId,
@@ -199,9 +230,9 @@ export async function spawnShellInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return spawn(file, argv.slice(1), {
+  return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
+    env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -231,7 +262,7 @@ export async function spawnBackgroundProcess(
     executionTarget?: ExecutionTarget
   },
 ): Promise<ChildProcess> {
-  const target = resolveExecutionTarget(opts.executionTarget)
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   if (isSshExecutionTarget(target)) {
     return spawnRemoteShellCommand(shellCommandLine, {
       hostId: target.hostId,
@@ -272,9 +303,9 @@ export async function spawnBackgroundProcess(
     )
     const file = argv[0]
     if (!file) throw new Error('sandbox wrap produced empty argv')
-    const child = spawn(file, argv.slice(1), {
+    const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
       cwd: opts.cwd,
-      env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
+      env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
       stdio: 'pipe',
       detached: detachForGroupKill,
     })
@@ -326,7 +357,7 @@ export async function spawnPtyInProjectSandbox(
   shell: string,
   opts: SpawnPtyOptions,
 ): Promise<IPty> {
-  const target = resolveExecutionTarget(opts.executionTarget)
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
   if (isSshExecutionTarget(target)) {
     const launch = await buildRemotePtyLaunch(
       target.hostId,
@@ -382,11 +413,11 @@ export async function spawnPtyInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return pty.spawn(file, argv.slice(1), {
+  return pty.spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     ...ptyOpts,
     // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
     // sandbox-wrapped, so the system temp dir is denied (issue #481). The wrap env is
     // process.env verbatim on POSIX, so scrub it too (#579) — termEnv is already scrubbed.
-    env: withWorkspaceTmpEnv({ ...strippedBaseEnv(env), ...termEnv }),
+    env: withSandboxShellPath(withWorkspaceTmpEnv({ ...strippedBaseEnv(env), ...termEnv })),
   })
 }

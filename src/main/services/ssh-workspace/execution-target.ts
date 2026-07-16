@@ -1,6 +1,10 @@
 import { storageGet } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import {
+  getWorkspaceRoot,
+  normalizeRemoteWorkspacePath,
+  resolveSshHostForWorkspaceRoot,
+} from '../workspace.ts'
 import { findConfiguredSshHost } from './hosts.ts'
 
 export type ExecutionTarget =
@@ -41,6 +45,19 @@ function findActiveStoredProject(): StoredProject | null {
   return active ?? null
 }
 
+function findStoredProjectPathForHost(sshHost: string): string | undefined {
+  const projects = storageGet('projects')
+  if (!Array.isArray(projects)) return undefined
+  for (const project of projects) {
+    if (!project || typeof project !== 'object') continue
+    const candidate = project as StoredProject
+    if (candidate.sshHost === sshHost && typeof candidate.path === 'string') {
+      return candidate.path
+    }
+  }
+  return undefined
+}
+
 /**
  * Resolve the execution target for the active project. Returns `local` for
  * local projects. Remote projects fail closed when SSH execution is disabled
@@ -48,7 +65,14 @@ function findActiveStoredProject(): StoredProject | null {
  */
 export function getActiveExecutionTarget(): ExecutionTarget {
   const active = findActiveStoredProject()
-  if (!active?.sshHost) return { kind: 'local' }
+  const workspaceRoot = getWorkspaceRoot()
+  // Prefer the active project's sshHost, then any project whose path matches the
+  // workspace root (covers races where activeProjectId lags workspace:set).
+  const sshHost =
+    (typeof active?.sshHost === 'string' ? active.sshHost : undefined) ??
+    (workspaceRoot ? resolveSshHostForWorkspaceRoot(workspaceRoot) : undefined)
+
+  if (!sshHost) return { kind: 'local' }
 
   if (!isSshWorkspaceExecutionEnabled()) {
     throw new ExecutionTargetMismatchError(
@@ -56,17 +80,50 @@ export function getActiveExecutionTarget(): ExecutionTarget {
     )
   }
 
-  const host = findConfiguredSshHost(active.sshHost)
+  const host = findConfiguredSshHost(sshHost)
   if (!host) {
     throw new ExecutionTargetMismatchError(
-      `SSH host "${active.sshHost}" is not configured. Add it in Settings → SSH.`,
+      `SSH host "${sshHost}" is not configured. Add it in Settings → SSH.`,
     )
   }
 
-  const root = getWorkspaceRoot()
-  if (!root) return { kind: 'local' }
+  const remoteRoot =
+    (active?.sshHost === sshHost ? active.path : undefined) ??
+    workspaceRoot ??
+    findStoredProjectPathForHost(sshHost)
+  if (!remoteRoot) {
+    throw new ExecutionTargetMismatchError(
+      `Remote workspace root is not set for SSH host "${sshHost}".`,
+    )
+  }
 
-  return { kind: 'ssh', hostId: host.id, remoteRoot: active.path }
+  return {
+    kind: 'ssh',
+    hostId: host.id,
+    remoteRoot: normalizeRemoteWorkspacePath(remoteRoot),
+  }
+}
+
+/**
+ * Resolve an SSH target for a cwd that belongs to a remote project even when the
+ * active execution target incorrectly resolved to local (activation races).
+ */
+export function resolveSshExecutionTargetForCwd(cwd: string): ExecutionTarget | null {
+  const sshHost = resolveSshHostForWorkspaceRoot(cwd)
+  if (!sshHost) return null
+  if (!isSshWorkspaceExecutionEnabled()) return null
+  const host = findConfiguredSshHost(sshHost)
+  if (!host) return null
+  const active = findActiveStoredProject()
+  const remoteRoot =
+    (active?.sshHost === sshHost ? active.path : undefined) ??
+    findStoredProjectPathForHost(sshHost) ??
+    cwd
+  return {
+    kind: 'ssh',
+    hostId: host.id,
+    remoteRoot: normalizeRemoteWorkspacePath(remoteRoot),
+  }
 }
 
 export function resolveExecutionTarget(explicit: ExecutionTarget | undefined): ExecutionTarget {
