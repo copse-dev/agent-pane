@@ -120,7 +120,7 @@ export function resetUserData(): void {
   writeSettings({})
 }
 
-/** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in cursor-hooks.ts. */
+/** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in hooks/cursor-adapter.ts. */
 const USER_CURSOR_HOOKS_PATH = join(homedir(), '.cursor', 'hooks.json')
 const USER_CURSOR_HOOKS_BACKUP = `${USER_CURSOR_HOOKS_PATH}.e2e-backup`
 
@@ -300,6 +300,37 @@ export function seedOpenRouterFixture(workspaceRoot: string, options?: { apiBase
       openrouter: {
         v: 1,
         enc: Buffer.from('sk-or-e2e-key', 'utf8').toString('base64'),
+        plain: true,
+      },
+    },
+  })
+}
+
+/**
+ * Seed a Cursor key for the remote-agent model picker e2e. Point
+ * `remoteAgentBaseUrl` at a local fixture that serves `GET /v1/models` (Cursor
+ * validation + catalog share that base). Claude Cloud Agent rows are covered by
+ * unit tests — Anthropic key validation hits the real API and can't be stubbed
+ * from seed data alone.
+ */
+export function seedRemoteAgentModelsFixture(
+  workspaceRoot: string,
+  options: { apiBase: string; model?: string },
+): void {
+  const projectId = 'e2e-remote-models-project'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [],
+  })
+  writeSettings({
+    model: options.model ?? 'remote-agent:cursor',
+    remoteAgentBaseUrl: options.apiBase,
+    apiKey: {
+      cursor: {
+        v: 1,
+        enc: Buffer.from('e2e-cursor-key', 'utf8').toString('base64'),
         plain: true,
       },
     },

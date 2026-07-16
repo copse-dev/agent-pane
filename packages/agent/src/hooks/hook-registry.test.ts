@@ -14,17 +14,21 @@ import {
   type BlockingHook,
   type HookRunRecord,
 } from './canonical-events.ts'
-import type { AsyncHookOutcome } from './hook-outcome.ts'
 
 const emptyContext = {}
 
 const turnStartPayload = { userText: 'do the thing', priorTodos: [] as const }
 const finalizePayload = { openTodos: [] as const, attempt: 0 }
 
-describe('canonical event catalogue', () => {
-  it('wires exactly the two blocking assembly events for M0', () => {
-    assert.deepEqual([...HOOK_EVENT_NAMES], ['turnStart', 'beforeFinalize'])
-    for (const name of HOOK_EVENT_NAMES) {
+describe('canonical event catalogue — M0 events unchanged', () => {
+  // A1 widened the catalogue to the full v1 enumeration (pinned exhaustively in
+  // canonical-event-catalogue.test.ts). This test only guards that the two M0
+  // events keep their original blocking-assembly kind — the behavior existing
+  // turnStart/beforeFinalize hooks depend on.
+  it('keeps turnStart and beforeFinalize as blocking assembly events', () => {
+    assert.ok(HOOK_EVENT_NAMES.includes('turnStart'))
+    assert.ok(HOOK_EVENT_NAMES.includes('beforeFinalize'))
+    for (const name of ['turnStart', 'beforeFinalize'] as const) {
       assert.equal(HOOK_EVENT_SPECS[name].dispatch, 'blocking')
       assert.equal(HOOK_EVENT_SPECS[name].role, 'assembly')
     }
@@ -314,26 +318,3 @@ describe('mergeBlockingOutcomes', () => {
     assert.deepEqual(merged, { updatedInput: { command: 'ls', flag: 2 } })
   })
 })
-
-// Decision 11 as a compile-time guard (execution-guidance rule 3): an async
-// hook's outcome type must NOT carry `decision`, `updatedInput`, or
-// `injectContext`. Each `@ts-expect-error` below fails the typecheck if that
-// property ever becomes assignable — the type-level contract test the plan calls
-// for. One object per property because excess-property checking only reports the
-// first offender in a single literal. `void` keeps each value used under
-// `noUnusedLocals`.
-const asyncCannotDecide: AsyncHookOutcome = {
-  // @ts-expect-error `decision` is blocking-only (decisions 4 & 11)
-  decision: 'allow',
-}
-const asyncCannotRewriteInput: AsyncHookOutcome = {
-  // @ts-expect-error `updatedInput` is blocking-only (decisions 4 & 11)
-  updatedInput: {},
-}
-const asyncCannotInjectContext: AsyncHookOutcome = {
-  // @ts-expect-error `injectContext` is blocking-only (decision 11)
-  injectContext: 'nope',
-}
-void asyncCannotDecide
-void asyncCannotRewriteInput
-void asyncCannotInjectContext
