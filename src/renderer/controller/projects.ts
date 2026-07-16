@@ -15,6 +15,23 @@ import {
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
 
+/** Sidebar / stored name for an SSH project — host label plus full remote path. */
+export function formatSshProjectName(hostLabel: string, remotePath: string): string {
+  return `${hostLabel}:${remotePath}`
+}
+
+/**
+ * Label shown in the projects sidebar. SSH projects always include the remote
+ * path so two folders that share a basename (e.g. `/etc/ddg` vs `/opt/ddg`)
+ * do not both render as `host:ddg`.
+ */
+export function projectDisplayName(project: Project): string {
+  if (!project.sshHost) return project.name
+  const colon = project.name.indexOf(':')
+  const label = colon > 0 ? project.name.slice(0, colon) : project.sshHost
+  return formatSshProjectName(label, project.path)
+}
+
 /** Dedup key for local and SSH projects. */
 export function projectDedupKey(sshHost: string | undefined, path: string): string {
   return `${sshHost ?? ''}\0${path}`
@@ -360,7 +377,7 @@ export async function addProjectFromRemotePath(
     store.setState({
       projects: [
         ...store.getState().projects,
-        { id, path: canonical, name: `${label}:${basename(canonical)}`, sshHost: hostId },
+        { id, path: canonical, name: formatSshProjectName(label, canonical), sshHost: hostId },
       ],
     })
   }

@@ -9,6 +9,7 @@ import {
   getSidebarThreads,
   isProjectSwitchInFlight,
   paginateSidebarThreads,
+  projectDisplayName,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
   switchProjectThread,
@@ -129,7 +130,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           { class: `project-twisty${isExpanded ? ' expanded' : ''}` },
           chevronRightIcon('ui-icon ui-icon-sm'),
         ),
-        el('span', { class: 'project-name' }, project.name),
+        el('span', { class: 'project-name' }, projectDisplayName(project)),
       )
       // A collapsed project hides its thread rows, so surface any thread of its
       // own that is waiting on the user right on the project row (expanded
