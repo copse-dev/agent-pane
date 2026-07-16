@@ -43,14 +43,16 @@ running the turn: `model` (slug), `model_id`, and `model_params` (Cursor's
 `{ id, value }[]` array — e.g. `context_window` / `max_output_tokens`), matching
 the vendor contract (B4).
 
-| Event                  | stdin (event fields)      | stdout                                   | Copse         |
-| ---------------------- | ------------------------- | ---------------------------------------- | ------------- |
-| `beforeShellExecution` | `command`, `cwd`          | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
-| `beforeMCPExecution`   | `tool_name`, `tool_input` | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
-| `beforeReadFile`       | `file_path`, `content`    | `{ permission: "allow"\|"deny" }`        | ✅ honoured   |
-| `beforeSubmitPrompt`   | `prompt`, `attachments`   | `{ continue: boolean }`                  | ✅ wired (B1) |
-| `afterFileEdit`        | `file_path`, `edits`      | none (notification)                      | ✅ wired (B2) |
-| `stop`                 | `status`                  | none (notification)                      | ✅ wired (B3) |
+| Event                  | stdin (event fields)                                 | stdout                                   | Copse         |
+| ---------------------- | ---------------------------------------------------- | ---------------------------------------- | ------------- |
+| `beforeShellExecution` | `command`, `cwd`                                     | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeMCPExecution`   | `tool_name`, `tool_input`                            | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeReadFile`       | `file_path`, `content`                               | `{ permission: "allow"\|"deny" }`        | ✅ honoured   |
+| `beforeSubmitPrompt`   | `prompt`, `attachments`                              | `{ continue: boolean }`                  | ✅ wired (B1) |
+| `afterFileEdit`        | `file_path`, `edits`                                 | none (notification)                      | ✅ wired (B2) |
+| `stop`                 | `status`                                             | none (notification)                      | ✅ wired (B3) |
+| `afterShellExecution`  | `command`, `output`, `duration`                      | none (notification)                      | ✅ wired (D2) |
+| `afterMCPExecution`    | `tool_name`, `tool_input`, `result_json`, `duration` | none (notification)                      | ✅ wired (D2) |
 
 The real `conversation_id` (thread id) and `generation_id` (turn id) come from
 the active run (B4); they are empty strings only when a hook fires outside any
@@ -72,19 +74,20 @@ returning modified content.
 
 ## What Copse supports
 
-| Capability                    | Status        | Notes                                                                                                                                                              |
-| ----------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Permission hooks**          | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                          |
-| **User hooks**                | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                            |
-| **Project hooks**             | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                             |
-| **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                         |
-| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt` (B1), `afterFileEdit` (B2), `stop` (B3) are wired; every declared Cursor event now fires                                                      |
-| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin (B4) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)            |
-| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event (B4), sourced from the model actually running                                                   |
-| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                |
-| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                          |
-| **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                         |
-| **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session) |
+| Capability                    | Status        | Notes                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Permission hooks**          | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                                                                                                                                                                                              |
+| **User hooks**                | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                                                                                                                                                                                                |
+| **Project hooks**             | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                                                                                                                                                                                                 |
+| **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                                                                                                                                                                                             |
+| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt` (B1), `afterFileEdit` (B2), `stop` (B3), `afterShellExecution` / `afterMCPExecution` (D2) are wired; every declared Cursor event now fires                                                                                                                                                                        |
+| **Post-tool observation**     | Supported     | `afterShellExecution` / `afterMCPExecution` (D2) fire **detached** after each shell / MCP tool result — payload flavors of the one canonical `afterToolUse` event (the tool name picks the flavor, like the permission gates map onto `toolGate`). Notification-only; the output snapshot is capped before it reaches the hook's stdin |
+| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin (B4) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)                                                                                                                                                                                |
+| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event (B4), sourced from the model actually running                                                                                                                                                                                                                       |
+| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                                                                                                                                                                                    |
+| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                                                                                                                                                                                              |
+| **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                                                                                                                                                                                             |
+| **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                     |
 
 ### Enablement
 

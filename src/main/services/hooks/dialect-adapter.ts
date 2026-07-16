@@ -195,6 +195,31 @@ export interface DialectAdapter {
     payload: HookEventPayloads['subagentStop'],
   ): DialectInterpretation
   /**
+   * Marshal a canonical `afterToolUse` payload into this dialect's stdin wire
+   * shape (D2). Optional. Cursor splits it into `afterShellExecution` (shell:
+   * `command` + capped `output` + `duration`) and `afterMCPExecution` (MCP:
+   * `tool_name` + `tool_input` + capped `result_json` + `duration`) by the tool
+   * name — payload flavors of the one canonical event. Returns null when the
+   * hook does not apply to this tool (the final guard past discovery matching).
+   */
+  marshalAfterToolUseRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['afterToolUse'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `afterToolUse` response table (D2). Optional, paired
+   * with {@link marshalAfterToolUseRequest}. Cursor's after-events are
+   * fire-and-forget (detached, decision 3): they return nothing, so the outcome
+   * is always null; a crash / timeout / non-zero exit is reported as `failed`
+   * for the spine + Sources error indicator only — there is nothing to block
+   * post-hoc (the tool already ran).
+   */
+  interpretAfterToolUse?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['afterToolUse'],
+  ): DialectInterpretation
+  /**
    * Record the first runtime failure of a hook this session (deduped per
    * dialect-event + command), feeding the Sources per-hook error indicator. The
    * runner passes the interpretation's resolved `spineEvent` so the key matches

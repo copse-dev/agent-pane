@@ -77,6 +77,14 @@ function isSubagentStopPayload(payload: unknown): payload is HookEventPayloads['
   )
 }
 
+function isAfterToolUsePayload(payload: unknown): payload is HookEventPayloads['afterToolUse'] {
+  // Distinguished from `toolGate` (which has `toolName` + `input` but no
+  // `isError`) by the `isError` observation field the post-tool payload carries.
+  return (
+    typeof payload === 'object' && payload !== null && 'toolName' in payload && 'isError' in payload
+  )
+}
+
 /**
  * Resolve a `failed` run to its outcome per the hook's `onFailure` (decision 9):
  * `closed` blocks (Cursor `failClosed: true`), `open` abstains (vendor default).
@@ -165,8 +173,10 @@ async function spawnInterpretResolve(
  * diff-queue / write-tool site); B3 adds `stop` (turn end / abort, dispatched
  * detached — decision 3); D1 adds `subagentStart` (blocking spawn gate, matcher
  * on subagent type) and `subagentStop` (detached completion, `followup_message`
- * routed to the queue channel). Other canonical events land their fire sites in
- * later phases and register no command hooks yet, so they abstain.
+ * routed to the queue channel); D2 adds `afterToolUse` (post-tool observation,
+ * dispatched detached — the Cursor `afterShellExecution` / `afterMCPExecution`
+ * flavors with a capped output snapshot). Other canonical events land their fire
+ * sites in later phases and register no command hooks yet, so they abstain.
  */
 export function createCommandHookRunner(opts?: {
   /**
@@ -282,6 +292,20 @@ export function createCommandHookRunner(opts?: {
           (spawn) => interpret(spawn, payload),
           context,
           recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'afterToolUse' && isAfterToolUsePayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalAfterToolUseRequest?.bind(adapter)
+        const interpret = adapter?.interpretAfterToolUse?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
         )
       }
 
