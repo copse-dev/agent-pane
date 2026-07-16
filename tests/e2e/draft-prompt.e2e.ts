@@ -51,10 +51,9 @@ describe('draft prompt preservation', () => {
     await $('.project-new-thread-btn').click()
     await expect($('.prompt-input')).toHaveText('')
 
-    // Creating a new thread appends its row asynchronously (store emit →
-    // re-render), so snapshotting `$$` right after the click races the insert
-    // and sees the pre-insert count — the #345 flake (expected 3, received 2).
-    // Poll until the row lands before snapshotting.
+    // Sidebar pagination preserves the current two-row window when a new thread
+    // is appended. Expand it before asserting the complete persisted set.
+    await $('.chats-show-more').click()
     await browser.waitUntil(async () => (await $$('.chats-list .chat-row')).length === 3, {
       timeout: 10_000,
       timeoutMsg: 'expected 3 chat rows after creating a new thread',

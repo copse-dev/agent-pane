@@ -139,7 +139,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  width: auto;
+  margin-inline: var(--spacing-xs);
+  border-radius: 0;
   text-align: left;
   padding: 4px var(--spacing-sm) 4px 28px;
   font-size: var(--font-size-sm);
@@ -154,6 +156,7 @@
 .chat-row.selected {
   background: var(--bg-selected);
   color: var(--text-primary);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
 .chat-title {
   flex: 1 1 auto;
@@ -267,7 +270,7 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding-bottom: var(--chat-composer-height);
+  padding-bottom: calc(var(--chat-composer-height) + var(--spacing-md));
 }
 .pane-files {
   width: var(--files-width, 480px);
