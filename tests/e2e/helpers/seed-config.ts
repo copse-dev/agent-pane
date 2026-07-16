@@ -219,7 +219,6 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     model?: string
-    modelComparisonEnabled?: boolean
     advisorModel?: string
     localServerUrl?: string
     localDefaultModel?: string
@@ -233,6 +232,13 @@ export function seedEmptyProject(
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
+    /**
+     * Pack ids to force-disable at boot. Written to the `packDisabled` list the
+     * host pack service reads (P3). Use this to opt out of packs that ship
+     * enabled by default (e.g. drop the `copse.model-comparison` pack for a test
+     * that must not surface the `compare_models` tool).
+     */
+    packDisabled?: readonly string[]
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -257,8 +263,8 @@ export function seedEmptyProject(
   if (options?.model) {
     settings.model = options.model
   }
-  if (options?.modelComparisonEnabled !== undefined) {
-    settings.modelComparisonEnabled = options.modelComparisonEnabled
+  if (options?.packDisabled !== undefined) {
+    settings.packDisabled = [...options.packDisabled]
   }
   if (options?.advisorModel) {
     settings.advisorModel = options.advisorModel

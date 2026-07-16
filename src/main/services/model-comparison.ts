@@ -18,7 +18,11 @@
 
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 
-export const MODEL_COMPARISON_ENABLED_SETTING = 'modelComparisonEnabled'
+// The former `MODEL_COMPARISON_ENABLED_SETTING` (top-level
+// `modelComparisonEnabled`) was retired in P5: the pack toggle
+// (`copse.model-comparison`) is now the atomic master switch consulted by the
+// tool registration in `registry-bootstrap.ts` and the auto-on-review trigger
+// in `agent-service.ts` / `isAutoComparisonEnabled()`.
 export const MODEL_COMPARISON_AUTO_ON_REVIEW_SETTING = 'modelComparisonAutoOnReview'
 export const COMPARISON_MODEL_A_SETTING = 'comparisonModelA'
 export const COMPARISON_MODEL_B_SETTING = 'comparisonModelB'
