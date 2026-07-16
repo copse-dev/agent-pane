@@ -2500,3 +2500,66 @@ export function seedMultiModelChatFixture(workspaceRoot: string): void {
     ],
   })
 }
+
+/**
+ * C2 held-queue fixture: an idle thread with a **held** hook-originated pending
+ * message (`autoDispatch: false`, decisions 5 & 16). The held state has no live
+ * producer yet (async function hooks that emit `queueMessage` land in later
+ * phases), so we seed the persisted queue shape directly — `pendingMessages`
+ * round-trips through `meta.json` — to exercise the renderer's held badge +
+ * Release affordance for a visual eval.
+ */
+export function seedHeldQueueFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-held-queue-project'
+  const threadId = 'e2e-held-queue-thread'
+  const heldMessageId = 'msg-held-hook'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Held hook message',
+        status: 'idle',
+        currentEpoch: 'epoch-current',
+        messages: [
+          {
+            id: 'msg-user-open',
+            role: 'user',
+            content: 'Refactor the auth module.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-reply',
+            role: 'assistant',
+            content: 'Done — the auth module is refactored.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: heldMessageId,
+            role: 'user',
+            content: 'You still have open todos — finish them before stopping.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        pendingMessages: [
+          {
+            messageId: heldMessageId,
+            payload: { content: 'You still have open todos — finish them before stopping.' },
+            createdAt: Date.now(),
+            origin: { kind: 'hook', hookId: 'todo-closeout', event: 'stop' },
+            epoch: 'epoch-stale',
+            autoDispatch: false,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
+}

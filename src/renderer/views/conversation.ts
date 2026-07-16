@@ -36,12 +36,15 @@ import { retryComparison, retryReview } from '../controller/retry-review-compari
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
+  isHeldMessage,
   queuedMessageIds,
   queuedPayloadText,
+  releaseHeldMessage,
   removeQueuedMessage,
   sendQueuedMessageNow,
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
+import type { QueuedUserMessage } from '@shared/types'
 
 function statusIcon(status: ToolCall['status']): SVGSVGElement {
   if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
@@ -696,6 +699,42 @@ export function mountConversation(
     }
   }
 
+  function releaseQueued(messageId: string): void {
+    const threadId = store.getState().activeThreadId
+    if (threadId) releaseHeldMessage(store, api, threadId, messageId)
+  }
+
+  // A held message (decisions 5 & 16) is skipped by the drain loop — it only
+  // moves on an explicit human action. It gets a primary "Release" affordance
+  // (submit + start a fresh turn tree) plus the usual edit / delete.
+  function buildHeldActions(messageId: string): HTMLElement {
+    const releaseBtn = el(
+      'button',
+      { class: 'queued-action queued-release', type: 'button' },
+      'Release',
+    )
+    releaseBtn.addEventListener('click', () => {
+      releaseQueued(messageId)
+    })
+    const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
+    editBtn.addEventListener('click', () => {
+      startEditing(messageId)
+    })
+    const deleteBtn = el(
+      'button',
+      { class: 'queued-action queued-delete', type: 'button' },
+      'Delete',
+    )
+    deleteBtn.addEventListener('click', () => {
+      deleteQueued(messageId)
+    })
+    return el(
+      'div',
+      { class: 'message-queued-ui' },
+      el('div', { class: 'message-queued-actions' }, releaseBtn, editBtn, deleteBtn),
+    )
+  }
+
   function buildQueuedActions(messageId: string): HTMLElement {
     const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
     editBtn.addEventListener('click', () => {
@@ -786,19 +825,27 @@ export function mountConversation(
     return wrap
   }
 
-  function createQueuedItem(msg: Message): HTMLElement {
+  function createQueuedItem(msg: Message, queued: QueuedUserMessage): HTMLElement {
     const editing = editingMessageId === msg.id
+    const held = isHeldMessage(queued)
+    const fromHook = queued.origin?.kind === 'hook'
+    const classes = ['msg', 'msg-user', 'msg-queued']
+    if (editing) classes.push('msg-editing')
+    if (held) classes.push('msg-held')
+    if (fromHook) classes.push('msg-hook-origin')
     const item = el('div', {
-      class: editing ? 'msg msg-user msg-queued msg-editing' : 'msg msg-user msg-queued',
+      class: classes.join(' '),
       'data-message-id': msg.id,
+      ...(fromHook ? { 'data-hook-id': queued.origin?.hookId ?? '' } : {}),
     })
     const body = el('div', { class: 'message-body' })
-    body.append(el('span', { class: 'message-queued-badge' }, editing ? 'Editing' : 'Queued'))
+    const badgeText = editing ? 'Editing' : held ? 'Held' : 'Queued'
+    body.append(el('span', { class: 'message-queued-badge' }, badgeText))
     if (editing) {
       body.append(buildQueuedEditor(msg.id))
     } else {
       appendMessageContent(body, msg, api)
-      body.append(buildQueuedActions(msg.id))
+      body.append(held ? buildHeldActions(msg.id) : buildQueuedActions(msg.id))
     }
     item.append(body)
     return item
@@ -821,7 +868,7 @@ export function mountConversation(
     for (const item of pending) {
       const msg = messagesById.get(item.messageId)
       if (!msg || msg.role !== 'user') continue
-      queuedHost.append(createQueuedItem(msg))
+      queuedHost.append(createQueuedItem(msg, item))
     }
     queuedHost.hidden = queuedHost.childElementCount === 0
   }
