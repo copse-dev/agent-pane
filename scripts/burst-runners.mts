@@ -14,7 +14,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const AWS_REGION_ENV = 'AWS_REGION'
-const SCW_BIN_ENV = 'SCW_BIN'
 const DEFAULT_AMI_SSM_PARAMETER =
   '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id'
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
@@ -298,12 +297,10 @@ function requireTool(binary: string, probeArgs = ['--version']): void {
     die(`required tool '${binary}' was found but '${binary} ${probeArgs.join(' ')}' failed`)
 }
 
-function scalewayBinary(): string {
-  return process.env[SCW_BIN_ENV] || 'scw'
-}
-
 function requireScalewayTool(): void {
-  requireTool(scalewayBinary(), ['help'])
+  // Scaleway's CLI has no --version; `scw help` also fails without a topic.
+  // General help (`scw --help`) is the reliable presence probe.
+  requireTool('scw', ['--help'])
 }
 
 function capture(binary: string, args: string[], input?: string | Buffer): string {
@@ -656,7 +653,7 @@ function launchScalewayServers(config: ScalewayUpConfig): string[] {
           ? [`security-group-id=${config.securityGroupId}`]
           : []),
       ])
-      const raw = capture(scalewayBinary(), args)
+      const raw = capture('scw', args)
       const id = parseScalewayServer(raw).providerId
       if (!id) die(`Scaleway create did not return a server id: ${raw}`)
       ids.push(id)
@@ -710,21 +707,21 @@ function scalewayServerFromRecord(server: Record<string, unknown>): CloudHost {
 function waitForScalewayServers(config: ScalewayUpConfig, serverIds: string[]): void {
   for (const id of serverIds) {
     console.log(`==> Waiting for Scaleway server ${id}`)
-    run(scalewayBinary(), scalewayArgs(config, ['instance', 'server', 'wait', id]))
+    run('scw', scalewayArgs(config, ['instance', 'server', 'wait', id]))
   }
 }
 
 function getScalewayServers(config: ScalewayConfig, serverIds: string[]): CloudHost[] {
   return serverIds.map((id) =>
     parseScalewayServer(
-      capture(scalewayBinary(), scalewayJsonArgs(config, ['instance', 'server', 'get', id])),
+      capture('scw', scalewayJsonArgs(config, ['instance', 'server', 'get', id])),
     ),
   )
 }
 
 function listScalewayServers(config: ScalewayConfig): CloudHost[] {
   const raw = capture(
-    scalewayBinary(),
+    'scw',
     scalewayJsonArgs(config, [
       'instance',
       'server',
@@ -929,13 +926,13 @@ function scalewayDown(options: Options): void {
   for (const host of hosts) {
     console.log(`==> Terminating ${host.providerId}`)
     run(
-      scalewayBinary(),
+      'scw',
       scalewayArgs(config, ['instance', 'server', 'terminate', host.providerId, 'with-ip=true']),
     )
   }
   if (hasFlag(options, 'wait')) {
     for (const host of hosts) {
-      run(scalewayBinary(), scalewayArgs(config, ['instance', 'server', 'wait', host.providerId]))
+      run('scw', scalewayArgs(config, ['instance', 'server', 'wait', host.providerId]))
     }
   }
 }

@@ -62,8 +62,6 @@ Prerequisites:
 
 - Scaleway CLI installed and configured (`scw init`) with permission to create,
   list, wait for, and terminate Instances in your project.
-- `scw` must be visible to `npm run`'s PATH. If your shell can run `scw` but npm
-  cannot, pass an absolute path with `SCW_BIN=/path/to/scw`.
 - Your Scaleway project has an SSH public key installed for the default `root`
   user (Scaleway propagates console SSH keys to new Linux Instances). Pass
   `--key-path` if SSH should use a specific private key.
@@ -83,13 +81,6 @@ GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
     --scw-type PLAY2-MICRO \
     --runners-per-instance 1 \
     --ttl-minutes 240
-```
-
-If npm does not inherit the path where Scaleway CLI is installed:
-
-```bash
-SCW_BIN="$(command -v scw)" GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
-  npm run runners:burst:scw -- up --zone fr-par-1 --instances 3
 ```
 
 More memory headroom:
