@@ -384,9 +384,9 @@ function runAsync(
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'] })
     const prefix = options.prefix ?? ''
-    if (child.stdout) pipeWithPrefix(prefix, child.stdout, process.stdout)
-    if (child.stderr) pipeWithPrefix(prefix, child.stderr, process.stderr)
-    child.stdin?.end(options.input ?? Buffer.alloc(0))
+    pipeWithPrefix(prefix, child.stdout, process.stdout)
+    pipeWithPrefix(prefix, child.stderr, process.stderr)
+    child.stdin.end(options.input ?? Buffer.alloc(0))
     child.on('error', reject)
     child.on('close', (code) => {
       if (code === 0) resolve()
@@ -415,10 +415,10 @@ function captureAsync(
     const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
-    child.stdout?.on('data', (chunk: string | Buffer) => {
+    child.stdout.on('data', (chunk: string | Buffer) => {
       stdout += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
     })
-    child.stderr?.on('data', (chunk: string | Buffer) => {
+    child.stderr.on('data', (chunk: string | Buffer) => {
       stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
     })
     child.on('error', reject)
@@ -1225,7 +1225,8 @@ async function scalewayUp(options: Options): Promise<void> {
     }
   }
 
-  if (batches.length === 0) {
+  const firstBatch = batches[0]
+  if (firstBatch === undefined) {
     die(
       `No Scaleway AZ had capacity for ${String(requested)}× ${optionWithDefault(options, 'scw-type', DEFAULT_SCW_TYPE)}`,
     )
@@ -1237,7 +1238,7 @@ async function scalewayUp(options: Options): Promise<void> {
     hosts.push(...getScalewayServers(batch.config, batch.ids))
   }
   printHosts(hosts)
-  await provisionHosts(batches[0]!.config, hosts, hasFlag(options, 'serial'))
+  await provisionHosts(firstBatch.config, hosts, hasFlag(options, 'serial'))
 
   if (remaining > 0) {
     die(
