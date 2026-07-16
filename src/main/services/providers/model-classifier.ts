@@ -1,8 +1,4 @@
-import {
-  getModelInfo,
-  TRACKED_MODELS,
-  type TrackedModel,
-} from '@copse/llm/model-catalog.ts'
+import { getModelInfo, TRACKED_MODELS, type TrackedModel } from '@copse/llm/model-catalog.ts'
 import {
   BAND_REPRESENTATIVE_MODEL,
   intellectBand,
@@ -167,7 +163,7 @@ export function classifyModelForTask(input: ClassifyModelInput): ModelRecommenda
   if (info && contextNeed > info.contextWindow) {
     reasons.push(
       `note: estimated context ${String(contextNeed)} exceeds ${model}'s ${String(info.contextWindow)}-token window`,
-      )
+    )
   } else if (pick.noCandidateFits) {
     reasons.push('no candidate fits the estimated context — picked cheapest in band anyway')
   }
