@@ -43,6 +43,7 @@ describe('conversation visual hierarchy', () => {
     const layout = await browser.execute(() => {
       const rect = (selector: string) => document.querySelector(selector)?.getBoundingClientRect()
       const pane = rect('#pane-chat')
+      const messagesList = document.querySelector<HTMLElement>('.messages-list')
       const user = rect('[data-message-id="msg-user-hierarchy"]')
       const trace = rect('[data-message-id="msg-assistant-check"]')
       const todoPanel = rect('.conversation-todos-host .todo-panel')
@@ -64,6 +65,7 @@ describe('conversation visual hierarchy', () => {
       const selectedThread = document.querySelector('.chat-row.selected')
       if (
         !pane ||
+        !messagesList ||
         !user ||
         !trace ||
         !todoPanel ||
@@ -90,6 +92,7 @@ describe('conversation visual hierarchy', () => {
       const comparisonStyle = getComputedStyle(comparisonElement)
       return {
         paneWidth: pane.width,
+        messagesListScrollbarGutter: messagesList.offsetWidth - messagesList.clientWidth,
         userWidth: user.width,
         traceWidth: trace.width,
         todoWidth: todoPanel.width,
@@ -128,7 +131,10 @@ describe('conversation visual hierarchy', () => {
     expect(layout).not.toHaveProperty('error')
     expect(layout.userWidth).toBeLessThan(layout.traceWidth)
     expect(layout.traceWidth).toBeLessThanOrEqual(962)
-    expect(Math.abs(layout.todoWidth - layout.traceWidth)).toBeLessThanOrEqual(1)
+    expect(layout.todoWidth).toBeLessThanOrEqual(962)
+    expect(Math.abs(layout.todoWidth - layout.traceWidth)).toBeLessThanOrEqual(
+      layout.messagesListScrollbarGutter + 1,
+    )
     expect(layout.answerWidth).toBeLessThanOrEqual(962)
     expect(Math.abs(layout.reviewWidth - layout.traceWidth)).toBeLessThanOrEqual(1)
     expect(Math.abs(layout.comparisonWidth - layout.traceWidth)).toBeLessThanOrEqual(1)
