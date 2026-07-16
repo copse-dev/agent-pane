@@ -16,7 +16,22 @@ import type {
   HookContext,
   HookEventName,
   HookEventPayloads,
+  HookRunRecord,
 } from './canonical-events.ts'
+
+/**
+ * Feed one execution to the host's spine-recording sink (decision 6).
+ * Recording is observability, never behavior: a throwing sink is swallowed so
+ * it cannot abort an emit or masquerade as a hook failure.
+ */
+function recordRun(context: HookContext, record: HookRunRecord): void {
+  if (!context.recordHookRun) return
+  try {
+    context.recordHookRun(record)
+  } catch (err) {
+    console.warn(`[hooks] recordHookRun sink threw for "${record.hookId}":`, err)
+  }
+}
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
 
@@ -91,13 +106,31 @@ export class HookRegistry {
     for (const hook of hooks) {
       if (context.signal?.aborted) break
       let outcome: BlockingHookOutcome | undefined
+      const startedAt = Date.now()
       try {
         // A specific `HookEventPayloads[E]` is assignable to `run`'s union
         // parameter, so no cast is needed to dispatch the stored hook.
         outcome = await hook.run(payload, context)
       } catch (cause) {
+        // Record the failed execution first (decision 6: *every* execution is
+        // recorded), then fail hard as before — the throw is never swallowed.
+        recordRun(context, {
+          event,
+          hookId: hook.id,
+          startedAt,
+          durationMs: Date.now() - startedAt,
+          outcome: null,
+          error: errorMessage(cause),
+        })
         throw new HookExecutionError(hook.id, event, cause)
       }
+      recordRun(context, {
+        event,
+        hookId: hook.id,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        outcome: outcome ?? null,
+      })
       if (outcome) outcomes.push({ hookId: hook.id, outcome })
     }
     return { outcomes }
