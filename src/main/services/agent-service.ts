@@ -248,6 +248,11 @@ async function runBeforeSubmitPrompt(
   threadId: string,
   userPrompt: UserContent,
 ): Promise<string | null> {
+  // Gate on the same master switch as every other hook path (tool gate, stop,
+  // afterFileEdit). Without this, "always-trusted" user `~/.cursor/hooks.json`
+  // beforeSubmitPrompt hooks would spawn on every submit even with the feature
+  // off (the default) — a consent-gate bypass and needless per-submit discovery.
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return null
   const workspaceRoot = getWorkspaceRoot()
   beginHookRunRecording(threadId)
   try {
