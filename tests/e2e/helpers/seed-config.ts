@@ -206,6 +206,7 @@ export function seedEmptyProject(
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     okfMemoriesEnabled?: boolean
+    roadmapPlansEnabled?: boolean
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -247,6 +248,9 @@ export function seedEmptyProject(
   }
   if (options?.okfMemoriesEnabled !== undefined) {
     settings.okfMemoriesEnabled = options.okfMemoriesEnabled
+  }
+  if (options?.roadmapPlansEnabled !== undefined) {
+    settings.roadmapPlansEnabled = options.roadmapPlansEnabled
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
