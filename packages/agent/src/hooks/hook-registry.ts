@@ -13,11 +13,13 @@ import { errorMessage } from '../internal-utils.ts'
 import type { BlockingHookOutcome, HookDecision, HookHaltRun } from './hook-outcome.ts'
 import type {
   BlockingHook,
+  FunctionHookContext,
   HookContext,
   HookEventName,
   HookEventPayloads,
   HookRunRecord,
 } from './canonical-events.ts'
+import type { CommandHook, CommandHookResult } from './command-executor.ts'
 
 /**
  * Feed one execution to the host's spine-recording sink (decision 6).
@@ -72,37 +74,74 @@ export class HookRegistry {
   // Keyed by event; `BlockingHook`'s method-syntax `run` makes hooks for
   // different events co-storable here without a cast (see canonical-events.ts).
   private readonly blockingHooks = new Map<HookEventName, BlockingHook[]>()
+  // Command (spawned-process) hooks share the registry (decision 1) but run via
+  // the host-injected runner, not in-process, so they live in their own map.
+  private readonly commandHooks = new Map<HookEventName, CommandHook[]>()
 
-  /** Register a first-party blocking hook. Later registrations run later. */
+  /** Register a first-party blocking function hook. Later registrations run later. */
   register<E extends HookEventName>(hook: BlockingHook<E>): void {
     const list = this.blockingHooks.get(hook.event)
     if (list) list.push(hook)
     else this.blockingHooks.set(hook.event, [hook])
   }
 
-  /** Hooks registered for `event`, in registration order (empty when none). */
+  /**
+   * Register a command (spawned-process) hook — same registry, same events
+   * (decision 1). Dispatched via {@link HookContext.runCommandHook}; failure is
+   * resolved per-dialect by the runner (decision 9), never fail-hard.
+   */
+  registerCommand<E extends HookEventName>(hook: CommandHook<E>): void {
+    const list = this.commandHooks.get(hook.event)
+    if (list) list.push(hook)
+    else this.commandHooks.set(hook.event, [hook])
+  }
+
+  /** Function hooks registered for `event`, in registration order (empty when none). */
   hooksFor(event: HookEventName): readonly BlockingHook[] {
     return this.blockingHooks.get(event) ?? []
   }
 
+  /** Command hooks registered for `event`, in registration order (empty when none). */
+  commandHooksFor(event: HookEventName): readonly CommandHook[] {
+    return this.commandHooks.get(event) ?? []
+  }
+
   /**
-   * Fire a blocking canonical event: run every registered hook in registration
-   * order and collect the outcomes they return. With zero registered hooks this
-   * resolves to an empty result and the caller applies nothing — the "emitting
-   * changes nothing" guarantee this milestone ships.
+   * Fire a blocking canonical event: run every registered function hook, then
+   * every registered command hook, in registration order, and collect the
+   * outcomes they return. With zero registered hooks this resolves to an empty
+   * result and the caller applies nothing — the "emitting changes nothing"
+   * guarantee M0 shipped, preserved here.
    *
-   * Fail-hard (decision 9): a hook that throws aborts the emit with a
-   * {@link HookExecutionError}; the failure is never downgraded to an allow.
+   * Two executor kinds, two failure policies (decisions 1 & 9):
+   *   - Function hooks **fail hard**: a throw aborts the emit with a
+   *     {@link HookExecutionError}, never downgraded to an allow.
+   *   - Command hooks **defer failure to their dialect**: the runner resolves
+   *     crash / timeout / invalid JSON per the hook's `onFailure` before
+   *     returning, so a command failure is a normalized outcome (or none), never
+   *     a thrown emit. A runner that itself throws is caught and resolved the
+   *     same way, so one buggy command hook can never fail-hard the harness.
    */
   async emit<E extends HookEventName>(
     event: E,
     payload: HookEventPayloads[E],
-    context: HookContext,
+    context: FunctionHookContext,
   ): Promise<HookEmitResult> {
-    const hooks = this.blockingHooks.get(event)
-    if (!hooks || hooks.length === 0) return { outcomes: [] }
-
     const outcomes: HookOutcomeRecord[] = []
+    await this.dispatchFunctionHooks(event, payload, context, outcomes)
+    await this.dispatchCommandHooks(event, payload, context, outcomes)
+    return { outcomes }
+  }
+
+  /** Run the in-process function hooks for an event (fail-hard, decision 9). */
+  private async dispatchFunctionHooks<E extends HookEventName>(
+    event: E,
+    payload: HookEventPayloads[E],
+    context: FunctionHookContext,
+    outcomes: HookOutcomeRecord[],
+  ): Promise<void> {
+    const hooks = this.blockingHooks.get(event)
+    if (!hooks || hooks.length === 0) return
     for (const hook of hooks) {
       if (context.signal?.aborted) break
       let outcome: BlockingHookOutcome | undefined
@@ -133,8 +172,55 @@ export class HookRegistry {
       })
       if (outcome) outcomes.push({ hookId: hook.id, outcome })
     }
-    return { outcomes }
   }
+
+  /**
+   * Run the command hooks for an event via the host-injected runner. Never
+   * fail-hard (decision 9): the runner resolves dialect failure semantics, and
+   * a runner that throws is caught and resolved with the hook's own `onFailure`.
+   * Command spine recording is owned by the runner (it holds the process's
+   * stdout/stderr/exit code), so this path does not touch `recordHookRun`.
+   * With no runner injected, command hooks are skipped — never a hard failure.
+   */
+  private async dispatchCommandHooks<E extends HookEventName>(
+    event: E,
+    payload: HookEventPayloads[E],
+    context: FunctionHookContext,
+    outcomes: HookOutcomeRecord[],
+  ): Promise<void> {
+    const hooks = this.commandHooks.get(event)
+    if (!hooks || hooks.length === 0) return
+    const runner = context.runCommandHook
+    if (!runner) return
+    for (const hook of hooks) {
+      if (context.signal?.aborted) break
+      let result: CommandHookResult
+      try {
+        result = await runner.run(hook, payload, context)
+      } catch (cause) {
+        result = commandRunnerCrashResult(hook, cause)
+      }
+      if (result.outcome) outcomes.push({ hookId: hook.id, outcome: result.outcome })
+    }
+  }
+}
+
+/**
+ * Resolve a command hook whose *runner* threw unexpectedly (a host bug, not the
+ * script's own crash — that the runner resolves internally). Applies the hook's
+ * per-dialect `onFailure` (decision 9): `closed` denies the gated action;
+ * `open` yields no opinion, so the action proceeds. Never rethrows — command
+ * hooks are not fail-hard.
+ */
+function commandRunnerCrashResult(hook: CommandHook, cause: unknown): CommandHookResult {
+  const outcome: BlockingHookOutcome | null =
+    hook.onFailure === 'closed'
+      ? {
+          decision: 'deny',
+          agentMessage: `command hook "${hook.id}" failed: ${errorMessage(cause)}`,
+        }
+      : null
+  return { outcome, failed: true, failureMode: hook.onFailure }
 }
 
 const DECISION_RANK: Record<HookDecision, number> = { allow: 0, ask: 1, deny: 2 }

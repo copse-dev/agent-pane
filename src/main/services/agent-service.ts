@@ -98,7 +98,7 @@ import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
-import { parseRemoteAgentModel } from '@shared/remote-agent.ts'
+import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
@@ -246,7 +246,7 @@ export async function runAgent(
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
-  const remoteProvider = parseRemoteAgentModel(model)
+  const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
 
@@ -321,7 +321,7 @@ export async function runAgent(
     }
   }
 
-  if (remoteProvider) {
+  if (remoteSelection) {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
@@ -330,7 +330,8 @@ export async function runAgent(
     try {
       const result = await runRemoteAgentFromSettings({
         threadId,
-        provider: remoteProvider,
+        provider: remoteSelection.provider,
+        ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
