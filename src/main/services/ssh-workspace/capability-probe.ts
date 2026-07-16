@@ -23,14 +23,12 @@ export async function probeSshCapabilities(transport: SshTransport): Promise<Ssh
   const rg = await hasTool(transport, 'rg')
   const inotifywait = await hasTool(transport, 'inotifywait')
 
+  // Tool presence is carried by the boolean flags; the status banner turns those
+  // into user-facing copy. Keep `warnings` for probe/infrastructure failures only
+  // so the UI does not show the same missing-tool message twice.
   const warnings: string[] = []
   if (osResult.code !== 0 || archResult.code !== 0) {
     warnings.push('Capability probe command failed — remote tooling may be unavailable.')
-  }
-  if (!git) warnings.push('`git` missing on host — git pane and backups will not work remotely.')
-  if (!rg) warnings.push('`rg` missing on host — searches will fall back to `grep -r`.')
-  if (!inotifywait) {
-    warnings.push('`inotifywait` missing — external file edits may not be detected live.')
   }
 
   return {
