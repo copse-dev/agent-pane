@@ -894,8 +894,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       listCopseHooksForSources(opts),
     ])
     return {
-      hooks: [...cursor.hooks, ...claude, ...copse.hooks],
-      warnings: [...cursor.warnings, ...copse.warnings],
+      hooks: [...cursor.hooks, ...claude.hooks, ...copse.hooks],
+      warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
   })
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
