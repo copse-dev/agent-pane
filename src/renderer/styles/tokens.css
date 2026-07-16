@@ -79,4 +79,8 @@
   /* Left inset for custom titlebars under macOS traffic lights (see trafficLightPosition). */
   --traffic-light-inset: 78px;
   --titlebar-height: 40px;
+  /* Shared height for projects Settings and the portrait panel-controls row:
+     16px icon + sm padding + top border (Settings' historical band). */
+  --chrome-action-band-height: calc(16px + 2 * var(--spacing-sm) + 1px);
+  --chrome-action-band-content-height: 16px;
 }
