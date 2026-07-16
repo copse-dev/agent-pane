@@ -2,7 +2,7 @@ import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HookSummary } from '@shared/types/hooks.ts'
+import type { HooksListResult } from '@shared/types/hooks.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -271,6 +271,9 @@ export interface ApiClient {
       safetyModel: string
       reviewModel?: string
       autoRunSandboxCommands: boolean
+      // Optional so bundles that don't render the toggle (e.g. the LM Studio
+      // connection save) don't clobber the persisted value.
+      cursorHooksEnabled?: boolean
       mcpAutoAllowReadOnly: boolean
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
@@ -401,7 +404,7 @@ export interface ApiClient {
     list: () => Promise<CursorPluginSummary[]>
   }
   hooks: {
-    list: () => Promise<HookSummary[]>
+    list: () => Promise<HooksListResult>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
