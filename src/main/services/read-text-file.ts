@@ -217,8 +217,11 @@ export function readTextLineRangeFromUtf8Content(
       charTruncated: false,
     }
   }
-  void bomSkip
-  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  let normalized = content
+  if (encoding === 'utf8' && bomSkip > 0 && normalized.charCodeAt(0) === 0xfeff) {
+    normalized = normalized.slice(1)
+  }
+  normalized = normalized.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const lines = normalized.split('\n')
   if (lines.at(-1) === '') lines.pop()
 
