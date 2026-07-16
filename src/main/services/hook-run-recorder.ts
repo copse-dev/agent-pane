@@ -68,6 +68,22 @@ export function endHookRunRecording(threadId: string): void {
   if (current?.threadId === threadId) current = null
 }
 
+/** An opaque, by-value copy of the recording context for detached attribution. */
+export type HookRunRecordingSnapshot = HookRunRecordingContext
+
+/**
+ * Capture the current recording context by value. Detached async hooks
+ * (`stop`, `subagentStop`, …) resolve *after* {@link endHookRunRecording} has
+ * cleared the live `current` (decision 3 — the loop never waits for them), so
+ * their fire sites snapshot the context synchronously at dispatch and record
+ * against the snapshot, keeping decision 6's "always-on" guarantee for async
+ * hooks (otherwise the `hook_run` line is dropped or misattributed to a newer
+ * run). Returns null when no run is active.
+ */
+export function snapshotHookRunContext(): HookRunRecordingSnapshot | null {
+  return current ? { ...current } : null
+}
+
 /**
  * The current run's turn id — the "generation" half of decision 6's attribution,
  * reused as the Cursor hook wire `generation_id` (B4) so a hook's wire payload
@@ -142,8 +158,11 @@ function decisionFromOutcome(outcome: BlockingHookOutcome | null): SpineHookRunD
  * outcomes: no process, so no exit code and no stdout/stderr blobs, and
  * `parseOk` is structurally true.
  */
-export function recordFunctionHookRun(record: HookRunRecord): void {
-  const ctx = current
+export function recordFunctionHookRun(
+  record: HookRunRecord,
+  snapshot: HookRunRecordingSnapshot | null = current,
+): void {
+  const ctx = snapshot
   if (!ctx) return
   const line: SpineHookRunLine = {
     v: SPINE_SCHEMA_VERSION,
@@ -217,8 +236,11 @@ export interface CommandHookRunInput {
  * blobs next to the normalized decision, so a debug print that corrupts a
  * response is visible as `parseOk: false` right next to the bytes (decision 6).
  */
-export function recordCommandHookRun(input: CommandHookRunInput): void {
-  const ctx = current
+export function recordCommandHookRun(
+  input: CommandHookRunInput,
+  snapshot: HookRunRecordingSnapshot | null = current,
+): void {
+  const ctx = snapshot
   if (!ctx) return
   const id = randomUUID()
   const stdoutRef = `blobs/${id}.stdout.txt`

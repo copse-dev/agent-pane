@@ -34,6 +34,7 @@ import {
   beginHookRunRecording,
   endHookRunRecording,
   recordFunctionHookRun,
+  snapshotHookRunContext,
   setHookRunStep,
   setHookRunToolset,
 } from './hook-run-recorder.ts'
@@ -303,12 +304,18 @@ function fireStopHook(threadId: string, status: 'completed' | 'aborted'): void {
   // outside an active run. C2/C3 formalize the turn-tree identity + the
   // staleness check on late outputs.
   const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  // Snapshot the recording context now, synchronously, for the same reason as
+  // the session identity: `endHookRunRecording` clears the live context right
+  // after this fire site, so the detached stop hook records against the snapshot
+  // (decision 3/6) or its hook_run line would be lost.
+  const recordingSnapshot = snapshotHookRunContext()
   void runStopHooks(status, {
     threadId,
     turnTreeId,
     workspaceRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession,
+    recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
   })

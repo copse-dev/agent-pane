@@ -43,6 +43,7 @@ import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorStopHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
 
 /** What the turn-end / abort fire site learns from the stop hooks. */
@@ -72,6 +73,12 @@ export type RunStopHooksOpts = DialectDiscoverOpts & {
   turnTreeId: TurnTreeId
   /** Session identity captured by value at the fire site (B4 + decision 3). */
   agentSession?: AgentSessionInfo
+  /**
+   * Recording context snapshotted synchronously at the fire site so the
+   * detached `stop` hook's `hook_run` spine line survives `endHookRunRecording`
+   * (decision 3/6). Without it the record is dropped or misattributed.
+   */
+  recordingSnapshot?: HookRunRecordingSnapshot | null
   /** Detached executor; defaults to the process-wide shared instance. */
   dispatcher?: AsyncHookDispatcher
 }
@@ -124,7 +131,9 @@ export async function runStopHooks(
     dispatcher,
     threadId: opts.threadId,
     turnTreeId: opts.turnTreeId,
-    runCommandHook: createCommandHookRunner(),
+    runCommandHook: createCommandHookRunner(
+      opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
+    ),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 
