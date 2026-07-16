@@ -14,35 +14,6 @@ async function savePortraitElementScreenshot(selector: string, filename: string)
 const PORTRAIT_WIDTH = 760
 const PORTRAIT_HEIGHT = 1180
 
-async function setPortraitWindow(): Promise<void> {
-  const alreadyPortrait = await browser.execute(() => {
-    const { innerWidth: width, innerHeight: height } = window
-    return height >= 700 && height / width >= 1.35
-  })
-  if (alreadyPortrait) return
-
-  await browser.execute(
-    (width, height) => {
-      window.resizeTo(width, height)
-    },
-    PORTRAIT_WIDTH,
-    PORTRAIT_HEIGHT,
-  )
-  await browser.waitUntil(
-    async () => {
-      const size = await browser.execute(() => ({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      }))
-      return size.height >= 700 && size.height / size.width >= 1.35
-    },
-    {
-      timeout: 30_000,
-      timeoutMsg: 'expected Electron window to resize to a tall portrait viewport',
-    },
-  )
-}
-
 async function setProjectsWidth(px: number): Promise<void> {
   await browser.execute((width) => {
     document.getElementById('body')?.style.setProperty('--projects-width', `${width}px`)
@@ -51,8 +22,33 @@ async function setProjectsWidth(px: number): Promise<void> {
   await browser.pause(150)
 }
 
+/**
+ * Narrow the app shell in CSS (not via OS window.resizeTo). CI displays often
+ * refuse tall Electron windows — same flake that CI-excludes
+ * `portrait-right-panel.e2e.ts`. Portrait chrome itself is forced by seeding
+ * `rightPanelPosition: 'bottom'`; this just gives the chat column a stable
+ * portrait-ish width for layout + overflow assertions.
+ */
+async function pinPortraitAppShell(): Promise<void> {
+  await browser.execute((width) => {
+    const app = document.getElementById('app')
+    if (!app) throw new Error('missing #app')
+    // Width only — forcing a taller-than-display height makes Electron screenshot
+    // captures hang on some CI / VNC setups.
+    app.style.width = `${width}px`
+    app.style.maxWidth = `${width}px`
+    app.style.boxSizing = 'border-box'
+    window.dispatchEvent(new Event('resize'))
+  }, PORTRAIT_WIDTH)
+  await browser.pause(100)
+}
+
 async function openPortraitChrome(): Promise<void> {
   resetUserData()
+  // Pin the panel to `bottom` so portrait chrome activates without needing a
+  // tall OS window. CI runners often clamp `window.resizeTo` / windowBounds
+  // (same reason `portrait-right-panel.e2e.ts` is CI-excluded), and the chrome
+  // affordances are identical for bottom-pinned and auto-portrait layouts.
   seedPortraitRightPanelFixture(
     process.cwd(),
     true,
@@ -60,11 +56,15 @@ async function openPortraitChrome(): Promise<void> {
       width: PORTRAIT_WIDTH,
       height: PORTRAIT_HEIGHT,
     },
-    { okfMemoriesEnabled: true, roadmapPlansEnabled: true },
+    {
+      okfMemoriesEnabled: true,
+      roadmapPlansEnabled: true,
+      rightPanelPosition: 'bottom',
+    },
   )
   await browser.reloadSession()
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
-  await setPortraitWindow()
+  await pinPortraitAppShell()
   await browser.waitUntil(
     async () => (await (await $('#app')).getAttribute('class'))?.includes('is-portrait-chrome'),
     { timeout: 5_000, timeoutMsg: 'expected portrait chrome class on #app' },

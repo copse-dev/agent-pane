@@ -930,6 +930,8 @@ export function seedPortraitRightPanelFixture(
   options?: {
     okfMemoriesEnabled?: boolean
     roadmapPlansEnabled?: boolean
+    /** Pin panel placement; `bottom` forces portrait chrome without a tall window. */
+    rightPanelPosition?: 'auto' | 'side' | 'bottom'
   },
 ): void {
   const projectId = 'e2e-portrait-right-panel-project'
@@ -961,6 +963,9 @@ export function seedPortraitRightPanelFixture(
   writeSettings({
     autoPortraitRightPanel,
     windowBounds,
+    ...(options?.rightPanelPosition !== undefined
+      ? { rightPanelPosition: options.rightPanelPosition }
+      : {}),
     ...(options?.okfMemoriesEnabled !== undefined
       ? { okfMemoriesEnabled: options.okfMemoriesEnabled }
       : {}),
