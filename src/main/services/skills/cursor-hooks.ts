@@ -4,13 +4,16 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   CURSOR_HOOK_EVENTS,
+  isCursorPermissionHookEvent,
   type CursorHookEvent,
   type CursorHookScope,
-  type CursorHookSummary,
+  type CursorHooksListResult,
+  type CursorHookValidationWarning,
   type CursorPermissionHookEvent,
 } from '@shared/types/cursor-hooks.ts'
-import type { HookSummary } from '@shared/types/hooks.ts'
+import type { HooksListResult } from '@shared/types/hooks.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { recordCommandHookRun } from '../hook-run-recorder.ts'
 
 /** Hooks that take longer than this are treated as failed-open (allow). */
 const HOOK_TIMEOUT_MS = 5_000
@@ -39,91 +42,175 @@ function isHookEvent(value: string): value is CursorHookEvent {
   return (CURSOR_HOOK_EVENTS as readonly string[]).includes(value)
 }
 
+/** One parsed config: usable hooks plus per-entry authoring warnings. */
+interface ParsedHooksConfig {
+  hooks: DiscoveredHook[]
+  warnings: CursorHookValidationWarning[]
+}
+
 /**
  * Parse one `hooks.json`. The shape is `{ version, hooks: { <event>: [{ command }] } }`.
  * Unknown events and malformed entries are skipped rather than throwing — a bad hook
- * config should never break the agent loop.
+ * config should never break the agent loop — but each skip is surfaced as a warn-level
+ * validation warning so the Sources panel can show authoring problems (plan G3: a
+ * warn-level lint, never a load gate).
  */
-async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<DiscoveredHook[]> {
+async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<ParsedHooksConfig> {
+  const warnings: CursorHookValidationWarning[] = []
+  const warn = (message: string): void => {
+    warnings.push({ source: path, scope, message })
+  }
+
   let raw: string
   try {
     raw = await fsp.readFile(path, 'utf-8')
   } catch {
-    return []
+    // A missing config is the normal case, not an authoring problem.
+    return { hooks: [], warnings }
   }
 
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return []
+    warn('hooks.json is not valid JSON — file ignored')
+    return { hooks: [], warnings }
   }
 
   // parsed comes from JSON.parse and can legitimately be null (e.g. `null`/`false`);
   // the cast type hides that, so the optional chain guards the real runtime case.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const hooks = (parsed as { hooks?: unknown })?.hooks
-  if (typeof hooks !== 'object' || hooks === null) return []
+  if (typeof hooks !== 'object' || hooks === null) {
+    warn('hooks.json has no "hooks" object — file ignored')
+    return { hooks: [], warnings }
+  }
 
   const cwd = dirname(path)
   const out: DiscoveredHook[] = []
   for (const [event, entries] of Object.entries(hooks as Record<string, unknown>)) {
-    if (!isHookEvent(event) || !Array.isArray(entries)) continue
-    for (const entry of entries) {
+    if (!isHookEvent(event)) {
+      warn(`Unknown hook event "${event}" — entries skipped`)
+      continue
+    }
+    if (!Array.isArray(entries)) {
+      warn(`"${event}" must be an array of { command } entries — skipped`)
+      continue
+    }
+    entries.forEach((entry, index) => {
       // entry is an element of a parsed JSON array and can be null; the cast type
       // hides that, so the optional chain guards the genuine runtime case.
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const command = (entry as { command?: unknown })?.command
-      if (typeof command !== 'string' || !command.trim()) continue
+      if (typeof command !== 'string' || !command.trim()) {
+        warn(`"${event}" entry ${String(index + 1)} has a missing or empty "command" — skipped`)
+        return
+      }
       out.push({ event, command: command.trim(), cwd, source: path, scope })
-    }
+    })
   }
-  return out
+  return { hooks: out, warnings }
 }
 
 /**
- * Discover all hooks visible in the current context.
+ * Discover all hooks visible in the current context, with validation warnings.
  *
  * - User hooks (`~/.cursor/hooks.json`) are always discovered.
  * - Project hooks (`<root>/.cursor/hooks.json`) are only discovered when the workspace
  *   is trusted, because honouring them spawns scripts from a possibly-cloned repo.
  */
-async function discoverHooks(opts: {
+async function discoverHooksDetailed(opts: {
   workspaceRoot: string | null
   projectTrusted: boolean
-}): Promise<DiscoveredHook[]> {
-  const configs: Array<Promise<DiscoveredHook[]>> = [
+}): Promise<ParsedHooksConfig> {
+  const configs: Array<Promise<ParsedHooksConfig>> = [
     parseHooksConfig(userHooksConfigPath(), 'user'),
   ]
   if (opts.workspaceRoot && opts.projectTrusted) {
     configs.push(parseHooksConfig(projectHooksConfigPath(opts.workspaceRoot), 'project'))
   }
   const results = await Promise.all(configs)
-  return results.flat()
+  return {
+    hooks: results.flatMap((r) => r.hooks),
+    warnings: results.flatMap((r) => r.warnings),
+  }
+}
+
+/** The execution path only needs the usable hooks; warnings are a Sources concern. */
+async function discoverHooks(opts: {
+  workspaceRoot: string | null
+  projectTrusted: boolean
+}): Promise<DiscoveredHook[]> {
+  return (await discoverHooksDetailed(opts)).hooks
+}
+
+/**
+ * Runtime hook failures observed this session, keyed by command+event and recording
+ * only the *first* failure per hook (mirrors `warnedProjectHookCommands` below).
+ * Feeds the per-hook error indicator in Sources; never affects fail-open semantics.
+ */
+const sessionHookErrors = new Map<string, string>()
+
+function hookErrorKey(event: CursorHookEvent, command: string): string {
+  return `${event}\u0000${command}`
+}
+
+/** Record the first runtime failure of a hook this session (dedupe per hook). */
+function recordHookRunFailure(hook: DiscoveredHook, message: string): void {
+  const key = hookErrorKey(hook.event, hook.command)
+  if (sessionHookErrors.has(key)) return
+  sessionHookErrors.set(key, message)
+}
+
+/** Test-only: clear the per-session hook error state between cases. */
+export function resetCursorHookSessionErrorsForTest(): void {
+  sessionHookErrors.clear()
 }
 
 /** Diagnostics / Settings → Sources — discovered Cursor hooks, regardless of enablement. */
 export async function listCursorHooks(opts: {
   workspaceRoot: string | null
   projectTrusted: boolean
-}): Promise<CursorHookSummary[]> {
-  const hooks = await discoverHooks(opts)
-  return hooks.map(({ event, command, source, scope }) => ({ event, command, source, scope }))
+}): Promise<CursorHooksListResult> {
+  const { hooks, warnings } = await discoverHooksDetailed(opts)
+  return {
+    hooks: hooks.map(({ event, command, source, scope }) => {
+      const lastError = sessionHookErrors.get(hookErrorKey(event, command))
+      return {
+        event,
+        command,
+        source,
+        scope,
+        supported: isCursorPermissionHookEvent(event),
+        ...(lastError !== undefined ? { lastError } : {}),
+      }
+    }),
+    warnings,
+  }
 }
 
-/** Cursor hooks as the shared {@link HookSummary} shape used by `hooks:list`. */
-export async function listCursorHooksAsSummaries(opts: {
+/** Cursor hooks + warnings in the shared shape used by `hooks:list`. */
+export async function listCursorHooksForSources(opts: {
   workspaceRoot: string | null
   projectTrusted: boolean
-}): Promise<HookSummary[]> {
-  const hooks = await listCursorHooks(opts)
-  return hooks.map((h) => ({
-    family: 'cursor' as const,
-    event: h.event,
-    command: h.command,
-    source: h.source,
-    scope: h.scope,
-  }))
+}): Promise<HooksListResult> {
+  const { hooks, warnings } = await listCursorHooks(opts)
+  return {
+    hooks: hooks.map((h) => ({
+      family: 'cursor' as const,
+      event: h.event,
+      command: h.command,
+      source: h.source,
+      scope: h.scope,
+      supported: h.supported,
+      ...(h.lastError !== undefined ? { lastError: h.lastError } : {}),
+    })),
+    warnings: warnings.map((w) => ({
+      message: w.message,
+      source: w.source,
+      scope: w.scope,
+    })),
+  }
 }
 
 export type CursorHookPermission = 'allow' | 'deny' | 'ask'
@@ -166,19 +253,56 @@ function auditProjectHook(hook: DiscoveredHook): void {
   )
 }
 
+/**
+ * Everything observed about one spawned hook execution. `response` is what the
+ * permission reduction consumes; the rest feeds the always-on spine record
+ * (decision 6 of docs/plans/hooks-and-feature-packs.md).
+ */
+interface HookCommandExecution {
+  response: HookPermissionResponse | null
+  /** Raw captured streams (stored verbatim as thread blobs). */
+  stdout: string
+  stderr: string
+  /** Process exit code; null when killed (timeout / output cap) or spawn failed. */
+  exitCode: number | null
+  startedAt: number
+  durationMs: number
+  /**
+   * Whether stdout was successfully converted into a response. Empty stdout is
+   * an intentional no-response (`true`); non-empty non-JSON output — e.g. a
+   * debug print corrupting the response channel — is `false`.
+   */
+  parseOk: boolean
+}
+
+/** Cap captured stream sizes so a runaway hook can't exhaust memory. */
+const OUTPUT_CAP_BYTES = 1_000_000
+
 /** Spawn one hook, feed it the JSON payload on stdin, and parse its stdout JSON. */
 function runHookCommand(
   hook: DiscoveredHook,
   payload: unknown,
   signal?: AbortSignal,
-): Promise<HookPermissionResponse | null> {
+): Promise<HookCommandExecution> {
   return new Promise((resolve) => {
+    const startedAt = Date.now()
+    let stdout = ''
+    let stderr = ''
+    let exitCode: number | null = null
     let settled = false
-    const finish = (value: HookPermissionResponse | null): void => {
+    const finish = (response: HookPermissionResponse | null, parseOk: boolean): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve(value)
+      resolve({
+        response,
+        stdout,
+        stderr,
+        exitCode,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        parseOk,
+      })
     }
 
     auditProjectHook(hook)
@@ -190,41 +314,60 @@ function runHookCommand(
       cwd: hook.cwd,
       shell: true,
       env: envForRendererChildProcess(),
-      stdio: ['pipe', 'pipe', 'ignore'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       signal,
     })
 
+    // Each fail-open path below also records a first-failure-per-session error
+    // for the Sources panel (recordHookRunFailure); recording never affects the
+    // fail-open decision itself.
     const timer = setTimeout(() => {
+      recordHookRunFailure(hook, `timed out after ${String(HOOK_TIMEOUT_MS / 1000)}s`)
       child.kill('SIGKILL')
-      finish(null)
+      finish(null, false)
     }, HOOK_TIMEOUT_MS)
 
-    let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => {
       stdout += chunk.toString('utf-8')
-      // Cap captured output so a runaway hook can't exhaust memory.
-      if (stdout.length > 1_000_000) child.kill('SIGKILL')
+      // stdout is the response channel: a runaway response is fatal to the hook.
+      if (stdout.length > OUTPUT_CAP_BYTES) child.kill('SIGKILL')
+    })
+    // stderr is captured for the spine record (decision 6 — previously
+    // discarded via `'ignore'`). Overflow only truncates the capture; it never
+    // kills the hook, because stderr chatter carries no decision.
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (stderr.length <= OUTPUT_CAP_BYTES) stderr += chunk.toString('utf-8')
     })
     child.on('error', () => {
-      finish(null)
+      recordHookRunFailure(hook, 'failed to start')
+      finish(null, false)
     })
-    child.on('close', () => {
+    child.on('close', (code) => {
+      exitCode = code
       const text = stdout.trim()
       if (!text) {
-        finish(null)
+        // Empty stdout is an intentional no-response, not a parse failure. A
+        // non-zero exit with no output is still a crash worth surfacing (null =
+        // killed by signal; the timeout path records its own failure).
+        if (code !== 0 && code !== null) {
+          recordHookRunFailure(hook, `exited with code ${String(code)}`)
+        }
+        finish(null, true)
         return
       }
       try {
-        finish(JSON.parse(text) as HookPermissionResponse)
+        finish(JSON.parse(text) as HookPermissionResponse, true)
       } catch {
-        finish(null)
+        recordHookRunFailure(hook, 'printed invalid JSON — response ignored')
+        finish(null, false)
       }
     })
 
     try {
       child.stdin.end(JSON.stringify(payload))
     } catch {
-      finish(null)
+      recordHookRunFailure(hook, 'failed to start')
+      finish(null, false)
     }
   })
 }
@@ -253,12 +396,41 @@ export async function runPermissionHooks(
     workspace_roots: opts.workspaceRoot ? [opts.workspaceRoot] : [],
   }
 
-  const responses = await Promise.all(
+  const executions = await Promise.all(
     hooks.map((hook) => runHookCommand(hook, { ...base, ...payload }, opts.signal)),
   )
 
+  // Always-on spine recording (decision 6): one hook_run line per execution,
+  // with the raw stdout/stderr bytes as blobs. Attribution/persistence live in
+  // the recorder; a run with no attributable thread records nothing.
+  hooks.forEach((hook, i) => {
+    const execution = executions[i]
+    if (!execution) return
+    recordCommandHookRun({
+      event: hook.event,
+      hookId: hook.command,
+      startedAt: execution.startedAt,
+      durationMs: execution.durationMs,
+      exitCode: execution.exitCode,
+      parseOk: execution.parseOk,
+      decision: {
+        ...(execution.response?.permission !== undefined
+          ? { permission: execution.response.permission }
+          : {}),
+        ...(execution.response?.agentMessage !== undefined
+          ? { agentMessageChars: execution.response.agentMessage.length }
+          : {}),
+        ...(execution.response?.userMessage !== undefined
+          ? { userMessageChars: execution.response.userMessage.length }
+          : {}),
+      },
+      stdout: execution.stdout,
+      stderr: execution.stderr,
+    })
+  })
+
   let decision: CursorHookDecision = { permission: 'allow' }
-  for (const res of responses) {
+  for (const { response: res } of executions) {
     const permission = res?.permission
     if (permission === 'deny') {
       return {
