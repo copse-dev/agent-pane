@@ -412,6 +412,37 @@ export async function cursorAfterFileEditHooks(
     })
 }
 
+/**
+ * Discover the Cursor command hooks registered for `stop` (B3), as registry
+ * `CommandHook`s. Same discovery + trust + `failClosed` → `onFailure` mapping as
+ * {@link cursorToolGateHooks}; the turn-end / abort fire site (`stop.ts`)
+ * registers and fires them **detached** (decision 3, never awaited) through the
+ * shared registry → runner → adapter seam. Cursor's `stop` is notification-only,
+ * so `failClosed` has nothing to block post-hoc — but the flag still maps to
+ * `onFailure` for the spine + Sources error indicator uniformity.
+ */
+export async function cursorStopHooks(
+  _payload: HookEventPayloads['stop'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'stop'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'stop')
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'stop' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
 interface CursorHookResponse {
   permission?: HookDecision
   agentMessage?: string
@@ -616,6 +647,54 @@ export const cursorAdapter: DialectAdapter = {
     // the spine, but the fire site (after-file-edit.ts) never acts on it — the
     // edit has already landed. `failClosed` therefore has nothing to block here.
     const spineEvent = 'afterFileEdit'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalStopRequest(_hook, payload) {
+    // Cursor's stop stdin: the terminal `status` plus the standard agent-session
+    // envelope. B4 fills conversation/generation ids + model.
+    return {
+      conversation_id: '',
+      generation_id: '',
+      hook_event_name: 'stop',
+      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
+      status: payload.status,
+    }
+  },
+
+  interpretStop(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's stop is a notification: it carries only `status` and returns
+    // nothing (vendor docs). So stdout never yields a control-flow decision —
+    // the outcome is always null. We still surface a crash / timeout / non-zero
+    // exit as `failed` for the Sources per-hook error indicator and the spine,
+    // but the fire site (stop.ts) fires detached and never acts on it (decision
+    // 3, no drain barrier), so `failClosed` has nothing to block. Any
+    // `followup_message` a dialect might return is *not* parsed into an action
+    // here — follow-ups route through the pending-message queue (C2), never a
+    // bespoke stop protocol (decision 4).
+    const spineEvent = 'stop'
     const emptyDecision: SpineHookRunDecision = {}
     const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
 
