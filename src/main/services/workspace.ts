@@ -14,6 +14,22 @@ let workspaceRoot: string | null = (storageGet(WORKSPACE_KEY) as string | null |
 /** Roots the renderer may activate via `workspace:set` (dialog-opened or persisted projects). */
 const allowedWorkspaceRoots = new Set<string>()
 
+/** Resolves once persisted project roots are seeded at main-process startup. */
+let allowedWorkspaceRootsReady: Promise<void> = Promise.resolve()
+
+/**
+ * Kick off async seeding of persisted project roots during handler registration.
+ * `assertAllowedWorkspaceRoot` awaits this so an early `workspace:set` cannot
+ * race the fire-and-forget bootstrap.
+ */
+export function scheduleAllowedWorkspaceRootsBootstrap(bootstrap: () => Promise<void>): void {
+  allowedWorkspaceRootsReady = bootstrap()
+}
+
+async function awaitAllowedWorkspaceRootsReady(): Promise<void> {
+  await allowedWorkspaceRootsReady
+}
+
 /**
  * macOS seatbelt (ASRT) confines spawned shell/git tools to the workspace, but
  * `fs:*` IPC handlers read/write via node:fs in the unsandboxed main process.
@@ -54,6 +70,7 @@ export async function registerAllowedWorkspaceRoot(root: string): Promise<string
 }
 
 export async function assertAllowedWorkspaceRoot(root: string): Promise<string> {
+  await awaitAllowedWorkspaceRootsReady()
   const canonical = await canonicalWorkspaceRoot(root)
   if (!allowedWorkspaceRoots.has(canonical)) {
     throw new Error('Workspace root is not an allowed project folder')
@@ -64,6 +81,7 @@ export async function assertAllowedWorkspaceRoot(root: string): Promise<string> 
 /** @internal test helper */
 export function clearAllowedWorkspaceRootsForTest(): void {
   allowedWorkspaceRoots.clear()
+  allowedWorkspaceRootsReady = Promise.resolve()
 }
 
 export function getWorkspaceRoot(): string | null {
