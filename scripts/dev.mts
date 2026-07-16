@@ -86,7 +86,12 @@ const nodeOpts = {
   define,
 }
 
-const sharedAlias = { '@shared': new URL('../src/shared', import.meta.url).pathname }
+const sharedAlias = {
+  '@shared': new URL('../src/shared', import.meta.url).pathname,
+  '@copse/agent': new URL('../packages/agent/src', import.meta.url).pathname,
+  '@copse/llm': new URL('../packages/llm/src', import.meta.url).pathname,
+  '@copse/plan-usage': new URL('../packages/plan-usage/src', import.meta.url).pathname,
+}
 
 const onEndPlugin = (cb: () => void): esbuild.Plugin => ({
   name: 'on-end',

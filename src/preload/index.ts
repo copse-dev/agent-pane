@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => {
       const listener = (
@@ -92,6 +93,7 @@ contextBridge.exposeInMainWorld('api', {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          comparisonModels?: { a: string; b: string; judge: string }
         },
       ): void => {
         handler(req)
@@ -203,8 +205,12 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   approval: {
-    respond: (id: string, approved: boolean, remember?: boolean) =>
-      ipcRenderer.invoke('approval:respond', id, approved, remember),
+    respond: (
+      id: string,
+      approved: boolean,
+      remember?: boolean,
+      comparisonModels?: { a: string; b: string; judge: string },
+    ) => ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels),
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
@@ -422,6 +428,7 @@ contextBridge.exposeInMainWorld('api', {
     record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
       ipcRenderer.invoke('usage:record', input),
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
+    getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
