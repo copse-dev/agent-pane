@@ -106,6 +106,7 @@ interface ScalewayUpConfig extends ScalewayConfig, RunnerConfig {
   image: string
   securityGroupId: string | undefined
   type: string
+  volumeSizeGb: number
 }
 
 function usage(): string {

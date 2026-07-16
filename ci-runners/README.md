@@ -119,6 +119,9 @@ Scaleway sizing guidance:
   Scaleway stopped instances still cost for attached volumes/IPs, so prefer
   `down --yes` when the queue drains. The TTL is a backstop, not the primary
   cleanup path.
+- `--volume-size-gb` defaults to 80 (Scaleway SBS root). The default PLAY2 image
+  disk is too small for `docker compose build` + dep bake; omit the flag to get
+  80 GB, or raise it if builds still hit `no space left on device`.
 
 ## AWS burst hosts
 
