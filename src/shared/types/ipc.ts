@@ -29,7 +29,7 @@ export interface IpcInvokeMap {
   // Workspace
   'workspace:open': { args: []; result: string | null }
   'workspace:get': { args: []; result: string | null }
-  'workspace:set': { args: [root: string]; result: string }
+  'workspace:set': { args: [root: string, sshHost?: string]; result: string }
 
   // File system
   'fs:readFile': { args: [path: string]; result: string }

@@ -111,9 +111,9 @@ export function attachProjectThreadCache(store: AppStore): () => void {
   })
 }
 
-async function trySetWorkspace(api: ApiClient, path: string): Promise<boolean> {
+async function trySetWorkspace(api: ApiClient, path: string, sshHost?: string): Promise<boolean> {
   try {
-    await api.workspace.set(path)
+    await api.workspace.set(path, sshHost)
     return true
   } catch {
     return false
@@ -216,7 +216,7 @@ async function finishActivate(
     }
   }
 
-  if (!(await trySetWorkspace(api, path))) {
+  if (!(await trySetWorkspace(api, path, sshHost))) {
     if (gen !== switchGeneration) return
     if (sshHost) {
       abortProjectActivation(
@@ -405,7 +405,7 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
       return
     }
   }
-  if (!(await trySetWorkspace(api, proj.path))) {
+  if (!(await trySetWorkspace(api, proj.path, proj.sshHost))) {
     await dropMissingProject(store, api, id)
     const nextProjectId = store.getState().activeProjectId
     if (nextProjectId) {
