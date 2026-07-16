@@ -144,6 +144,23 @@ export interface ApiClient {
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
     ) => () => void
   }
+  sshWorkspace: {
+    listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    getStates: () => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    connect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    disconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    reconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    onConnectionChanged: (
+      handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
+    ) => () => void
+  }
   mcp: {
     list: () => Promise<McpServerStatus[]>
     reload: () => Promise<McpServerStatus[]>
