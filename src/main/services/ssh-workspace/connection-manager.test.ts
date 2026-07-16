@@ -69,14 +69,16 @@ describe('SshConnectionManager', () => {
     })
   })
 
-  it('surfaces connection errors', async () => {
+  it('surfaces connection errors and cleans up the transport', async () => {
     await withTestHost(async () => {
+      let disconnectCalls = 0
       setSshTransportFactory(() => ({
         isConnected: (): boolean => false,
         connect: async (): Promise<void> => {
           throw new Error('auth failed')
         },
         disconnect: async (): Promise<void> => {
+          disconnectCalls += 1
           await Promise.resolve()
         },
         execArgv: async (): Promise<{ stdout: string; stderr: string; code: number }> => ({
@@ -93,11 +95,44 @@ describe('SshConnectionManager', () => {
 
       const manager = new SshConnectionManager()
       await assert.rejects(() => manager.connect('dev-box'), /auth failed/)
+      assert.equal(disconnectCalls, 1)
       const failed = manager.listStates()
       assert.equal(failed.length, 1)
       const failedState = failed[0]
       assert.ok(failedState)
       assert.equal(failedState.status, 'error')
+    })
+  })
+
+  it('dedupes concurrent connect calls for the same host', async () => {
+    await withTestHost(async () => {
+      let connectCalls = 0
+      setSshTransportFactory(
+        () =>
+          new FakeSshTransport(
+            [
+              { when: /^uname -s$/, stdout: 'Linux\n' },
+              { when: /^uname -m$/, stdout: 'x86_64\n' },
+              { when: /printf %s "\$SHELL"/, stdout: '/bin/bash' },
+              { when: /command -v git$/, stdout: '/usr/bin/git\n' },
+              { when: /command -v rg$/, stdout: '/usr/bin/rg\n' },
+              { when: /command -v inotifywait$/, stdout: '/usr/bin/inotifywait\n' },
+            ],
+            {
+              onConnect: (): void => {
+                connectCalls += 1
+              },
+            },
+          ),
+      )
+
+      const manager = new SshConnectionManager()
+      const [first, second] = await Promise.all([
+        manager.connect('dev-box'),
+        manager.connect('dev-box'),
+      ])
+      assert.equal(first.host.id, second.host.id)
+      assert.equal(connectCalls, 1)
     })
   })
 })

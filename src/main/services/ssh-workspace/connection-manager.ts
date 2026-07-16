@@ -40,8 +40,17 @@ export function resetSshTransportFactory(): void {
 
 resetSshTransportFactory()
 
+async function disconnectTransportBestEffort(transport: SshTransport): Promise<void> {
+  try {
+    await transport.disconnect()
+  } catch {
+    // ignore cleanup failures
+  }
+}
+
 export class SshConnectionManager {
   private readonly connections = new Map<string, ManagedConnection>()
+  private readonly connectPromises = new Map<string, Promise<SshConnection>>()
   private readonly listeners = new Set<ConnectionListener>()
 
   onChange(listener: ConnectionListener): () => void {
@@ -78,8 +87,28 @@ export class SshConnectionManager {
   }
 
   async connect(hostId: string): Promise<SshConnection> {
+    const inFlight = this.connectPromises.get(hostId)
+    if (inFlight) return inFlight
+
     const existing = this.connections.get(hostId)
     if (existing?.status === 'connected') return wrapConnection(existing)
+
+    const promise = this.connectInternal(hostId, existing)
+    this.connectPromises.set(hostId, promise)
+    try {
+      return await promise
+    } finally {
+      this.connectPromises.delete(hostId)
+    }
+  }
+
+  private async connectInternal(
+    hostId: string,
+    existing: ManagedConnection | undefined,
+  ): Promise<SshConnection> {
+    if (existing && existing.status !== 'connected') {
+      await disconnectTransportBestEffort(existing.transport)
+    }
 
     const host = findConfiguredSshHost(hostId)
     if (!host) throw new Error(`Unknown SSH host: ${hostId}`)
@@ -104,6 +133,7 @@ export class SshConnectionManager {
       const message = err instanceof Error ? err.message : String(err)
       managed.status = 'error'
       managed.lastError = message
+      await disconnectTransportBestEffort(transport)
       this.emit()
       throw err instanceof Error ? err : new Error(message)
     }
