@@ -47,6 +47,19 @@ describe('SSH settings section', () => {
     await expect(hostRow).toBeDisplayed()
     assert.match(await hostRow.getText(), /Dev Server/)
 
+    const editBtn = await hostRow.$('.ssh-host-edit')
+    const removeBtn = await hostRow.$('.ssh-host-delete')
+    await expect(editBtn).toBeDisplayed()
+    await expect(removeBtn).toBeDisplayed()
+    // Guard the EditRemove jam: actions must be separate flex items with gap.
+    const editBox = await editBtn.getLocation()
+    const editSize = await editBtn.getSize()
+    const removeBox = await removeBtn.getLocation()
+    assert.ok(
+      removeBox.x >= editBox.x + editSize.width + 8,
+      `expected ≥8px between Edit and Remove, got remove.x=${String(removeBox.x)} edit.right=${String(editBox.x + editSize.width)}`,
+    )
+
     await enabledToggle.click()
     assert.equal(await enabledToggle.isSelected(), true)
 

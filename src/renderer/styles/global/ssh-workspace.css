@@ -141,28 +141,53 @@
 .ssh-host-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 8px 0;
+  gap: var(--spacing-sm);
+  margin: var(--spacing-sm) 0;
 }
 .ssh-host-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 10px;
   border: 1px solid var(--border);
-  border-radius: var(--radius, 4px);
+  border-radius: var(--radius);
+}
+.ssh-host-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ssh-host-row-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--spacing-md);
+}
+.ssh-host-row-actions button {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.ssh-host-row-actions button:hover {
+  background: var(--bg-hover);
+}
+.ssh-host-row-actions .ssh-host-delete {
+  color: var(--error);
 }
 .ssh-host-form {
   display: grid;
-  gap: 8px;
-  margin-top: 12px;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
 }
 .ssh-host-form label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--spacing-xs);
 }
 .ssh-import-config {
-  margin: 8px 0;
+  margin: var(--spacing-sm) 0;
 }
