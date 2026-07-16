@@ -26,6 +26,14 @@ import {
 
 export type { ExecutionTarget }
 
+/** Remote cd target: callers pass `opts.cwd`; fall back to the project remote root. */
+function sshRemoteWorkingDirectory(
+  target: Extract<ExecutionTarget, { kind: 'ssh' }>,
+  cwd: string,
+): string {
+  return cwd || target.remoteRoot
+}
+
 export function isProjectSandboxEnabled(): boolean {
   return isProjectSandboxActive() && SandboxManager.isSandboxingEnabled()
 }
@@ -109,7 +117,7 @@ export async function spawnInProjectSandbox(
     const command = shellCommand(executable, args)
     return spawnRemoteShellCommand(command, {
       hostId: target.hostId,
-      remoteRoot: target.remoteRoot,
+      remoteRoot: sshRemoteWorkingDirectory(target, opts.cwd),
       stdio: opts.stdio,
       ...(opts.env ? { env: opts.env } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
@@ -161,7 +169,7 @@ export async function spawnShellInProjectSandbox(
   if (isSshExecutionTarget(target)) {
     return spawnRemoteShellCommand(shellCommandLine, {
       hostId: target.hostId,
-      remoteRoot: target.remoteRoot,
+      remoteRoot: sshRemoteWorkingDirectory(target, opts.cwd),
       stdio: opts.stdio,
       ...(opts.env ? { env: opts.env } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
@@ -227,7 +235,7 @@ export async function spawnBackgroundProcess(
   if (isSshExecutionTarget(target)) {
     return spawnRemoteShellCommand(shellCommandLine, {
       hostId: target.hostId,
-      remoteRoot: target.remoteRoot,
+      remoteRoot: sshRemoteWorkingDirectory(target, opts.cwd),
       stdio: 'pipe',
       ...(opts.env ? { env: opts.env } : {}),
     })
@@ -320,7 +328,12 @@ export async function spawnPtyInProjectSandbox(
 ): Promise<IPty> {
   const target = resolveExecutionTarget(opts.executionTarget)
   if (isSshExecutionTarget(target)) {
-    const launch = await buildRemotePtyLaunch(target.hostId, target.remoteRoot, shell, opts.env)
+    const launch = await buildRemotePtyLaunch(
+      target.hostId,
+      sshRemoteWorkingDirectory(target, opts.cwd),
+      shell,
+      opts.env,
+    )
     const termEnv: NodeJS.ProcessEnv = {
       ...launch.env,
       TERM: 'xterm-256color',
