@@ -22,12 +22,26 @@ function componentLabel(component: 'fileIndex' | 'semantic'): string {
   return component === 'fileIndex' ? 'file index' : 'semantic code index'
 }
 
+function phaseLabel(phase: IndexComponentStatus['phase']): string {
+  // `unavailable` covers both "no gortex/vera binary" and SSH workspaces, which
+  // skip semantic indexing in v1 — avoid implying a missing install on remote roots.
+  if (phase === 'unavailable') return 'unavailable'
+  return phase
+}
+
 function describe(status: WorkspaceIndexStatus): string {
   const parts = (['fileIndex', 'semantic'] as const).map((key) => {
-    const { phase } = status[key]
-    return `${componentLabel(key)}: ${phase === 'unavailable' ? 'no backend installed' : phase}`
+    return `${componentLabel(key)}: ${phaseLabel(status[key].phase)}`
   })
   return `Workspace index — ${parts.join(', ')}`
+}
+
+/** Chip copy: distinguish a remote file-list build from a (local) semantic index. */
+function buildingChipText(status: WorkspaceIndexStatus, elapsedLabel: string): string {
+  const fileBuilding = status.fileIndex.phase === 'building'
+  const semanticBuilding = status.semantic.phase === 'building'
+  if (fileBuilding && !semanticBuilding) return `Building file index… ${elapsedLabel}`
+  return `Indexing… ${elapsedLabel}`
 }
 
 function oldestBuildStart(status: WorkspaceIndexStatus): number | null {
@@ -86,7 +100,7 @@ export function mountFooterIndexStatus(host: HTMLElement, api: ApiClient): { des
         return
       }
       chip.hidden = false
-      chip.textContent = `Indexing… ${formatElapsed(elapsed)}`
+      chip.textContent = buildingChipText(status, formatElapsed(elapsed))
       chip.dataset['state'] = 'building'
       chip.title = describe(status)
       return

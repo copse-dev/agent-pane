@@ -37,7 +37,7 @@ function thread(id: string, title = id): Thread {
 }
 
 function makeApi(handlers: {
-  workspaceSet?: (path: string) => Promise<string>
+  workspaceSet?: (path: string, sshHost?: string) => Promise<string>
   storageGet?: (key: string) => Promise<unknown>
   storageSet?: (key: string, value: unknown) => Promise<void>
   loadProjectThreads?: (projectId: string) => Promise<Thread[]>
@@ -214,6 +214,56 @@ test('a superseded project switch does not apply stale workspace state', async (
   assert.equal(store.getState().activeThreadId, 't-c')
   assert.ok(workspaceSets.includes('/c'))
   assert.equal(workspaceSets.at(-1), '/c')
+})
+
+test('switchProject passes sshHost through to workspace.set', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'local', path: '/local', name: 'Local' },
+      {
+        id: 'remote',
+        path: '/etc/ddg',
+        name: 'ddg',
+        sshHost: 'euw-serp-dev-testing16',
+      },
+    ],
+    activeProjectId: 'local',
+    expandedProjectId: 'local',
+    workspaceRoot: '/local',
+    threads: [thread('t-local')],
+  })
+
+  const sets: { path: string; sshHost?: string }[] = []
+  const api = makeApi({
+    workspaceSet: async (path, sshHost) => {
+      if (sshHost !== undefined) sets.push({ path, sshHost })
+      else sets.push({ path })
+      return path
+    },
+    loadProjectThreads: async () => [thread('t-remote')],
+  })
+  // SSH connect must succeed for activation to reach workspace.set.
+  Object.assign(api, {
+    settings: {
+      get: async (key: string): Promise<unknown> => (key === 'sshWorkspaceEnabled' ? true : null),
+    },
+    sshWorkspace: {
+      getStates: async () => [
+        {
+          hostId: 'euw-serp-dev-testing16',
+          status: 'connected',
+          label: 'dev',
+          target: 'dev',
+        },
+      ],
+      connect: async (): Promise<void> => undefined,
+    },
+  })
+
+  switchProject(store, api, 'remote')
+  await waitUntil(() => store.getState().activeProjectId === 'remote')
+  assert.deepEqual(sets.at(-1), { path: '/etc/ddg', sshHost: 'euw-serp-dev-testing16' })
 })
 
 test('restoreProject does not emit projects_changed before threads are loaded', async () => {

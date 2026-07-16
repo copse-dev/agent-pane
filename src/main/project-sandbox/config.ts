@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getSetting } from '../services/storage/settings.ts'
-import { getChatStoreRoot } from '../services/workspace.ts'
+import { getChatStoreRootSync } from '../services/workspace.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   sandboxAllowedDomainsFromOrigins,
@@ -367,7 +367,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // lives under $HOME, so `denyRead: [homedir()]` would block it without this
   // more-specific allow. NOT added to allowWrite — the sandbox denies chat-store
   // writes too, matching the workspace-only path guards.
-  const chatStore = getChatStoreRoot()
+  const chatStore = getChatStoreRootSync()
   const chatStoreRead = chatStore ? [chatStore, `${chatStore}/**`] : []
   return {
     // Auto-run, sandbox-contained commands get NO network (see

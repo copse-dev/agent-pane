@@ -93,6 +93,9 @@ For primary/secondary action buttons (Save / Cancel style):
 - Separate buttons with `gap: var(--spacing-md)`, not a tight `--spacing-sm`.
 - Keep an action bar clear of the window's bottom edge. Don't let buttons sit flush against the
   bottom; add generous bottom spacing (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`).
+- Inline row actions (Edit / Remove on a list row) need an explicit flex container with
+  `gap: var(--spacing-md)`. Without it, adjacent text buttons render as one jammed word
+  (`EditRemove`) — see `.ssh-host-row-actions` in `ssh-workspace.css`.
 
 ## Text selection: content is selectable, chrome is not
 
@@ -177,6 +180,31 @@ Fix (in [`conversation.css`](../src/renderer/styles/global/conversation.css)):
 
 Do not put `pre-wrap` back on the message container “for convenience”; it regresses every multi-block
 agent summary.
+
+## Remote folder breadcrumbs
+
+In the Open remote folder dialog, the root crumb's label is `/`. Do **not** also render a `/`
+separator after it — that paints `/ / usr` for `/usr`. Skip the separator when
+`segment.path === '/'` (`remotePathShowsSeparatorAfter` in
+[`remote-folder-path.ts`](../src/renderer/views/remote-folder-path.ts)). Specs:
+[`remote-folder-path.test.ts`](../src/renderer/views/remote-folder-path.test.ts),
+[`tests/e2e/remote-folder-breadcrumbs.e2e.ts`](../tests/e2e/remote-folder-breadcrumbs.e2e.ts).
+
+## SSH project sidebar labels
+
+SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
+Two remotes ending in the same leaf (e.g. `/etc/ddg` and `/home/ubuntu/ddg`) must stay
+visually distinct. Display re-derives from `project.path` so older basename-only stored
+names still render correctly (`projectDisplayName` in
+[`projects.ts`](../src/renderer/controller/projects.ts)).
+
+## SSH chrome — plain text, no decorative emoji
+
+The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.
+Status banners are text (+ actions) only — no ⚡/⚠ icons. Capability warnings come from the
+boolean flags once each (`inotifywait not found…`), never duplicated with probe `warnings[]`.
+Specs: [`ssh-status-banner.test.ts`](../src/renderer/views/ssh-status-banner.test.ts),
+[`tests/e2e/ssh-titlebar-target.e2e.ts`](../tests/e2e/ssh-titlebar-target.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval
 

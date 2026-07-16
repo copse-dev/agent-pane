@@ -62,7 +62,7 @@ export interface ApiClient {
   workspace: {
     open: () => Promise<string | null>
     get: () => Promise<string | null>
-    set: (root: string) => Promise<string>
+    set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     onOpened: (handler: (root: string) => void) => () => void
@@ -142,6 +142,28 @@ export interface ApiClient {
     respond: (id: string, value: string) => Promise<void>
     onRequest: (
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+    ) => () => void
+  }
+  sshWorkspace: {
+    listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    getStates: () => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    connect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    disconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    reconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    listDirectory: (
+      hostId: string,
+      dirPath: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshRemoteDirEntry[]>
+    registerRoot: (hostId: string, dirPath: string) => Promise<string>
+    onConnectionChanged: (
+      handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
     ) => () => void
   }
   mcp: {

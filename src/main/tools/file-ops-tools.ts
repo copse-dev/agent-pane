@@ -1,8 +1,8 @@
-import * as fsp from 'node:fs/promises'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
 import { resolveWorkspacePath } from '../services/workspace.ts'
+import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { stageFileOp } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
 
@@ -14,10 +14,10 @@ export const deleteFileTool = defineTool({
     path: z.string().describe('File path relative to workspace root'),
   }),
   async execute({ path }) {
-    const absPath = resolveWorkspacePath(path)
+    const absPath = await resolveWorkspacePath(path)
     let before: string
     try {
-      before = await fsp.readFile(absPath, 'utf-8')
+      before = await getActiveWorkspaceFs().readFile(absPath, 'utf-8')
     } catch {
       return `File not found: ${path}`
     }
@@ -45,17 +45,17 @@ export const renameFileTool = defineTool({
   }),
   async execute({ from, to }) {
     if (from === to) return 'Source and destination are the same path.'
-    const fromAbs = resolveWorkspacePath(from)
+    const fromAbs = await resolveWorkspacePath(from)
     // Validate destination resolves inside the workspace before staging.
-    resolveWorkspacePath(to)
+    await resolveWorkspacePath(to)
     let before: string
     try {
-      before = await fsp.readFile(fromAbs, 'utf-8')
+      before = await getActiveWorkspaceFs().readFile(fromAbs, 'utf-8')
     } catch {
       return `File not found: ${from}`
     }
     try {
-      await fsp.access(resolveWorkspacePath(to))
+      await getActiveWorkspaceFs().access(await resolveWorkspacePath(to))
       return `Destination already exists: ${to}`
     } catch {
       /* destination is free */
@@ -79,9 +79,9 @@ export const makeDirectoryTool = defineTool({
     path: z.string().describe('Directory path relative to workspace root'),
   }),
   async execute({ path }) {
-    const absPath = resolveWorkspacePath(path)
+    const absPath = await resolveWorkspacePath(path)
     try {
-      const stat = await fsp.stat(absPath)
+      const stat = await getActiveWorkspaceFs().stat(absPath)
       if (stat.isDirectory()) return `Directory already exists: ${path}`
       return `Path already exists and is not a directory: ${path}`
     } catch {

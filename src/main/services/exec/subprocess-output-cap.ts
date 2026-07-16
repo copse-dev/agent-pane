@@ -6,6 +6,15 @@ export const COMMAND_OUTPUT_TRUNCATED_MARKER = '\n[output truncated]\n'
 /** Default timeout for internal git/rg/gh subprocesses (pager-safe). */
 export const COMMAND_RUNNER_DEFAULT_TIMEOUT_MS = 30_000
 
+/**
+ * Workspace file-path listing (`rg --files` / `find`). Local trees finish quickly;
+ * SSH + ProxyCommand hosts often need minutes on a large tree.
+ */
+export const FILE_INDEX_LIST_TIMEOUT_MS = 5 * 60 * 1000
+
+/** Path lists for large repos exceed the default 100 KiB command cap. */
+export const FILE_INDEX_LIST_MAX_BYTES = 8 * 1024 * 1024
+
 /** Long-running indexer / probe commands opt into this explicitly. */
 export const COMMAND_RUNNER_LONG_TIMEOUT_MS = 3_600_000
 
