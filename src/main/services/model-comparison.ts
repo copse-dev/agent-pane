@@ -93,6 +93,11 @@ export function billableComparisonModels(
   return [...seen]
 }
 
+/** Short intro for the comparison approval when the renderer shows model pickers. */
+export function comparisonApprovalPickerIntro(): string {
+  return 'Each reviewer independently reads the working diff; a judge compares their verdicts.'
+}
+
 /** Human-readable body for the "spend money on a comparison?" approval prompt. */
 export function comparisonApprovalBody(
   models: ComparisonModels,

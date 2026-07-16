@@ -77,6 +77,24 @@ export const HOOK_EVENT_SPECS: Record<HookEventName, HookEventSpec> = {
 }
 
 /**
+ * What the registry reports to the host about one function-hook execution
+ * (decision 6 spine recording). The registry knows the event, the hook, the
+ * timing, and the outcome; the *host* owns attribution (thread/turn/step) and
+ * persistence — this record deliberately carries none of that, which is what
+ * keeps `packages/agent` free of any persistence import.
+ */
+export interface HookRunRecord {
+  event: HookEventName
+  hookId: string
+  startedAt: number
+  durationMs: number
+  /** The outcome the hook returned; null when it abstained or threw. */
+  outcome: BlockingHookOutcome | null
+  /** Set when the hook threw. Fail-hard semantics still apply — recording happens first. */
+  error?: string
+}
+
+/**
  * Cross-cutting services and signals a hook receives alongside its event
  * payload. First-party (function) hooks receive app services *here*, never by
  * importing them — that is what keeps `packages/agent` Electron-free
@@ -92,6 +110,14 @@ export interface HookContext {
    * imports the app's git service.
    */
   resolveGithubRepoSlug?: () => Promise<string | null>
+  /**
+   * Spine-recording sink (decision 6, always-on when the host provides it).
+   * Called once per hook execution, including executions that throw. Injected
+   * by the app — the registry never imports persistence. Must be treated as
+   * fire-and-forget observability: the registry swallows sink errors so
+   * recording can never change loop behavior.
+   */
+  recordHookRun?: (record: HookRunRecord) => void
 }
 
 type MaybePromise<T> = T | Promise<T>
