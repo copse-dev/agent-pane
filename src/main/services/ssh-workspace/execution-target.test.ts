@@ -85,6 +85,29 @@ describe('getActiveExecutionTarget', () => {
     })
   })
 
+  it('still returns ssh when workspace root is unset but the active project is remote', () => {
+    setWorkspaceRootForTest(null)
+    assert.deepEqual(getActiveExecutionTarget(), {
+      kind: 'ssh',
+      hostId: 'dev',
+      remoteRoot: '/remote/project',
+    })
+  })
+
+  it('recovers ssh host from workspace root when activeProjectId lacks sshHost', () => {
+    storageSet('activeProjectId', 'stale')
+    storageSet('projects', [
+      { id: 'stale', path: '/local/old', name: 'Old' },
+      { id: 'p1', path: '/etc/ddg', name: 'ddg', sshHost: 'dev' },
+    ])
+    setWorkspaceRootForTest('/etc/ddg')
+    assert.deepEqual(getActiveExecutionTarget(), {
+      kind: 'ssh',
+      hostId: 'dev',
+      remoteRoot: '/etc/ddg',
+    })
+  })
+
   it('returns local when execution is disabled for a local project', async () => {
     await setSetting('sshWorkspaceEnabled', false)
     storageSet('projects', [{ id: 'p1', path: '/local/project' }])
