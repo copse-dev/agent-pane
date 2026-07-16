@@ -79,38 +79,39 @@ Cost-first general e2e burst:
 ```bash
 GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
   npm run runners:burst:scw -- up \
-    --zone fr-par-1 \
     --instances 6 \
     --scw-type PLAY2-MICRO \
     --runners-per-instance 1 \
     --ttl-minutes 240
 ```
 
-More memory headroom:
+More memory headroom (omit `--zone` to auto-pick an AZ with quota):
 
 ```bash
 GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
   npm run runners:burst:scw -- up \
-    --zone fr-par-1 \
     --instances 3 \
-    --scw-type PRO2-XS \
+    --scw-type BASIC3-X4C-16G \
     --runners-per-instance 2 \
     --ttl-minutes 240
 ```
 
-Useful follow-ups:
+Useful follow-ups (`status`/`down` scan all AZs unless `--zone` is set):
 
 ```bash
-npm run runners:burst:scw -- status --zone fr-par-1
-npm run runners:burst:scw -- down --zone fr-par-1 --yes --wait
+npm run runners:burst:scw -- status
+npm run runners:burst:scw -- down --yes --wait
 ```
 
 Scaleway sizing guidance:
 
+- Omit `--zone` on `up` to try Paris → Amsterdam → Warsaw → Milan AZs until
+  one has capacity for the full `--instances` count (Scaleway quotas are
+  per-AZ). Pass `--zone` to pin. `status`/`down` without `--zone` scan all.
 - `PLAY2-MICRO` (4 vCPU / 8 GiB) with one runner is the cheapest general
   e2e/check shape and is roughly one third the hourly cost of AWS `c7i.xlarge`.
-- `PRO2-XS` (4 vCPU / 16 GiB) can run one very roomy runner or two denser
-  runners. Use it if Electron still shows memory/session pressure on PLAY2.
+- `BASIC3-X4C-16G` / `PRO2-XS` (4 vCPU / 16 GiB) can run two denser runners.
+  Prefer BASIC3 when PRO2-XS AZ quotas are exhausted.
 - `DEV1-L` is slightly cheaper than PLAY2-MICRO with the same nominal CPU/RAM,
   but PLAY2 is the newer x86 line and the safer default for burst CI.
 - For check-only bursts, smaller 2 vCPU / 4 GiB types can be cost-effective, but
