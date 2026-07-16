@@ -528,11 +528,7 @@ function claudePreToolUseForTool(
 }
 
 /** Record non-allow hook verdicts to the durable decision log (#656). */
-function recordHookDecision(
-  toolName: string,
-  decision: CursorHookDecision,
-  source: string,
-): void {
+function recordHookDecision(toolName: string, decision: CursorHookDecision, source: string): void {
   if (decision.permission === 'allow') return
   recordDecision({
     kind: 'hook',
