@@ -324,7 +324,7 @@ maxBytes})`, `execPty(...)`, and `sftp()` handles; watches liveness and
   mount, same pattern as the Remote-agents fieldset at :316); host CRUD,
   strict-host-key toggle, agent-forwarding opt-in, passphrase storage using
   the existing key-host mount pattern.
-- **Status surfaces**: footer indicator `⚡ user@host`, disconnect banner
+- **Status surfaces**: titlebar `user@host`, disconnect banner
   with reconnect action, and capability warnings (no rg / no watch).
 - **External editors** (`editors/editor-launcher.ts:55`): opening a local
   editor on a remote path is meaningless; either hide the affordance for SSH

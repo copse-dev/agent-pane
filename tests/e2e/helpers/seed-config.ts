@@ -217,11 +217,19 @@ export function seedEmptyProject(
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     okfMemoriesEnabled?: boolean
+    /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
+    sshHost?: string
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
+  const project: Record<string, unknown> = {
+    id: projectId,
+    path: workspaceRoot,
+    name: 'workspace',
+  }
+  if (options?.sshHost) project.sshHost = options.sshHost
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    projects: [project],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   })

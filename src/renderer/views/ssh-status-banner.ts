@@ -52,7 +52,6 @@ export function mountSshStatusBanner(store: AppStore, api: ApiClient): SshStatus
     hostEl = el(
       'div',
       { id: BANNER_ID, class: 'ssh-status-banner', role: 'status' },
-      el('span', { class: 'ssh-status-icon', 'aria-hidden': 'true' }, '⚡'),
       el('span', { class: 'ssh-status-text' }, message),
       el('span', { class: 'ssh-status-actions' }, reconnectBtn, settingsBtn),
     )

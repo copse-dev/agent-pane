@@ -240,7 +240,7 @@ export function mountTitlebar(root: HTMLElement, store: AppStore, api: ApiClient
         }
         const target = host.user ? `${host.user}@${host.host}` : host.host
         sshTarget.hidden = false
-        sshTarget.textContent = `⚡ ${target}`
+        sshTarget.textContent = target
         sshTarget.title = `SSH workspace on ${target}`
       })
     } else {
