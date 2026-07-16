@@ -123,10 +123,11 @@ describe('portrait panel controls row', () => {
       }
     })
     expect(layout.barTop).toBeGreaterThanOrEqual(layout.footerBottom - 1)
-    // Same band as Settings — shared `--chrome-action-band-height`.
-    expect(Math.abs(layout.barHeight - layout.settingsHeight)).toBeLessThanOrEqual(1)
-    expect(Math.abs(layout.barTop - layout.settingsTop)).toBeLessThanOrEqual(1)
-    expect(Math.abs(layout.barBottom - layout.settingsBottom)).toBeLessThanOrEqual(1)
+    // Same band as Settings — shared `--chrome-action-band-height`. Tops,
+    // bottoms, and heights must agree so the separator line is continuous.
+    expect(layout.barHeight).toBe(layout.settingsHeight)
+    expect(layout.barTop).toBe(layout.settingsTop)
+    expect(layout.barBottom).toBe(layout.settingsBottom)
 
     // Narrow the projects pane so the full labeled set (incl. Memories/Roadmap)
     // fits in the chat column for reference screenshots.
@@ -138,6 +139,23 @@ describe('portrait panel controls row', () => {
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-chrome.png'))
+    // Crop the Settings | panel-bar seam so height alignment is reviewable.
+    await browser.execute(() => {
+      const settings = document.querySelector('.projects-settings-btn')
+      const bar = document.querySelector('.portrait-panel-bar')
+      if (!settings || !bar) throw new Error('missing settings or portrait bar')
+      const top =
+        Math.min(settings.getBoundingClientRect().top, bar.getBoundingClientRect().top) - 8
+      const host = document.createElement('div')
+      host.id = 'e2e-portrait-seam'
+      host.style.cssText = `position:fixed;left:0;right:0;top:${String(top)}px;bottom:0;z-index:9999;pointer-events:none;`
+      document.body.append(host)
+    })
+    await savePortraitElementScreenshot(
+      '#e2e-portrait-seam',
+      'portrait-panel-controls-settings-seam.png',
+    )
+    await browser.execute(() => document.getElementById('e2e-portrait-seam')?.remove())
     await savePortraitElementScreenshot('#titlebar', 'portrait-panel-controls-titlebar.png')
     await savePortraitElementScreenshot('#input-bar', 'portrait-panel-controls-footer-row.png')
     await savePortraitElementScreenshot(
