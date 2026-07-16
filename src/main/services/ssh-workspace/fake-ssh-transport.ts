@@ -8,14 +8,21 @@ interface FakeExecScript {
   code?: number
 }
 
+interface FakeSshTransportHooks {
+  onConnect?: () => void
+  onDisconnect?: () => void
+}
+
 /** In-memory SSH transport for unit tests. */
 export class FakeSshTransport implements SshTransport {
   private connected = false
   readonly calls: { kind: 'argv' | 'shell'; command: string; options?: SshExecOptions }[] = []
   private readonly scripts: FakeExecScript[]
+  private readonly hooks: FakeSshTransportHooks
 
-  constructor(scripts: FakeExecScript[] = []) {
+  constructor(scripts: FakeExecScript[] = [], hooks: FakeSshTransportHooks = {}) {
     this.scripts = scripts
+    this.hooks = hooks
   }
 
   isConnected(): boolean {
@@ -24,11 +31,13 @@ export class FakeSshTransport implements SshTransport {
 
   async connect(): Promise<void> {
     this.connected = true
+    this.hooks.onConnect?.()
     await Promise.resolve()
   }
 
   async disconnect(): Promise<void> {
     this.connected = false
+    this.hooks.onDisconnect?.()
     await Promise.resolve()
   }
 
