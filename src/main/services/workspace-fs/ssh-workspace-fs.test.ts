@@ -6,17 +6,27 @@ import {
   getSshConnectionManager,
   setSshTransportFactory,
 } from '../ssh-workspace/connection-manager.ts'
-import { storageSet } from '../storage/storage.ts'
+import { getSetting, setSetting } from '../storage/settings.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { clearSshWorkspaceFsCacheForTest, SshWorkspaceFs } from './ssh-workspace-fs.ts'
+import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
+
+const TEST_HOST: SshWorkspaceHost = {
+  id: 'dev',
+  label: 'Dev',
+  host: 'dev.example',
+  user: 'me',
+}
 
 describe('SshWorkspaceFs', () => {
   let cleanupRoot: (() => void) | undefined
+  let previousHosts: SshWorkspaceHost[]
 
-  beforeEach(() => {
+  beforeEach(async () => {
     resetSshConnectionManagerForTests()
     clearSshWorkspaceFsCacheForTest()
-    storageSet('sshWorkspaceHosts', [{ id: 'dev', label: 'Dev', host: 'dev.example', user: 'me' }])
+    previousHosts = getSetting<SshWorkspaceHost[]>('sshWorkspaceHosts', [])
+    await setSetting('sshWorkspaceHosts', [TEST_HOST])
     setSshTransportFactory(
       () =>
         new FakeSshTransport([
@@ -31,10 +41,11 @@ describe('SshWorkspaceFs', () => {
     cleanupRoot = setWorkspaceRootForTest('/home/me/project')
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupRoot?.()
     resetSshConnectionManagerForTests()
     clearSshWorkspaceFsCacheForTest()
+    await setSetting('sshWorkspaceHosts', previousHosts)
   })
 
   it('reads a file over SSH exec', async () => {
