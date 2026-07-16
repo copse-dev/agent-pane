@@ -8,10 +8,11 @@
  * service. `down` terminates instances by tags so burst capacity is easy to
  * remove when the GitHub Actions queue drains.
  */
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Readable, Writable } from 'node:stream'
 
 const AWS_REGION_ENV = 'AWS_REGION'
 const DEFAULT_AMI_SSM_PARAMETER =
@@ -156,6 +157,7 @@ Common options:
   --volume-size-gb <n>          Root volume size in GB for AWS EBS / Scaleway SBS (default: ${String(DEFAULT_VOLUME_SIZE_GB)}).
   --ssh-host public|private     Which instance IP to SSH to (default: public).
   --no-wait                    Do not wait for EC2 status checks before SSH provisioning.
+  --serial                     Provision hosts one at a time (default: provision in parallel).
 
 Example:
   GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \\
@@ -332,6 +334,71 @@ function run(binary: string, args: string[], input?: string | Buffer): void {
       `${binary} ${args.join(' ')} failed with exit code ${String(result.status ?? 'unknown')}`,
     )
   }
+}
+
+function pipeWithPrefix(prefix: string, source: Readable, dest: Writable): void {
+  let pending = ''
+  source.on('data', (chunk: string | Buffer) => {
+    pending += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    const lines = pending.split('\n')
+    pending = lines.pop() ?? ''
+    for (const line of lines) dest.write(`${prefix}${line}\n`)
+  })
+  source.on('end', () => {
+    if (pending.length > 0) dest.write(`${prefix}${pending}\n`)
+  })
+}
+
+function runAsync(
+  binary: string,
+  args: string[],
+  options: { input?: string | Buffer; prefix?: string } = {},
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    const prefix = options.prefix ?? ''
+    if (child.stdout) pipeWithPrefix(prefix, child.stdout, process.stdout)
+    if (child.stderr) pipeWithPrefix(prefix, child.stderr, process.stderr)
+    child.stdin?.end(options.input ?? Buffer.alloc(0))
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) resolve()
+      else {
+        reject(
+          new Error(
+            `${binary} ${args.join(' ')} failed with exit code ${String(code ?? 'unknown')}`,
+          ),
+        )
+      }
+    })
+  })
+}
+
+function sleepAsync(seconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, seconds * 1000)
+  })
+}
+
+function captureAsync(
+  binary: string,
+  args: string[],
+): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.on('data', (chunk: string | Buffer) => {
+      stdout += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    })
+    child.stderr?.on('data', (chunk: string | Buffer) => {
+      stderr += typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    })
+    child.on('error', reject)
+    child.on('close', (status) => {
+      resolve({ status, stdout, stderr })
+    })
+  })
 }
 
 function resolveAmiId(config: AwsConfig, options: Options): string {
@@ -713,11 +780,18 @@ function scalewayServerFromRecord(server: Record<string, unknown>): CloudHost {
   }
 }
 
-function waitForScalewayServers(config: ScalewayUpConfig, serverIds: string[]): void {
-  for (const id of serverIds) {
-    console.log(`==> Waiting for Scaleway server ${id}`)
-    run('scw', scalewayArgs(config, ['instance', 'server', 'wait', id]))
-  }
+async function waitForScalewayServers(
+  config: ScalewayUpConfig,
+  serverIds: string[],
+): Promise<void> {
+  await Promise.all(
+    serverIds.map(async (id) => {
+      console.log(`==> Waiting for Scaleway server ${id}`)
+      await runAsync('scw', scalewayArgs(config, ['instance', 'server', 'wait', id]), {
+        prefix: `[${id}] `,
+      })
+    }),
+  )
 }
 
 function getScalewayServers(config: ScalewayConfig, serverIds: string[]): CloudHost[] {
@@ -780,17 +854,20 @@ function sshBaseArgs(config: RunnerConfig, host: CloudHost): string[] {
   return [...sshCommonArgs(config, 15), sshTarget(config, host)]
 }
 
-function sshRun(
+function hostPrefix(host: CloudHost): string {
+  return `[${host.providerId}] `
+}
+
+function sshRunAsync(
   config: RunnerConfig,
   host: CloudHost,
   script: string,
   input?: string | Buffer,
-): void {
-  run('ssh', [...sshBaseArgs(config, host), 'bash', '-lc', shellQuote(script)], input)
-}
-
-function sleepSeconds(seconds: number): void {
-  spawnSync('sleep', [String(seconds)], { stdio: 'ignore' })
+): Promise<void> {
+  return runAsync('ssh', [...sshBaseArgs(config, host), 'bash', '-lc', shellQuote(script)], {
+    ...(input === undefined ? {} : { input }),
+    prefix: hostPrefix(host),
+  })
 }
 
 function sshProbeError(stderr: string): string {
@@ -818,30 +895,28 @@ function isFatalSshProbeError(stderr: string): boolean {
   )
 }
 
-function waitForSsh(config: RunnerConfig, host: CloudHost): void {
+async function waitForSsh(config: RunnerConfig, host: CloudHost): Promise<void> {
   const target = sshTarget(config, host)
+  const prefix = hostPrefix(host)
   const deadline = Date.now() + SSH_READY_TIMEOUT_MS
   let attempt = 0
-  console.log(`==> Waiting for SSH on ${target}`)
+  console.log(`${prefix}==> Waiting for SSH on ${target}`)
   while (Date.now() < deadline) {
     attempt += 1
-    const result = spawnSync('ssh', [...sshCommonArgs(config, 5), target, 'true'], {
-      encoding: 'utf8',
-    })
+    const result = await captureAsync('ssh', [...sshCommonArgs(config, 5), target, 'true'])
     if (result.status === 0) return
-    const stderr = typeof result.stderr === 'string' ? result.stderr : String(result.stderr ?? '')
-    const detail = sshProbeError(stderr)
-    if (isFatalSshProbeError(stderr)) {
-      die(
+    const detail = sshProbeError(result.stderr)
+    if (isFatalSshProbeError(result.stderr)) {
+      throw new Error(
         `SSH to ${target} failed: ${detail}. For Scaleway, the project SSH public key must match this private key (pass --key-path).`,
       )
     }
     if (attempt === 1 || attempt % 6 === 0) {
-      console.log(`==> SSH not ready yet (${detail}); retrying…`)
+      console.log(`${prefix}==> SSH not ready yet (${detail}); retrying…`)
     }
-    sleepSeconds(SSH_READY_POLL_SECONDS)
+    await sleepAsync(SSH_READY_POLL_SECONDS)
   }
-  die(
+  throw new Error(
     `SSH to ${target} did not become ready within ${String(SSH_READY_TIMEOUT_MS / 60_000)} minutes. Connection refused usually means sshd is still starting; a timeout often means the Scaleway security group is dropping TCP/22.`,
   )
 }
@@ -860,23 +935,40 @@ function remoteEnv(config: RunnerConfig): string {
   ].join('\n')
 }
 
-function uploadRunnerDir(config: RunnerConfig, host: CloudHost): void {
-  const archive = execFileSync('tar', ['-C', 'ci-runners', '-czf', '-', '.'], {
+function buildRunnerArchive(): Buffer {
+  return execFileSync('tar', ['-C', 'ci-runners', '-czf', '-', '.'], {
     maxBuffer: 50 * 1024 * 1024,
   })
-  sshRun(
+}
+
+async function uploadRunnerDir(
+  config: RunnerConfig,
+  host: CloudHost,
+  archive: Buffer,
+): Promise<void> {
+  await sshRunAsync(
     config,
     host,
     'rm -rf ~/ci-runners && mkdir -p ~/ci-runners && tar -xzf - -C ~/ci-runners',
     archive,
   )
-  sshRun(config, host, 'cat > ~/ci-runners/.env && chmod 600 ~/ci-runners/.env', remoteEnv(config))
+  await sshRunAsync(
+    config,
+    host,
+    'cat > ~/ci-runners/.env && chmod 600 ~/ci-runners/.env',
+    remoteEnv(config),
+  )
 }
 
-function provisionHost(config: RunnerConfig, host: CloudHost): void {
-  console.log(`==> Provisioning ${host.providerId} (${sshTarget(config, host)})`)
-  waitForSsh(config, host)
-  sshRun(
+async function provisionHost(
+  config: RunnerConfig,
+  host: CloudHost,
+  archive: Buffer,
+): Promise<void> {
+  const prefix = hostPrefix(host)
+  console.log(`${prefix}==> Provisioning (${sshTarget(config, host)})`)
+  await waitForSsh(config, host)
+  await sshRunAsync(
     config,
     host,
     [
@@ -886,8 +978,8 @@ function provisionHost(config: RunnerConfig, host: CloudHost): void {
       'sudo docker compose version',
     ].join(' && '),
   )
-  uploadRunnerDir(config, host)
-  sshRun(
+  await uploadRunnerDir(config, host, archive)
+  await sshRunAsync(
     config,
     host,
     [
@@ -908,6 +1000,37 @@ function provisionHost(config: RunnerConfig, host: CloudHost): void {
       )}`,
     ].join(' && '),
   )
+  console.log(`${prefix}==> Provisioned`)
+}
+
+async function provisionHosts(
+  config: RunnerConfig,
+  hosts: CloudHost[],
+  serial: boolean,
+): Promise<void> {
+  if (hosts.length === 0) return
+  const archive = buildRunnerArchive()
+  if (serial || hosts.length === 1) {
+    for (const host of hosts) await provisionHost(config, host, archive)
+    return
+  }
+  console.log(
+    `==> Provisioning ${String(hosts.length)} hosts in parallel (pass --serial for one-at-a-time)`,
+  )
+  const results = await Promise.allSettled(
+    hosts.map((host) => provisionHost(config, host, archive)),
+  )
+  const failures: string[] = []
+  for (const [index, result] of results.entries()) {
+    if (result.status === 'rejected') {
+      const host = hosts[index]
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      failures.push(`${host?.providerId ?? String(index)}: ${reason}`)
+    }
+  }
+  if (failures.length > 0) {
+    die(`provision failed on ${String(failures.length)} host(s):\n${failures.join('\n')}`)
+  }
 }
 
 function printHosts(hosts: CloudHost[]): void {
@@ -929,7 +1052,7 @@ function printHosts(hosts: CloudHost[]): void {
   }
 }
 
-function awsUp(options: Options): void {
+async function awsUp(options: Options): Promise<void> {
   requireTool('aws')
   requireTool('ssh', ['-V'])
   requireTool('tar')
@@ -942,7 +1065,7 @@ function awsUp(options: Options): void {
   if (config.wait) waitForInstances(config, ids)
   const hosts = describeInstances(config, ids).map(awsHost)
   printHosts(hosts)
-  for (const host of hosts) provisionHost(config, host)
+  await provisionHosts(config, hosts, hasFlag(options, 'serial'))
   console.log(
     '==> Burst runners are starting. Watch GitHub Actions runners or use: npm run runners:burst -- status',
   )
@@ -973,7 +1096,7 @@ function awsDown(options: Options): void {
   }
 }
 
-function scalewayUp(options: Options): void {
+async function scalewayUp(options: Options): Promise<void> {
   requireScalewayTool()
   requireTool('ssh', ['-V'])
   requireTool('tar')
@@ -983,10 +1106,10 @@ function scalewayUp(options: Options): void {
   )
   const ids = launchScalewayServers(config)
   console.log(`==> Launched: ${ids.join(', ')}`)
-  if (config.wait) waitForScalewayServers(config, ids)
+  if (config.wait) await waitForScalewayServers(config, ids)
   const hosts = getScalewayServers(config, ids)
   printHosts(hosts)
-  for (const host of hosts) provisionHost(config, host)
+  await provisionHosts(config, hosts, hasFlag(options, 'serial'))
   console.log(
     '==> Scaleway burst runners are starting. Watch GitHub Actions runners or use: npm run runners:burst:scw -- status',
   )
@@ -1021,19 +1144,19 @@ function scalewayDown(options: Options): void {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const { command, options, provider } = parseArgs(process.argv)
   try {
     if (command === 'help') {
       console.log(usage())
     } else if (provider === 'scaleway' && command === 'up') {
-      scalewayUp(options)
+      await scalewayUp(options)
     } else if (provider === 'scaleway' && command === 'status') {
       scalewayStatus(options)
     } else if (provider === 'scaleway') {
       scalewayDown(options)
     } else if (command === 'up') {
-      awsUp(options)
+      await awsUp(options)
     } else if (command === 'status') {
       awsStatus(options)
     } else {
@@ -1045,4 +1168,4 @@ function main(): void {
   }
 }
 
-main()
+void main()

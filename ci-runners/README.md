@@ -122,6 +122,8 @@ Scaleway sizing guidance:
 - `--volume-size-gb` defaults to 80 (Scaleway SBS root). The default PLAY2 image
   disk is too small for `docker compose build` + dep bake; omit the flag to get
   80 GB, or raise it if builds still hit `no space left on device`.
+- With `--instances N` (N>1), hosts are provisioned **in parallel** after create
+  (SSH wait + Docker build). Pass `--serial` for one-at-a-time logs.
 
 ## AWS burst hosts
 
@@ -179,6 +181,8 @@ Cost/packing guidance:
   hosts, but duplicate Docker builds, EBS volumes, and setup. One very large
   host has coarser scale-down and larger single-host blast radius. Prefer a few
   medium hosts that each pack whole runners safely.
+- With `--instances N` (N>1), hosts are provisioned **in parallel** after create.
+  Pass `--serial` for one-at-a-time logs.
 - `--ttl-minutes` defaults to 240. Instances launch with
   `instance-initiated-shutdown-behavior=terminate`, so the scheduled shutdown
   auto-terminates forgotten burst capacity. Pass `--ttl-minutes 0` only when you
