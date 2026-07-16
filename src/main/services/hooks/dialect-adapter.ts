@@ -75,6 +75,26 @@ export interface DialectAdapter {
     payload: HookEventPayloads['toolGate'],
   ): DialectInterpretation
   /**
+   * Marshal a canonical `beforeSubmitPrompt` payload into this dialect's stdin
+   * wire shape (B1). Optional: a dialect with no compose-path hook equivalent
+   * (Claude has none) omits it and the runner abstains for that dialect. Returns
+   * null when the hook does not apply.
+   */
+  marshalBeforeSubmitPromptRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['beforeSubmitPrompt'],
+  ): unknown
+  /**
+   * Apply this dialect's `beforeSubmitPrompt` exit-code / response table to a
+   * spawn result (B1). Optional, paired with {@link marshalBeforeSubmitPromptRequest}.
+   * `continue: false` normalizes to a `haltRun` outcome; `user_message` /
+   * `agentMessage` ride along for surfacing.
+   */
+  interpretBeforeSubmitPrompt?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['beforeSubmitPrompt'],
+  ): DialectInterpretation
+  /**
    * Record the first runtime failure of a hook this session (deduped per
    * dialect-event + command), feeding the Sources per-hook error indicator. The
    * runner passes the interpretation's resolved `spineEvent` so the key matches
