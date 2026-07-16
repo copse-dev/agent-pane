@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import type { WorkspaceFsPathProbe, WorkspaceFsStat } from './workspace-fs.ts'
 
@@ -35,7 +36,9 @@ export const localWorkspaceFs: WorkspaceFsPathProbe = {
   },
 
   realpath(path: string): Promise<string> {
-    return fsp.realpath(path)
+    // Match the pre-3a sync helpers (`realpathSync.native`) for macOS symlink
+    // canonicalization (/var → /private/var); `fsp.realpath` can diverge.
+    return Promise.resolve(realpathSync.native(path))
   },
 
   readFile(path: string, encoding: 'utf-8'): Promise<string> {
