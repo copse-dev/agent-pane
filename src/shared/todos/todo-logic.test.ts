@@ -77,10 +77,10 @@ describe('todo-logic', () => {
   })
 
   it('todoProgress is 0/0 when every item is cancelled', () => {
-    assert.deepEqual(
-      todoProgress([{ id: '1', content: 'skip', status: 'cancelled' }]),
-      { done: 0, total: 0 },
-    )
+    assert.deepEqual(todoProgress([{ id: '1', content: 'skip', status: 'cancelled' }]), {
+      done: 0,
+      total: 0,
+    })
   })
 
   it('shouldSteerTodos for multi-step prompts only', () => {
