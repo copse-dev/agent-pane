@@ -9,7 +9,7 @@ import {
   upsertHost,
   type SshHostDraft,
 } from './setup/ssh-host-helpers.ts'
-import { parentRemotePath, remotePathSegments } from './remote-folder-path.ts'
+import { fillRemotePathBreadcrumbs, parentRemotePath } from './remote-folder-path.ts'
 
 export interface RemoteFolderPick {
   hostId: string
@@ -326,35 +326,9 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
     }
 
     function renderBreadcrumbs(path: string): void {
-      clear(breadcrumbs)
-      const segments = remotePathSegments(path)
-      for (let i = 0; i < segments.length; i += 1) {
-        const segment = segments[i]
-        if (!segment) continue
-        const isCurrent = i === segments.length - 1
-        if (isCurrent) {
-          breadcrumbs.append(
-            el('span', { class: 'remote-folder-crumb remote-folder-crumb-current' }, segment.label),
-          )
-          continue
-        }
-        const crumb = el(
-          'button',
-          {
-            type: 'button',
-            class: 'remote-folder-crumb',
-            'aria-label': `Go to ${segment.path}`,
-          },
-          segment.label,
-        )
-        crumb.addEventListener('click', () => {
-          void browse(segment.path)
-        })
-        breadcrumbs.append(crumb)
-        breadcrumbs.append(
-          el('span', { class: 'remote-folder-crumb-sep', 'aria-hidden': 'true' }, '/'),
-        )
-      }
+      fillRemotePathBreadcrumbs(breadcrumbs, path, (next) => {
+        void browse(next)
+      })
     }
 
     async function browse(path: string): Promise<void> {
