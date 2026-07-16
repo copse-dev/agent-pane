@@ -360,7 +360,7 @@ function mountFullLayout(): void {
   const inputRoot = requireElement('input-bar')
   mountInputBar(inputRoot, store, api)
   const conversationRoot = requireElement('conversation')
-  mountConversation(conversationRoot, store, api)
+  mountConversation(conversationRoot, store, api, inputRoot)
   mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')

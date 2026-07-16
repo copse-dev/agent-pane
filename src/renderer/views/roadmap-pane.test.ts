@@ -245,6 +245,7 @@ describe('roadmap pane', () => {
       assert.equal(prompt.value, 'Do the thing')
       assert.equal(notes.value, 'after #99 merges')
       assert.equal(status.value, 'blocked')
+      assert.equal(viewer.querySelector('.memories-meta')?.textContent, 'Updated 2026-07-13')
       // Status and Delete are offered for an existing item.
       assert.equal(status.hidden, false)
       assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-delete-btn')?.hidden, false)

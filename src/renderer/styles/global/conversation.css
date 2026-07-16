@@ -108,6 +108,14 @@
 .agent-activity-clickable:hover {
   color: var(--text-primary);
 }
+#input-bar > .agent-activity {
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+#input-bar:has(> .agent-activity:not([hidden])) .prompt-input {
+  border-radius: 0;
+}
 .msg {
   width: min(100%, var(--chat-content-max));
   margin-inline: auto;

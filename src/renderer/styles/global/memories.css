@@ -60,6 +60,9 @@
   height: 100%;
   min-height: 0;
 }
+.memories-form > .memories-label:not(:first-child) {
+  margin-top: var(--spacing-sm);
+}
 .memories-label {
   font-size: 10px;
   text-transform: uppercase;
