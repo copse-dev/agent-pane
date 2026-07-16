@@ -55,12 +55,11 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    # Fork code gets a deliberately small, read-only check tier on an ephemeral
-    # GitHub-hosted runner. Same-repo work can use the configured check fleet.
-    runs-on: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # GitHub-hosted: the self-hosted check fleet (6 GB cgroup) has been
+    # cgroup-killing `tsc` / `eslint .` under load (exit 137) across many PRs.
+    # Hosted runners have enough headroom for the static gate; heavier jobs
+    # below still prefer CHECKS_RUNNER when set.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
@@ -250,7 +249,8 @@ jobs:
   # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Same rationale as precheck: avoid 6 GB self-hosted OOM on eslint/prettier.
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
