@@ -9,6 +9,7 @@ interface MockOpts {
   available?: Record<string, boolean>
   extraProviders?: ExtraProvider[]
   openRouterModels?: Array<{ id: string; name: string }>
+  cursorCloudModels?: Array<{ id: string; label: string }>
   lmStudioModels?: string[]
   openRouterModelSetting?: string
   acpAgents?: AcpAgentConfig[]
@@ -40,6 +41,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
       },
     },
     openRouter: { models: async () => opts.openRouterModels ?? [] },
+    remoteAgent: { models: async () => opts.cursorCloudModels ?? [] },
     lmStudio: { models: async () => opts.lmStudioModels ?? [] },
   } as unknown as ApiClient
 }
@@ -70,24 +72,36 @@ describe('fetchModelOptions visibility', () => {
   it('hides each remote agent until its own provider key is configured', async () => {
     // No relevant keys → neither remote agent is offered.
     const none = await fetchModelOptions(mockApi(), 'claude-sonnet-4-6')
-    assert.ok(!none.some((o) => o.value === 'remote-agent:cursor'))
-    assert.ok(!none.some((o) => o.value === 'remote-agent:anthropic'))
+    assert.ok(!none.some((o) => o.value.startsWith('remote-agent:cursor')))
+    assert.ok(!none.some((o) => o.value.startsWith('remote-agent:anthropic')))
 
-    // An Anthropic key surfaces Claude Agent but not the Cursor agent.
+    // An Anthropic key surfaces Claude Cloud Agent models (same ids as Cloud models).
     const anthropicOnly = await fetchModelOptions(
       mockApi({ available: { anthropic: true } }),
       'claude-sonnet-4-6',
     )
-    assert.ok(anthropicOnly.some((o) => o.value === 'remote-agent:anthropic'))
-    assert.ok(!anthropicOnly.some((o) => o.value === 'remote-agent:cursor'))
+    const claudeRemote = anthropicOnly.filter((o) => o.group === 'Claude Cloud Agent')
+    assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-opus-4-8'))
+    assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-sonnet-4-6'))
+    assert.ok(claudeRemote.some((o) => o.label === 'claude-sonnet-4-6'))
+    assert.ok(!anthropicOnly.some((o) => o.value.startsWith('remote-agent:cursor')))
 
-    // A Cursor key surfaces the Cursor agent.
+    // A Cursor key surfaces Default + live catalog under its own heading.
     const cursorKey = await fetchModelOptions(
-      mockApi({ available: { cursor: true } }),
+      mockApi({
+        available: { cursor: true },
+        cursorCloudModels: [{ id: 'composer-2', label: 'Composer 2' }],
+      }),
       'claude-sonnet-4-6',
     )
-    assert.ok(cursorKey.some((o) => o.value === 'remote-agent:cursor'))
-    assert.ok(cursorKey.some((o) => o.group === 'Remote agents'))
+    const cursorRemote = cursorKey.filter((o) => o.group === 'Cursor Cloud Agent')
+    assert.deepEqual(
+      cursorRemote.map((o) => ({ value: o.value, label: o.label })),
+      [
+        { value: 'remote-agent:cursor', label: 'Default' },
+        { value: 'remote-agent:cursor#composer-2', label: 'Composer 2' },
+      ],
+    )
   })
 
   it('lists an ACP agent without models as a single bare entry under its own heading', async () => {
@@ -150,10 +164,10 @@ describe('fetchModelOptions visibility', () => {
   })
 
   it('keeps a selected-but-unconfigured remote agent selectable with a clear label', async () => {
-    const options = await fetchModelOptions(mockApi(), 'remote-agent:cursor')
-    const current = options.find((o) => o.value === 'remote-agent:cursor')
+    const options = await fetchModelOptions(mockApi(), 'remote-agent:cursor#composer-2')
+    const current = options.find((o) => o.value === 'remote-agent:cursor#composer-2')
     assert.ok(current)
-    assert.equal(current.group, 'Remote agents')
+    assert.equal(current.group, 'Cursor Cloud Agent')
     assert.match(current.label, /no valid key/)
   })
 

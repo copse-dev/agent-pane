@@ -11,7 +11,10 @@
 // App code that also needs `remote-agent:` re-exports it from here (see
 // ../remote-agent.ts) so there is a single source of truth for the literal.
 
-/** Model-selection prefix for a remote cloud agent (`remote-agent:<provider>`). */
+/**
+ * Model-selection prefix for a remote cloud agent
+ * (`remote-agent:<provider>` or `remote-agent:<provider>#<model>`).
+ */
 export const REMOTE_AGENT_MODEL_PREFIX = 'remote-agent:'
 
 /** Model-selection prefix for an LM Studio local server (`lmstudio:<modelId>`). */
