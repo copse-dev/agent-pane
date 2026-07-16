@@ -749,17 +749,28 @@ function sshTarget(config: RunnerConfig, host: CloudHost): string {
   return `${config.remoteUser}@${ip}`
 }
 
-function sshBaseArgs(config: RunnerConfig, host: CloudHost): string[] {
+function sshCommonArgs(config: RunnerConfig, connectTimeoutSeconds: number): string[] {
+  // Burst hosts recycle public IPs; ignore known_hosts so a replaced VM does not
+  // get stuck on "REMOTE HOST IDENTIFICATION HAS CHANGED".
   return [
     ...(config.keyPath ? ['-i', config.keyPath, '-o', 'IdentitiesOnly=yes'] : []),
     '-o',
     'BatchMode=yes',
     '-o',
-    'ConnectTimeout=15',
+    `ConnectTimeout=${String(connectTimeoutSeconds)}`,
     '-o',
-    'StrictHostKeyChecking=accept-new',
-    sshTarget(config, host),
+    'StrictHostKeyChecking=no',
+    '-o',
+    'UserKnownHostsFile=/dev/null',
+    '-o',
+    'GlobalKnownHostsFile=/dev/null',
+    '-o',
+    'LogLevel=ERROR',
   ]
+}
+
+function sshBaseArgs(config: RunnerConfig, host: CloudHost): string[] {
+  return [...sshCommonArgs(config, 15), sshTarget(config, host)]
 }
 
 function sshRun(
@@ -780,16 +791,23 @@ function sshProbeError(stderr: string): string {
     stderr
       .split('\n')
       .map((entry) => entry.trim())
-      .find((entry) => entry.length > 0) ?? 'unknown SSH error'
+      .find(
+        (entry) =>
+          entry.length > 0 && !entry.startsWith('@') && !/WARNING: REMOTE HOST/i.test(entry),
+      ) ??
+    stderr
+      .split('\n')
+      .map((entry) => entry.trim())
+      .find((entry) => entry.length > 0) ??
+    'unknown SSH error'
   return line
 }
 
-function isFatalSshProbeError(message: string): boolean {
+function isFatalSshProbeError(stderr: string): boolean {
   return (
-    /permission denied/i.test(message) ||
-    /too many authentication failures/i.test(message) ||
-    /publickey/i.test(message) ||
-    /host key verification failed/i.test(message)
+    /permission denied/i.test(stderr) ||
+    /too many authentication failures/i.test(stderr) ||
+    /publickey/i.test(stderr)
   )
 }
 
@@ -800,28 +818,15 @@ function waitForSsh(config: RunnerConfig, host: CloudHost): void {
   console.log(`==> Waiting for SSH on ${target}`)
   while (Date.now() < deadline) {
     attempt += 1
-    const result = spawnSync(
-      'ssh',
-      [
-        ...(config.keyPath ? ['-i', config.keyPath, '-o', 'IdentitiesOnly=yes'] : []),
-        '-o',
-        'BatchMode=yes',
-        '-o',
-        'ConnectTimeout=5',
-        '-o',
-        'StrictHostKeyChecking=accept-new',
-        target,
-        'true',
-      ],
-      { encoding: 'utf8' },
-    )
+    const result = spawnSync('ssh', [...sshCommonArgs(config, 5), target, 'true'], {
+      encoding: 'utf8',
+    })
     if (result.status === 0) return
-    const detail = sshProbeError(
-      typeof result.stderr === 'string' ? result.stderr : String(result.stderr ?? ''),
-    )
-    if (isFatalSshProbeError(detail)) {
+    const stderr = typeof result.stderr === 'string' ? result.stderr : String(result.stderr ?? '')
+    const detail = sshProbeError(stderr)
+    if (isFatalSshProbeError(stderr)) {
       die(
-        `SSH to ${target} failed: ${detail}. For Scaleway, the project SSH public key must match this private key (pass --key-path), and the security group must allow TCP/22 from this machine.`,
+        `SSH to ${target} failed: ${detail}. For Scaleway, the project SSH public key must match this private key (pass --key-path).`,
       )
     }
     if (attempt === 1 || attempt % 6 === 0) {
