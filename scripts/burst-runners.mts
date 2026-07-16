@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Provision short-lived AWS EC2 hosts for the existing ci-runners/ Docker fleet.
+ * Provision short-lived cloud hosts for the existing ci-runners/ Docker fleet.
  *
  * This is intentionally an orchestration wrapper around ci-runners/ rather than a
  * second runner implementation: launch x64 Ubuntu hosts, install Docker, upload
@@ -17,12 +17,16 @@ const AWS_REGION_ENV = 'AWS_REGION'
 const DEFAULT_AMI_SSM_PARAMETER =
   '/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id'
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
-const DEFAULT_INSTANCE_TYPE = 'c7i.2xlarge'
+const DEFAULT_AWS_INSTANCE_TYPE = 'c7i.2xlarge'
 const DEFAULT_NAME = 'copse-burst'
-const DEFAULT_REMOTE_USER = 'ubuntu'
+const DEFAULT_AWS_REMOTE_USER = 'ubuntu'
 const DEFAULT_RUNNER_GROUP = 'default'
 const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks'
 const DEFAULT_RUNNERS_PER_INSTANCE = 2
+const DEFAULT_SCW_IMAGE = 'ubuntu_noble'
+const DEFAULT_SCW_REMOTE_USER = 'root'
+const DEFAULT_SCW_TYPE = 'PLAY2-MICRO'
+const DEFAULT_SCW_ZONE = 'fr-par-1'
 const DEFAULT_TARGET_REF = 'main'
 const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
 const DEFAULT_TTL_MINUTES = 240
@@ -32,10 +36,12 @@ const MANAGED_BY_TAG = 'copse-burst-runners'
 type Command = 'up' | 'status' | 'down' | 'help'
 type OptionValue = string | true
 type Options = Record<string, OptionValue>
+type Provider = 'aws' | 'scaleway'
 
 interface ParsedArgs {
   command: Command
   options: Options
+  provider: Provider
 }
 
 interface InstanceInfo {
@@ -47,50 +53,81 @@ interface InstanceInfo {
   name: string
 }
 
-interface AwsConfig {
+interface CloudHost {
+  providerId: string
+  state: string
+  publicIp: string
+  privateIp: string
+  launchTime: string
   name: string
+}
+
+interface BaseCloudConfig {
+  name: string
+}
+
+interface AwsConfig extends BaseCloudConfig {
   region: string | undefined
 }
 
-interface UpConfig extends AwsConfig {
+interface ScalewayConfig extends BaseCloudConfig {
+  zone: string
+}
+
+interface RunnerConfig {
   accessToken: string
-  amiId: string
   buildToken: string
   githubUrl: string
   instanceCount: number
-  instanceType: string
-  keyName: string
   keyPath: string
   remoteUser: string
   runnerGroup: string
   runnerLabels: string
   runnersPerInstance: number
-  securityGroupIds: string[]
   sshHost: 'public' | 'private'
-  subnetId: string
   targetRef: string
   targetRepo: string
   ttlMinutes: number
-  volumeSizeGb: number
   wait: boolean
+}
+
+interface AwsUpConfig extends AwsConfig, RunnerConfig {
+  amiId: string
+  instanceType: string
+  keyName: string
+  securityGroupIds: string[]
+  subnetId: string
+  volumeSizeGb: number
+}
+
+interface ScalewayUpConfig extends ScalewayConfig, RunnerConfig {
+  image: string
+  securityGroupId: string | undefined
+  type: string
 }
 
 function usage(): string {
   return `Usage:
   npm run runners:burst -- up --key-name <ec2-key> --key-path <pem> --subnet-id <subnet> --security-group-id <sg>
+  npm run runners:burst:scw -- up
   npm run runners:burst -- status [--name ${DEFAULT_NAME}]
+  npm run runners:burst:scw -- status [--name ${DEFAULT_NAME}]
   npm run runners:burst -- down --yes [--name ${DEFAULT_NAME}]
+  npm run runners:burst:scw -- down --yes [--name ${DEFAULT_NAME}]
 
 Commands:
-  up       Launch EC2 host(s), upload ci-runners/, and start ephemeral GitHub runners.
-  status   List non-terminated EC2 instances tagged for this burst fleet.
-  down     Terminate EC2 instances tagged for this burst fleet. Requires --yes.
+  up       Launch host(s), upload ci-runners/, and start ephemeral GitHub runners.
+  status   List non-terminated instances tagged for this burst fleet.
+  down     Terminate instances tagged for this burst fleet. Requires --yes.
 
-Required for up:
+Required for AWS up:
   --key-name <name>             EC2 key pair name for the launched instance(s).
   --key-path <path>             Private key path used for SSH provisioning.
   --subnet-id <id>              Subnet where instances should launch.
   --security-group-id <id>      Security group that allows SSH from this machine.
+
+Required for Scaleway up:
+  scw must be installed/configured, and your project SSH key must reach root.
 
 Secrets are read from environment variables, not command-line flags:
   --access-token-env <name>     GitHub runner registration PAT env var (default: GITHUB_RUNNER_PAT).
@@ -99,11 +136,15 @@ Secrets are read from environment variables, not command-line flags:
 Common options:
   --name <tag>                  Burst fleet tag/name (default: ${DEFAULT_NAME}).
   --region <region>             AWS region (default: $${AWS_REGION_ENV} / AWS CLI config).
-  --instances <n>               EC2 hosts to launch (default: 1).
+  --zone <zone>                  Scaleway zone (default: ${DEFAULT_SCW_ZONE}).
+  --instances <n>               Hosts to launch (default: 1).
   --runners-per-instance <n>    Docker runner containers per host (default: ${String(DEFAULT_RUNNERS_PER_INSTANCE)}).
-  --instance-type <type>        EC2 instance type (default: ${DEFAULT_INSTANCE_TYPE}).
+  --instance-type <type>        EC2 instance type (default: ${DEFAULT_AWS_INSTANCE_TYPE}).
+  --scw-type <type>             Scaleway instance type (default: ${DEFAULT_SCW_TYPE}).
   --ami-id <ami>                AMI id. Defaults to latest Ubuntu 24.04 amd64 via SSM.
+  --scw-image <image>           Scaleway image label/id (default: ${DEFAULT_SCW_IMAGE}).
   --github-url <url>            Runner registration URL (default: ${DEFAULT_GITHUB_URL}).
+  --key-path <path>             SSH private key path. Required for AWS, optional for Scaleway.
   --target-repo <owner/repo>    Repo baked into the runner image (default: ${DEFAULT_TARGET_REPO}).
   --target-ref <ref>            Ref baked into the runner image (default: ${DEFAULT_TARGET_REF}).
   --runner-labels <labels>      Labels to register (default: ${DEFAULT_RUNNER_LABELS}).
@@ -125,6 +166,14 @@ Example:
       --key-path ~/.ssh/copse-ci.pem \\
       --subnet-id subnet-123 \\
       --security-group-id sg-123
+
+  GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \\
+    npm run runners:burst:scw -- up \\
+      --zone fr-par-1 \\
+      --instances 3 \\
+      --scw-type PLAY2-MICRO \\
+      --runners-per-instance 1 \\
+      --ttl-minutes 240
 `
 }
 
@@ -134,11 +183,19 @@ function die(message: string): never {
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
-  const commandArg = argv[2] ?? 'help'
+  let provider: Provider = 'aws'
+  let commandIndex = 2
+  const providerArg = argv[2]
+  if (providerArg === 'scw' || providerArg === 'scaleway') {
+    provider = 'scaleway'
+    commandIndex = 3
+  }
+
+  const commandArg = argv[commandIndex] ?? 'help'
   const command = parseCommand(commandArg)
   const options: Options = {}
 
-  for (let i = 3; i < argv.length; i += 1) {
+  for (let i = commandIndex + 1; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === undefined) continue
     if (!arg.startsWith('--')) die(`unexpected positional argument '${arg}'`)
@@ -163,7 +220,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
   }
 
-  return { command, options }
+  return { command, options, provider }
 }
 
 function parseCommand(value: string): Command {
@@ -225,6 +282,14 @@ function awsArgs(config: AwsConfig, args: string[]): string[] {
   return config.region === undefined ? args : ['--region', config.region, ...args]
 }
 
+function scalewayArgs(config: ScalewayConfig, args: string[]): string[] {
+  return [...args, `zone=${config.zone}`]
+}
+
+function scalewayJsonArgs(config: ScalewayConfig, args: string[]): string[] {
+  return [...scalewayArgs(config, args), '-o', 'json']
+}
+
 function requireTool(binary: string): void {
   const result = spawnSync(binary, ['--version'], { encoding: 'utf8', stdio: 'ignore' })
   if (result.status !== 0) die(`required tool '${binary}' is not available on PATH`)
@@ -280,12 +345,10 @@ function resolveAmiId(config: AwsConfig, options: Options): string {
   return value
 }
 
-function buildUpConfig(options: Options): UpConfig {
-  const region = option(options, 'region') ?? process.env[AWS_REGION_ENV]
-  const base: AwsConfig = {
-    name: validateTagValue(optionWithDefault(options, 'name', DEFAULT_NAME), 'name'),
-    region,
-  }
+function buildRunnerConfig(
+  options: Options,
+  defaults: { remoteUser: string; runnersPerInstance: number },
+): RunnerConfig {
   const accessTokenEnv = optionWithDefault(options, 'access-token-env', 'GITHUB_RUNNER_PAT')
   const buildTokenEnv = optionWithDefault(options, 'build-token-env', 'BUILD_GH_TOKEN')
   const sshHost = optionWithDefault(options, 'ssh-host', 'public')
@@ -293,36 +356,69 @@ function buildUpConfig(options: Options): UpConfig {
     die("--ssh-host must be either 'public' or 'private'")
 
   return {
-    ...base,
     accessToken: envValue(accessTokenEnv),
-    amiId: resolveAmiId(base, options),
     buildToken: envValue(buildTokenEnv),
     githubUrl: optionWithDefault(options, 'github-url', DEFAULT_GITHUB_URL),
     instanceCount: positiveInt(optionWithDefault(options, 'instances', '1'), 'instances'),
-    instanceType: optionWithDefault(options, 'instance-type', DEFAULT_INSTANCE_TYPE),
-    keyName: requiredOption(options, 'key-name'),
-    keyPath: requiredOption(options, 'key-path'),
-    remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_REMOTE_USER),
+    keyPath: optionWithDefault(options, 'key-path', ''),
+    remoteUser: optionWithDefault(options, 'remote-user', defaults.remoteUser),
     runnerGroup: optionWithDefault(options, 'runner-group', DEFAULT_RUNNER_GROUP),
     runnerLabels: optionWithDefault(options, 'runner-labels', DEFAULT_RUNNER_LABELS),
     runnersPerInstance: positiveInt(
-      optionWithDefault(options, 'runners-per-instance', String(DEFAULT_RUNNERS_PER_INSTANCE)),
+      optionWithDefault(options, 'runners-per-instance', String(defaults.runnersPerInstance)),
       'runners-per-instance',
     ),
-    securityGroupIds: requiredOption(options, 'security-group-id').split(',').filter(Boolean),
     sshHost,
-    subnetId: requiredOption(options, 'subnet-id'),
     targetRef: optionWithDefault(options, 'target-ref', DEFAULT_TARGET_REF),
     targetRepo: optionWithDefault(options, 'target-repo', DEFAULT_TARGET_REPO),
     ttlMinutes: nonNegativeInt(
       optionWithDefault(options, 'ttl-minutes', String(DEFAULT_TTL_MINUTES)),
       'ttl-minutes',
     ),
+    wait: !hasFlag(options, 'no-wait'),
+  }
+}
+
+function buildAwsUpConfig(options: Options): AwsUpConfig {
+  const base: AwsConfig = {
+    name: validateTagValue(optionWithDefault(options, 'name', DEFAULT_NAME), 'name'),
+    region: option(options, 'region') ?? process.env[AWS_REGION_ENV],
+  }
+  const runner = buildRunnerConfig(options, {
+    remoteUser: DEFAULT_AWS_REMOTE_USER,
+    runnersPerInstance: DEFAULT_RUNNERS_PER_INSTANCE,
+  })
+  if (!runner.keyPath) die('missing required --key-path')
+
+  return {
+    ...base,
+    ...runner,
+    amiId: resolveAmiId(base, options),
+    instanceType: optionWithDefault(options, 'instance-type', DEFAULT_AWS_INSTANCE_TYPE),
+    keyName: requiredOption(options, 'key-name'),
+    securityGroupIds: requiredOption(options, 'security-group-id').split(',').filter(Boolean),
+    subnetId: requiredOption(options, 'subnet-id'),
     volumeSizeGb: positiveInt(
       optionWithDefault(options, 'volume-size-gb', String(DEFAULT_VOLUME_SIZE_GB)),
       'volume-size-gb',
     ),
-    wait: !hasFlag(options, 'no-wait'),
+  }
+}
+
+function buildScalewayUpConfig(options: Options): ScalewayUpConfig {
+  const base: ScalewayConfig = {
+    name: validateTagValue(optionWithDefault(options, 'name', DEFAULT_NAME), 'name'),
+    zone: optionWithDefault(options, 'zone', DEFAULT_SCW_ZONE),
+  }
+  return {
+    ...base,
+    ...buildRunnerConfig(options, {
+      remoteUser: DEFAULT_SCW_REMOTE_USER,
+      runnersPerInstance: 1,
+    }),
+    image: optionWithDefault(options, 'scw-image', DEFAULT_SCW_IMAGE),
+    securityGroupId: option(options, 'security-group-id'),
+    type: optionWithDefault(options, 'scw-type', DEFAULT_SCW_TYPE),
   }
 }
 
@@ -330,6 +426,13 @@ function buildAwsConfig(options: Options): AwsConfig {
   return {
     name: validateTagValue(optionWithDefault(options, 'name', DEFAULT_NAME), 'name'),
     region: option(options, 'region') ?? process.env[AWS_REGION_ENV],
+  }
+}
+
+function buildScalewayConfig(options: Options): ScalewayConfig {
+  return {
+    name: validateTagValue(optionWithDefault(options, 'name', DEFAULT_NAME), 'name'),
+    zone: optionWithDefault(options, 'zone', DEFAULT_SCW_ZONE),
   }
 }
 
@@ -343,6 +446,14 @@ function tagSpecifications(name: string, ttlMinutes: number): string {
     `{Key=ManagedBy,Value=${MANAGED_BY_TAG}}`,
     ']',
   ].join('')
+}
+
+function scalewayTags(name: string): string[] {
+  return ['copse-burst', `copse-burst-${name}`, MANAGED_BY_TAG]
+}
+
+function scalewayTagArgs(name: string): string[] {
+  return scalewayTags(name).flatMap((tag, index) => [`tags.${String(index)}=${tag}`])
 }
 
 function blockDeviceMappings(volumeSizeGb: number): string {
@@ -378,7 +489,7 @@ ${ttlSnippet}
 `
 }
 
-function launchInstances(config: UpConfig): string[] {
+function launchInstances(config: AwsUpConfig): string[] {
   const tmp = mkdtempSync(join(tmpdir(), 'copse-burst-'))
   const userDataPath = join(tmp, 'user-data.sh')
   writeFileSync(userDataPath, userDataScript(config.ttlMinutes), 'utf8')
@@ -424,7 +535,7 @@ function launchInstances(config: UpConfig): string[] {
   }
 }
 
-function waitForInstances(config: UpConfig, instanceIds: string[]): void {
+function waitForInstances(config: AwsUpConfig, instanceIds: string[]): void {
   console.log(`==> Waiting for EC2 status checks: ${instanceIds.join(', ')}`)
   run(
     'aws',
@@ -434,6 +545,10 @@ function waitForInstances(config: UpConfig, instanceIds: string[]): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value)
 }
 
 function requiredString(record: Record<string, unknown>, key: string): string {
@@ -496,44 +611,162 @@ function describeInstances(config: AwsConfig, instanceIds?: string[]): InstanceI
   return parseInstances(capture('aws', awsArgs(config, args)))
 }
 
+function awsHost(instance: InstanceInfo): CloudHost {
+  return {
+    launchTime: instance.launchTime,
+    name: instance.name,
+    privateIp: instance.privateIp,
+    providerId: instance.instanceId,
+    publicIp: instance.publicIp,
+    state: instance.state,
+  }
+}
+
+function launchScalewayServers(config: ScalewayUpConfig): string[] {
+  const tmp = mkdtempSync(join(tmpdir(), 'copse-burst-scw-'))
+  const cloudInitPath = join(tmp, 'cloud-init.sh')
+  writeFileSync(cloudInitPath, userDataScript(config.ttlMinutes), 'utf8')
+  const ids: string[] = []
+  try {
+    for (let index = 0; index < config.instanceCount; index += 1) {
+      const name = `${config.name}-${Date.now().toString(36)}-${String(index + 1)}`
+      const args = scalewayJsonArgs(config, [
+        'instance',
+        'server',
+        'create',
+        `name=${name}`,
+        `image=${config.image}`,
+        `type=${config.type}`,
+        'ip=new',
+        'dynamic-ip-required=true',
+        `cloud-init=@${cloudInitPath}`,
+        ...scalewayTagArgs(config.name),
+        ...(config.securityGroupId !== undefined
+          ? [`security-group-id=${config.securityGroupId}`]
+          : []),
+      ])
+      const raw = capture('scw', args)
+      const id = parseScalewayServer(raw).providerId
+      if (!id) die(`Scaleway create did not return a server id: ${raw}`)
+      ids.push(id)
+    }
+    return ids
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
+function parseScalewayServer(raw: string): CloudHost {
+  const parsed: unknown = JSON.parse(raw)
+  if (!isRecord(parsed)) throw new Error('Scaleway server response was not an object')
+  const wrapped = parsed['server']
+  return scalewayServerFromRecord(isRecord(wrapped) ? wrapped : parsed)
+}
+
+function stringFromPath(value: unknown): string {
+  return typeof value === 'string' ? value : ''
+}
+
+function nestedRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
+}
+
+function firstRecord(value: unknown): Record<string, unknown> | undefined {
+  if (isUnknownArray(value)) {
+    const first = value[0]
+    return isRecord(first) ? first : undefined
+  }
+  return nestedRecord(value)
+}
+
+function scalewayServerFromRecord(server: Record<string, unknown>): CloudHost {
+  const publicIpRecord =
+    nestedRecord(server['public_ip']) ??
+    nestedRecord(server['publicIp']) ??
+    firstRecord(server['public_ips']) ??
+    firstRecord(server['publicIps'])
+  const privateIpRecord = nestedRecord(server['private_ip']) ?? nestedRecord(server['privateIp'])
+  return {
+    launchTime: stringFromPath(server['creation_date']) || stringFromPath(server['creationDate']),
+    name: stringFromPath(server['name']),
+    privateIp: stringFromPath(privateIpRecord?.['address']),
+    providerId: stringFromPath(server['id']),
+    publicIp: stringFromPath(publicIpRecord?.['address']),
+    state: stringFromPath(server['state']),
+  }
+}
+
+function waitForScalewayServers(config: ScalewayUpConfig, serverIds: string[]): void {
+  for (const id of serverIds) {
+    console.log(`==> Waiting for Scaleway server ${id}`)
+    run('scw', scalewayArgs(config, ['instance', 'server', 'wait', id]))
+  }
+}
+
+function getScalewayServers(config: ScalewayConfig, serverIds: string[]): CloudHost[] {
+  return serverIds.map((id) =>
+    parseScalewayServer(
+      capture('scw', scalewayJsonArgs(config, ['instance', 'server', 'get', id])),
+    ),
+  )
+}
+
+function listScalewayServers(config: ScalewayConfig): CloudHost[] {
+  const raw = capture(
+    'scw',
+    scalewayJsonArgs(config, [
+      'instance',
+      'server',
+      'list',
+      `tags=${scalewayTags(config.name).join(',')}`,
+    ]),
+  )
+  const parsed: unknown = JSON.parse(raw)
+  const servers = Array.isArray(parsed) ? parsed : isRecord(parsed) ? parsed['servers'] : undefined
+  if (!Array.isArray(servers)) throw new Error('Scaleway server list response was not an array')
+  return servers.map((item) => {
+    if (!isRecord(item)) throw new Error('Scaleway server list item was not an object')
+    return scalewayServerFromRecord(item)
+  })
+}
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
 }
 
-function sshTarget(config: UpConfig, instance: InstanceInfo): string {
-  const host = config.sshHost === 'public' ? instance.publicIp : instance.privateIp
-  if (!host) {
+function sshTarget(config: RunnerConfig, host: CloudHost): string {
+  const ip = config.sshHost === 'public' ? host.publicIp : host.privateIp
+  if (!ip) {
     die(
-      `${instance.instanceId} has no ${config.sshHost} IP. Use --ssh-host private from a network with VPC access, or launch in a subnet that assigns public IPs.`,
+      `${host.providerId} has no ${config.sshHost} IP. Use --ssh-host private from a network with VPC access, or launch with a public IP.`,
     )
   }
-  return `${config.remoteUser}@${host}`
+  return `${config.remoteUser}@${ip}`
 }
 
-function sshBaseArgs(config: UpConfig, instance: InstanceInfo): string[] {
+function sshBaseArgs(config: RunnerConfig, host: CloudHost): string[] {
   return [
-    '-i',
-    config.keyPath,
+    ...(config.keyPath ? ['-i', config.keyPath] : []),
     '-o',
     'BatchMode=yes',
     '-o',
     'ConnectTimeout=15',
     '-o',
     'StrictHostKeyChecking=accept-new',
-    sshTarget(config, instance),
+    sshTarget(config, host),
   ]
 }
 
 function sshRun(
-  config: UpConfig,
-  instance: InstanceInfo,
+  config: RunnerConfig,
+  host: CloudHost,
   script: string,
   input?: string | Buffer,
 ): void {
-  run('ssh', [...sshBaseArgs(config, instance), 'bash', '-lc', shellQuote(script)], input)
+  run('ssh', [...sshBaseArgs(config, host), 'bash', '-lc', shellQuote(script)], input)
 }
 
-function remoteEnv(config: UpConfig): string {
+function remoteEnv(config: RunnerConfig): string {
   return [
     `GITHUB_URL=${config.githubUrl}`,
     `ACCESS_TOKEN=${config.accessToken}`,
@@ -547,29 +780,24 @@ function remoteEnv(config: UpConfig): string {
   ].join('\n')
 }
 
-function uploadRunnerDir(config: UpConfig, instance: InstanceInfo): void {
+function uploadRunnerDir(config: RunnerConfig, host: CloudHost): void {
   const archive = execFileSync('tar', ['-C', 'ci-runners', '-czf', '-', '.'], {
     maxBuffer: 50 * 1024 * 1024,
   })
   sshRun(
     config,
-    instance,
+    host,
     'rm -rf ~/ci-runners && mkdir -p ~/ci-runners && tar -xzf - -C ~/ci-runners',
     archive,
   )
-  sshRun(
-    config,
-    instance,
-    'cat > ~/ci-runners/.env && chmod 600 ~/ci-runners/.env',
-    remoteEnv(config),
-  )
+  sshRun(config, host, 'cat > ~/ci-runners/.env && chmod 600 ~/ci-runners/.env', remoteEnv(config))
 }
 
-function provisionInstance(config: UpConfig, instance: InstanceInfo): void {
-  console.log(`==> Provisioning ${instance.instanceId} (${sshTarget(config, instance)})`)
+function provisionHost(config: RunnerConfig, host: CloudHost): void {
+  console.log(`==> Provisioning ${host.providerId} (${sshTarget(config, host)})`)
   sshRun(
     config,
-    instance,
+    host,
     [
       'cloud-init status --wait',
       'sudo systemctl enable --now docker',
@@ -577,10 +805,10 @@ function provisionInstance(config: UpConfig, instance: InstanceInfo): void {
       'sudo docker compose version',
     ].join(' && '),
   )
-  uploadRunnerDir(config, instance)
+  uploadRunnerDir(config, host)
   sshRun(
     config,
-    instance,
+    host,
     [
       'cd ~/ci-runners',
       'export DOCKER_BUILDKIT=1',
@@ -590,51 +818,51 @@ function provisionInstance(config: UpConfig, instance: InstanceInfo): void {
   )
 }
 
-function printInstances(instances: InstanceInfo[]): void {
-  if (instances.length === 0) {
+function printHosts(hosts: CloudHost[]): void {
+  if (hosts.length === 0) {
     console.log('No burst instances found.')
     return
   }
-  for (const instance of instances) {
+  for (const host of hosts) {
     console.log(
       [
-        instance.instanceId,
-        instance.state,
-        instance.publicIp || '-',
-        instance.privateIp || '-',
-        instance.name || '-',
-        instance.launchTime || '-',
+        host.providerId,
+        host.state,
+        host.publicIp || '-',
+        host.privateIp || '-',
+        host.name || '-',
+        host.launchTime || '-',
       ].join('\t'),
     )
   }
 }
 
-function up(options: Options): void {
+function awsUp(options: Options): void {
   requireTool('aws')
   requireTool('ssh')
   requireTool('tar')
-  const config = buildUpConfig(options)
+  const config = buildAwsUpConfig(options)
   console.log(
     `==> Launching ${String(config.instanceCount)} ${config.instanceType} host(s) for ${config.name} using ${config.amiId}`,
   )
   const ids = launchInstances(config)
   console.log(`==> Launched: ${ids.join(', ')}`)
   if (config.wait) waitForInstances(config, ids)
-  const instances = describeInstances(config, ids)
-  printInstances(instances)
-  for (const instance of instances) provisionInstance(config, instance)
+  const hosts = describeInstances(config, ids).map(awsHost)
+  printHosts(hosts)
+  for (const host of hosts) provisionHost(config, host)
   console.log(
     '==> Burst runners are starting. Watch GitHub Actions runners or use: npm run runners:burst -- status',
   )
 }
 
-function status(options: Options): void {
+function awsStatus(options: Options): void {
   requireTool('aws')
   const config = buildAwsConfig(options)
-  printInstances(describeInstances(config))
+  printHosts(describeInstances(config).map(awsHost))
 }
 
-function down(options: Options): void {
+function awsDown(options: Options): void {
   requireTool('aws')
   if (!hasFlag(options, 'yes')) die('down requires --yes')
   const config = buildAwsConfig(options)
@@ -643,7 +871,7 @@ function down(options: Options): void {
     console.log('No burst instances to terminate.')
     return
   }
-  printInstances(instances)
+  printHosts(instances.map(awsHost))
   const ids = instances.map((instance) => instance.instanceId)
   console.log(`==> Terminating: ${ids.join(', ')}`)
   run('aws', awsArgs(config, ['ec2', 'terminate-instances', '--instance-ids', ...ids]))
@@ -653,17 +881,71 @@ function down(options: Options): void {
   }
 }
 
+function scalewayUp(options: Options): void {
+  requireTool('scw')
+  requireTool('ssh')
+  requireTool('tar')
+  const config = buildScalewayUpConfig(options)
+  console.log(
+    `==> Launching ${String(config.instanceCount)} ${config.type} Scaleway host(s) for ${config.name} in ${config.zone}`,
+  )
+  const ids = launchScalewayServers(config)
+  console.log(`==> Launched: ${ids.join(', ')}`)
+  if (config.wait) waitForScalewayServers(config, ids)
+  const hosts = getScalewayServers(config, ids)
+  printHosts(hosts)
+  for (const host of hosts) provisionHost(config, host)
+  console.log(
+    '==> Scaleway burst runners are starting. Watch GitHub Actions runners or use: npm run runners:burst:scw -- status',
+  )
+}
+
+function scalewayStatus(options: Options): void {
+  requireTool('scw')
+  printHosts(listScalewayServers(buildScalewayConfig(options)))
+}
+
+function scalewayDown(options: Options): void {
+  requireTool('scw')
+  if (!hasFlag(options, 'yes')) die('down requires --yes')
+  const config = buildScalewayConfig(options)
+  const hosts = listScalewayServers(config).filter((host) => host.state !== 'terminated')
+  if (hosts.length === 0) {
+    console.log('No Scaleway burst instances to terminate.')
+    return
+  }
+  printHosts(hosts)
+  for (const host of hosts) {
+    console.log(`==> Terminating ${host.providerId}`)
+    run(
+      'scw',
+      scalewayArgs(config, ['instance', 'server', 'terminate', host.providerId, 'with-ip=true']),
+    )
+  }
+  if (hasFlag(options, 'wait')) {
+    for (const host of hosts) {
+      run('scw', scalewayArgs(config, ['instance', 'server', 'wait', host.providerId]))
+    }
+  }
+}
+
 function main(): void {
-  const { command, options } = parseArgs(process.argv)
+  const { command, options, provider } = parseArgs(process.argv)
   try {
     if (command === 'help') {
       console.log(usage())
+    } else if (provider === 'scaleway' && command === 'up') {
+      scalewayUp(options)
+    } else if (provider === 'scaleway' && command === 'status') {
+      scalewayStatus(options)
+    } else if (provider === 'scaleway') {
+      scalewayDown(options)
     } else if (command === 'up') {
-      up(options)
+      awsUp(options)
     } else if (command === 'status') {
-      status(options)
+      awsStatus(options)
     } else {
-      down(options)
+      awsDown(options)
     }
   } catch (err) {
     console.error(err instanceof Error ? err.message : err)

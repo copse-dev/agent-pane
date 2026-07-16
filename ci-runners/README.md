@@ -53,6 +53,70 @@ docker compose ps
 docker compose down      # tear down
 ```
 
+## Scaleway burst hosts
+
+Scaleway is the cheapest/easiest burst path when AWS billing or capacity is in
+the way. It uses the same runner image and labels as the local/AWS flows.
+
+Prerequisites:
+
+- Scaleway CLI installed and configured (`scw init`) with permission to create,
+  list, wait for, and terminate Instances in your project.
+- Your Scaleway project has an SSH public key installed for the default `root`
+  user (Scaleway propagates console SSH keys to new Linux Instances). Pass
+  `--key-path` if SSH should use a specific private key.
+- The selected security group/default security group allows SSH from the machine
+  running the CLI, and outbound traffic can reach GitHub and apt repositories.
+- `GITHUB_RUNNER_PAT` with GitHub self-hosted runner registration permission for
+  `GITHUB_URL` (org or repo), and `BUILD_GH_TOKEN` with read access to
+  `agent-pane` plus the private `@copse/streaming-markdown` dependency.
+
+Cost-first general e2e burst:
+
+```bash
+GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
+  npm run runners:burst:scw -- up \
+    --zone fr-par-1 \
+    --instances 6 \
+    --scw-type PLAY2-MICRO \
+    --runners-per-instance 1 \
+    --ttl-minutes 240
+```
+
+More memory headroom:
+
+```bash
+GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
+  npm run runners:burst:scw -- up \
+    --zone fr-par-1 \
+    --instances 3 \
+    --scw-type PRO2-XS \
+    --runners-per-instance 2 \
+    --ttl-minutes 240
+```
+
+Useful follow-ups:
+
+```bash
+npm run runners:burst:scw -- status --zone fr-par-1
+npm run runners:burst:scw -- down --zone fr-par-1 --yes --wait
+```
+
+Scaleway sizing guidance:
+
+- `PLAY2-MICRO` (4 vCPU / 8 GiB) with one runner is the cheapest general
+  e2e/check shape and is roughly one third the hourly cost of AWS `c7i.xlarge`.
+- `PRO2-XS` (4 vCPU / 16 GiB) can run one very roomy runner or two denser
+  runners. Use it if Electron still shows memory/session pressure on PLAY2.
+- `DEV1-L` is slightly cheaper than PLAY2-MICRO with the same nominal CPU/RAM,
+  but PLAY2 is the newer x86 line and the safer default for burst CI.
+- For check-only bursts, smaller 2 vCPU / 4 GiB types can be cost-effective, but
+  remove the e2e label: `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
+- `--ttl-minutes` defaults to 240. The host schedules a shutdown after that TTL;
+  Scaleway stopped instances still cost for attached volumes/IPs, so prefer
+  `down --yes` when the queue drains. The TTL is a backstop, not the primary
+  cleanup path.
+
 ## AWS burst hosts
 
 For short queue-draining bursts, run the same Docker runner fleet on temporary
