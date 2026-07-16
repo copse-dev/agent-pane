@@ -18,6 +18,7 @@ import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/can
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorToolGateHooks } from './cursor-adapter.ts'
 import { claudeToolGateHooks } from './claude-adapter.ts'
+import { copseToolGateHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { withRunDeadlinePaused } from './run-deadline.ts'
 
@@ -113,11 +114,12 @@ export async function runToolGateHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  const [cursorHooks, claudeHooks] = await Promise.all([
+  const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
     cursorToolGateHooks(payload, discoverOpts),
     claudeToolGateHooks(payload, discoverOpts),
+    copseToolGateHooks(payload, discoverOpts),
   ])
-  const hooks = [...cursorHooks, ...claudeHooks]
+  const hooks = [...cursorHooks, ...claudeHooks, ...copseHooks]
   if (hooks.length === 0) return { permission: 'allow' }
 
   // Only now that a hook actually gates this read do we pay for the file read

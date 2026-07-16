@@ -39,6 +39,7 @@ import { isWorkspaceTrusted } from '../security/workspace-trust.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSessionStartHooks } from './cursor-adapter.ts'
 import { claudeSessionStartHooks } from './claude-adapter.ts'
+import { copseSessionStartHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { snapshotHookRunContext, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
@@ -116,14 +117,16 @@ export async function runSessionStartHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  // Both wired dialects can declare a session-start hook (Cursor's `sessionStart`
-  // + Claude's `SessionStart`). Discovery is not gated on any abort signal —
-  // decision 3 says a detached hook runs to its own completion.
-  const [cursorHooks, claudeHooks] = await Promise.all([
+  // Every wired dialect can declare a session-start hook (Cursor's
+  // `sessionStart`, Claude's `SessionStart`, Copse's `sessionStart`). Discovery
+  // is not gated on any abort signal — decision 3 says a detached hook runs to
+  // its own completion.
+  const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
     cursorSessionStartHooks(payload, discoverOpts),
     claudeSessionStartHooks(payload, discoverOpts),
+    copseSessionStartHooks(payload, discoverOpts),
   ])
-  const hooks = [...cursorHooks, ...claudeHooks]
+  const hooks = [...cursorHooks, ...claudeHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()
