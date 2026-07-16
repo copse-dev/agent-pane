@@ -11,6 +11,11 @@ import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
 export interface RemoteAgentRunOptions {
   threadId: string
   provider: RemoteAgentProvider
+  /**
+   * Upstream model id for Create Agent. Cursor omits the field when unset
+   * (account default); Anthropic falls back to DEFAULT_MANAGED_AGENT_MODEL.
+   */
+  model?: string
   userPrompt: UserContent
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void

@@ -48,6 +48,7 @@ import {
   listFreeOpenRouterModels,
   invalidateOpenRouterModelsCache,
 } from './services/providers/openrouter-models.ts'
+import { invalidateCursorCloudModelsCache } from './services/remote/cursor-cloud-models.ts'
 import {
   detectLmStudio,
   downloadLmStudioModel,
@@ -277,6 +278,7 @@ app
       assertMainFrameSender(event, win)
       invalidateLmStudioModelsCache()
       invalidateOpenRouterModelsCache()
+      invalidateCursorCloudModelsCache()
     })
 
     ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
