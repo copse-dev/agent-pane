@@ -15,7 +15,12 @@ import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
 import type { AcpAgentConfig } from '../../../src/shared/types/acp.ts'
 import { explodeThread } from '../../../src/shared/threads/fold.ts'
-import { serializeSpine } from '../../../src/shared/threads/spine-schema.ts'
+import {
+  SPINE_SCHEMA_VERSION,
+  serializeSpine,
+  serializeSpineLine,
+  type SpineHookRunLine,
+} from '../../../src/shared/threads/spine-schema.ts'
 
 /** Mirrors `app.setPath('userData', …)` in `src/main/app-init.ts`. */
 function copsePanelUserDataDir(): string {
@@ -969,6 +974,124 @@ export function seedStickyUserPromptFixture(workspaceRoot: string): void {
         updatedAt: now + 3,
       },
     ],
+  })
+}
+
+/**
+ * G1 hook-card visual eval (decision 10). Seeds an idle thread whose spine
+ * carries always-on `hook_run` records (decision 6) so the store folds them into
+ * the display-only hook-card family (executions, deny/ask decisions, halts),
+ * plus a hook-originated user turn (`origin` persisted on the message) so the
+ * origin marker renders. Written by interleaving the exploded message spine with
+ * `hook_run` lines anchored to the message they fired within — exactly the
+ * on-disk shape `appendHookRun` produces — so the real fold path is exercised.
+ */
+export function seedHookCardsFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-hook-cards-project'
+  const threadId = 'e2e-hook-cards-thread'
+  const now = Date.now()
+  const messages: Message[] = [
+    {
+      id: 'msg-user-hook-open',
+      role: 'user',
+      content: 'Run the test suite and fix any failures.',
+      toolCalls: [],
+      createdAt: now,
+    },
+    {
+      id: 'msg-assistant-hook',
+      role: 'assistant',
+      content: 'Running the suite. A pre-commit hook gated the shell command.',
+      toolCalls: [
+        {
+          id: 'tc-run-tests',
+          name: 'run_shell',
+          args: { command: 'npm test' },
+          status: 'done',
+          result: 'All tests passed.',
+        },
+      ],
+      createdAt: now + 1,
+    },
+    {
+      id: 'msg-user-hook-followup',
+      role: 'user',
+      content: 'You still have open todos — finish them before stopping.',
+      toolCalls: [],
+      origin: { kind: 'hook', hookId: 'todo-closeout', event: 'stop' },
+      createdAt: now + 2,
+    },
+    {
+      id: 'msg-assistant-hook-2',
+      role: 'assistant',
+      content: 'A stop hook halted the run.',
+      toolCalls: [],
+      createdAt: now + 3,
+    },
+  ]
+
+  const hookRun = (overrides: Partial<SpineHookRunLine> & { id: string }): SpineHookRunLine => ({
+    v: SPINE_SCHEMA_VERSION,
+    type: 'hook_run',
+    event: 'beforeShellExecution',
+    hookId: 'guard.sh',
+    executor: 'command',
+    startedAt: now,
+    durationMs: 24,
+    exitCode: 0,
+    parseOk: true,
+    decision: {},
+    ...overrides,
+  })
+
+  // hook_run lines anchor to the message that precedes them in the spine.
+  const runsByAnchor: Record<string, SpineHookRunLine[]> = {
+    'msg-assistant-hook': [
+      hookRun({ id: 'hr-allow', decision: { permission: 'allow' } }),
+      hookRun({ id: 'hr-deny', hookId: 'block-prod.sh', decision: { permission: 'deny' } }),
+    ],
+    'msg-assistant-hook-2': [
+      hookRun({
+        id: 'hr-halt',
+        event: 'stop',
+        hookId: 'todo-closeout',
+        durationMs: 0,
+        decision: { haltRun: true, haltApplied: true, stopReason: 'Open todos remain.' },
+      }),
+    ],
+  }
+
+  const { spine, files } = explodeThread(messages, sha256)
+  const lines: string[] = []
+  for (const line of spine) {
+    lines.push(serializeSpineLine(line))
+    for (const run of runsByAnchor[line.id] ?? []) lines.push(serializeSpineLine(run))
+  }
+
+  const dir = join(e2eWorkspaceDir(), projectId, threadId)
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  for (const file of files) {
+    const full = join(dir, file.ref)
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, file.contents)
+  }
+  writeFileSync(join(dir, 'events.jsonl'), `${lines.join('\n')}\n`)
+  const meta = {
+    id: threadId,
+    title: 'Hook cards',
+    status: 'idle',
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: now,
+    updatedAt: now + 3,
+  }
+  writeFileSync(join(dir, 'meta.json'), `${JSON.stringify(meta)}\n`)
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
   })
 }
 
