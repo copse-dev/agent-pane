@@ -115,6 +115,33 @@ strategy in three ways:
 Visual eval: `tests/e2e/advisor-pair-hint.e2e.ts` (screenshots
 `advisor-pair-hint-good.png` / `advisor-pair-hint-warn.png`).
 
+### Context passing (transcript + verified repo state)
+
+The advisor is handed two things: the executor's transcript and a verified
+repo-state block. `buildAdvisorTranscript()` formats the live message array
+(system prompt, user turns, assistant text, assistant tool _calls_, and tool
+_results_) — the client-side equivalent of what Anthropic's native advisor tool
+quotes automatically (system prompt + tool defs + prior turns + tool results).
+
+The transcript alone is a lossy, sometimes context-trimmed _narration_ of what
+the executor did, not what the repo _is_ — so the advisor could hallucinate repo
+state (e.g. reading edit tool calls and concluding "the branch has lots of
+changes" when the working tree is clean and the branch is merely behind its
+base). `advisor-context.ts` closes that gap with a deterministic
+`## Repository state (verified now — authoritative over the transcript)` block
+prepended to the prompt: current branch, ahead/behind vs the base branch,
+working-tree status (clean, or a capped `git status --short` + change stats),
+and an explicit note that "behind" counts unmerged base commits, not local
+edits. It's best-effort (any git failure degrades to no block) and only emitted
+inside a git work tree.
+
+This keeps the **bare-advisor contract** (no tools, per the native tool) while
+raising context quality — the opposite axis from Amp's "Oracle", which is a full
+sub-agent with its own read/edit/terminal tools and context window. A future
+opt-in "investigative advisor" (read-only tools, Oracle-style) is possible but
+deliberately not the default: it diverges from the native drop-in parity and
+costs more latency/tokens.
+
 ### Advisor result rendering
 
 The advice is prose (headings, lists, code), so the `advisor` tool returns

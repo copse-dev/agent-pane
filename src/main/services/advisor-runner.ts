@@ -4,6 +4,7 @@ import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { routedModelSetting } from './providers/role-models.ts'
 import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
+import { buildAdvisorRepoState } from './advisor-context.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import {
   ADVISOR_MODEL_SETTING,
@@ -61,7 +62,12 @@ export function getAdvisorRunner(): AdvisorRunner | null {
   const ctx = activeContext
   return async (signal: AbortSignal) => {
     const transcript = buildAdvisorTranscript(ctx.getTranscript())
-    const prompt = `${ADVISOR_PREAMBLE}\n\n# Executor transcript\n\n${transcript}`
+    // Prepend verified repo facts (branch, ahead/behind, working-tree status) so
+    // the advisor anchors on ground truth instead of inferring repo state from a
+    // lossy, sometimes-trimmed transcript (which made it hallucinate that a
+    // merely-behind branch had lots of local changes). See advisor-context.ts.
+    const repoState = await buildAdvisorRepoState()
+    const prompt = `${ADVISOR_PREAMBLE}\n\n${repoState}# Executor transcript\n\n${transcript}`
 
     let text: string
     let usage: ModelUsage
