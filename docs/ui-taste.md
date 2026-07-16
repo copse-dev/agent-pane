@@ -266,6 +266,14 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   `Message.origin`), never from live hook registration (decision 17), so history renders identically
   to the live run. Spec: [`tests/e2e/hook-cards.e2e.ts`](../tests/e2e/hook-cards.e2e.ts); DOM in
   [`src/renderer/views/hook-cards.test.ts`](../src/renderer/views/hook-cards.test.ts).
+## Context menus (right-click)
+
+Right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
+[`layout.css`](../src/renderer/styles/global/layout.css)), not the anchored `.browser-menu` wrap.
+Pin to `clientX`/`clientY`, clamp into the viewport, and dismiss on outside pointerdown / Escape /
+window blur. First use: project rows → **Remove from sidebar**
+([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
+[`tests/e2e/project-remove-sidebar.e2e.ts`](../tests/e2e/project-remove-sidebar.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval
 

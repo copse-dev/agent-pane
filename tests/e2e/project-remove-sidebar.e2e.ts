@@ -38,8 +38,9 @@ describe('remove project from sidebar', () => {
     await $('.context-menu-item').click()
     await browser.waitUntil(
       async () => {
-        const rows = await $$('.project-row')
-        const names = await Promise.all(rows.map(async (r) => r.getText()))
+        const names = await browser.execute(() =>
+          Array.from(document.querySelectorAll('.project-name')).map((n) => n.textContent ?? ''),
+        )
         return names.length === 1 && names[0]?.includes('Project A') === true
       },
       {
