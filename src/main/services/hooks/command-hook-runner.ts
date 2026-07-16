@@ -49,6 +49,10 @@ function isAfterFileEditPayload(payload: unknown): payload is HookEventPayloads[
   return typeof payload === 'object' && payload !== null && 'filePath' in payload
 }
 
+function isStopPayload(payload: unknown): payload is HookEventPayloads['stop'] {
+  return typeof payload === 'object' && payload !== null && 'status' in payload
+}
+
 /**
  * Resolve a `failed` run to its outcome per the hook's `onFailure` (decision 9):
  * `closed` blocks (Cursor `failClosed: true`), `open` abstains (vendor default).
@@ -121,8 +125,9 @@ async function spawnInterpretResolve(
  * Build the host command-hook runner injected into `HookContext.runCommandHook`.
  * A2 wired the `toolGate` event (the permission gate); B1 adds
  * `beforeSubmitPrompt` (the compose path); B2 adds `afterFileEdit` (the
- * diff-queue / write-tool site). Other canonical events land their fire sites in
- * later phases and register no command hooks yet, so they abstain.
+ * diff-queue / write-tool site); B3 adds `stop` (turn end / abort, dispatched
+ * detached — decision 3). Other canonical events land their fire sites in later
+ * phases and register no command hooks yet, so they abstain.
  */
 export function createCommandHookRunner(): CommandHookRunner {
   return {
@@ -162,6 +167,20 @@ export function createCommandHookRunner(): CommandHookRunner {
         const adapter = getDialectAdapter(hook.dialect)
         const marshal = adapter?.marshalAfterFileEditRequest?.bind(adapter)
         const interpret = adapter?.interpretAfterFileEdit?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload),
+          (spawn) => interpret(spawn, payload),
+          context,
+        )
+      }
+
+      if (hook.event === 'stop' && isStopPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalStopRequest?.bind(adapter)
+        const interpret = adapter?.interpretStop?.bind(adapter)
         if (!adapter || !marshal || !interpret) return ABSTAIN
         return spawnInterpretResolve(
           hook,
