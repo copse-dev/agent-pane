@@ -44,7 +44,7 @@ export function getActiveExecutionTarget(): ExecutionTarget {
   const host = findConfiguredSshHost(active.sshHost)
   if (!host) return { kind: 'local' }
 
-  return { kind: 'ssh', hostId: host.id, remoteRoot: root }
+  return { kind: 'ssh', hostId: host.id, remoteRoot: active.path }
 }
 
 export function resolveExecutionTarget(explicit: ExecutionTarget | undefined): ExecutionTarget {
