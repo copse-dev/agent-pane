@@ -273,7 +273,7 @@ Right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pa
 Pin to `clientX`/`clientY`, clamp into the viewport, and dismiss on outside pointerdown / Escape /
 window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
-[`tests/e2e/project-remove-sidebar.e2e.ts`](../tests/e2e/project-remove-sidebar.e2e.ts).
+[`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval
 
