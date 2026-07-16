@@ -26,11 +26,6 @@ import {
   setGitFileDiffModel,
   whenDiffHostVisible,
 } from '../monaco/git-diff-viewer.ts'
-import {
-  refreshGitChangesDiffCollapse,
-  revealFirstDiffChange,
-  revealFirstDiffChangeOnNextUpdate,
-} from '../monaco/diff-scroll.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 
 function isImageDiff(diff: GitFileDiff): boolean {
@@ -179,7 +174,6 @@ export function mountGitChangesPane(
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
-  let cancelPendingDiffReveal: (() => void) | null = null
   const proposedDiffCache = new Map<string, ActiveDiff>()
   let pendingNavigate: string | null = null
   // Path of a freshly proposed diff the pane should jump to on the next sync,
@@ -365,35 +359,23 @@ export function mountGitChangesPane(
     acceptBtn.onclick = (): void => void api.diff.approve(view.path)
     rejectBtn.onclick = (): void => void api.diff.reject(view.path)
 
-    cancelPendingDiffReveal?.()
-    cancelPendingDiffReveal = revealFirstDiffChangeOnNextUpdate(ensureDiffEditor())
+    // Unhide the wrap *before* creating/laying out Monaco — creating the editor
+    // while `diffWrap` is still `hidden` (zero size) races layout and leaves the
+    // first change off-screen after lazy Monaco load.
+    emptyState.hidden = true
+    imageWrap.hidden = true
+    diffWrap.hidden = false
 
     await whenDiffHostVisible(viewerRoot)
     if (requestId !== selectRequestId || pendingSelect.path !== view.path) return
 
-    emptyState.hidden = true
-    imageWrap.hidden = true
-    diffWrap.hidden = false
-    disposeDiffModels(ensureDiffEditor())
-    ensureDiffEditor().setModel({
-      original: monaco.editor.createModel(view.before, view.language),
-      modified: monaco.editor.createModel(view.after, view.language),
-    })
-    await new Promise<void>((resolve) => {
-      const timeout = window.setTimeout(() => {
-        disposable.dispose()
-        resolve()
-      }, 1_000)
-      const disposable = ensureDiffEditor().onDidUpdateDiff(() => {
-        window.clearTimeout(timeout)
-        disposable.dispose()
-        resolve()
-      })
-    })
-    if (requestId !== selectRequestId) return
-    await refreshGitChangesDiffCollapse(ensureDiffEditor())
-    ensureDiffEditor().layout()
-    revealFirstDiffChange(ensureDiffEditor())
+    const proposed: GitFileDiff = {
+      path: view.path,
+      before: view.before,
+      after: view.after,
+      language: view.language,
+    }
+    await setGitFileDiffModel(ensureDiffEditor(), monaco, proposed, viewerRoot)
   }
 
   async function selectProposed(path: string): Promise<void> {
@@ -474,8 +456,6 @@ export function mountGitChangesPane(
   function clearViewer(): void {
     selectRequestId++
     pendingSelect = null
-    cancelPendingDiffReveal?.()
-    cancelPendingDiffReveal = null
     hideApprovalButtons()
     emptyState.hidden = false
     emptyState.textContent = 'Select a changed file'
@@ -661,7 +641,6 @@ export function mountGitChangesPane(
     unsubs.forEach((u) => {
       u()
     })
-    cancelPendingDiffReveal?.()
     diffEditor?.dispose()
     diffEditor = null
   }
