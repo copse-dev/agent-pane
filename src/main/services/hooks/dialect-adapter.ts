@@ -95,6 +95,28 @@ export interface DialectAdapter {
     payload: HookEventPayloads['beforeSubmitPrompt'],
   ): DialectInterpretation
   /**
+   * Marshal a canonical `afterFileEdit` payload into this dialect's stdin wire
+   * shape (B2). Optional: a dialect with no post-edit hook equivalent omits it
+   * and the runner abstains for that dialect. Cursor's afterFileEdit is a
+   * notification (it cannot block or return data), so its paired
+   * {@link interpretAfterFileEdit} never yields a control-flow decision.
+   */
+  marshalAfterFileEditRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['afterFileEdit'],
+  ): unknown
+  /**
+   * Apply this dialect's `afterFileEdit` exit-code table to a spawn result (B2).
+   * Optional, paired with {@link marshalAfterFileEditRequest}. For a
+   * notification-only dialect (Cursor) the outcome is always null; a crash /
+   * timeout / non-zero exit is reported as `failed` for the spine + Sources
+   * error indicator, but the edit has already landed so nothing is blocked.
+   */
+  interpretAfterFileEdit?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['afterFileEdit'],
+  ): DialectInterpretation
+  /**
    * Record the first runtime failure of a hook this session (deduped per
    * dialect-event + command), feeding the Sources per-hook error indicator. The
    * runner passes the interpretation's resolved `spineEvent` so the key matches
