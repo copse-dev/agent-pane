@@ -192,9 +192,9 @@ export function seedE2eThreePaneLayout(): void {
 }
 
 /** SSH workspace settings for remote-folder / SSH settings UI e2e specs. */
-export function seedSshWorkspaceSettings(options?: { hosts?: boolean }): void {
+export function seedSshWorkspaceSettings(options?: { hosts?: boolean; enabled?: boolean }): void {
   writeSettings({
-    sshWorkspaceEnabled: true,
+    sshWorkspaceEnabled: options?.enabled !== false,
     sshWorkspaceHosts:
       options?.hosts === false
         ? []
