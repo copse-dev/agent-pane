@@ -69,6 +69,21 @@ Rules:
 - Be thorough while investigating but concise in the final summary
 - Your final message MUST be a structured findings report the parent can act on without re-reading the logs. Include: failing check(s), the root-cause error, the file(s)/line(s) involved, and a concrete suggested fix.`
 
+/**
+ * Decision a `subagentStart` gate returns (D1). Deny/halt prevents the spawn:
+ * the subagent loop never runs and the deny message is surfaced to the parent.
+ * Cursor's `subagentStart` speaks allow/deny (`ask` is treated as deny), so this
+ * is a plain boolean plus the messages the hook wants surfaced.
+ */
+export interface SubagentStartDecision {
+  /** True when a hook denied/halted the spawn (the loop must not run). */
+  denied: boolean
+  /** Message fed to the parent agent as the deny reason, if any. */
+  agentMessage?: string
+  /** Message shown to the user (hook card), if any. */
+  userMessage?: string
+}
+
 export interface RunSubagentOptions {
   provider: LLMProvider
   prompt: string
@@ -91,6 +106,24 @@ export interface RunSubagentOptions {
   localFallback?: boolean
   /** Session kind reported to the renderer (drives the tool card label). */
   kind?: SubagentSession['kind']
+  /**
+   * Blocking `subagentStart` gate fired **before** the subagent spawns (D1).
+   * Host-injected so `packages/agent` stays Electron-free (execution-guidance
+   * rule 4): the host fires the canonical `subagentStart` event (matcher on
+   * subagent type) through the registry → runner → adapter seam and reduces it to
+   * this decision. A denied result prevents the spawn — the agent loop never
+   * runs — and the deny message becomes the subagent's summary. Absent (or when
+   * hooks are disabled) means "always allow", so the default path is unchanged.
+   */
+  onSubagentStart?: (subagentType: string) => Promise<SubagentStartDecision> | SubagentStartDecision
+  /**
+   * Detached `subagentStop` notification fired on completion — success, error,
+   * or abort (D1). Fire-and-forget: the host dispatches the canonical
+   * `subagentStop` event through the C1 detached executor and returns
+   * synchronously (decision 3, never awaited). Follow-ups route through the
+   * pending-message queue + budget (C2/C3), never a bespoke protocol.
+   */
+  onSubagentStop?: (subagentType: string, status: 'completed' | 'error' | 'aborted') => void
 }
 
 export interface RunSubagentResult {
@@ -135,6 +168,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     usageModel,
     localFallback,
     kind = 'explore',
+    onSubagentStart,
+    onSubagentStop,
   } = opts
 
   const sessionId = randomUUID()
@@ -147,6 +182,27 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     messages: [],
     ...(usageModel !== undefined ? { model: usageModel } : {}),
     ...(localFallback ? { localFallback: true } : {}),
+  }
+
+  // `subagentStart` gate (D1): fire the blocking hook **before** the spawn. A
+  // deny prevents the spawn entirely — the agent loop never runs (no LLM calls),
+  // and the deny reason becomes the subagent's summary so the parent still gets a
+  // result. The gate is host-injected (Electron-free boundary, rule 4).
+  if (onSubagentStart) {
+    const decision = await onSubagentStart(kind)
+    if (decision.denied) {
+      const denyMessage =
+        decision.agentMessage ??
+        decision.userMessage ??
+        `Subagent "${kind}" was blocked by a subagentStart hook.`
+      session.status = 'error'
+      session.summary = denyMessage
+      onSubagentChunk({ type: 'subagent_start', parentToolCallId, session: { ...session } })
+      onSubagentChunk({ type: 'subagent_error', parentToolCallId, error: denyMessage })
+      onSubagentChunk({ type: 'subagent_done', parentToolCallId, summary: denyMessage })
+      // No spawn ⇒ no subagentStop (Cursor fires it only for subagents that ran).
+      return { session, summary: denyMessage }
+    }
   }
 
   onSubagentChunk({ type: 'subagent_start', parentToolCallId, session: { ...session } })
@@ -300,6 +356,24 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
       summary,
       ...(session.usage ? { usage: session.usage } : {}),
     })
+  }
+
+  // `subagentStop` (D1): fire the detached notification on completion — reached
+  // by both the success and error paths above, and by an abort (the loop returns
+  // rather than throwing on an aborted signal). Fire-and-forget: the host
+  // dispatches it through the C1 detached executor and never blocks here
+  // (decision 3). A throwing callback must never fail a finished subagent.
+  if (onSubagentStop) {
+    const status: 'completed' | 'error' | 'aborted' = signal?.aborted
+      ? 'aborted'
+      : session.status === 'error'
+        ? 'error'
+        : 'completed'
+    try {
+      onSubagentStop(kind, status)
+    } catch {
+      // Detached notification: a broken stop callback can never fail the turn.
+    }
   }
 
   return { session, summary }

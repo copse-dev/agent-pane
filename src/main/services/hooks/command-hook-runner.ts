@@ -51,7 +51,30 @@ function isAfterFileEditPayload(payload: unknown): payload is HookEventPayloads[
 }
 
 function isStopPayload(payload: unknown): payload is HookEventPayloads['stop'] {
-  return typeof payload === 'object' && payload !== null && 'status' in payload
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'status' in payload &&
+    !('subagentType' in payload)
+  )
+}
+
+function isSubagentStartPayload(payload: unknown): payload is HookEventPayloads['subagentStart'] {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'subagentType' in payload &&
+    !('status' in payload)
+  )
+}
+
+function isSubagentStopPayload(payload: unknown): payload is HookEventPayloads['subagentStop'] {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'subagentType' in payload &&
+    'status' in payload
+  )
 }
 
 /**
@@ -126,7 +149,13 @@ async function spawnInterpretResolve(
     return resolveFailure(hook, interpretation)
   }
 
-  return { outcome: interpretation.outcome, failed: false }
+  return {
+    outcome: interpretation.outcome,
+    failed: false,
+    // Async follow-up (D1 subagentStop) rides through to the queue channel via
+    // emitAsync's `onAsyncOutcome`; absent on every blocking-event run.
+    ...(interpretation.queueMessage ? { queueMessage: interpretation.queueMessage } : {}),
+  }
 }
 
 /**
@@ -134,8 +163,10 @@ async function spawnInterpretResolve(
  * A2 wired the `toolGate` event (the permission gate); B1 adds
  * `beforeSubmitPrompt` (the compose path); B2 adds `afterFileEdit` (the
  * diff-queue / write-tool site); B3 adds `stop` (turn end / abort, dispatched
- * detached — decision 3). Other canonical events land their fire sites in later
- * phases and register no command hooks yet, so they abstain.
+ * detached — decision 3); D1 adds `subagentStart` (blocking spawn gate, matcher
+ * on subagent type) and `subagentStop` (detached completion, `followup_message`
+ * routed to the queue channel). Other canonical events land their fire sites in
+ * later phases and register no command hooks yet, so they abstain.
  */
 export function createCommandHookRunner(opts?: {
   /**
@@ -221,6 +252,34 @@ export function createCommandHookRunner(opts?: {
           (spawn) => interpret(spawn, payload),
           context,
           recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'subagentStart' && isSubagentStartPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalSubagentStartRequest?.bind(adapter)
+        const interpret = adapter?.interpretSubagentStart?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+        )
+      }
+
+      if (hook.event === 'subagentStop' && isSubagentStopPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalSubagentStopRequest?.bind(adapter)
+        const interpret = adapter?.interpretSubagentStop?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
         )
       }
 

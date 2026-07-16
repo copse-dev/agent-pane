@@ -353,11 +353,21 @@ export class HookRegistry {
             turnTreeId,
             run: async () => {
               // The runner records its own spine line and resolves dialect
-              // failure; async observation events return no actionable decision
-              // off the critical path, so the result is intentionally dropped.
-              // A future async command output channel (queueMessage) routes
-              // through C2, not here.
-              await runner.run(hook, payload, hookContext)
+              // failure. An async command hook's only actionable output off the
+              // critical path is a queued follow-up (`queueMessage`, decision 4 —
+              // D1's `subagentStop` `followup_message`); it routes through the
+              // same `onAsyncOutcome` → C2 queue channel the function-hook path
+              // uses, never a bespoke protocol. A notification-only completion
+              // (Cursor `stop`) carries none, so its result is dropped.
+              const result = await runner.run(hook, payload, hookContext)
+              if (result.queueMessage && onAsyncOutcome) {
+                onAsyncOutcome({
+                  event,
+                  hookId: hook.id,
+                  turnTreeId,
+                  outcome: { queueMessage: result.queueMessage },
+                })
+              }
             },
           }),
         )

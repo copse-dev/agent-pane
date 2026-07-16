@@ -58,6 +58,16 @@ interface DiscoveredCursorHook {
    * string or string[] `glob` field on the entry.
    */
   glob?: string[]
+  /**
+   * Cursor's native per-hook `matcher` (a regex string). D1 honours it for the
+   * subagent-lifecycle events only — the matcher runs against the **subagent
+   * type** (`explore`, `investigate_ci`, …), enough for a deniable
+   * `subagentStart`. The full per-event matcher matrix (command text / tool
+   * type) is D3; parsing it here is harmless (it is only *applied* by the
+   * subagent discovery functions), so other events keep their existing
+   * fire-for-all behavior until D3 wires their matcher semantics.
+   */
+  matcher?: string
 }
 
 /** `~/.cursor/hooks.json` — always trusted (the user installed it). */
@@ -152,6 +162,11 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
       }
       const failClosed = (entry as { failClosed?: unknown }).failClosed === true
       const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
+      const matcherRaw = (entry as { matcher?: unknown }).matcher
+      const matcher =
+        typeof matcherRaw === 'string' && matcherRaw.trim().length > 0
+          ? matcherRaw.trim()
+          : undefined
       out.push({
         event,
         command: command.trim(),
@@ -160,6 +175,7 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
         scope,
         failClosed,
         ...(glob ? { glob } : {}),
+        ...(matcher ? { matcher } : {}),
       })
     })
   }
@@ -443,10 +459,99 @@ export async function cursorStopHooks(
     })
 }
 
+/**
+ * Whether a subagent-lifecycle hook's `matcher` (a regex string) covers the
+ * subagent type (D1). A hook with no matcher fires for every subagent (Cursor's
+ * default). Cursor runs the matcher against the subagent type (`explore`,
+ * `shell`, `generalPurpose`, …); Copse's own types are `explore` /
+ * `investigate_ci`. A malformed regex fires for nothing — a broken matcher must
+ * not accidentally deny (or observe) every subagent.
+ */
+function subagentTypeMatches(hook: DiscoveredCursorHook, subagentType: string): boolean {
+  if (!hook.matcher) return true
+  try {
+    return new RegExp(hook.matcher).test(subagentType)
+  } catch {
+    console.warn(
+      `[cursor-hooks] invalid "${hook.event}" matcher /${hook.matcher}/ — hook skipped for "${subagentType}"`,
+    )
+    return false
+  }
+}
+
+/**
+ * Discover the Cursor command hooks registered for `subagentStart` (D1) whose
+ * `matcher` covers the subagent type, as registry `CommandHook`s. Same discovery
+ * + trust + `failClosed` → `onFailure` mapping as {@link cursorToolGateHooks};
+ * the matcher-on-type filter is applied here at discovery (the adapter's
+ * dispatch-side filter). `subagentStart` is **blocking**: the subagent fire site
+ * (`subagent.ts`) registers and fires them, and a `deny` prevents the spawn.
+ */
+export async function cursorSubagentStartHooks(
+  payload: HookEventPayloads['subagentStart'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'subagentStart'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'subagentStart' && subagentTypeMatches(h, payload.subagentType))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'subagentStart' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `subagentStop` (D1) whose
+ * `matcher` covers the subagent type, as registry `CommandHook`s. Fired
+ * **detached** (decision 3) through the C1 executor by the subagent fire site
+ * (`subagent.ts`); a `followup_message` (on `completed`) routes through the
+ * pending-message queue (C2/C3), never a bespoke protocol.
+ */
+export async function cursorSubagentStopHooks(
+  payload: HookEventPayloads['subagentStop'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'subagentStop'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'subagentStop' && subagentTypeMatches(h, payload.subagentType))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'subagentStop' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
 interface CursorHookResponse {
   permission?: HookDecision
   agentMessage?: string
   userMessage?: string
+}
+
+/**
+ * Cursor `subagentStop` stdout: an optional `followup_message` that auto-
+ * continues the parent (consumed only on `status: completed`). Snake and camel
+ * spellings accepted, mirroring the other Cursor response parsers.
+ */
+interface CursorSubagentStopResponse {
+  followup_message?: string
+  followupMessage?: string
 }
 
 /**
@@ -743,11 +848,166 @@ export const cursorAdapter: DialectAdapter = {
     return { ...base, failed: false, parseOk: true }
   },
 
+  marshalSubagentStartRequest(_hook, payload, session) {
+    // Cursor's subagentStart stdin: the subagent type (the matcher target) and
+    // the resolved `subagent_model` (B4 — the model the subagent will run,
+    // including a local→cloud fallback), plus the standard agent-session
+    // envelope. The host sets `session.model` to the subagent's resolved model,
+    // so the envelope `model` and `subagent_model` both report it.
+    const base = agentSessionEnvelope('subagentStart', session)
+    return {
+      ...base,
+      subagent_type: payload.subagentType,
+      ...(session?.model ? { subagent_model: session.model.model } : {}),
+    }
+  },
+
+  interpretSubagentStart(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's subagentStart is a blocking allow/deny gate (`ask` is treated as
+    // deny — vendor contract). A crash / timeout / invalid JSON is a `failed`
+    // run the runner resolves per `onFailure` (failClosed blocks the spawn).
+    const spineEvent = 'subagentStart'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) {
+      if (spawn.exitCode === 0) return { ...base, failed: false, parseOk: true }
+      const detail =
+        spawn.exitCode === null ? 'was killed' : `exited with code ${String(spawn.exitCode)}`
+      return { ...base, failed: true, parseOk: true, runtimeError: detail }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: 'printed invalid JSON — response ignored',
+      }
+    }
+    const { outcome, spineDecision } = subagentStartOutcomeFromResponse(parsed)
+    return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
+  },
+
+  marshalSubagentStopRequest(_hook, payload, session) {
+    // Cursor's subagentStop stdin: the subagent type + terminal status, plus the
+    // standard agent-session envelope. The fire site captures the session by
+    // value before dispatching detached (decision 3).
+    return {
+      ...agentSessionEnvelope('subagentStop', session),
+      subagent_type: payload.subagentType,
+      status: payload.status,
+    }
+  },
+
+  interpretSubagentStop(spawn: HookSpawnResult, payload): DialectInterpretation {
+    // Cursor's subagentStop is detached (decision 3): it returns nothing that
+    // gates control flow. Its one actionable output is `followup_message`
+    // (consumed only on `status: completed`), which routes through the pending-
+    // message queue (C2/C3), never a bespoke protocol — so we surface it as a
+    // `queueMessage` the runner forwards to `onAsyncOutcome`. A crash / timeout /
+    // non-zero exit is recorded `failed` for the spine + Sources only.
+    const spineEvent = 'subagentStop'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) return { ...base, failed: false, parseOk: true }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // A notification hook that prints noise is not a failure to block on
+      // (nothing to block post-hoc); record parseOk:false for the spine only.
+      return { ...base, failed: false, parseOk: false }
+    }
+    const followup = firstString(
+      (parsed as CursorSubagentStopResponse).followup_message,
+      (parsed as CursorSubagentStopResponse).followupMessage,
+    )
+    // The vendor consumes `followup_message` only on a completed subagent.
+    if (followup !== undefined && payload.status === 'completed') {
+      const spineDecision: SpineHookRunDecision = { queuedMessageChars: followup.length }
+      return {
+        ...base,
+        queueMessage: { text: followup, sendNow: false },
+        spineDecision,
+        failed: false,
+        parseOk: true,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
   recordRuntimeFailure(event, command, message) {
     const key = hookErrorKey(event, command)
     if (sessionHookErrors.has(key)) return
     sessionHookErrors.set(key, message)
   },
+}
+
+/**
+ * Normalize a Cursor `subagentStart` response (D1). `permission: deny` blocks
+ * the spawn; `ask` is **treated as deny** (Cursor: "`ask` is not supported for
+ * `subagentStart`"). `allow` (or an absent permission) proceeds. `user_message`
+ * rides along for surfacing on a deny.
+ */
+function subagentStartOutcomeFromResponse(parsed: unknown): {
+  outcome: BlockingHookOutcome | null
+  spineDecision: SpineHookRunDecision
+} {
+  if (typeof parsed !== 'object' || parsed === null) return { outcome: null, spineDecision: {} }
+  const res = parsed as CursorHookResponse & { user_message?: string; agent_message?: string }
+  const userMessage = firstString(res.userMessage, res.user_message)
+  const agentMessage = firstString(res.agentMessage, res.agent_message)
+  const outcome: BlockingHookOutcome = {}
+  // `ask` → `deny` (vendor contract for subagentStart); `allow` stays allow.
+  if (res.permission === 'deny' || res.permission === 'ask') outcome.decision = 'deny'
+  else if (res.permission === 'allow') outcome.decision = 'allow'
+  if (agentMessage !== undefined) outcome.agentMessage = agentMessage
+  if (userMessage !== undefined) outcome.userMessage = userMessage
+  const spineDecision: SpineHookRunDecision = {
+    ...(outcome.decision !== undefined ? { permission: outcome.decision } : {}),
+    ...(agentMessage !== undefined ? { agentMessageChars: agentMessage.length } : {}),
+    ...(userMessage !== undefined ? { userMessageChars: userMessage.length } : {}),
+  }
+  return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
 }
 
 /**
