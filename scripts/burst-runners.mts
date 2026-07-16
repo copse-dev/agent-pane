@@ -891,7 +891,7 @@ function awsDown(options: Options): void {
 
 function scalewayUp(options: Options): void {
   requireScalewayTool()
-  requireTool('ssh')
+  requireTool('ssh', ['-V'])
   requireTool('tar')
   const config = buildScalewayUpConfig(options)
   console.log(
