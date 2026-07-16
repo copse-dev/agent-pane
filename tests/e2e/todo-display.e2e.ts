@@ -5,11 +5,8 @@ import {
   saveAppScreenshot,
   saveThreePaneScreenshot,
 } from './helpers/screenshot.ts'
-import {
-  resetUserData,
-  seedE2eThreePaneLayout,
-  seedTodoPlanFixtures,
-} from './helpers/seed-config.ts'
+import { resetUserData, seedE2eThreePaneLayout } from './helpers/seed-config.ts'
+import { seedTodoPlanFixtures } from './todo-plan-fixtures.ts'
 
 async function openRightPanel(): Promise<void> {
   const pane = await $('#pane-files')

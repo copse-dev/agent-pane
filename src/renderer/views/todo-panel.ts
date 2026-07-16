@@ -16,15 +16,20 @@ function statusIcon(status: Exclude<TodoStatus, 'cancelled'>): SVGSVGElement {
 
 /**
  * Renders the inline To-dos panel. Cancelled items are omitted (they are no
- * longer part of the plan). Returns null when nothing remains to show — the
- * host should hide the panel rather than render an empty 0/0 shell.
+ * longer part of the plan). When nothing remains to show, returns a hidden
+ * sentinel (not `.todo-panel`) so callers can always append without leaving a
+ * visible 0/0 shell.
  */
-export function createTodoListEl(
-  todos: TodoItem[],
-  opts?: { compact?: boolean },
-): HTMLElement | null {
+export function createTodoListEl(todos: TodoItem[], opts?: { compact?: boolean }): HTMLElement {
   const visible = activeTodos(todos)
-  if (visible.length === 0) return null
+  if (visible.length === 0) {
+    return el('div', {
+      class: 'todo-panel-absent',
+      hidden: true,
+      'aria-hidden': 'true',
+      'data-todo-panel': 'absent',
+    })
+  }
 
   const { done, total } = todoProgress(visible)
   const panel = el('div', { class: opts?.compact ? 'todo-panel todo-panel-compact' : 'todo-panel' })

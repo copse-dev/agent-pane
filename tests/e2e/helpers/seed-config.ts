@@ -1430,15 +1430,12 @@ export function seedScrollStreamingFixture(workspaceRoot: string): void {
 export function seedTodoPlanFixtures(workspaceRoot: string): {
   planThreadTitle: string
   noPlanThreadTitle: string
-  allCancelledThreadTitle: string
 } {
   const projectId = 'e2e-todo-project'
   const planThreadId = 'e2e-todo-thread'
   const noPlanThreadId = 'e2e-todo-no-plan-thread'
-  const allCancelledThreadId = 'e2e-todo-all-cancelled-thread'
   const planThreadTitle = 'Todo display test'
   const noPlanThreadTitle = 'No plan thread'
-  const allCancelledThreadTitle = 'All cancelled plan'
   const todos = [
     { id: 'todo-1', content: 'Refactor renderer.ts fence extraction', status: 'completed' },
     { id: 'todo-2', content: 'Add mermaid lazy loader + post-render hook', status: 'in_progress' },
@@ -1451,12 +1448,6 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
     },
     { id: 'todo-4', content: 'Run npm run check + build/e2e', status: 'pending' },
     { id: 'todo-5', content: 'Create GitHub issue for diagram steering', status: 'pending' },
-    // Cancelled items stay in thread state but must not appear in the panel.
-    {
-      id: 'todo-cancelled',
-      content: 'Add unit tests for an abandoned side quest',
-      status: 'cancelled',
-    },
   ]
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
@@ -1484,37 +1475,6 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
           },
         ],
         todos,
-        usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: Date.now() + 3,
-        updatedAt: Date.now() + 3,
-      },
-      {
-        id: allCancelledThreadId,
-        title: allCancelledThreadTitle,
-        status: 'idle',
-        messages: [
-          {
-            id: 'msg-user-all-cancelled',
-            role: 'user',
-            content: 'Scratch that plan — cancel the remaining todos.',
-            toolCalls: [],
-            createdAt: Date.now(),
-          },
-          {
-            id: 'msg-assistant-all-cancelled',
-            role: 'assistant',
-            content: "Cancelled the leftover todos; there's nothing left on the plan.",
-            toolCalls: [],
-            createdAt: Date.now(),
-          },
-        ],
-        todos: [
-          {
-            id: 'todo-cancel-1',
-            content: 'Add unit tests for the roadmap search feature',
-            status: 'cancelled',
-          },
-        ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: Date.now() + 2,
         updatedAt: Date.now() + 2,
@@ -1545,7 +1505,7 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
       },
     ],
   })
-  return { planThreadTitle, noPlanThreadTitle, allCancelledThreadTitle }
+  return { planThreadTitle, noPlanThreadTitle }
 }
 
 /** Running thread with a queued follow-up message for edit / send-now e2e. */

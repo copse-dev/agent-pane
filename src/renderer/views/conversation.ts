@@ -1090,9 +1090,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   function syncTodoPanel(): void {
     todoHost.replaceChildren()
     const thread = getActiveThread(store)
-    if (!thread?.todos?.length) return
-    const panel = createTodoListEl(thread.todos, { compact: true })
-    if (panel) todoHost.append(panel)
+    if (thread?.todos?.length) {
+      todoHost.append(createTodoListEl(thread.todos, { compact: true }))
+    }
   }
 
   function renderMessageReview(threadId: string, messageId: string): void {

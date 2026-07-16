@@ -12,7 +12,7 @@ describe('createTodoListEl', () => {
       { id: '3', content: 'Still open', status: 'pending' },
     ]
     const panel = createTodoListEl(todos)
-    assert.ok(panel)
+    assert.equal(panel.classList.contains('todo-panel'), true)
     assert.equal(panel.querySelector('.todo-panel-count')?.textContent, '2')
     assert.equal(panel.querySelector('.todo-panel-progress')?.textContent, '1/2 done')
     assert.equal(panel.querySelectorAll('.todo-item').length, 2)
@@ -21,15 +21,21 @@ describe('createTodoListEl', () => {
     assert.ok(panel.querySelector('[data-todo-id="3"]'))
   })
 
-  it('returns null when every todo is cancelled (hide the panel)', () => {
+  it('returns a hidden sentinel when every todo is cancelled (hide the panel)', () => {
     const todos: TodoItem[] = [
       { id: '1', content: 'Skip A', status: 'cancelled' },
       { id: '2', content: 'Skip B', status: 'cancelled' },
     ]
-    assert.equal(createTodoListEl(todos), null)
+    const panel = createTodoListEl(todos)
+    assert.equal(panel.classList.contains('todo-panel'), false)
+    assert.equal(panel.classList.contains('todo-panel-absent'), true)
+    assert.equal(panel.hidden, true)
+    assert.equal(panel.getAttribute('data-todo-panel'), 'absent')
   })
 
-  it('returns null for an empty list', () => {
-    assert.equal(createTodoListEl([]), null)
+  it('returns a hidden sentinel for an empty list', () => {
+    const panel = createTodoListEl([])
+    assert.equal(panel.classList.contains('todo-panel-absent'), true)
+    assert.equal(panel.hidden, true)
   })
 })
