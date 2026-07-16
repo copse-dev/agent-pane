@@ -158,6 +158,17 @@ export interface Thread {
    * so the staleness check (decision 16) has a reference point.
    */
   currentEpoch?: string
+  /**
+   * Machine-initiated new turns already spent in the current turn tree (decision
+   * 5, C3). Counts queue-drain continuations (hook send-now, stop / subagent
+   * follow-ups) as they auto-dispatch; when it reaches the cap
+   * (`DEFAULT_CONTINUATION_BUDGET`), `drainMessageQueue` flips a further
+   * machine-originated message to **held** instead of auto-submitting. Reset to 0
+   * when a human action (typed prompt / release) starts a fresh turn tree. The
+   * run seeds the main-process ledger with this so its in-run tighteners
+   * (closeout / pre-review / remediation) share one counter per turn tree.
+   */
+  continuationUsed?: number
   /** True while a queued message is being edited; suspends FIFO draining. */
   queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */

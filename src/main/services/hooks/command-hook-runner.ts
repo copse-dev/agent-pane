@@ -26,6 +26,7 @@ import type {
 } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
 import { recordCommandHookRun, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
+import { hookRecursionGuardTripped } from './hook-depth.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
 import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
@@ -152,6 +153,13 @@ export function createCommandHookRunner(opts?: {
       payload: HookEventPayloads[E],
       context: HookContext,
     ): Promise<CommandHookResult> {
+      // Recursion guard (decision 5): if this Copse is itself running inside a
+      // hook (`COPSE_HOOK_DEPTH` ≥ MAX), suppress all command-hook spawns so a
+      // hook that re-enters Copse cannot drive an unbounded hook→Copse→hook
+      // loop. Abstaining (never fail-hard) matches a command hook that returns
+      // no decision — the action proceeds, one nested level breaks the loop.
+      if (hookRecursionGuardTripped()) return ABSTAIN
+
       // Every wired agent-session event stamps the real conversation / generation
       // ids + running model onto its wire payload (B4); the host captures it at
       // the fire site and hands it through the context (opaque to packages/agent).

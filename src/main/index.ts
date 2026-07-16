@@ -215,8 +215,15 @@ app
     ipcMain.handle('agent:run', async (event, threadIdArg: unknown, rawPrompt: string) => {
       assertMainFrameSender(event, win)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const { userContent, invokedSkills, priorTodos, workingBrief, model } =
-        parseAgentRunPayload(rawPrompt)
+      const {
+        userContent,
+        invokedSkills,
+        priorTodos,
+        workingBrief,
+        model,
+        turnTreeId,
+        continuationBudgetUsed,
+      } = parseAgentRunPayload(rawPrompt)
 
       // Hydrate from persisted storage on first use after a restart
       if (!messageHistory.has(threadId)) {
@@ -232,6 +239,8 @@ app
         priorTodos,
         ...(workingBrief !== undefined ? { workingBrief } : {}),
         ...(model !== undefined ? { model } : {}),
+        ...(turnTreeId !== undefined ? { turnTreeId } : {}),
+        ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
       })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
