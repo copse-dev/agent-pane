@@ -4,6 +4,7 @@ import {
   GIT_CHANGES_DIFF_EDITOR_OPTIONS,
   refreshGitChangesDiffCollapse,
   revealFirstDiffChange,
+  waitForViewModelDiff,
 } from './diff-scroll.ts'
 
 let diffModelVersion = 0
@@ -48,6 +49,14 @@ export function disposeDiffModels(diffEditor: Monaco.editor.IStandaloneDiffEdito
   oldModels.modified.dispose()
 }
 
+/**
+ * Attach a git/proposed file diff and scroll to the first change.
+ *
+ * Uses createViewModel + waitForDiff so computation finishes before the model
+ * is shown — important right after lazy Monaco load, when the editor worker may
+ * still be bootstrapping and a bare setModel + immediate getLineChanges() race
+ * leaves the reveal as a no-op (change off-screen / collapse unset).
+ */
 export async function setGitFileDiffModel(
   diffEditor: Monaco.editor.IStandaloneDiffEditor,
   monaco: typeof Monaco,
@@ -59,30 +68,20 @@ export async function setGitFileDiffModel(
   disposeDiffModels(diffEditor)
   const version = diffModelVersion++
   const safePath = diff.path.replace(/[^a-zA-Z0-9._/-]/g, '_')
-  diffEditor.setModel({
-    original: monaco.editor.createModel(
-      diff.before,
-      diff.language,
-      monaco.Uri.parse(`inmemory://git-changes/${String(version)}/original/${safePath}`),
-    ),
-    modified: monaco.editor.createModel(
-      diff.after,
-      diff.language,
-      monaco.Uri.parse(`inmemory://git-changes/${String(version)}/modified/${safePath}`),
-    ),
-  })
+  const original = monaco.editor.createModel(
+    diff.before,
+    diff.language,
+    monaco.Uri.parse(`inmemory://git-changes/${String(version)}/original/${safePath}`),
+  )
+  const modified = monaco.editor.createModel(
+    diff.after,
+    diff.language,
+    monaco.Uri.parse(`inmemory://git-changes/${String(version)}/modified/${safePath}`),
+  )
+  const viewModel = diffEditor.createViewModel({ original, modified })
+  await waitForViewModelDiff(viewModel, 2_000)
+  diffEditor.setModel(viewModel)
 
-  await new Promise<void>((resolve) => {
-    const timeout = window.setTimeout(() => {
-      disposable.dispose()
-      resolve()
-    }, 1_000)
-    const disposable = diffEditor.onDidUpdateDiff(() => {
-      window.clearTimeout(timeout)
-      disposable.dispose()
-      resolve()
-    })
-  })
   await refreshGitChangesDiffCollapse(diffEditor)
   diffEditor.layout()
   revealFirstDiffChange(diffEditor)
