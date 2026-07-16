@@ -243,7 +243,9 @@ describe('input bar two-step stop', () => {
     assert.equal(stopBtn.classList.contains('stop-pending'), true)
     assert.equal(aborts, 0)
 
-    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    composer.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
     await settle()
 
     assert.equal(aborts, 1)
