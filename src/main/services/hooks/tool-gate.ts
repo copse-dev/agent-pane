@@ -13,6 +13,7 @@
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
+import { buildInjectedContextBlock } from '@copse/agent/hooks/inject-context.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorToolGateHooks } from './cursor-adapter.ts'
@@ -37,6 +38,15 @@ export interface HookGateDecision {
    * tool — a rewrite is never applied without re-analysis (security-critical).
    */
   updatedInput?: Record<string, unknown>
+  /**
+   * Context a blocking hook injected into the current turn (H2), already built
+   * into the final system-reminder block (10k-capped, with a truncation note on
+   * overflow). Present only when the gate allows (or an `ask` is approved) and a
+   * hook returned `injectContext` — a deny drops the tool, so there is nothing
+   * to inject into. The caller appends this to the tool's result so the model
+   * reads it in the current turn.
+   */
+  injectContext?: string
 }
 
 export interface ToolGateCheck {
@@ -133,10 +143,15 @@ export async function runToolGateHooks(
   // value is the final threaded `payload.input`, not just the last hook's delta,
   // so the caller re-runs policy on the complete rewritten input.
   const rewritten = merged.updatedInput !== undefined
+  // H2: a hook's `injectContext` becomes the current-turn system-reminder block
+  // (10k-capped). Only meaningful when the tool proceeds — a `deny` drops the
+  // tool and its result, so we never build a block for a denied gate.
+  const injectContext = denied ? undefined : buildInjectedContextBlock(merged.injectContext)
   return {
     permission,
     ...(merged.agentMessage !== undefined ? { agentMessage: merged.agentMessage } : {}),
     ...(merged.userMessage !== undefined ? { userMessage: merged.userMessage } : {}),
     ...(rewritten ? { updatedInput: payload.input } : {}),
+    ...(injectContext !== undefined ? { injectContext } : {}),
   }
 }

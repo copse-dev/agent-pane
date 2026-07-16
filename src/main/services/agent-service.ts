@@ -261,15 +261,26 @@ function promptTextForSubmit(userPrompt: UserContent): string {
  * to this thread (decision 6); the turn itself re-begins recording with its own
  * turn id.
  */
+interface BeforeSubmitPromptResult {
+  /** The user-facing notice to show when a hook halted the submit; null to proceed. */
+  blocked: string | null
+  /**
+   * Current-turn context a hook injected (H2), pre-built into the system-reminder
+   * block. Folded into the local turn's system message (like `turnStart`); absent
+   * when no hook injected or the submit was halted.
+   */
+  injectContext?: string
+}
+
 async function runBeforeSubmitPrompt(
   threadId: string,
   userPrompt: UserContent,
-): Promise<string | null> {
+): Promise<BeforeSubmitPromptResult> {
   // Gate on the same master switch as every other hook path (tool gate, stop,
   // afterFileEdit). Without this, "always-trusted" user `~/.cursor/hooks.json`
   // beforeSubmitPrompt hooks would spawn on every submit even with the feature
   // off (the default) — a consent-gate bypass and needless per-submit discovery.
-  if (!getSetting<boolean>('cursorHooksEnabled', false)) return null
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return { blocked: null }
   const workspaceRoot = getWorkspaceRoot()
   beginHookRunRecording(threadId)
   try {
@@ -279,10 +290,18 @@ async function runBeforeSubmitPrompt(
       // Real conversation/generation ids + running model on the wire payload (B4).
       agentSession: currentAgentSessionInfo({ conversationId: threadId }),
     })
-    if (!decision.blocked) return null
-    return (
-      decision.userMessage ?? decision.reason ?? 'A hook blocked this prompt from being submitted.'
-    )
+    if (!decision.blocked) {
+      return {
+        blocked: null,
+        ...(decision.injectContext !== undefined ? { injectContext: decision.injectContext } : {}),
+      }
+    }
+    return {
+      blocked:
+        decision.userMessage ??
+        decision.reason ??
+        'A hook blocked this prompt from being submitted.',
+    }
   } finally {
     endHookRunRecording(threadId)
   }
@@ -443,12 +462,18 @@ export async function runAgent(
   // the existing text/`done` channel and return without starting the turn — the
   // blocked prompt never enters LLM history. Spine recording is attributed the
   // same way the turn's own hooks are (decision 6, always-on).
-  const blocked = await runBeforeSubmitPrompt(threadId, userPrompt)
-  if (blocked) {
-    sendChunk({ type: 'text', text: blocked })
+  const submit = await runBeforeSubmitPrompt(threadId, userPrompt)
+  if (submit.blocked) {
+    sendChunk({ type: 'text', text: submit.blocked })
     sendChunk({ type: 'done' })
     return { usage: { inputTokens: 0, outputTokens: 0 }, messages: priorMessages }
   }
+  // H2: a `beforeSubmitPrompt` hook may inject current-turn context (Cursor
+  // `additionalContext`). It is folded into the local turn's system message
+  // alongside `turnStart` steering below. ACP / remote paths compose the prompt
+  // out-of-process and have no equivalent injection point, so this is honoured
+  // on the local agent-loop path (the compose-path hook's home).
+  const submitInjectContext = submit.injectContext
 
   // Experimental PII redaction: when enabled, swap personal data the user typed
   // for stable placeholders before the prompt leaves the device — for every
@@ -656,11 +681,16 @@ export async function runAgent(
         recordHookRun: recordFunctionHookRun,
       },
     )
-    const injected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
-    if (injected && messages[0]?.role === 'system') {
+    // Fold both the `turnStart` steering (M0.2) and any `beforeSubmitPrompt`
+    // injected context (H2, already a system-reminder block) into messages[0].
+    const turnStartInjected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
+    const injectedBlocks = [turnStartInjected, submitInjectContext].filter(
+      (block): block is string => block !== undefined && block.length > 0,
+    )
+    if (injectedBlocks.length > 0 && messages[0]?.role === 'system') {
       messages[0] = {
         role: 'system',
-        content: messages[0].content + `\n\n${injected}`,
+        content: messages[0].content + `\n\n${injectedBlocks.join('\n\n')}`,
       }
     }
 
