@@ -24,9 +24,41 @@ function fakeApi(
 
 describe('review panel (subagent file links)', () => {
   it('renders the review summary markdown', () => {
-    const review: ThreadReview = { status: 'done', summary: 'Looks **good**.' }
+    const review: ThreadReview = { status: 'done', summary: 'Looks **good**.', issuesFound: false }
     const card = createReviewCardEl(review, fakeApi())
     assert.equal(card.querySelector('.review-panel-body strong')?.textContent, 'good')
+  })
+
+  it('collapses a clean review (issuesFound false) as a closed details card', () => {
+    const review: ThreadReview = {
+      status: 'done',
+      summary: 'Looks correct — no issues found.',
+      issuesFound: false,
+    }
+    const card = createReviewCardEl(review, fakeApi())
+    assert.equal(card.tagName, 'DETAILS')
+    assert.equal((card as HTMLDetailsElement).open, false)
+    assert.equal(card.getAttribute('data-issues-found'), 'false')
+    assert.ok(card.querySelector('summary.review-panel-header'))
+  })
+
+  it('keeps a review with findings expanded', () => {
+    const review: ThreadReview = {
+      status: 'done',
+      summary: '1 likely bug in the parser.',
+      issuesFound: true,
+    }
+    const card = createReviewCardEl(review, fakeApi())
+    assert.equal(card.tagName, 'DIV')
+    assert.equal(card.getAttribute('data-issues-found'), 'true')
+    assert.equal(card.querySelector('summary'), null)
+  })
+
+  it('does not collapse legacy reviews that omit issuesFound', () => {
+    const review: ThreadReview = { status: 'done', summary: 'Looks good.' }
+    const card = createReviewCardEl(review, fakeApi())
+    assert.equal(card.tagName, 'DIV')
+    assert.equal(card.hasAttribute('data-issues-found'), false)
   })
 
   it('does not render a body while the review is still running', () => {
@@ -50,7 +82,7 @@ describe('review panel (subagent file links)', () => {
   })
 
   it('does not show a retry button on a successful review', () => {
-    const review: ThreadReview = { status: 'done', summary: 'Looks good.' }
+    const review: ThreadReview = { status: 'done', summary: 'Looks good.', issuesFound: false }
     const card = createReviewCardEl(review, fakeApi(), () => {})
     assert.equal(card.querySelector('.card-retry-button'), null)
   })
@@ -59,6 +91,7 @@ describe('review panel (subagent file links)', () => {
     const review: ThreadReview = {
       status: 'done',
       summary: 'The change in src/main/index.ts looks risky.',
+      issuesFound: true,
     }
     const card = createReviewCardEl(
       review,

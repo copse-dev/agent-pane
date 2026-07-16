@@ -59,7 +59,12 @@ export interface IpcInvokeMap {
 
   // Approval gate (shell / MCP)
   'approval:respond': {
-    args: [id: string, approved: boolean, remember?: boolean]
+    args: [
+      id: string,
+      approved: boolean,
+      remember?: boolean,
+      comparisonModels?: { a: string; b: string; judge: string },
+    ]
     result: undefined
   }
 
@@ -153,6 +158,10 @@ export interface IpcInvokeMap {
     result: undefined
   }
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
+  'usage:getPlanUsage': {
+    args: []
+    result: import('@copse/plan-usage').PlanUsageSnapshot
+  }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
@@ -300,9 +309,10 @@ export interface IpcEventMap {
       threadId?: string
       title: string
       body: string
-      type: 'shell' | 'mcp' | 'web'
+      type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
       allowRemember?: boolean
       rememberLabel?: string
+      comparisonModels?: { a: string; b: string; judge: string }
     },
   ]
   'agent:ask_user_request': [
@@ -311,6 +321,13 @@ export interface IpcEventMap {
       /** Thread whose run asked the question; scopes the prompt in the UI. */
       threadId?: string
       questions: { question: string; options?: string[] }[]
+    },
+  ]
+  'ssh:prompt_request': [
+    {
+      id: string
+      prompt: string
+      kind: 'confirm' | 'secret'
     },
   ]
   'mcp:status_changed': [statuses: McpServerStatus[]]
