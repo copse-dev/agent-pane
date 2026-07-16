@@ -35,3 +35,25 @@ export function buildRemoteShellCommand(
   if (!cwd) return inner
   return `cd ${posixQuote(cwd)} && ${inner}`
 }
+
+/**
+ * Interactive remote PTY launch line.
+ *
+ * Must not use {@link buildRemoteEnvPrefix} (`env KEY=VAL …`) in front of
+ * `exec`: `env` treats `exec` as a program name and fails with
+ * `env: 'exec': No such file or directory` (exit 127). Use shell assignments
+ * before the builtin `exec` instead.
+ */
+export function buildRemotePtyCommand(
+  shell: string,
+  cwd: string | undefined,
+  env: Record<string, string> | undefined,
+): string {
+  const pairs = Object.entries(env ?? {})
+    .filter(([key]) => ENV_KEY_PATTERN.test(key))
+    .map(([key, value]) => `${key}=${posixQuote(value)}`)
+  const assignPrefix = pairs.length > 0 ? `${pairs.join(' ')} ` : ''
+  const launch = `${assignPrefix}exec ${posixQuote(shell)} -l`
+  if (!cwd) return launch
+  return `cd ${posixQuote(cwd)} && ${launch}`
+}
