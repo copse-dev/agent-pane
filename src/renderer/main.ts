@@ -149,8 +149,12 @@ function requireElement(id: string): HTMLElement {
 // Catch-all for IPC/promise failures that would otherwise vanish silently
 // (many call sites dispatch with `void api.…()`). Surface them to the user.
 window.addEventListener('unhandledrejection', (event) => {
-  // Monaco throws when diff compute races model disposal (e.g. staged-diff accept).
-  if (event.reason instanceof Error && event.reason.message === 'no diff result available') {
+  // Monaco throws when diff compute races model disposal (e.g. staged-diff accept)
+  // or when hideUnchangedRegions refresh cancels an in-flight compute.
+  if (
+    event.reason instanceof Error &&
+    (event.reason.message === 'no diff result available' || event.reason.message === 'Canceled')
+  ) {
     event.preventDefault()
     return
   }

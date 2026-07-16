@@ -83,6 +83,7 @@ describe('runManagedAgentFromSettings without a repository', () => {
 
       const agentCreate = requests.find((r) => r.method === 'POST' && r.path === '/v1/agents')
       assert.ok(agentCreate?.body)
+      assert.equal(agentCreate.body['model'], 'claude-opus-4-8')
       assert.equal('mcp_servers' in agentCreate.body, false)
       assert.deepEqual(agentCreate.body['tools'], [{ type: 'agent_toolset_20260401' }])
       assert.match(String(agentCreate.body['system']), /No repository is attached/)
@@ -99,6 +100,28 @@ describe('runManagedAgentFromSettings without a repository', () => {
       assert.equal(result.assistantText, 'Hello from the sandbox')
       assert.equal(result.inputTokens, 5)
       assert.equal(result.outputTokens, 7)
+    } finally {
+      restoreWorkspace()
+    }
+  })
+
+  it('passes a selected Managed Agents model id on create', async () => {
+    const restoreWorkspace = setWorkspaceRootForTest(null)
+    clearManagedAgentSession('thread-managed-model')
+    process.env['ANTHROPIC_API_KEY'] = 'test-key'
+    const requests: RecordedRequest[] = []
+    try {
+      await runManagedAgentFromSettings({
+        threadId: 'thread-managed-model',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        userPrompt: 'use sonnet',
+        signal: new AbortController().signal,
+        onChunk: () => {},
+        fetchImpl: mockManagedAgentsApi(requests),
+      })
+      const agentCreate = requests.find((r) => r.method === 'POST' && r.path === '/v1/agents')
+      assert.equal(agentCreate?.body?.['model'], 'claude-sonnet-4-6')
     } finally {
       restoreWorkspace()
     }
