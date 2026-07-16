@@ -333,7 +333,8 @@ jobs:
   bench:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: no Electron/display need; avoid the saturated self-hosted check queue.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
@@ -405,7 +406,9 @@ jobs:
   build:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: produces the dist artifact for e2e; self-hosted check fleet is only
+    # needed for Electron e2e shards below.
+    runs-on: ubuntu-latest
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
