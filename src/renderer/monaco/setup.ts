@@ -124,7 +124,7 @@ let monacoPromise: Promise<typeof Monaco> | undefined
 // injected and configured exactly once however many panes ask for it.
 export function loadMonaco(): Promise<typeof Monaco> {
   if (monacoPromise) return monacoPromise
-  monacoPromise = loadMonacoBundle().then((monaco) => {
+  monacoPromise = loadMonacoBundle().then(async (monaco) => {
     configureMonacoFileRoot()
     // Monaco calls getWorker for language services too; each label needs its own
     // ESM worker or requests such as TypeScript diagnostics hit the editor worker.
@@ -133,10 +133,33 @@ export function loadMonaco(): Promise<typeof Monaco> {
         return createMonacoWorker(label)
       },
     }
-    // Diff computation uses the generic editor worker; warm it during init so the
-    // first staged-diff accept doesn't race an in-flight worker bootstrap.
-    void createMonacoWorker('editor').catch(() => undefined)
+    // Diff computation uses the generic editor worker. Await it before resolving
+    // so panes that mount on `loadMonaco()` (Changes / PR) never setModel while
+    // the worker is still bootstrapping — that race left reveals as no-ops.
+    await ensureMonacoEditorWorker()
     return monaco
   })
   return monacoPromise
+}
+
+/**
+ * Resolve once the generic editor worker is ready for diff computation.
+ * Caps wait at 2s so a broken/unavailable Worker cannot stall Monaco load.
+ */
+export function ensureMonacoEditorWorker(): Promise<void> {
+  if (typeof Worker === 'undefined') return Promise.resolve()
+  let timeoutId = 0
+  return Promise.race([
+    createMonacoWorker('editor').then(
+      () => undefined,
+      () => undefined,
+    ),
+    new Promise<void>((resolve) => {
+      timeoutId = globalThis.setTimeout(() => {
+        resolve()
+      }, 2_000)
+    }),
+  ]).finally(() => {
+    globalThis.clearTimeout(timeoutId)
+  })
 }

@@ -98,6 +98,26 @@ describe('git changes viewer', function () {
       timeout: 30_000,
       timeoutMsg: 'expected collapsed unchanged regions in the diff viewer',
     })
+
+    // The staged change (`value = 2`) sits mid-file. After lazy Monaco load, a
+    // reveal race used to leave the viewport at the top with no visible change —
+    // assert the modified side actually scrolled the edit into view.
+    await browser.waitUntil(
+      async () => {
+        const visible = await browser.execute(() => {
+          const host = document.querySelector('#git-diff-viewer-host')
+          if (!host) return false
+          const modified = host.querySelector('.editor.modified .view-lines')
+          return Boolean(modified?.textContent?.includes('value = 2'))
+        })
+        return visible
+      },
+      {
+        timeout: 15_000,
+        timeoutMsg: 'expected first change (value = 2) visible after auto-reveal',
+      },
+    )
+
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'git-changes-diff-collapsed.png'))
 
     const expandBtn = await $('.diff-hidden-lines-widget a[role="button"]')
