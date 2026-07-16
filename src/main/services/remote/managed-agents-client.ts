@@ -21,8 +21,9 @@ import {
 import {
   DEFAULT_ANTHROPIC_AGENT_BASE_URL,
   DEFAULT_CURSOR_AGENT_BASE_URL,
-  REMOTE_AGENT_MODEL_PREFIX,
   REMOTE_AGENT_PROVIDER_ANTHROPIC,
+  remoteAgentModelValue,
+  resolveManagedAgentModelId,
 } from '@shared/remote-agent.ts'
 import { getSetting, resolveApiKey } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
@@ -49,6 +50,11 @@ interface ManagedAgentSession {
   sessionId: string
   agentId: string
   environmentId: string
+  /**
+   * Upstream model id used when this agent was created. Absent on sessions
+   * persisted before multi-model support (treated as DEFAULT_MANAGED_AGENT_MODEL).
+   */
+  model?: string
   /**
    * Whether a github_repository resource is attached. Absent on sessions
    * persisted before repo-less support; those were always repo-backed.
@@ -166,12 +172,14 @@ async function createAgent(input: {
   baseUrl: string
   apiKey: string
   system: string
+  /** Upstream Managed Agents model id (required by the API). */
+  model: string
   /** Repo-less sessions have no GitHub auth, so skip the GitHub MCP toolset. */
   withGithubTools: boolean
 }): Promise<string> {
   const body = {
     name: 'Copse Claude Agent',
-    model: DEFAULT_MANAGED_AGENT_MODEL,
+    model: input.model,
     system: input.system,
     // TODO(api-verify): The GitHub MCP server is registered with no auth here, yet
     // the system prompt instructs the agent to push branches / open PRs via these
@@ -416,9 +424,17 @@ export async function runManagedAgentFromSettings(
   // project switch, and the link/PR must land on the project it started in.
   const launchProjectId = getActiveProjectId()
 
+  const selectedModel = resolveManagedAgentModelId({
+    provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
+    ...(options.model?.trim() ? { model: options.model.trim() } : {}),
+  })
   const priorSession = readSession(options.threadId)
+  // Model is bound at agent create; a different selection starts a new session.
+  const priorModel = priorSession?.model ?? DEFAULT_MANAGED_AGENT_MODEL
   const canReuse =
-    priorSession?.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC && priorSession.baseUrl === baseUrl
+    priorSession?.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC &&
+    priorSession.baseUrl === baseUrl &&
+    priorModel === selectedModel
 
   let session: ManagedAgentSession
   let turnPrompt: PromptPayload
@@ -449,6 +465,7 @@ export async function runManagedAgentFromSettings(
       baseUrl,
       apiKey,
       system,
+      model: selectedModel,
       withGithubTools: repository !== null,
     })
     const environmentId = await createEnvironment({ fetchImpl, baseUrl, apiKey })
@@ -469,6 +486,7 @@ export async function runManagedAgentFromSettings(
       sessionId,
       agentId,
       environmentId,
+      model: selectedModel,
       hasRepo: repository !== null,
       usageInput: 0,
       usageOutput: 0,
@@ -541,7 +559,7 @@ export async function runManagedAgentFromSettings(
       if (deltaInput || deltaOutput) {
         options.onChunk({
           type: 'usage',
-          model: `${REMOTE_AGENT_MODEL_PREFIX}${REMOTE_AGENT_PROVIDER_ANTHROPIC}`,
+          model: remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, selectedModel),
           inputTokens: deltaInput,
           outputTokens: deltaOutput,
         })
