@@ -20,6 +20,8 @@ import {
   registerAllowedWorkspaceRoot,
   resolveReadablePath,
   resolveWorkspacePath,
+  scheduleAllowedWorkspaceRootsBootstrap,
+  seedAllowedWorkspaceRoots,
   setWorkspaceRootForTest,
 } from './workspace.ts'
 
@@ -300,5 +302,14 @@ describe('allowed workspace roots', () => {
     await registerAllowedWorkspaceRoot(allowed)
     await assert.doesNotReject(() => assertAllowedWorkspaceRoot(allowed))
     await assert.rejects(() => assertAllowedWorkspaceRoot(other), /not an allowed project/)
+  })
+
+  it('assertAllowedWorkspaceRoot waits for startup bootstrap seeding', async () => {
+    const allowed = mkdtempSync(join(tmpdir(), 'copse-bootstrap-'))
+    scheduleAllowedWorkspaceRootsBootstrap(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      await seedAllowedWorkspaceRoots([allowed])
+    })
+    await assert.doesNotReject(() => assertAllowedWorkspaceRoot(allowed))
   })
 })
