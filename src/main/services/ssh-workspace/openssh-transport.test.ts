@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
 import { sshExecArgs, sshPtyArgs } from './openssh-transport.ts'
-import { controlSocketPath, setSshPathsUserDataDirForTests } from './ssh-paths.ts'
+import { controlSocketPath, setSshControlDirForTests } from './ssh-paths.ts'
 
 const host: SshWorkspaceHost = {
   id: 'dev-box',
@@ -16,22 +16,19 @@ const host: SshWorkspaceHost = {
 
 describe('sshExecArgs / ControlPath', () => {
   afterEach(() => {
-    setSshPathsUserDataDirForTests(null)
+    setSshControlDirForTests(null)
   })
 
   it(
-    'passes the control socket via -S, not -o ControlPath (spaces in userData)',
+    'passes the control socket via -S, not -o ControlPath',
     {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      // macOS electron userData is under `Application Support` — spaces must not
-      // end up inside an `-o ControlPath=…` config line.
-      const userData = mkdtempSync(join(tmpdir(), 'Application Support-copse-'))
+      const dir = mkdtempSync(join(tmpdir(), 'copse-cm-'))
       try {
-        setSshPathsUserDataDirForTests(userData)
+        setSshControlDirForTests(dir)
         const sock = controlSocketPath(host.id)
-        assert.match(sock, /Application Support/)
 
         const args = sshExecArgs(host, 'true')
         const sIdx = args.indexOf('-S')
@@ -45,7 +42,7 @@ describe('sshExecArgs / ControlPath', () => {
           )
         }
       } finally {
-        rmSync(userData, { recursive: true, force: true })
+        rmSync(dir, { recursive: true, force: true })
       }
     },
   )
@@ -56,9 +53,9 @@ describe('sshExecArgs / ControlPath', () => {
       skip: process.platform === 'win32' ? 'ControlMaster / -S unused on Windows OpenSSH' : false,
     },
     () => {
-      const userData = mkdtempSync(join(tmpdir(), 'Application Support-copse-'))
+      const dir = mkdtempSync(join(tmpdir(), 'copse-cm-'))
       try {
-        setSshPathsUserDataDirForTests(userData)
+        setSshControlDirForTests(dir)
         const sock = controlSocketPath(host.id)
         const args = sshPtyArgs(host, 'bash -l')
         assert.equal(args[0], '-tt')
@@ -66,7 +63,7 @@ describe('sshExecArgs / ControlPath', () => {
         assert.equal(args[sIdx + 1], sock)
         assert.ok(!args.some((a) => a.startsWith('ControlPath=')))
       } finally {
-        rmSync(userData, { recursive: true, force: true })
+        rmSync(dir, { recursive: true, force: true })
       }
     },
   )
