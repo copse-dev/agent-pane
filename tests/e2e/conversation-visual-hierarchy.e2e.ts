@@ -90,6 +90,8 @@ describe('conversation visual hierarchy', () => {
       const selectedStyle = getComputedStyle(selectedThread)
       const reviewStyle = getComputedStyle(reviewElement)
       const comparisonStyle = getComputedStyle(comparisonElement)
+      const messagesListRect = messagesList.getBoundingClientRect()
+      const messagesListContentCenter = messagesListRect.left + messagesList.clientWidth / 2
       return {
         paneWidth: pane.width,
         messagesListScrollbarGutter: messagesList.offsetWidth - messagesList.clientWidth,
@@ -106,9 +108,9 @@ describe('conversation visual hierarchy', () => {
         todoCenterDelta: Math.abs(
           todoPanel.left + todoPanel.width / 2 - (pane.left + pane.width / 2),
         ),
-        reviewCenterDelta: Math.abs(review.left + review.width / 2 - (pane.left + pane.width / 2)),
+        reviewCenterDelta: Math.abs(review.left + review.width / 2 - messagesListContentCenter),
         comparisonCenterDelta: Math.abs(
-          comparison.left + comparison.width / 2 - (pane.left + pane.width / 2),
+          comparison.left + comparison.width / 2 - messagesListContentCenter,
         ),
         composerBottomGap: pane.bottom - composer.bottom,
         reasoningBorderWidth: reasoningStyle.borderLeftWidth,
