@@ -1,9 +1,14 @@
 import { posixQuote } from '../security/safe-install.ts'
 
+const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
 /** Build `env KEY=VAL … command` prefix for remote exec (no server SendEnv cooperation needed). */
 export function buildRemoteEnvPrefix(env: Record<string, string> | undefined): string {
   if (!env || Object.keys(env).length === 0) return ''
-  const pairs = Object.entries(env).map(([key, value]) => `${key}=${posixQuote(value)}`)
+  const pairs = Object.entries(env)
+    .filter(([key]) => ENV_KEY_PATTERN.test(key))
+    .map(([key, value]) => `${key}=${posixQuote(value)}`)
+  if (pairs.length === 0) return ''
   return `env ${pairs.join(' ')} `
 }
 

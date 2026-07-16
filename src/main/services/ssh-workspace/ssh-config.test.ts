@@ -25,4 +25,13 @@ Host dev github.com
     assert.equal(aliases.length, 1)
     assert.equal(aliases[0]?.alias, 'lab')
   })
+
+  it('strips quotes from identity file paths', () => {
+    const aliases = parseSshConfig(`
+Host dev
+  IdentityFile "/home/alice/.ssh/my key"
+`)
+    assert.equal(aliases.length, 1)
+    assert.equal(aliases[0]?.identityFile, '/home/alice/.ssh/my key')
+  })
 })

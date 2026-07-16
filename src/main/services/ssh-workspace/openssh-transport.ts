@@ -86,7 +86,14 @@ async function runLocalSsh(
     }
 
     const onAbort = (): void => {
+      if (settled) return
+      settled = true
       cancelKill = terminateProcessTree(proc)
+      finish(() => {
+        const err = new Error('SSH command aborted')
+        err.name = 'AbortError'
+        reject(err)
+      })
     }
 
     const timer =
@@ -109,7 +116,7 @@ async function runLocalSsh(
       stdout = appendFlatCapped(stdout, chunk.toString(), maxBytes)
     })
     proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr = appendFlatCapped(stderr, chunk.toString(), COMMAND_OUTPUT_MAX_BYTES)
+      stderr = appendFlatCapped(stderr, chunk.toString(), maxBytes)
     })
 
     proc.on('close', (code) => {
@@ -182,8 +189,15 @@ export class OpenSshTransport implements SshTransport {
             master.stderr.trim() || master.stdout.trim() || 'SSH control connection failed',
           )
         }
+        this.connected = true
+      } else {
+        // Windows OpenSSH lacks ControlMaster — verify reachability with a no-op exec.
+        const probe = await this.execArgv(['true'], { timeoutMs: 15_000 })
+        if (probe.code !== 0) {
+          throw new Error(probe.stderr.trim() || probe.stdout.trim() || 'SSH connection failed')
+        }
+        this.connected = true
       }
-      this.connected = true
     } finally {
       askpass.release()
     }
@@ -208,13 +222,13 @@ export class OpenSshTransport implements SshTransport {
 
   async execArgv(argv: string[], options: SshExecOptions = {}): Promise<SshExecResult> {
     const remote = buildRemoteArgvCommand(argv, options.cwd, options.env)
-    const args = [...baseSshArgs(this.host, this.controlPath), remote]
+    const args = [...baseSshArgs(this.host, this.controlPath), '--', remote]
     return runLocalSsh(args, options)
   }
 
   async execShell(command: string, options: SshExecOptions = {}): Promise<SshExecResult> {
     const remote = buildRemoteShellCommand(command, options.cwd, options.env)
-    const args = [...baseSshArgs(this.host, this.controlPath), remote]
+    const args = [...baseSshArgs(this.host, this.controlPath), '--', remote]
     return runLocalSsh(args, options)
   }
 }
