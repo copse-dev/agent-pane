@@ -27,8 +27,8 @@ import type {
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
 import { recordCommandHookRun } from '../hook-run-recorder.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
-import { spawnHookProcess } from './hook-spawn.ts'
-import type { DialectInterpretation } from './dialect-adapter.ts'
+import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
+import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
 
 /** No usable response — the action proceeds (a command hook is never fail-hard). */
 const ABSTAIN: CommandHookResult = { outcome: null, failed: false }
@@ -37,6 +37,12 @@ function isToolGatePayload(payload: unknown): payload is HookEventPayloads['tool
   return (
     typeof payload === 'object' && payload !== null && 'toolName' in payload && 'input' in payload
   )
+}
+
+function isBeforeSubmitPromptPayload(
+  payload: unknown,
+): payload is HookEventPayloads['beforeSubmitPrompt'] {
+  return typeof payload === 'object' && payload !== null && 'prompt' in payload
 }
 
 /**
@@ -61,9 +67,57 @@ function resolveFailure(
 }
 
 /**
+ * Spawn one hook, interpret it via its dialect, record the spine line, and
+ * resolve failures per `onFailure` — the shared execution path every wired
+ * event uses. Only the marshalled `request` and the dialect `interpret` closure
+ * differ per event; a null request means the hook does not apply (abstain).
+ */
+async function spawnInterpretResolve(
+  hook: CommandHook,
+  adapter: DialectAdapter,
+  request: unknown,
+  interpret: (spawn: HookSpawnResult) => DialectInterpretation,
+  context: HookContext,
+): Promise<CommandHookResult> {
+  if (request === null) return ABSTAIN
+
+  const spawn = await spawnHookProcess(hook.command, request, {
+    cwd: hook.cwd ?? process.cwd(),
+    ...(hook.timeoutMs !== undefined ? { timeoutMs: hook.timeoutMs } : {}),
+    ...(context.signal ? { signal: context.signal } : {}),
+  })
+
+  const interpretation = interpret(spawn)
+
+  // Always-on spine recording (decision 6): one hook_run line per execution,
+  // raw stdout AND stderr as blobs, next to the normalized decision.
+  recordCommandHookRun({
+    event: interpretation.spineEvent,
+    hookId: hook.id,
+    startedAt: spawn.startedAt,
+    durationMs: spawn.durationMs,
+    exitCode: spawn.exitCode,
+    parseOk: interpretation.parseOk,
+    decision: interpretation.spineDecision,
+    stdout: spawn.stdout,
+    stderr: spawn.stderr,
+  })
+
+  if (interpretation.failed) {
+    if (interpretation.runtimeError !== undefined) {
+      adapter.recordRuntimeFailure(interpretation.spineEvent, hook.id, interpretation.runtimeError)
+    }
+    return resolveFailure(hook, interpretation)
+  }
+
+  return { outcome: interpretation.outcome, failed: false }
+}
+
+/**
  * Build the host command-hook runner injected into `HookContext.runCommandHook`.
- * A2 wires only the `toolGate` event (the permission gate); other canonical
- * events land their fire sites in later phases and register no command hooks yet.
+ * A2 wired the `toolGate` event (the permission gate); B1 adds
+ * `beforeSubmitPrompt` (the compose path). Other canonical events land their fire
+ * sites in later phases and register no command hooks yet, so they abstain.
  */
 export function createCommandHookRunner(): CommandHookRunner {
   return {
@@ -72,51 +126,35 @@ export function createCommandHookRunner(): CommandHookRunner {
       payload: HookEventPayloads[E],
       context: HookContext,
     ): Promise<CommandHookResult> {
-      // A2 only wires toolGate command hooks; anything else abstains cleanly
-      // until its phase wires the fire site (never a hard failure).
-      if (hook.event !== 'toolGate' || !isToolGatePayload(payload)) return ABSTAIN
-
-      const adapter = getDialectAdapter(hook.dialect)
-      if (!adapter) return ABSTAIN
-
-      const request = adapter.marshalToolGateRequest(hook, payload)
-      // A null request means the hook does not apply to this tool — abstain.
-      if (request === null) return ABSTAIN
-
-      const spawn = await spawnHookProcess(hook.command, request, {
-        cwd: hook.cwd ?? process.cwd(),
-        ...(hook.timeoutMs !== undefined ? { timeoutMs: hook.timeoutMs } : {}),
-        ...(context.signal ? { signal: context.signal } : {}),
-      })
-
-      const interpretation = adapter.interpretToolGate(spawn, payload)
-
-      // Always-on spine recording (decision 6): one hook_run line per execution,
-      // raw stdout AND stderr as blobs, next to the normalized decision.
-      recordCommandHookRun({
-        event: interpretation.spineEvent,
-        hookId: hook.id,
-        startedAt: spawn.startedAt,
-        durationMs: spawn.durationMs,
-        exitCode: spawn.exitCode,
-        parseOk: interpretation.parseOk,
-        decision: interpretation.spineDecision,
-        stdout: spawn.stdout,
-        stderr: spawn.stderr,
-      })
-
-      if (interpretation.failed) {
-        if (interpretation.runtimeError !== undefined) {
-          adapter.recordRuntimeFailure(
-            interpretation.spineEvent,
-            hook.id,
-            interpretation.runtimeError,
-          )
-        }
-        return resolveFailure(hook, interpretation)
+      if (hook.event === 'toolGate' && isToolGatePayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        if (!adapter) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          adapter.marshalToolGateRequest(hook, payload),
+          (spawn) => adapter.interpretToolGate(spawn, payload),
+          context,
+        )
       }
 
-      return { outcome: interpretation.outcome, failed: false }
+      if (hook.event === 'beforeSubmitPrompt' && isBeforeSubmitPromptPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        // A dialect with no compose-path hook (Claude) omits these — abstain.
+        const marshal = adapter?.marshalBeforeSubmitPromptRequest?.bind(adapter)
+        const interpret = adapter?.interpretBeforeSubmitPrompt?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload),
+          (spawn) => interpret(spawn, payload),
+          context,
+        )
+      }
+
+      // Unwired event (no fire site yet): abstain cleanly, never a hard failure.
+      return ABSTAIN
     },
   }
 }

@@ -95,10 +95,11 @@ describe('cursor-adapter', () => {
       assert.equal(warning.scope, 'user')
     })
 
-    it('marks declared-but-unwired events as unsupported', async () => {
+    it('marks declared-but-unwired events as unsupported (beforeSubmitPrompt is wired in B1)', async () => {
       await writeUserHooks({
         hooks: {
           beforeShellExecution: [{ command: './gate.sh' }],
+          beforeSubmitPrompt: [{ command: './submit.sh' }],
           stop: [{ command: './notify.sh' }],
         },
       })
@@ -110,6 +111,7 @@ describe('cursor-adapter', () => {
       assert.equal(warnings.length, 0)
       assert.equal(hooks.find((h) => h.event === 'stop')?.supported, false)
       assert.equal(hooks.find((h) => h.event === 'beforeShellExecution')?.supported, true)
+      assert.equal(hooks.find((h) => h.event === 'beforeSubmitPrompt')?.supported, true)
     })
 
     it('warns on malformed entries without dropping valid ones', async () => {
