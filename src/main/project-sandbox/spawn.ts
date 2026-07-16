@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import { homedir } from 'node:os'
 import { basename, dirname } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as pty from 'node-pty'
@@ -362,7 +363,6 @@ export async function spawnPtyInProjectSandbox(
     const launch = await buildRemotePtyLaunch(
       target.hostId,
       sshRemoteWorkingDirectory(target, opts.cwd),
-      shell,
       opts.env,
     )
     const termEnv: NodeJS.ProcessEnv = {
@@ -370,11 +370,13 @@ export async function spawnPtyInProjectSandbox(
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
     }
+    // Local cwd for the ssh client process — must exist on this machine. The
+    // remote working directory is already embedded in the ssh remote command.
     const ptyProcess = pty.spawn(launch.file, launch.args, {
       name: 'xterm-256color',
       cols: opts.cols,
       rows: opts.rows,
-      cwd: opts.cwd,
+      cwd: homedir(),
       env: termEnv,
     })
     ptyProcess.onExit(() => {
