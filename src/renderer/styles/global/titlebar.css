@@ -96,6 +96,23 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.titlebar-btn-label {
+  min-width: 0;
+}
+
+/* Portrait / bottom-pinned chrome: keep Open-in-editor + Panel labeled, drop
+   secondary titlebar labels to icons so the cluster fits a narrow window. The
+   full labeled set lives in `.portrait-panel-bar` under the composer footer. */
+#app.is-portrait-chrome #titlebar .titlebar-compact-icon .titlebar-btn-label {
+  display: none;
+}
+#app.is-portrait-chrome #titlebar .titlebar-compact-icon {
+  padding: 3px 6px;
+  gap: 0;
+}
+#app.is-portrait-chrome #titlebar .open-in-editor-label {
+  max-width: 112px;
+}
 .titlebar button,
 .titlebar input,
 .titlebar select {

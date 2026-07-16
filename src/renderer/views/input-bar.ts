@@ -50,6 +50,7 @@ import {
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
+import { mountPanelModeControls } from './panel-mode-controls.ts'
 
 export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const chips = el('div', { class: 'attachment-chips' })
@@ -150,6 +151,13 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const footerCompact = bindFooterCompactLayout(footer, () => {
     updateFooter()
   })
+  // Portrait / bottom-pinned chrome: a labeled panel-mode row under the status
+  // footer (between status and the stacked right panel) so users can flip modes
+  // without climbing to the titlebar. Hidden via CSS unless `.is-portrait-chrome`.
+  const portraitPanelControls = mountPanelModeControls(store, api, {
+    className: 'portrait-panel-bar titlebar-panel-controls',
+    alwaysShowLabels: 'all',
+  })
   let costVisible = false
 
   const modelPicker = mountFooterModelPicker(
@@ -197,7 +205,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     updateFooter()
   })
 
-  root.append(chips, branchWarning, inputRow, footer)
+  root.append(chips, branchWarning, inputRow, footer, portraitPanelControls.element)
 
   const followUps = mountFollowUpSuggestions(store, api, (prompt) => {
     composer.value = prompt
@@ -932,6 +940,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     modelPicker.destroy()
     footerOverflow.destroy()
     footerCompact.destroy()
+    portraitPanelControls.destroy()
     branchControl.destroy()
     indexStatusChip.destroy()
     skillPicker()

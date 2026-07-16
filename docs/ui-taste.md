@@ -187,6 +187,19 @@ do not leave a `0/0 done` shell with struck-through or muted ghost rows. Striket
 **completed** work, not cancelled work. Spec:
 [`tests/e2e/todo-display.e2e.ts`](../tests/e2e/todo-display.e2e.ts).
 
+## Portrait / vertical chrome (narrow tall windows)
+
+On tall portrait windows (or when the right panel is pinned to **bottom**), keep mode switching
+reachable without a crowded titlebar:
+
+- Titlebar keeps **Open in editor** + **Panel** labeled; secondary mode buttons (Terminal, Changes,
+  PRs, Browser, …) become icon-only.
+- A labeled `.portrait-panel-bar` sits under `.input-footer` (between status and the stacked panel),
+  matching the Settings button height band and spanning the chat column.
+- When the chat column is too narrow for every labeled mode, trailing buttons collapse into a `…`
+  overflow menu (Panel stays visible). Spec:
+  [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the
