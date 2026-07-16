@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, chmod, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -9,6 +9,10 @@ import {
   userHooksConfigPath,
   projectHooksConfigPath,
 } from './cursor-hooks.ts'
+import { beginHookRunRecording, endHookRunRecording } from '../hook-run-recorder.ts'
+import { getThreadMeta } from '../thread-store.ts'
+import { storageSet } from '../storage/storage.ts'
+import { parseSpineEntries, type SpineHookRunLine } from '@shared/threads/spine-schema.ts'
 
 describe('cursor-hooks', () => {
   let tempHome = ''
@@ -139,5 +143,102 @@ describe('cursor-hooks', () => {
 
     const hooks = await listCursorHooks({ workspaceRoot: null, projectTrusted: false })
     assert.deepEqual(hooks, [])
+  })
+
+  // Decision 6 (docs/plans/hooks-and-feature-packs.md): every command-hook
+  // execution appends a hook_run spine line with raw stdout AND stderr as
+  // blobs — stderr was previously discarded via stdio 'ignore'.
+  describe('spine recording of executions (decision 6)', () => {
+    const PROJECT = 'proj-cursor-hooks'
+    const THREAD = 't1'
+    let workspaceDir = ''
+    let previousWorkspaceDir: string | undefined
+
+    beforeEach(async () => {
+      workspaceDir = await mkdtemp(join(tmpdir(), 'copse-hook-spine-'))
+      previousWorkspaceDir = process.env['COPSE_WORKSPACE_DIR']
+      process.env['COPSE_WORKSPACE_DIR'] = workspaceDir
+      storageSet('activeProjectId', PROJECT)
+      beginHookRunRecording(THREAD)
+    })
+
+    afterEach(async () => {
+      endHookRunRecording(THREAD)
+      if (previousWorkspaceDir === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previousWorkspaceDir
+      await rm(workspaceDir, { recursive: true, force: true })
+    })
+
+    async function readRecordedRuns(): Promise<SpineHookRunLine[]> {
+      // Flushes the store's serialized write queue (recording is fire-and-forget).
+      await getThreadMeta(PROJECT, THREAD)
+      const raw = await readFile(join(workspaceDir, PROJECT, THREAD, 'events.jsonl'), 'utf-8')
+      return parseSpineEntries(raw)
+        .map((e) => e.line)
+        .filter((l): l is SpineHookRunLine => l?.type === 'hook_run')
+    }
+
+    it('captures stderr and exit code alongside the parsed decision', async () => {
+      const script = join(tempHome, 'noisy.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\necho 'debug noise' >&2\nprintf '%s' '{"permission":"ask"}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await runPermissionHooks(
+        'beforeShellExecution',
+        { command: 'ls' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+      assert.equal(decision.permission, 'ask')
+
+      const runs = await readRecordedRuns()
+      assert.equal(runs.length, 1)
+      const [run] = runs
+      assert.ok(run)
+      assert.equal(run.event, 'beforeShellExecution')
+      assert.equal(run.hookId, script)
+      assert.equal(run.executor, 'command')
+      assert.equal(run.exitCode, 0)
+      assert.equal(run.parseOk, true)
+      assert.equal(run.decision.permission, 'ask')
+      assert.ok(run.durationMs >= 0)
+      const dir = join(workspaceDir, PROJECT, THREAD)
+      assert.ok(run.stdout && run.stderr)
+      assert.equal(await readFile(join(dir, run.stdout.ref), 'utf-8'), '{"permission":"ask"}')
+      assert.equal(await readFile(join(dir, run.stderr.ref), 'utf-8'), 'debug noise\n')
+    })
+
+    it('records parse_ok false with the corrupt bytes when stdout is not JSON', async () => {
+      const script = join(tempHome, 'corrupt.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s' 'oops not json'\nexit 3\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { beforeReadFile: [{ command: script }] } })
+
+      // Fail-open semantics are unchanged: the corrupted response allows.
+      const decision = await runPermissionHooks(
+        'beforeReadFile',
+        { file_path: 'x.txt', content: '' },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+      assert.equal(decision.permission, 'allow')
+
+      const runs = await readRecordedRuns()
+      const [run] = runs
+      assert.ok(run)
+      assert.equal(run.parseOk, false)
+      assert.equal(run.exitCode, 3)
+      assert.deepEqual(run.decision, {})
+      assert.ok(run.stdout)
+      const dir = join(workspaceDir, PROJECT, THREAD)
+      assert.equal(await readFile(join(dir, run.stdout.ref), 'utf-8'), 'oops not json')
+    })
   })
 })

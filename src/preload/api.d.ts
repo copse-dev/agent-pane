@@ -101,6 +101,7 @@ export interface ApiClient {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => () => void
     onAskUserRequest: (
@@ -127,7 +128,12 @@ export interface ApiClient {
     onConflict: (handler: (paths: string[]) => void) => () => void
   }
   approval: {
-    respond: (id: string, approved: boolean, remember?: boolean) => Promise<void>
+    respond: (
+      id: string,
+      approved: boolean,
+      remember?: boolean,
+      comparisonModels?: { a: string; b: string; judge: string },
+    ) => Promise<void>
   }
   ask: {
     respond: (id: string, answers: string[]) => Promise<void>
@@ -351,6 +357,7 @@ export interface ApiClient {
   usage: {
     record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) => Promise<void>
     getSummary: () => Promise<import('@shared/usage/aggregate-usage.ts').UsageSummary>
+    getPlanUsage: () => Promise<import('@copse/plan-usage').PlanUsageSnapshot>
   }
   index: {
     query: (pattern: string) => Promise<string[]>
