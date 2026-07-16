@@ -90,7 +90,7 @@ export const config: Options.Testrunner = {
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
       // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).
-      COPSE_PLAN_USAGE_MOCK: '1',
+      COPSE_PLAN_USAGE_MOCK: process.env.COPSE_PLAN_USAGE_MOCK?.trim() || '1',
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,

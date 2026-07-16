@@ -126,4 +126,26 @@ describe('loadPlanUsageSnapshot', () => {
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
     }
   })
+
+  it('returns the auth-error mock fixture when COPSE_PLAN_USAGE_MOCK=auth-errors', async () => {
+    const prev = process.env['COPSE_PLAN_USAGE_MOCK']
+    process.env['COPSE_PLAN_USAGE_MOCK'] = 'auth-errors'
+    try {
+      const snap = await loadPlanUsageSnapshot()
+      assert.equal(snap.providers.length, 4)
+      assert.equal(snap.providers[0]?.provider, 'claude')
+      assert.equal(snap.providers[0]?.status, 'unavailable')
+      assert.match(
+        snap.providers[0]?.status === 'unavailable' ? snap.providers[0].reason : '',
+        /credentials were rejected/i,
+      )
+      assert.equal(snap.providers[1]?.provider, 'codex')
+      assert.equal(snap.providers[1]?.status, 'ok')
+      assert.equal(snap.providers[2]?.provider, 'huggingface')
+      assert.equal(snap.providers[2]?.status, 'error')
+    } finally {
+      if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
+      else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
+    }
+  })
 })

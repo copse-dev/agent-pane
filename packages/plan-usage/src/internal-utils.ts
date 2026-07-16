@@ -4,6 +4,14 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+export function isAuthRejectionError(message: string): boolean {
+  return (
+    /\bHTTP (?:401|403)\b/i.test(message) ||
+    /\b(?:authentication|authorization)_error\b/i.test(message) ||
+    /invalid authentication credentials/i.test(message)
+  )
+}
+
 export function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 0
   if (value < 0) return 0
