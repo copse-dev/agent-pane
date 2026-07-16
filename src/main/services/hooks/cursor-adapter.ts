@@ -14,7 +14,8 @@
 // `failed` + the hook's `onFailure`; the shared runner turns that into deny/allow.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import micromatch from 'micromatch'
 import {
   CURSOR_HOOK_EVENTS,
   isCursorWiredHookEvent,
@@ -47,6 +48,16 @@ interface DiscoveredCursorHook {
   scope: CursorHookScope
   /** Cursor `failClosed: true` — crash / timeout / invalid JSON blocks instead of allowing. */
   failClosed: boolean
+  /**
+   * Optional path/glob matcher for `afterFileEdit` (B2). Cursor's native
+   * `afterFileEdit` has no declared per-hook path matcher — the vendor pattern
+   * is for the script to filter on `file_path` itself — so this is a Copse
+   * convenience the Cursor adapter honours: when present, the hook fires only
+   * for edited paths matching one of the globs; when absent, it fires for every
+   * edit (Cursor's "runs after every file edit" default). Populated from a
+   * string or string[] `glob` field on the entry.
+   */
+  glob?: string[]
 }
 
 /** `~/.cursor/hooks.json` — always trusted (the user installed it). */
@@ -61,6 +72,17 @@ export function projectHooksConfigPath(workspaceRoot: string): string {
 
 function isHookEvent(value: string): value is CursorHookEvent {
   return (CURSOR_HOOK_EVENTS as readonly string[]).includes(value)
+}
+
+/**
+ * Normalize an entry's `glob` matcher field (B2) to a clean string[] or
+ * undefined. Accepts a single string or an array of strings; anything else (or
+ * an empty result) yields undefined so the hook fires for every edit.
+ */
+function normalizeGlobField(value: unknown): string[] | undefined {
+  const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
+  const globs = raw.filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+  return globs.length > 0 ? globs : undefined
 }
 
 /** One parsed config: usable hooks plus per-entry authoring warnings. */
@@ -129,7 +151,16 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
         return
       }
       const failClosed = (entry as { failClosed?: unknown }).failClosed === true
-      out.push({ event, command: command.trim(), cwd, source: path, scope, failClosed })
+      const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
+      out.push({
+        event,
+        command: command.trim(),
+        cwd,
+        source: path,
+        scope,
+        failClosed,
+        ...(glob ? { glob } : {}),
+      })
     })
   }
   return { hooks: out, warnings }
@@ -320,6 +351,67 @@ export async function cursorBeforeSubmitPromptHooks(
     })
 }
 
+/**
+ * Whether an `afterFileEdit` hook's glob matcher covers the edited path (B2).
+ * A hook with no glob fires for every edit (Cursor's default). Otherwise the
+ * absolute path is matched, plus — when it is under the workspace — its
+ * workspace-relative form (so `**` / `src/**` globs match the natural way), and
+ * a basename pass so a bare `*.ts` still matches a nested file.
+ */
+function afterFileEditMatches(
+  hook: DiscoveredCursorHook,
+  filePath: string,
+  workspaceRoot: string | null,
+): boolean {
+  if (!hook.glob || hook.glob.length === 0) return true
+  const candidates = [filePath.replace(/\\/g, '/')]
+  if (workspaceRoot) {
+    const rel = relative(workspaceRoot, filePath).replace(/\\/g, '/')
+    if (rel && !rel.startsWith('..')) candidates.push(rel)
+  }
+  return candidates.some(
+    (c) =>
+      micromatch.isMatch(c, hook.glob as string[], { dot: true }) ||
+      micromatch.isMatch(c, hook.glob as string[], { dot: true, basename: true }),
+  )
+}
+
+/**
+ * Discover the Cursor command hooks registered for `afterFileEdit` (B2) whose
+ * path matcher covers `payload.filePath`, as registry `CommandHook`s. Same
+ * discovery + trust + `failClosed` → `onFailure` mapping as
+ * {@link cursorToolGateHooks}; the matcher (per-hook `glob`) is applied here at
+ * discovery — the adapter's dispatch-side filter, mirroring how the tool → event
+ * matcher gates `toolGate`. The diff-queue / write-tool fire site
+ * (`after-file-edit.ts`) registers and fires the survivors through the shared
+ * registry → runner → adapter seam.
+ */
+export async function cursorAfterFileEditHooks(
+  payload: HookEventPayloads['afterFileEdit'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'afterFileEdit'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter(
+      (h) =>
+        h.event === 'afterFileEdit' &&
+        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+    )
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'afterFileEdit' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
 interface CursorHookResponse {
   permission?: HookDecision
   agentMessage?: string
@@ -498,6 +590,55 @@ export const cursorAdapter: DialectAdapter = {
     }
     const { outcome, spineDecision } = beforeSubmitOutcomeFromResponse(parsed)
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
+  },
+
+  marshalAfterFileEditRequest(_hook, payload) {
+    // Cursor's afterFileEdit stdin: the edited file's absolute path, the edits
+    // (old_string/new_string pairs) and the standard agent-session envelope.
+    // The canonical payload carries only the path in v1, so `edits` is empty —
+    // enough for the common formatter/accounting hook, which keys off file_path;
+    // edit content enrichment rides with B4's conversation/generation ids.
+    return {
+      conversation_id: '',
+      generation_id: '',
+      hook_event_name: 'afterFileEdit',
+      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
+      file_path: payload.filePath,
+      edits: [],
+    }
+  },
+
+  interpretAfterFileEdit(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's afterFileEdit is a notification: it "cannot block the agent or
+    // return data to it" (vendor docs). So stdout never yields a control-flow
+    // decision — the outcome is always null. We still surface a crash / timeout
+    // / non-zero exit as `failed` for the Sources per-hook error indicator and
+    // the spine, but the fire site (after-file-edit.ts) never acts on it — the
+    // edit has already landed. `failClosed` therefore has nothing to block here.
+    const spineEvent = 'afterFileEdit'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
   },
 
   recordRuntimeFailure(event, command, message) {
