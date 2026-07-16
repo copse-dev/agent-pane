@@ -15,7 +15,8 @@ import type {
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
-import { acpModelValue } from '@shared/acp.ts'
+import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
@@ -261,6 +262,10 @@ export async function runWithAcpRetry<T>(
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
+  if (isActiveSshWorkspace()) {
+    throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
+  }
+
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
@@ -434,6 +439,9 @@ export async function runAcpAgentFromSettings(
  * Returns `null` when the agent is unknown/disabled or exposes no model selector.
  */
 export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSelector | null> {
+  if (isActiveSshWorkspace()) {
+    throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
+  }
   const agent = getAcpAgent(agentId)
   if (!agent) return null
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()

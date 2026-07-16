@@ -1,13 +1,19 @@
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
+import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
+import { setSetting } from '../storage/settings.ts'
+import { storageSet } from '../storage/storage.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   AcpTurnFailure,
   buildAcpPrompt,
   isAcpConnectionDropped,
   isRetryableAcpError,
   isTransientProviderError,
+  listAcpModelsForAgent,
   permissionResponseFor,
+  runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
   runWithAcpRetry,
   sliceLines,
@@ -359,5 +365,44 @@ describe('buildAcpPrompt', () => {
       skills: '\n\n## Invoked skills\n\nBODY',
     })
     assert.match(prompt, /--- New message ---\ngo\n\n## Invoked skills\n\nBODY$/)
+  })
+})
+
+describe('ACP on SSH workspaces', () => {
+  beforeEach(async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: '/remote/project', sshHost: 'dev' }])
+    setWorkspaceRootForTest('/remote/project')
+  })
+
+  afterEach(() => {
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    void setSetting('sshWorkspaceEnabled', false)
+    void setSetting('sshWorkspaceHosts', [])
+  })
+
+  it('rejects session open and model detect with a clear unsupported message', async () => {
+    await assert.rejects(
+      () =>
+        runAcpAgentFromSettings({
+          threadId: 't1',
+          agentId: 'cursor',
+          userPrompt: 'hi',
+          priorMessages: [],
+          signal: new AbortController().signal,
+          onChunk: () => undefined,
+        }),
+      (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
+    )
+    await assert.rejects(
+      () => listAcpModelsForAgent('cursor'),
+      (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
+    )
   })
 })

@@ -184,6 +184,10 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
   catalog agent out (#590).
+- **Not available on SSH workspaces.** ACP agents are local stdio processes; they
+  are hidden from the chat model picker and rejected at session open when the
+  active project is an SSH remote. Use a cloud/local model (or open a local
+  folder) instead. Remoting ACP over SSH is not implemented.
 
 ## Comparing agents (capability probe)
 
