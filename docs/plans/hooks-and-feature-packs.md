@@ -117,6 +117,11 @@ revisiting this document, not silently diverging in an implementation PR.
    directions** (a Claude hook sees Claude's stdin shape and tool names). Foreign files
    stay strictly on their vendor's contract; Copse-native events live only in the Copse
    dialect. Unknown events in a foreign file are warned about, never silently skipped.
+   _Acknowledged exception (B2):_ the Cursor adapter honours an optional per-hook `glob`
+   field on `afterFileEdit` — a Copse convenience, since Cursor's native `afterFileEdit`
+   has no per-hook path matcher (the vendor pattern is in-script `file_path` filtering).
+   It is additive (absent ⇒ fires for all edits) and full Cursor matcher semantics remain
+   deferred to D3, but it is a deliberate, minor divergence from strict vendor parity.
 9. **Foreign dialects keep vendor failure semantics — including Cursor `failClosed`.**
    Cursor hooks fail open **by default**, but Cursor's per-hook `failClosed: true`
    (crash / timeout / invalid JSON blocks the action instead of allowing it) is part of
