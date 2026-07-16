@@ -279,22 +279,31 @@
   border-top: 1px solid var(--border);
 }
 /* Portrait / bottom-pinned chrome: labeled panel toggles between the status
-   footer and the stacked right panel. Same band height as `.projects-settings-btn`
-   (`--chrome-action-band-height`) so the row lines up with Settings. */
+   footer and the stacked right panel. Pixel-locked to `.projects-settings-btn`
+   via the shared `--chrome-action-band-height` token (and max/min so flex/scroll
+   cannot grow it). Buttons are ghost-styled like Settings — no tall pill chrome. */
 .portrait-panel-bar {
   display: none;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   flex-wrap: nowrap;
   overflow-x: auto;
-  scrollbar-width: thin;
+  overflow-y: hidden;
+  scrollbar-width: none;
   width: 100%;
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
+  min-height: var(--chrome-action-band-height);
+  max-height: var(--chrome-action-band-height);
   padding: 0 var(--spacing-md);
   background: var(--bg-elevated);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+}
+.portrait-panel-bar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 #app.is-portrait-chrome .portrait-panel-bar {
   display: flex;
@@ -302,10 +311,24 @@
 .portrait-panel-bar .titlebar-text-btn {
   flex: 0 0 auto;
   box-sizing: border-box;
-  height: 22px;
+  height: var(--chrome-action-band-content-height);
   padding: 0 6px;
-  gap: 3px;
+  gap: 4px;
   white-space: nowrap;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.portrait-panel-bar .titlebar-text-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.portrait-panel-bar .titlebar-text-btn.active {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border: none;
 }
 .footer-model-host {
   min-width: 0;

@@ -7,6 +7,8 @@
   width: 100%;
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
+  min-height: var(--chrome-action-band-height);
+  max-height: var(--chrome-action-band-height);
   padding: 0 var(--spacing-md);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
