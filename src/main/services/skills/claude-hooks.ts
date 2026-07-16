@@ -6,6 +6,7 @@ import type { ClaudePermissionDecision } from '@shared/types/claude-hooks.ts'
 import { CLAUDE_PERMISSION_DECISIONS } from '@shared/types/claude-hooks.ts'
 import type { HookScope, HookSummary } from '@shared/types/hooks.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { recordCommandHookRun } from '../hook-run-recorder.ts'
 import type { CursorHookDecision, CursorHookPermission } from './cursor-hooks.ts'
 
 /** Hooks that take longer than this are treated as failed-open (allow). */
@@ -183,6 +184,8 @@ interface HookProcessResult {
   exitCode: number | null
   stdout: string
   stderr: string
+  startedAt: number
+  durationMs: number
 }
 
 /** Spawn one Claude hook command; capture exit code, stdout, and stderr. */
@@ -192,12 +195,13 @@ function runClaudeHookCommand(
   signal?: AbortSignal,
 ): Promise<HookProcessResult> {
   return new Promise((resolve) => {
+    const startedAt = Date.now()
     let settled = false
-    const finish = (value: HookProcessResult): void => {
+    const finish = (value: Omit<HookProcessResult, 'startedAt' | 'durationMs'>): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve(value)
+      resolve({ ...value, startedAt, durationMs: Date.now() - startedAt })
     }
 
     auditProjectHook(hook)
@@ -238,6 +242,18 @@ function runClaudeHookCommand(
       finish({ exitCode: null, stdout: '', stderr: '' })
     }
   })
+}
+
+/** True when stdout is empty (intentional no-decision) or valid JSON. */
+function claudeStdoutParsesClean(result: HookProcessResult): boolean {
+  const text = result.stdout.trim()
+  if (!text) return true
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function mapClaudeDecision(decision: ClaudePermissionDecision): CursorHookPermission {
@@ -320,6 +336,32 @@ export async function runClaudePreToolUseHooks(
   const results = await Promise.all(
     hooks.map((hook) => runClaudeHookCommand(hook, payload, opts.signal)),
   )
+
+  // Always-on spine recording (decision 6): one hook_run line per execution,
+  // raw stdout/stderr as blobs. Recording never affects the decision reduction.
+  hooks.forEach((hook, i) => {
+    const result = results[i]
+    if (!result) return
+    const decision = decisionFromClaudeResult(result)
+    recordCommandHookRun({
+      event: 'PreToolUse',
+      hookId: hook.command,
+      startedAt: result.startedAt,
+      durationMs: result.durationMs,
+      exitCode: result.exitCode,
+      // Claude semantics: exit 0 with empty stdout and exit 2 are intentional
+      // protocol outcomes; anything else that fell through is a failed parse.
+      parseOk: result.exitCode === 2 || claudeStdoutParsesClean(result),
+      decision: {
+        permission: decision.permission,
+        ...(decision.agentMessage !== undefined
+          ? { agentMessageChars: decision.agentMessage.length }
+          : {}),
+      },
+      stdout: result.stdout,
+      stderr: result.stderr,
+    })
+  })
 
   let decision: CursorHookDecision = { permission: 'allow' }
   for (const result of results) {
