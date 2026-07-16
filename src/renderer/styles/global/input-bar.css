@@ -215,6 +215,22 @@
 .msg-queued.msg-editing .message-body {
   opacity: 1;
 }
+/* Held (decisions 5 & 16): a queued message that will not auto-submit — it waits
+   for an explicit human release. Warm-toned badge so it reads as "needs you",
+   distinct from the neutral "Queued" state. */
+.msg-queued.msg-held .message-queued-badge {
+  color: white;
+  background: var(--warning, #d18616);
+}
+.queued-action.queued-release {
+  color: white;
+  background: var(--accent);
+  border-color: transparent;
+}
+.queued-action.queued-release:hover {
+  color: white;
+  filter: brightness(1.08);
+}
 .message-queued-ui {
   margin-top: var(--spacing-sm);
 }

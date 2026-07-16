@@ -10,7 +10,11 @@ import {
   getActiveThread,
   setThreadDraftPrompt,
 } from '@shared/store/thread-helpers.ts'
-import { dispatchAgentRun, enqueueUserMessage } from '../controller/message-queue.ts'
+import {
+  dispatchAgentRun,
+  enqueueUserMessage,
+  startHumanTurnTree,
+} from '../controller/message-queue.ts'
 import { nextWorkingBrief } from '@copse/agent/working-brief.ts'
 import {
   buildTextWithAttachments,
@@ -682,6 +686,10 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
         createdAt: Date.now(),
       })
     } else {
+      // A typed prompt at idle starts a fresh turn tree (decision 16): late async
+      // hooks from an earlier turn now carry a stale epoch and are held, not
+      // auto-submitted, into this new turn.
+      startHumanTurnTree(store, id)
       dispatchAgentRun(store, api, id, payload)
     }
     composer.clear()

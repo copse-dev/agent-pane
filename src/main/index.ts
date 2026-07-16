@@ -57,6 +57,7 @@ import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import { storageGet, storageSet } from './services/storage/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
+import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
@@ -141,6 +142,12 @@ app
         if (!win.isDestroyed()) win.webContents.send('agent:chunk', threadId, chunk)
       },
     }
+
+    // C2: forward an async hook's queued message to the renderer's pending queue
+    // (decision 4). Same window-guarded send as `agent:chunk`.
+    setHookQueueMessageSender((payload) => {
+      if (!win.isDestroyed()) win.webContents.send('agent:hook_queue_message', payload)
+    })
 
     initApproval(win)
     initAskUser(win)
