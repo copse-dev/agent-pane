@@ -8,6 +8,7 @@ import {
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolveWorkspacePath,
+  scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
 } from '../services/workspace.ts'
@@ -187,13 +188,17 @@ const SKILLS_RELOAD_KEYS = new Set([
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
-  void seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
-  const persistedRoot = getWorkspaceRoot()
-  if (persistedRoot) {
-    void registerAllowedWorkspaceRoot(persistedRoot).catch(() => {
-      // Stale workspaceRoot in config — ignore until user picks a folder.
-    })
-  }
+  scheduleAllowedWorkspaceRootsBootstrap(async () => {
+    await seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
+    const persistedRoot = getWorkspaceRoot()
+    if (persistedRoot) {
+      try {
+        await registerAllowedWorkspaceRoot(persistedRoot)
+      } catch {
+        // Stale workspaceRoot in config — ignore until user picks a folder.
+      }
+    }
+  })
 
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
