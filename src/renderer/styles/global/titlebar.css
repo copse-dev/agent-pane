@@ -111,7 +111,7 @@
   gap: 0;
 }
 #app.is-portrait-chrome #titlebar .open-in-editor-label {
-  max-width: 112px;
+  max-width: 72px;
 }
 .titlebar button,
 .titlebar input,
