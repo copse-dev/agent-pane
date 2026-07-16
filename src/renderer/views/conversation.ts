@@ -581,7 +581,12 @@ const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
-export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+export function mountConversation(
+  root: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+  activityHost?: HTMLElement,
+): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -617,7 +622,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // visible at the bottom of the screen instead of getting buried under the
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
-  root.append(scrollArea, queuedHost, activityBar)
+  root.append(scrollArea, queuedHost)
+  // In the full app, activity is the composer's top strip so it reads as part
+  // of the message box rather than a separate full-width status bar. Component
+  // mounts can omit the host and keep the self-contained fallback.
+  if (activityHost) activityHost.prepend(activityBar)
+  else root.append(activityBar)
 
   // Clicking a file edit's +/- counts reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
@@ -1261,6 +1271,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   rebuildForThread()
   syncFromStore()
   return () => {
+    if (activityHost) activityBar.remove()
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()
