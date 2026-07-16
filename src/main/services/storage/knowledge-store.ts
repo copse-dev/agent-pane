@@ -177,8 +177,19 @@ function serializeNote(note: KnowledgeNote): string {
   return lines.join('\n')
 }
 
+// Cache compiled regexes so we don't rebuild one per call.
+const _FM_KEY_RE = new Map<string, RegExp>()
+function _fmKeyRe(key: string): RegExp {
+  let re = _FM_KEY_RE.get(key)
+  if (!re) {
+    re = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm')
+    _FM_KEY_RE.set(key, re)
+  }
+  return re
+}
+
 function frontmatterField(yaml: string, key: string): string | undefined {
-  const match = yaml.match(new RegExp(`^${key}:[ \\t]*(.*)$`, 'm'))
+  const match = yaml.match(_fmKeyRe(key))
   return match ? unquoteScalar(match[1] ?? '') : undefined
 }
 
@@ -275,8 +286,8 @@ function nextOrder(records: Map<string, IndexRecord>): number {
   return max + 1
 }
 
-function readNote(rel: string): KnowledgeNote | null {
-  const abs = join(knowledgeDir(), rel)
+/** Read a single note file by absolute path, returning null on failure. */
+function readSingleNote(abs: string): KnowledgeNote | null {
   try {
     return parseNoteFile(readFileSync(abs, 'utf8'), abs)
   } catch {
@@ -285,7 +296,7 @@ function readNote(rel: string): KnowledgeNote | null {
 }
 
 /** Every `.md` note file under the type subdirs, relative to the knowledge dir. */
-function scanNoteFiles(): string[] {
+function scanNoteFiles(type?: string): string[] {
   const base = knowledgeDir()
   let typeDirs: string[]
   try {
@@ -297,6 +308,7 @@ function scanNoteFiles(): string[] {
   }
   const files: string[] = []
   for (const dir of typeDirs) {
+    if (type && dir !== type) continue
     let entries: string[]
     try {
       entries = readdirSync(join(base, dir))
@@ -360,7 +372,7 @@ export function updateKnowledgeNote(
   const records = foldIndex()
   const record = records.get(id)
   if (!record) return null
-  const current = readNote(record.file)
+  const current = readSingleNote(join(knowledgeDir(), record.file))
   if (!current) return null
   const updated: KnowledgeNote = {
     ...current,
@@ -415,20 +427,50 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
   const records = [...foldIndex().values()].sort((a, b) => a.order - b.order)
   const notes: KnowledgeNote[] = []
   const seen = new Set<string>()
+
+  // Read notes referenced by the index (batch of file reads).
   for (const record of records) {
-    const note = readNote(record.file)
+    const note = readSingleNote(join(knowledgeDir(), record.file))
     if (!note) continue
     notes.push(note)
     seen.add(note.id)
   }
-  for (const rel of scanNoteFiles()) {
-    const note = readNote(rel)
-    if (!note || seen.has(note.id)) continue
-    seen.add(note.id)
+
+  // Build a lookup of indexed relative paths so we skip them during orphan scan.
+  const indexedFiles = new Set(records.map((r) => r.file))
+
+  // Scan for orphan files not in the index and heal them in a single pass.
+  const orphanFiles = scanNoteFiles(type)
+  let maxOrder = 0
+  for (const record of records) {
+    if (record.order > maxOrder) maxOrder = record.order
+  }
+  let order = maxOrder + 1
+
+  for (const rel of orphanFiles) {
+    if (indexedFiles.has(rel)) continue // already indexed — no double-read
+    const abs = join(knowledgeDir(), rel)
+    let raw: string
+    try {
+      raw = readFileSync(abs, 'utf8')
+    } catch {
+      continue
+    }
+    const split = splitSkillMarkdown(raw)
+    if (!split) continue
+    const { frontmatter } = split
+    const id = frontmatterField(frontmatter, 'id')
+    const noteType = frontmatterField(frontmatter, 'type')
+    if (!id || !noteType) continue
+    if (seen.has(id)) continue
+
+    const note = parseNoteFile(raw, abs)
+    if (!note) continue
+
     appendIndex({
       id: note.id,
       type: note.type,
-      order: nextOrder(foldIndex()),
+      order: order++,
       title: note.title,
       status: note.status,
       file: rel,
@@ -437,13 +479,14 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
     })
     notes.push(note)
   }
+
   return type ? notes.filter((note) => note.type === type) : notes
 }
 
 /** A single note by id, or null if unknown. */
 export function getKnowledgeNote(id: string): KnowledgeNote | null {
   const record = foldIndex().get(id)
-  return record ? readNote(record.file) : null
+  return record ? readSingleNote(join(knowledgeDir(), record.file)) : null
 }
 
 /** Notes whose title, tags, body, or extra fields contain every whitespace-

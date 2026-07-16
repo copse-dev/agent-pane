@@ -1,4 +1,4 @@
-import { el, clear, qsRequired } from '../dom/helpers.ts'
+import { el, clear } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
