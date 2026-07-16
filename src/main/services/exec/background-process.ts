@@ -2,10 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import { spawnBackgroundProcess } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
-import {
-  getActiveExecutionTarget,
-  isSshExecutionTarget,
-} from '../ssh-workspace/execution-target.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
 import {
@@ -92,7 +89,9 @@ export function classifyDetectedServerUrl(output: string): {
 } {
   const url = detectServerUrl(output)
   if (!url) return { url: null, urlRemote: false }
-  return { url, urlRemote: isSshExecutionTarget(getActiveExecutionTarget()) }
+  // Use the fail-safe helper: remote projects with SSH disabled must not throw
+  // from URL classification (background log scraping is best-effort).
+  return { url, urlRemote: isActiveSshWorkspace() }
 }
 
 function toInfo(entry: BackgroundProcess): BackgroundProcessInfo {
