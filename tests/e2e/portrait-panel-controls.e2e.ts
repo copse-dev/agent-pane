@@ -69,8 +69,10 @@ async function openPortraitChrome(): Promise<void> {
     async () => (await (await $('#app')).getAttribute('class'))?.includes('is-portrait-chrome'),
     { timeout: 5_000, timeoutMsg: 'expected portrait chrome class on #app' },
   )
-  // Give the chat column room so every labeled mode fits before assertions.
-  await setProjectsWidth(160)
+  // Collapse the projects pane so every labeled mode fits before assertions.
+  // CI font metrics are wider than local; 160px still overflowed Memories/Roadmap
+  // on the self-hosted e2e runners.
+  await setProjectsWidth(48)
   // Experimental Memories / Roadmap buttons reveal asynchronously after settings.get.
   await $('.portrait-panel-bar .titlebar-text-btn[aria-label="Open memories"]').waitForDisplayed({
     timeout: 10_000,
@@ -78,6 +80,13 @@ async function openPortraitChrome(): Promise<void> {
   await $('.portrait-panel-bar .titlebar-text-btn[aria-label="Open roadmap"]').waitForDisplayed({
     timeout: 10_000,
   })
+  await browser.waitUntil(
+    async () => {
+      const overflow = await $('.portrait-panel-overflow')
+      return !(await overflow.isExisting()) || !(await overflow.isDisplayed())
+    },
+    { timeout: 5_000, timeoutMsg: 'expected all portrait panel modes to fit without overflow' },
+  )
 }
 
 describe('portrait panel controls row', () => {
