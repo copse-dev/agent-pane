@@ -966,10 +966,9 @@ jobs:
     name: CI Passed
     if: always()
     needs: [precheck, check, bench, build, e2e]
-    runs-on: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Tiny aggregate gate — keep on hosted so a saturated self-hosted check
+    # fleet cannot leave a green pipeline without its required status check.
+    runs-on: ubuntu-latest
     steps:
       - name: Check upstream job results
         run: |
