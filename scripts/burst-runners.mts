@@ -774,6 +774,38 @@ function sshRun(
   run('ssh', [...sshBaseArgs(config, host), 'bash', '-lc', shellQuote(script)], input)
 }
 
+function sleepSeconds(seconds: number): void {
+  spawnSync('sleep', [String(seconds)], { stdio: 'ignore' })
+}
+
+function waitForSsh(config: RunnerConfig, host: CloudHost): void {
+  const target = sshTarget(config, host)
+  const deadline = Date.now() + SSH_READY_TIMEOUT_MS
+  console.log(`==> Waiting for SSH on ${target}`)
+  while (Date.now() < deadline) {
+    const result = spawnSync(
+      'ssh',
+      [
+        ...(config.keyPath ? ['-i', config.keyPath] : []),
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ConnectTimeout=5',
+        '-o',
+        'StrictHostKeyChecking=accept-new',
+        target,
+        'true',
+      ],
+      { stdio: 'ignore' },
+    )
+    if (result.status === 0) return
+    sleepSeconds(SSH_READY_POLL_SECONDS)
+  }
+  die(
+    `SSH to ${target} did not become ready within ${String(SSH_READY_TIMEOUT_MS / 60_000)} minutes (connection refused usually means sshd is still starting; a timeout often means port 22 is blocked)`,
+  )
+}
+
 function remoteEnv(config: RunnerConfig): string {
   return [
     `GITHUB_URL=${config.githubUrl}`,
