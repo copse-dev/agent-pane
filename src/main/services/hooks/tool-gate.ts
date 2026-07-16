@@ -19,6 +19,7 @@ import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorToolGateHooks } from './cursor-adapter.ts'
 import { claudeToolGateHooks } from './claude-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import { withRunDeadlinePaused } from './run-deadline.ts'
 
 /** A permission-style verdict reduced from the tool-gate hooks. */
 export type HookGatePermission = 'allow' | 'deny' | 'ask'
@@ -133,11 +134,16 @@ export async function runToolGateHooks(
   // hook's `updatedInput` into `payload.input` for the next hook (the H1
   // sequential pipeline lives in the registry so both function and command
   // hooks participate), so `payload.input` here is the *final* rewritten input.
-  const { outcomes } = await registry.emit('toolGate', payload, {
-    runCommandHook: createCommandHookRunner(),
-    ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
-  })
+  // H4 (decision 13): pause the run's idle deadline while the blocking hooks are
+  // awaited, the same way tool execution does — a slow gate hook (up to its
+  // per-dialect timeout) must not advance the idle clock.
+  const { outcomes } = await withRunDeadlinePaused(opts.agentSession?.conversationId, () =>
+    registry.emit('toolGate', payload, {
+      runCommandHook: createCommandHookRunner(),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
+    }),
+  )
   const merged = mergeBlockingOutcomes(outcomes)
 
   // A hook `haltRun` (`continue: false`) blocks the action for the gate.

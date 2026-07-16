@@ -10,7 +10,7 @@
 // This module lives host-side (`src/main/services/hooks/`) — execution-guidance
 // rule 4: spawning is Electron-adjacent host code, never `packages/agent`.
 import { spawn } from 'node:child_process'
-import { childHookEnv } from './hook-depth.ts'
+import { childHookEnv, currentHookDepth, HOOK_DEPTH_ENV } from './hook-depth.ts'
 
 /** Default per-hook timeout. Vendor-specific overrides live in each adapter (decision 13, H4). */
 export const DEFAULT_HOOK_TIMEOUT_MS = 5_000
@@ -41,6 +41,15 @@ export interface HookSpawnOptions {
   timeoutMs?: number
   /** Abort signal for the current run; kills the process when it fires. */
   signal?: AbortSignal
+  /**
+   * Session-scoped environment overlay (H4). Merged on top of the scrubbed
+   * {@link childHookEnv} so a `sessionStart` hook's `env` output reaches every
+   * later hook process spawned in the same session (decision-doc "`sessionStart`
+   * env propagation"). The overlay never removes the depth guard / scrubbing —
+   * it only adds session vars, applied last so it cannot clobber
+   * `COPSE_HOOK_DEPTH`.
+   */
+  sessionEnv?: Record<string, string>
 }
 
 /**
@@ -87,10 +96,17 @@ export function spawnHookProcess(
     // Hook commands are arbitrary user/project-supplied shell, run outside the
     // project sandbox with non-LLM tool tokens present in `env`. This is gated
     // by workspace trust + `cursorHooksEnabled`; see docs/cursor-hooks.md#security.
+    // Session env (H4) is layered on top of the scrubbed child env, then the
+    // depth guard is re-applied last so a session var can never clobber
+    // `COPSE_HOOK_DEPTH` (the recursion guard, decision 5).
+    const baseEnv = childHookEnv()
+    const env = opts.sessionEnv
+      ? { ...baseEnv, ...opts.sessionEnv, [HOOK_DEPTH_ENV]: String(currentHookDepth() + 1) }
+      : baseEnv
     const child = spawn(command, {
       cwd: opts.cwd,
       shell: true,
-      env: childHookEnv(),
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(opts.signal ? { signal: opts.signal } : {}),
     })

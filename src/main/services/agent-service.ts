@@ -104,6 +104,8 @@ import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
 import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
 import { registerHaltTarget, clearHaltTarget } from './hooks/halt-run.ts'
+import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
+import { fireSessionStartHook } from './hooks/session-start.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
@@ -625,6 +627,16 @@ export async function runAgent(
   beginHookRunRecording(threadId)
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
+  // H4 (decision 13): register this run's idle deadline so host-side blocking
+  // hook fire sites (tool gate, subagent spawn gate, afterFileEdit formatter)
+  // can pause it while a blocking hook is awaited — "the same way tool execution
+  // does". Cleared in the finally, guarded on the same deadline object.
+  registerRunDeadline(threadId, runAbort.deadline)
+  // H4: fire the canonical `sessionStart` event on the thread's first turn (a new
+  // composer conversation), fire-and-forget (decision 3) — its `env` outcome is
+  // collected into this session's env store and propagates to later hook
+  // process spawns. Never awaited: a slow sessionStart hook cannot delay the turn.
+  fireSessionStartHook(threadId, { firstTurn: priorMessages.length === 0, turnTreeId })
 
   // Seed the shared continuation budget for this turn tree (decision 5) with the
   // machine turns already spent on the renderer's queue-drain continuations, so
@@ -1234,6 +1246,7 @@ export async function runAgent(
     // per-run seed here need not persist — this keeps the ledger map bounded.
     budgetLedger.forget(turnTreeId)
     runAbort.clear()
+    clearRunDeadline(threadId, runAbort.deadline)
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
     endHookRunRecording(threadId)
