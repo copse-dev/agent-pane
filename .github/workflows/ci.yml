@@ -305,7 +305,9 @@ jobs:
   check:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: coverage/esbuild has been dying with "service was stopped" on the
+    # 6 GB self-hosted check fleet under load (same class of flake as precheck OOM).
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
