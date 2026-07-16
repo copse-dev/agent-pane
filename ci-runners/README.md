@@ -64,9 +64,12 @@ Prerequisites:
   list, wait for, and terminate Instances in your project.
 - Your Scaleway project has an SSH public key installed for the default `root`
   user (Scaleway propagates console SSH keys to new Linux Instances). Pass
-  `--key-path` if SSH should use a specific private key.
-- The selected security group/default security group allows SSH from the machine
-  running the CLI, and outbound traffic can reach GitHub and apt repositories.
+  `--key-path` if SSH should use a specific private key — the wait loop fails
+  fast on `Permission denied`.
+- The default (or selected) security group must allow inbound TCP/22 from the
+  machine running the CLI. A long `Waiting for SSH` with connection timeouts
+  almost always means port 22 is dropped. Outbound traffic must also reach
+  GitHub and apt repositories.
 - `GITHUB_RUNNER_PAT` with GitHub self-hosted runner registration permission for
   `GITHUB_URL` (org or repo), and `BUILD_GH_TOKEN` with read access to
   `agent-pane` plus the private `@copse/streaming-markdown` dependency.

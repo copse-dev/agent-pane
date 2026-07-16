@@ -780,15 +780,35 @@ function sleepSeconds(seconds: number): void {
   spawnSync('sleep', [String(seconds)], { stdio: 'ignore' })
 }
 
+function sshProbeError(stderr: string): string {
+  const line =
+    stderr
+      .split('\n')
+      .map((entry) => entry.trim())
+      .find((entry) => entry.length > 0) ?? 'unknown SSH error'
+  return line
+}
+
+function isFatalSshProbeError(message: string): boolean {
+  return (
+    /permission denied/i.test(message) ||
+    /too many authentication failures/i.test(message) ||
+    /publickey/i.test(message) ||
+    /host key verification failed/i.test(message)
+  )
+}
+
 function waitForSsh(config: RunnerConfig, host: CloudHost): void {
   const target = sshTarget(config, host)
   const deadline = Date.now() + SSH_READY_TIMEOUT_MS
+  let attempt = 0
   console.log(`==> Waiting for SSH on ${target}`)
   while (Date.now() < deadline) {
+    attempt += 1
     const result = spawnSync(
       'ssh',
       [
-        ...(config.keyPath ? ['-i', config.keyPath] : []),
+        ...(config.keyPath ? ['-i', config.keyPath, '-o', 'IdentitiesOnly=yes'] : []),
         '-o',
         'BatchMode=yes',
         '-o',
@@ -798,13 +818,24 @@ function waitForSsh(config: RunnerConfig, host: CloudHost): void {
         target,
         'true',
       ],
-      { stdio: 'ignore' },
+      { encoding: 'utf8' },
     )
     if (result.status === 0) return
+    const detail = sshProbeError(
+      typeof result.stderr === 'string' ? result.stderr : String(result.stderr ?? ''),
+    )
+    if (isFatalSshProbeError(detail)) {
+      die(
+        `SSH to ${target} failed: ${detail}. For Scaleway, the project SSH public key must match this private key (pass --key-path), and the security group must allow TCP/22 from this machine.`,
+      )
+    }
+    if (attempt === 1 || attempt % 6 === 0) {
+      console.log(`==> SSH not ready yet (${detail}); retrying…`)
+    }
     sleepSeconds(SSH_READY_POLL_SECONDS)
   }
   die(
-    `SSH to ${target} did not become ready within ${String(SSH_READY_TIMEOUT_MS / 60_000)} minutes (connection refused usually means sshd is still starting; a timeout often means port 22 is blocked)`,
+    `SSH to ${target} did not become ready within ${String(SSH_READY_TIMEOUT_MS / 60_000)} minutes. Connection refused usually means sshd is still starting; a timeout often means the Scaleway security group is dropping TCP/22.`,
   )
 }
 
