@@ -80,6 +80,7 @@ import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
+import { advisorAddsLift } from './advisor-strategy.ts'
 import {
   runWithOrchestrationContext,
   resolveOrchestrationWorkerModelId,
@@ -210,8 +211,19 @@ function parentTools(
   registry: ToolRegistry,
   subagentsEnabled: boolean,
   readonlyMode: boolean,
+  executorModel: string,
 ): LLMTool[] {
   let tools = registry.toLLMTools()
+  // Hide the advisor tool when the configured advisor is not more capable than
+  // the executor (same model, or a confidently weaker annotated pairing) — it
+  // would only spend tokens for no lift. Conservative: cross-scale/unannotated
+  // pairings keep it (see advisorAddsLift). No-op unless the tool is registered.
+  if (
+    tools.some((t) => t.name === 'advisor') &&
+    !advisorAddsLift(executorModel, resolveAdvisorModelId())
+  ) {
+    tools = tools.filter((t) => t.name !== 'advisor')
+  }
   if (!subagentsEnabled) {
     tools = tools
       .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
@@ -607,7 +619,7 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode)
+    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, model)
     setHookRunToolset(parentLoopTools)
 
     const turnStart = await createHookRegistry().emit(

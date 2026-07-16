@@ -77,6 +77,14 @@ strategy in three ways:
   on the same scale (its per-band representative models live in
   `BAND_REPRESENTATIVE_MODEL`, scale-validated in tests so extending the scale forces
   the picks to be revisited), and roadmap complexity maps bands → low/medium/high.
+- **A confidently-weaker advisor hides the tool.** `advisorAddsLift(executor, advisor)`
+  returns `false` only on same-scale certainty — the same model on both sides, an
+  annotated cloud advisor with lower intellect, or a catalogued local advisor with fewer
+  params — and `parentTools` drops the `advisor` tool from the executor's toolset in that
+  case, so a stronger model never wastes a call on a weaker advisor. Cross-scale (local
+  advisor vs cloud executor) and unannotated pairings keep the tool (hiding is stricter
+  than the settings `warn`, so it only fires when certain); ACP executors are unannotated
+  so the tool is never hidden for them. The settings hint says when a pairing hides it.
 - **`validateAdvisorPair()` grades pairings from the annotations**, not just the native
   table: local executor + top-of-scale cloud advisor is flagged as the recommended
   pairing; cloud/cloud pairings compare intellect numbers (a weaker-annotated advisor

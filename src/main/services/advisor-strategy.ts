@@ -193,6 +193,41 @@ function annotationFor(model: string): CapabilityAnnotation {
 }
 
 /**
+ * Whether the `advisor` tool is worth offering for this (executor, advisor)
+ * pairing — used to hide the tool when a stronger executor would gain nothing
+ * from a weaker advisor. Deliberately conservative: it only returns `false`
+ * when the annotations give *confident, same-scale* evidence the advisor is not
+ * more capable than the executor —
+ *
+ * - the same model on both sides (no lift by definition),
+ * - two annotated cloud models where the advisor's intellect is lower,
+ * - two catalogued local models where the advisor has fewer parameters.
+ *
+ * Cross-scale pairings (local advisor vs cloud executor, or anything
+ * unannotated — OpenRouter / ACP / uncatalogued) can't be compared, so it
+ * returns `true` (keep offering) rather than hide a possibly-useful tool. This
+ * is a superset-safe gate: hiding is stricter than the `warn` the settings hint
+ * shows, so we only hide when certain.
+ */
+export function advisorAddsLift(executorModel: string, advisorModel: string): boolean {
+  if (executorModel === advisorModel) return false
+  const executor = annotationFor(executorModel)
+  const advisor = annotationFor(advisorModel)
+  if (executor.kind === 'cloud' && advisor.kind === 'cloud') {
+    return advisor.intellect >= executor.intellect
+  }
+  if (
+    executor.kind === 'local' &&
+    advisor.kind === 'local' &&
+    executor.paramsB !== null &&
+    advisor.paramsB !== null
+  ) {
+    return advisor.paramsB >= executor.paramsB
+  }
+  return true
+}
+
+/**
  * Assess an (executor, advisor) pairing for the client-side strategy. Permissive
  * by design — the only pairing we refuse to bless is advising with the *same*
  * model, which buys nothing. Everything else is allowed, but the model
@@ -211,7 +246,8 @@ export function validateAdvisorPair(
       ok: false,
       native,
       level: 'warn',
-      reason: 'Advisor and executor are the same model — pick a stronger advisor to get any lift.',
+      reason:
+        'Advisor and executor are the same model — pick a stronger advisor to get any lift. The advisor tool stays hidden while they match.',
     }
   }
   if (native) {
@@ -282,7 +318,7 @@ export function validateAdvisorPair(
       ok: true,
       native,
       level: 'warn',
-      reason: `Advisor is annotated weaker than the executor (intellect ${String(advisor.intellect)} vs ${String(executor.intellect)}) — its advice is unlikely to add lift.`,
+      reason: `Advisor is annotated weaker than the executor (intellect ${String(advisor.intellect)} vs ${String(executor.intellect)}) — its advice is unlikely to add lift, so the advisor tool is hidden for this pairing.`,
     }
   }
 
@@ -306,11 +342,14 @@ export function validateAdvisorPair(
           reason: `Advisor is a larger local model (~${String(advisor.paramsB)}B vs ~${String(executor.paramsB)}B) — modest lift; a frontier cloud advisor gives more.`,
         }
       }
+      const hidden = advisor.paramsB < executor.paramsB
       return {
         ok: true,
         native,
         level: 'warn',
-        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B) — pick a bigger model to get any lift.`,
+        reason: `Advisor (~${String(advisor.paramsB)}B) is not larger than the executor (~${String(executor.paramsB)}B) — pick a bigger model to get any lift.${
+          hidden ? ' The advisor tool is hidden for this pairing.' : ''
+        }`,
       }
     }
     return {

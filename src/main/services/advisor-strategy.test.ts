@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 import type { LLMMessage } from '@shared/types'
 import {
   DEFAULT_ADVISOR_MAX_TOKENS,
+  advisorAddsLift,
   attributeAdvice,
   buildAdvisorTranscript,
   formatAdvisorModelLabel,
@@ -148,11 +149,13 @@ describe('validateAdvisorPair', () => {
     assert.equal(equal.level, 'info')
     assert.match(equal.reason, /same intellect/i)
 
-    // Weaker advisor: warned, still allowed (client-side is permissive).
+    // Weaker advisor: warned, still allowed (client-side is permissive) and the
+    // hint says the tool is hidden for the pairing.
     const weaker = validateAdvisorPair('claude-opus-4-8', 'claude-haiku-4-5')
     assert.equal(weaker.ok, true)
     assert.equal(weaker.level, 'warn')
     assert.match(weaker.reason, /annotated weaker/i)
+    assert.match(weaker.reason, /hidden/i)
   })
 
   it('keeps a cloud advisor informative when the executor has no annotation', () => {
@@ -198,6 +201,37 @@ describe('validateAdvisorPair', () => {
     assert.equal(a.ok, true)
     assert.equal(a.level, 'info')
     assert.match(a.reason, /external ACP agent/i)
+  })
+})
+
+describe('advisorAddsLift', () => {
+  it('hides the tool when the advisor is the same model as the executor', () => {
+    assert.equal(advisorAddsLift('claude-opus-4-8', 'claude-opus-4-8'), false)
+  })
+
+  it('compares annotated cloud models by intellect', () => {
+    assert.equal(advisorAddsLift('gpt-4o-mini', 'claude-opus-4-8'), true) // stronger
+    assert.equal(advisorAddsLift('gpt-4o', 'claude-sonnet-4-6'), true) // equal intellect → keep
+    assert.equal(advisorAddsLift('claude-opus-4-8', 'claude-haiku-4-5'), false) // weaker → hide
+  })
+
+  it('compares catalogued local models by parameter count', () => {
+    assert.equal(
+      advisorAddsLift('lmstudio:qwen/qwen3-4b-2507', 'lmstudio:qwen/qwen2.5-coder-32b'),
+      true,
+    )
+    assert.equal(
+      advisorAddsLift('lmstudio:qwen/qwen2.5-coder-32b', 'lmstudio:qwen/qwen3-4b-2507'),
+      false,
+    )
+  })
+
+  it('keeps the tool for cross-scale and unannotated pairings (cannot prove weaker)', () => {
+    // Local advisor vs cloud executor: no shared scale → keep.
+    assert.equal(advisorAddsLift('claude-opus-4-8', 'lmstudio:qwen/qwen2.5-coder-32b'), true)
+    // Unannotated executor (ACP/OpenRouter) → keep.
+    assert.equal(advisorAddsLift('acp:gemini-cli', 'claude-haiku-4-5'), true)
+    assert.equal(advisorAddsLift('openrouter:zai-org/glm-5.2', 'claude-opus-4-8'), true)
   })
 })
 
