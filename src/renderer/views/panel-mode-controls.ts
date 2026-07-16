@@ -1,9 +1,11 @@
-import { el } from '../dom/helpers.ts'
+import { el, on } from '../dom/helpers.ts'
+import { moreHorizontalIcon } from '../dom/icons.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
+import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 
 export type PanelControlId =
   | 'explorer'
@@ -155,6 +157,11 @@ export interface MountPanelModeControlsOptions {
    * `#app.is-portrait-chrome`. Pass `'all'` for the bottom portrait row.
    */
   alwaysShowLabels?: ReadonlySet<PanelControlId> | 'all'
+  /**
+   * When true (portrait bar), trailing buttons that don't fit collapse into a
+   * `…` overflow menu instead of wrapping or scrolling.
+   */
+  enableOverflow?: boolean
 }
 
 /**
@@ -171,6 +178,8 @@ export function mountPanelModeControls(
   const controls = el('div', { class: opts.className ?? 'titlebar-panel-controls' })
   const buttons = new Map<PanelControlId, HTMLButtonElement>()
   let changesBadge: HTMLSpanElement | null = null
+  const cleanups: Array<() => void> = []
+  let syncOverflow: (() => void) | null = null
 
   for (const def of PANEL_CONTROL_DEFS) {
     const keepLabel = alwaysShowLabels === null || alwaysShowLabels.has(def.id)
@@ -191,16 +200,163 @@ export function mountPanelModeControls(
           .filter(Boolean)
           .join(' '),
         'aria-label': def.ariaLabel,
+        'data-panel-control': def.id,
         ...(def.experimentalSetting ? { hidden: true } : {}),
       },
       ...children,
     )
+    if (def.experimentalSetting) btn.setAttribute('data-experimental-hidden', '')
     btn.addEventListener('click', () => {
       toggleRightPanelWithWorkspace(store, api, def.mode)
       syncPanelBtns()
     })
     buttons.set(def.id, btn)
     controls.append(btn)
+  }
+
+  if (opts.enableOverflow) {
+    const overflowBadge = el('span', {
+      class: 'titlebar-btn-badge portrait-panel-overflow-badge',
+      hidden: true,
+    })
+    const overflowTrigger = el(
+      'button',
+      {
+        type: 'button',
+        class: 'portrait-panel-overflow-trigger',
+        'aria-haspopup': 'menu',
+        'aria-expanded': 'false',
+        'aria-label': 'More panel modes',
+      },
+      moreHorizontalIcon('ui-icon ui-icon-sm'),
+      overflowBadge,
+    )
+    const overflowMenu = el('div', {
+      class: 'portrait-panel-overflow-menu',
+      role: 'menu',
+      hidden: '',
+    })
+    const overflowWrap = el(
+      'div',
+      { class: 'portrait-panel-overflow', hidden: true },
+      overflowTrigger,
+      overflowMenu,
+    )
+    controls.append(overflowWrap)
+
+    let overflowOpen = false
+    let overflowFrame = 0
+
+    function setOverflowOpen(next: boolean): void {
+      overflowOpen = next
+      overflowTrigger.setAttribute('aria-expanded', String(next))
+      if (next) overflowMenu.removeAttribute('hidden')
+      else overflowMenu.setAttribute('hidden', '')
+    }
+
+    function eligibleButtons(): HTMLButtonElement[] {
+      return PANEL_CONTROL_DEFS.map((def) => buttons.get(def.id)).filter(
+        (btn): btn is HTMLButtonElement => !!btn && !btn.hasAttribute('data-experimental-hidden'),
+      )
+    }
+
+    function renderOverflowMenu(overflowed: HTMLButtonElement[]): void {
+      const { filesPaneOpen, rightPanelMode } = store.getState()
+      overflowMenu.replaceChildren(
+        ...overflowed.map((btn) => {
+          const id = btn.dataset['panelControl']
+          const def = PANEL_CONTROL_DEFS.find((d) => d.id === id)
+          const item = el(
+            'button',
+            { type: 'button', class: 'portrait-panel-overflow-item', role: 'menuitem' },
+            def ? def.icon() : '',
+            def?.label ?? btn.getAttribute('aria-label') ?? 'Panel',
+          )
+          if (def && filesPaneOpen && rightPanelMode === def.mode) {
+            item.classList.add('is-active')
+          }
+          item.addEventListener('click', () => {
+            btn.click()
+            setOverflowOpen(false)
+          })
+          return item
+        }),
+      )
+    }
+
+    function syncOverflowBadge(overflowed: HTMLButtonElement[]): void {
+      const changesOverflowed = overflowed.some((btn) => btn.dataset['panelControl'] === 'changes')
+      const pending = store.getState().stagedDiffs.length
+      const show = changesOverflowed && pending > 0
+      overflowBadge.hidden = !show
+      overflowBadge.textContent = show ? String(pending) : ''
+      overflowTrigger.classList.toggle('has-pending', show)
+    }
+
+    syncOverflow = (): void => {
+      cancelAnimationFrame(overflowFrame)
+      overflowFrame = requestAnimationFrame(() => {
+        // Unit tests run under a minimal DOM without layout/CSSOM; skip overflow
+        // planning there so rAF work from mount doesn't throw after the test ends.
+        if (typeof getComputedStyle !== 'function' || controls.clientWidth === 0) return
+
+        const eligible = eligibleButtons()
+        for (const btn of eligible) {
+          btn.removeAttribute('data-portrait-overflow')
+        }
+        overflowWrap.hidden = true
+        setOverflowOpen(false)
+
+        const styles = getComputedStyle(controls)
+        const gap = Number.parseFloat(styles.columnGap || styles.gap || '0') || 0
+        const padL = Number.parseFloat(styles.paddingLeft) || 0
+        const padR = Number.parseFloat(styles.paddingRight) || 0
+        const containerWidth = Math.max(0, controls.clientWidth - padL - padR)
+        const widths = eligible.map((btn) => btn.getBoundingClientRect().width)
+
+        // Measure the trigger while briefly shown so getBoundingClientRect is real.
+        overflowWrap.hidden = false
+        const overflowWidth = overflowTrigger.getBoundingClientRect().width
+        overflowWrap.hidden = true
+
+        const hideCount = countPortraitPanelOverflow(widths, gap, containerWidth, overflowWidth, 1)
+        if (hideCount === 0) {
+          syncOverflowBadge([])
+          return
+        }
+
+        const overflowed = eligible.slice(eligible.length - hideCount)
+        for (const btn of overflowed) {
+          btn.setAttribute('data-portrait-overflow', '')
+        }
+        overflowWrap.hidden = false
+        renderOverflowMenu(overflowed)
+        syncOverflowBadge(overflowed)
+      })
+    }
+
+    overflowTrigger.addEventListener('click', () => {
+      if (overflowWrap.hidden) return
+      setOverflowOpen(!overflowOpen)
+    })
+    cleanups.push(
+      on(document, 'click', (e) => {
+        if (!overflowOpen) return
+        if (!overflowWrap.contains(e.target as Node)) setOverflowOpen(false)
+      }),
+      on(document, 'keydown', (e) => {
+        if (e.key === 'Escape' && overflowOpen) setOverflowOpen(false)
+      }),
+    )
+
+    const observer = new ResizeObserver(() => {
+      syncOverflow?.()
+    })
+    observer.observe(controls)
+    cleanups.push(() => {
+      cancelAnimationFrame(overflowFrame)
+      observer.disconnect()
+    })
   }
 
   function syncPanelBtns(): void {
@@ -210,17 +366,27 @@ export function mountPanelModeControls(
       if (!btn) continue
       btn.classList.toggle('active', filesPaneOpen && rightPanelMode === def.mode)
     }
+    syncOverflow?.()
   }
 
   function syncExperimentalBtns(): void {
+    const pending: Array<Promise<void>> = []
     for (const def of PANEL_CONTROL_DEFS) {
       if (!def.experimentalSetting) continue
       const btn = buttons.get(def.id)
       if (!btn) continue
-      void api.settings.get(def.experimentalSetting).then((enabled) => {
-        btn.hidden = enabled !== true
-      })
+      pending.push(
+        api.settings.get(def.experimentalSetting).then((enabled) => {
+          const hide = enabled !== true
+          btn.hidden = hide
+          if (hide) btn.setAttribute('data-experimental-hidden', '')
+          else btn.removeAttribute('data-experimental-hidden')
+        }),
+      )
     }
+    void Promise.all(pending).then(() => {
+      syncOverflow?.()
+    })
   }
 
   function syncChangesBadge(): void {
@@ -230,6 +396,7 @@ export function mountPanelModeControls(
     changesBadge.hidden = pending === 0
     changesBadge.textContent = String(pending)
     changesBtn?.classList.toggle('has-pending', pending > 0)
+    syncOverflow?.()
   }
 
   syncPanelBtns()
@@ -247,6 +414,9 @@ export function mountPanelModeControls(
     element: controls,
     destroy(): void {
       unsubs.forEach((u) => {
+        u()
+      })
+      cleanups.forEach((u) => {
         u()
       })
       controls.remove()

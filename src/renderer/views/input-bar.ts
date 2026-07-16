@@ -157,6 +157,7 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const portraitPanelControls = mountPanelModeControls(store, api, {
     className: 'portrait-panel-bar titlebar-panel-controls',
     alwaysShowLabels: 'all',
+    enableOverflow: true,
   })
   let costVisible = false
 

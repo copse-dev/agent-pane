@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedPortraitRightPanelFixture } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 
@@ -43,6 +43,14 @@ async function setPortraitWindow(): Promise<void> {
   )
 }
 
+async function setProjectsWidth(px: number): Promise<void> {
+  await browser.execute((width) => {
+    document.getElementById('body')?.style.setProperty('--projects-width', `${width}px`)
+    window.dispatchEvent(new Event('resize'))
+  }, px)
+  await browser.pause(150)
+}
+
 async function openPortraitChrome(): Promise<void> {
   resetUserData()
   seedPortraitRightPanelFixture(
@@ -61,6 +69,8 @@ async function openPortraitChrome(): Promise<void> {
     async () => (await (await $('#app')).getAttribute('class'))?.includes('is-portrait-chrome'),
     { timeout: 5_000, timeoutMsg: 'expected portrait chrome class on #app' },
   )
+  // Give the chat column room so every labeled mode fits before assertions.
+  await setProjectsWidth(160)
   // Experimental Memories / Roadmap buttons reveal asynchronously after settings.get.
   await $('.portrait-panel-bar .titlebar-text-btn[aria-label="Open memories"]').waitForDisplayed({
     timeout: 10_000,
@@ -84,6 +94,7 @@ describe('portrait panel controls row', () => {
 
     const portraitBar = await $('.portrait-panel-bar')
     await expect(portraitBar).toBeDisplayed()
+    await expect($('.portrait-panel-overflow')).not.toBeDisplayed()
 
     const labeled = [
       { label: 'Toggle right panel', text: 'Panel' },
@@ -128,14 +139,6 @@ describe('portrait panel controls row', () => {
     expect(layout.barHeight).toBe(layout.settingsHeight)
     expect(layout.barTop).toBe(layout.settingsTop)
     expect(layout.barBottom).toBe(layout.settingsBottom)
-
-    // Narrow the projects pane so the full labeled set (incl. Memories/Roadmap)
-    // fits in the chat column for reference screenshots.
-    await browser.execute(() => {
-      document.getElementById('body')?.style.setProperty('--projects-width', '160px')
-      window.dispatchEvent(new Event('resize'))
-    })
-    await browser.pause(100)
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-chrome.png'))
@@ -191,5 +194,60 @@ describe('portrait panel controls row', () => {
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-with-panel.png'))
+  })
+
+  it('collapses trailing modes into a … menu when the chat column is cramped', async () => {
+    await openPortraitChrome()
+
+    // Widen the projects pane until the labeled row must spill into overflow.
+    await setProjectsWidth(420)
+    await browser.waitUntil(
+      async () => {
+        const overflow = await $('.portrait-panel-overflow')
+        return overflow.isExisting() && (await overflow.isDisplayed())
+      },
+      { timeout: 5_000, timeoutMsg: 'expected portrait panel overflow trigger when cramped' },
+    )
+
+    await expect(
+      $('.portrait-panel-bar .titlebar-text-btn[aria-label="Toggle right panel"]'),
+    ).toBeDisplayed()
+    await expect(
+      $('.portrait-panel-bar .titlebar-text-btn[aria-label="Open browser"]'),
+    ).not.toBeDisplayed()
+
+    await savePortraitElementScreenshot(
+      '.portrait-panel-bar',
+      'portrait-panel-controls-overflow.png',
+    )
+
+    await $('.portrait-panel-overflow-trigger').click()
+    const menu = await $('.portrait-panel-overflow-menu')
+    await expect(menu).toBeDisplayed()
+    const items = await $$('.portrait-panel-overflow-item')
+    expect(items.length).toBeGreaterThan(0)
+    const labels = await browser.execute(() =>
+      Array.from(document.querySelectorAll('.portrait-panel-overflow-item')).map((el) =>
+        (el.textContent ?? '').trim(),
+      ),
+    )
+    expect(labels).toContain('Browser')
+
+    await savePortraitElementScreenshot('#input-bar', 'portrait-panel-controls-overflow-open.png')
+
+    const browserItem = await menu.$('.portrait-panel-overflow-item*=Browser')
+    await browserItem.waitForClickable({ timeout: 5_000 })
+    await browserItem.click()
+    await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document
+              .querySelector('.portrait-panel-bar [data-panel-control="browser"]')
+              ?.classList.contains('active') === true,
+        ),
+      { timeout: 5_000, timeoutMsg: 'expected Browser mode active after overflow pick' },
+    )
   })
 })
