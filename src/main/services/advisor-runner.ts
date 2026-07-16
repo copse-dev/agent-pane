@@ -4,7 +4,7 @@ import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { routedModelSetting } from './providers/role-models.ts'
 import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
-import { buildAdvisorRepoState } from './advisor-context.ts'
+import { buildAdvisorRepoState, buildAdvisorWorkingDiff } from './advisor-context.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
 import {
   ADVISOR_MODEL_SETTING,
@@ -36,7 +36,20 @@ export interface AdvisorRunnerContext {
   getTranscript: () => LLMMessage[]
 }
 
-export type AdvisorRunner = (signal: AbortSignal) => Promise<string>
+/**
+ * Optional, executor-controlled shaping of a consult. Both are additive: the
+ * no-arg call still forwards the full transcript + repo state and asks for
+ * generic strategic guidance (native-tool-compatible), so these only *add*
+ * focus/context, never withhold it.
+ */
+export interface AdvisorCallOptions {
+  /** The executor's specific question, if any — focuses the advice. */
+  question?: string
+  /** Attach the current working-tree diff to the advisor's context. */
+  includeDiff?: boolean
+}
+
+export type AdvisorRunner = (signal: AbortSignal, options?: AdvisorCallOptions) => Promise<string>
 
 let activeContext: AdvisorRunnerContext | null = null
 
@@ -53,21 +66,28 @@ const ADVISOR_PREAMBLE =
   'tool call, and every result so far. Do not answer the task yourself or write ' +
   'the deliverable. Give concise strategic guidance: the approach to take, the ' +
   'key risk or failure mode to avoid, and the single most important next step. ' +
-  'Keep guidance under ~200 words — a focused starting point, not a full plan.'
+  'If the executor included a specific question below, answer that directly ' +
+  'first. Keep guidance under ~200 words — a focused starting point, not a full plan.'
 
 const ADVISOR_TIMEOUT_MS = 120_000
 
 export function getAdvisorRunner(): AdvisorRunner | null {
   if (!activeContext) return null
   const ctx = activeContext
-  return async (signal: AbortSignal) => {
+  return async (signal: AbortSignal, options?: AdvisorCallOptions) => {
     const transcript = buildAdvisorTranscript(ctx.getTranscript())
     // Prepend verified repo facts (branch, ahead/behind, working-tree status) so
     // the advisor anchors on ground truth instead of inferring repo state from a
     // lossy, sometimes-trimmed transcript (which made it hallucinate that a
     // merely-behind branch had lots of local changes). See advisor-context.ts.
     const repoState = await buildAdvisorRepoState()
-    const prompt = `${ADVISOR_PREAMBLE}\n\n${repoState}# Executor transcript\n\n${transcript}`
+    // "More context", executor-controlled: attach the live working diff on request.
+    const workingDiff = options?.includeDiff ? await buildAdvisorWorkingDiff() : ''
+    // "Prompt what it wants": the executor's specific question goes last, so it
+    // is the most salient instruction the advisor reads.
+    const question = options?.question?.trim()
+    const questionBlock = question ? `\n# The executor’s specific question\n\n${question}\n` : ''
+    const prompt = `${ADVISOR_PREAMBLE}\n\n${repoState}${workingDiff}# Executor transcript\n\n${transcript}\n${questionBlock}`
 
     let text: string
     let usage: ModelUsage

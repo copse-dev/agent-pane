@@ -25,8 +25,17 @@ We deliberately mirror the native tool's observable behaviour so a future switch
 real `advisor_20260301` server tool (for Claude-cloud executors) is a drop-in with no
 behavioural change:
 
-- **No-parameter tool.** The `advisor` tool takes no arguments; the executor's full
-  transcript is forwarded automatically (client-side we read the live loop transcript).
+- **No-argument call stays native-compatible.** The native `advisor_20260301` tool takes
+  no arguments; a bare `advisor()` call here behaves identically — the full transcript is
+  forwarded automatically (client-side we read the live loop transcript). We add two
+  **optional** client-side parameters that only ever _add_ focus/context, never withhold
+  it, so the no-arg form remains a drop-in: `question` (the executor's specific ask,
+  appended after the transcript) and `include_diff` (attach the verified working-tree
+  diff). A future switch to the native server tool simply ignores/strips them. We
+  deliberately do **not** let the executor _reduce_ the forwarded context: it is the
+  party that is stuck, and withholding state is exactly what caused the repo-state
+  hallucination the verified-context block fixes — so context is full by default and the
+  executor can only enrich it.
 - **Result shape.** Advice is normalized into the native `advisor_result` `{ text,
 stop_reason? }` union, with an `advisor_redacted_result` branch reserved for parity.
 - **Bare advisor.** The advisor runs with no tools and no context management; only the
@@ -48,8 +57,9 @@ stop_reason? }` union, with an `advisor_redacted_result` branch reserved for par
   `agent-service.ts` around an `advisor` call, mirroring the explore subagent seam) that
   reads the live transcript, builds the advisor provider via `buildProvider`, runs a bare
   one-shot inference with `completeTextWithUsage`, and returns the normalized advice.
-- **Tool** `advisor` (`src/main/tools/advisor-tool.ts`) — no parameters; registered only
-  when the flag is on (`registry-bootstrap.ts`).
+- **Tool** `advisor` (`src/main/tools/advisor-tool.ts`) — optional `question` /
+  `include_diff` params (the no-arg call is native-compatible); registered only when the
+  flag is on (`registry-bootstrap.ts`).
 - **Tests** `advisor-strategy.test.ts` (transcript formatting, result normalization/render,
   native-pair validation).
 
@@ -141,6 +151,13 @@ sub-agent with its own read/edit/terminal tools and context window. A future
 opt-in "investigative advisor" (read-only tools, Oracle-style) is possible but
 deliberately not the default: it diverges from the native drop-in parity and
 costs more latency/tokens.
+
+**Executor-controlled shaping (optional).** On top of the automatic context, the
+executor can focus a consult with `question` (its specific ask, placed last so
+it is the most salient instruction) and enrich it with `include_diff` (attaches
+the capped, verified working-tree diff via `buildAdvisorWorkingDiff`). Both are
+additive — there is no knob to _reduce_ context, on purpose (see the contract
+section). This mirrors Amp's promptable Oracle while staying tool-free.
 
 ### Advisor result rendering
 

@@ -947,7 +947,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Let the agent consult a larger advisor model mid-task
               </label>
               <p class="field-hint">
-                Adds a no-parameter <code>advisor</code> tool that forwards your full conversation
+                Adds an <code>advisor</code> tool that forwards your full conversation
                 transcript to a larger advisor model for strategic guidance, so the everyday loop can
                 run on a cheaper or on-device model while frontier intelligence is pulled in at the
                 moments that matter (planning, getting unstuck, final review). Runs client-side, so

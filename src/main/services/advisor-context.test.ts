@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { formatAdvisorRepoState, type AdvisorRepoState } from './advisor-context.ts'
+import {
+  formatAdvisorRepoState,
+  formatAdvisorWorkingDiff,
+  type AdvisorRepoState,
+} from './advisor-context.ts'
 
 const CLEAN: AdvisorRepoState = {
   branch: 'feature-x',
@@ -59,5 +63,25 @@ describe('formatAdvisorRepoState', () => {
     })
     assert.match(out, /Branch: \(detached\)/)
     assert.match(out, /Working tree: clean/)
+  })
+})
+
+describe('formatAdvisorWorkingDiff', () => {
+  it('fences the combined diff', () => {
+    const out = formatAdvisorWorkingDiff('diff --git a/x b/x\n+added')
+    assert.match(out, /## Working diff \(staged \+ unstaged, verified now\)/)
+    assert.match(out, /```diff\ndiff --git a\/x b\/x\n\+added\n```/)
+  })
+
+  it('reports a clean tree for empty or sentinel output', () => {
+    assert.match(formatAdvisorWorkingDiff(''), /the working tree is clean/)
+    assert.match(formatAdvisorWorkingDiff('(no output)'), /the working tree is clean/)
+  })
+
+  it('caps an oversized diff with a truncation marker', () => {
+    const big = `diff --git a/x b/x\n${'+'.repeat(9000)}`
+    const out = formatAdvisorWorkingDiff(big, 500)
+    assert.match(out, /… \(diff truncated\)/)
+    assert.ok(out.length < big.length)
   })
 })

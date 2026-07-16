@@ -4,6 +4,7 @@ import {
   getCurrentBranchName,
   getDefaultBranch,
   getGitChangeStats,
+  getGitDiffText,
   getGitStatusText,
 } from './github/git-service.ts'
 
@@ -78,6 +79,48 @@ export function formatAdvisorRepoState(state: AdvisorRepoState): string {
   }
 
   return `${lines.join('\n')}\n\n`
+}
+
+/** Max characters of working diff to forward before truncating. */
+const MAX_DIFF_CHARS = 8000
+
+/**
+ * Pure formatter for the working-diff block: fences the combined diff, caps it,
+ * or reports a clean tree. Split from the I/O so the capping/clean-tree/fencing
+ * logic is unit-tested without a repo. `getGitDiffText` returns the sentinel
+ * `(no output)` for an empty diff.
+ */
+export function formatAdvisorWorkingDiff(combinedDiff: string, maxChars = MAX_DIFF_CHARS): string {
+  const combined = combinedDiff.trim()
+  if (!combined || combined === '(no output)') {
+    return '## Working diff\n\n(the working tree is clean — no diff to show)\n\n'
+  }
+  const body =
+    combined.length > maxChars ? `${combined.slice(0, maxChars)}\n… (diff truncated)` : combined
+  return `## Working diff (staged + unstaged, verified now)\n\n\`\`\`diff\n${body}\n\`\`\`\n\n`
+}
+
+/**
+ * A fenced block of the current working-tree diff (staged + unstaged + untracked),
+ * capped, for when the executor asks the advisor to weigh in on the actual code
+ * changes (`include_diff`). The advisor is bare, so only Copse can fetch this —
+ * and forwarding it guarantees fresh, untrimmed diff regardless of what the
+ * transcript still holds. Best-effort; '' when there is no git context.
+ */
+export async function buildAdvisorWorkingDiff(maxChars = MAX_DIFF_CHARS): Promise<string> {
+  try {
+    if (!(await isInsideGitWorkTree())) return ''
+    const [unstaged, staged] = await Promise.all([
+      getGitDiffText(),
+      getGitDiffText(undefined, true),
+    ])
+    const combined = [staged.trim(), unstaged.trim()]
+      .filter((part) => part && part !== '(no output)')
+      .join('\n')
+    return formatAdvisorWorkingDiff(combined, maxChars)
+  } catch {
+    return ''
+  }
 }
 
 /**
