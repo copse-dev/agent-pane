@@ -22,7 +22,7 @@ Example `hooks.json`:
 {
   "version": 1,
   "hooks": {
-    "beforeShellExecution": [{ "command": "./hooks/audit.sh" }],
+    "beforeShellExecution": [{ "command": "./hooks/audit.sh", "failClosed": true }],
     "beforeMCPExecution": [{ "command": "node hooks/mcp-guard.js" }],
     "beforeReadFile": [{ "command": "./hooks/redact.sh" }]
   }
@@ -30,7 +30,9 @@ Example `hooks.json`:
 ```
 
 `command` is a shell command spawned with the directory of the `hooks.json` as its
-working directory, so relative paths resolve against the config.
+working directory, so relative paths resolve against the config. A hook may set
+`"failClosed": true` to make a crash / timeout / invalid JSON **block** the action
+instead of failing open (see Reliability and trust below).
 
 ## Hook events and I/O
 
@@ -73,23 +75,39 @@ visible before enabling.
 
 ### Implementation
 
-Discovery, parsing, and the stdio runner live in
-[`src/main/services/skills/cursor-hooks.ts`](../src/main/services/skills/cursor-hooks.ts):
+Cursor is a **dialect adapter** (A2 of the hooks platform,
+[`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md), decision 8:
+"dialect by source path"). Discovery, parsing, matchers, wire marshalling in both
+directions, and the per-event exit-code table all live in
+[`src/main/services/hooks/cursor-adapter.ts`](../src/main/services/hooks/cursor-adapter.ts):
 
 - `listCursorHooks()` — discovered hooks for the current context (diagnostics / `hooks:list`)
-- `runPermissionHooks(event, payload, opts)` — spawn the hooks for an event and reduce
-  their responses to a single decision
+- `cursorToolGateHooks(payload, opts)` — the Cursor command hooks matching a tool gate,
+  as canonical `CommandHook`s (their `onFailure` set from `failClosed`)
+- `cursorAdapter` — the `DialectAdapter` the shared runner delegates to (marshalling +
+  the exit-code table)
 
-The permission gate ([`permission-gate.ts`](../src/main/services/permission-gate.ts))
-maps a tool call to its hook event and consults `runPermissionHooks` before its own
-logic. Hooks can only **tighten** the gate: a `deny` blocks the call, but an `allow`
-still flows through Copse's normal prompting — a hook can never auto-approve something
-Copse would otherwise ask about.
+The shared process spawn (stdin marshalling, stdout/stderr capture, timeout, output cap)
+lives in [`hook-spawn.ts`](../src/main/services/hooks/hook-spawn.ts); the host runner in
+[`command-hook-runner.ts`](../src/main/services/hooks/command-hook-runner.ts) spawns each
+hook and applies its dialect's failure semantics.
+
+The permission gate ([`permission-gate.ts`](../src/main/services/security/permission-gate.ts))
+maps a tool call onto the canonical `toolGate` event and calls
+`runToolGateHooks` ([`tool-gate.ts`](../src/main/services/hooks/tool-gate.ts)), which fires
+the hooks through the registry → runner → adapter seam. Hooks can only **tighten** the gate:
+a `deny` blocks the call, but an `allow` still flows through Copse's normal prompting — a
+hook can never auto-approve something Copse would otherwise ask about.
 
 ### Reliability and trust
 
-- **Fail open.** A missing config, crash, timeout (5s), or unparseable response is
-  treated as `allow`, so a broken hook never silently wedges the agent.
+- **Fail open by default, `failClosed` honoured.** A missing config, crash, timeout (5s),
+  or unparseable response is treated as `allow`, so a broken hook never silently wedges
+  the agent. But Cursor's per-hook `failClosed: true` (`{ "command": …, "failClosed": true }`)
+  reverses that for **that** hook: a crash / timeout / invalid JSON **blocks** the action
+  instead — the vendor contract for imported security hooks (decision 9). The Cursor
+  adapter reports the failure + the hook's resolved `onFailure`; the runner turns it into
+  a deny (`failClosed`) or a no-op (the default).
 - **No LLM secrets.** Hook processes inherit `envForRendererChildProcess()` — the same
   scrubbed environment as `run_shell`, so provider _LLM_ API keys never reach hook
   scripts. Note this is **not** an empty environment: non-LLM tool tokens that the agent
@@ -158,9 +176,13 @@ trusting the code it can cause to run.
 
 ## Related files
 
-- `src/main/services/skills/cursor-hooks.ts` — discovery, parsing, and the stdio runner
-- `src/main/services/skills/claude-hooks.ts` — Claude Code PreToolUse adapter (#639)
-- `src/main/services/security/permission-gate.ts` — maps tool calls to permission hooks
+- `src/main/services/hooks/cursor-adapter.ts` — Cursor dialect adapter: discovery, parsing
+  (incl. `failClosed`), matchers, wire marshalling, exit-code table
+- `src/main/services/hooks/claude-adapter.ts` — Claude Code PreToolUse dialect adapter (#639)
+- `src/main/services/hooks/hook-spawn.ts` — shared process spawn + stdout/stderr capture
+- `src/main/services/hooks/command-hook-runner.ts` — host runner; applies dialect failure semantics
+- `src/main/services/hooks/tool-gate.ts` — maps tool calls onto the canonical `toolGate` event
+- `src/main/services/security/permission-gate.ts` — calls the tool-gate hooks
 - `src/shared/types/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
 - `src/shared/types/hooks.ts` — shared `HookSummary` for Sources / `hooks:list`
 - `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes

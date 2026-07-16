@@ -18,9 +18,14 @@ import {
 
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
 import {
-  REMOTE_AGENT_MODELS,
+  MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
   REMOTE_AGENT_MODEL_PREFIX,
-  parseRemoteAgentModel,
+  REMOTE_AGENT_PROVIDER_ANTHROPIC,
+  REMOTE_AGENT_PROVIDER_CURSOR,
+  parseRemoteAgentModelSelection,
+  remoteAgentDisplayLabel,
+  remoteAgentGroupLabel,
+  remoteAgentModelValue,
 } from '@shared/remote-agent.ts'
 import { ACP_MODEL_PREFIX, acpGroupLabel, acpModelValue, parseAcpModel } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
@@ -41,9 +46,8 @@ export function modelDisplayLabel(model: string): string {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
   if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
-  const remoteProvider = parseRemoteAgentModel(model)
-  if (remoteProvider) {
-    return REMOTE_AGENT_MODELS.find((option) => option.provider === remoteProvider)?.label ?? model
+  if (parseRemoteAgentModelSelection(model)) {
+    return remoteAgentDisplayLabel(model)
   }
   // Without the configured-agents list to resolve a title, fall back to the id.
   const acpId = parseAcpModel(model)
@@ -161,6 +165,74 @@ function extraProviderOptions(
   return entries
 }
 
+async function remoteAgentOptions(
+  api: ApiClient,
+  isAvailable: (provider: string) => boolean,
+  current: string,
+): Promise<ModelOption[]> {
+  const options: ModelOption[] = []
+
+  if (isAvailable(REMOTE_AGENT_PROVIDER_CURSOR)) {
+    const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_CURSOR)
+    let liveModels: Array<{ id: string; label: string }> = []
+    try {
+      liveModels = await api.remoteAgent.models()
+    } catch {
+      /* network error — fall through to default / current only */
+    }
+
+    const seen = new Set<string>()
+    const add = (value: string, label: string): void => {
+      if (seen.has(value)) return
+      seen.add(value)
+      options.push({ value, label, group })
+    }
+
+    // Account default (omit model on Create Agent) — always first when the key
+    // is configured, even when the live catalog is empty.
+    add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), 'Default')
+    for (const model of liveModels) {
+      add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id), model.label || model.id)
+    }
+    const currentSelection = parseRemoteAgentModelSelection(current)
+    if (
+      currentSelection?.provider === REMOTE_AGENT_PROVIDER_CURSOR &&
+      currentSelection.model &&
+      !seen.has(current)
+    ) {
+      add(current, currentSelection.model)
+    }
+  }
+
+  if (isAvailable(REMOTE_AGENT_PROVIDER_ANTHROPIC)) {
+    const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC)
+    const seen = new Set<string>()
+    const add = (value: string, label: string): void => {
+      if (seen.has(value)) return
+      seen.add(value)
+      options.push({ value, label, group })
+    }
+    // Same Claude ids as the Cloud models group (bare id labels).
+    for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
+      add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id), id)
+    }
+    const currentSelection = parseRemoteAgentModelSelection(current)
+    if (
+      currentSelection?.provider === REMOTE_AGENT_PROVIDER_ANTHROPIC &&
+      currentSelection.model &&
+      !seen.has(current)
+    ) {
+      add(current, currentSelection.model)
+    }
+    // Keep a pre-multi-model bare selection selectable until the user switches.
+    if (current === remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC) && !seen.has(current)) {
+      add(current, remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC))
+    }
+  }
+
+  return options
+}
+
 export async function fetchModelOptions(api: ApiClient, current: string): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
@@ -192,14 +264,9 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
     options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
-  // Remote agents (Cursor Cloud, Claude Cloud): only listed once the matching
-  // provider key is configured. Each remote model gates on its own provider.
-  const remoteGroup = 'Remote agents'
-  for (const remote of REMOTE_AGENT_MODELS) {
-    if (isAvailable(remote.provider)) {
-      options.push({ value: remote.value, label: remote.label, group: remoteGroup })
-    }
-  }
+  // Remote agents (Cursor Cloud, Claude Cloud): expand into per-provider groups
+  // with concrete model rows — same pattern as ACP agents.
+  options.push(...(await remoteAgentOptions(api, isAvailable, current)))
 
   // ACP agents (external coding agents Copse drives): only listed once configured.
   options.push(...(await acpAgentOptions(api)))
@@ -225,10 +292,11 @@ export async function fetchModelOptions(api: ApiClient, current: string): Promis
         group: lmGroup,
       })
     } else if (current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
+      const selection = parseRemoteAgentModelSelection(current)
       options.push({
         value: current,
         label: `${modelDisplayLabel(current)} (no valid key)`,
-        group: remoteGroup,
+        group: selection ? remoteAgentGroupLabel(selection.provider) : 'Remote agents',
       })
     } else if (current.startsWith(ACP_MODEL_PREFIX)) {
       options.push({

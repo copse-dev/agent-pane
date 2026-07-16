@@ -1,8 +1,6 @@
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
-import { runPermissionHooks } from '../skills/cursor-hooks.ts'
-import { runClaudePreToolUseHooks } from '../skills/claude-hooks.ts'
-import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
+import { runToolGateHooks } from '../hooks/tool-gate.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
@@ -450,56 +448,13 @@ export async function ensureTerminalPermitted(): Promise<boolean> {
   return true
 }
 
-/** Map a tool call to the Cursor permission-hook event + payload it should fire. */
-function cursorHookForTool(
-  toolName: string,
-  args: unknown,
-): { event: CursorPermissionHookEvent; payload: Record<string, unknown> } | null {
-  if (toolName === 'run_shell') {
-    const command = shellCommandFromArgs(args) ?? ''
-    return { event: 'beforeShellExecution', payload: { command, cwd: getWorkspaceRoot() ?? '' } }
-  }
-  if (toolName.startsWith('mcp__')) {
-    return { event: 'beforeMCPExecution', payload: { tool_name: toolName, tool_input: args } }
-  }
-  if (toolName === 'read_file') {
-    const rawPath =
-      typeof args === 'object' && args !== null ? (args as { path?: unknown }).path : undefined
-    const path = typeof rawPath === 'string' ? rawPath : ''
-    return { event: 'beforeReadFile', payload: { file_path: path, content: '' } }
-  }
-  return null
-}
-
-/** Map a Copse tool call to the Claude PreToolUse tool_name + tool_input. */
-function claudePreToolUseForTool(
-  toolName: string,
-  args: unknown,
-): { toolName: string; toolInput: Record<string, unknown> } | null {
-  if (toolName === 'run_shell') {
-    const command = shellCommandFromArgs(args) ?? ''
-    return { toolName: 'Bash', toolInput: { command } }
-  }
-  if (toolName.startsWith('mcp__')) {
-    const toolInput =
-      typeof args === 'object' && args !== null ? { ...(args as Record<string, unknown>) } : {}
-    return { toolName, toolInput }
-  }
-  if (toolName === 'read_file') {
-    const rawPath =
-      typeof args === 'object' && args !== null ? (args as { path?: unknown }).path : undefined
-    const path = typeof rawPath === 'string' ? rawPath : ''
-    return { toolName: 'Read', toolInput: { file_path: path } }
-  }
-  return null
-}
-
 /**
- * Run matching Cursor hooks and Claude Code PreToolUse hooks for this tool call.
- * Hooks can only *block* — an allow/ask still falls through to Copse's own gate — so
- * a deny here is the one short-circuit. Gated behind `cursorHooksEnabled` (default off)
- * because honouring hooks spawns user/project scripts on the agent's hot path. The same
- * flag covers both Cursor `hooks.json` and Claude `.claude/settings.json` hooks (#639).
+ * Run the tool-gate hooks (Cursor `hooks.json` + Claude `.claude/settings.json`)
+ * for this tool call, via the canonical `toolGate` event and its dialect adapters
+ * (A2). Hooks can only *block* — an allow/ask still falls through to Copse's own
+ * gate — so a deny here is the one short-circuit. Gated behind `cursorHooksEnabled`
+ * (default off) because honouring hooks spawns user/project scripts on the agent's
+ * hot path. The same flag covers both dialects (#639).
  */
 async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return true
@@ -507,34 +462,16 @@ async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
   const workspaceRoot = getWorkspaceRoot()
   const projectTrusted = isWorkspaceTrusted(workspaceRoot)
 
-  const cursorMapped = cursorHookForTool(check.toolName, check.args)
-  if (cursorMapped) {
-    const decision = await runPermissionHooks(cursorMapped.event, cursorMapped.payload, {
-      workspaceRoot,
-      projectTrusted,
-    })
-    if (decision.permission === 'deny') {
-      console.warn(
-        `[cursor-hooks] ${cursorMapped.event} denied ${check.toolName}` +
-          (decision.agentMessage ? `: ${decision.agentMessage}` : ''),
-      )
-      return false
-    }
-  }
-
-  const claudeMapped = claudePreToolUseForTool(check.toolName, check.args)
-  if (claudeMapped) {
-    const decision = await runClaudePreToolUseHooks(claudeMapped.toolName, claudeMapped.toolInput, {
-      workspaceRoot,
-      projectTrusted,
-    })
-    if (decision.permission === 'deny') {
-      console.warn(
-        `[claude-hooks] PreToolUse denied ${check.toolName}` +
-          (decision.agentMessage ? `: ${decision.agentMessage}` : ''),
-      )
-      return false
-    }
+  const decision = await runToolGateHooks(
+    { toolName: check.toolName, args: check.args },
+    { workspaceRoot, projectTrusted },
+  )
+  if (decision.permission === 'deny') {
+    console.warn(
+      `[hooks] toolGate denied ${check.toolName}` +
+        (decision.agentMessage ? `: ${decision.agentMessage}` : ''),
+    )
+    return false
   }
 
   return true
