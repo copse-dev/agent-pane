@@ -192,13 +192,17 @@ export function seedE2eThreePaneLayout(): void {
 }
 
 /** SSH workspace settings for remote-folder / SSH settings UI e2e specs. */
-export function seedSshWorkspaceSettings(options?: { hosts?: boolean; enabled?: boolean }): void {
+export function seedSshWorkspaceSettings(options?: {
+  /** `false` = none; omit/`true` = default fixture host; or pass an explicit host list. */
+  hosts?: boolean | Array<{ id: string; label: string; host: string; user?: string }>
+  enabled?: boolean
+}): void {
+  const defaultHost = { id: 'dev', label: 'Dev Server', host: 'dev.example', user: 'ubuntu' }
+  const hosts =
+    options?.hosts === false ? [] : Array.isArray(options?.hosts) ? options.hosts : [defaultHost]
   writeSettings({
     sshWorkspaceEnabled: options?.enabled !== false,
-    sshWorkspaceHosts:
-      options?.hosts === false
-        ? []
-        : [{ id: 'dev', label: 'Dev Server', host: 'dev.example', user: 'ubuntu' }],
+    sshWorkspaceHosts: hosts,
   })
 }
 

@@ -190,6 +190,14 @@ separator after it — that paints `/ / usr` for `/usr`. Skip the separator when
 [`remote-folder-path.test.ts`](../src/renderer/views/remote-folder-path.test.ts),
 [`tests/e2e/remote-folder-breadcrumbs.e2e.ts`](../tests/e2e/remote-folder-breadcrumbs.e2e.ts).
 
+## SSH project sidebar labels
+
+SSH projects in the projects pane use `hostLabel:/full/remote/path`, not `hostLabel:basename`.
+Two remotes ending in the same leaf (e.g. `/etc/ddg` and `/home/ubuntu/ddg`) must stay
+visually distinct. Display re-derives from `project.path` so older basename-only stored
+names still render correctly (`projectDisplayName` in
+[`projects.ts`](../src/renderer/controller/projects.ts)).
+
 ## SSH chrome — plain text, no decorative emoji
 
 The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.

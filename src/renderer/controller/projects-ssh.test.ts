@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { projectDedupKey } from './projects.ts'
+import { formatSshProjectName, projectDedupKey, projectDisplayName } from './projects.ts'
 import {
   emptySshHostDraft,
   parseSshHostDraft,
@@ -12,6 +12,34 @@ describe('projectDedupKey', () => {
   it('separates the same path on different SSH hosts', () => {
     assert.notEqual(projectDedupKey('dev', '/repo'), projectDedupKey('staging', '/repo'))
     assert.equal(projectDedupKey(undefined, '/repo'), projectDedupKey('', '/repo'))
+  })
+})
+
+describe('projectDisplayName', () => {
+  it('includes the full remote path for SSH projects, even when name is basename-only', () => {
+    assert.equal(
+      formatSshProjectName('euw-serp-dev-testing16', '/etc/ddg'),
+      'euw-serp-dev-testing16:/etc/ddg',
+    )
+    assert.equal(
+      projectDisplayName({
+        id: 'a',
+        path: '/etc/ddg',
+        name: 'euw-serp-dev-testing16:ddg',
+        sshHost: 'euw-serp-dev-testing16',
+      }),
+      'euw-serp-dev-testing16:/etc/ddg',
+    )
+    assert.equal(
+      projectDisplayName({
+        id: 'b',
+        path: '/home/ubuntu/ddg',
+        name: 'euw-serp-dev-testing16:ddg',
+        sshHost: 'euw-serp-dev-testing16',
+      }),
+      'euw-serp-dev-testing16:/home/ubuntu/ddg',
+    )
+    assert.equal(projectDisplayName({ id: 'c', path: '/local', name: 'local' }), 'local')
   })
 })
 
