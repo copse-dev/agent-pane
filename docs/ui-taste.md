@@ -178,6 +178,15 @@ Fix (in [`conversation.css`](../src/renderer/styles/global/conversation.css)):
 Do not put `pre-wrap` back on the message container “for convenience”; it regresses every multi-block
 agent summary.
 
+## To-dos panel: cancelled means gone
+
+The inline To-dos panel (`todo-panel.ts`) lists the **active plan only**. Cancelled items
+are omitted from the DOM (same product read as ACP plans: cancelled = no longer part of the
+plan). When every item is cancelled — or the thread has no todos — hide the panel entirely;
+do not leave a `0/0 done` shell with struck-through or muted ghost rows. Strikethrough is for
+**completed** work, not cancelled work. Spec:
+[`tests/e2e/todo-display.e2e.ts`](../tests/e2e/todo-display.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the
