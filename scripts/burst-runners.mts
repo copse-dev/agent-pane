@@ -153,7 +153,7 @@ Common options:
   --runner-labels <labels>      Labels to register (default: ${DEFAULT_RUNNER_LABELS}).
   --runner-group <group>        GitHub runner group (default: ${DEFAULT_RUNNER_GROUP}).
   --ttl-minutes <n>             Auto-terminate hosts after n minutes; 0 disables (default: ${String(DEFAULT_TTL_MINUTES)}).
-  --volume-size-gb <n>          Root EBS volume size (default: ${String(DEFAULT_VOLUME_SIZE_GB)}).
+  --volume-size-gb <n>          Root volume size in GB for AWS EBS / Scaleway SBS (default: ${String(DEFAULT_VOLUME_SIZE_GB)}).
   --ssh-host public|private     Which instance IP to SSH to (default: public).
   --no-wait                    Do not wait for EC2 status checks before SSH provisioning.
 
@@ -430,6 +430,10 @@ function buildScalewayUpConfig(options: Options): ScalewayUpConfig {
     image: optionWithDefault(options, 'scw-image', DEFAULT_SCW_IMAGE),
     securityGroupId: option(options, 'security-group-id'),
     type: optionWithDefault(options, 'scw-type', DEFAULT_SCW_TYPE),
+    volumeSizeGb: positiveInt(
+      optionWithDefault(options, 'volume-size-gb', String(DEFAULT_VOLUME_SIZE_GB)),
+      'volume-size-gb',
+    ),
   }
 }
 
@@ -648,6 +652,8 @@ function launchScalewayServers(config: ScalewayUpConfig): string[] {
         `name=${name}`,
         `image=${config.image}`,
         `type=${config.type}`,
+        // PLAY2 defaults to a tiny SBS root; the runner image + bake needs ~AWS-sized disk.
+        `root-volume=sbs:${String(config.volumeSizeGb)}GB`,
         'ip=new',
         'dynamic-ip-required=true',
         `cloud-init=@${cloudInitPath}`,
