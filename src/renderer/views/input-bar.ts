@@ -155,7 +155,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   // footer (between status and the stacked right panel) so users can flip modes
   // without climbing to the titlebar. Hidden via CSS unless `.is-portrait-chrome`.
   const portraitPanelControls = mountPanelModeControls(store, api, {
-    className: 'portrait-panel-bar titlebar-panel-controls',
+    // Own class only — do not share `.titlebar-panel-controls` or titlebar e2e
+    // / click selectors (`.titlebar-panel-controls [aria-label=…]`) collide.
+    className: 'portrait-panel-bar',
     alwaysShowLabels: 'all',
     enableOverflow: true,
   })
