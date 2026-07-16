@@ -306,15 +306,15 @@ function scalewayArgs(config: ScalewayConfig, args: string[]): string[] {
 }
 
 function scalewayTerminateArgs(config: ScalewayConfig, serverId: string): string[] {
-  // with-block-volumes=true answers the interactive "delete volumes?" prompt.
-  // Do not pass a leading -y: scw treats it as eating the next token ("instance").
+  // with-block=true answers the interactive "delete volumes?" prompt (not
+  // with-block-volumes). Do not pass a leading -y: scw eats the next token.
   return scalewayArgs(config, [
     'instance',
     'server',
     'terminate',
     serverId,
     'with-ip=true',
-    'with-block-volumes=true',
+    'with-block=true',
   ])
 }
 
