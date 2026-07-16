@@ -21,10 +21,12 @@ export function hostFromSshConfigAlias(alias: SshConfigAlias): SshWorkspaceHost 
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/^-+|-+$/g, '')
+  // SSH target must be the config alias so OpenSSH applies the full Host stanza
+  // (ProxyJump, IdentityFile, etc.). HostName/user/port are display metadata only.
   const host: SshWorkspaceHost = {
     id: slug || alias.alias,
     label: alias.alias,
-    host: alias.hostname ?? alias.alias,
+    host: alias.alias,
   }
   if (alias.port !== undefined) host.port = alias.port
   if (alias.user) host.user = alias.user

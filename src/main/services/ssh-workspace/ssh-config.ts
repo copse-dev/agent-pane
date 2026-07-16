@@ -3,8 +3,19 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { SshConfigAlias } from '@shared/types/ssh-workspace.ts'
 
+function unquoteConfigValue(value: string): string {
+  const trimmed = value.trim()
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
 function parsePort(value: string): number | undefined {
-  const port = Number.parseInt(value.trim(), 10)
+  const port = Number.parseInt(unquoteConfigValue(value), 10)
   return Number.isFinite(port) && port > 0 && port <= 65535 ? port : undefined
 }
 
@@ -47,7 +58,7 @@ export function parseSshConfig(content: string): SshConfigAlias[] {
     const space = line.indexOf(' ')
     if (space === -1) continue
     const key = line.slice(0, space).toLowerCase()
-    const value = line.slice(space + 1).trim()
+    const value = unquoteConfigValue(line.slice(space + 1).trim())
     if (!value) continue
 
     if (key === 'host') {

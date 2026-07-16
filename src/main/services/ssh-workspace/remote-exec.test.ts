@@ -20,4 +20,15 @@ describe('remote exec quoting', () => {
     const cmd = buildRemoteArgvCommand(["it's"], undefined, undefined)
     assert.equal(cmd, `'it'\\''s'`)
   })
+
+  it('rejects env keys that are not valid shell identifiers', () => {
+    const cmd = buildRemoteShellCommand('npm test', undefined, {
+      NODE_ENV: 'test',
+      'LD_PRELOAD=evil': 'ignored',
+      'FOO=bar': 'also ignored',
+    })
+    assert.match(cmd, /env NODE_ENV='test'/)
+    assert.doesNotMatch(cmd, /LD_PRELOAD/)
+    assert.doesNotMatch(cmd, /FOO=bar/)
+  })
 })
