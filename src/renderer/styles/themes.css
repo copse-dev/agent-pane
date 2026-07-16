@@ -10,8 +10,9 @@
   --border: #414141;
   --border-subtle: #333333;
   --border-strong: #565656;
-  --link: #58a6ff;
-  --link-hover: #79b8ff;
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
+  --link: color-mix(in srgb, var(--accent) 65%, white);
+  --link-hover: color-mix(in srgb, var(--accent) 50%, white);
   --error: #f48771;
   --danger: #f14c4c;
   --success: #4ec9b0;
@@ -46,8 +47,9 @@
   --border-subtle: #e4e4e4;
   --border-strong: #ababab;
   --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
-  --link: #0969da;
-  --link-hover: #0550ae;
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, black);
+  --link: color-mix(in srgb, var(--accent) 75%, black);
+  --link-hover: color-mix(in srgb, var(--accent) 65%, black);
   --error: #cf222e;
   --danger: #cf222e;
   --success: #1a7f37;

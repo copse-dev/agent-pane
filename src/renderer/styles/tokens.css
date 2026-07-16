@@ -34,11 +34,16 @@
   --chat-gradient-mid: var(--bg-base);
   --chat-gradient-bottom: color-mix(in srgb, var(--bg-elevated) 24%, var(--bg-base));
   --chat-gradient-glow: color-mix(in srgb, var(--accent) 6%, var(--bg-elevated));
-  --accent: #007acc;
-  --accent-hover: #1177bb;
+  /* One user-configurable interaction hue drives primary actions, selection,
+     message emphasis, and theme-derived links. Teal sits more naturally beside
+     the warm default interface tint than the previous editor-blue default. */
+  --accent-color: #2a9d8f;
+  --accent: var(--accent-color);
+  --accent-hover: color-mix(in srgb, var(--accent) 85%, white);
   --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--bg-elevated));
-  --link: #58a6ff;
-  --link-hover: #79b8ff;
+  --link: color-mix(in srgb, var(--accent) 65%, white);
+  --link-hover: color-mix(in srgb, var(--accent) 50%, white);
+  --text-on-accent: #101918;
   --error: #f48771;
   --danger: #f14c4c;
   --success: #4ec9b0;
@@ -67,6 +72,10 @@
   --spacing-md: 12px;
   --spacing-lg: 16px;
   --spacing-xl: 24px;
+  /* Keep prose, tool traces, and the docked composer readable on very wide
+     windows. Wide artifacts can still scroll or expand within this column. */
+  --chat-content-max: 960px;
+  --chat-user-max: 840px;
   /* Left inset for custom titlebars under macOS traffic lights (see trafficLightPosition). */
   --traffic-light-inset: 78px;
   --titlebar-height: 40px;

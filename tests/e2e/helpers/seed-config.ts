@@ -752,6 +752,186 @@ export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   })
 }
 
+/** A representative completed coding turn for conversation hierarchy visual evaluation. */
+export function seedConversationVisualHierarchyFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-conversation-hierarchy-project'
+  const threadId = 'e2e-conversation-hierarchy-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Conversation visual hierarchy',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-hierarchy',
+            role: 'user',
+            content: 'Can you make sure Prettier passes and commit the formatting fix?',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-check',
+            role: 'assistant',
+            content: '',
+            reasoning:
+              'Running the formatter check first, then I will update only the affected file.',
+            toolCalls: [
+              {
+                id: 'tc-format-check',
+                name: 'run_shell',
+                args: { command: 'npm run format:check' },
+                status: 'done',
+                result: 'Formatting issues found in tests/e2e/model-picker.e2e.ts',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-result',
+            role: 'assistant',
+            content: [
+              'Prettier is fixed and the formatting change is committed.',
+              '',
+              '- Formatted `tests/e2e/model-picker.e2e.ts`',
+              '- Verified `npm run format:check` passes',
+              '- Created commit `abc1234`',
+              '- [Open the pull request](https://github.com/copse-dev/agent-pane/pull/899)',
+            ].join('\n'),
+            toolCalls: [],
+            review: {
+              status: 'done',
+              summary: 'The formatting-only change is scoped correctly. No issues found.',
+            },
+            createdAt: now + 3,
+          },
+        ],
+        todos: [
+          {
+            id: 'todo-hierarchy-1',
+            content: 'Inspect the affected conversation surfaces',
+            status: 'completed',
+          },
+          {
+            id: 'todo-hierarchy-2',
+            content: 'Align transcript cards to the reading column',
+            status: 'completed',
+          },
+          {
+            id: 'todo-hierarchy-3',
+            content: 'Verify the focused screenshot evaluation',
+            status: 'completed',
+          },
+        ],
+        comparison: {
+          status: 'error',
+          models: { a: 'reviewer-a', b: 'reviewer-b', judge: 'judge' },
+          reviewA: '',
+          reviewB: '',
+          synthesis: '',
+          error: 'Comparison declined.',
+        },
+        usage: { inputTokens: 3200, outputTokens: 900 },
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget: 180_000,
+          conversationTokens: 54_000,
+          fillRatio: 0.3,
+          updatedAt: now + 3,
+        },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
+/** Two user turns followed by enough output to exercise the latest-prompt sticky anchor. */
+export function seedStickyUserPromptFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-sticky-user-prompt-project'
+  const threadId = 'e2e-sticky-user-prompt-thread'
+  const now = Date.now()
+  const firstResult = [
+    'The initial pass is complete.',
+    '',
+    ...Array.from(
+      { length: 8 },
+      (_, index) =>
+        `Initial result ${String(index + 1)}: inspected the relevant renderer and interaction code.`,
+    ),
+  ].join('\n\n')
+  const latestResult = [
+    'Applying the follow-up request now.',
+    '',
+    ...Array.from(
+      { length: 32 },
+      (_, index) =>
+        `- Validation detail ${String(index + 1)} remains visible beneath the active request.`,
+    ),
+  ].join('\n')
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Sticky user prompt',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-sticky-first',
+            role: 'user',
+            content: 'Please inspect the current chat layout.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-sticky-first',
+            role: 'assistant',
+            content: firstResult,
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-user-sticky-latest',
+            role: 'user',
+            content: 'Follow-up: keep this latest request visible while the response grows.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-sticky-result',
+            role: 'assistant',
+            content: latestResult,
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 2400, outputTokens: 1600 },
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget: 180_000,
+          conversationTokens: 36_000,
+          fillRatio: 0.2,
+          updatedAt: now + 3,
+        },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
 export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
   const projectId = 'e2e-code-block-copy-project'
   const threadId = 'e2e-code-block-copy-thread'

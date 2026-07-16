@@ -68,6 +68,16 @@ export function endHookRunRecording(threadId: string): void {
   if (current?.threadId === threadId) current = null
 }
 
+/**
+ * The current run's turn id — the "generation" half of decision 6's attribution,
+ * reused as the Cursor hook wire `generation_id` (B4) so a hook's wire payload
+ * and its spine `hook_run` line agree on the turn. Null outside an active
+ * recording window (the marshaller then emits an empty generation id).
+ */
+export function getCurrentHookRunTurnId(): string | null {
+  return current?.turnId ?? null
+}
+
 /** Update the emitting-step attribution (wired to the loop's LLM-call counter). */
 export function setHookRunStep(step: number): void {
   if (current) current.step = step

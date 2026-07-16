@@ -72,16 +72,15 @@ describe('mermaid diagram rendering', () => {
           inputRect.height > 0 &&
           inputRect.bottom <= window.innerHeight &&
           inputRect.top >= 0,
-        composerNearPaneBottom:
-          composerRect != null &&
-          paneRect != null &&
-          Math.abs(composerRect.bottom - paneRect.bottom) < 4,
+        composerBottomGap:
+          composerRect != null && paneRect != null ? paneRect.bottom - composerRect.bottom : -1,
         composerHeight,
       }
     })
     expect(chrome.inputExists).toBe(true)
     expect(chrome.inputInViewport).toBe(true)
-    expect(chrome.composerNearPaneBottom).toBe(true)
+    expect(chrome.composerBottomGap).toBeGreaterThanOrEqual(11)
+    expect(chrome.composerBottomGap).toBeLessThanOrEqual(13)
     expect(chrome.composerHeight).toBeGreaterThan(72)
 
     await $('.mermaid-diagram--folded').waitForExist({ timeout: 10_000 })
