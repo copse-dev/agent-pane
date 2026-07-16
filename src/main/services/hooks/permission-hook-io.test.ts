@@ -11,6 +11,7 @@ import { mkdtemp, mkdir, writeFile, rm, chmod, readFile } from 'node:fs/promises
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { AgentSessionInfo } from '@copse/agent/hooks/canonical-events.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import { userHooksConfigPath, resetCursorHookSessionErrorsForTest } from './cursor-adapter.ts'
 import { runToolGateHooks } from './tool-gate.ts'
 import { runBeforeSubmitPromptHooks } from './before-submit-prompt.ts'
@@ -153,11 +154,16 @@ describe('permission-hook I/O — agent-session envelope on the wire (B4)', () =
 
   it('stop carries real ids + model (captured by value for detached dispatch)', async () => {
     await writeCapturingHook('stop')
-    await runStopHooks('completed', {
+    const result = await runStopHooks('completed', {
+      threadId: 'hook-io-stop',
+      turnTreeId: asTurnTreeId('hook-io-stop:turn'),
       workspaceRoot: null,
       projectTrusted: false,
       agentSession: SESSION,
     })
+    // Detached (C1): the hook runs off the critical path — await its completion
+    // before reading what it captured.
+    await result.settled
     const stdin = await capturedStdin()
     assertEnvelope(stdin, 'stop')
     assert.equal(stdin['status'], 'completed')
