@@ -52,7 +52,10 @@ try {
   await esbuild.build(buildOptions)
 } catch (err) {
   const msg = err instanceof Error ? err.message : String(err)
-  if (!msg.includes('The service was stopped') && !msg.includes('The service is no longer running')) {
+  if (
+    !msg.includes('The service was stopped') &&
+    !msg.includes('The service is no longer running')
+  ) {
     throw err
   }
   console.warn(`[run-tests] esbuild service stopped (${msg}); retrying once`)
