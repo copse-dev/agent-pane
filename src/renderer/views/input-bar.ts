@@ -172,6 +172,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       // against the newly selected model rather than waiting for the next keystroke.
       void runContextEstimate()
     },
+    () => {
+      composer.focus()
+    },
   )
   // Re-sync the picker whenever the active thread changes (new thread,
   // thread switch, or thread deletion that shifts the active pointer).
