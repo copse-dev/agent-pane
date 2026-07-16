@@ -21,7 +21,12 @@ import { classifyAgentError } from './agent-errors.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
-import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
+import {
+  clearActiveRunThread,
+  recordThreadModel,
+  setActiveRunModel,
+  setActiveRunThread,
+} from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -91,6 +96,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
+import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import {
   findNewlyInProgressLocal,
@@ -260,6 +266,8 @@ async function runBeforeSubmitPrompt(
     const decision = await runBeforeSubmitPromptHooks(promptTextForSubmit(userPrompt), {
       workspaceRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      // Real conversation/generation ids + running model on the wire payload (B4).
+      agentSession: currentAgentSessionInfo({ conversationId: threadId }),
     })
     if (!decision.blocked) return null
     return (
@@ -283,9 +291,15 @@ async function runBeforeSubmitPrompt(
 function fireStopHook(status: 'completed' | 'aborted'): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
   const workspaceRoot = getWorkspaceRoot()
+  // Capture the agent-session identity **by value** now, synchronously — `stop`
+  // dispatches detached (decision 3) and the run's recording context is torn
+  // down right after, so reading ambient ids at marshal time would come up empty
+  // (B4). The snapshot lets the detached hook still stamp the finished turn.
+  const agentSession = currentAgentSessionInfo()
   void runStopHooks(status, {
     workspaceRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    agentSession,
   }).catch((err: unknown) => {
     console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
   })
@@ -312,6 +326,10 @@ export async function runAgent(
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
+  // The model actually running this turn — stamped on Cursor hook agent-session
+  // payloads (B4). Set before any hook can fire (beforeSubmitPrompt below, the
+  // tool gate, afterFileEdit, stop) so every one reports the real model.
+  setActiveRunModel(model)
   const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null

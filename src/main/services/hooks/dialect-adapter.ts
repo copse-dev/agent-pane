@@ -14,7 +14,7 @@
 // dialect up here and delegates marshalling + interpretation to the right
 // adapter — so a dialect is fully described by its {@link DialectAdapter}.
 import type { CommandHook, HookDialect } from '@copse/agent/hooks/command-executor.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
 import type { HookSpawnResult } from './hook-spawn.ts'
@@ -62,9 +62,14 @@ export interface DialectAdapter {
    * (decision 8: "a Claude hook sees Claude's stdin shape and tool names").
    * Returns null when the hook does not apply to this tool — matching is done at
    * discovery, but the marshaller is the final guard against firing a hook for a
-   * tool its declared event/matcher never covered.
+   * tool its declared event/matcher never covered. `session` carries the real
+   * conversation / generation ids + running model to stamp on the payload (B4).
    */
-  marshalToolGateRequest(hook: CommandHook, payload: HookEventPayloads['toolGate']): unknown
+  marshalToolGateRequest(
+    hook: CommandHook,
+    payload: HookEventPayloads['toolGate'],
+    session?: AgentSessionInfo,
+  ): unknown
   /**
    * Apply this dialect's per-event exit-code table to a spawn result. Pure w.r.t.
    * the process (no I/O); the runner owns spawning, spine recording, and the
@@ -83,6 +88,7 @@ export interface DialectAdapter {
   marshalBeforeSubmitPromptRequest?(
     hook: CommandHook,
     payload: HookEventPayloads['beforeSubmitPrompt'],
+    session?: AgentSessionInfo,
   ): unknown
   /**
    * Apply this dialect's `beforeSubmitPrompt` exit-code / response table to a
@@ -104,6 +110,7 @@ export interface DialectAdapter {
   marshalAfterFileEditRequest?(
     hook: CommandHook,
     payload: HookEventPayloads['afterFileEdit'],
+    session?: AgentSessionInfo,
   ): unknown
   /**
    * Apply this dialect's `afterFileEdit` exit-code table to a spawn result (B2).
@@ -123,7 +130,11 @@ export interface DialectAdapter {
    * carries only `status` and returns nothing), so its paired
    * {@link interpretStop} never yields a control-flow decision.
    */
-  marshalStopRequest?(hook: CommandHook, payload: HookEventPayloads['stop']): unknown
+  marshalStopRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['stop'],
+    session?: AgentSessionInfo,
+  ): unknown
   /**
    * Apply this dialect's `stop` exit-code table to a spawn result (B3).
    * Optional, paired with {@link marshalStopRequest}. `stop` is detached

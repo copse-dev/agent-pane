@@ -136,13 +136,18 @@ export function createCommandHookRunner(): CommandHookRunner {
       payload: HookEventPayloads[E],
       context: HookContext,
     ): Promise<CommandHookResult> {
+      // Every wired agent-session event stamps the real conversation / generation
+      // ids + running model onto its wire payload (B4); the host captures it at
+      // the fire site and hands it through the context (opaque to packages/agent).
+      const session = context.agentSession
+
       if (hook.event === 'toolGate' && isToolGatePayload(payload)) {
         const adapter = getDialectAdapter(hook.dialect)
         if (!adapter) return ABSTAIN
         return spawnInterpretResolve(
           hook,
           adapter,
-          adapter.marshalToolGateRequest(hook, payload),
+          adapter.marshalToolGateRequest(hook, payload, session),
           (spawn) => adapter.interpretToolGate(spawn, payload),
           context,
         )
@@ -157,7 +162,7 @@ export function createCommandHookRunner(): CommandHookRunner {
         return spawnInterpretResolve(
           hook,
           adapter,
-          marshal(hook, payload),
+          marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
         )
@@ -171,7 +176,7 @@ export function createCommandHookRunner(): CommandHookRunner {
         return spawnInterpretResolve(
           hook,
           adapter,
-          marshal(hook, payload),
+          marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
         )
@@ -185,7 +190,7 @@ export function createCommandHookRunner(): CommandHookRunner {
         return spawnInterpretResolve(
           hook,
           adapter,
-          marshal(hook, payload),
+          marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
         )
