@@ -891,6 +891,11 @@ dialog.settings-overlay::backdrop {
   color: var(--error);
   border-color: var(--error);
 }
+/* `sandbox: false` escape (F3): hook runs outside the project sandbox. */
+.sources-badge-unsandboxed {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
 .sources-row-error {
   font-size: 11px;
   color: var(--error);

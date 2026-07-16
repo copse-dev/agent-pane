@@ -24,8 +24,10 @@
 // here and are listed in {@link COPSE_SUPPORTED_EVENTS}; their host fire sites
 // live in `diff-apply.ts` / `permission-decision.ts` / `post-turn-review.ts`.
 // Cursor / Claude declare none of these (Copse-native), so only the Copse
-// adapter marshals them. F3's sandbox-by-default spawn reversal is still not
-// implemented — `sandbox` is parsed/carried only.
+// adapter marshals them. F3 landed the sandbox-by-default spawn reversal: the
+// `sandbox` field carried here now drives the sandboxed spawn (`hook-spawn.ts`),
+// the `sandbox: false` escape is surfaced on the Sources summary below, and a
+// blocked-by-sandbox run is recorded + resolved via `onFailure` in the runner.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -411,6 +413,10 @@ export async function listCopseHooksForSources(
       supported: isCopseSupportedEvent(h.event),
       ...(h.matcher !== undefined ? { matcher: h.matcher } : {}),
       ...(lastError !== undefined ? { lastError } : {}),
+      // Surface the `sandbox: false` escape (decision 7 / F3) so Sources can
+      // badge "outside sandbox" and the risk is visible. Only present when the
+      // hook opted out; sandboxed-by-default hooks omit it.
+      ...(h.sandbox ? {} : { sandbox: false }),
     }
   })
   return {
@@ -431,8 +437,8 @@ export async function listCopseHooksForSources(
 /**
  * Auditing (decision 7): a project (repo-supplied) Copse hook runs a spawned
  * script; warn at most once per distinct command. When a hook sets the
- * `sandbox: false` escape, call that out — F3 will enforce sandbox-by-default,
- * and the escape is what the trust prompt surfaces.
+ * `sandbox: false` escape, call that out — F3 enforces sandbox-by-default
+ * (macOS), and the escape is what Sources badges "outside sandbox".
  */
 const warnedProjectHookCommands = new Set<string>()
 
