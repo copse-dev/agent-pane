@@ -32,6 +32,8 @@ const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
 const DEFAULT_TTL_MINUTES = 240
 const DEFAULT_VOLUME_SIZE_GB = 80
 const MANAGED_BY_TAG = 'copse-burst-runners'
+const SSH_READY_POLL_SECONDS = 5
+const SSH_READY_TIMEOUT_MS = 10 * 60 * 1000
 
 type Command = 'up' | 'status' | 'down' | 'help'
 type OptionValue = string | true
@@ -835,6 +837,7 @@ function uploadRunnerDir(config: RunnerConfig, host: CloudHost): void {
 
 function provisionHost(config: RunnerConfig, host: CloudHost): void {
   console.log(`==> Provisioning ${host.providerId} (${sshTarget(config, host)})`)
+  waitForSsh(config, host)
   sshRun(
     config,
     host,
