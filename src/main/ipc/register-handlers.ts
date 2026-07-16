@@ -77,7 +77,7 @@ import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
-import { listCursorHooksAsSummaries } from '../services/skills/cursor-hooks.ts'
+import { listCursorHooksForSources } from '../services/skills/cursor-hooks.ts'
 import { listClaudeHooks } from '../services/skills/claude-hooks.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -751,10 +751,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude] = await Promise.all([
-      listCursorHooksAsSummaries(opts),
+      listCursorHooksForSources(opts),
       listClaudeHooks(opts),
     ])
-    return [...cursor, ...claude]
+    return { hooks: [...cursor.hooks, ...claude], warnings: cursor.warnings }
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
