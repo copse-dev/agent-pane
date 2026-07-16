@@ -26,6 +26,13 @@ import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import {
+  beginHookRunRecording,
+  endHookRunRecording,
+  recordFunctionHookRun,
+  setHookRunStep,
+  setHookRunToolset,
+} from './hook-run-recorder.ts'
+import {
   buildProvider,
   buildSubagentRoute,
   buildReviewRoute,
@@ -359,6 +366,9 @@ export async function runAgent(
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
+  // Attribute hook executions (function + command) to this run's spine records
+  // (decision 6 — always-on).
+  beginHookRunRecording(threadId)
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
 
@@ -413,12 +423,21 @@ export async function runAgent(
         ? userPrompt
         : resolveParentGoal(undefined, messages, userPrompt)
     const priorTodos = options?.priorTodos ?? []
+
+    // Fingerprint the toolset offered to the model before any hook can fire, so
+    // every hook_run spine record — including turnStart's — references it
+    // (decision 6). The tool list is fixed for the whole run.
+    const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
+    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode)
+    setHookRunToolset(parentLoopTools)
+
     const turnStart = await createHookRegistry().emit(
       'turnStart',
       { userText: userTextForSteering, priorTodos },
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        recordHookRun: recordFunctionHookRun,
       },
     )
     const injected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
@@ -458,7 +477,6 @@ export async function runAgent(
     }
 
     const runReadLimits = readFileLimitsFromConversationBudget(conversationBudget)
-    const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
 
     resetSubagentUsage()
 
@@ -540,8 +558,6 @@ export async function runAgent(
 
       return { todos, ...(extraMessage ? { extraMessage } : {}) }
     })
-
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode)
 
     // The parent tool executor, shared by the main loop and any post-turn parent
     // continuation turns (pre-review todo gate, review remediation) so both route
@@ -646,6 +662,8 @@ export async function runAgent(
           onRunDeadlineActivity: runAbort.schedule,
           coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
           getOpenTodos: () => getAgentRunTodos(),
+          recordHookRun: recordFunctionHookRun,
+          onLlmCall: setHookRunStep,
           executeTool: executeParentTool,
           signal: controller.signal,
           maxContextTokens: contextWindow,
@@ -717,6 +735,8 @@ export async function runAgent(
       onEditTool: (name: string): void => {
         if (isEditTool(name)) turnChangedFiles = true
       },
+      recordHookRun: recordFunctionHookRun,
+      onLlmCall: setHookRunStep,
       userNudge: '',
       maxSteps: 6,
     }
@@ -854,6 +874,7 @@ export async function runAgent(
     runAbort.clear()
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
+    endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
     abortMap.delete(threadId)
   }
