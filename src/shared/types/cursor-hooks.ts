@@ -27,11 +27,27 @@ export const CURSOR_PERMISSION_HOOK_EVENTS = [
 
 export type CursorPermissionHookEvent = (typeof CURSOR_PERMISSION_HOOK_EVENTS)[number]
 
-/** Whether an event is actually wired into Copse (vs parsed for discovery only). */
+/** Whether an event is one of the permission-gating hooks (shell / MCP / read). */
 export function isCursorPermissionHookEvent(
   event: CursorHookEvent,
 ): event is CursorPermissionHookEvent {
   return (CURSOR_PERMISSION_HOOK_EVENTS as readonly string[]).includes(event)
+}
+
+/**
+ * Events Copse actually fires (vs parsed for discovery only). The permission
+ * gates plus `beforeSubmitPrompt` (B1 — wired on the compose path); the rest
+ * (`afterFileEdit`, `stop`) land their fire sites in later phases and stay
+ * discovery-only until then.
+ */
+export const CURSOR_WIRED_HOOK_EVENTS = [
+  ...CURSOR_PERMISSION_HOOK_EVENTS,
+  'beforeSubmitPrompt',
+] as const
+
+/** Whether Copse actually fires this event (drives the Sources "supported" badge). */
+export function isCursorWiredHookEvent(event: CursorHookEvent): boolean {
+  return (CURSOR_WIRED_HOOK_EVENTS as readonly string[]).includes(event)
 }
 
 /** Where a hook definition came from — determines its trust tier. */
@@ -47,8 +63,9 @@ export interface CursorHookSummary {
   scope: CursorHookScope
   /**
    * Whether Copse actually fires this event. Declared-but-unwired events
-   * (`beforeSubmitPrompt`, `afterFileEdit`, `stop`) are discovered so the
-   * Sources panel can badge them "unsupported" instead of looking active.
+   * (`afterFileEdit`, `stop`) are discovered so the Sources panel can badge them
+   * "unsupported" instead of looking active. `beforeSubmitPrompt` became wired
+   * in B1.
    */
   supported: boolean
   /**
