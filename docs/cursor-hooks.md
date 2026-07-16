@@ -204,10 +204,9 @@ Enabling Cursor hooks hands real, local execution authority to whoever authored 
 
 **Enabling `cursorHooksEnabled` and trusting a workspace grants that repo's
 `.cursor/hooks.json` arbitrary local code execution on every gated tool call.** Each
-matching hook `command` is spawned through a shell (`shell: true`) on the agent's hot
-path, with the directory of the `hooks.json` as its working directory. A trusted repo's
-hooks run with the same authority as any other process you launch — they are **not**
-confined to the agent's project sandbox.
+matching hook `command` is spawned through a shell on the agent's hot path, with the
+directory of the `hooks.json` as its working directory. A trusted repo's hooks run with
+whatever authority the sandbox leaves them (see below).
 
 Concretely, "trusting a workspace" with hooks enabled also means:
 
@@ -215,9 +214,14 @@ Concretely, "trusting a workspace" with hooks enabled also means:
   (`beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`) spawns the repo's
   hook command first. A cloned or third-party repo can ship a `hooks.json` that runs
   whatever it likes, repeatedly, for the lifetime of the session.
-- **Runs outside the sandbox.** Hook commands are ordinary child processes; they are not
-  subject to the project sandbox that constrains agent shell/file tools. They can read
-  and write anywhere your user account can.
+- **Sandboxed by default (F3, macOS-only).** As of F3 (decision 7 of the
+  [hooks platform plan](./plans/hooks-and-feature-packs.md)), hook processes run **inside
+  the project sandbox by default** — the same workspace-scoped seatbelt that constrains the
+  agent's shell/file tools. Cursor / Claude hooks cannot opt out (only the Copse dialect's
+  `sandbox: false` can). **Enforcement is macOS-only**: on Linux / Windows there is no OS
+  sandbox, so a hook still runs with full user authority — treat "sandboxed" as a _default,
+  not a guarantee_. A hook the sandbox blocks is recorded on the spine and surfaced in
+  Sources; it is never a silent fail-open.
 - **Tool tokens are in the environment.** Hook processes inherit the scrubbed
   `envForRendererChildProcess()` environment. That strips _LLM provider_ keys, but
   **non-LLM tool tokens used by the agent (e.g. `GITHUB_TOKEN`) remain in `env`** and are
