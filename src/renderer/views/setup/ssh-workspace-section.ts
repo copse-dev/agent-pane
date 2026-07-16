@@ -18,7 +18,15 @@ export interface SshWorkspaceSection {
   refresh: () => Promise<void>
 }
 
-export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
+export interface SshWorkspaceSectionOptions {
+  /** Fired after a live-persisted setting change (enable toggle, host key policy). */
+  onChanged?: () => void
+}
+
+export function createSshWorkspaceSection(
+  api: ApiClient,
+  opts: SshWorkspaceSectionOptions = {},
+): SshWorkspaceSection {
   const hostList = el('div', { class: 'ssh-host-list' })
   const status = el('span', { class: 'ssh-host-status' })
   const enabledInput = el('input', { type: 'checkbox', name: 'sshWorkspaceEnabled' })
@@ -175,10 +183,14 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
   })
 
   enabledInput.addEventListener('change', () => {
-    void api.settings.set('sshWorkspaceEnabled', enabledInput.checked)
+    void api.settings.set('sshWorkspaceEnabled', enabledInput.checked).then(() => {
+      opts.onChanged?.()
+    })
   })
   strictSelect.addEventListener('change', () => {
-    void api.settings.set('sshStrictHostKeys', strictSelect.value)
+    void api.settings.set('sshStrictHostKeys', strictSelect.value).then(() => {
+      opts.onChanged?.()
+    })
   })
 
   async function refresh(): Promise<void> {
@@ -225,9 +237,9 @@ export function createSshWorkspaceSection(api: ApiClient): SshWorkspaceSection {
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Run shell, git, search, and file tools on a remote Linux host over SSH. Add hosts here or in the ',
+      'Run shell, git, search, and file tools on a remote Linux host over SSH. Enable the feature below, add hosts here or in the ',
       el('strong', {}, 'Open remote folder'),
-      ' dialog, enable the feature, then open a remote project from the projects panel.',
+      ' dialog, then open a remote project from the projects panel.',
     ),
     el('label', { class: 'checkbox-label' }, enabledInput, ' Enable SSH workspaces (experimental)'),
     el('label', {}, 'Host key policy ', strictSelect),

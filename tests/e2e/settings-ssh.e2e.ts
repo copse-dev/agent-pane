@@ -13,7 +13,9 @@ describe('SSH settings section', () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-settings-ssh')
-    seedSshWorkspaceSettings()
+    // Start disabled so we can prove the live toggle reveals "+ Remote"
+    // without clicking Save.
+    seedSshWorkspaceSettings({ enabled: false })
     await browser.reloadSession()
   })
 
@@ -21,8 +23,12 @@ describe('SSH settings section', () => {
     resetUserData()
   })
 
-  it('shows SSH workspace host CRUD and enable toggle', async () => {
+  it('shows SSH workspace host CRUD and enable toggle under Settings → SSH', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
+
+    const remoteBefore = $('.projects-open-remote-btn')
+    assert.equal(await remoteBefore.isDisplayed(), false)
+
     await $('[aria-label="Settings"]').click()
 
     const navBtn = $('.settings-nav-btn[data-section="ssh"]')
@@ -35,12 +41,22 @@ describe('SSH settings section', () => {
 
     const enabledToggle = await sshSection.$('input[name="sshWorkspaceEnabled"]')
     await expect(enabledToggle).toBeExisting()
-    assert.equal(await enabledToggle.isSelected(), true)
+    assert.equal(await enabledToggle.isSelected(), false)
 
     const hostRow = await sshSection.$('.ssh-host-row')
     await expect(hostRow).toBeDisplayed()
     assert.match(await hostRow.getText(), /Dev Server/)
 
+    await enabledToggle.click()
+    assert.equal(await enabledToggle.isSelected(), true)
+
     await saveElementScreenshot('#settings-dialog', 'settings-ssh-workspace.png')
+
+    // Cancel closes without the form Save path — the live toggle must still
+    // have emitted settings_changed so the projects pane shows "+ Remote".
+    await $('#settings-cancel').click()
+    const remoteAfter = $('.projects-open-remote-btn')
+    await expect(remoteAfter).toBeDisplayed()
+    await saveElementScreenshot('#pane-projects', 'ssh-projects-pane-after-enable.png')
   })
 })

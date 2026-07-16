@@ -1070,7 +1070,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const acpAgentsSection = createAcpAgentsSection(api)
   qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
 
-  const sshWorkspaceSection = createSshWorkspaceSection(api)
+  const sshWorkspaceSection = createSshWorkspaceSection(api, {
+    // Live-persist toggles must wake listeners (e.g. projects "+ Remote" button)
+    // without requiring the dialog Save button.
+    onChanged: (): void => {
+      store.emit('settings_changed')
+    },
+  })
   qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
@@ -1213,10 +1219,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     // Pull in the lazily-loaded section content so matched blocks (e.g. the ACP
-    // agents list) render fully rather than as an empty shell.
+    // agents list / SSH host list) render fully rather than as an empty shell.
     if (!searchContentLoaded) {
       searchContentLoaded = true
       void acpAgentsSection.refresh()
+      void sshWorkspaceSection.refresh()
       void refreshSources()
     }
 
@@ -1668,8 +1675,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       searchInput.value = ''
     }
     applySearch('')
-    showSection(pendingSection ?? 'general')
+    const openedSection = pendingSection ?? 'general'
+    showSection(openedSection)
     pendingSection = null
+    // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
+    // lazy section content here too.
+    if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
+    if (openedSection === 'experimental') void acpAgentsSection.refresh()
+    if (openedSection === 'usage') void usageSection.refresh()
+    if (openedSection === 'sources') void refreshSources()
     searchInput.focus()
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
