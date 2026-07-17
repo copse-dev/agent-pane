@@ -586,11 +586,14 @@ async function scopeGortexToActiveRepo(activeRoot: string): Promise<void> {
 
 /**
  * RSS above which a daemon found at boot is treated as an oversized zombie and
- * reaped. Left running across sessions the daemon keeps a graph per repo ever
- * opened and grows unbounded (observed 3.5→10 GB); a healthy scoped,
- * GOMEMLIMIT-capped daemon stays well under this and is reused as-is.
+ * reaped. Set to the {@link GORTEX_MEM_LIMIT} ceiling (4 GiB): a daemon this big
+ * predates the cap or escaped it (legacy accumulated bloat), so freeing it early
+ * — before we allocate our window — avoids a multi-GB resident pushing the
+ * machine over its ceiling mid-boot. A scoped, GOMEMLIMIT-capped daemon stays
+ * well under this and is reused as-is (no needless re-index); moderate daemons
+ * are instead shrunk gracefully by scopeGortexToActiveRepo's untrack + reload.
  */
-const GORTEX_ORPHAN_REAP_RSS_MB = 2048
+const GORTEX_ORPHAN_REAP_RSS_MB = 4096
 
 /** Whether a boot-time process (by RSS + command) is an oversized gortex daemon worth reaping. */
 export function isOversizedGortexDaemon(rssMb: number, command: string): boolean {
@@ -676,13 +679,17 @@ export async function stopGortexDaemon(): Promise<void> {
 }
 
 async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
+  // Scope BEFORE starting the daemon. `untrack` is a plain config edit that works
+  // with no daemon running, so this leaves gortex's config listing only the
+  // active repo. Ordering matters: a freshly-started daemon reads the *full*
+  // config and immediately begins cold-indexing every repo in it — a large
+  // previously-opened checkout (e.g. 100k files) balloons to multiple GB and
+  // OOM-kills us before a later untrack could drop it. Slimmed first, the daemon
+  // (fresh or reused) only ever indexes the active workspace.
+  await scopeGortexToActiveRepo(workspaceRoot)
   if (!(await ensureGortexDaemon(workspaceRoot))) {
     throw new Error('gortex daemon failed to start')
   }
-  // Keep the daemon scoped to the active workspace before (re)building its index,
-  // so a previously-opened large repo's graph is dropped and its memory freed
-  // rather than kept warm alongside this one.
-  await scopeGortexToActiveRepo(workspaceRoot)
   // Register excludes (and shed any pre-exclude index) before track so the very
   // first build already honors them, rather than indexing ~3 GB once first.
   await ensureGortexExcludes(workspaceRoot)
