@@ -227,6 +227,7 @@
   min-height: 0;
   border-top: 1px solid var(--border-subtle);
   --chat-composer-height: 148px;
+  --chat-composer-width: min(calc(100% - 2 * var(--spacing-xl)), var(--chat-content-max));
   background:
     radial-gradient(
       ellipse 85% 50% at 50% -5%,
@@ -239,6 +240,9 @@
       var(--chat-gradient-mid) 52%,
       var(--chat-gradient-bottom) 100%
     );
+}
+.pane-chat.composer-centered {
+  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
 }
 .conversation,
 .conversation-scroll,
@@ -253,7 +257,6 @@
   bottom: auto;
   left: 50%;
   right: auto;
-  width: min(720px, calc(100% - 2 * var(--spacing-lg)));
   transform: translate(-50%, -50%);
   border-top: none;
   border-radius: var(--radius-lg);
@@ -312,6 +315,9 @@
   width: auto;
   height: var(--pane-divider-width);
   cursor: row-resize;
+  /* Keep the transparent 2px hit extension above the seam clickable where it
+     crosses the higher-z portrait controls bar. */
+  z-index: 32;
 }
 .three-pane.is-right-panel-horizontal #resizer-files::after {
   inset-block: -2px;

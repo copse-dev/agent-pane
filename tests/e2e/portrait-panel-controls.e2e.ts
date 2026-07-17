@@ -1,7 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, $$, browser, expect } from '@wdio/globals'
-import { resetUserData, seedPortraitRightPanelFixture } from './helpers/seed-config.ts'
+import {
+  resetUserData,
+  seedEmptyProject,
+  seedPortraitRightPanelFixture,
+} from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, prepareE2eScreenshot } from './helpers/screenshot.ts'
 
 async function savePortraitElementScreenshot(selector: string, filename: string): Promise<void> {
@@ -90,6 +94,23 @@ async function openPortraitChrome(): Promise<void> {
   )
 }
 
+async function openCenteredPortraitChrome(): Promise<void> {
+  resetUserData()
+  seedEmptyProject(process.cwd(), 'e2e-portrait-panel-centered', {
+    okfMemoriesEnabled: true,
+    roadmapPlansEnabled: true,
+    rightPanelPosition: 'bottom',
+  })
+  await browser.reloadSession()
+  await $('.project-new-thread-btn').waitForClickable({ timeout: 30_000 })
+  await $('.project-new-thread-btn').click()
+  await $('.prompt-input').waitForExist({ timeout: 30_000 })
+  await pinPortraitAppShell()
+  await setProjectsWidth(200)
+  await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
+  await $('.portrait-panel-bar').waitForDisplayed({ timeout: 10_000 })
+}
+
 describe('portrait panel controls row', () => {
   before(() => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -97,6 +118,29 @@ describe('portrait panel controls row', () => {
 
   after(() => {
     resetUserData()
+  })
+
+  it('matches the centered empty composer width', async () => {
+    await openCenteredPortraitChrome()
+
+    const geometry = await browser.execute(() => {
+      const input = document.getElementById('input-bar')!.getBoundingClientRect()
+      const bar = document.querySelector('.portrait-panel-bar')!.getBoundingClientRect()
+      return {
+        inputLeft: input.left,
+        inputRight: input.right,
+        inputWidth: input.width,
+        barLeft: bar.left,
+        barRight: bar.right,
+        barWidth: bar.width,
+      }
+    })
+    expect(Math.abs(geometry.barLeft - geometry.inputLeft)).toBeLessThanOrEqual(1)
+    expect(Math.abs(geometry.barRight - geometry.inputRight)).toBeLessThanOrEqual(1)
+    expect(Math.abs(geometry.barWidth - geometry.inputWidth)).toBeLessThanOrEqual(1)
+
+    await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-centered.png'))
   })
 
   it('docks one composer-width mode strip to the seam and keeps buttons unboxed', async () => {
@@ -262,6 +306,7 @@ describe('portrait panel controls row', () => {
       const resizerRect = resizer.getBoundingClientRect()
       const filesStyle = getComputedStyle(document.getElementById('pane-files')!)
       const settings = document.querySelector('.projects-settings-btn')!.getBoundingClientRect()
+      const seamHitTarget = document.elementFromPoint(bar.left + bar.width / 2, resizerRect.top - 1)
       return {
         barBottom: bar.bottom,
         filesTop: files.top,
@@ -271,6 +316,7 @@ describe('portrait panel controls row', () => {
         filesBorderTop: filesStyle.borderTopWidth,
         settingsHeight: settings.height,
         barHeight: bar.height,
+        seamHitTargetId: seamHitTarget?.id,
       }
     })
     expect(Math.abs(stacked.resizerTop - stacked.barBottom)).toBeLessThanOrEqual(1)
@@ -278,6 +324,7 @@ describe('portrait panel controls row', () => {
     expect(stacked.resizerHeight).toBe(1)
     expect(stacked.filesBorderTop).toBe('0px')
     expect(Math.abs(stacked.barHeight - stacked.settingsHeight)).toBeLessThanOrEqual(1)
+    expect(stacked.seamHitTargetId).toBe('resizer-files')
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-with-panel.png'))

@@ -312,7 +312,7 @@
   /* Visible so the `…` menu can open above the band; overflowed buttons are
      removed via [data-portrait-overflow] rather than clipped. */
   overflow: visible;
-  width: min(calc(100% - 2 * var(--spacing-xl)), var(--chat-content-max));
+  width: var(--chat-composer-width);
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
   min-height: var(--chrome-action-band-height);
