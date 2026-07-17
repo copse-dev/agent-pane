@@ -19,6 +19,7 @@ import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { getGitDiffText } from './github/git-service.ts'
+import { subagentHookCallbacks } from './hooks/subagent.ts'
 
 export interface RunPostTurnReviewOptions {
   parentGoal: string
@@ -34,6 +35,7 @@ export interface RunPostTurnReviewOptions {
 
 export interface PostTurnReviewResult {
   summary: string
+  issuesFound: boolean
   usage: ModelUsage
 }
 
@@ -117,11 +119,15 @@ export async function runPostTurnReview(
       systemPrompt: REVIEW_SYSTEM_PROMPT,
       userTask: prompt,
       usageModel,
+      // subagentStart gate + subagentStop notification (D1); no-op when
+      // cursorHooksEnabled is off.
+      ...subagentHookCallbacks({ usageModel }),
     })
 
     // The shared review system prompt now asks for a trailing REVIEW_JSON line;
-    // these legacy single-shot consumers (model comparison, standalone review)
-    // only want the human-facing verdict, so strip it here.
-    return { summary: parseReviewVerdict(summary).summary, usage }
+    // model-comparison consumers only want the human-facing verdict, while the
+    // standalone retry path also needs `issuesFound` for the review card.
+    const verdict = parseReviewVerdict(summary)
+    return { summary: verdict.summary, issuesFound: verdict.issuesFound, usage }
   })
 }

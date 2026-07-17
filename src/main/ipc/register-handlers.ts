@@ -5,11 +5,15 @@ import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectSshHost,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
+  resolveSshHostForWorkspaceRoot,
   resolveWorkspacePath,
+  scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
+  type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import {
   assertFsWriteContent,
@@ -77,8 +81,8 @@ import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
-import { listCursorHooksAsSummaries } from '../services/skills/cursor-hooks.ts'
-import { listClaudeHooks } from '../services/skills/claude-hooks.ts'
+import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
+import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -122,7 +126,7 @@ import { classifyRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
-import { isGitAvailable } from '../services/tool-availability.ts'
+import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
   getGhCliStatus,
   getGhPrChecksState,
@@ -166,10 +170,15 @@ import {
 } from '../services/providers/provider-key-status.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
+import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
+import {
+  invalidateCursorCloudModelsCache,
+  listCursorCloudModels,
+} from '../services/remote/cursor-cloud-models.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 import {
   gatewayListDir,
@@ -185,21 +194,24 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
-  seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
-  const persistedRoot = getWorkspaceRoot()
-  if (persistedRoot) {
-    try {
-      registerAllowedWorkspaceRoot(persistedRoot)
-    } catch {
-      // Stale workspaceRoot in config — ignore until user picks a folder.
+  const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+  scheduleAllowedWorkspaceRootsBootstrap(async () => {
+    await seedAllowedWorkspaceRoots(storedProjects)
+    const persistedRoot = getWorkspaceRoot()
+    if (persistedRoot) {
+      const sshHost = getActiveProjectSshHost()
+      try {
+        await registerAllowedWorkspaceRoot(persistedRoot, sshHost)
+      } catch {
+        // Stale workspaceRoot in config — ignore until user picks a folder.
+      }
     }
-  }
+  })
 
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
-    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
+    const root = await registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     // Scheduled, not awaited — index builds must not block the renderer's
     // swap to the full layout; the footer indicator reports progress.
@@ -211,12 +223,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
-  ipcMain.handle('workspace:set', async (event, root: unknown) => {
+  ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
-    const projects = (storageGet('projects') as { path: string }[] | null) ?? []
-    seedAllowedWorkspaceRoots(projects.map((p) => p.path))
-    const canonical = assertAllowedWorkspaceRoot(parsedRoot)
+    const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
+    const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+    await seedAllowedWorkspaceRoots(projects)
+    const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
+    const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)
     await initSkillsRegistry()
@@ -227,7 +241,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('fs:readFile', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     return gatewayReadFile(abs)
   })
 
@@ -236,7 +250,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const relPath = parseIpcArgs(zPathString, [path])
     if (typeof content !== 'string') throw new IpcValidationError('File content must be a string')
     assertFsWriteContent(content)
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     await gatewayWriteFile(abs, content)
     scheduleIndexRebuild()
   })
@@ -244,14 +258,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('fs:readdir', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     return gatewayReaddir(abs)
   })
 
   ipcMain.handle('fs:listDir', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString.optional(), [path])
-    const abs = resolveWorkspacePath(relPath || '.')
+    const abs = await resolveWorkspacePath(relPath || '.')
     const dirents = await gatewayListDir(abs)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -284,7 +298,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
     await whenFileIndexReady()
-    return resolveFileReferences(candidates)
+    return await resolveFileReferences(candidates)
   })
 
   // OKF memories management. The renderer's Memories pane (issue #645, Phase 3)
@@ -578,6 +592,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // back so the renderer can prompt for explicit consent and retry.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
+    if (p === 'cursor') invalidateCursorCloudModelsCache()
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -680,6 +695,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     recordUsageEvent(parseUsageRecordInput(input))
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
+  ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshot())
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])
@@ -749,10 +765,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude] = await Promise.all([
-      listCursorHooksAsSummaries(opts),
+      listCursorHooksForSources(opts),
       listClaudeHooks(opts),
     ])
-    return [...cursor, ...claude]
+    return { hooks: [...cursor.hooks, ...claude], warnings: cursor.warnings }
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
@@ -763,7 +779,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     })),
   )
 
-  ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
+  ipcMain.handle(
+    'git:isAvailable',
+    async () => (await isGitAvailableForTarget()) && (await isInsideGitWorkTree()),
+  )
   ipcMain.handle('git:status', () => getGitStatus())
   ipcMain.handle('git:changeStats', () => getGitChangeStats())
   ipcMain.handle('git:fileDiff', (event, path: unknown, staged: unknown) => {
@@ -882,6 +901,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
+  ipcMain.handle('remoteAgent:models', (event) => {
+    assertMainFrameSender(event, win)
+    return listCursorCloudModels()
+  })
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()

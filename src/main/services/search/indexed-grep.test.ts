@@ -9,7 +9,7 @@ import {
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('indexed-grep parsing', () => {
-  it('parses ripgrep JSON match lines', () => {
+  it('parses ripgrep JSON match lines', async () => {
     const stdout = [
       JSON.stringify({
         type: 'match',
@@ -23,13 +23,15 @@ describe('indexed-grep parsing', () => {
 
     const restore = setWorkspaceRootForTest('/tmp/repo')
     try {
-      assert.deepEqual(parseRipgrepJson(stdout, 10), ['src/main.ts:12: export function main() {}'])
+      assert.deepEqual(await parseRipgrepJson(stdout, 10), [
+        'src/main.ts:12: export function main() {}',
+      ])
     } finally {
       restore()
     }
   })
 
-  it('includes context lines with a "-" separator and caps by match count (#122)', () => {
+  it('includes context lines with a "-" separator and caps by match count (#122)', async () => {
     const stdout = [
       JSON.stringify({
         type: 'context',
@@ -59,7 +61,7 @@ describe('indexed-grep parsing', () => {
 
     const restore = setWorkspaceRootForTest('/tmp/repo')
     try {
-      const lines = parseRipgrepJson(stdout, 5)
+      const lines = await parseRipgrepJson(stdout, 5)
       assert.deepEqual(lines, [
         'src/main.ts-11- before',
         'src/main.ts:12: export function main() {}',
@@ -73,10 +75,10 @@ describe('indexed-grep parsing', () => {
     }
   })
 
-  it('parses grep-style stdout lines', () => {
+  it('parses grep-style stdout lines', async () => {
     const restore = setWorkspaceRootForTest('/tmp/repo')
     try {
-      assert.deepEqual(parseGrepStdout('/tmp/repo/src/main.ts:12: hello\n', 10), [
+      assert.deepEqual(await parseGrepStdout('/tmp/repo/src/main.ts:12: hello\n', 10), [
         'src/main.ts:12: hello',
       ])
     } finally {
@@ -88,6 +90,7 @@ describe('indexed-grep parsing', () => {
     setIndexedGrepBackendForTest('rg')
     assert.equal(formatCodeSearchResults([], 5, 'rg'), 'No matches found.')
     assert.match(formatCodeSearchResults(['a.ts:1: x', 'a.ts:2: y'], 2, 'ig'), /indexed ig backend/)
+    assert.match(formatCodeSearchResults(['a.ts:1: x'], 5, 'grep'), /grep -r/)
   })
 })
 

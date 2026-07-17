@@ -35,11 +35,9 @@ export const config: Options.Testrunner = {
   capabilities: [
     {
       browserName: 'chrome',
-      // Must match the Chromium shipped by the pinned Electron (electron ^42 →
-      // Chromium 148); the session reports 148.0.7778.265 at runtime. This was
-      // left at 134 (Electron 35's Chromium) across the Electron bump, so the
-      // requested vs actual browser version diverged.
-      browserVersion: '148.0.7778.265',
+      // Must match the Chromium shipped by the pinned Electron (electron ^43 →
+      // Chromium 150); the session reports 150.0.7871.46 at runtime.
+      browserVersion: '150.0.7871.46',
       'wdio:chromedriverOptions': { binary: chromedriverBinary },
       'wdio:enforceWebDriverClassic': true,
       'goog:chromeOptions': {
@@ -89,6 +87,8 @@ export const config: Options.Testrunner = {
       COPSE_E2E: '1',
       COPSE_PANEL_MOCK_LLM: '1',
       COPSE_PANEL_MOCK_GH: '1',
+      // Deterministic Claude/Codex plan bars in Settings → Usage (no real OAuth).
+      COPSE_PLAN_USAGE_MOCK: '1',
       // Pin the branch the app reports so footer/branch-picker screenshots stay
       // stable regardless of which branch the PR is built from.
       COPSE_PANEL_MOCK_BRANCH: E2E_GIT_BRANCH,

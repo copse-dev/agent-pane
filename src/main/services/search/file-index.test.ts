@@ -51,4 +51,14 @@ describe('file-index', () => {
     // No build in flight — must resolve without hanging.
     await whenFileIndexReady()
   })
+
+  it('coalesces concurrent buildIndex callers onto one listing', async () => {
+    resetWorkspaceIndexStatusForTest()
+    const [a, b] = await Promise.all([buildIndex(tempRoot), buildIndex(tempRoot)])
+    assert.equal(a, undefined)
+    assert.equal(b, undefined)
+    // Two callers must not leave the active-build counter stuck above zero.
+    assert.equal(getWorkspaceIndexStatus().fileIndex.phase, 'ready')
+    assert.ok(getIndex()?.paths.includes('src/main.ts'))
+  })
 })

@@ -120,6 +120,34 @@ export function resetUserData(): void {
   writeSettings({})
 }
 
+/** `~/.cursor/hooks.json` — mirrors `userHooksConfigPath()` in hooks/cursor-adapter.ts. */
+const USER_CURSOR_HOOKS_PATH = join(homedir(), '.cursor', 'hooks.json')
+const USER_CURSOR_HOOKS_BACKUP = `${USER_CURSOR_HOOKS_PATH}.e2e-backup`
+
+/**
+ * Seed a user-scope Cursor `hooks.json` for the Sources → Hooks e2e. Any real
+ * file at that path is backed up first; call {@link restoreUserCursorHooks}
+ * in `after` to put it back (or remove the seeded one).
+ */
+export function seedUserCursorHooks(config: unknown): void {
+  mkdirSync(dirname(USER_CURSOR_HOOKS_PATH), { recursive: true })
+  if (existsSync(USER_CURSOR_HOOKS_PATH) && !existsSync(USER_CURSOR_HOOKS_BACKUP)) {
+    copyFileSync(USER_CURSOR_HOOKS_PATH, USER_CURSOR_HOOKS_BACKUP)
+  }
+  const contents = typeof config === 'string' ? config : JSON.stringify(config, null, 2)
+  writeFileSync(USER_CURSOR_HOOKS_PATH, contents, 'utf8')
+}
+
+/** Undo {@link seedUserCursorHooks}: restore the backup or remove the seeded file. */
+export function restoreUserCursorHooks(): void {
+  if (existsSync(USER_CURSOR_HOOKS_BACKUP)) {
+    copyFileSync(USER_CURSOR_HOOKS_BACKUP, USER_CURSOR_HOOKS_PATH)
+    rmSync(USER_CURSOR_HOOKS_BACKUP, { force: true })
+  } else {
+    rmSync(USER_CURSOR_HOOKS_PATH, { force: true })
+  }
+}
+
 /** Fresh profile that triggers the first-run onboarding wizard. */
 export function seedOnboardingFixture(): void {
   resetUserData()
@@ -163,6 +191,21 @@ export function seedE2eThreePaneLayout(): void {
   })
 }
 
+/** SSH workspace settings for remote-folder / SSH settings UI e2e specs. */
+export function seedSshWorkspaceSettings(options?: {
+  /** `false` = none; omit/`true` = default fixture host; or pass an explicit host list. */
+  hosts?: boolean | Array<{ id: string; label: string; host: string; user?: string }>
+  enabled?: boolean
+}): void {
+  const defaultHost = { id: 'dev', label: 'Dev Server', host: 'dev.example', user: 'ubuntu' }
+  const hosts =
+    options?.hosts === false ? [] : Array.isArray(options?.hosts) ? options.hosts : [defaultHost]
+  writeSettings({
+    sshWorkspaceEnabled: options?.enabled !== false,
+    sshWorkspaceHosts: hosts,
+  })
+}
+
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
@@ -170,6 +213,7 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     model?: string
+    modelComparisonEnabled?: boolean
     localServerUrl?: string
     localDefaultModel?: string
     subagentModel?: string
@@ -177,11 +221,20 @@ export function seedEmptyProject(
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     okfMemoriesEnabled?: boolean
+    roadmapPlansEnabled?: boolean
+    /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
+    sshHost?: string
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
+  const project: Record<string, unknown> = {
+    id: projectId,
+    path: workspaceRoot,
+    name: 'workspace',
+  }
+  if (options?.sshHost) project.sshHost = options.sshHost
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    projects: [project],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   })
@@ -194,6 +247,9 @@ export function seedEmptyProject(
   }
   if (options?.model) {
     settings.model = options.model
+  }
+  if (options?.modelComparisonEnabled !== undefined) {
+    settings.modelComparisonEnabled = options.modelComparisonEnabled
   }
   if (options?.localServerUrl) {
     settings.localServerUrl = options.localServerUrl
@@ -215,6 +271,9 @@ export function seedEmptyProject(
   }
   if (options?.okfMemoriesEnabled !== undefined) {
     settings.okfMemoriesEnabled = options.okfMemoriesEnabled
+  }
+  if (options?.roadmapPlansEnabled !== undefined) {
+    settings.roadmapPlansEnabled = options.roadmapPlansEnabled
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)
@@ -268,6 +327,37 @@ export function seedOpenRouterFixture(workspaceRoot: string, options?: { apiBase
       openrouter: {
         v: 1,
         enc: Buffer.from('sk-or-e2e-key', 'utf8').toString('base64'),
+        plain: true,
+      },
+    },
+  })
+}
+
+/**
+ * Seed a Cursor key for the remote-agent model picker e2e. Point
+ * `remoteAgentBaseUrl` at a local fixture that serves `GET /v1/models` (Cursor
+ * validation + catalog share that base). Claude Cloud Agent rows are covered by
+ * unit tests — Anthropic key validation hits the real API and can't be stubbed
+ * from seed data alone.
+ */
+export function seedRemoteAgentModelsFixture(
+  workspaceRoot: string,
+  options: { apiBase: string; model?: string },
+): void {
+  const projectId = 'e2e-remote-models-project'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [],
+  })
+  writeSettings({
+    model: options.model ?? 'remote-agent:cursor',
+    remoteAgentBaseUrl: options.apiBase,
+    apiKey: {
+      cursor: {
+        v: 1,
+        enc: Buffer.from('e2e-cursor-key', 'utf8').toString('base64'),
         plain: true,
       },
     },
@@ -689,6 +779,186 @@ export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   })
 }
 
+/** A representative completed coding turn for conversation hierarchy visual evaluation. */
+export function seedConversationVisualHierarchyFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-conversation-hierarchy-project'
+  const threadId = 'e2e-conversation-hierarchy-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Conversation visual hierarchy',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-hierarchy',
+            role: 'user',
+            content: 'Can you make sure Prettier passes and commit the formatting fix?',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-check',
+            role: 'assistant',
+            content: '',
+            reasoning:
+              'Running the formatter check first, then I will update only the affected file.',
+            toolCalls: [
+              {
+                id: 'tc-format-check',
+                name: 'run_shell',
+                args: { command: 'npm run format:check' },
+                status: 'done',
+                result: 'Formatting issues found in tests/e2e/model-picker.e2e.ts',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-assistant-result',
+            role: 'assistant',
+            content: [
+              'Prettier is fixed and the formatting change is committed.',
+              '',
+              '- Formatted `tests/e2e/model-picker.e2e.ts`',
+              '- Verified `npm run format:check` passes',
+              '- Created commit `abc1234`',
+              '- [Open the pull request](https://github.com/copse-dev/agent-pane/pull/899)',
+            ].join('\n'),
+            toolCalls: [],
+            review: {
+              status: 'done',
+              summary: 'The formatting-only change is scoped correctly. No issues found.',
+            },
+            createdAt: now + 3,
+          },
+        ],
+        todos: [
+          {
+            id: 'todo-hierarchy-1',
+            content: 'Inspect the affected conversation surfaces',
+            status: 'completed',
+          },
+          {
+            id: 'todo-hierarchy-2',
+            content: 'Align transcript cards to the reading column',
+            status: 'completed',
+          },
+          {
+            id: 'todo-hierarchy-3',
+            content: 'Verify the focused screenshot evaluation',
+            status: 'completed',
+          },
+        ],
+        comparison: {
+          status: 'error',
+          models: { a: 'reviewer-a', b: 'reviewer-b', judge: 'judge' },
+          reviewA: '',
+          reviewB: '',
+          synthesis: '',
+          error: 'Comparison declined.',
+        },
+        usage: { inputTokens: 3200, outputTokens: 900 },
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget: 180_000,
+          conversationTokens: 54_000,
+          fillRatio: 0.3,
+          updatedAt: now + 3,
+        },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
+/** Two user turns followed by enough output to exercise the latest-prompt sticky anchor. */
+export function seedStickyUserPromptFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-sticky-user-prompt-project'
+  const threadId = 'e2e-sticky-user-prompt-thread'
+  const now = Date.now()
+  const firstResult = [
+    'The initial pass is complete.',
+    '',
+    ...Array.from(
+      { length: 8 },
+      (_, index) =>
+        `Initial result ${String(index + 1)}: inspected the relevant renderer and interaction code.`,
+    ),
+  ].join('\n\n')
+  const latestResult = [
+    'Applying the follow-up request now.',
+    '',
+    ...Array.from(
+      { length: 32 },
+      (_, index) =>
+        `- Validation detail ${String(index + 1)} remains visible beneath the active request.`,
+    ),
+  ].join('\n')
+
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Sticky user prompt',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-sticky-first',
+            role: 'user',
+            content: 'Please inspect the current chat layout.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-sticky-first',
+            role: 'assistant',
+            content: firstResult,
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-user-sticky-latest',
+            role: 'user',
+            content: 'Follow-up: keep this latest request visible while the response grows.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-sticky-result',
+            role: 'assistant',
+            content: latestResult,
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 2400, outputTokens: 1600 },
+        contextSnapshot: {
+          contextWindow: 200_000,
+          conversationBudget: 180_000,
+          conversationTokens: 36_000,
+          fillRatio: 0.2,
+          updatedAt: now + 3,
+        },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
 export function seedCodeBlockCopyFixture(workspaceRoot: string): void {
   const projectId = 'e2e-code-block-copy-project'
   const threadId = 'e2e-code-block-copy-thread'
@@ -864,6 +1134,12 @@ export function seedPortraitRightPanelFixture(
   workspaceRoot: string,
   autoPortraitRightPanel: boolean,
   windowBounds: { width: number; height: number } = { width: 760, height: 1180 },
+  options?: {
+    okfMemoriesEnabled?: boolean
+    roadmapPlansEnabled?: boolean
+    /** Pin panel placement; `bottom` forces portrait chrome without a tall window. */
+    rightPanelPosition?: 'auto' | 'side' | 'bottom'
+  },
 ): void {
   const projectId = 'e2e-portrait-right-panel-project'
   const threadId = 'e2e-portrait-right-panel-thread'
@@ -891,7 +1167,19 @@ export function seedPortraitRightPanelFixture(
       },
     ],
   })
-  writeSettings({ autoPortraitRightPanel, windowBounds })
+  writeSettings({
+    autoPortraitRightPanel,
+    windowBounds,
+    ...(options?.rightPanelPosition !== undefined
+      ? { rightPanelPosition: options.rightPanelPosition }
+      : {}),
+    ...(options?.okfMemoriesEnabled !== undefined
+      ? { okfMemoriesEnabled: options.okfMemoriesEnabled }
+      : {}),
+    ...(options?.roadmapPlansEnabled !== undefined
+      ? { roadmapPlansEnabled: options.roadmapPlansEnabled }
+      : {}),
+  })
 }
 
 /**
@@ -933,6 +1221,7 @@ export function seedReviewInlineFixture(workspaceRoot: string): void {
               status: 'done',
               summary:
                 'Reviewed the change to `src/parser.ts`. The null guard is correct and the new test covers the empty-input case. No issues found.',
+              issuesFound: false,
             },
             createdAt: now + 1,
           },
@@ -1442,11 +1731,6 @@ export function seedTodoPlanFixtures(workspaceRoot: string): {
     ],
   })
   return { planThreadTitle, noPlanThreadTitle }
-}
-
-/** @deprecated Use seedTodoPlanFixtures — kept for older specs that only need the plan thread. */
-export function seedTodoDisplayFixture(workspaceRoot: string): void {
-  seedTodoPlanFixtures(workspaceRoot)
 }
 
 /** Running thread with a queued follow-up message for edit / send-now e2e. */
@@ -2169,6 +2453,130 @@ export function seedMarkdownTableCodeFirstColumnFixture(workspaceRoot: string): 
             content,
             toolCalls: [],
             createdAt: Date.now(),
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  })
+}
+
+/**
+ * Two assistant turns on different primary-chat models. Labels must appear on
+ * both bubbles (hidden when a thread stays on one model). Visual eval for
+ * per-message model provenance in the transcript.
+ */
+export function seedMultiModelChatFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-multi-model-chat-project'
+  const threadId = 'e2e-multi-model-chat-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Multi-model chat',
+        status: 'idle',
+        model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+        messages: [
+          {
+            id: 'msg-user-1',
+            role: 'user',
+            content: 'Summarize the permission policy.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-1',
+            role: 'assistant',
+            content:
+              'The shell permission gate auto-runs sandbox-contained commands on macOS and prompts for hard-external work.',
+            model: 'claude-sonnet-4-6',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-user-2',
+            role: 'user',
+            content: 'Now explain it more briefly.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-assistant-2',
+            role: 'assistant',
+            content: 'Sandbox-safe commands auto-run; anything that reaches outside prompts first.',
+            model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+}
+
+/**
+ * C2 held-queue fixture: an idle thread with a **held** hook-originated pending
+ * message (`autoDispatch: false`, decisions 5 & 16). The held state has no live
+ * producer yet (async function hooks that emit `queueMessage` land in later
+ * phases), so we seed the persisted queue shape directly — `pendingMessages`
+ * round-trips through `meta.json` — to exercise the renderer's held badge +
+ * Release affordance for a visual eval.
+ */
+export function seedHeldQueueFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-held-queue-project'
+  const threadId = 'e2e-held-queue-thread'
+  const heldMessageId = 'msg-held-hook'
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Held hook message',
+        status: 'idle',
+        currentEpoch: 'epoch-current',
+        messages: [
+          {
+            id: 'msg-user-open',
+            role: 'user',
+            content: 'Refactor the auth module.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-reply',
+            role: 'assistant',
+            content: 'Done — the auth module is refactored.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: heldMessageId,
+            role: 'user',
+            content: 'You still have open todos — finish them before stopping.',
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+        ],
+        pendingMessages: [
+          {
+            messageId: heldMessageId,
+            payload: { content: 'You still have open todos — finish them before stopping.' },
+            createdAt: Date.now(),
+            origin: { kind: 'hook', hookId: 'todo-closeout', event: 'stop' },
+            epoch: 'epoch-stale',
+            autoDispatch: false,
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },

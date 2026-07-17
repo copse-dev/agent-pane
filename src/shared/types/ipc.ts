@@ -29,7 +29,7 @@ export interface IpcInvokeMap {
   // Workspace
   'workspace:open': { args: []; result: string | null }
   'workspace:get': { args: []; result: string | null }
-  'workspace:set': { args: [root: string]; result: string }
+  'workspace:set': { args: [root: string, sshHost?: string]; result: string }
 
   // File system
   'fs:readFile': { args: [path: string]; result: string }
@@ -59,7 +59,12 @@ export interface IpcInvokeMap {
 
   // Approval gate (shell / MCP)
   'approval:respond': {
-    args: [id: string, approved: boolean, remember?: boolean]
+    args: [
+      id: string,
+      approved: boolean,
+      remember?: boolean,
+      comparisonModels?: { a: string; b: string; judge: string },
+    ]
     result: undefined
   }
 
@@ -151,6 +156,10 @@ export interface IpcInvokeMap {
     result: undefined
   }
   'usage:getSummary': { args: []; result: import('@shared/usage/aggregate-usage.ts').UsageSummary }
+  'usage:getPlanUsage': {
+    args: []
+    result: import('@copse/plan-usage').PlanUsageSnapshot
+  }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }
@@ -298,9 +307,10 @@ export interface IpcEventMap {
       threadId?: string
       title: string
       body: string
-      type: 'shell' | 'mcp' | 'web'
+      type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
       allowRemember?: boolean
       rememberLabel?: string
+      comparisonModels?: { a: string; b: string; judge: string }
     },
   ]
   'agent:ask_user_request': [
@@ -311,6 +321,7 @@ export interface IpcEventMap {
       questions: { question: string; options?: string[] }[]
     },
   ]
+  'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'ssh:prompt_request': [
     {
       id: string
@@ -318,6 +329,7 @@ export interface IpcEventMap {
       kind: 'confirm' | 'secret'
     },
   ]
+  'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [entries: { path: string; language: string }[]]

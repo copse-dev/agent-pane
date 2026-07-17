@@ -15,6 +15,7 @@ import {
   openSettingsDialog,
   closeSettingsDialog,
   isSettingsDialogOpen,
+  applyUiAccent,
 } from './settings-dialog.ts'
 
 // Recursive stub: api.<anything>.<nested>() returns a never-settling promise, so
@@ -91,6 +92,18 @@ describe('settings dialog (native <dialog>)', () => {
   })
 })
 
+describe('accent colour', () => {
+  it('applies the hue and chooses readable text for light and dark accents', () => {
+    applyUiAccent('#2A9D8F')
+    assert.equal(document.documentElement.style.getPropertyValue('--accent-color'), '#2A9D8F')
+    assert.equal(document.documentElement.style.getPropertyValue('--text-on-accent'), '#101918')
+
+    applyUiAccent('#312E81')
+    assert.equal(document.documentElement.style.getPropertyValue('--accent-color'), '#312E81')
+    assert.equal(document.documentElement.style.getPropertyValue('--text-on-accent'), '#ffffff')
+  })
+})
+
 describe('settings search (cross-section block filter)', () => {
   let content: HTMLElement
   let searchInput: HTMLInputElement
@@ -113,12 +126,21 @@ describe('settings search (cross-section block filter)', () => {
     searchInput = document.getElementById('settings-search-input') as HTMLInputElement
   })
 
+  it('focuses the search input when the dialog opens', () => {
+    let focused = false
+    searchInput.focus = (): void => {
+      focused = true
+    }
+    document.getElementById('settings-dialog')?.dispatchEvent(new Event('settings-open'))
+    assert.ok(focused)
+  })
+
   it('lifts a matching block out of another section into the results list', () => {
-    // "Interface tint" lives only in Appearance; General is the initially active
+    // "Interface tint" lives inside Interface colours in Appearance; General is the initially active
     // section, so a hit here proves the search crosses sections.
     search('interface tint')
     assert.ok(content.classList.contains('settings-searching'))
-    assert.deepEqual(resultLegends(), ['Interface tint'])
+    assert.deepEqual(resultLegends(), ['Interface colours'])
   })
 
   it('matches text in a label or hint, not just the heading', () => {
@@ -147,17 +169,17 @@ describe('settings search (cross-section block filter)', () => {
   it('clearing the query restores blocks to their sections', () => {
     search('interface tint')
     assert.ok(content.classList.contains('settings-searching'))
-    assert.deepEqual(resultLegends(), ['Interface tint'])
+    assert.deepEqual(resultLegends(), ['Interface colours'])
     search('')
     assert.ok(!content.classList.contains('settings-searching'))
     assert.equal(document.querySelectorAll('#settings-search-results > *').length, 0)
     assert.equal((document.getElementById('settings-search-empty') as HTMLElement).hidden, true)
-    // The Interface tint block is back inside the Appearance section.
+    // The combined Interface colours block is back inside the Appearance section.
     const appearance = document.querySelector('.settings-section[data-section="appearance"]')
     const legends = Array.from(appearance?.querySelectorAll('legend') ?? []).map((l) =>
       l.textContent.trim(),
     )
-    assert.ok(legends.includes('Interface tint'))
+    assert.ok(legends.includes('Interface colours'))
     // Back to exactly one active section (General, the default).
     const active = document.querySelectorAll('.settings-section.active')
     assert.equal(active.length, 1)

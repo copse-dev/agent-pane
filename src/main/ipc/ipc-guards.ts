@@ -105,7 +105,18 @@ export function assertStorageKey(key: string): void {
   }
 }
 
-export const approvalRespondSchema = z.tuple([z.uuid(), z.boolean(), z.boolean().optional()])
+export const comparisonModelSelectionSchema = z.object({
+  a: z.string().min(1).max(500),
+  b: z.string().min(1).max(500),
+  judge: z.string().min(1).max(500),
+})
+
+export const approvalRespondSchema = z.tuple([
+  z.uuid(),
+  z.boolean(),
+  z.boolean().optional(),
+  comparisonModelSelectionSchema.optional(),
+])
 
 // Answer payload for a pending ask_user question: the request id plus one answer
 // string per question, in order. Answers are bounded so a runaway/hostile
@@ -113,6 +124,8 @@ export const approvalRespondSchema = z.tuple([z.uuid(), z.boolean(), z.boolean()
 export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192)).max(10)])
 
 export const sshPromptRespondSchema = z.tuple([z.uuid(), z.string().max(8192)])
+
+export const zSshHostId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 
 export const providerSchema = z.enum([
   'anthropic',
