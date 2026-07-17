@@ -5,15 +5,12 @@ import { getWorkspaceRoot } from '../workspace.ts'
 import { resolveLocalModelId } from '../providers/provider-selection.ts'
 import { stripTrailingSlash } from '../providers/lm-studio-models.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import { safeJsonParse } from '@shared/safe-json.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
+import { parseClassification, type ClassificationResult } from './safety-classification-parse.ts'
 
-export interface ClassificationResult {
-  scope: 'sandbox' | 'external'
-  confidence: number
-  reason: string
-}
+export type { ClassificationResult } from './safety-classification-parse.ts'
+export { parseClassification } from './safety-classification-parse.ts'
 
 const SYSTEM_PROMPT = `You are a sandbox scope classifier for a coding assistant.
 Given a shell command and sandbox rules, decide whether the command can run entirely within the project sandbox.
@@ -29,25 +26,6 @@ Reply with JSON only (no markdown):
 Mark as "external" if the command might: use the network, read/write outside the workspace, exfiltrate secrets, modify system config, spawn services reachable from outside, or use MCP/external APIs.
 Mark as "sandbox" only when you are confident the command stays within the workspace with no network.
 When uncertain, use "external" with lower confidence.`
-
-function parseClassification(text: string): ClassificationResult | null {
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) return null
-  const parsed = safeJsonParse<{
-    scope?: string
-    confidence?: number
-    reason?: string
-  }>(jsonMatch[0])
-  if (!parsed) return null
-  if (parsed.scope !== 'sandbox' && parsed.scope !== 'external') return null
-  const confidence =
-    typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
-      ? Math.min(1, Math.max(0, parsed.confidence))
-      : 0
-  const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : ''
-  if (!reason) return null
-  return { scope: parsed.scope, confidence, reason }
-}
 
 function resolveSafetyModel(url: string): Promise<string | null> {
   return resolveLocalModelId('safetyModel', url, LM_STUDIO_MODEL_IDS.safety)

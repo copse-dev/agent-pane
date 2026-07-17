@@ -10,6 +10,7 @@ const sharedAlias = {
   '@shared': resolve('./src/shared'),
   '@copse/agent': resolve('./packages/agent/src'),
   '@copse/llm': resolve('./packages/llm/src'),
+  '@copse/plan-usage': resolve('./packages/plan-usage/src'),
 }
 
 function fetchBundledCursorSkillsForBuild(): void {
@@ -65,6 +66,12 @@ await esbuild.build({
   ...nodeOpts,
   entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
   outfile: 'dist/main/sandbox-fs-worker.js',
+})
+await esbuild.build({
+  ...nodeOpts,
+  entryPoints: ['src/main/services/ssh-workspace/askpass-helper.ts'],
+  outfile: 'dist/main/ssh-askpass-helper.js',
+  banner: { js: '#!/usr/bin/env node' },
 })
 await esbuild.build({
   ...nodeOpts,

@@ -16,6 +16,7 @@ import type {
 import type { ToolRegistry } from '../tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from '../agent-run-read-limits.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { subagentHookCallbacks } from '../hooks/subagent.ts'
 
 // Experimental, opt-in feature flag for the CI investigator subagent (off by
 // default). Read in registry-bootstrap (tool registration) and follow-up-service
@@ -125,6 +126,9 @@ export async function runCiInvestigatorSubagent(
       userTask,
       usageModel,
       ...(localFallback !== undefined ? { localFallback } : {}),
+      // subagentStart gate + subagentStop notification (D1); no-op when
+      // cursorHooksEnabled is off.
+      ...subagentHookCallbacks({ usageModel }),
     })
 
     const usage = session.usage ?? { inputTokens: 0, outputTokens: 0 }

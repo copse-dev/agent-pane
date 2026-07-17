@@ -126,6 +126,24 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     assert.match(streamAfter.textContent, /Analyzing the code/)
   })
 
+  it('replaces a rebuilt card instead of leaving the stale one behind', () => {
+    const { store, messageId, host } = mountWithCards()
+
+    const editBefore = host.querySelector('[data-tool-id="tc-edit-1"]')
+    assert.ok(editBefore, 'expected the sibling edit card to render')
+
+    // The edit call changes, so its card is rebuilt (signature mismatch). The
+    // reconciler claims the old node out of its `existing` index before the
+    // rebuild, so the trailing cleanup never saw it — the stale card used to
+    // stay in the DOM next to the fresh one.
+    updateToolCall(store, messageId, 'tc-edit-1', { result: 'wrote 2 lines' })
+
+    const editCards = host.querySelectorAll('[data-tool-id="tc-edit-1"]')
+    assert.equal(editCards.length, 1, 'rebuilt card must replace the stale node')
+    assert.notStrictEqual(editCards[0], editBefore, 'changed card should be rebuilt')
+    assert.match(editCards[0]?.querySelector('.tool-result')?.textContent ?? '', /wrote 2 lines/)
+  })
+
   it('re-renders a card whose tool call actually changed', () => {
     const { store, messageId, host } = mountWithCards()
 

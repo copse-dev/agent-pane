@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, addToolCall, createThread } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  addToolCall,
+  createThread,
+  updateToolCall,
+} from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 
@@ -88,6 +93,34 @@ describe('tool call display (component)', () => {
     assert.equal(failed.getAttribute('data-status'), 'error')
     // The errored read must NOT be folded into the reading group.
     assert.equal(document.querySelector('.tool-card-group [data-tool-id="tc-read-2"]'), null)
+  })
+
+  it('keeps a user-expanded group item open across a tool update rebuild', () => {
+    const { store, messageId } = mountWithTools()
+
+    const group = document.querySelector('.tool-card-group') as HTMLDetailsElement
+    const item = group.querySelector('[data-tool-id="tc-read-1"]') as HTMLDetailsElement
+    group.open = true
+    item.open = true
+
+    // A group member changing rebuilds the whole group card from scratch (its
+    // signature covers every member); the expanded item must survive — it used
+    // to snap shut on every agent step.
+    updateToolCall(store, messageId, 'tc-list-1', { result: 'd main\nf index.ts\nf util.ts' })
+
+    const groups = document.querySelectorAll('.tool-card-group')
+    assert.equal(groups.length, 1, 'rebuild must replace the group card, not duplicate it')
+    const groupAfter = groups[0] as HTMLDetailsElement
+    assert.ok(groupAfter, 'expected the group card to still render')
+    assert.equal(groupAfter.hasAttribute('open'), true, 'group should stay open')
+    const itemAfter = groupAfter.querySelector('[data-tool-id="tc-read-1"]')
+    assert.ok(itemAfter, 'expected the reading item to still render')
+    assert.equal(itemAfter.hasAttribute('open'), true, 'expanded item should stay open')
+    // The item the user never touched stays collapsed.
+    assert.equal(
+      groupAfter.querySelector('[data-tool-id="tc-list-1"]')?.hasAttribute('open'),
+      false,
+    )
   })
 
   it('renders an ACP markdown result as markdown, not literal code fences', () => {

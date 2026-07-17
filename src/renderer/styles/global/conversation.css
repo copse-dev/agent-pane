@@ -5,10 +5,10 @@
      conversation overflows. Reserving the gutter up front stops the content
      column from narrowing mid-stream (a visible horizontal reflow per message). */
   scrollbar-gutter: stable;
-  padding: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-xl);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
   min-height: 0;
 }
 .conversation-scroll {
@@ -108,7 +108,17 @@
 .agent-activity-clickable:hover {
   color: var(--text-primary);
 }
+#input-bar > .agent-activity {
+  border-top: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+#input-bar:has(> .agent-activity:not([hidden])) .prompt-input {
+  border-radius: 0;
+}
 .msg {
+  width: min(100%, var(--chat-content-max));
+  margin-inline: auto;
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius);
   /* Contain horizontal overflow (wide code, long unbroken URLs) within the
@@ -130,6 +140,11 @@
   border-left: 2px solid color-mix(in srgb, var(--accent) 35%, transparent);
   padding-left: var(--spacing-sm);
 }
+.message-reasoning:not([open]) {
+  margin-bottom: var(--spacing-xs);
+  border-left: 0;
+  padding-left: 0;
+}
 .message-reasoning-summary {
   display: flex;
   align-items: center;
@@ -139,6 +154,13 @@
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   user-select: none;
+  width: fit-content;
+  border-radius: var(--radius);
+  padding: 2px var(--spacing-xs);
+}
+.message-reasoning-summary:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 .message-reasoning-summary::-webkit-details-marker {
   display: none;
@@ -211,16 +233,58 @@
 .message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
   opacity: 0;
 }
-/* The user's own replies read as "yours" through a soft accent-tinted fill and
-   matching hairline — no hard left bar. It lifts off the chat gradient with a
-   faint shadow and rounds like the other panels. */
+/* The user's own replies read as "yours" through a restrained accent-tinted
+   fill and matching hairline — distinct from the trace without becoming a
+   full-width blue slab. */
 .msg-user {
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  width: min(100%, var(--chat-user-max));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-elevated));
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  border-radius: var(--radius-lg);
+}
+/* User prompts sit against the right edge of the centered reading column while
+   their text remains naturally left-aligned. Auto space goes on the leading
+   side; the trailing margin mirrors the reading column's outer gutter and
+   collapses to zero on narrower panes. */
+.messages-list > .msg-user {
+  position: relative;
+  margin-left: auto;
+  margin-right: max(0px, calc((100% - var(--chat-content-max)) / 2));
+}
+/* Keep the request that owns the current response in view as its output grows.
+   Historical prompts remain ordinary transcript content: only the last user
+   sibling sticks, so multiple prompts never pile up at the top. */
+.messages-list > .msg-user:not(:has(~ .msg-user)) {
+  position: sticky;
+  /* Cancel the list's 16px top padding so scrolling text cannot peek above the
+     anchored prompt. A pinned TODO panel remains a natural boundary above it. */
+  top: calc(-1 * var(--spacing-lg));
+  z-index: 3;
   box-shadow: var(--shadow-sm);
 }
 .msg-assistant {
   background: transparent;
+}
+/* Primary-chat model chrome — only present when the thread used more than one
+   picker model. Mirrors the subagent card's muted model line. */
+.message-model {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary, var(--text-secondary));
+  margin-bottom: var(--spacing-xs);
+}
+/* A text-only response is the readable outcome of a run. Give it more breathing
+   room than the execution trace without inventing a new completion state. */
+.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card)) {
+  margin-block: var(--spacing-xs);
+  padding-block: var(--spacing-lg);
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+.msg-assistant:has(.message-text:not(:empty)):not(:has(.tool-card))
+  > .message-body
+  > .message-text {
+  font-size: var(--font-size-md);
+  line-height: 1.6;
 }
 .msg-error {
   background: rgba(244, 135, 113, 0.1);

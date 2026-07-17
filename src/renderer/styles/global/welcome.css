@@ -37,7 +37,7 @@
 }
 .welcome-open-btn {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   padding: var(--spacing-sm) var(--spacing-xl);
   border-radius: var(--radius);
   font-size: var(--font-size-lg);

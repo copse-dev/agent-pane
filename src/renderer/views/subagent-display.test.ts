@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, addToolCall, createThread } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  addToolCall,
+  createThread,
+  updateToolCall,
+} from '@shared/store/thread-helpers.ts'
 import type { ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
@@ -117,6 +122,37 @@ describe('subagent display (component)', () => {
     assert.equal(card.querySelector('.subagent-message-assistant strong')?.textContent, 'README.md')
     // e2e (after expand): .subagent-inner-tool .tool-name === 'Read file'
     assert.equal(card.querySelector('.subagent-inner-tool .tool-name')?.textContent, 'Read file')
+  })
+
+  it('keeps a user-expanded inner tool open when the timeline rebuilds', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Here is what the subagent found.')
+    addToolCall(store, messageId, structuredClone(exploreCall))
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = document.querySelector('.tool-card-subagent') as HTMLDetailsElement
+    const inner = card.querySelector('[data-tool-id="inner-read-1"]') as HTMLDetailsElement
+    card.open = true
+    inner.setAttribute('open', '')
+
+    // A changed inner tool call changes the timeline wrapper's signature, which
+    // rebuilds every inner card from scratch; the user's expansion must survive.
+    const session = structuredClone(exploreCall.subagent)
+    assert.ok(session)
+    const innerCall = session.messages[0]?.toolCalls[0]
+    assert.ok(innerCall)
+    innerCall.result = '# Copse\n\nUpdated readme contents.\n'
+    updateToolCall(store, messageId, 'tc-explore-1', { subagent: session })
+
+    const cardAfter = document.querySelector('.tool-card-subagent')
+    assert.ok(cardAfter, 'expected the subagent card to still render')
+    assert.equal(cardAfter.hasAttribute('open'), true, 'card should stay open')
+    const innerAfter = cardAfter.querySelector('[data-tool-id="inner-read-1"]')
+    assert.ok(innerAfter, 'expected the inner tool to still render')
+    assert.equal(innerAfter.hasAttribute('open'), true, 'expanded inner tool should stay open')
   })
 
   it('makes file paths in inner tool results clickable', async () => {

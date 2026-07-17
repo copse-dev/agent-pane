@@ -7,7 +7,8 @@ import {
   resolveReadablePath,
   toRelativePath,
 } from '../services/workspace.ts'
-import { isRgAvailable } from '../services/tool-availability.ts'
+import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
+import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import {
   executeSemanticSearch,
@@ -63,7 +64,7 @@ export const searchCodebaseTool = defineTool({
     }
 
     const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
-    const filterPath = path ? toRelativePath(resolveWorkspacePath(path)) : undefined
+    const filterPath = path ? await toRelativePath(await resolveWorkspacePath(path)) : undefined
 
     let semanticFallback: 'building' | 'unavailable' | null = null
     if (resolvedMode === 'semantic') {
@@ -81,19 +82,21 @@ export const searchCodebaseTool = defineTool({
       if (mode === 'semantic') {
         return semantic.status === 'building'
           ? semanticIndexBuildingNote()
-          : 'Semantic search unavailable. Bundled gortex failed to install or ' +
+          : isActiveSshWorkspace()
+            ? semanticIndexBuildingNote()
+            : 'Semantic search unavailable. Bundled gortex failed to install or ' +
               'gortex/vera is missing on PATH (see README.md), or retry with mode: regex.'
       }
       semanticFallback = semantic.status
     }
 
-    if (!isRgAvailable()) {
+    if (!(await isRgAvailableForTarget()) && !isActiveSshWorkspace()) {
       return 'Regex search unavailable: ripgrep (rg) not found on PATH.'
     }
 
     // Regex path resolves the read-only chat store too (#644); the semantic index
     // below stays workspace-only (chat-store discovery goes through catalog.jsonl).
-    const searchRoot = path ? resolveReadablePath(path) : root
+    const searchRoot = path ? await resolveReadablePath(path) : root
     const { lines, backend } = await searchCodeContent({
       pattern: searchText,
       searchRoot,
@@ -108,7 +111,9 @@ export const searchCodebaseTool = defineTool({
       semanticFallback === 'building'
         ? '[semantic index still building — regex fallback]\n'
         : semanticFallback === 'unavailable'
-          ? '[semantic search unavailable — regex fallback]\n'
+          ? isActiveSshWorkspace()
+            ? '[semantic search unavailable on SSH workspace — regex fallback]\n'
+            : '[semantic search unavailable — regex fallback]\n'
           : '[regex search]\n'
     return header + formatCodeSearchResults(lines, max_results, backend)
   },
@@ -137,7 +142,7 @@ export const semanticSearchTool = defineTool({
       return 'Provide a query via `query` (its alias `pattern` also works).'
     }
 
-    const filterPath = path ? toRelativePath(resolveWorkspacePath(path)) : undefined
+    const filterPath = path ? await toRelativePath(await resolveWorkspacePath(path)) : undefined
     const semantic = await executeSemanticSearch(
       {
         query: searchText,
@@ -150,10 +155,10 @@ export const semanticSearchTool = defineTool({
       return semanticIndexBuildingNote()
     }
     if (semantic.status === 'unavailable') {
-      return (
-        'Semantic search unavailable. Bundled gortex failed to install or ' +
-        'gortex/vera is missing on PATH (see README.md).'
-      )
+      return isActiveSshWorkspace()
+        ? semanticIndexBuildingNote()
+        : 'Semantic search unavailable. Bundled gortex failed to install or ' +
+            'gortex/vera is missing on PATH (see README.md).'
     }
 
     return `[native semantic search]\n${semantic.text}`

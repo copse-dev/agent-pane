@@ -13,6 +13,10 @@ import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
 import type { Message, SubagentSession, ToolCall, TranscriptAttachment } from '@shared/types'
+import {
+  formatPrimaryChatModelLabel,
+  shouldShowPrimaryChatModelLabels,
+} from '@shared/threads/message-model.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -32,12 +36,15 @@ import { retryComparison, retryReview } from '../controller/retry-review-compari
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
+  isHeldMessage,
   queuedMessageIds,
   queuedPayloadText,
+  releaseHeldMessage,
   removeQueuedMessage,
   sendQueuedMessageNow,
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
+import type { QueuedUserMessage } from '@shared/types'
 
 function statusIcon(status: ToolCall['status']): SVGSVGElement {
   if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
@@ -292,10 +299,19 @@ function syncSubagentTimeline(
       const sig = JSON.stringify(innerToolCalls)
       let wrap = existing.get(key)
       if (!wrap || subagentInnerToolsSig.get(wrap) !== sig) {
+        // Rebuilding recreates every inner tool collapsed; carry over the ids
+        // the user expanded so their disclosure survives the tick.
+        const openInner = new Set<string>()
+        wrap?.querySelectorAll<HTMLElement>('.subagent-inner-tool[open]').forEach((node) => {
+          const id = node.dataset['toolId']
+          if (id) openInner.add(id)
+        })
         const fresh = el('div', { class: 'subagent-inner-tools' })
         fresh.dataset['timelineKey'] = key
         for (const inner of innerToolCalls) {
-          fresh.append(createInnerToolCard(inner))
+          const entry = createInnerToolCard(inner)
+          if (openInner.has(inner.id)) entry.setAttribute('open', '')
+          fresh.append(entry)
         }
         subagentInnerToolsSig.set(fresh, sig)
         void annotateFileReferences(fresh, api)
@@ -577,7 +593,12 @@ const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
-export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+export function mountConversation(
+  root: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+  activityHost?: HTMLElement,
+): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -613,7 +634,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // visible at the bottom of the screen instead of getting buried under the
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
-  root.append(scrollArea, queuedHost, activityBar)
+  root.append(scrollArea, queuedHost)
+  // In the full app, activity is the composer's top strip so it reads as part
+  // of the message box rather than a separate full-width status bar. Component
+  // mounts can omit the host and keep the self-contained fallback.
+  if (activityHost) activityHost.prepend(activityBar)
+  else root.append(activityBar)
 
   // Clicking a file edit's +/- counts reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
@@ -680,6 +706,42 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       setQueuePaused(store, threadId, false)
       drainMessageQueue(store, api, threadId)
     }
+  }
+
+  function releaseQueued(messageId: string): void {
+    const threadId = store.getState().activeThreadId
+    if (threadId) releaseHeldMessage(store, api, threadId, messageId)
+  }
+
+  // A held message (decisions 5 & 16) is skipped by the drain loop — it only
+  // moves on an explicit human action. It gets a primary "Release" affordance
+  // (submit + start a fresh turn tree) plus the usual edit / delete.
+  function buildHeldActions(messageId: string): HTMLElement {
+    const releaseBtn = el(
+      'button',
+      { class: 'queued-action queued-release', type: 'button' },
+      'Release',
+    )
+    releaseBtn.addEventListener('click', () => {
+      releaseQueued(messageId)
+    })
+    const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
+    editBtn.addEventListener('click', () => {
+      startEditing(messageId)
+    })
+    const deleteBtn = el(
+      'button',
+      { class: 'queued-action queued-delete', type: 'button' },
+      'Delete',
+    )
+    deleteBtn.addEventListener('click', () => {
+      deleteQueued(messageId)
+    })
+    return el(
+      'div',
+      { class: 'message-queued-ui' },
+      el('div', { class: 'message-queued-actions' }, releaseBtn, editBtn, deleteBtn),
+    )
   }
 
   function buildQueuedActions(messageId: string): HTMLElement {
@@ -772,19 +834,27 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return wrap
   }
 
-  function createQueuedItem(msg: Message): HTMLElement {
+  function createQueuedItem(msg: Message, queued: QueuedUserMessage): HTMLElement {
     const editing = editingMessageId === msg.id
+    const held = isHeldMessage(queued)
+    const fromHook = queued.origin?.kind === 'hook'
+    const classes = ['msg', 'msg-user', 'msg-queued']
+    if (editing) classes.push('msg-editing')
+    if (held) classes.push('msg-held')
+    if (fromHook) classes.push('msg-hook-origin')
     const item = el('div', {
-      class: editing ? 'msg msg-user msg-queued msg-editing' : 'msg msg-user msg-queued',
+      class: classes.join(' '),
       'data-message-id': msg.id,
+      ...(fromHook ? { 'data-hook-id': queued.origin?.hookId ?? '' } : {}),
     })
     const body = el('div', { class: 'message-body' })
-    body.append(el('span', { class: 'message-queued-badge' }, editing ? 'Editing' : 'Queued'))
+    const badgeText = editing ? 'Editing' : held ? 'Held' : 'Queued'
+    body.append(el('span', { class: 'message-queued-badge' }, badgeText))
     if (editing) {
       body.append(buildQueuedEditor(msg.id))
     } else {
       appendMessageContent(body, msg, api)
-      body.append(buildQueuedActions(msg.id))
+      body.append(held ? buildHeldActions(msg.id) : buildQueuedActions(msg.id))
     }
     item.append(body)
     return item
@@ -807,7 +877,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     for (const item of pending) {
       const msg = messagesById.get(item.messageId)
       if (!msg || msg.role !== 'user') continue
-      queuedHost.append(createQueuedItem(msg))
+      queuedHost.append(createQueuedItem(msg, item))
     }
     queuedHost.hidden = queuedHost.childElementCount === 0
   }
@@ -994,6 +1064,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         populateSubagentCard(card, item.toolCall, item.label, api)
         toolCardSignatures.set(card, sig)
       } else {
+        // The stale node was already claimed out of `existing`, so the cleanup
+        // below won't drop it — remove it here or the rebuilt card duplicates.
+        card?.remove()
         card = createToolCard(item, api)
         toolCardKeys.set(card, key)
         toolCardSignatures.set(card, sig)
@@ -1003,6 +1076,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const status = aggregateToolStatus(item.toolCalls)
         ;(card as HTMLDetailsElement).open =
           status === 'running' || userExpandedGroups.has(item.key)
+        // A changed group card is rebuilt from scratch with every item collapsed;
+        // reapply the per-item expansion captured above so an item the user
+        // opened (or an expanded individual card absorbed into this group)
+        // survives the per-step rebuild.
+        card
+          .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
+          .forEach((entry) => {
+            const id = entry.dataset['toolId']
+            if (id && userExpandedTools.has(id)) entry.open = true
+          })
       } else {
         const tc = item.toolCall
         const running = tc.status === 'running' || tc.subagent?.status === 'running'
@@ -1056,7 +1139,31 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
+    // Model labels appear only once the primary chat has used more than one
+    // model; syncing after each append also labels earlier turns when the
+    // second model arrives.
+    syncModelLabels()
     scrollToBottom(msg.role === 'user')
+  }
+
+  /** Show/hide per-message model chrome when the primary chat is multi-model. */
+  function syncModelLabels(): void {
+    const thread = getActiveThread(store)
+    if (!thread) return
+    const show = shouldShowPrimaryChatModelLabels(thread.messages)
+    for (const msg of thread.messages) {
+      if (msg.role !== 'assistant') continue
+      const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
+      if (!msgEl) continue
+      const existing = msgEl.querySelector<HTMLElement>('.message-model')
+      if (show && msg.model) {
+        const label = existing ?? el('div', { class: 'message-model' })
+        label.textContent = formatPrimaryChatModelLabel(msg.model)
+        if (!existing) msgEl.prepend(label)
+      } else {
+        existing?.remove()
+      }
+    }
   }
 
   function syncTodoPanel(): void {
@@ -1233,6 +1340,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   rebuildForThread()
   syncFromStore()
   return () => {
+    if (activityHost) activityBar.remove()
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

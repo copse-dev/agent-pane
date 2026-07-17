@@ -31,7 +31,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Keep a deliberately uncached install in the release path. The shared setup
+  # action restores a complete node_modules tree when possible, which is useful
+  # for packaging but can hide an undeclared/transitive production dependency.
+  # This gate exercises the lockfile from scratch with install scripts disabled,
+  # then proves the production bundle is self-contained before packaging starts.
+  verify-clean-release-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-node@v6
+        with: { node-version-file: '.nvmrc' }
+      - name: Verify clean release build
+        run: npm ci --ignore-scripts && npm run build:release
+
   build-mac:
+    needs: verify-clean-release-build
     # Apple-Silicon GitHub-hosted runner; electron-builder downloads the x64
     # Electron to cross-build the Intel artifacts in the same run.
     runs-on: macos-14

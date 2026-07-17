@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
@@ -93,6 +94,7 @@ let rootOverride: string | null = null
 /** @internal test helper — point the store at a temp dir instead of `~/.copse`. */
 export function setKnowledgeRootForTest(path: string | null): void {
   rootOverride = path
+  clearIndexCache()
 }
 
 function knowledgeBaseDir(): string {
@@ -177,8 +179,19 @@ function serializeNote(note: KnowledgeNote): string {
   return lines.join('\n')
 }
 
+// Cache compiled regexes so we don't rebuild one per call.
+const _FM_KEY_RE = new Map<string, RegExp>()
+function _fmKeyRe(key: string): RegExp {
+  let re = _FM_KEY_RE.get(key)
+  if (!re) {
+    re = new RegExp(`^${key}:[ \\t]*(.*)$`, 'm')
+    _FM_KEY_RE.set(key, re)
+  }
+  return re
+}
+
 function frontmatterField(yaml: string, key: string): string | undefined {
-  const match = yaml.match(new RegExp(`^${key}:[ \\t]*(.*)$`, 'm'))
+  const match = yaml.match(_fmKeyRe(key))
   return match ? unquoteScalar(match[1] ?? '') : undefined
 }
 
@@ -237,13 +250,44 @@ function isIndexRecord(value: unknown): value is IndexRecord {
 
 /** Fold the append-only index into the current record per id (last wins),
  * dropping tombstoned ids. Missing/corrupt file → empty map. */
+// Cache the index in memory; reload when the file changes.
+let cachedIndex: Map<string, IndexRecord> | null = null
+let cachedIndexFile: string | null = null
+let cachedIndexMtime: number | null = null
+let cachedIndexSize: number | null = null
+
 function foldIndex(): Map<string, IndexRecord> {
+  const file = indexFile()
+  let stat: { mtimeMs: number; size: number }
+  try {
+    stat = statSync(file)
+  } catch {
+    cachedIndex = null
+    cachedIndexFile = null
+    cachedIndexMtime = null
+    cachedIndexSize = null
+    return new Map<string, IndexRecord>()
+  }
+  // Return cached index if the file hasn't changed
+  if (
+    cachedIndex !== null &&
+    cachedIndexFile === file &&
+    cachedIndexMtime === stat.mtimeMs &&
+    cachedIndexSize === stat.size
+  ) {
+    return cachedIndex
+  }
+  // Read and parse the index (cached on success).
   const records = new Map<string, IndexRecord>()
   let raw: string
   try {
-    raw = readFileSync(indexFile(), 'utf8')
+    raw = readFileSync(file, 'utf8')
   } catch {
-    return records
+    cachedIndex = new Map<string, IndexRecord>()
+    cachedIndexFile = file
+    cachedIndexMtime = stat.mtimeMs
+    cachedIndexSize = stat.size
+    return cachedIndex
   }
   for (const line of raw.split('\n')) {
     const trimmed = line.trim()
@@ -258,7 +302,19 @@ function foldIndex(): Map<string, IndexRecord> {
   for (const [id, record] of records) {
     if (record.deleted) records.delete(id)
   }
+  cachedIndex = records
+  cachedIndexFile = file
+  cachedIndexMtime = stat.mtimeMs
+  cachedIndexSize = stat.size
   return records
+}
+
+/** Clear the index cache (called when the index is modified). */
+export function clearIndexCache(): void {
+  cachedIndex = null
+  cachedIndexFile = null
+  cachedIndexMtime = null
+  cachedIndexSize = null
 }
 
 function appendIndex(record: IndexRecord): void {
@@ -275,8 +331,8 @@ function nextOrder(records: Map<string, IndexRecord>): number {
   return max + 1
 }
 
-function readNote(rel: string): KnowledgeNote | null {
-  const abs = join(knowledgeDir(), rel)
+/** Read a single note file by absolute path, returning null on failure. */
+function readSingleNote(abs: string): KnowledgeNote | null {
   try {
     return parseNoteFile(readFileSync(abs, 'utf8'), abs)
   } catch {
@@ -285,7 +341,7 @@ function readNote(rel: string): KnowledgeNote | null {
 }
 
 /** Every `.md` note file under the type subdirs, relative to the knowledge dir. */
-function scanNoteFiles(): string[] {
+function scanNoteFiles(type?: string): string[] {
   const base = knowledgeDir()
   let typeDirs: string[]
   try {
@@ -297,6 +353,7 @@ function scanNoteFiles(): string[] {
   }
   const files: string[] = []
   for (const dir of typeDirs) {
+    if (type && dir !== type) continue
     let entries: string[]
     try {
       entries = readdirSync(join(base, dir))
@@ -360,7 +417,7 @@ export function updateKnowledgeNote(
   const records = foldIndex()
   const record = records.get(id)
   if (!record) return null
-  const current = readNote(record.file)
+  const current = readSingleNote(join(knowledgeDir(), record.file))
   if (!current) return null
   const updated: KnowledgeNote = {
     ...current,
@@ -414,21 +471,61 @@ export function deleteKnowledgeNote(id: string, now: Date = new Date()): boolean
 export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
   const records = [...foldIndex().values()].sort((a, b) => a.order - b.order)
   const notes: KnowledgeNote[] = []
+
+  // Read notes referenced by the index in a batch (single pass over file reads).
+  const knowledgeDirPath = knowledgeDir()
+  const absPaths = records.map((r) => join(knowledgeDirPath, r.file))
+  for (const absPath of absPaths) {
+    try {
+      const raw = readFileSync(absPath, 'utf8')
+      const note = parseNoteFile(raw, absPath)
+      if (note !== null) {
+        notes.push(note)
+      }
+    } catch {
+      // Silently skip unreadable files.
+    }
+  }
+
+  // Build a lookup of indexed relative paths so we skip them during orphan scan.
   const seen = new Set<string>()
-  for (const record of records) {
-    const note = readNote(record.file)
-    if (!note) continue
-    notes.push(note)
+  const indexedFiles = new Set(records.map((r) => r.file))
+  for (const note of notes) {
     seen.add(note.id)
   }
-  for (const rel of scanNoteFiles()) {
-    const note = readNote(rel)
-    if (!note || seen.has(note.id)) continue
-    seen.add(note.id)
+
+  // Scan for orphan files not in the index and heal them in a single pass.
+  const orphanFiles = scanNoteFiles(type)
+  let maxOrder = 0
+  for (const record of records) {
+    if (record.order > maxOrder) maxOrder = record.order
+  }
+  let order = maxOrder + 1
+
+  for (const rel of orphanFiles) {
+    if (indexedFiles.has(rel)) continue // already indexed — no double-read
+    const abs = join(knowledgeDirPath, rel)
+    let raw: string
+    try {
+      raw = readFileSync(abs, 'utf8')
+    } catch {
+      continue
+    }
+    const split = splitSkillMarkdown(raw)
+    if (!split) continue
+    const { frontmatter } = split
+    const id = frontmatterField(frontmatter, 'id')
+    const noteType = frontmatterField(frontmatter, 'type')
+    if (!id || !noteType) continue
+    if (seen.has(id)) continue
+
+    const note = parseNoteFile(raw, abs)
+    if (!note) continue
+
     appendIndex({
       id: note.id,
       type: note.type,
-      order: nextOrder(foldIndex()),
+      order: order++,
       title: note.title,
       status: note.status,
       file: rel,
@@ -437,13 +534,14 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
     })
     notes.push(note)
   }
+
   return type ? notes.filter((note) => note.type === type) : notes
 }
 
 /** A single note by id, or null if unknown. */
 export function getKnowledgeNote(id: string): KnowledgeNote | null {
   const record = foldIndex().get(id)
-  return record ? readNote(record.file) : null
+  return record ? readSingleNote(join(knowledgeDir(), record.file)) : null
 }
 
 /** Notes whose title, tags, body, or extra fields contain every whitespace-

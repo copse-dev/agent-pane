@@ -52,6 +52,8 @@ import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.t
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
+import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
+import { delegateStepTool } from '../tools/delegate-step-tool.ts'
 import { MODEL_COMPARISON_ENABLED_SETTING } from './model-comparison.ts'
 import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
@@ -132,6 +134,13 @@ export function createRegistry(): ToolRegistry {
   // on-device model. Shaped to match Claude's native advisor tool contract.
   if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
     registry.register(advisorTool)
+  }
+  // Experimental orchestration strategy (off by default) — the advisor's
+  // inverse: the chat model stays the orchestrator and a `delegate_step` tool
+  // hands each bounded implementation step to a cheaper/faster worker model
+  // running as a subagent, with the parent observing between steps.
+  if (getSetting<boolean>(ORCHESTRATION_STRATEGY_ENABLED_SETTING, false)) {
+    registry.register(delegateStepTool)
   }
   // Experimental model comparison harness (off by default). Adds a no-parameter
   // `compare_models` tool that runs the working-diff review through two models

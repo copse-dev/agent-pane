@@ -62,3 +62,31 @@
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }
+.approval-comparison-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.approval-comparison-intro {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.approval-comparison-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+.approval-comparison-label {
+  color: var(--text-muted);
+}
+.approval-model-select {
+  width: 100%;
+  font-size: var(--font-size-sm);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+}

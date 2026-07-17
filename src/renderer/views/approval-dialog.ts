@@ -3,6 +3,10 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { isSettingsDialogOpen, onSettingsDialogClose } from './settings-dialog.ts'
 import { setAttentionThreads } from '../controller/attention.ts'
+import {
+  createComparisonModelPickers,
+  type ComparisonModelSelection,
+} from './approval-comparison-pickers.ts'
 
 /**
  * How long the first pending request waits before the dialog pops, so a burst of
@@ -91,8 +95,10 @@ export function mountApprovalDialog(
     threadId: string | undefined
     title: string
     body: string
+    type: string
     allowRemember: boolean | undefined
     rememberLabel: string | undefined
+    comparisonModels?: ComparisonModelSelection
   }
 
   // Requests waiting for their turn (background threads, or arrived before the
@@ -108,6 +114,8 @@ export function mountApprovalDialog(
   let cancelCoalesce: (() => void) | null = null
   // Cancels the pending Approve re-enable while the appended batch settles.
   let cancelSettle: (() => void) | null = null
+  /** Live reader for model-compare pickers on the open prompt (single-item batch). */
+  let readComparisonModels: (() => ComparisonModelSelection) | null = null
 
   // Minimizing the window flips the renderer document to `hidden`. A modal shown
   // on a hidden window can't be painted, so it reads as a frozen/crashed pane and
@@ -172,7 +180,10 @@ export function mountApprovalDialog(
   }
 
   function renderBatch(): void {
+    readComparisonModels = null
     const count = batch.length
+    const singleModelCompare =
+      count === 1 && batch[0]?.type === 'model-compare' && batch[0].comparisonModels !== undefined
     // Collapse the per-request title into one heading when the whole batch asks
     // the same question (parallel fetches/reads/shell — the common case). A mixed
     // batch gets a count heading and keeps a light per-row label so the rows stay
@@ -188,7 +199,13 @@ export function mountApprovalDialog(
       ...batch.map((req) => {
         const rowChildren: (Node | string)[] = []
         if (showRowTitles) rowChildren.push(el('div', { class: 'approval-item-title' }, req.title))
-        rowChildren.push(el('pre', { class: 'approval-body' }, req.body))
+        if (singleModelCompare && req.comparisonModels && req === batch[0]) {
+          const pickers = createComparisonModelPickers(api, req.comparisonModels, req.body)
+          readComparisonModels = pickers.read
+          rowChildren.push(pickers.root)
+        } else {
+          rowChildren.push(el('pre', { class: 'approval-body' }, req.body))
+        }
         return el('div', { class: 'approval-item' }, ...rowChildren)
       }),
     )
@@ -287,24 +304,45 @@ export function mountApprovalDialog(
   function resolve(approved: boolean, remember: boolean): void {
     if (!active || batch.length === 0) return
     const answered = batch
+    const comparisonModels = approved && readComparisonModels ? readComparisonModels() : undefined
     dialog.close()
     batch = []
     active = false
+    readComparisonModels = null
     clearSettle()
-    for (const req of answered) void api.approval.respond(req.id, approved, remember)
+    for (const req of answered) {
+      void api.approval.respond(
+        req.id,
+        approved,
+        remember,
+        req.type === 'model-compare' ? comparisonModels : undefined,
+      )
+    }
     // Surface anything that was waiting behind this batch immediately — it has
     // already sat through its own coalesce window, so no extra delay.
     show()
   }
 
-  api.agent.onApprovalRequest(({ id, threadId, title, body, allowRemember, rememberLabel }) => {
-    queue.push({ id, threadId, title, body, allowRemember, rememberLabel })
-    if (active) appendToOpen()
-    else scheduleShow()
-    // scheduleShow/appendToOpen sync attention on their own paths, but a request
-    // held back by the settings guard reaches neither; sync unconditionally.
-    syncAttention()
-  })
+  api.agent.onApprovalRequest(
+    ({ id, threadId, title, body, type, allowRemember, rememberLabel, comparisonModels }) => {
+      const pending: PendingApproval = {
+        id,
+        threadId,
+        title,
+        body,
+        type,
+        allowRemember,
+        rememberLabel,
+      }
+      if (comparisonModels) pending.comparisonModels = comparisonModels
+      queue.push(pending)
+      if (active) appendToOpen()
+      else scheduleShow()
+      // scheduleShow/appendToOpen sync attention on their own paths, but a request
+      // held back by the settings guard reaches neither; sync unconditionally.
+      syncAttention()
+    },
+  )
 
   // When the user switches threads, a previously-backgrounded request for the
   // now-focused thread should surface. `threads_changed` also fires on project
