@@ -8,6 +8,7 @@ export default ts.config(
       'dist/',
       'dist-test/',
       'dist-types/',
+      'coverage/',
       'node_modules/',
       '.tmp/',
       '.claude/**',

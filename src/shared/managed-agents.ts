@@ -11,7 +11,8 @@
  * checkout.
  */
 export const DEFAULT_MANAGED_AGENT_MODEL = 'claude-opus-4-8'
-export const DEFAULT_MANAGED_AGENT_BRANCH_PREFIX = 'claude/'
+/** Standard prefix for branches created by Copse-managed agents. */
+export const DEFAULT_MANAGED_AGENT_BRANCH_PREFIX = 'copse/'
 export const MANAGED_AGENT_REPO_MOUNT_PATH = '/workspace/repo'
 export const GITHUB_MCP_SERVER_URL = 'https://api.githubcopilot.com/mcp/'
 export const GITHUB_MCP_SERVER_NAME = 'github'
@@ -47,9 +48,14 @@ export function buildManagedAgentSystemPrompt(input: ManagedAgentSystemPromptInp
     lines.push(`Start from the repository's default branch.`)
   }
 
+  lines.push(
+    "Never commit or push directly to the repository's default branch. Before making changes, check",
+    'which branch is checked out and which branch is the repository default.',
+  )
+
   if (input.workOnCurrentBranch) {
     lines.push(
-      `Commit your work directly to ${baseRef ? `\`${baseRef}\`` : 'the default branch'} — do not create a new branch — then push it.`,
+      `If ${baseRef ? `\`${baseRef}\`` : 'the current branch'} is not the default branch, commit your work there and push it. If it is the default branch, create a new working branch named \`${input.branchPrefix}<short-kebab-summary>\` instead.`,
     )
   } else {
     lines.push(

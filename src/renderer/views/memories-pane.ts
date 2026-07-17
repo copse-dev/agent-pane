@@ -2,6 +2,7 @@ import { el, clear, qsRequired } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { knowledgeDate } from './knowledge-date.ts'
 
 // A memory is one `Memory`-typed knowledge note. Derive the shape from the IPC
 // surface so this view never imports main-process types directly.
@@ -162,7 +163,7 @@ export function mountMemoriesPane(
     deleteBtn.hidden = !note
     if (note?.updatedAt) {
       metaLine.hidden = false
-      metaLine.textContent = `Updated ${note.updatedAt}`
+      metaLine.textContent = `Updated ${knowledgeDate(note.updatedAt)}`
     } else {
       metaLine.hidden = true
       metaLine.textContent = ''

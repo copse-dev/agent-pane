@@ -64,6 +64,7 @@ function setup(
         return (): void => {}
       },
       onUsage: () => (): void => {},
+      onHookQueueMessage: () => (): void => {},
       suggestTitle: async (text: string) => {
         titleCalls.push(text)
         return 'Generated Title'
@@ -113,6 +114,21 @@ function setup(
         trackingStartedAt: null,
         ledgerEventCount: 0,
       }),
+      getPlanUsage: async () => ({
+        checkedAt: new Date(0).toISOString(),
+        providers: [
+          {
+            status: 'unavailable' as const,
+            provider: 'claude' as const,
+            reason: 'test',
+          },
+          {
+            status: 'unavailable' as const,
+            provider: 'codex' as const,
+            reason: 'test',
+          },
+        ],
+      }),
     },
   } as unknown as ApiClient
 
@@ -133,6 +149,17 @@ test('text chunks create one assistant message and accumulate tokens', () => {
   assert.equal(messages().length, 1)
   assert.equal(at(messages(), 0).role, 'assistant')
   assert.equal(at(messages(), 0).content, 'Hello world')
+})
+
+test('assistant messages stamp the thread primary-chat model', () => {
+  const { send, messages } = setup([
+    {
+      ...thread('t1'),
+      model: 'claude-sonnet-4-6',
+    },
+  ])
+  send({ type: 'text', text: 'Hello' })
+  assert.equal(at(messages(), 0).model, 'claude-sonnet-4-6')
 })
 
 test('whitespace-only text before any message is ignored', () => {

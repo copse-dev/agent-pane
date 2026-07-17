@@ -12,8 +12,6 @@ describe('settings-writable', () => {
     assert.equal(isRendererWritableSettingKey('autoRunSandboxCommands'), false)
     assert.equal(isRendererWritableSettingKey('localServerUrl'), false)
     assert.equal(isRendererWritableSettingKey('safetyClassifierEnabled'), false)
-    assert.equal(isRendererWritableSettingKey('safetyConfidenceThreshold'), false)
-    assert.equal(isRendererWritableSettingKey('safetySandboxAllowThreshold'), false)
     assert.equal(isRendererWritableSettingKey('safetyExternalDenyThreshold'), false)
     assert.equal(isRendererWritableSettingKey('mcpAutoAllowReadOnly'), false)
     assert.equal(isRendererWritableSettingKey('defaultReadonlyMode'), false)
@@ -26,6 +24,7 @@ describe('settings-writable', () => {
     assert.equal(parseRendererWritableSetting('theme', 'dark'), 'dark')
     assert.equal(parseRendererWritableSetting('appIconVariant', 'aurora'), 'aurora')
     assert.equal(parseRendererWritableSetting('autoPortraitRightPanel', false), false)
+    assert.equal(parseRendererWritableSetting('uiAccentColor', '#2A9D8F'), '#2A9D8F')
   })
 
   it('accepts a non-negative integer post-turn-review diff threshold, rejects negatives', () => {
@@ -39,7 +38,6 @@ describe('settings-writable', () => {
     const parsed = securitySettingsSchema.parse({
       localServerUrl: 'http://127.0.0.1:1234/v1',
       safetyClassifierEnabled: true,
-      safetySandboxAllowThreshold: 0.85,
       safetyExternalDenyThreshold: 1,
       safetyModel: '',
       autoRunSandboxCommands: false,
@@ -50,16 +48,14 @@ describe('settings-writable', () => {
       webAllowUserApproval: true,
     })
     assert.equal(parsed.localServerUrl, 'http://127.0.0.1:1234/v1')
-    assert.equal(parsed.safetySandboxAllowThreshold, 0.85)
     assert.equal(parsed.safetyExternalDenyThreshold, 1)
     assert.deepEqual(parsed.webAllowedOrigins, ['https://duckduckgo.com', 'http://localhost:*'])
   })
 
-  it('parses the renderer bundle without cursorHooksEnabled (storage-only, no UI yet)', () => {
+  it('parses a bundle without cursorHooksEnabled (older renderer bundles omit it)', () => {
     const parsed = securitySettingsSchema.parse({
       localServerUrl: 'http://127.0.0.1:1234/v1',
       safetyClassifierEnabled: true,
-      safetySandboxAllowThreshold: 0.85,
       safetyExternalDenyThreshold: 1,
       safetyModel: '',
       autoRunSandboxCommands: false,
@@ -70,6 +66,24 @@ describe('settings-writable', () => {
     })
     assert.equal(parsed.cursorHooksEnabled, undefined)
     assert.equal('cursorHooksEnabled' in parsed, false)
+  })
+
+  it('strips unknown deprecated threshold keys from the security bundle', () => {
+    const parsed = securitySettingsSchema.parse({
+      localServerUrl: 'http://127.0.0.1:1234/v1',
+      safetyClassifierEnabled: true,
+      safetySandboxAllowThreshold: 0.85,
+      safetyConfidenceThreshold: 0.85,
+      safetyExternalDenyThreshold: 1,
+      safetyModel: '',
+      autoRunSandboxCommands: false,
+      mcpAutoAllowReadOnly: true,
+      defaultReadonlyMode: false,
+      webAllowedOrigins: ['https://duckduckgo.com'],
+      webAllowUserApproval: true,
+    })
+    assert.equal('safetySandboxAllowThreshold' in parsed, false)
+    assert.equal('safetyConfidenceThreshold' in parsed, false)
   })
 
   it('treats api-key records as secret (not readable via settings:get)', () => {
@@ -126,7 +140,7 @@ describe('settings-writable', () => {
       securitySettingsSchema.parse({
         localServerUrl: '',
         safetyClassifierEnabled: true,
-        safetyConfidenceThreshold: 0.85,
+        safetyExternalDenyThreshold: 1,
         safetyModel: '',
         autoRunSandboxCommands: true,
         mcpAutoAllowReadOnly: false,

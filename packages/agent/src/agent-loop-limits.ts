@@ -30,9 +30,6 @@ export function isStreamOutputRunaway(
 /** Idle budget for a run; resets on {@link AgentRunDeadline.recordActivity}. */
 export const AGENT_RUN_IDLE_TIMEOUT_MS = 15 * 60 * 1000
 
-/** @deprecated use {@link AGENT_RUN_IDLE_TIMEOUT_MS} */
-export const AGENT_RUN_TIMEOUT_MS = AGENT_RUN_IDLE_TIMEOUT_MS
-
 /** Absolute wall-clock cap on a single agent run regardless of activity. */
 export const AGENT_RUN_HARD_MAX_MS = 60 * 60 * 1000
 
@@ -42,15 +39,6 @@ export const AGENT_RUN_ABORT_REASON_TIMEOUT = 'copse:agent-run-timeout'
 /** Subagent inner loops: step budget plus headroom for finalize / forced text. */
 export function defaultMaxLlmCallsForSteps(maxSteps: number): number {
   return Math.min(DEFAULT_MAX_LLM_CALLS, maxSteps + 3)
-}
-
-/** @deprecated use {@link AgentRunDeadline.isExpired} */
-export function isRunPastDeadline(
-  runStartedAt: number,
-  runTimeoutMs: number,
-  now = Date.now(),
-): boolean {
-  return now - runStartedAt >= runTimeoutMs
 }
 
 /**

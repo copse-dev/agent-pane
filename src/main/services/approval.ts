@@ -9,17 +9,28 @@ import {
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
 
+/** Model ids for a two-reviewer + judge comparison run. */
+export interface ComparisonModelSelection {
+  a: string
+  b: string
+  judge: string
+}
+
 export interface ApprovalRequest {
   title: string
   body: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
+  /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
+  comparisonModels?: ComparisonModelSelection
 }
 
 export interface ApprovalResponse {
   approved: boolean
   remember: boolean
+  /** User-selected models from the comparison approval pickers. */
+  comparisonModels?: ComparisonModelSelection
 }
 
 // Pending approvals never auto-resolve, so a tool call would hang forever if the
@@ -84,8 +95,15 @@ export function initApproval(win: BrowserWindow): void {
       // assertMainFrameSender rejects any frame other than the window's main
       // frame, so a compromised/embedded frame can't answer an approval.
       assertMainFrameSender(event, win)
-      const [id, approved, remember] = parseIpcArgs(approvalRespondSchema, rawArgs)
-      settle(id, { approved, remember: remember === true })
+      const [id, approved, remember, comparisonModels] = parseIpcArgs(
+        approvalRespondSchema,
+        rawArgs,
+      )
+      settle(id, {
+        approved,
+        remember: remember === true,
+        ...(comparisonModels ? { comparisonModels } : {}),
+      })
     } catch (err) {
       if (err instanceof IpcValidationError) return
       throw err

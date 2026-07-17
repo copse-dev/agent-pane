@@ -19,28 +19,17 @@ function statusLabel(status: ThreadReview['status']): string {
   }
 }
 
-// TODO(#480): Collapse the card by default when the review found no issues
-// (positive verdict). This needs an explicit structured signal — e.g. an
-// `issuesFound: boolean` (or a `verdict: 'clean' | 'concerns'`) field on
-// `ThreadReview`, plumbed from the review subagent through the
-// `post_turn_review` stream chunk (src/shared/types/stream.ts) and
-// agent-service.ts. The subagent prompt (review-subagent.ts) currently only
-// asks for a free-text one-line summary, so the verdict can only be inferred by
-// string-sniffing the summary, which we deliberately avoid. Once that signal
-// exists, render this card as a collapsed <details> when there are no issues.
+/** Clean reviews (explicit `issuesFound: false`) collapse by default so a
+ * positive verdict stays out of the way; reviews with findings (or unknown
+ * legacy verdicts without the structured signal) stay expanded. */
+function shouldCollapseCleanReview(review: ThreadReview): boolean {
+  return review.status === 'done' && review.issuesFound === false
+}
 
-/** Compact card summarising the post-turn review verdict for a thread. */
-export function createReviewCardEl(
-  review: ThreadReview,
-  api: ApiClient,
-  onRetry?: () => void,
-): HTMLElement {
-  const panel = el('div', {
-    class: `review-panel review-panel-${review.status}`,
-    'data-status': review.status,
+function appendReviewHeader(panel: HTMLElement, review: ThreadReview, onRetry?: () => void): void {
+  const header = el(shouldCollapseCleanReview(review) ? 'summary' : 'div', {
+    class: 'review-panel-header',
   })
-
-  const header = el('div', { class: 'review-panel-header' })
   header.append(
     el(
       'span',
@@ -56,6 +45,24 @@ export function createReviewCardEl(
     header.append(createRetryButton(onRetry))
   }
   panel.append(header)
+}
+
+/** Compact card summarising the post-turn review verdict for a thread. */
+export function createReviewCardEl(
+  review: ThreadReview,
+  api: ApiClient,
+  onRetry?: () => void,
+): HTMLElement {
+  const collapse = shouldCollapseCleanReview(review)
+  const panel = el(collapse ? 'details' : 'div', {
+    class: `review-panel review-panel-${review.status}`,
+    'data-status': review.status,
+    ...(review.issuesFound !== undefined
+      ? { 'data-issues-found': review.issuesFound ? 'true' : 'false' }
+      : {}),
+  })
+
+  appendReviewHeader(panel, review, onRetry)
 
   if (review.status === 'running') return panel
 
