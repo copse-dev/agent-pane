@@ -44,6 +44,22 @@ mkdir -p "${RUN_DIR}"
 # Persist everything we print, while still streaming to the attached client.
 exec > >(tee -a "${RUN_DIR}/log") 2>&1
 
+# Safety net: the local CLI polls for the status file, so it must appear even
+# when this script dies abruptly (docker stop's SIGTERM, an unhandled error)
+# instead of reaching finish(). finish() sets FINISHED before its own status
+# write, making this trap a no-op on the normal path.
+FINISHED=0
+on_exit() {
+  local code=$?
+  if [[ "${FINISHED}" != "1" ]]; then
+    echo "==> aborted before completion (signal or unhandled error)" || true
+    [[ -f "${RUN_DIR}/status" ]] || echo "${code:-1}" > "${RUN_DIR}/status" 2>/dev/null || true
+  fi
+}
+trap on_exit EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
 finish() {
   local code="$1"
   # Collect artifacts even on failure — failures are when you want the logs.
@@ -76,6 +92,7 @@ finish() {
     rm -rf "${TREE}"
   fi
   # Written last: the local CLI treats this file's existence as run completion.
+  FINISHED=1
   echo "${code}" > "${RUN_DIR}/status"
   exit "${code}"
 }

@@ -715,18 +715,39 @@ async function runCommand(options: Options): Promise<void> {
 
   console.log(`==> Starting ${String(shardIds.length)} container(s) on ${record.ip} (run ${runId})`)
   if (detach) {
-    for (const [i, shardId] of shardIds.entries()) {
-      await sshRunAsync(
-        ssh,
-        host,
-        dockerRunCommand({
-          detach: true,
-          keepTree,
-          sha: snapshot.sha,
-          shardId,
-          wdioArgs: shardArgLists[i] ?? [],
-        }),
-      )
+    // Launch sequentially, tracking what actually started: if a later shard
+    // fails to launch, the earlier ones keep running on the host — trim
+    // meta.json to the started set (so `wait` doesn't poll a shard that will
+    // never write a status file) and still print the wait hint.
+    const started: string[] = []
+    try {
+      for (const [i, shardId] of shardIds.entries()) {
+        await sshRunAsync(
+          ssh,
+          host,
+          dockerRunCommand({
+            detach: true,
+            keepTree,
+            sha: snapshot.sha,
+            shardId,
+            wdioArgs: shardArgLists[i] ?? [],
+          }),
+        )
+        started.push(shardId)
+      }
+    } catch (err) {
+      if (started.length > 0) {
+        writeFileSync(
+          join(runDir, 'meta.json'),
+          `${JSON.stringify({ ...meta, shardIds: started }, null, 2)}\n`,
+          'utf8',
+        )
+        console.error(
+          `==> Launch failed after ${String(started.length)}/${String(shardIds.length)} shard(s) started. ` +
+            `They are still running — finish with: npm run e2e:remote -- wait ${runId}`,
+        )
+      }
+      throw err
     }
     console.log(`==> Detached. Finish with: npm run e2e:remote -- wait ${runId}`)
     return
@@ -778,8 +799,15 @@ async function waitCommand(options: Options, positional: string[]): Promise<void
   const statuses = new Map<string, number>()
   let lastNote = 0
   while (statuses.size < meta.shardIds.length) {
-    if (Date.now() > deadline)
+    if (Date.now() > deadline) {
+      // Pull whatever exists before giving up: finished shards have full
+      // results, and even a hung shard's partial log is the debugging clue.
+      console.error(
+        `==> Timed out with ${String(statuses.size)}/${String(meta.shardIds.length)} shard(s) done — pulling available results`,
+      )
+      pullRunResults(meta, options)
       die(`run ${runId} did not finish within ${String(timeoutMinutes)} minutes`)
+    }
     for (const shardId of meta.shardIds) {
       if (statuses.has(shardId)) continue
       const result = execFileSync(
