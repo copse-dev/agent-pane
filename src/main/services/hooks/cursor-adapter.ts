@@ -14,10 +14,11 @@
 // `failed` + the hook's `onFailure`; the shared runner turns that into deny/allow.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import micromatch from 'micromatch'
 import {
   CURSOR_HOOK_EVENTS,
-  isCursorPermissionHookEvent,
+  isCursorWiredHookEvent,
   type CursorHookEvent,
   type CursorHookScope,
   type CursorHooksListResult,
@@ -26,7 +27,7 @@ import {
 } from '@shared/types/cursor-hooks.ts'
 import type { HooksListResult } from '@shared/types/hooks.ts'
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -47,6 +48,16 @@ interface DiscoveredCursorHook {
   scope: CursorHookScope
   /** Cursor `failClosed: true` — crash / timeout / invalid JSON blocks instead of allowing. */
   failClosed: boolean
+  /**
+   * Optional path/glob matcher for `afterFileEdit` (B2). Cursor's native
+   * `afterFileEdit` has no declared per-hook path matcher — the vendor pattern
+   * is for the script to filter on `file_path` itself — so this is a Copse
+   * convenience the Cursor adapter honours: when present, the hook fires only
+   * for edited paths matching one of the globs; when absent, it fires for every
+   * edit (Cursor's "runs after every file edit" default). Populated from a
+   * string or string[] `glob` field on the entry.
+   */
+  glob?: string[]
 }
 
 /** `~/.cursor/hooks.json` — always trusted (the user installed it). */
@@ -61,6 +72,17 @@ export function projectHooksConfigPath(workspaceRoot: string): string {
 
 function isHookEvent(value: string): value is CursorHookEvent {
   return (CURSOR_HOOK_EVENTS as readonly string[]).includes(value)
+}
+
+/**
+ * Normalize an entry's `glob` matcher field (B2) to a clean string[] or
+ * undefined. Accepts a single string or an array of strings; anything else (or
+ * an empty result) yields undefined so the hook fires for every edit.
+ */
+function normalizeGlobField(value: unknown): string[] | undefined {
+  const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
+  const globs = raw.filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+  return globs.length > 0 ? globs : undefined
 }
 
 /** One parsed config: usable hooks plus per-entry authoring warnings. */
@@ -129,7 +151,16 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
         return
       }
       const failClosed = (entry as { failClosed?: unknown }).failClosed === true
-      out.push({ event, command: command.trim(), cwd, source: path, scope, failClosed })
+      const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
+      out.push({
+        event,
+        command: command.trim(),
+        cwd,
+        source: path,
+        scope,
+        failClosed,
+        ...(glob ? { glob } : {}),
+      })
     })
   }
   return { hooks: out, warnings }
@@ -195,7 +226,7 @@ export async function listCursorHooks(opts: DialectDiscoverOpts): Promise<Cursor
         command,
         source,
         scope,
-        supported: isCursorPermissionHookEvent(event),
+        supported: isCursorWiredHookEvent(event),
         ...(lastError !== undefined ? { lastError } : {}),
       }
     }),
@@ -291,10 +322,152 @@ export async function cursorToolGateHooks(
     })
 }
 
+/**
+ * Discover the Cursor command hooks registered for `beforeSubmitPrompt` (B1), as
+ * registry `CommandHook`s. Same discovery + trust + `failClosed` → `onFailure`
+ * mapping as {@link cursorToolGateHooks}; the compose-path fire site
+ * (`before-submit-prompt.ts`) registers and fires them through the shared
+ * registry → runner → adapter seam.
+ */
+export async function cursorBeforeSubmitPromptHooks(
+  _payload: HookEventPayloads['beforeSubmitPrompt'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'beforeSubmitPrompt'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'beforeSubmitPrompt')
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'beforeSubmitPrompt' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Whether an `afterFileEdit` hook's glob matcher covers the edited path (B2).
+ * A hook with no glob fires for every edit (Cursor's default). Otherwise the
+ * absolute path is matched, plus — when it is under the workspace — its
+ * workspace-relative form (so `**` / `src/**` globs match the natural way), and
+ * a basename pass so a bare `*.ts` still matches a nested file.
+ */
+function afterFileEditMatches(
+  hook: DiscoveredCursorHook,
+  filePath: string,
+  workspaceRoot: string | null,
+): boolean {
+  if (!hook.glob || hook.glob.length === 0) return true
+  const candidates = [filePath.replace(/\\/g, '/')]
+  if (workspaceRoot) {
+    const rel = relative(workspaceRoot, filePath).replace(/\\/g, '/')
+    if (rel && !rel.startsWith('..')) candidates.push(rel)
+  }
+  return candidates.some(
+    (c) =>
+      micromatch.isMatch(c, hook.glob as string[], { dot: true }) ||
+      micromatch.isMatch(c, hook.glob as string[], { dot: true, basename: true }),
+  )
+}
+
+/**
+ * Discover the Cursor command hooks registered for `afterFileEdit` (B2) whose
+ * path matcher covers `payload.filePath`, as registry `CommandHook`s. Same
+ * discovery + trust + `failClosed` → `onFailure` mapping as
+ * {@link cursorToolGateHooks}; the matcher (per-hook `glob`) is applied here at
+ * discovery — the adapter's dispatch-side filter, mirroring how the tool → event
+ * matcher gates `toolGate`. The diff-queue / write-tool fire site
+ * (`after-file-edit.ts`) registers and fires the survivors through the shared
+ * registry → runner → adapter seam.
+ */
+export async function cursorAfterFileEditHooks(
+  payload: HookEventPayloads['afterFileEdit'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'afterFileEdit'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter(
+      (h) =>
+        h.event === 'afterFileEdit' &&
+        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+    )
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'afterFileEdit' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `stop` (B3), as registry
+ * `CommandHook`s. Same discovery + trust + `failClosed` → `onFailure` mapping as
+ * {@link cursorToolGateHooks}; the turn-end / abort fire site (`stop.ts`)
+ * registers and fires them **detached** (decision 3, never awaited) through the
+ * shared registry → runner → adapter seam. Cursor's `stop` is notification-only,
+ * so `failClosed` has nothing to block post-hoc — but the flag still maps to
+ * `onFailure` for the spine + Sources error indicator uniformity.
+ */
+export async function cursorStopHooks(
+  _payload: HookEventPayloads['stop'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'stop'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'stop')
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'stop' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
 interface CursorHookResponse {
   permission?: HookDecision
   agentMessage?: string
   userMessage?: string
+}
+
+/**
+ * Cursor `beforeSubmitPrompt` stdout: `{ continue: boolean }` plus an optional
+ * user-facing message. The vendor documents `user_message` (snake_case); the
+ * permission-hook response uses camelCase `userMessage`/`agentMessage`, so we
+ * accept either spelling and normalize.
+ */
+interface CursorBeforeSubmitPromptResponse {
+  continue?: boolean
+  user_message?: string
+  userMessage?: string
+  agent_message?: string
+  agentMessage?: string
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return undefined
 }
 
 function isHookDecision(value: unknown): value is HookDecision {
@@ -322,19 +495,42 @@ function outcomeFromResponse(parsed: unknown): {
   return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
 }
 
+/**
+ * The base agent-session envelope every Cursor hook payload carries (B4). The
+ * real `conversation_id` (thread id) and `generation_id` (turn id) come from the
+ * host-captured {@link AgentSessionInfo}; when there is no active run the ids are
+ * empty strings (the pre-B4 behavior). The running model is stamped as Cursor's
+ * `model` / `model_id` / `model_params` (vendor contract; `model_params` is the
+ * `{ id, value }[]` array shape, not an object) on **every** agent-session
+ * event — Cursor sends model identity on all of them.
+ */
+function agentSessionEnvelope(
+  event: CursorHookEvent,
+  session: AgentSessionInfo | undefined,
+): Record<string, unknown> {
+  const root = getWorkspaceRoot()
+  const base: Record<string, unknown> = {
+    conversation_id: session?.conversationId ?? '',
+    generation_id: session?.generationId ?? '',
+    hook_event_name: event,
+    workspace_roots: root ? [root] : [],
+  }
+  if (session?.model) {
+    base['model'] = session.model.model
+    base['model_id'] = session.model.modelId
+    base['model_params'] = session.model.modelParams
+  }
+  return base
+}
+
 /** The concrete Cursor dialect adapter the runner delegates to. */
 export const cursorAdapter: DialectAdapter = {
   dialect: 'cursor',
 
-  marshalToolGateRequest(_hook, payload) {
+  marshalToolGateRequest(_hook, payload, session) {
     const event = cursorEventForTool(payload.toolName)
     if (!event) return null
-    const base = {
-      conversation_id: '',
-      generation_id: '',
-      hook_event_name: event,
-      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
-    }
+    const base = agentSessionEnvelope(event, session)
     if (event === 'beforeShellExecution') {
       return {
         ...base,
@@ -345,8 +541,15 @@ export const cursorAdapter: DialectAdapter = {
     if (event === 'beforeMCPExecution') {
       return { ...base, tool_name: payload.toolName, tool_input: payload.input }
     }
-    // beforeReadFile: content is passed after the gate today (B4 wires content).
-    return { ...base, file_path: stringField(payload.input, 'path'), content: '' }
+    // beforeReadFile: the host reads the file eagerly for read_file gates and
+    // fills `payload.fileContent` (B4), so a redaction/secret-detection hook can
+    // inspect the bytes and deny. Cursor's beforeReadFile response is allow/deny
+    // only (no content-rewrite in the vendor contract), so "redact" == deny.
+    return {
+      ...base,
+      file_path: stringField(payload.input, 'path'),
+      content: payload.fileContent ?? '',
+    }
   },
 
   interpretToolGate(spawn: HookSpawnResult, payload): DialectInterpretation {
@@ -394,9 +597,186 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
+  marshalBeforeSubmitPromptRequest(_hook, payload, session) {
+    // Cursor's beforeSubmitPrompt stdin: the composed prompt plus attachments
+    // (empty until an attachments payload channel exists) and the standard
+    // agent-session envelope (real conversation/generation ids + model — B4).
+    return {
+      ...agentSessionEnvelope('beforeSubmitPrompt', session),
+      prompt: payload.prompt,
+      attachments: [],
+    }
+  },
+
+  interpretBeforeSubmitPrompt(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    const spineEvent = 'beforeSubmitPrompt'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) {
+      // No stdout on a clean exit is an intentional "allow / no opinion"; a
+      // crash with no output is a failure the runner resolves per `onFailure`.
+      if (spawn.exitCode === 0) return { ...base, failed: false, parseOk: true }
+      const detail =
+        spawn.exitCode === null ? 'was killed' : `exited with code ${String(spawn.exitCode)}`
+      return { ...base, failed: true, parseOk: true, runtimeError: detail }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: 'printed invalid JSON — response ignored',
+      }
+    }
+    const { outcome, spineDecision } = beforeSubmitOutcomeFromResponse(parsed)
+    return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
+  },
+
+  marshalAfterFileEditRequest(_hook, payload, session) {
+    // Cursor's afterFileEdit stdin: the edited file's absolute path, the edits
+    // (old_string/new_string pairs) and the standard agent-session envelope
+    // (real conversation/generation ids + model — B4). The canonical payload
+    // carries only the path in v1, so `edits` is empty — enough for the common
+    // formatter/accounting hook, which keys off file_path.
+    return {
+      ...agentSessionEnvelope('afterFileEdit', session),
+      file_path: payload.filePath,
+      edits: [],
+    }
+  },
+
+  interpretAfterFileEdit(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's afterFileEdit is a notification: it "cannot block the agent or
+    // return data to it" (vendor docs). So stdout never yields a control-flow
+    // decision — the outcome is always null. We still surface a crash / timeout
+    // / non-zero exit as `failed` for the Sources per-hook error indicator and
+    // the spine, but the fire site (after-file-edit.ts) never acts on it — the
+    // edit has already landed. `failClosed` therefore has nothing to block here.
+    const spineEvent = 'afterFileEdit'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalStopRequest(_hook, payload, session) {
+    // Cursor's stop stdin: the terminal `status` plus the standard agent-session
+    // envelope (real conversation/generation ids + model — B4). The fire site
+    // captures the session by value before dispatching detached, so a slow stop
+    // hook still marshals the finished turn's identity (decision 3).
+    return {
+      ...agentSessionEnvelope('stop', session),
+      status: payload.status,
+    }
+  },
+
+  interpretStop(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's stop is a notification: it carries only `status` and returns
+    // nothing (vendor docs). So stdout never yields a control-flow decision —
+    // the outcome is always null. We still surface a crash / timeout / non-zero
+    // exit as `failed` for the Sources per-hook error indicator and the spine,
+    // but the fire site (stop.ts) fires detached and never acts on it (decision
+    // 3, no drain barrier), so `failClosed` has nothing to block. Any
+    // `followup_message` a dialect might return is *not* parsed into an action
+    // here — follow-ups route through the pending-message queue (C2), never a
+    // bespoke stop protocol (decision 4).
+    const spineEvent = 'stop'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
   recordRuntimeFailure(event, command, message) {
     const key = hookErrorKey(event, command)
     if (sessionHookErrors.has(key)) return
     sessionHookErrors.set(key, message)
   },
+}
+
+/**
+ * Normalize a Cursor `beforeSubmitPrompt` response. `continue: false` halts the
+ * submit (decision 12's `haltRun`); the user-facing message becomes the halt
+ * reason and rides along as `userMessage` for surfacing (B1 acceptance: carry
+ * `user_message` on halt). `agentMessage` is carried when present. Any other
+ * `continue` value (true / absent) is an allow — no opinion.
+ */
+function beforeSubmitOutcomeFromResponse(parsed: unknown): {
+  outcome: BlockingHookOutcome | null
+  spineDecision: SpineHookRunDecision
+} {
+  if (typeof parsed !== 'object' || parsed === null) return { outcome: null, spineDecision: {} }
+  const res = parsed as CursorBeforeSubmitPromptResponse
+  const userMessage = firstString(res.user_message, res.userMessage)
+  const agentMessage = firstString(res.agent_message, res.agentMessage)
+  const outcome: BlockingHookOutcome = {}
+  if (res.continue === false) {
+    outcome.haltRun = {
+      reason: userMessage ?? 'Prompt submission was blocked by a beforeSubmitPrompt hook.',
+    }
+  }
+  if (userMessage !== undefined) outcome.userMessage = userMessage
+  if (agentMessage !== undefined) outcome.agentMessage = agentMessage
+  const spineDecision: SpineHookRunDecision = {
+    ...(outcome.haltRun !== undefined ? { haltRun: true } : {}),
+    ...(agentMessage !== undefined ? { agentMessageChars: agentMessage.length } : {}),
+    ...(userMessage !== undefined ? { userMessageChars: userMessage.length } : {}),
+  }
+  return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
 }

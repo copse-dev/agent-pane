@@ -12,14 +12,16 @@ async function clickProject(name: string): Promise<void> {
 }
 
 async function openTerminalPane(): Promise<void> {
-  const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+  // Scope to #titlebar — portrait chrome mounts a second Open-terminal control
+  // under the composer with the same aria-label.
+  const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
   await terminalBtn.click()
   await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
   await expect(terminalBtn).toHaveElementClass('active')
 }
 
 async function terminalModeActive(): Promise<boolean> {
-  const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
+  const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
   const cls = await terminalBtn.getAttribute('class')
   return cls?.includes('active') ?? false
 }

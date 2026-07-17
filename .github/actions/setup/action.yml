@@ -174,16 +174,25 @@ runs:
       shell: bash
       env:
         npm_config_ignore_scripts: 'false'
-    # Self-heal a poisoned dependency tree on the cache-HIT path too (where the
-    # npm ci above is skipped). If a cache was saved before this fix — or restored
-    # missing esbuild's working binary — the probe rebuilds just esbuild with
-    # scripts forced on, refetching the platform binary. Runs on every setup (hit
-    # or miss), cheap when the binary is already there.
+    # Self-heal a poisoned dependency tree on the cache-HIT / baked-seed path
+    # (where the npm ci above is skipped). `--version` alone is not enough: a
+    # half-broken @esbuild/<platform> binary can answer --version and still die
+    # mid-build with "The service was stopped" (seen on main check after a baked
+    # seed under fleet load). Probe the same JS-API service path that
+    # scripts/run-tests.mts and scripts/build.mts use, then rebuild esbuild when
+    # either check fails. Cheap when healthy.
     - run: |
+        esbuild_ok=true
         if ! node_modules/.bin/esbuild --version >/dev/null 2>&1; then
-          echo "::warning::esbuild platform binary missing after dep restore — running npm rebuild esbuild"
+          esbuild_ok=false
+        elif ! node -e "require('esbuild').transformSync('export default 1',{loader:'ts'})" >/dev/null 2>&1; then
+          esbuild_ok=false
+        fi
+        if [ "$esbuild_ok" != true ]; then
+          echo "::warning::esbuild unhealthy after dep restore — running npm rebuild esbuild"
           npm rebuild esbuild
           node_modules/.bin/esbuild --version
+          node -e "require('esbuild').transformSync('export default 1',{loader:'ts'})"
         fi
       shell: bash
       env:

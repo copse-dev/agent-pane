@@ -64,6 +64,7 @@ function setup(
         return (): void => {}
       },
       onUsage: () => (): void => {},
+      onHookQueueMessage: () => (): void => {},
       suggestTitle: async (text: string) => {
         titleCalls.push(text)
         return 'Generated Title'

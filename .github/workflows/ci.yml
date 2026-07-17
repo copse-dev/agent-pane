@@ -55,12 +55,11 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    # Fork code gets a deliberately small, read-only check tier on an ephemeral
-    # GitHub-hosted runner. Same-repo work can use the configured check fleet.
-    runs-on: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # GitHub-hosted: the self-hosted check fleet (6 GB cgroup) has been
+    # cgroup-killing `tsc` / `eslint .` under load (exit 137) across many PRs.
+    # Hosted runners have enough headroom for the static gate; heavier jobs
+    # below still prefer CHECKS_RUNNER when set.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
@@ -80,8 +79,42 @@ jobs:
           # Same-repo runs keep credentials for the oracle's base ref fetches.
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       - uses: ./.github/actions/setup
-      - run: npm run typecheck
-      - run: npm run lint
+      # Retry once on exit 137 (SIGKILL / cgroup OOM). The check fleet caps each
+      # runner at ~6 GB; under load, tsc/eslint can get killed even though a
+      # second attempt on a quieter container succeeds. Real type/lint errors
+      # exit non-137 and still fail the gate immediately.
+      - name: Typecheck
+        run: |
+          set +e
+          npm run typecheck
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -ne 137 ]; then exit "$status"; fi
+          echo "::warning::typecheck OOM-killed (137); retrying once"
+          sleep 10
+          npm run typecheck
+      - name: Lint
+        env:
+          # Cap the V8 heap so eslint stays inside the ~6 GB check-runner cgroup
+          # instead of racing other jobs for the whole container.
+          NODE_OPTIONS: --max-old-space-size=3072
+        run: |
+          # Typecheck just exited; give the cgroup a beat to reclaim before
+          # eslint's peak allocation, then retry a couple of times on 137.
+          sleep 15
+          attempt=1
+          while true; do
+            set +e
+            npm run lint
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then exit 0; fi
+            if [ "$status" -ne 137 ] || [ "$attempt" -ge 3 ]; then exit "$status"; fi
+            echo "::warning::lint OOM-killed (137); retry $attempt/3"
+            attempt=$((attempt + 1))
+            sleep 20
+          done
       - run: npm run format:check
       - run: npm run check:dead-code
       # Guard the e2e oracle that gates the `e2e` job: every spec must stay
@@ -193,6 +226,12 @@ jobs:
   # `format:check` as the "gate" half, which stays honest when this job is off
   # (no PAT) or can't run (fork PR).
   #
+  # Scope to files changed vs the PR base (not the whole tree): full-repo
+  # `eslint . --fix` + `prettier --write .` regularly OOM-kill (exit 137) on
+  # the 6 GB check runners under fleet load, painting every PR red before
+  # precheck even starts. Diff-scoped autofix is enough — the gate half still
+  # checks the whole tree — and keeps peak memory proportional to the PR.
+  #
   # A SEPARATE job rather than folded into `precheck`: precheck checks out the
   # merge ref (fetch-depth: 0) so the e2e oracle can diff against base, whereas
   # committing needs the branch (head_ref) checkout — the same split that keeps
@@ -210,22 +249,48 @@ jobs:
   # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Same rationale as precheck: avoid 6 GB self-hosted OOM on eslint/prettier.
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.head_ref }}
+          fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - uses: ./.github/actions/setup
-      # `|| true`: a non-autofixable lint error must not abort the run — we still
-      # want the fixes ESLint did apply to land. Real lint failures stay the job
-      # of precheck's `lint` gate, not this fixer.
-      - name: ESLint --fix
-        run: npx eslint . --fix || true
-      - name: Prettier --write
-        run: npm run format
+      # `|| true` on eslint: a non-autofixable lint error must not abort the run —
+      # we still want the fixes ESLint did apply to land. Real lint failures stay
+      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
+      # on OOM (137); a second kill fails the job so a wedged runner is visible.
+      - name: Autofix changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fi
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
+              | grep -E '\.(cjs|css|cts|js|json|jsx|md|mjs|mts|ts|tsx|yaml|yml)$' \
+              || true
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No autofixable files changed vs base."
+            exit 0
+          fi
+          echo "Autofixing ${#files[@]} changed file(s)"
+          npx eslint --fix -- "${files[@]}" || true
+          set +e
+          npx prettier --write -- "${files[@]}"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -ne 137 ]; then exit "$status"; fi
+          echo "::warning::prettier OOM-killed (137); retrying once"
+          sleep 10
+          npx prettier --write -- "${files[@]}"
       - name: Commit and push fixes
         run: |
           if git diff --quiet; then
@@ -240,7 +305,9 @@ jobs:
   check:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: coverage/esbuild has been dying with "service was stopped" on the
+    # 6 GB self-hosted check fleet under load (same class of flake as precheck OOM).
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
@@ -266,7 +333,8 @@ jobs:
   bench:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: no Electron/display need; avoid the saturated self-hosted check queue.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
@@ -338,7 +406,9 @@ jobs:
   build:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: produces the dist artifact for e2e; self-hosted check fleet is only
+    # needed for Electron e2e shards below.
+    runs-on: ubuntu-latest
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
@@ -899,10 +969,9 @@ jobs:
     name: CI Passed
     if: always()
     needs: [precheck, check, bench, build, e2e]
-    runs-on: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Tiny aggregate gate — keep on hosted so a saturated self-hosted check
+    # fleet cannot leave a green pipeline without its required status check.
+    runs-on: ubuntu-latest
     steps:
       - name: Check upstream job results
         run: |
