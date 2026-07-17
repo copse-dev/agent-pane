@@ -125,6 +125,29 @@ export async function detectExternalEditors(
 }
 
 /**
+ * How to launch a detected editor on a remote SSH workspace folder via the
+ * editor's own remote scheme (VS Code / Cursor Remote SSH).
+ */
+export function buildRemoteEditorLaunch(
+  detected: DetectedEditorLaunch,
+  root: string,
+  sshAlias: string,
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  if (detected.editor.id !== 'vscode' && detected.editor.id !== 'cursor') {
+    throw new Error('Remote workspaces can only be opened in VS Code or Cursor')
+  }
+  const uri = `vscode-remote://ssh-remote+${encodeURIComponent(sshAlias)}${root}`
+  if (platform === 'darwin' && detected.macAppPath) {
+    return { command: 'open', args: ['-a', detected.macAppPath, uri] }
+  }
+  if (detected.cliPath) {
+    return { command: detected.cliPath, args: ['--folder-uri', uri] }
+  }
+  throw new Error(`No launcher available for ${detected.editor.name}`)
+}
+
+/**
  * How to launch a detected editor on a folder. On macOS prefer `open -a` on the
  * bundle — it works even when the editor's shell command was never installed and
  * matches Finder semantics; elsewhere the CLI is the only launcher.

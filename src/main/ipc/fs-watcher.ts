@@ -5,14 +5,18 @@ import { assertMainFrameSender, parseIpcArgs, zPathString } from './ipc-guards.t
 import { isResolvedPathInsideWorkspace, resolveWorkspacePath } from '../services/workspace.ts'
 import { gatewayReadFile } from '../project-sandbox/sandbox-fs-client.ts'
 import { FS_WATCH_MAX_CONTENT_BYTES } from '../services/fs-watch-limits.ts'
+import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 
 const watchers = new Map<string, fs.FSWatcher>()
 
 export function initFsWatcher(win: BrowserWindow): void {
-  ipcMain.handle('fs:watch', (event, path: unknown) => {
+  ipcMain.handle('fs:watch', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const rel = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(rel)
+    // Node's fs.watch can only observe the local machine. Remote workspaces do
+    // not claim live external-edit updates until they have a remote watcher.
+    if (isActiveSshWorkspace()) return
+    const abs = await resolveWorkspacePath(rel)
     if (watchers.has(abs)) return
     let debounce: ReturnType<typeof setTimeout>
     const w = fs.watch(abs, { persistent: false }, () => {
@@ -24,10 +28,11 @@ export function initFsWatcher(win: BrowserWindow): void {
     watchers.set(abs, w)
   })
 
-  ipcMain.handle('fs:unwatch', (event, path: unknown) => {
+  ipcMain.handle('fs:unwatch', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const rel = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(rel)
+    if (isActiveSshWorkspace()) return
+    const abs = await resolveWorkspacePath(rel)
     watchers.get(abs)?.close()
     watchers.delete(abs)
   })
@@ -43,7 +48,7 @@ async function notifyFileChanged(
     // registration, but `fs.watch` follows the live filesystem. Re-resolve the
     // real on-disk location and skip the event if a swapped symlink now points
     // outside the workspace.
-    if (!isResolvedPathInsideWorkspace(absPath)) return
+    if (!(await isResolvedPathInsideWorkspace(absPath))) return
     const st = await fsp.stat(absPath)
     if (!st.isFile()) return
     if (st.size > FS_WATCH_MAX_CONTENT_BYTES) {

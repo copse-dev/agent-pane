@@ -126,6 +126,12 @@ export interface SubagentStartPayload {
 export interface SubagentStopPayload {
   /** The subagent type/kind that finished. */
   subagentType: string
+  /**
+   * How the subagent finished (Cursor `status`). A `followup_message` is only
+   * consumed on `completed` (vendor contract), so the terminal status travels
+   * with the payload for both the wire shape and the follow-up gate.
+   */
+  status: 'completed' | 'error' | 'aborted'
 }
 
 /**
