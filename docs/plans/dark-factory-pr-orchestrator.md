@@ -231,9 +231,25 @@ Settled here; changing one means updating this doc, not silently diverging.
 11. **Fully inert while off.** Flag off ⇒ no scheduler starts, no store is created, no
     tool is registered, PR pane behavior unchanged — the `ciInvestigatorEnabled`
     pattern.
-12. **Workspace-scoped v1.** Fleet = active project's repo + its link-store PRs
-    (`author:@me` cross-repo rows are listed but observe-only). The copse-CLI-style
-    multi-repo `repos[]` fleet is explicitly deferred to the #690 Q2 decision.
+12. **Workspace-scoped v1** (confirmed by owner, July 2026). Fleet = active project's
+    repo + its link-store PRs (`author:@me` cross-repo rows are listed but
+    observe-only). The copse-CLI-style multi-repo `repos[]` fleet is explicitly
+    deferred to the #690 Q2 decision.
+13. **App-open-only supervision in v1** (confirmed by owner, July 2026). The
+    orchestrator runs only while the Electron app is open; overnight gaps are covered
+    by the "while you were away" delta computed from the ci-history store on resume,
+    not by a daemon. No headless/detached host is designed for in v1 — if the
+    cloud-workspaces direction (PR #959) lands later, sensors/control moving to a
+    headless home is a new plan, not a hidden requirement here.
+14. **No cross-supervisor locking in v1** (confirmed by owner, July 2026). copse-CLI
+    and Cursor automations may act on the same repos concurrently; rerun caps and
+    one-diagnosis-per-incident make double-acting wasteful rather than harmful, which
+    is accepted. Revisit (PR-label lease) only if double-dispatch is observed in
+    practice.
+15. **`nurse` is the confirmed default autonomy** (owner, July 2026): capped reruns,
+    owner-thread routing, and headless diagnosis run unattended; repair dispatch
+    (rung 5) always requires per-incident approval in v1 — no trust-period
+    hands-free mode.
 
 ## Phases
 
@@ -290,17 +306,17 @@ earlier ones.
 
 ## Open questions
 
-1. **Fleet identity beyond the workspace** — when the same user's agents work across
-   several local projects, is the fleet per-project (as decided for v1) or per-GitHub-user
-   with project views? (Bound to #690 Q2.)
-2. **Cross-app coordination** — two Copse instances (or Copse + copse-CLI) watching the
-   same fleet will double-act. Is a lease/lock (e.g. a marker in the ci-history store or
-   a PR label) worth it in v1, or do rerun caps make double-acting merely wasteful
-   rather than harmful?
-3. **Where does the user _set_ per-check policy** (e.g. "never auto-rerun the e2e
+1. **Where does the user _set_ per-check policy** (e.g. "never auto-rerun the e2e
    check") — settings JSON, the fleet view, or editable `CiFlakePattern` notes?
-4. **Notification channel** beyond OS toast — the follow-up chips and attention badge
+2. **Notification channel** beyond OS toast — the follow-up chips and attention badge
    exist; is a digest ("fleet summary since you left") a chat message, a pane, or both?
+3. **Fleet identity beyond v1's workspace scope** — post-O6, is a cross-repo fleet
+   per-GitHub-user with project views, or a copse-CLI-style `repos[]` config? (Bound to
+   #690 Q2; the v1 answer is decisions 12–13.)
+
+_Resolved in review (July 2026):_ fleet scope (→ decision 12), orchestrator host /
+uptime (→ decision 13), cross-supervisor coordination (→ decision 14), default
+autonomy (→ decision 15).
 
 ## Related
 
