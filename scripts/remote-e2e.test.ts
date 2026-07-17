@@ -9,7 +9,11 @@ import {
   dockerRunCommand,
   gitSshCommand,
   newRunId,
+  packageLockHash,
   parseOraclePlan,
+  registryImageRef,
+  registryLoginHost,
+  resolveRegistry,
   roundRobinSpecs,
   shardWdioArgs,
   splitSshHost,
@@ -97,6 +101,47 @@ describe('gitSshCommand', () => {
     assert.ok(cmd.startsWith("'ssh' '-i' '/tmp/my key.pem'"))
     assert.ok(cmd.includes("'BatchMode=yes'"))
     assert.ok(cmd.includes("'UserKnownHostsFile=/dev/null'"))
+  })
+})
+
+describe('registry helpers', () => {
+  it('derives the Scaleway login host from a namespace URL', () => {
+    assert.equal(registryLoginHost('rg.fr-par.scw.cloud/copse'), 'rg.fr-par.scw.cloud')
+    assert.equal(registryLoginHost('rg.fr-par.scw.cloud/copse/'), 'rg.fr-par.scw.cloud')
+    assert.equal(registryLoginHost('rg.nl-ams.scw.cloud'), 'rg.nl-ams.scw.cloud')
+  })
+
+  it('builds image refs with the lockhash / latest tags', () => {
+    assert.equal(
+      registryImageRef('rg.fr-par.scw.cloud/copse', 'abc123'),
+      'rg.fr-par.scw.cloud/copse/copse-ci-runner:abc123',
+    )
+    assert.equal(
+      registryImageRef('rg.fr-par.scw.cloud/copse/', 'latest'),
+      'rg.fr-par.scw.cloud/copse/copse-ci-runner:latest',
+    )
+  })
+
+  it('resolves --registry over COPSE_CI_REGISTRY', () => {
+    const previous = process.env['COPSE_CI_REGISTRY']
+    process.env['COPSE_CI_REGISTRY'] = 'rg.fr-par.scw.cloud/from-env'
+    try {
+      assert.equal(resolveRegistry({}), 'rg.fr-par.scw.cloud/from-env')
+      assert.equal(
+        resolveRegistry({ registry: 'rg.fr-par.scw.cloud/from-flag/' }),
+        'rg.fr-par.scw.cloud/from-flag',
+      )
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_CI_REGISTRY']
+      else process.env['COPSE_CI_REGISTRY'] = previous
+    }
+  })
+
+  it('hashes package-lock.json the same way the image bake writes .lockhash', () => {
+    const hash = packageLockHash()
+    assert.match(hash, /^[a-f0-9]{64}$/)
+    const again = packageLockHash()
+    assert.equal(hash, again)
   })
 })
 

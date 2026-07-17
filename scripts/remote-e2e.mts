@@ -18,10 +18,16 @@
  * By default the run covers the test-oracle subset for your current diff
  * (same full/subset/skip plan CI uses); `--all` runs the whole CI suite.
  *
- * Secrets: only BUILD_GH_TOKEN (image bake at `up`/`rebake` time). Runs need
- * no GitHub credentials and no LLM keys — e2e drives the built-in mock LLM.
+ * Secrets:
+ *   - BUILD_GH_TOKEN — only for image bake (`publish` / on-host `--rebuild`).
+ *   - SCW_SECRET_KEY — local CLI only for Scaleway API + private registry login.
+ * Registry pulls use an ephemeral host login (stdin → pull → logout); credentials
+ * are never written into Docker layers or Scaleway instance images. Prefer
+ * `COPSE_CI_REGISTRY` so `up` skips the on-host bake entirely.
+ * Runs need no GitHub credentials and no LLM keys — e2e drives the built-in mock.
  */
-import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { execFileSync, spawn } from 'node:child_process'
 import {
   copyFileSync,
   existsSync,
@@ -87,6 +93,10 @@ const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
 const REMOTE_BASE = '/srv/remote-e2e'
 const LOCAL_STATE_DIR = '.tmp/remote-e2e'
 const IMAGE = 'copse-ci-runner:latest'
+const IMAGE_REPO = 'copse-ci-runner'
+/** Env var holding `rg.<region>.scw.cloud/<namespace>` for the runner image. */
+const REGISTRY_ENV = 'COPSE_CI_REGISTRY'
+const SCW_SECRET_ENV = 'SCW_SECRET_KEY'
 /**
  * Distinct tag namespace from the CI burst fleet (copse-burst /
  * copse-burst-runners) so `e2e:remote down` can never terminate CI capacity
@@ -95,7 +105,7 @@ const IMAGE = 'copse-ci-runner:latest'
 const TAGS: FleetTags = { kind: 'copse-remote-e2e', managedBy: 'copse-remote-e2e-hosts' }
 const TTL_LABEL = 'Copse remote-e2e host'
 
-type Command = 'up' | 'adopt' | 'rebake' | 'run' | 'wait' | 'status' | 'down' | 'help'
+type Command = 'up' | 'adopt' | 'rebake' | 'publish' | 'run' | 'wait' | 'status' | 'down' | 'help'
 type Provider = 'scaleway' | 'aws'
 
 interface HostRecord {
@@ -124,11 +134,29 @@ function usage(): string {
   return `Usage:
   npm run e2e:remote -- up [aws] [options]        Provision a dev e2e host (default: Scaleway)
   npm run e2e:remote -- adopt --host user@ip      Use an existing SSH-reachable Docker host
-  npm run e2e:remote -- rebake                    Rebuild the runner image on the saved host
+  npm run e2e:remote -- publish                   Bake locally and push to Scaleway Container Registry
+  npm run e2e:remote -- rebake                    Refresh the runner image (registry pull, or on-host bake)
   npm run e2e:remote -- run [options]             Run e2e from the working tree (oracle subset)
   npm run e2e:remote -- wait <run-id>             Wait for a detached run and pull artifacts
   npm run e2e:remote -- status                    Saved host, containers, runs, cloud fleet
   npm run e2e:remote -- down --yes                Terminate cloud host(s) tagged for this fleet
+
+Image source (faster/cheaper up — preferred):
+  Set ${REGISTRY_ENV}=rg.fr-par.scw.cloud/<namespace> (or pass --registry). Then \`up\`/\`adopt\`
+  pull a pre-baked image instead of \`docker compose build\` on the host. ${SCW_SECRET_ENV} is
+  used only for an ephemeral \`docker login\` on the host (stdin → pull → logout); it is never
+  stored in the Docker image or a Scaleway instance snapshot. Publish once with \`publish\`
+  (needs BUILD_GH_TOKEN locally); afterwards \`up\` needs no GitHub token.
+
+up / adopt / rebake options:
+  --registry <host/ns>         Scaleway registry namespace (default: $${REGISTRY_ENV})
+  --rebuild                    Force on-host bake even when a registry is configured
+  --transfer-image             Pull on this machine and \`docker load\` over SSH (no registry
+                               credentials ever touch the host; slower for multi-GB images)
+  --push                       With rebake: bake locally, push, then refresh the saved host
+  --build-token-env <name>     Image-bake clone token env var (default: BUILD_GH_TOKEN)
+  --target-repo <owner/repo>   Repo baked into the image (default: ${DEFAULT_TARGET_REPO})
+  --target-ref <ref>           Ref whose deps are baked (default: main)
 
 up options (Scaleway default; prefix 'aws' for EC2):
   --scw-type <type>            Scaleway type (default: ${DEFAULT_SCW_TYPE})
@@ -137,10 +165,7 @@ up options (Scaleway default; prefix 'aws' for EC2):
   --region / --key-name / --key-path / --subnet-id / --security-group-id   (AWS, as runners:burst)
   --name <tag>                 Fleet tag (default: ${DEFAULT_NAME})
   --ttl-minutes <n>            Auto-shutdown backstop; 0 disables (default: ${String(DEFAULT_TTL_MINUTES)})
-  --volume-size-gb <n>         Root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB)})
-  --build-token-env <name>     Image-bake clone token env var (default: BUILD_GH_TOKEN)
-  --target-repo <owner/repo>   Repo baked into the image (default: ${DEFAULT_TARGET_REPO})
-  --target-ref <ref>           Ref whose deps are baked (default: main)
+  --volume-size-gb <n>         Root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB)}; bake needs ~80)
   --replace                    Provision even if a saved host already exists
 
 run options:
@@ -194,6 +219,7 @@ function parseCommand(value: string): Command {
     case 'up':
     case 'adopt':
     case 'rebake':
+    case 'publish':
     case 'run':
     case 'wait':
     case 'status':
@@ -399,6 +425,64 @@ export function dockerRunCommand(args: {
 }
 
 // ---------------------------------------------------------------------------
+// Registry helpers (Scaleway Container Registry — no secrets in image layers)
+// ---------------------------------------------------------------------------
+
+/** sha256 of package-lock.json — same contract the image bake writes to .lockhash. */
+export function packageLockHash(cwd: string = process.cwd()): string {
+  const lockPath = join(cwd, 'package-lock.json')
+  if (!existsSync(lockPath)) die(`missing ${lockPath} (needed for registry image tag)`)
+  return createHash('sha256').update(readFileSync(lockPath)).digest('hex')
+}
+
+/** `rg.fr-par.scw.cloud/copse` → login host `rg.fr-par.scw.cloud`. */
+export function registryLoginHost(registry: string): string {
+  const trimmed = registry.replace(/\/+$/, '')
+  const slash = trimmed.indexOf('/')
+  return slash === -1 ? trimmed : trimmed.slice(0, slash)
+}
+
+export function registryImageRef(registry: string, tag: string): string {
+  return `${registry.replace(/\/+$/, '')}/${IMAGE_REPO}:${tag}`
+}
+
+export function resolveRegistry(options: Options): string | undefined {
+  const fromFlag = option(options, 'registry')
+  if (fromFlag !== undefined && fromFlag.length > 0) return fromFlag.replace(/\/+$/, '')
+  const fromEnv = process.env[REGISTRY_ENV]
+  if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv.replace(/\/+$/, '')
+  return undefined
+}
+
+function requireRegistry(options: Options): string {
+  return (
+    resolveRegistry(options) ??
+    die(
+      `no registry configured — set ${REGISTRY_ENV}=rg.fr-par.scw.cloud/<namespace> or pass --registry`,
+    )
+  )
+}
+
+function registrySecret(): string {
+  return envValue(SCW_SECRET_ENV)
+}
+
+/** Local `docker login` for publish / transfer-image (credentials stay on this machine). */
+function dockerLoginLocal(registry: string): void {
+  requireTool('docker')
+  const loginHost = registryLoginHost(registry)
+  run('docker', ['login', loginHost, '-u', 'nologin', '--password-stdin'], `${registrySecret()}\n`)
+}
+
+function dockerLogoutLocal(registry: string): void {
+  try {
+    run('docker', ['logout', registryLoginHost(registry)])
+  } catch {
+    // Best-effort cleanup after publish/transfer.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Host setup (shared by up / adopt / rebake)
 // ---------------------------------------------------------------------------
 
@@ -427,7 +511,125 @@ async function assertDockerReady(ssh: SshConfig, host: CloudHost): Promise<void>
   await sshRunAsync(ssh, host, 'sudo docker --version && sudo docker compose version')
 }
 
-async function setupHost(ssh: SshConfig, host: CloudHost, options: Options): Promise<void> {
+/** Bare repo + exec-run.sh — no secrets, no full ci-runners/ tree. */
+async function initRunStore(ssh: SshConfig, host: CloudHost): Promise<void> {
+  console.log('==> Initialising the run store')
+  const execRun = readFileSync(join('ci-runners', 'exec-run.sh'))
+  await sshRunAsync(
+    ssh,
+    host,
+    [
+      `sudo mkdir -p ${REMOTE_BASE}/runs`,
+      // Bare repo with world-readable objects so the container user (runner)
+      // can read snapshots pushed by the SSH user.
+      `sudo test -d ${REMOTE_BASE}/repo.git || sudo git init --bare --shared=all ${REMOTE_BASE}/repo.git`,
+      `sudo chown -R "$(id -un)" ${REMOTE_BASE}`,
+      `chmod 1777 ${REMOTE_BASE}/runs`,
+      `cat > ${REMOTE_BASE}/exec-run.sh`,
+      `chmod a+rx ${REMOTE_BASE}/exec-run.sh`,
+    ].join(' && '),
+    execRun,
+  )
+}
+
+/**
+ * Pull a pre-baked image onto the host with an ephemeral registry login.
+ * Password is fed on stdin for this SSH session only; logout + config wipe run
+ * in an EXIT trap so SCW_SECRET_KEY is never left on the host filesystem and
+ * never lands in a Docker layer or Scaleway snapshot.
+ */
+async function pullImageOntoHost(ssh: SshConfig, host: CloudHost, registry: string): Promise<void> {
+  const lockTag = registryImageRef(registry, packageLockHash())
+  const latestTag = registryImageRef(registry, 'latest')
+  const loginHost = registryLoginHost(registry)
+  console.log(
+    `==> Pulling ${lockTag} onto ${sshTarget(ssh, host)} (ephemeral registry login; no secrets persisted)`,
+  )
+  await sshRunAsync(
+    ssh,
+    host,
+    [
+      'set -euo pipefail',
+      'IFS= read -r SECRET',
+      `cleanup() {`,
+      `  sudo docker logout ${shellQuote(loginHost)} >/dev/null 2>&1 || true`,
+      `  sudo rm -f /root/.docker/config.json "$HOME/.docker/config.json" 2>/dev/null || true`,
+      `  unset SECRET`,
+      `}`,
+      'trap cleanup EXIT',
+      `printf '%s\\n' "$SECRET" | sudo docker login ${shellQuote(loginHost)} -u nologin --password-stdin`,
+      `if sudo docker pull ${shellQuote(lockTag)}; then`,
+      `  sudo docker tag ${shellQuote(lockTag)} ${shellQuote(IMAGE)}`,
+      `elif sudo docker pull ${shellQuote(latestTag)}; then`,
+      `  echo "==> ${lockTag} missing; using ${latestTag} (rebake/publish if lockfile drifted)"`,
+      `  sudo docker tag ${shellQuote(latestTag)} ${shellQuote(IMAGE)}`,
+      `else`,
+      `  echo "ERROR: could not pull ${lockTag} or ${latestTag} — run: npm run e2e:remote -- publish" >&2`,
+      `  exit 1`,
+      `fi`,
+    ].join('\n'),
+    `${registrySecret()}\n`,
+  )
+}
+
+/**
+ * Stricter path: pull on this machine (where SCW_SECRET_KEY already lives for
+ * Scaleway API use) and stream `docker save|load` over SSH — the host never
+ * sees registry credentials. Slower for multi-GB images than a same-region
+ * host pull.
+ */
+async function transferImageToHost(
+  ssh: SshConfig,
+  host: CloudHost,
+  registry: string,
+): Promise<void> {
+  requireTool('docker')
+  const lockTag = registryImageRef(registry, packageLockHash())
+  const latestTag = registryImageRef(registry, 'latest')
+  console.log(`==> Transferring registry image to ${sshTarget(ssh, host)} via docker save|load`)
+  dockerLoginLocal(registry)
+  try {
+    let source = lockTag
+    try {
+      run('docker', ['pull', lockTag])
+    } catch {
+      console.log(`==> ${lockTag} missing; pulling ${latestTag}`)
+      run('docker', ['pull', latestTag])
+      source = latestTag
+    }
+    const loadScript = [
+      'set -euo pipefail',
+      'sudo docker load',
+      `sudo docker tag ${shellQuote(source)} ${shellQuote(IMAGE)}`,
+    ].join('\n')
+    await new Promise<void>((resolve, reject) => {
+      const save = spawn('docker', ['save', source], { stdio: ['ignore', 'pipe', 'inherit'] })
+      const remote = spawn(
+        'ssh',
+        [...sshCommonArgs(ssh, 15), sshTarget(ssh, host), 'bash', '-lc', shellQuote(loadScript)],
+        { stdio: ['pipe', 'inherit', 'inherit'] },
+      )
+      save.on('error', reject)
+      remote.on('error', reject)
+      save.stdout.pipe(remote.stdin)
+      save.on('close', (code) => {
+        if (code !== 0) {
+          remote.stdin.end()
+          reject(new Error(`docker save ${source} failed with exit code ${String(code)}`))
+        }
+      })
+      remote.on('close', (code) => {
+        if (code === 0) resolve()
+        else reject(new Error(`remote docker load failed with exit code ${String(code)}`))
+      })
+    })
+  } finally {
+    dockerLogoutLocal(registry)
+  }
+}
+
+/** On-host bake — only when no registry is configured, or `--rebuild`. */
+async function bakeImageOnHost(ssh: SshConfig, host: CloudHost, options: Options): Promise<void> {
   console.log(`==> Uploading ci-runners/ to ${sshTarget(ssh, host)}`)
   await sshRunAsync(
     ssh,
@@ -458,25 +660,74 @@ async function setupHost(ssh: SshConfig, host: CloudHost, options: Options): Pro
         'set +a',
         'export DOCKER_BUILDKIT=1',
         'docker compose build --pull runner',
+        // Drop the bake token from the host disk after the build.
+        'rm -f .env',
       ].join(' && '),
     )}`,
   )
-  console.log('==> Initialising the run store')
-  await sshRunAsync(
-    ssh,
-    host,
-    [
-      `sudo mkdir -p ${REMOTE_BASE}/runs`,
-      // Bare repo with world-readable objects so the container user (runner)
-      // can read snapshots pushed by the SSH user.
-      `sudo test -d ${REMOTE_BASE}/repo.git || sudo git init --bare --shared=all ${REMOTE_BASE}/repo.git`,
-      `sudo chown -R "$(id -un)" ${REMOTE_BASE}`,
-      // Containers create their per-run dirs themselves.
-      `chmod 1777 ${REMOTE_BASE}/runs`,
-      `cp ~/ci-runners/exec-run.sh ${REMOTE_BASE}/exec-run.sh`,
-      `chmod a+rx ${REMOTE_BASE}/exec-run.sh`,
-    ].join(' && '),
-  )
+}
+
+/** Bake the runner image on this machine (BuildKit secret — never in a layer). */
+function bakeImageLocally(options: Options): void {
+  requireTool('docker')
+  requireTool('docker', ['compose', 'version'])
+  const envPath = join('ci-runners', '.env')
+  const previous = existsSync(envPath) ? readFileSync(envPath) : undefined
+  writeFileSync(envPath, bakeEnv(options), { mode: 0o600 })
+  try {
+    console.log('==> Building the runner image locally (BuildKit secret; not written into layers)')
+    run('bash', [
+      '-lc',
+      [
+        'set -euo pipefail',
+        'cd ci-runners',
+        'set -a',
+        '. ./.env',
+        'set +a',
+        'export DOCKER_BUILDKIT=1',
+        'docker compose build --pull runner',
+      ].join(' && '),
+    ])
+  } finally {
+    if (previous === undefined) rmSync(envPath, { force: true })
+    else writeFileSync(envPath, previous, { mode: 0o600 })
+  }
+}
+
+function pushLocalImage(registry: string): void {
+  const lockTag = registryImageRef(registry, packageLockHash())
+  const latestTag = registryImageRef(registry, 'latest')
+  console.log(`==> Pushing ${lockTag} and ${latestTag}`)
+  dockerLoginLocal(registry)
+  try {
+    run('docker', ['tag', IMAGE, lockTag])
+    run('docker', ['tag', IMAGE, latestTag])
+    run('docker', ['push', lockTag])
+    run('docker', ['push', latestTag])
+  } finally {
+    dockerLogoutLocal(registry)
+  }
+}
+
+async function setupHost(ssh: SshConfig, host: CloudHost, options: Options): Promise<void> {
+  const registry = resolveRegistry(options)
+  const forceRebuild = hasFlag(options, 'rebuild')
+  if (registry !== undefined && !forceRebuild) {
+    if (hasFlag(options, 'transfer-image')) await transferImageToHost(ssh, host, registry)
+    else await pullImageOntoHost(ssh, host, registry)
+    await initRunStore(ssh, host)
+    return
+  }
+  if (registry === undefined) {
+    console.log(
+      `==> No ${REGISTRY_ENV}/--registry — baking on the host (slower). ` +
+        `Publish once (\`e2e:remote publish\`) and set ${REGISTRY_ENV} to skip this.`,
+    )
+  } else {
+    console.log('==> --rebuild: baking on the host instead of pulling from the registry')
+  }
+  await bakeImageOnHost(ssh, host, options)
+  await initRunStore(ssh, host)
 }
 
 // ---------------------------------------------------------------------------
@@ -624,7 +875,36 @@ async function adoptCommand(options: Options): Promise<void> {
   console.log(`==> Adopted ${user}@${ip}. Next: npm run e2e:remote -- run`)
 }
 
+function publishCommand(options: Options): void {
+  const registry = requireRegistry(options)
+  bakeImageLocally(options)
+  pushLocalImage(registry)
+  console.log(
+    `==> Published ${registryImageRef(registry, packageLockHash())} (+ :latest). ` +
+      `Hosts with ${REGISTRY_ENV} set will pull this on up/rebake — no BUILD_GH_TOKEN on the host.`,
+  )
+}
+
 async function rebakeCommand(options: Options): Promise<void> {
+  if (hasFlag(options, 'push')) {
+    publishCommand(options)
+    const record = loadHostRecord()
+    if (record === undefined) {
+      console.log('==> No saved host — publish complete. Provision with: e2e:remote up')
+      return
+    }
+    requireTool('ssh', ['-V'])
+    const ssh = sshConfigFor(record)
+    const host = cloudHostFor(record)
+    await assertDockerReady(ssh, host)
+    // Fresh publish is in the registry; pull (or transfer) onto the host.
+    const registry = requireRegistry(options)
+    if (hasFlag(options, 'transfer-image')) await transferImageToHost(ssh, host, registry)
+    else await pullImageOntoHost(ssh, host, registry)
+    await initRunStore(ssh, host)
+    console.log('==> Host refreshed from the image just published.')
+    return
+  }
   requireTool('ssh', ['-V'])
   requireTool('tar')
   const record = requireHostRecord(options)
@@ -632,7 +912,7 @@ async function rebakeCommand(options: Options): Promise<void> {
   const host = cloudHostFor(record)
   await assertDockerReady(ssh, host)
   await setupHost(ssh, host, options)
-  console.log('==> Image rebaked with fresh dependencies.')
+  console.log('==> Image refreshed on the host.')
 }
 
 function resolvePlan(options: Options): OraclePlan {
@@ -1010,6 +1290,7 @@ async function main(): Promise<void> {
     if (command === 'help') console.log(usage())
     else if (command === 'up') await upCommand(options, provider)
     else if (command === 'adopt') await adoptCommand(options)
+    else if (command === 'publish') publishCommand(options)
     else if (command === 'rebake') await rebakeCommand(options)
     else if (command === 'run') await runCommand(options)
     else if (command === 'wait') await waitCommand(options, positional)
