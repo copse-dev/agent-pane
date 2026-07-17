@@ -30,6 +30,7 @@ import type {
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
+import { subagentHookCallbacks } from './hooks/subagent.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { getGitDiffText } from './github/git-service.ts'
 
@@ -223,6 +224,10 @@ export async function runPostTurnReviewOnce(
       systemPrompt: REVIEW_SYSTEM_PROMPT,
       userTask: prompt,
       usageModel: opts.usageModel,
+      // D1: the post-turn review subagent goes through the same lifecycle gate
+      // as every other subagent spawn — a `subagentStart` deny hook blocks it
+      // and `subagentStop` fires on completion (all four runSubagent callers).
+      ...subagentHookCallbacks({ usageModel: opts.usageModel }),
     }),
   )
 
