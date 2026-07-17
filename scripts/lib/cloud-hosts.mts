@@ -249,11 +249,16 @@ function pipeWithPrefix(prefix: string, source: Readable, dest: Writable): void 
   })
 }
 
-export function runAsync(
+/**
+ * Stream a command's output (with an optional per-line prefix) and resolve
+ * with its exit code instead of throwing — for workloads whose non-zero exit
+ * is a result to report (a failing test run), not an orchestration error.
+ */
+export function runStatusAsync(
   binary: string,
   args: string[],
   options: { input?: string | Buffer; prefix?: string } = {},
-): Promise<void> {
+): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'] })
     const prefix = options.prefix ?? ''
@@ -262,16 +267,20 @@ export function runAsync(
     child.stdin.end(options.input ?? Buffer.alloc(0))
     child.on('error', reject)
     child.on('close', (code) => {
-      if (code === 0) resolve()
-      else {
-        reject(
-          new Error(
-            `${binary} ${args.join(' ')} failed with exit code ${String(code ?? 'unknown')}`,
-          ),
-        )
-      }
+      resolve(code ?? 1)
     })
   })
+}
+
+export async function runAsync(
+  binary: string,
+  args: string[],
+  options: { input?: string | Buffer; prefix?: string } = {},
+): Promise<void> {
+  const code = await runStatusAsync(binary, args, options)
+  if (code !== 0) {
+    throw new Error(`${binary} ${args.join(' ')} failed with exit code ${String(code)}`)
+  }
 }
 
 export function sleepAsync(seconds: number): Promise<void> {
