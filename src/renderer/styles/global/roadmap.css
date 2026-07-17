@@ -110,6 +110,79 @@
   padding: var(--spacing-xs) var(--spacing-sm);
 }
 
+/* Attachments (files/images pasted, dropped, or picked into the editor). */
+.roadmap-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+}
+.roadmap-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 4px 2px 6px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.roadmap-attachment-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: calc(var(--radius) / 2);
+  flex: none;
+}
+.roadmap-attachment-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The global input/button rules give buttons a filled look — the remove ✕ is
+   an inline glyph, like the composer's attachment-chip remove. */
+.roadmap-attachment-remove {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+  flex: none;
+}
+.roadmap-attachment-remove:hover {
+  color: var(--danger, #f14c4c);
+}
+.roadmap-attach-btn {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.roadmap-attach-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+/* Whole-form drop target while dragging files over the editor. */
+.roadmap-form.is-drop-target {
+  outline: 1px dashed var(--accent);
+  outline-offset: -4px;
+}
+/* 📎 count in the list row. */
+.roadmap-attachment-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
 /* Import-from-issues picker (viewer column). */
 .roadmap-import-list {
   flex: 1;

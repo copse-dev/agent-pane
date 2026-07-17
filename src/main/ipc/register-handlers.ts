@@ -109,6 +109,18 @@ import {
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
 import {
+  deleteAllKnowledgeAttachments,
+  deleteKnowledgeAttachmentFiles,
+  readKnowledgeAttachmentDataUrl,
+  saveKnowledgeAttachments,
+} from '../services/storage/knowledge-attachments.ts'
+import {
+  ATTACHMENTS_FIELD,
+  MAX_NOTE_ATTACHMENTS,
+  parseKnowledgeAttachments,
+  serializeKnowledgeAttachments,
+} from '@shared/knowledge/attachments.ts'
+import {
   checkoutGitBranch,
   getBranches,
   getDefaultBranch,
@@ -355,6 +367,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
+  // Attachments arrive as base64 data URLs (what the pane's paste/drop/picker
+  // produce); ~14 MB of base64 ≈ 10 MB decoded per attachment.
+  const zRoadmapAttachmentAdds = z
+    .array(
+      z.object({
+        name: zNonEmptyString.max(255),
+        mimeType: z.string().max(128),
+        dataUrl: z.string().max(14_000_000),
+      }),
+    )
+    .max(MAX_NOTE_ATTACHMENTS)
+  const zRoadmapAttachmentIds = z.array(zNonEmptyString.max(128)).max(MAX_NOTE_ATTACHMENTS)
 
   function roadmapFields(
     existing: Record<string, string>,
@@ -400,11 +424,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle(
     'roadmap:create',
-    (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown) => {
+    (
+      event,
+      rawPrompt: unknown,
+      rawNotes: unknown,
+      rawIssue: unknown,
+      rawAttachments: unknown,
+    ) => {
       assertMainFrameSender(event, win)
       const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
       const issue = parseRoadmapIssue(rawIssue)
+      const attachments = parseIpcArgs(zRoadmapAttachmentAdds.optional(), [rawAttachments]) ?? []
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
       const note = addKnowledgeNote({
         type: ROADMAP_TYPE,
@@ -416,7 +447,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       // Saving is immediate; the complexity classification (a model round-trip)
       // stamps the note in the background and the pane refreshes on the event.
       void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
-      return note
+      if (attachments.length === 0) return note
+      // Attachment files are keyed by the note id, so they land in a second
+      // step once addKnowledgeNote has minted it.
+      const saved = saveKnowledgeAttachments(note.id, attachments)
+      return (
+        updateKnowledgeNote(note.id, {
+          fields: { ...note.fields, [ATTACHMENTS_FIELD]: serializeKnowledgeAttachments(saved) },
+        }) ?? note
+      )
     },
   )
 
@@ -429,6 +468,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       rawNotes: unknown,
       rawStatus: unknown,
       rawIssue: unknown,
+      rawAddAttachments: unknown,
+      rawRemoveAttachmentIds: unknown,
     ) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zRoadmapId, [rawId])
@@ -436,6 +477,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
       const status = parseIpcArgs(zRoadmapStatus, [rawStatus])
       const issue = parseRoadmapIssue(rawIssue)
+      const addAttachments =
+        parseIpcArgs(zRoadmapAttachmentAdds.optional(), [rawAddAttachments]) ?? []
+      const removeAttachmentIds =
+        parseIpcArgs(zRoadmapAttachmentIds.optional(), [rawRemoveAttachmentIds]) ?? []
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
       const existing = getKnowledgeNote(id)
       if (!existing || existing.type !== ROADMAP_TYPE) return null
@@ -452,6 +497,27 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         delete fields['fit']
         delete fields['fitDetail']
       }
+      if (addAttachments.length > 0 || removeAttachmentIds.length > 0) {
+        const current = parseKnowledgeAttachments(existing.fields[ATTACHMENTS_FIELD])
+        const removeSet = new Set(removeAttachmentIds)
+        const kept = current.filter((att) => !removeSet.has(att.id))
+        if (kept.length + addAttachments.length > MAX_NOTE_ATTACHMENTS) {
+          throw new IpcValidationError(
+            `A roadmap item can hold at most ${String(MAX_NOTE_ATTACHMENTS)} attachments`,
+          )
+        }
+        // Save the new payloads before deleting the removed ones, so a failed
+        // save leaves the stored metadata still matching the files on disk.
+        const saved = saveKnowledgeAttachments(id, addAttachments)
+        deleteKnowledgeAttachmentFiles(
+          id,
+          current.filter((att) => removeSet.has(att.id)),
+        )
+        const next = [...kept, ...saved]
+        if (next.length > 0) fields[ATTACHMENTS_FIELD] = serializeKnowledgeAttachments(next)
+        // Literal key (= ATTACHMENTS_FIELD): no-dynamic-delete bars computed deletes.
+        else delete fields['attachments']
+      }
       const updated = updateKnowledgeNote(id, {
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
@@ -464,6 +530,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return updated
     },
   )
+
+  // An attachment's payload as a data URL, fetched lazily for thumbnails and
+  // for carrying attachments into a new thread's composer.
+  ipcMain.handle('roadmap:attachmentData', (event, rawId: unknown, rawAttachmentId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const attachmentId = parseIpcArgs(zNonEmptyString.max(128), [rawAttachmentId])
+    const note = getKnowledgeNote(id)
+    if (!note || note.type !== ROADMAP_TYPE) return null
+    const att = parseKnowledgeAttachments(note.fields[ATTACHMENTS_FIELD]).find(
+      (a) => a.id === attachmentId,
+    )
+    return att ? readKnowledgeAttachmentDataUrl(id, att) : null
+  })
 
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
   // always follow the workspace's *current* origin remote.
@@ -529,7 +609,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zRoadmapId, [rawId])
     const existing = getKnowledgeNote(id)
     if (!existing || existing.type !== ROADMAP_TYPE) return false
-    return deleteKnowledgeNote(id)
+    const deleted = deleteKnowledgeNote(id)
+    if (deleted) deleteAllKnowledgeAttachments(id)
+    return deleted
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {

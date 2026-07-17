@@ -408,6 +408,7 @@ export interface ApiClient {
       prompt: string,
       notes?: string,
       issue?: string,
+      attachments?: { name: string; mimeType: string; dataUrl: string }[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote>
     update: (
       id: string,
@@ -415,7 +416,10 @@ export interface ApiClient {
       notes: string | undefined,
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
       issue?: string,
+      addAttachments?: { name: string; mimeType: string; dataUrl: string }[],
+      removeAttachmentIds?: string[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    attachmentData: (id: string, attachmentId: string) => Promise<string | null>
     delete: (id: string) => Promise<boolean>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{
