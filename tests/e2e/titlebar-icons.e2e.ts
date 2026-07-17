@@ -34,7 +34,9 @@ describe('titlebar panel icons', () => {
     ]
 
     for (const button of buttons) {
-      const btn = await $(`.titlebar-text-btn[aria-label="${button.label}"]`)
+      // Scope to #titlebar — portrait chrome mounts a second labeled cluster
+      // under the composer with the same aria-labels / titlebar-text-btn classes.
+      const btn = await $(`#titlebar .titlebar-text-btn[aria-label="${button.label}"]`)
       await expect(btn).toHaveText(button.text)
       const icon = await btn.$(`svg.titlebar-btn-icon[data-icon="${button.icon}"]`)
       await expect(icon).toExist()
@@ -43,7 +45,9 @@ describe('titlebar panel icons', () => {
 
     const iconStyles = await browser.execute(() =>
       Array.from(
-        document.querySelectorAll<SVGSVGElement>('.titlebar-text-btn svg.titlebar-btn-icon'),
+        document.querySelectorAll<SVGSVGElement>(
+          '#titlebar .titlebar-text-btn svg.titlebar-btn-icon',
+        ),
       ).map((icon) => {
         const styles = getComputedStyle(icon)
         const buttonStyles = getComputedStyle(icon.closest('button')!)
@@ -67,13 +71,16 @@ describe('titlebar panel icons', () => {
     // flags are on), and the "Open in editor" primary button (hidden until an
     // editor is detected). All are still in the DOM here, so their SVGs count.
     // The Open-in-editor caret uses a ui-icon chevron, not titlebar-btn-icon,
-    // so it is excluded from this set.
-    await expect(await $$('.titlebar-text-btn svg.titlebar-btn-icon')).toBeElementsArrayOfSize(8)
+    // so it is excluded from this set. Portrait-bar duplicates are excluded by
+    // the #titlebar scope.
+    await expect(
+      await $$('#titlebar .titlebar-text-btn svg.titlebar-btn-icon'),
+    ).toBeElementsArrayOfSize(8)
     await browser.execute(() => {
       const dragRegion = document.querySelector<HTMLElement>('.titlebar-drag')
       if (!dragRegion) throw new Error('Missing titlebar drag region')
       dragRegion.style.flex = '0 0 16px'
     })
-    await saveElementScreenshot('.titlebar-panel-controls', 'titlebar-outline-icons.png')
+    await saveElementScreenshot('#titlebar .titlebar-panel-controls', 'titlebar-outline-icons.png')
   })
 })

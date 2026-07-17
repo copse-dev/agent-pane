@@ -102,6 +102,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   fontSize: z.number().int().min(8).max(32),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
+  // Interaction colour for links, primary actions, selections, and chat
+  // emphasis. Theme CSS derives accessible link/hover shades from this hue.
+  uiAccentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   // Whole-app tint: a hue mixed into every neutral surface at a chosen
   // strength. Colour is a #rrggbb hex; strength maps to a mix percentage in
   // the renderer (off = no tint). See tokens.css --tint-hue / --tint-amount.

@@ -114,6 +114,14 @@ export interface ApiClient {
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
+    /**
+     * An async hook's `queueMessage` output (decision 4), bridged from the host.
+     * The renderer lands it in the thread's pending queue with origin + epoch;
+     * a stale-epoch send-now is downgraded to held (decision 16).
+     */
+    onHookQueueMessage: (
+      handler: (payload: import('@shared/types/hooks.ts').HookQueueMessagePayload) => void,
+    ) => () => void
   }
   diff: {
     approve: (path: string) => Promise<void>

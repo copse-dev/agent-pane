@@ -160,6 +160,20 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:refresh_context_estimate', listener)
       }
     },
+    onHookQueueMessage: (
+      handler: (payload: import('@shared/types/hooks.ts').HookQueueMessagePayload) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        payload: import('@shared/types/hooks.ts').HookQueueMessagePayload,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('agent:hook_queue_message', listener)
+      return (): void => {
+        ipcRenderer.off('agent:hook_queue_message', listener)
+      }
+    },
   },
   diff: {
     approve: (path: string) => ipcRenderer.invoke('diff:approve', path),
