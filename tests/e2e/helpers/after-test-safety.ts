@@ -81,7 +81,5 @@ export function isAfterTestBudgetTimeout(error: unknown): boolean {
  * "Unexpected error toast(s): …".
  */
 export function isIgnorableAfterTestError(error: unknown): boolean {
-  return (
-    isDeadSessionError(error) || isAfterTestBudgetTimeout(error) || isMochaTimeoutError(error)
-  )
+  return isDeadSessionError(error) || isAfterTestBudgetTimeout(error) || isMochaTimeoutError(error)
 }

@@ -55,10 +55,7 @@ describe('isDeadSessionError', () => {
 
 describe('shouldSkipAfterTestSessionTraffic', () => {
   it('skips on mocha timeout or dead session', () => {
-    assert.equal(
-      shouldSkipAfterTestSessionTraffic(new Error('Timeout of 60000ms exceeded')),
-      true,
-    )
+    assert.equal(shouldSkipAfterTestSessionTraffic(new Error('Timeout of 60000ms exceeded')), true)
     assert.equal(
       shouldSkipAfterTestSessionTraffic(new Error('UND_ERR_HEADERS_TIMEOUT when running element')),
       true,
@@ -76,11 +73,11 @@ describe('isIgnorableAfterTestError', () => {
       isIgnorableAfterTestError(new Error('afterTest toast assertion timed out after 5000ms')),
       true,
     )
-    assert.equal(isAfterTestBudgetTimeout(new Error('afterTest failure artifacts timed out after 5000ms')), true)
     assert.equal(
-      isIgnorableAfterTestError(new Error('Unexpected error toast(s): boom')),
-      false,
+      isAfterTestBudgetTimeout(new Error('afterTest failure artifacts timed out after 5000ms')),
+      true,
     )
+    assert.equal(isIgnorableAfterTestError(new Error('Unexpected error toast(s): boom')), false)
   })
 })
 
