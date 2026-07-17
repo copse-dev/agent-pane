@@ -28,17 +28,20 @@ describe('dismissing a failed model comparison', () => {
     const card = $('.messages-list [data-comparison-card][data-status="error"]')
     await card.waitForExist({ timeout: 30_000 })
 
+    // NOTE: the returned object must not have a truthy `error` key — webdriver
+    // v9 treats a 200 execute response whose value carries `error` as a failed
+    // WebDriver request and throws that string (retrying the call three times).
     const header = await browser.execute(() => {
       const failed = document.querySelector('[data-comparison-card]')
       return {
         title: failed?.querySelector('.comparison-panel-title')?.textContent ?? '',
-        error: failed?.querySelector('.comparison-panel-error')?.textContent ?? '',
+        errorText: failed?.querySelector('.comparison-panel-error')?.textContent ?? '',
         hasRetry: !!failed?.querySelector('.card-retry-button'),
         hasDismiss: !!failed?.querySelector('.card-dismiss-button'),
       }
     })
     expect(header.title).toBe('Comparison failed')
-    expect(header.error).toContain('spend approval declined')
+    expect(header.errorText).toContain('spend approval declined')
     expect(header.hasRetry).toBe(true)
     expect(header.hasDismiss).toBe(true)
 
