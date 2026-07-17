@@ -66,7 +66,13 @@ import {
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
 const DEFAULT_NAME = 'copse-burst'
 const DEFAULT_RUNNER_GROUP = 'default'
-const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks'
+// Burst cloud hosts serve the check tier only, NOT e2e: across 137 recent e2e
+// jobs, every failure clustered on burst-provisioned hosts (timeout-shaped —
+// mocha 60/90s limits, renderer loss, session-DELETE cascades) while the local
+// ci-runners/ fleet was 100% clean. The `burst` marker label makes these hosts
+// identifiable in job logs; a beefy cloud host can still opt into e2e capacity
+// explicitly via `--runner-labels ...,copse-e2e`.
+const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
 const DEFAULT_RUNNERS_PER_INSTANCE = 2
 const DEFAULT_TARGET_REF = 'main'
 const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
