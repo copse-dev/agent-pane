@@ -613,5 +613,8 @@ if (process.env['COPSE_E2E'] === '1') {
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
     },
+    requestAcpPackageInstallApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
+    },
   })
 }

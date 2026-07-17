@@ -71,12 +71,16 @@ import {
   loadProjectCatalog,
 } from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
 import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
-import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
+import {
+  requestAcpPackageInstallApproval,
+  runAcpAutoSetup,
+} from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
@@ -1034,6 +1038,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [prompt, kind],
       )
       return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
+    })
+    ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
+      assertMainFrameSender(event, win)
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      return requestAcpPackageInstallApproval([codex])
     })
   }
 }
