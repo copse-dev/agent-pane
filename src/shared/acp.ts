@@ -18,6 +18,13 @@ import type { AcpAgentConfig } from './types/acp.ts'
 export const ACP_MODEL_PREFIX = 'acp:'
 const ACP_MODEL_SEP = '#'
 
+/**
+ * ACP agents are local stdio processes. SSH workspaces do not remount them on
+ * the remote host (and must not silently run against a remote path as cwd).
+ */
+export const ACP_UNSUPPORTED_ON_SSH_MESSAGE =
+  'ACP agents run locally on this device and are not available in SSH workspaces. Switch to a local folder or pick a cloud/local model.'
+
 /** An `acp:<id>` model value decoded into its agent id and optional model. */
 export interface AcpModelSelection {
   id: string

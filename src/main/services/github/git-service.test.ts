@@ -358,23 +358,26 @@ describe('resolveWorkspaceRelativeGitPath', () => {
     if (root) await rm(root, { recursive: true, force: true })
   })
 
-  it('keeps an in-workspace relative path unchanged', () => {
-    assert.equal(resolveWorkspaceRelativeGitPath('src/foo.ts'), join('src', 'foo.ts'))
+  it('keeps an in-workspace relative path unchanged', async () => {
+    assert.equal(await resolveWorkspaceRelativeGitPath('src/foo.ts'), join('src', 'foo.ts'))
   })
 
-  it('normalizes a redundant in-workspace path', () => {
-    assert.equal(resolveWorkspaceRelativeGitPath('./src/../src/foo.ts'), join('src', 'foo.ts'))
-  })
-
-  it('maps an absolute in-workspace path back to workspace-relative', () => {
+  it('normalizes a redundant in-workspace path', async () => {
     assert.equal(
-      resolveWorkspaceRelativeGitPath(join(root, 'src', 'foo.ts')),
+      await resolveWorkspaceRelativeGitPath('./src/../src/foo.ts'),
       join('src', 'foo.ts'),
     )
   })
 
-  it('rejects a path that escapes the workspace root', () => {
-    assert.throws(() => resolveWorkspaceRelativeGitPath('../escape.ts'), /outside workspace/)
+  it('maps an absolute in-workspace path back to workspace-relative', async () => {
+    assert.equal(
+      await resolveWorkspaceRelativeGitPath(join(root, 'src', 'foo.ts')),
+      join('src', 'foo.ts'),
+    )
+  })
+
+  it('rejects a path that escapes the workspace root', async () => {
+    await assert.rejects(() => resolveWorkspaceRelativeGitPath('../escape.ts'), /outside workspace/)
   })
 })
 

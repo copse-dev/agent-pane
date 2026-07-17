@@ -7,6 +7,7 @@ import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
 import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { toRelativePath } from '../workspace.ts'
 import {
   indexBuildStarted,
@@ -144,6 +145,7 @@ export function getSemanticBackend(): SemanticBackend | null {
 }
 
 export function isSemanticSearchAvailable(): boolean {
+  if (isActiveSshWorkspace()) return false
   return activeBackend !== null
 }
 
@@ -310,6 +312,7 @@ async function probeWithOpts(
 
 /** Register and build the semantic index when a workspace opens. */
 export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> {
+  if (isActiveSshWorkspace()) return
   const backend = activeBackend
   if (!backend) return
 
@@ -358,6 +361,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
  * per-process thread cap and lagging the UI.
  */
 export async function updateSemanticIndex(workspaceRoot: string): Promise<void> {
+  if (isActiveSshWorkspace()) return
   const backend = activeBackend
   if (!backend) return
 
@@ -561,7 +565,7 @@ async function searchWithGortex(
   )
 
   return {
-    hits: parseGortexJson(stdout, opts.maxResults, opts.filterPath),
+    hits: await parseGortexJson(stdout, opts.maxResults, opts.filterPath),
     backend: 'gortex',
   }
 }
@@ -584,17 +588,19 @@ async function searchWithVera(
     ...(opts.signal ? { signal: opts.signal } : {}),
   })
 
-  return { hits: parseVeraJson(stdout, opts.maxResults), backend: 'vera' }
+  return { hits: await parseVeraJson(stdout, opts.maxResults), backend: 'vera' }
 }
 
-export function parseGortexJson(
+export async function parseGortexJson(
   stdout: string,
   maxResults: number,
   filterPath?: string,
-): SemanticSearchHit[] {
+): Promise<SemanticSearchHit[]> {
   const parsed = parseJsonPayload(stdout)
   const items = extractResultItems(parsed)
-  const hits = items.map(normalizeGortexHit).filter((hit): hit is SemanticSearchHit => hit !== null)
+  const hits = (await Promise.all(items.map(normalizeGortexHit))).filter(
+    (hit): hit is SemanticSearchHit => hit !== null,
+  )
   const scoped =
     filterPath && filterPath !== '.'
       ? hits.filter((hit) => hit.path === filterPath || hit.path.startsWith(`${filterPath}/`))
@@ -602,11 +608,13 @@ export function parseGortexJson(
   return scoped.slice(0, maxResults)
 }
 
-export function parseVeraJson(stdout: string, maxResults: number): SemanticSearchHit[] {
+export async function parseVeraJson(
+  stdout: string,
+  maxResults: number,
+): Promise<SemanticSearchHit[]> {
   const parsed = parseJsonPayload(stdout)
   const items = extractResultItems(parsed)
-  return items
-    .map(normalizeVeraHit)
+  return (await Promise.all(items.map(normalizeVeraHit)))
     .filter((hit): hit is SemanticSearchHit => hit !== null)
     .slice(0, maxResults)
 }
@@ -647,7 +655,7 @@ function extractResultItems(parsed: unknown): unknown[] {
  * toRelativePath would resolve it against the process cwd instead. Hits are
  * symbols (no end_line/snippet); `doc` is the symbol's docstring when indexed.
  */
-function normalizeGortexHit(item: unknown): SemanticSearchHit | null {
+async function normalizeGortexHit(item: unknown): Promise<SemanticSearchHit | null> {
   if (typeof item !== 'object' || item === null) return null
   const record = item as Record<string, unknown>
   const path = readString(record, ['absolute_file_path', 'file_path', 'path', 'file'])
@@ -663,7 +671,7 @@ function normalizeGortexHit(item: unknown): SemanticSearchHit | null {
   const score = readNumber(record, ['score', 'rrf_score', 'relevance'])
 
   return {
-    path: toRelativePath(path),
+    path: await toRelativePath(path),
     startLine,
     ...(endLine !== undefined ? { endLine } : {}),
     text: text.trim(),
@@ -671,7 +679,7 @@ function normalizeGortexHit(item: unknown): SemanticSearchHit | null {
   }
 }
 
-function normalizeVeraHit(item: unknown): SemanticSearchHit | null {
+async function normalizeVeraHit(item: unknown): Promise<SemanticSearchHit | null> {
   if (typeof item !== 'object' || item === null) return null
   const record = item as Record<string, unknown>
   const path = readString(record, ['path', 'file', 'filename'])
@@ -683,7 +691,7 @@ function normalizeVeraHit(item: unknown): SemanticSearchHit | null {
   const score = readNumber(record, ['score', 'rerank_score', 'relevance'])
 
   return {
-    path: toRelativePath(path),
+    path: await toRelativePath(path),
     startLine,
     ...(endLine !== undefined ? { endLine } : {}),
     text: text.trim(),
