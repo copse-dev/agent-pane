@@ -54,6 +54,12 @@ export const config: Options.Testrunner = {
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],
   specFileRetries: 1,
   specFileRetriesDelay: 2,
+  // A crashed Electron renderer leaves chromedriver unable to answer
+  // deleteSession. The base 120s transport timeout then stalls teardown for two
+  // minutes and consumes the shard's outer retry budget. CI already retries the
+  // whole shard in a fresh process, so fail dead sessions quickly here.
+  connectionRetryTimeout: 30_000,
+  connectionRetryCount: 1,
   // Electron session relaunches (`browser.reloadSession()`) are slow on the
   // resource-constrained GitHub runner, so specs that reload mid-test can blow
   // the default 30s mocha timeout. Give them headroom (local runs finish in <5s).
