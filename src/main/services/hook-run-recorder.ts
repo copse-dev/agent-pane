@@ -226,15 +226,26 @@ const MAX_STOP_REASON_CHARS = 500
  * visible in the transcript, never silent. No-op outside an active recording
  * window (e.g. a stale halt arriving with no run active).
  */
-export function recordHaltRun(input: {
-  event: string
-  hookId: string
-  executor: 'function' | 'command'
-  /** true = the halt aborted the run; false = suppressed as stale (decision 16). */
-  applied: boolean
-  reason: string
-}): void {
-  const ctx = current
+export function recordHaltRun(
+  input: {
+    event: string
+    hookId: string
+    executor: 'function' | 'command'
+    /** true = the halt aborted the run; false = suppressed as stale (decision 16). */
+    applied: boolean
+    reason: string
+  },
+  /**
+   * Recording context snapshotted at the emitting fire site (decision 3/6). A
+   * *stale* halt (decision 16) typically arrives after `endHookRunRecording`
+   * closed the live window — or while a *newer* turn's window is open — so
+   * recording against the live context would drop the suppressed line or
+   * attribute it to the wrong turn. Defaults to the live context for blocking
+   * halts, which are current by construction.
+   */
+  snapshot: HookRunRecordingSnapshot | null = current,
+): void {
+  const ctx = snapshot
   if (!ctx) return
   const decision: SpineHookRunDecision = {
     haltRun: true,

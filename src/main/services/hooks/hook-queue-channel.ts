@@ -15,6 +15,7 @@
 // `BrowserWindow` down every call.
 import type { AsyncOutcomeRecord } from '@copse/agent/hooks/hook-registry.ts'
 import type { HookQueueMessagePayload } from '@shared/types/hooks.ts'
+import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { requestAsyncHaltRun } from './halt-run.ts'
 
 /** How this module reaches the renderer; set once at window creation. */
@@ -66,9 +67,18 @@ export function forwardHookQueueMessage(record: AsyncOutcomeRecord, threadId: st
  * suppressed no-op rather than a cross-turn abort. An outcome may in principle
  * carry both; each is handled independently.
  */
-export function hookQueueOutcomeSink(threadId: string): (record: AsyncOutcomeRecord) => void {
+export function hookQueueOutcomeSink(
+  threadId: string,
+  /**
+   * Recording context snapshotted at the emitting fire site (decision 3/6), so
+   * a halt effect line arriving after the turn's recording window closed — the
+   * canonical stale case (decision 16) — still lands attributed to the emitting
+   * turn instead of being dropped or misattributed.
+   */
+  recordingSnapshot?: HookRunRecordingSnapshot | null,
+): (record: AsyncOutcomeRecord) => void {
   return (record) => {
-    if (record.outcome.haltRun) requestAsyncHaltRun(record, threadId)
+    if (record.outcome.haltRun) requestAsyncHaltRun(record, threadId, recordingSnapshot)
     forwardHookQueueMessage(record, threadId)
   }
 }

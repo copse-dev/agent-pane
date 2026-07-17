@@ -20,7 +20,7 @@
 // and the abort happen here.
 import type { AsyncOutcomeRecord } from '@copse/agent/hooks/hook-registry.ts'
 import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
-import { recordHaltRun } from '../hook-run-recorder.ts'
+import { recordHaltRun, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 
 /** What happened to a `haltRun` request. */
 export type HaltDisposition =
@@ -97,17 +97,29 @@ interface HaltAttribution {
  * suppressed no-op, recorded as suppressed. Either way the effect is
  * spine-recorded, so a late async stop is never silent.
  */
-export function requestAsyncHaltRun(record: AsyncOutcomeRecord, threadId: string): HaltDisposition {
+export function requestAsyncHaltRun(
+  record: AsyncOutcomeRecord,
+  threadId: string,
+  recordingSnapshot?: HookRunRecordingSnapshot | null,
+): HaltDisposition {
   const halt = record.outcome.haltRun
   if (!halt) return 'suppressed-stale'
   const target = targets.get(threadId)
   const current = target !== undefined && target.turnTreeId === record.turnTreeId
-  return applyOrSuppress(current ? target : null, {
-    event: record.event,
-    hookId: record.hookId,
-    executor: 'function',
-    reason: halt.reason,
-  })
+  return applyOrSuppress(
+    current ? target : null,
+    {
+      event: record.event,
+      hookId: record.hookId,
+      executor: 'function',
+      reason: halt.reason,
+    },
+    // The emitting fire site's snapshot (decision 3/6): a stale halt usually
+    // lands after its turn's recording window closed, so recording against the
+    // live context would drop the suppressed line (or attribute it to a newer
+    // turn). The snapshot keeps decision 16's "recorded as suppressed" true.
+    recordingSnapshot,
+  )
 }
 
 /**
@@ -134,15 +146,24 @@ export function haltRunFromBlockingHook(input: {
 }
 
 /** Shared tail: abort the target when present, spine-record the effect either way. */
-function applyOrSuppress(target: HaltTarget | null, attribution: HaltAttribution): HaltDisposition {
+function applyOrSuppress(
+  target: HaltTarget | null,
+  attribution: HaltAttribution,
+  recordingSnapshot?: HookRunRecordingSnapshot | null,
+): HaltDisposition {
   const applied = target !== null
-  recorder({
-    event: attribution.event,
-    hookId: attribution.hookId,
-    executor: attribution.executor,
-    applied,
-    reason: attribution.reason,
-  })
+  // undefined → the recorder defaults to the live context (blocking halts,
+  // which fire inside the active run and are current by construction).
+  recorder(
+    {
+      event: attribution.event,
+      hookId: attribution.hookId,
+      executor: attribution.executor,
+      applied,
+      reason: attribution.reason,
+    },
+    recordingSnapshot,
+  )
   if (target) {
     target.abort(attribution.reason)
     return 'halted'

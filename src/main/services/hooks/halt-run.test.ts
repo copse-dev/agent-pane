@@ -193,3 +193,45 @@ describe('the async outcome sink routes haltRun to the abort path (H3 wiring)', 
     assert.deepEqual(aborts, [])
   })
 })
+
+describe('stale halts record against the fire-site snapshot (decisions 3/6/16)', () => {
+  it('forwards the emitting fire site snapshot to the recorder for a stale async halt', () => {
+    // The canonical stale case: the emitting turn's recording window has closed
+    // (endHookRunRecording ran), so the suppressed effect line must record
+    // against the snapshot captured at the fire site — recording against the
+    // live context would drop it or attribute it to a newer turn.
+    const snapshots: unknown[] = []
+    setHaltRunRecorderForTesting((input, snapshot) => {
+      snapshots.push(snapshot)
+      void input
+    })
+    const fireSiteSnapshot = { projectId: 'p', threadId: THREAD, turnId: 'turn-old' }
+
+    const sink = hookQueueOutcomeSink(
+      THREAD,
+      fireSiteSnapshot as unknown as Parameters<typeof hookQueueOutcomeSink>[1],
+    )
+    sink(asyncRecord(STALE, { reason: 'late stop' }))
+
+    assert.equal(snapshots.length, 1, 'suppressed halt still records')
+    assert.equal(snapshots[0], fireSiteSnapshot, 'recorded against the fire-site snapshot')
+  })
+
+  it('leaves the snapshot undefined for blocking halts (live context by construction)', () => {
+    const snapshots: unknown[] = []
+    setHaltRunRecorderForTesting((input, snapshot) => {
+      snapshots.push(snapshot)
+      void input
+    })
+
+    haltRunFromBlockingHook({
+      threadId: THREAD,
+      event: 'toolGate',
+      hookId: 'block.sh',
+      reason: 'blocked',
+    })
+
+    assert.equal(snapshots.length, 1)
+    assert.equal(snapshots[0], undefined, 'blocking path defaults to the live context')
+  })
+})

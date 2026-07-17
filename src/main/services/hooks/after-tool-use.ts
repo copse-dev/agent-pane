@@ -141,7 +141,7 @@ export async function runAfterToolUseHooks(
     runCommandHook: createCommandHookRunner(
       opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
     ),
-    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 
