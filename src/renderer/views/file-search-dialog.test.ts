@@ -1,6 +1,9 @@
 // Verifies the Cmd/Ctrl+P quick-open palette: it mounts as a native <dialog>,
 // renders matches from api.index.query as the user types, and opens the chosen
-// file in the explorer (openWorkspaceFile → store state + reveal events).
+// file in the explorer (openWorkspaceFile → store state + reveal events). It is
+// also a light "search everywhere": roadmap items matching the query render in
+// a labelled section beneath the files, and choosing one opens the Roadmap pane
+// with that item selected (navigateToRoadmapItem → roadmap_reveal).
 //
 // happy-dom has no modal-dialog implementation (no showModal/close/open), so we
 // shim those to track open state — same approach as the settings-dialog test.
@@ -29,11 +32,37 @@ function shimModal(dialog: HTMLDialogElement): void {
 interface ApiCalls {
   queries: string[]
   reads: string[]
+  roadmapLists: number
 }
 
-// Minimal api with a controllable file index + file reader. queryResult lets a
-// test swap what the next index.query resolves to.
-function stubApi(calls: ApiCalls, queryResult: () => string[]): ApiClient {
+/** Minimal roadmap KnowledgeNote; only the fields the palette reads matter. */
+function makeRoadmapItem(
+  id: string,
+  prompt: string,
+  status = 'ready',
+  notes?: string,
+): Record<string, unknown> {
+  return {
+    id,
+    type: 'Roadmap',
+    title: prompt.slice(0, 80),
+    body: prompt,
+    tags: [],
+    status,
+    fields: notes ? { notes } : {},
+    createdAt: '2026-07-13T00:00:00.000Z',
+    updatedAt: '2026-07-13T00:00:00.000Z',
+    file: `/tmp/${id}.md`,
+  }
+}
+
+// Minimal api with a controllable file index + file reader + roadmap store.
+// queryResult lets a test swap what the next index.query resolves to.
+function stubApi(
+  calls: ApiCalls,
+  queryResult: () => string[],
+  options?: { roadmap?: Record<string, unknown>[]; roadmapEnabled?: boolean },
+): ApiClient {
   const api = {
     index: {
       query: (pattern: string): Promise<string[]> => {
@@ -45,6 +74,16 @@ function stubApi(calls: ApiCalls, queryResult: () => string[]): ApiClient {
       readFile: (path: string): Promise<string> => {
         calls.reads.push(path)
         return Promise.resolve(`contents of ${path}`)
+      },
+    },
+    settings: {
+      get: (key: string): Promise<unknown> =>
+        Promise.resolve(key === 'roadmapPlansEnabled' ? (options?.roadmapEnabled ?? false) : null),
+    },
+    roadmap: {
+      list: (): Promise<Record<string, unknown>[]> => {
+        calls.roadmapLists++
+        return Promise.resolve(options?.roadmap ?? [])
       },
     },
   }
@@ -71,17 +110,24 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   let store: ReturnType<typeof createStore>
   let result: string[]
 
-  beforeEach(() => {
+  function mount(options?: {
+    roadmap?: Record<string, unknown>[]
+    roadmapEnabled?: boolean
+  }): void {
     document.body.innerHTML = ''
-    calls = { queries: [], reads: [] }
-    result = ['src/main.ts', 'src/renderer/views/file-tree.ts']
+    calls = { queries: [], reads: [], roadmapLists: 0 }
     store = createStore()
     mountFileSearchDialog(
       store,
-      stubApi(calls, () => result),
+      stubApi(calls, () => result, options),
     )
     dialog = document.getElementById('file-search-dialog') as HTMLDialogElement
     shimModal(dialog)
+  }
+
+  beforeEach(() => {
+    result = ['src/main.ts', 'src/renderer/views/file-tree.ts']
+    mount()
   })
 
   it('mounts as a native dialog, initially closed', () => {
@@ -141,5 +187,85 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   it('close() is a no-op when already closed', () => {
     closeFileSearchDialog()
     assert.equal(isFileSearchDialogOpen(), false)
+  })
+
+  describe('roadmap results (search everywhere)', () => {
+    const roadmap = [
+      makeRoadmapItem('r1', 'Polish the onboarding flow', 'ready'),
+      makeRoadmapItem('r2', 'Port the e2e suite', 'blocked', 'waiting on onboarding rework'),
+      makeRoadmapItem('r3', 'Ship dark-mode themes', 'done'),
+    ]
+
+    async function typeQuery(query: string): Promise<void> {
+      const input = dialog.querySelector('.file-search-input') as HTMLInputElement
+      input.value = query
+      input.dispatchEvent(new Event('input'))
+      await tick(150) // past the 100ms debounce
+    }
+
+    it('renders matching roadmap items in a labelled section after the files', async () => {
+      mount({ roadmap, roadmapEnabled: true })
+      result = ['docs/onboarding.md']
+      openFileSearchDialog()
+      await tick(0)
+      await typeQuery('onboarding')
+      const section = dialog.querySelector('.file-search-section')
+      assert.equal(section?.textContent, 'Roadmap')
+      const rows = dialog.querySelectorAll('.file-search-roadmap-item')
+      // r1 matches on the prompt, r2 on its notes field, r3 not at all.
+      assert.equal(rows.length, 2)
+      assert.equal(
+        requireQuery(at(rows, 0), '.file-search-name').textContent,
+        'Polish the onboarding flow',
+      )
+      const badge = requireQuery(at(rows, 0), '.roadmap-status-badge')
+      assert.equal(badge.textContent, 'ready')
+      assert.ok(badge.classList.contains('is-ready'))
+      // The section sits after the file rows: file first in the flat list.
+      const all = dialog.querySelectorAll('.file-search-item')
+      assert.equal(all.length, 3)
+      assert.ok(at(all, 0).classList.contains('selected'))
+      assert.equal(requireQuery(at(all, 0), '.file-search-name').textContent, 'onboarding.md')
+    })
+
+    it('choosing a roadmap item opens the Roadmap pane with it selected', async () => {
+      mount({ roadmap, roadmapEnabled: true })
+      result = []
+      const revealed: string[] = []
+      store.on('roadmap_reveal', (id) => revealed.push(id))
+      openFileSearchDialog()
+      await tick(0)
+      await typeQuery('e2e suite')
+      const row = dialog.querySelector('.file-search-roadmap-item') as HTMLElement
+      assert.ok(row, 'expected a roadmap result row')
+      row.dispatchEvent(new Event('mousedown'))
+      await tick(0)
+      assert.equal(isFileSearchDialogOpen(), false)
+      assert.equal(store.getState().rightPanelMode, 'roadmap')
+      assert.equal(store.getState().filesPaneOpen, true)
+      assert.deepEqual(revealed, ['r2'])
+      // No file read happened — the entry routed to the pane, not the explorer.
+      assert.deepEqual(calls.reads, [])
+    })
+
+    it('shows no roadmap section for the empty seed query', async () => {
+      mount({ roadmap, roadmapEnabled: true })
+      openFileSearchDialog()
+      await tick(0)
+      assert.equal(dialog.querySelector('.file-search-section'), null)
+      assert.equal(dialog.querySelectorAll('.file-search-roadmap-item').length, 0)
+    })
+
+    it('never lists roadmap items while the roadmap feature is disabled', async () => {
+      mount({ roadmap, roadmapEnabled: false })
+      result = []
+      openFileSearchDialog()
+      await tick(0)
+      await typeQuery('onboarding')
+      assert.equal(calls.roadmapLists, 0, 'must not fetch the roadmap when disabled')
+      assert.equal(dialog.querySelectorAll('.file-search-roadmap-item').length, 0)
+      const empty = dialog.querySelector('.file-search-empty') as HTMLElement
+      assert.equal(empty.hidden, false)
+    })
   })
 })

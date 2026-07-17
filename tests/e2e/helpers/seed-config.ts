@@ -295,6 +295,51 @@ export function seedEmptyProject(
   }
 }
 
+/**
+ * Seed OKF roadmap notes for a workspace, mirroring the knowledge store's
+ * on-disk layout (`~/.copse/knowledge/<slug>-<hash8>/roadmap/<id>.md`,
+ * `src/main/services/storage/knowledge-store.ts`). No `index.jsonl` is written —
+ * the store heals unindexed note files in on first read. Returns the workspace's
+ * knowledge dir so specs can remove it in `after`.
+ */
+export function seedRoadmapNotes(
+  workspaceRoot: string,
+  notes: { id: string; title: string; body: string; status?: string }[],
+): string {
+  const slug =
+    workspaceRoot
+      .split('/')
+      .filter(Boolean)
+      .slice(-1)[0]
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 64) || 'workspace'
+  const hash = createHash('sha1').update(workspaceRoot).digest('hex').slice(0, 8)
+  const knowledgeDir = join(homedir(), '.copse', 'knowledge', `${slug}-${hash}`)
+  const roadmapDir = join(knowledgeDir, 'roadmap')
+  mkdirSync(roadmapDir, { recursive: true })
+  const iso = new Date().toISOString()
+  for (const note of notes) {
+    const contents = [
+      '---',
+      'type: Roadmap',
+      `id: ${note.id}`,
+      `title: "${note.title}"`,
+      'tags: []',
+      `status: ${note.status ?? 'ready'}`,
+      `createdAt: ${iso}`,
+      `updatedAt: ${iso}`,
+      '---',
+      '',
+      note.body,
+      '',
+    ].join('\n')
+    writeFileSync(join(roadmapDir, `${note.id}.md`), contents, 'utf8')
+  }
+  return knowledgeDir
+}
+
 /** Two projects on the same workspace root for project-switch e2e (#502). */
 export function seedProjectSwitchFixture(
   workspaceRoot: string,

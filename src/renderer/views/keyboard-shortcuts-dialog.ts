@@ -57,7 +57,7 @@ const SECTIONS: ShortcutSection[] = [
   {
     title: 'Navigation',
     shortcuts: [
-      { label: 'Quick open file', keys: ['Mod', 'P'] },
+      { label: 'Quick open (files, roadmap)', keys: ['Mod', 'P'] },
       { label: 'Find in conversation', keys: ['Mod', 'F'] },
       { label: 'Previous thread', keys: ['Alt', '←'] },
       { label: 'Next thread', keys: ['Alt', '→'] },
