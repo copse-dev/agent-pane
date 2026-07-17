@@ -57,6 +57,7 @@ new tests should keep that trend:
 - **Migrating a spec to a component test removes it from the flaky tier
   entirely** — strictly better than the oracle skipping it. This is the cheapest
   CI win available and the preferred way to retire a quarantined spec.
+
 - The **test oracle** (`scripts/test-oracle.mts`) maps a PR's diff to the e2e
   specs it can affect and runs only those (`subset`), falling back to `full`
   for broad/low-confidence changes; the nightly schedule runs everything. Keep
@@ -78,6 +79,21 @@ new tests should keep that trend:
 
 Net: every new e2e spec should justify why it can't be a component test. The
 default direction is _down_.
+
+## Experimental browser geometry tier
+
+`npm run build:demo && npm run test:demo` is the focused spike from
+[`docs/spikes/demo-browser-tier.md`](spikes/demo-browser-tier.md). It runs the unchanged renderer
+against an in-memory `ApiClient` in ordinary headless Chrome, so geometry/computed-style checks that
+do not need Electron can be evaluated without main-process or window lifecycle cost.
+
+This is not yet a blanket migration target. Keep existing Electron specs in place until the repeat
+experiment on the constrained self-hosted runner passes. The tier boundary under evaluation is:
+
+| Question the test answers                              | Candidate tier |
+| ------------------------------------------------------ | -------------- |
+| Sizing/geometry over a deterministic mocked backend    | demo (browser) |
+| Monaco / terminal / webview / native window / main IPC | e2e (Electron) |
 
 ## Self-hosted runners and on-machine LLM eval
 

@@ -17,7 +17,9 @@ export default ts.config(
       'wdio.conf.ts',
       'wdio.ci.conf.ts',
       'wdio.eval.conf.ts',
+      'wdio.demo.conf.ts',
       'tests/e2e/**',
+      'tests/demo/**',
       'tests/fixtures/git-changes-repo/**',
       // Bench-task fixture repos: code for the agent under eval to fix, not project code.
       'benchmarks/fixtures/**',
