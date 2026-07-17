@@ -73,12 +73,20 @@ export async function checkRoadmapFit(id: string): Promise<RoadmapFitResult> {
     .filter(Boolean)
     .join(' • ')
     .slice(0, 600)
-  updateKnowledgeNote(id, {
-    fields: {
-      ...note.fields,
-      fit: verdict,
-      ...(flatDetail ? { fitDetail: flatDetail } : {}),
-    },
-  })
+  // Re-read after the model calls: spreading the entry snapshot would undo any
+  // field written while the check ran (e.g. a background complexity stamp,
+  // stampRoadmapComplexity), and the verdict judged the entry prompt/issue —
+  // if either changed mid-flight the newer save owns the fit fields, so the
+  // stale verdict is dropped (still returned for the transient pane text).
+  const fresh = getKnowledgeNote(id)
+  if (fresh && fresh.body === note.body && fresh.fields['issue'] === ref) {
+    updateKnowledgeNote(id, {
+      fields: {
+        ...fresh.fields,
+        fit: verdict,
+        ...(flatDetail ? { fitDetail: flatDetail } : {}),
+      },
+    })
+  }
   return { verdict, detail }
 }

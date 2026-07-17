@@ -1,6 +1,6 @@
 import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig, AcpAutoSetupResult } from '@shared/types/acp.ts'
-import { listAcpAgentModels } from './acp-client.ts'
+import { probeAcpAgent } from './acp-client.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { resolveOnPath } from './acp-detect.ts'
 import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
@@ -79,9 +79,17 @@ export async function updateCurrentAcpAgentModels(
   agentId: string,
   models: NonNullable<AcpAgentConfig['availableModels']>,
 ): Promise<boolean> {
+  return updateCurrentAcpAgentSelectors(agentId, { availableModels: models })
+}
+
+/** Merge detected selector fields onto the latest persisted config. */
+async function updateCurrentAcpAgentSelectors(
+  agentId: string,
+  selectors: ProbedSelectorFields,
+): Promise<boolean> {
   const config = listAcpAgents().find((agent) => agent.id === agentId)
   if (!config) return false
-  await upsertAcpAgent({ ...config, availableModels: models })
+  await upsertAcpAgent({ ...config, ...selectors })
   return true
 }
 
@@ -165,25 +173,26 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
     if (!input?.agentInstalled && !installedNow.has(known.id)) continue
 
     let config = presetToConfig(known)
-    const models = await probeModels(known, cwd)
-    if (models) {
-      config = { ...config, availableModels: models }
-      result.modelsDetected.push(known.id)
+    const probed = await probeSelectors(known, cwd)
+    if (probed.availableModels || probed.availablePermissionModes) {
+      config = { ...config, ...probed }
+      if (probed.availableModels) result.modelsDetected.push(known.id)
     }
     await upsertAcpAgent(config)
     result.registered.push(known.id)
   }
 
-  // Retry model detection for agents registered on an earlier run without models
-  // (installed/authenticated since). Preserves the user's config; only fills in
-  // availableModels once the probe finally succeeds.
+  // Retry selector detection for agents registered on an earlier run without
+  // models (installed/authenticated since). Merge onto the latest registry
+  // entry because approval, installs, and probing may outlive settings changes.
   for (const known of plan.refreshModels) {
     if (signal.aborted) break
-    const models = await probeModels(known, cwd)
-    // Approval, installs, and the probe can all take long enough for settings
-    // to change. Merge onto the registry only after those awaits complete.
-    if (models && (await updateCurrentAcpAgentModels(known.id, models))) {
-      result.modelsDetected.push(known.id)
+    const probed = await probeSelectors(known, cwd)
+    if (
+      (probed.availableModels || probed.availablePermissionModes) &&
+      (await updateCurrentAcpAgentSelectors(known.id, probed))
+    ) {
+      if (probed.availableModels) result.modelsDetected.push(known.id)
     }
   }
 
@@ -210,24 +219,36 @@ export async function requestAcpPackageInstallApproval(
 }
 
 /**
- * Best-effort probe of a known agent's model selector. Returns the flattened
- * choices, or null when there's no open folder or the probe fails (auth, network,
- * timeout) — callers keep the agent registered and the user can "Detect models".
+ * Cached-selector fields (models + session modes) discovered from one probe, to
+ * spread onto a registered {@link AcpAgentConfig}. Empty object when the probe
+ * found neither (or failed) — callers still register the agent, and the user can
+ * fill these in later with "Detect models".
  */
-async function probeModels(
+type ProbedSelectorFields = Pick<AcpAgentConfig, 'availableModels' | 'availablePermissionModes'>
+
+/**
+ * Best-effort probe of a known agent's models and session modes (issue #607).
+ * Returns the cached-selector fields, or `{}` when there's no open folder or the
+ * probe fails (auth, network, timeout) — callers keep the agent registered
+ * regardless and the user can "Detect models" later.
+ */
+async function probeSelectors(
   known: KnownAcpAgent,
   cwd: string | null,
-): Promise<AcpAgentConfig['availableModels'] | null> {
-  if (!cwd) return null
+): Promise<ProbedSelectorFields> {
+  if (!cwd) return {}
   try {
-    const selector = await listAcpAgentModels({
+    const probe = await probeAcpAgent({
       command: known.command,
       cwd,
       ...(known.args.length ? { args: known.args } : {}),
       ...(known.sandbox ? { sandbox: known.sandbox } : {}),
     })
-    return selector?.choices.length ? selector.choices : null
+    return {
+      ...(probe.models?.choices.length ? { availableModels: probe.models.choices } : {}),
+      ...(probe.modes?.choices.length ? { availablePermissionModes: probe.modes.choices } : {}),
+    }
   } catch {
-    return null
+    return {}
   }
 }

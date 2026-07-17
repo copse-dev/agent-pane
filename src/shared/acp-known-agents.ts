@@ -57,6 +57,17 @@ export interface KnownAcpAgent {
    * unsandboxed. Keep domains minimal — the user can widen them per agent.
    */
   sandbox?: { allowedDomains: string[]; homeDirs?: string[]; scratchPaths?: string[] }
+  /**
+   * ACP **session mode** (`SessionModeId`) to default the agent into when it
+   * spawns **sandboxed** and the user hasn't chosen one (issue #607). The
+   * seatbelt already contains writes to the workspace/scratch and the post-turn
+   * audit surfaces anything that bypassed the diff queue, so prompt-per-edit
+   * adds friction without adding safety — the Claude adapters default to
+   * `acceptEdits`. A user-set `permissionMode` always wins; unsandboxed agents
+   * keep their own default prompting regardless. The apply step still guards
+   * that the agent actually advertises this mode, so a stale value is harmless.
+   */
+  sandboxedPermissionMode?: string
   /** Shell command that authenticates the agent / mints a token (e.g. `claude setup-token`). */
   setup?: string
   /** Where to read more about the agent. */
@@ -110,6 +121,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // sibling -cwd files.
       scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
     },
+    sandboxedPermissionMode: 'acceptEdits',
     setup: 'claude setup-token',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
     note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).',
@@ -139,6 +151,7 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
       // sibling -cwd files.
       scratchPaths: ['/tmp/claude-${uid}', '/tmp/claude-*'],
     },
+    sandboxedPermissionMode: 'acceptEdits',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
     note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
   },
