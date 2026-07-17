@@ -295,30 +295,45 @@
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
 }
-/* Portrait / bottom-pinned chrome: labeled panel toggles between the status
-   footer and the stacked right panel. Pixel-locked to `.projects-settings-btn`
-   via the shared `--chrome-action-band-height` token (and max/min so flex/scroll
-   cannot grow it). Buttons are ghost-styled like Settings — no tall pill chrome. */
+/* Portrait / bottom-pinned chrome: dock one composer-width outline around the
+   labeled panel toggles, directly on the single-pixel divider above the stacked
+   panel. Its height remains pixel-locked to `.projects-settings-btn`. */
 .portrait-panel-bar {
   display: none;
+  position: absolute;
+  z-index: 31;
+  left: 50%;
+  right: auto;
+  bottom: 0;
+  transform: translateX(-50%);
   align-items: center;
   gap: 2px;
   flex-wrap: nowrap;
   /* Visible so the `…` menu can open above the band; overflowed buttons are
      removed via [data-portrait-overflow] rather than clipped. */
   overflow: visible;
-  width: 100%;
+  width: min(calc(100% - 2 * var(--spacing-xl)), var(--chat-content-max));
   box-sizing: border-box;
   height: var(--chrome-action-band-height);
   min-height: var(--chrome-action-band-height);
   max-height: var(--chrome-action-band-height);
   padding: 0 var(--spacing-md);
   background: var(--bg-elevated);
-  border-top: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   flex-shrink: 0;
 }
 #app.is-portrait-chrome .portrait-panel-bar {
   display: flex;
+}
+#app.is-portrait-chrome .pane-chat:not(.composer-centered) #input-bar {
+  bottom: calc(var(--chrome-action-band-height) + var(--spacing-md));
+}
+#app.is-portrait-chrome .pane-chat:not(.composer-centered) .conversation {
+  padding-bottom: calc(
+    var(--chat-composer-height) + var(--chrome-action-band-height) + var(--spacing-md)
+  );
 }
 .portrait-panel-bar .titlebar-text-btn,
 .portrait-panel-bar .portrait-panel-btn {
@@ -326,8 +341,8 @@
   align-items: center;
   flex: 0 0 auto;
   box-sizing: border-box;
-  height: var(--chrome-action-band-content-height);
-  padding: 0 6px;
+  height: calc(var(--chrome-action-band-height) - 2 * var(--spacing-xs));
+  padding: 0 var(--spacing-sm);
   gap: 4px;
   white-space: nowrap;
   background: transparent;
@@ -344,8 +359,7 @@
 .portrait-panel-bar .titlebar-text-btn.active,
 .portrait-panel-bar .portrait-panel-btn.active {
   color: var(--text-primary);
-  background: var(--bg-hover);
-  border: none;
+  background: var(--bg-selected);
 }
 .portrait-panel-bar .titlebar-text-btn[data-portrait-overflow],
 .portrait-panel-bar .portrait-panel-btn[data-portrait-overflow] {
@@ -365,8 +379,8 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: var(--chrome-action-band-content-height);
-  padding: 0 6px;
+  height: calc(var(--chrome-action-band-height) - 2 * var(--spacing-xs));
+  padding: 0 var(--spacing-sm);
   border: none;
   border-radius: var(--radius);
   background: transparent;

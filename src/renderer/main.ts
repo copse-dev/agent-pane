@@ -358,7 +358,9 @@ function mountFullLayout(): void {
   const monacoReady = loadMonaco()
   mountProjectsPane(requireElement('pane-projects'), store, api)
   const inputRoot = requireElement('input-bar')
-  mountInputBar(inputRoot, store, api)
+  mountInputBar(inputRoot, store, api, {
+    portraitPanelHost: requireElement('pane-chat'),
+  })
   const conversationRoot = requireElement('conversation')
   mountConversation(conversationRoot, store, api, inputRoot)
   mountConversationSearch(conversationRoot)

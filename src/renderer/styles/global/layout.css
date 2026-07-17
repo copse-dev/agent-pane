@@ -324,7 +324,9 @@
   width: auto;
   min-width: 0;
   min-height: 0;
-  border-top: 1px solid var(--border);
+  /* The resizer is the seam. A second pane border made this divider read as a
+     heavy two-pixel rule instead of the shared single-width line. */
+  border-top: 0;
 }
 .pane-files-body {
   flex: 1;

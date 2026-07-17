@@ -99,7 +99,7 @@ describe('portrait panel controls row', () => {
     resetUserData()
   })
 
-  it('shows a labeled panel row under the footer and icon-only secondary titlebar buttons', async () => {
+  it('docks one composer-width mode strip to the seam and keeps buttons unboxed', async () => {
     await openPortraitChrome()
 
     const portraitBar = await $('.portrait-panel-bar')
@@ -133,24 +133,89 @@ describe('portrait panel controls row', () => {
       const footer = document.querySelector('.input-footer')!.getBoundingClientRect()
       const bar = document.querySelector('.portrait-panel-bar')!
       const settings = document.querySelector('.projects-settings-btn')!
+      const paneChat = document.getElementById('pane-chat')!
+      const inputBar = document.getElementById('input-bar')!
+      const barStyle = getComputedStyle(bar)
       const barRect = bar.getBoundingClientRect()
+      const inputRect = inputBar.getBoundingClientRect()
       const settingsRect = settings.getBoundingClientRect()
+      const paneChatRect = paneChat.getBoundingClientRect()
       return {
         footerBottom: footer.bottom,
+        inputBottom: inputRect.bottom,
+        inputLeft: inputRect.left,
+        inputRight: inputRect.right,
+        inputWidth: inputRect.width,
         barTop: barRect.top,
+        barBottom: barRect.bottom,
+        barLeft: barRect.left,
+        barRight: barRect.right,
+        barWidth: barRect.width,
+        barBorderTop: barStyle.borderTopWidth,
+        barBorderRight: barStyle.borderRightWidth,
+        barBorderBottom: barStyle.borderBottomWidth,
+        barBorderLeft: barStyle.borderLeftWidth,
+        barBottomLeftRadius: barStyle.borderBottomLeftRadius,
+        barBottomRightRadius: barStyle.borderBottomRightRadius,
+        paneChatBottom: paneChatRect.bottom,
+        parentId: bar.parentElement?.id,
         settingsHeight: settingsRect.height,
+        settingsTop: settingsRect.top,
+        settingsBottom: settingsRect.bottom,
         barHeight: barRect.height,
         barCssHeight: getComputedStyle(bar).height,
         settingsCssHeight: getComputedStyle(settings).height,
       }
     })
-    expect(layout.barTop).toBeGreaterThanOrEqual(layout.footerBottom - 1)
+    expect(layout.parentId).toBe('pane-chat')
+    expect(layout.inputBottom).toBeLessThan(layout.barTop)
+    expect(layout.footerBottom).toBeLessThan(layout.barTop)
+    expect(Math.abs(layout.barLeft - layout.inputLeft)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.barRight - layout.inputRight)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.barWidth - layout.inputWidth)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.barBottom - layout.paneChatBottom)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.barTop - layout.settingsTop)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.barBottom - layout.settingsBottom)).toBeLessThanOrEqual(1)
     // Same CSS band as Settings (shared `--chrome-action-band-height`). Absolute
     // tops can drift when the app shell is CSS-sized inside a larger Electron
     // window on CI; matching computed heights is the product invariant. The
     // seam screenshot below covers visual alignment.
     expect(layout.barCssHeight).toBe(layout.settingsCssHeight)
     expect(Math.abs(layout.barHeight - layout.settingsHeight)).toBeLessThanOrEqual(1)
+    expect(layout.barBorderTop).toBe('1px')
+    expect(layout.barBorderRight).toBe('1px')
+    expect(layout.barBorderBottom).toBe('0px')
+    expect(layout.barBorderLeft).toBe('1px')
+    expect(layout.barBottomLeftRadius).toBe('0px')
+    expect(layout.barBottomRightRadius).toBe('0px')
+
+    const unboxedButtons = await browser.execute(() =>
+      ['explorer', 'terminal', 'changes'].map((id) => {
+        const element = document.querySelector<HTMLElement>(
+          `.portrait-panel-bar [data-panel-control="${id}"]`,
+        )!
+        const style = getComputedStyle(element)
+        return {
+          id,
+          height: element.getBoundingClientRect().height,
+          paddingLeft: style.paddingLeft,
+          paddingRight: style.paddingRight,
+          borderTop: style.borderTopWidth,
+          borderRight: style.borderRightWidth,
+          borderBottom: style.borderBottomWidth,
+          borderLeft: style.borderLeftWidth,
+        }
+      }),
+    )
+    for (const button of unboxedButtons) {
+      expect(button.height).toBeGreaterThanOrEqual(24)
+      expect(button.paddingLeft).toBe('8px')
+      expect(button.paddingRight).toBe('8px')
+      expect(button.borderTop).toBe('0px')
+      expect(button.borderRight).toBe('0px')
+      expect(button.borderBottom).toBe('0px')
+      expect(button.borderLeft).toBe('0px')
+    }
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
     await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'portrait-panel-controls-chrome.png'))
@@ -178,30 +243,40 @@ describe('portrait panel controls row', () => {
       'portrait-panel-controls-all-buttons.png',
     )
 
-    // Opening a panel from the bottom row stacks it below chat and keeps the row.
-    await portraitBar.$('.titlebar-text-btn[aria-label="Open terminal"]').click()
+    // Opening Changes from the bottom row stacks it below chat and keeps the row.
+    await portraitBar.$('.titlebar-text-btn[aria-label="Open changes"]').click()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
     await browser.waitUntil(
       async () =>
         (await (await $('#body')).getAttribute('class'))?.includes('is-right-panel-horizontal'),
-      { timeout: 5_000, timeoutMsg: 'expected stacked right-panel layout after opening Terminal' },
+      { timeout: 5_000, timeoutMsg: 'expected stacked right-panel layout after opening Changes' },
     )
-    await expect(
-      portraitBar.$('.titlebar-text-btn[aria-label="Open terminal"]'),
-    ).toHaveElementClass('active')
+    await expect(portraitBar.$('.titlebar-text-btn[aria-label="Open changes"]')).toHaveElementClass(
+      'active',
+    )
 
     const stacked = await browser.execute(() => {
       const bar = document.querySelector('.portrait-panel-bar')!.getBoundingClientRect()
       const files = document.getElementById('pane-files')!.getBoundingClientRect()
+      const resizer = document.getElementById('resizer-files')!
+      const resizerRect = resizer.getBoundingClientRect()
+      const filesStyle = getComputedStyle(document.getElementById('pane-files')!)
       const settings = document.querySelector('.projects-settings-btn')!.getBoundingClientRect()
       return {
         barBottom: bar.bottom,
         filesTop: files.top,
+        resizerTop: resizerRect.top,
+        resizerBottom: resizerRect.bottom,
+        resizerHeight: resizerRect.height,
+        filesBorderTop: filesStyle.borderTopWidth,
         settingsHeight: settings.height,
         barHeight: bar.height,
       }
     })
-    expect(stacked.filesTop).toBeGreaterThanOrEqual(stacked.barBottom - 2)
+    expect(Math.abs(stacked.resizerTop - stacked.barBottom)).toBeLessThanOrEqual(1)
+    expect(Math.abs(stacked.filesTop - stacked.resizerBottom)).toBeLessThanOrEqual(1)
+    expect(stacked.resizerHeight).toBe(1)
+    expect(stacked.filesBorderTop).toBe('0px')
     expect(Math.abs(stacked.barHeight - stacked.settingsHeight)).toBeLessThanOrEqual(1)
 
     await prepareE2eScreenshot({ width: PORTRAIT_WIDTH, height: PORTRAIT_HEIGHT })
