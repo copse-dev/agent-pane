@@ -103,26 +103,28 @@ function findSpawnHelper(root: string): string | null {
  * Whether node-pty's spawn-helper is executable. `false` = present but missing the
  * execute bit (terminal will fail to launch), `true` = ok, `null` = could not be
  * located (Windows has no spawn-helper; a packaging layout we don't recognise).
+ *
+ * node-pty ships with Copse, not with the project the user opened, so we resolve
+ * the helper relative to the app — never `process.cwd()` in a packaged build,
+ * which can be an arbitrary (or broken) unrelated directory the app was launched
+ * from. In dev the app runs from the repo, so cwd's node_modules is correct.
  */
 function spawnHelperExecutable(): boolean | null {
   if (process.platform === 'win32') return null
-  const candidates = [join(process.cwd(), 'node_modules', 'node-pty', 'prebuilds')]
-  if (process.resourcesPath) {
-    candidates.push(
-      join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds'),
-    )
+  const prebuildsRoot = app.isPackaged
+    ? process.resourcesPath
+      ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds')
+      : null
+    : join(process.cwd(), 'node_modules', 'node-pty', 'prebuilds')
+  if (!prebuildsRoot) return null
+  const helper = findSpawnHelper(prebuildsRoot)
+  if (!helper) return null
+  try {
+    accessSync(helper, constants.X_OK)
+    return true
+  } catch {
+    return false
   }
-  for (const root of candidates) {
-    const helper = findSpawnHelper(root)
-    if (!helper) continue
-    try {
-      accessSync(helper, constants.X_OK)
-      return true
-    } catch {
-      return false
-    }
-  }
-  return null
 }
 
 /** Run every diagnostic and assemble the report. Each source fails soft to a safe default. */
