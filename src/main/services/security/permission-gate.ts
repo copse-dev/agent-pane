@@ -620,10 +620,7 @@ async function promptHookAsk(check: PermissionCheck, decision: HookGateDecision)
 }
 
 /** Record non-allow hook verdicts to the durable decision log (#656). */
-function recordHookDecision(
-  toolName: string,
-  decision: HookGateDecision,
-): void {
+function recordHookDecision(toolName: string, decision: HookGateDecision): void {
   if (decision.permission === 'allow') return
   recordDecision({
     kind: 'hook',

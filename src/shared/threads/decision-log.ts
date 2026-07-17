@@ -161,6 +161,32 @@ export function serializeDecisionLine(event: DecisionEvent): string {
   return JSON.stringify(event)
 }
 
+const DECISION_ACTORS: ReadonlySet<string> = new Set(['user', 'classifier', 'hook'])
+const DECISION_VERDICTS: ReadonlySet<string> = new Set([
+  'approved',
+  'denied',
+  'allowed',
+  'blocked',
+  'ask',
+  'timeout',
+])
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string'
+}
+
+function isDecisionActor(value: unknown): value is DecisionActor {
+  return typeof value === 'string' && DECISION_ACTORS.has(value)
+}
+
+function isDecisionVerdict(value: unknown): value is DecisionVerdict {
+  return typeof value === 'string' && DECISION_VERDICTS.has(value)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
 /** Parse one line. Returns null on malformed JSON or a non-decision line. */
 export function parseDecisionLine(raw: string): DecisionEvent | null {
   let parsed: unknown
@@ -169,16 +195,52 @@ export function parseDecisionLine(raw: string): DecisionEvent | null {
   } catch {
     return null
   }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const event = parsed as Record<string, unknown>
+  const { v, type, id, at, kind, actor, verdict, subject } = event
+  const { scope, remembered, confidence, reasons, threadId, source } = event
   if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    (parsed as { type?: unknown }).type !== 'decision' ||
-    typeof (parsed as { id?: unknown }).id !== 'string' ||
-    typeof (parsed as { kind?: unknown }).kind !== 'string'
+    v !== DECISION_LOG_SCHEMA_VERSION ||
+    type !== 'decision' ||
+    typeof id !== 'string' ||
+    id.length === 0 ||
+    typeof at !== 'number' ||
+    !Number.isSafeInteger(at) ||
+    at < 0 ||
+    typeof kind !== 'string' ||
+    kind.length === 0 ||
+    !isDecisionActor(actor) ||
+    !isDecisionVerdict(verdict) ||
+    typeof subject !== 'string' ||
+    !isOptionalString(scope) ||
+    (remembered !== undefined && typeof remembered !== 'boolean') ||
+    (confidence !== undefined &&
+      (typeof confidence !== 'number' ||
+        !Number.isFinite(confidence) ||
+        confidence < 0 ||
+        confidence > 1)) ||
+    (reasons !== undefined && !isStringArray(reasons)) ||
+    !isOptionalString(threadId) ||
+    !isOptionalString(source)
   ) {
     return null
   }
-  return parsed as DecisionEvent
+  return {
+    v,
+    type,
+    id,
+    at,
+    kind,
+    actor,
+    verdict,
+    subject,
+    ...(typeof scope === 'string' ? { scope } : {}),
+    ...(typeof remembered === 'boolean' ? { remembered } : {}),
+    ...(typeof confidence === 'number' ? { confidence } : {}),
+    ...(reasons !== undefined ? { reasons } : {}),
+    ...(typeof threadId === 'string' ? { threadId } : {}),
+    ...(typeof source === 'string' ? { source } : {}),
+  }
 }
 
 /** Parse a full `decisions.jsonl` body, skipping blank or malformed lines. */

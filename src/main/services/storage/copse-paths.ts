@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /**
  * Single source of truth for the root of Copse's on-disk store (issue #644),
@@ -18,5 +18,11 @@ export function workspaceRoot(): string {
 
 /** Per-project directory under the store root (`<root>/<projectId>`). */
 export function projectStoreDir(projectId: string): string {
-  return join(workspaceRoot(), projectId)
+  const root = resolve(workspaceRoot())
+  const candidate = resolve(root, projectId)
+  const rel = relative(root, candidate)
+  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error('Project id resolves outside the workspace store')
+  }
+  return candidate
 }

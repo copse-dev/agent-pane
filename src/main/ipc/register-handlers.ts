@@ -956,14 +956,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // empty/absent value falls back to the active project.
   ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zNonEmptyString.max(256).optional(), [rawProjectId])
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
     const resolved = projectId ?? getActiveProjectId()
     if (!resolved) return []
     return readDecisionLog(resolved)
   })
   ipcMain.handle('decisions:export', (event, rawProjectId: unknown) => {
     assertMainFrameSender(event, win)
-    const projectId = parseIpcArgs(zNonEmptyString.max(256).optional(), [rawProjectId])
+    const projectId = parseIpcArgs(zProjectId.optional(), [rawProjectId])
     const resolved = projectId ?? getActiveProjectId()
     if (!resolved) throw new Error('No project to export decisions for.')
     return exportDecisionLog(resolved)

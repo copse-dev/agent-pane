@@ -69,6 +69,34 @@ describe('decision-log schema', () => {
     assert.equal(parseDecisionLine('null'), null)
   })
 
+  it('parseDecisionLine validates every required and optional field', () => {
+    const valid = makeDecisionEvent(
+      {
+        ...baseInput,
+        scope: 'sandbox',
+        remembered: false,
+        confidence: 0.5,
+        reasons: ['policy'],
+        threadId: 'thread-1',
+        source: 'classifier',
+      },
+      'id',
+      1,
+    )
+    const invalid: unknown[] = [
+      { ...valid, v: 2 },
+      { ...valid, at: Number.NaN },
+      { ...valid, actor: 'agent' },
+      { ...valid, verdict: 'maybe' },
+      { ...valid, subject: 42 },
+      { ...valid, remembered: 'yes' },
+      { ...valid, confidence: 1.1 },
+      { ...valid, reasons: ['ok', 42] },
+      { ...valid, threadId: 42 },
+    ]
+    for (const event of invalid) assert.equal(parseDecisionLine(JSON.stringify(event)), null)
+  })
+
   it('parseDecisionLog skips blank and malformed lines', () => {
     const good = serializeDecisionLine(makeDecisionEvent(baseInput, 'a', 1))
     const raw = ['', good, 'garbage', '   ', good].join('\n')
