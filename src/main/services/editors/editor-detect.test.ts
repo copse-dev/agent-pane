@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   KNOWN_EXTERNAL_EDITORS,
   buildEditorLaunch,
+  buildRemoteEditorLaunch,
   detectExternalEditors,
   parseMockEditorIds,
 } from './editor-detect.ts'
@@ -40,7 +41,7 @@ describe('detectExternalEditors under the e2e mock', () => {
     const detected = await detectExternalEditors('linux')
     assert.deepEqual(
       detected.map((d) => d.editor.id),
-      ['vscode', 'cursor'], // KNOWN_EXTERNAL_EDITORS order, not env order
+      ['vscode', 'cursor'],
     )
   })
 
@@ -69,11 +70,7 @@ describe('buildEditorLaunch', () => {
       command: '/usr/local/bin/code',
       args: ['/repo'],
     })
-    const linux = {
-      editor: vscode,
-      cliPath: '/usr/bin/code',
-      macAppPath: '/Applications/VSC.app',
-    }
+    const linux = { editor: vscode, cliPath: '/usr/bin/code', macAppPath: '/Applications/VSC.app' }
     assert.deepEqual(buildEditorLaunch(linux, '/repo', 'linux'), {
       command: '/usr/bin/code',
       args: ['/repo'],
@@ -98,5 +95,25 @@ describe('buildEditorLaunch', () => {
     assert.throws(() => {
       buildEditorLaunch({ editor: vscode, cliPath: null, macAppPath: null }, '/repo', 'linux')
     }, /No launcher/)
+  })
+})
+
+describe('buildRemoteEditorLaunch', () => {
+  it('builds a vscode-remote folder URI for VS Code', () => {
+    const launch = buildRemoteEditorLaunch(
+      {
+        editor: { id: 'vscode', name: 'VS Code', macAppNames: [] },
+        cliPath: '/usr/bin/code',
+        macAppPath: null,
+      },
+      '/home/me/project',
+      'my-server',
+      'linux',
+    )
+    assert.equal(launch.command, '/usr/bin/code')
+    assert.deepEqual(launch.args, [
+      '--folder-uri',
+      'vscode-remote://ssh-remote+my-server/home/me/project',
+    ])
   })
 })

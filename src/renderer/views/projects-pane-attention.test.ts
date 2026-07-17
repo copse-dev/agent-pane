@@ -31,6 +31,41 @@ afterEach(() => {
   resetAttention()
 })
 
+describe('projects pane SSH labels (component)', () => {
+  it('shows host plus full remote path so same-basename dirs stay distinct', () => {
+    const store = createStore({
+      projects: [
+        {
+          id: 'a',
+          path: '/etc/ddg',
+          name: 'euw-serp-dev-testing16:ddg',
+          sshHost: 'euw-serp-dev-testing16',
+        },
+        {
+          id: 'b',
+          path: '/home/ubuntu/ddg',
+          name: 'euw-serp-dev-testing16:ddg',
+          sshHost: 'euw-serp-dev-testing16',
+        },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/etc/ddg',
+      threads: [],
+      activeThreadId: null,
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountProjectsPane(host, store, apiStub)
+
+    const names = Array.from(document.querySelectorAll('.project-name')).map((n) => n.textContent)
+    assert.deepEqual(names, [
+      'euw-serp-dev-testing16:/etc/ddg',
+      'euw-serp-dev-testing16:/home/ubuntu/ddg',
+    ])
+  })
+})
+
 describe('projects pane attention bell (component)', () => {
   function mount(store: ReturnType<typeof createStore>): HTMLElement {
     const host = document.createElement('div')

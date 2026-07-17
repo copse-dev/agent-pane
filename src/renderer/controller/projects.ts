@@ -1,6 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { Thread } from '@shared/types'
+import type { Project, Thread } from '@shared/types'
 import { createThread, normalizeBlankThreads, switchThread } from '@shared/store/thread-helpers.ts'
 import { loadThreads, flushProjectThreads, saveProjects } from './persistence.ts'
 import { resumePendingQueues } from './message-queue.ts'
@@ -14,6 +14,44 @@ import {
 
 const uuid = (): string => globalThis.crypto.randomUUID()
 const basename = (p: string): string => p.split('/').pop() ?? p
+
+/** Sidebar / stored name for an SSH project — host label plus full remote path. */
+export function formatSshProjectName(hostLabel: string, remotePath: string): string {
+  return `${hostLabel}:${remotePath}`
+}
+
+/**
+ * Label shown in the projects sidebar. SSH projects always include the remote
+ * path so two folders that share a basename (e.g. `/etc/ddg` vs `/opt/ddg`)
+ * do not both render as `host:ddg`.
+ */
+export function projectDisplayName(project: Project): string {
+  if (!project.sshHost) return project.name
+  const colon = project.name.indexOf(':')
+  const label = colon > 0 ? project.name.slice(0, colon) : project.sshHost
+  return formatSshProjectName(label, project.path)
+}
+
+/** Dedup key for local and SSH projects. */
+export function projectDedupKey(sshHost: string | undefined, path: string): string {
+  return `${sshHost ?? ''}\0${path}`
+}
+
+function findProjectByKey(
+  projects: Project[],
+  sshHost: string | undefined,
+  path: string,
+): Project | undefined {
+  const key = projectDedupKey(sshHost, path)
+  return projects.find((p) => projectDedupKey(p.sshHost, p.path) === key)
+}
+
+async function ensureSshConnected(api: ApiClient, hostId: string): Promise<void> {
+  const states = await api.sshWorkspace.getStates()
+  const state = states.find((s) => s.hostId === hostId)
+  if (state?.status === 'connected') return
+  await api.sshWorkspace.connect(hostId)
+}
 
 export const SIDEBAR_THREADS_PAGE_SIZE = 10
 
@@ -56,6 +94,17 @@ const projectViewState: ProjectViewStateRegistry = new Map()
 let switchGeneration = 0
 let pendingThreadAfterSwitch: string | null = null
 
+type ActivationWaiter = { resolve: () => void; reject: (err: Error) => void }
+const activationWaiters = new Map<string, ActivationWaiter>()
+
+function settleActivationWaiter(projectId: string, error?: Error): void {
+  const waiter = activationWaiters.get(projectId)
+  if (!waiter) return
+  activationWaiters.delete(projectId)
+  if (error) waiter.reject(error)
+  else waiter.resolve()
+}
+
 export function getSidebarThreads(store: AppStore, projectId: string): Thread[] {
   const { activeProjectId, threads } = store.getState()
   if (projectId === activeProjectId) return threads
@@ -79,13 +128,30 @@ export function attachProjectThreadCache(store: AppStore): () => void {
   })
 }
 
-async function trySetWorkspace(api: ApiClient, path: string): Promise<boolean> {
+async function trySetWorkspace(api: ApiClient, path: string, sshHost?: string): Promise<boolean> {
   try {
-    await api.workspace.set(path)
+    await api.workspace.set(path, sshHost)
     return true
   } catch {
     return false
   }
+}
+
+function abortProjectActivation(
+  store: AppStore,
+  id: string,
+  gen: number,
+  outgoingId: string | null,
+  error: Error,
+): void {
+  if (gen !== switchGeneration) return
+  settleActivationWaiter(id, error)
+  const revertExpanded = outgoingId ?? store.getState().activeProjectId
+  if (revertExpanded) {
+    store.setState({ expandedProjectId: revertExpanded })
+  }
+  store.emit('projects_changed')
+  store.emit('workspace_changed')
 }
 
 async function dropMissingProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
@@ -124,6 +190,7 @@ async function finishActivate(
   api: ApiClient,
   id: string,
   path: string,
+  sshHost: string | undefined,
   gen: number,
   outgoingId: string | null,
   outgoingThreads: Thread[],
@@ -138,8 +205,46 @@ async function finishActivate(
   await saveProjects(api, store.getState().projects, id)
   if (gen !== switchGeneration) return
 
-  if (!(await trySetWorkspace(api, path))) {
+  if (sshHost) {
+    const enabled = await api.settings.get('sshWorkspaceEnabled')
+    if (enabled !== true) {
+      abortProjectActivation(
+        store,
+        id,
+        gen,
+        outgoingId,
+        new Error('Enable SSH workspaces in Settings → SSH before opening a remote folder.'),
+      )
+      return
+    }
+    try {
+      await ensureSshConnected(api, sshHost)
+    } catch (err) {
+      if (gen !== switchGeneration) return
+      const message = err instanceof Error ? err.message : String(err)
+      abortProjectActivation(
+        store,
+        id,
+        gen,
+        outgoingId,
+        new Error(`SSH connection failed: ${message}`),
+      )
+      return
+    }
+  }
+
+  if (!(await trySetWorkspace(api, path, sshHost))) {
     if (gen !== switchGeneration) return
+    if (sshHost) {
+      abortProjectActivation(
+        store,
+        id,
+        gen,
+        outgoingId,
+        new Error('Could not open the remote workspace folder.'),
+      )
+      return
+    }
     await dropMissingProject(store, api, id)
     return
   }
@@ -178,12 +283,19 @@ async function finishActivate(
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
+  settleActivationWaiter(id)
   resumePendingQueues(store, api)
 }
 
 // Core project switch: expand the sidebar immediately, then persist threads,
 // point the workspace at the new path, and load threads in the background.
-function activate(store: AppStore, api: ApiClient, id: string, path: string): void {
+function activate(
+  store: AppStore,
+  api: ApiClient,
+  id: string,
+  path: string,
+  sshHost?: string,
+): void {
   const { activeProjectId, threads, expandedProjectId } = store.getState()
   if (activeProjectId === id && (expandedProjectId ?? activeProjectId) === id) return
 
@@ -199,13 +311,13 @@ function activate(store: AppStore, api: ApiClient, id: string, path: string): vo
     recordProjectViewState(projectViewState, outgoingId, captureProjectViewState(store.getState()))
   }
 
-  void finishActivate(store, api, id, path, gen, outgoingId, outgoingThreads)
+  void finishActivate(store, api, id, path, sshHost, gen, outgoingId, outgoingThreads)
 }
 
 export function switchProject(store: AppStore, api: ApiClient, id: string): void {
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
-  activate(store, api, id, proj.path)
+  activate(store, api, id, proj.path, proj.sshHost)
 }
 
 export function switchProjectThread(
@@ -223,33 +335,73 @@ export function switchProjectThread(
   switchProject(store, api, projectId)
 }
 
-// Register a folder as a project (dedup by path) and switch to it.
+// Register a folder as a project (dedup by path + sshHost) and switch to it.
 export async function addProjectFromPath(
   store: AppStore,
   api: ApiClient,
   path: string,
 ): Promise<void> {
-  const existing = store.getState().projects.find((p) => p.path === path)
+  const existing = findProjectByKey(store.getState().projects, undefined, path)
   let id: string
   if (existing) {
     id = existing.id
   } else {
     id = uuid()
-    store.setState({ projects: [...store.getState().projects, { id, path, name: basename(path) }] })
+    store.setState({
+      projects: [...store.getState().projects, { id, path, name: basename(path) }],
+    })
   }
   return activateAndWait(store, api, id, path)
 }
 
-function activateAndWait(store: AppStore, api: ApiClient, id: string, path: string): Promise<void> {
-  activate(store, api, id, path)
+export async function addProjectFromRemotePath(
+  store: AppStore,
+  api: ApiClient,
+  hostId: string,
+  path: string,
+): Promise<void> {
+  const enabled = await api.settings.get('sshWorkspaceEnabled')
+  if (enabled !== true) {
+    throw new Error('Enable SSH workspaces in Settings → SSH before opening a remote folder.')
+  }
+  const canonical = await api.sshWorkspace.registerRoot(hostId, path)
+  const existing = findProjectByKey(store.getState().projects, hostId, canonical)
+  let id: string
+  if (existing) {
+    id = existing.id
+  } else {
+    id = uuid()
+    const hosts = await api.sshWorkspace.listHosts()
+    const host = hosts.find((h) => h.id === hostId)
+    const label = host?.label ?? hostId
+    store.setState({
+      projects: [
+        ...store.getState().projects,
+        { id, path: canonical, name: formatSshProjectName(label, canonical), sshHost: hostId },
+      ],
+    })
+  }
+  return activateAndWait(store, api, id, canonical, hostId)
+}
+
+function activateAndWait(
+  store: AppStore,
+  api: ApiClient,
+  id: string,
+  path: string,
+  sshHost?: string,
+): Promise<void> {
+  activate(store, api, id, path, sshHost)
   return waitForProjectActivation(store, id)
 }
 
 async function waitForProjectActivation(store: AppStore, projectId: string): Promise<void> {
   if (store.getState().activeProjectId === projectId) return
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
+    activationWaiters.set(projectId, { resolve, reject })
     const unsub = store.on('workspace_changed', () => {
       if (store.getState().activeProjectId === projectId) {
+        activationWaiters.delete(projectId)
         unsub()
         resolve()
       }
@@ -261,7 +413,16 @@ async function waitForProjectActivation(store: AppStore, projectId: string): Pro
 export async function restoreProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
   const proj = store.getState().projects.find((p) => p.id === id)
   if (!proj) return
-  if (!(await trySetWorkspace(api, proj.path))) {
+  if (proj.sshHost) {
+    const enabled = await api.settings.get('sshWorkspaceEnabled')
+    if (enabled !== true) return
+    try {
+      await ensureSshConnected(api, proj.sshHost)
+    } catch {
+      return
+    }
+  }
+  if (!(await trySetWorkspace(api, proj.path, proj.sshHost))) {
     await dropMissingProject(store, api, id)
     const nextProjectId = store.getState().activeProjectId
     if (nextProjectId) {
@@ -293,12 +454,21 @@ export async function addProject(store: AppStore, api: ApiClient): Promise<boole
   return true
 }
 
+export async function addRemoteProject(store: AppStore, api: ApiClient): Promise<boolean> {
+  const { openRemoteFolderDialog } = await import('../views/remote-folder-dialog.ts')
+  const picked = await openRemoteFolderDialog(api)
+  if (!picked) return false
+  await addProjectFromRemotePath(store, api, picked.hostId, picked.path)
+  return true
+}
+
 /** Test hook — reset module-level switch state. */
 export function resetProjectSwitchStateForTest(): void {
   switchGeneration = 0
   pendingThreadAfterSwitch = null
   threadCache.clear()
   projectViewState.clear()
+  activationWaiters.clear()
 }
 
 /** Test hook — seed sidebar thread cache for a project. */

@@ -115,6 +115,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .project-row:hover {
   background: var(--bg-hover);
 }
