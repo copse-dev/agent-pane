@@ -73,10 +73,7 @@ export function upsertAgent(list: AcpAgentConfig[], agent: AcpAgentConfig): AcpA
 }
 
 /** Keep cached selector choices when a partial ACP probe omits that selector. */
-export function selectorChoicesAfterProbe<T>(
-  cached: T[],
-  selector: { choices: T[] } | null,
-): T[] {
+export function selectorChoicesAfterProbe<T>(cached: T[], selector: { choices: T[] } | null): T[] {
   return selector?.choices ?? cached
 }
 
