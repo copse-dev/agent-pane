@@ -4,12 +4,13 @@ import { listAcpAgentModels } from './acp-client.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { resolveOnPath } from './acp-detect.ts'
 import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
-import { storageGet, storageSet } from '../storage/storage.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
+import { requestApproval } from '../approval.ts'
 
 /**
- * "Just works" setup for curated ACP presets. It runs when ACP settings opens,
- * and a bounded variant also runs during app startup. For each preset it:
+ * "Just works" setup for curated ACP presets. It runs when ACP settings opens.
+ * Any host-wide package installation is still gated by an explicit approval.
+ * For each preset it:
  *
  *  1. Detects the agent binary and any gating client (`claude`, `cursor-agent`).
  *  2. Installs a missing npm adapter through Socket Firewall when the adapter opts
@@ -18,9 +19,6 @@ import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
  *  3. Registers a ready-to-use config for any preset whose binary is available.
  *  4. Best-effort detects + caches the agent's models (needs an open folder), so
  *     they appear in the picker without a manual "Detect".
- *
- * Startup maintenance also refreshes already-installed, auto-managed npm adapters
- * through Socket Firewall on a daily throttle.
  *
  * The planning half is a pure function so the install/register/update decisions
  * are unit tested without spawning anything.
@@ -52,23 +50,6 @@ export interface AcpAutoSetupPlan {
   refreshModels: KnownAcpAgent[]
 }
 
-type AutoManagedNpmAcpAgent = KnownAcpAgent & {
-  installPackage: string
-  autoInstall: true
-  preset: true
-}
-
-const ACP_STARTUP_PACKAGE_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000
-const ACP_STARTUP_PACKAGE_REFRESH_KEY = 'acp:lastStartupPackageRefreshAt'
-
-function isAutoManagedNpmAgent(known: KnownAcpAgent): known is AutoManagedNpmAcpAgent {
-  return known.preset === true && known.autoInstall === true && Boolean(known.installPackage)
-}
-
-function wasAborted(signal: AbortSignal): boolean {
-  return signal.aborted
-}
-
 /** Decide, from detection facts, what to install, register, and re-probe. Pure. */
 export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoSetupPlan {
   const install: KnownAcpAgent[] = []
@@ -91,19 +72,6 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
   return { install, register, refreshModels }
 }
 
-/** Decide which installed, auto-managed npm presets should be refreshed. Pure. */
-export function planAcpPackageUpdates(
-  inputs: readonly AcpAutoSetupInput[],
-): AutoManagedNpmAcpAgent[] {
-  const update: AutoManagedNpmAcpAgent[] = []
-  for (const { known, agentInstalled } of inputs) {
-    if (!isAutoManagedNpmAgent(known)) continue
-    if (!agentInstalled) continue
-    update.push(known)
-  }
-  return update
-}
-
 export type { AcpAutoSetupResult }
 
 /**
@@ -124,7 +92,6 @@ function presetToConfig(known: KnownAcpAgent): AcpAgentConfig {
 }
 
 let inFlight: Promise<AcpAutoSetupResult> | null = null
-let startupMaintenanceInFlight: Promise<void> | null = null
 
 /** Run auto-setup, coalescing concurrent calls (e.g. the tab opened twice). */
 export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
@@ -132,39 +99,6 @@ export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult
     inFlight = null
   })
   return inFlight
-}
-
-/** Refresh already-installed adapters without installing missing tools during app launch. */
-export function runAcpStartupMaintenance(signal: AbortSignal): Promise<void> {
-  startupMaintenanceInFlight ??= performAcpStartupMaintenance(signal).finally(() => {
-    startupMaintenanceInFlight = null
-  })
-  return startupMaintenanceInFlight
-}
-
-async function performAcpStartupMaintenance(signal: AbortSignal): Promise<void> {
-  if (wasAborted(signal)) return
-
-  if (!shouldRefreshStartupPackages()) return
-
-  const inputs = await detectPresetInputs()
-  const updates = planAcpPackageUpdates(inputs)
-
-  for (const known of updates) {
-    if (wasAborted(signal)) break
-    const ok = await installGlobalNpmPackage(known.installPackage, signal)
-    if (!ok) {
-      console.warn(`[acp] package refresh failed for ${known.id}`)
-    }
-  }
-
-  if (!wasAborted(signal)) storageSet(ACP_STARTUP_PACKAGE_REFRESH_KEY, Date.now())
-}
-
-function shouldRefreshStartupPackages(now = Date.now()): boolean {
-  const raw = storageGet(ACP_STARTUP_PACKAGE_REFRESH_KEY)
-  if (typeof raw !== 'number' || !Number.isFinite(raw)) return true
-  return now - raw >= ACP_STARTUP_PACKAGE_REFRESH_INTERVAL_MS
 }
 
 async function detectPresetInputs(): Promise<AcpAutoSetupInput[]> {
@@ -195,14 +129,21 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
   const plan = planAcpAutoSetup(inputs)
 
   const installedNow = new Set<string>()
-  for (const known of plan.install) {
-    if (signal.aborted || !known.installPackage) break
-    const ok = await installGlobalNpmPackage(known.installPackage, signal)
-    if (ok) {
-      installedNow.add(known.id)
-      result.installed.push(known.id)
-    } else {
-      result.failed.push({ id: known.id, reason: 'package install failed' })
+  const installApproved = await requestAcpPackageInstallApproval(plan.install)
+  if (!installApproved) {
+    for (const known of plan.install) {
+      result.failed.push({ id: known.id, reason: 'package install not approved' })
+    }
+  } else {
+    for (const known of plan.install) {
+      if (signal.aborted || !known.installPackage) break
+      const ok = await installGlobalNpmPackage(known.installPackage, signal)
+      if (ok) {
+        installedNow.add(known.id)
+        result.installed.push(known.id)
+      } else {
+        result.failed.push({ id: known.id, reason: 'package install failed' })
+      }
     }
   }
 
@@ -238,6 +179,24 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
   }
 
   return result
+}
+
+/** Ask before mutating the user's global npm installation. */
+export async function requestAcpPackageInstallApproval(
+  agents: readonly KnownAcpAgent[],
+): Promise<boolean> {
+  const packages = agents.flatMap((agent) => (agent.installPackage ? [agent.installPackage] : []))
+  if (packages.length === 0) return true
+  const { approved } = await requestApproval({
+    title: 'Install ACP adapters globally?',
+    body:
+      'Copse found missing ACP adapters and wants to install these global npm packages:\n\n' +
+      packages.map((pkg) => `• ${pkg}`).join('\n') +
+      '\n\nThe packages are installed through Socket Firewall with lifecycle scripts disabled.',
+    type: 'shell',
+    allowRemember: false,
+  })
+  return approved
 }
 
 /**

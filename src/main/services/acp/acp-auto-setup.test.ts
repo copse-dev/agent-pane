@@ -1,11 +1,16 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import {
   planAcpAutoSetup,
-  planAcpPackageUpdates,
+  requestAcpPackageInstallApproval,
   type AcpAutoSetupInput,
 } from './acp-auto-setup.ts'
+import { setApprovalHandler } from '../approval.ts'
+
+afterEach(() => {
+  setApprovalHandler(null)
+})
 
 const claude: KnownAcpAgent = {
   id: 'claude-agent-acp',
@@ -149,24 +154,15 @@ describe('planAcpAutoSetup', () => {
   })
 })
 
-describe('planAcpPackageUpdates', () => {
-  it('refreshes installed auto-managed npm presets', () => {
-    const plan = planAcpPackageUpdates([
-      input(codex, { agentInstalled: true }),
-      input(claude, { agentInstalled: true, clientInstalled: false }),
-    ])
-    assert.deepEqual(
-      plan.map((k) => k.id),
-      ['codex', 'claude-agent-acp'],
-    )
-  })
-
-  it('skips missing, non-auto, and non-preset agents', () => {
-    const plan = planAcpPackageUpdates([
-      input(codex, { agentInstalled: false }),
-      input(cursor, { agentInstalled: true, clientInstalled: true }),
-      input(nonPreset, { agentInstalled: true, clientInstalled: true }),
-    ])
-    assert.deepEqual(plan, [])
+describe('ACP package install approval', () => {
+  it('requires explicit approval and names every global package', async () => {
+    let body = ''
+    setApprovalHandler(async (request) => {
+      body = request.body
+      return { approved: false, remember: false }
+    })
+    assert.equal(await requestAcpPackageInstallApproval([codex, claude]), false)
+    assert.match(body, /@agentclientprotocol\/codex-acp/)
+    assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
   })
 })
