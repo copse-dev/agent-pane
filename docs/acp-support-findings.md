@@ -92,8 +92,10 @@ big decision:
   a transport-drop reconnect). Agents without resume still get a fresh session
   - preamble. Durable cross-app-restart persistence and Cursor's legacy
     `loadSession` path remain follow-ups.
-- **Forward image content blocks** to agents advertising `prompt.image` — all
-  three do; we currently drop attachments before prompting.
+- ~~**Forward image content blocks** to agents advertising `prompt.image`~~ —
+  done: when the agent advertises `promptCapabilities.image`, attached images
+  ride as ACP image content blocks on `session/prompt` (`buildAcpPromptContent`);
+  agents without the capability keep the prior text-only behaviour.
   ([#831](https://github.com/copse-dev/agent-pane/issues/831))
 
 The behavioral follow-up (Tier 2) is tracked in
