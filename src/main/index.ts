@@ -424,11 +424,7 @@ async function cleanupBeforeQuit(): Promise<void> {
   await drainWriteQueue()
   // Reap the detached gortex daemon too — left running it accumulates multi-GB
   // graphs across sessions and OOM-kills the app on a later launch.
-  await Promise.allSettled([
-    shutdownMcpServers(),
-    shutdownProjectSandbox(),
-    stopGortexDaemon(),
-  ])
+  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
 }
 
 app.on('before-quit', (event) => {
