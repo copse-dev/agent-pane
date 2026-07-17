@@ -129,7 +129,9 @@ Two defaults harden every invoked skill, trusted or not (both toggleable in
   tree. CodeQL analyzes JavaScript/TypeScript and the checksum-pinned, open-source
   gitleaks CLI scans repository history on GitHub-hosted runners, including fork
   pull requests without secrets. The CLI path avoids gitleaks-action's separate
-  organization-repository license requirement.
+  organization-repository license requirement. This full-history CI scan is the
+  project's required secret-scanning gate; GitHub's built-in secret scanning and
+  push protection remain optional repository settings.
   Add Dependabot/Renovate and consider `--ignore-scripts` for CI installs.
 - Evaluate npm provenance / `npm audit signatures`.
 
