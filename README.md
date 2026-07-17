@@ -6,7 +6,10 @@
 
 Electron desktop app (`copse-panel`): an AI coding assistant that chats with LLMs and uses tools against opened project folders. Three-pane UI with agent chat, Monaco editor, terminal, git, semantic search, built-in browser, MCP, and subagents — writes and shell commands wait for your approval.
 
-Requires Node ≥ 22.
+The supported general-availability build requires **macOS 26 or newer** on an
+Apple Silicon (`arm64`) or Intel (`x64`) Mac. Linux and Windows may be useful for
+source development, but they are not supported GA targets. Building from source
+requires Node ≥ 22.18.
 
 ## Quick start
 
@@ -41,7 +44,15 @@ Set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` for cloud models, add an `OPENROUTER
 
 API keys entered in **Settings → API Keys** are persisted in the app's `settings.json` (inside the `copse-panel` userData directory). When an OS secure-storage backend is available they are encrypted at rest via Electron's [`safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage) — the macOS Keychain, Windows DPAPI, or a Linux keyring (gnome-keyring / kwallet via libsecret).
 
-If **no keyring is available** — common on a headless or minimal Linux install — `safeStorage` cannot encrypt, so keys are stored as **base64 plaintext** instead (the app logs a one-line warning and keeps working so it is still usable without a keyring). In that case anyone with read access to your profile directory can recover the keys. To get encryption at rest on Linux, install and unlock a keyring such as `gnome-keyring` (with `libsecret`) before launching the app. Prefer not to store a key on disk at all? Provide it via the matching environment variable (e.g. `ANTHROPIC_API_KEY`) instead — env-var keys are never written to `settings.json`.
+If **no keyring is available** — common on a headless or minimal Linux install —
+`safeStorage` cannot encrypt. Copse refuses to persist the key until you
+explicitly consent to storing it as **base64 plaintext**. Base64 is not
+encryption; anyone with read access to your profile directory can recover the
+key. To get encryption at rest on Linux, install and unlock a keyring such as
+`gnome-keyring` (with `libsecret`) before launching the app. Prefer not to store
+a key on disk at all? Provide it via the matching environment variable (for
+example `ANTHROPIC_API_KEY`) instead — environment-only keys are never written to
+`settings.json`.
 
 ### Where chat threads are stored
 
@@ -54,6 +65,15 @@ If you already export provider keys in your shell (e.g. `ANTHROPIC_API_KEY` in `
 ### LM Studio context length resets on restart
 
 LM Studio reloads local models at a small default context length after a reboot, which trips Copse's low-context advisory. Copse reads the loaded context but can't safely reload the model at your machine's maximum — see [`docs/lm-studio-context-persistence.md`](./docs/lm-studio-context-persistence.md) for how to make your chosen context length restart-proof (save a per-model default, or script `lms load --context-length` at login).
+
+## Security, privacy, support, and releases
+
+- [Security policy and private vulnerability reporting](SECURITY.md)
+- [Privacy and complete data-flow inventory](docs/privacy-data-flow.md)
+- [Support, known issues, and safe diagnostics](SUPPORT.md)
+- [Changelog and GitHub Release note process](CHANGELOG.md)
+- [Backup, migration, and forward recovery](docs/recovery.md)
+- [General release checklist](docs/release-checklist.md)
 
 ## Commands
 
