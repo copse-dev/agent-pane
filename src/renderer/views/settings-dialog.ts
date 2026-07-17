@@ -16,6 +16,7 @@ import {
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
   DEFAULT_COMPARISON_JUDGE_MODEL,
@@ -159,6 +160,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
@@ -962,6 +964,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
+              <legend>Orchestration strategy</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="orchestrationStrategyEnabled" />
+                Let the agent delegate implementation steps to a cheaper worker model
+              </label>
+              <p class="field-hint">
+                The inverse of the advisor strategy: the chat model stays the orchestrator and a
+                <code>delegate_step</code> tool hands each bounded implementation step — with the
+                context it needs — to a cheaper/faster worker model running as a subagent with
+                read/edit/shell tools. Each step returns the worker’s report plus a working-tree
+                snapshot, so the orchestrator reviews what changed before delegating the next step.
+                While off, the tool is not registered.
+              </p>
+              <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
+              <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Model that implements delegated steps. Pick something cheaper/faster than your chat
+                model; defaults to <code>claude-haiku-4-5</code>.
+              </p>
+            </fieldset>
+
+            <fieldset>
               <legend>Model comparison</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelComparisonEnabled" />
@@ -1736,6 +1762,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
       )
+      const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
+        | string
+        | undefined
+      await populateModelSelect(
+        form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
+        api,
+        orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
+      )
       const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
@@ -1863,7 +1897,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'smallTasksModel',
         ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
-      for (const key of ['comparisonModelA', 'comparisonModelB', 'comparisonJudgeModel'] as const) {
+      for (const key of [
+        'advisorModel',
+        'orchestrationWorkerModel',
+        'comparisonModelA',
+        'comparisonModelB',
+        'comparisonJudgeModel',
+      ] as const) {
         await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
       }
       await saveSimpleFields(data, api)

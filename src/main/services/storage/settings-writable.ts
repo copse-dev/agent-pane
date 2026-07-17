@@ -176,6 +176,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   modelClassifierEnabled: z.boolean(),
   advisorStrategyEnabled: z.boolean(),
   advisorModel: z.string().max(256),
+  // Experimental orchestration strategy: the chat model orchestrates and a
+  // cheaper worker model implements delegated steps. See orchestration-strategy.ts.
+  orchestrationStrategyEnabled: z.boolean(),
+  orchestrationWorkerModel: z.string().max(256),
   // Experimental model comparison harness: run the working-diff review through
   // two models plus a judge that compares their verdicts. See model-comparison.ts.
   modelComparisonEnabled: z.boolean(),
