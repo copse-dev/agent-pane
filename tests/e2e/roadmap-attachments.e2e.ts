@@ -75,9 +75,8 @@ describe('Roadmap item attachments', () => {
       timeout: 5_000,
       timeoutMsg: 'expected both pasted files to stage as chips',
     })
-    const names = await Promise.all(
-      (await $$('.roadmap-attachment-name')).map((chip) => chip.getText()),
-    )
+    // wdio's element-array .map is itself async — never wrap it in Promise.all.
+    const names = await $$('.roadmap-attachment-name').map((chip) => chip.getText())
     assert.deepEqual(names, ['evals.jsonl', 'prompt-shot.png'])
     // The pending image previews from memory (no save yet).
     const thumbSrc = await $('.roadmap-attachment-thumb').getAttribute('src')
