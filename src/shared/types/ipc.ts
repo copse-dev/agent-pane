@@ -29,7 +29,7 @@ export interface IpcInvokeMap {
   // Workspace
   'workspace:open': { args: []; result: string | null }
   'workspace:get': { args: []; result: string | null }
-  'workspace:set': { args: [root: string]; result: string }
+  'workspace:set': { args: [root: string, sshHost?: string]; result: string }
 
   // File system
   'fs:readFile': { args: [path: string]; result: string }
@@ -321,6 +321,7 @@ export interface IpcEventMap {
       questions: { question: string; options?: string[] }[]
     },
   ]
+  'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'ssh:prompt_request': [
     {
       id: string
@@ -328,6 +329,7 @@ export interface IpcEventMap {
       kind: 'confirm' | 'secret'
     },
   ]
+  'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
   'diff:queued': [entries: { path: string; language: string }[]]

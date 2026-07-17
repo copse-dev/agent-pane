@@ -95,11 +95,12 @@ describe('cursor-adapter', () => {
       assert.equal(warning.scope, 'user')
     })
 
-    it('marks declared-but-unwired events as unsupported (beforeSubmitPrompt is wired in B1)', async () => {
+    it('marks every declared Cursor event supported (stop is wired in B3)', async () => {
       await writeUserHooks({
         hooks: {
           beforeShellExecution: [{ command: './gate.sh' }],
           beforeSubmitPrompt: [{ command: './submit.sh' }],
+          afterFileEdit: [{ command: './fmt.sh' }],
           stop: [{ command: './notify.sh' }],
         },
       })
@@ -109,9 +110,12 @@ describe('cursor-adapter', () => {
         projectTrusted: false,
       })
       assert.equal(warnings.length, 0)
-      assert.equal(hooks.find((h) => h.event === 'stop')?.supported, false)
+      // Every Cursor lifecycle event now has a fire site (permission gates + B1
+      // beforeSubmitPrompt + B2 afterFileEdit + B3 stop), so none are "unsupported".
+      assert.equal(hooks.find((h) => h.event === 'stop')?.supported, true)
       assert.equal(hooks.find((h) => h.event === 'beforeShellExecution')?.supported, true)
       assert.equal(hooks.find((h) => h.event === 'beforeSubmitPrompt')?.supported, true)
+      assert.equal(hooks.find((h) => h.event === 'afterFileEdit')?.supported, true)
     })
 
     it('warns on malformed entries without dropping valid ones', async () => {

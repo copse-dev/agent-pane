@@ -14,8 +14,8 @@
 // dialect up here and delegates marshalling + interpretation to the right
 // adapter — so a dialect is fully described by its {@link DialectAdapter}.
 import type { CommandHook, HookDialect } from '@copse/agent/hooks/command-executor.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
-import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { BlockingHookOutcome, HookQueueMessage } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
 import type { HookSpawnResult } from './hook-spawn.ts'
 
@@ -37,6 +37,12 @@ export interface DialectDiscoverOpts {
 export interface DialectInterpretation {
   /** Normalized outcome on a clean run; null when the hook abstained. */
   outcome: BlockingHookOutcome | null
+  /**
+   * An async follow-up message (D1: `subagentStop`'s `followup_message`), routed
+   * through the pending-message queue (decision 4). Only detached async events
+   * set it; the runner passes it through to {@link CommandHookResult.queueMessage}.
+   */
+  queueMessage?: HookQueueMessage
   /** True when the process crashed, timed out, or emitted invalid JSON. */
   failed: boolean
   /** Whether stdout parsed cleanly (empty stdout counts as an intentional no-response). */
@@ -62,9 +68,14 @@ export interface DialectAdapter {
    * (decision 8: "a Claude hook sees Claude's stdin shape and tool names").
    * Returns null when the hook does not apply to this tool — matching is done at
    * discovery, but the marshaller is the final guard against firing a hook for a
-   * tool its declared event/matcher never covered.
+   * tool its declared event/matcher never covered. `session` carries the real
+   * conversation / generation ids + running model to stamp on the payload (B4).
    */
-  marshalToolGateRequest(hook: CommandHook, payload: HookEventPayloads['toolGate']): unknown
+  marshalToolGateRequest(
+    hook: CommandHook,
+    payload: HookEventPayloads['toolGate'],
+    session?: AgentSessionInfo,
+  ): unknown
   /**
    * Apply this dialect's per-event exit-code table to a spawn result. Pure w.r.t.
    * the process (no I/O); the runner owns spawning, spine recording, and the
@@ -83,6 +94,7 @@ export interface DialectAdapter {
   marshalBeforeSubmitPromptRequest?(
     hook: CommandHook,
     payload: HookEventPayloads['beforeSubmitPrompt'],
+    session?: AgentSessionInfo,
   ): unknown
   /**
    * Apply this dialect's `beforeSubmitPrompt` exit-code / response table to a
@@ -93,6 +105,94 @@ export interface DialectAdapter {
   interpretBeforeSubmitPrompt?(
     spawn: HookSpawnResult,
     payload: HookEventPayloads['beforeSubmitPrompt'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `afterFileEdit` payload into this dialect's stdin wire
+   * shape (B2). Optional: a dialect with no post-edit hook equivalent omits it
+   * and the runner abstains for that dialect. Cursor's afterFileEdit is a
+   * notification (it cannot block or return data), so its paired
+   * {@link interpretAfterFileEdit} never yields a control-flow decision.
+   */
+  marshalAfterFileEditRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['afterFileEdit'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `afterFileEdit` exit-code table to a spawn result (B2).
+   * Optional, paired with {@link marshalAfterFileEditRequest}. For a
+   * notification-only dialect (Cursor) the outcome is always null; a crash /
+   * timeout / non-zero exit is reported as `failed` for the spine + Sources
+   * error indicator, but the edit has already landed so nothing is blocked.
+   */
+  interpretAfterFileEdit?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['afterFileEdit'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `stop` payload into this dialect's stdin wire shape
+   * (B3). Optional: a dialect with no run-end hook equivalent omits it and the
+   * runner abstains for that dialect. Cursor's `stop` is a notification (it
+   * carries only `status` and returns nothing), so its paired
+   * {@link interpretStop} never yields a control-flow decision.
+   */
+  marshalStopRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['stop'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `stop` exit-code table to a spawn result (B3).
+   * Optional, paired with {@link marshalStopRequest}. `stop` is detached
+   * (decision 3, never awaited) and notification-only for Cursor, so the outcome
+   * is always null; a crash / timeout / non-zero exit is reported as `failed`
+   * for the spine + Sources error indicator only. Follow-ups (`followup_message`
+   * on dialects that declare one) route through the pending-message queue (C2),
+   * never a bespoke stop protocol (decision 4).
+   */
+  interpretStop?(spawn: HookSpawnResult, payload: HookEventPayloads['stop']): DialectInterpretation
+  /**
+   * Marshal a canonical `subagentStart` payload into this dialect's stdin wire
+   * shape (D1). Optional: a dialect with no subagent-lifecycle hook omits it and
+   * the runner abstains. Cursor's `subagentStart` is a **blocking** decision
+   * (allow / deny; `ask` is treated as deny) with the subagent type + resolved
+   * `subagent_model` on stdin, so a matcher-on-type hook can deny a spawn.
+   */
+  marshalSubagentStartRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['subagentStart'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `subagentStart` response table (D1). Optional, paired
+   * with {@link marshalSubagentStartRequest}. `permission: deny` (and `ask`,
+   * which Cursor treats as deny) normalizes to a `deny` decision that prevents
+   * the spawn; `user_message` rides along for surfacing.
+   */
+  interpretSubagentStart?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['subagentStart'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `subagentStop` payload into this dialect's stdin wire
+   * shape (D1). Optional. Cursor's `subagentStop` is detached (decision 3) and
+   * may return a `followup_message` (consumed only on `status: completed`) that
+   * routes through the pending-message queue (C2/C3), never a bespoke protocol.
+   */
+  marshalSubagentStopRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['subagentStop'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `subagentStop` response table (D1). Optional, paired
+   * with {@link marshalSubagentStopRequest}. A `followup_message` (on
+   * `completed`) becomes a {@link DialectInterpretation.queueMessage} the runner
+   * forwards to the queue channel; otherwise the outcome is null (notification).
+   */
+  interpretSubagentStop?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['subagentStop'],
   ): DialectInterpretation
   /**
    * Record the first runtime failure of a hook this session (deduped per

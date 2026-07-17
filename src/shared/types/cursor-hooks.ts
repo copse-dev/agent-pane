@@ -14,6 +14,8 @@ export const CURSOR_HOOK_EVENTS = [
   'beforeSubmitPrompt',
   'afterFileEdit',
   'stop',
+  'subagentStart',
+  'subagentStop',
 ] as const
 
 export type CursorHookEvent = (typeof CURSOR_HOOK_EVENTS)[number]
@@ -36,13 +38,18 @@ export function isCursorPermissionHookEvent(
 
 /**
  * Events Copse actually fires (vs parsed for discovery only). The permission
- * gates plus `beforeSubmitPrompt` (B1 — wired on the compose path); the rest
- * (`afterFileEdit`, `stop`) land their fire sites in later phases and stay
- * discovery-only until then.
+ * gates plus `beforeSubmitPrompt` (B1 — compose path), `afterFileEdit`
+ * (B2 — the diff-queue / write-tool site), `stop` (B3 — fired the moment agent
+ * work stops, at turn end or abort), and `subagentStart` / `subagentStop`
+ * (D1 — the subagent spawn gate + detached completion, matcher on subagent type).
  */
 export const CURSOR_WIRED_HOOK_EVENTS = [
   ...CURSOR_PERMISSION_HOOK_EVENTS,
   'beforeSubmitPrompt',
+  'afterFileEdit',
+  'stop',
+  'subagentStart',
+  'subagentStop',
 ] as const
 
 /** Whether Copse actually fires this event (drives the Sources "supported" badge). */
@@ -62,10 +69,10 @@ export interface CursorHookSummary {
   source: string
   scope: CursorHookScope
   /**
-   * Whether Copse actually fires this event. Declared-but-unwired events
-   * (`afterFileEdit`, `stop`) are discovered so the Sources panel can badge them
-   * "unsupported" instead of looking active. `beforeSubmitPrompt` became wired
-   * in B1.
+   * Whether Copse actually fires this event. Declared-but-unwired events are
+   * still discovered so the Sources panel can badge them "unsupported" instead
+   * of looking active. `beforeSubmitPrompt` became wired in B1; `afterFileEdit`
+   * in B2 (the diff-queue / write-tool site); `stop` in B3 (turn end / abort).
    */
   supported: boolean
   /**

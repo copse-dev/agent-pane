@@ -30,6 +30,7 @@ import {
   recordFunctionHookRun,
   setHookRunStep,
   setHookRunToolset,
+  snapshotHookRunContext,
 } from './hook-run-recorder.ts'
 import { storageSet } from './storage/storage.ts'
 
@@ -158,6 +159,58 @@ describe('hook_run survives full save (decision 6)', () => {
       parseSpine(raw).map((m) => m.id),
       ['m1', 'm2'],
     )
+  })
+
+  it('a detached hook records against a snapshot taken before endHookRunRecording (C1, decision 3/6)', async () => {
+    storageSet('activeProjectId', PROJECT)
+    await saveProjectThread(PROJECT, thread([userMsg('m1', 'go')]))
+
+    beginHookRunRecording(THREAD)
+    setHookRunStep(2)
+    // A detached `stop` hook snapshots the context synchronously at its fire
+    // site, then the run's recording context is torn down before the hook
+    // process resolves. Recording against the live context here would be a
+    // no-op (context cleared); the snapshot keeps the line.
+    const snapshot = snapshotHookRunContext()
+    assert.ok(snapshot)
+    endHookRunRecording(THREAD)
+
+    // Live context is now null — a plain record would be dropped.
+    recordCommandHookRun({
+      event: 'stop',
+      hookId: './notify.sh',
+      startedAt: 200,
+      durationMs: 5,
+      exitCode: 0,
+      parseOk: true,
+      decision: {},
+      stdout: '',
+      stderr: '',
+    })
+    // …but recording against the captured snapshot persists the line.
+    recordCommandHookRun(
+      {
+        event: 'stop',
+        hookId: './notify.sh',
+        startedAt: 200,
+        durationMs: 5,
+        exitCode: 0,
+        parseOk: true,
+        decision: {},
+        stdout: 'bye',
+        stderr: '',
+      },
+      snapshot,
+    )
+    await flushStore()
+
+    const runs = readHookRuns(root)
+    assert.equal(runs.length, 1)
+    const line = runs[0]
+    assert.ok(line)
+    assert.equal(line.event, 'stop')
+    assert.equal(line.turnId, snapshot.turnId)
+    assert.equal(line.step, 2)
   })
 
   it('records command and function hook runs with attribution and toolset blob', async () => {

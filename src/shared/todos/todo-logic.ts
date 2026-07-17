@@ -11,8 +11,15 @@ export {
 
 const randomUUID = (): string => globalThis.crypto.randomUUID()
 
+export type ActiveTodoItem = TodoItem & { status: Exclude<TodoStatus, 'cancelled'> }
+
+/** Todos that still belong on the plan UI — cancelled items are omitted. */
+export function activeTodos(todos: readonly TodoItem[]): ActiveTodoItem[] {
+  return todos.filter((t): t is ActiveTodoItem => t.status !== 'cancelled')
+}
+
 export function todoProgress(todos: readonly TodoItem[]): { done: number; total: number } {
-  const active = todos.filter((t) => t.status !== 'cancelled')
+  const active = activeTodos(todos)
   const done = active.filter((t) => t.status === 'completed').length
   return { done, total: active.length }
 }

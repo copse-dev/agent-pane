@@ -21,7 +21,12 @@ import { classifyAgentError } from './agent-errors.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
-import { clearActiveRunThread, recordThreadModel, setActiveRunThread } from './thread-models.ts'
+import {
+  clearActiveRunThread,
+  recordThreadModel,
+  setActiveRunModel,
+  setActiveRunThread,
+} from './thread-models.ts'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
@@ -29,6 +34,7 @@ import {
   beginHookRunRecording,
   endHookRunRecording,
   recordFunctionHookRun,
+  snapshotHookRunContext,
   setHookRunStep,
   setHookRunToolset,
 } from './hook-run-recorder.ts'
@@ -75,6 +81,10 @@ import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
 import {
+  runWithOrchestrationContext,
+  resolveOrchestrationWorkerModelId,
+} from './orchestration-runner.ts'
+import {
   runModelComparison,
   setModelComparisonContext,
   isAutoComparisonEnabled,
@@ -90,6 +100,11 @@ import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './gith
 import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
+import { runStopHooks } from './hooks/stop.ts'
+import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
+import { currentAgentSessionInfo } from './hooks/agent-session.ts'
+import { getContinuationLedger } from './hooks/continuation-ledger.ts'
 import { isGitAvailable } from './tool-availability.ts'
 import {
   findNewlyInProgressLocal,
@@ -259,6 +274,8 @@ async function runBeforeSubmitPrompt(
     const decision = await runBeforeSubmitPromptHooks(promptTextForSubmit(userPrompt), {
       workspaceRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      // Real conversation/generation ids + running model on the wire payload (B4).
+      agentSession: currentAgentSessionInfo({ conversationId: threadId }),
     })
     if (!decision.blocked) return null
     return (
@@ -267,6 +284,50 @@ async function runBeforeSubmitPrompt(
   } finally {
     endHookRunRecording(threadId)
   }
+}
+
+/**
+ * Fire `stop` (B3) the moment agent work stops — turn end or abort. **Detached,
+ * never awaited (decision 3, no drain barrier):** dispatched with `void` so a
+ * slow `stop` hook can never delay the turn's `done`, and abort halts emission
+ * of new events but never waits for in-flight hooks. Gated behind
+ * `cursorHooksEnabled` (default off) at the fire site, the same flag the
+ * tool-gate / afterFileEdit paths use, because honouring hooks spawns
+ * user/project scripts. Any dispatch error is swallowed — a broken stop hook
+ * can never fail the turn that already finished.
+ */
+function fireStopHook(
+  threadId: string,
+  status: 'completed' | 'aborted',
+  runTurnTreeId?: TurnTreeId,
+): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  // Capture the agent-session identity **by value** now, synchronously — `stop`
+  // dispatches detached (decision 3) and the run's recording context is torn
+  // down right after, so reading ambient ids at marshal time would come up empty
+  // (B4). The snapshot lets the detached hook still stamp the finished turn.
+  const agentSession = currentAgentSessionInfo()
+  // C3 unifies the epoch: the run carries the renderer-minted turn-tree id
+  // (decision 16), so a `stop` hook's queued follow-up is tagged with the same
+  // epoch the renderer's staleness check compares against. Fall back to the run's
+  // generation id, then the thread id, when no renderer epoch was threaded (e.g.
+  // an older client, ACP, or a standalone retry).
+  const turnTreeId = runTurnTreeId ?? asTurnTreeId(agentSession.generationId || threadId)
+  // Snapshot the recording context now, synchronously (C1): `endHookRunRecording`
+  // clears the live context right after this fire site, so the detached stop hook
+  // records against the snapshot (decision 3/6) or its hook_run line would be lost.
+  const recordingSnapshot = snapshotHookRunContext()
+  void runStopHooks(status, {
+    threadId,
+    turnTreeId,
+    workspaceRoot,
+    projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    agentSession,
+    recordingSnapshot,
+  }).catch((err: unknown) => {
+    console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
+  })
 }
 
 export async function runAgent(
@@ -280,6 +341,10 @@ export async function runAgent(
     priorTodos?: TodoItem[]
     workingBrief?: string
     model?: string
+    /** Turn-tree epoch this run belongs to (decision 16 / C3); keys the budget. */
+    turnTreeId?: string
+    /** Machine turns already spent in this turn tree (decision 5); seeds the budget. */
+    continuationBudgetUsed?: number
   },
 ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> {
   // A new turn: drop last turn's restore point so the next dirty-worktree edit
@@ -290,11 +355,24 @@ export async function runAgent(
   const resolved = await resolveAgentChatModel(requestedModel)
   const model = resolved.model
   recordThreadModel(threadId, model)
+  // The model actually running this turn — stamped on Cursor hook agent-session
+  // payloads (B4). Set before any hook can fire (beforeSubmitPrompt below, the
+  // tool gate, afterFileEdit, stop) so every one reports the real model.
+  setActiveRunModel(model)
   const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
 
   const sendChunk = createAgentChunkSink(threadId, host)
+
+  // The turn-tree epoch this run belongs to (decision 16 / C3): the renderer
+  // mints it for a human submission / release and threads it on the payload, so
+  // the continuation ledger and the `stop` hook's epoch line up with the
+  // renderer's drain-time budget check. Falls back to the thread id when absent
+  // (older client / ACP / standalone retry).
+  const turnTreeId: TurnTreeId = asTurnTreeId(
+    options?.turnTreeId && options.turnTreeId.length > 0 ? options.turnTreeId : threadId,
+  )
 
   // B1: fire `beforeSubmitPrompt` on the compose path, before any agent turn
   // starts (ACP / remote / local). A blocking decision hook may halt the submit
@@ -372,6 +450,8 @@ export async function runAgent(
         ],
       }
     } finally {
+      // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
+      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -411,6 +491,8 @@ export async function runAgent(
         messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
       }
     } finally {
+      // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
+      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -429,6 +511,19 @@ export async function runAgent(
   beginHookRunRecording(threadId)
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
+
+  // Seed the shared continuation budget for this turn tree (decision 5) with the
+  // machine turns already spent on the renderer's queue-drain continuations, so
+  // the in-run tighteners below (todo closeout, the pre-review gate, remediation
+  // cycles) share one counter per turn tree and can only tighten inside the
+  // shared cap. `forget` in the finally keeps the map from growing across runs —
+  // the renderer re-seeds the spent count on the next run of the same turn tree.
+  const budgetLedger = getContinuationLedger()
+  budgetLedger.seed(turnTreeId, options?.continuationBudgetUsed ?? 0)
+  const continuationBudget: ContinuationGrant = {
+    tryGrant: () => budgetLedger.tryGrant(turnTreeId),
+    remaining: () => budgetLedger.remaining(turnTreeId),
+  }
 
   try {
     const invokedSkills = options?.invokedSkills ?? []
@@ -678,6 +773,26 @@ export async function runAgent(
           setAdvisorContext(null)
         }
       }
+      if (name === 'delegate_step') {
+        // Orchestration strategy: the parent stays the orchestrator while a
+        // cheaper worker model implements this one step as a subagent; the
+        // tool result carries the worker's report + working-tree snapshot so
+        // the parent observes between steps. ALS-scoped like explore so
+        // fanned-out independent steps each keep their own context. A
+        // delegated step is file-mutating by design, so it gates the
+        // post-turn review like a direct edit would.
+        turnChangedFiles = true
+        return runWithOrchestrationContext(
+          {
+            parentToolCallId: toolCallId,
+            parentGoal,
+            workerModel: resolveOrchestrationWorkerModelId(),
+            registry,
+            onChunk: sendChunk,
+          },
+          () => registry.execute(name, args, signal),
+        )
+      }
       if (name === 'compare_models') {
         // Manual trigger: run the two-model diff comparison on demand, with
         // the live parent goal/registry so the reviewers see the same diff.
@@ -720,6 +835,7 @@ export async function runAgent(
           onRunDeadlineActivity: runAbort.schedule,
           coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
           getOpenTodos: () => getAgentRunTodos(),
+          continuationBudget,
           recordHookRun: recordFunctionHookRun,
           onLlmCall: setHookRunStep,
           executeTool: executeParentTool,
@@ -795,6 +911,7 @@ export async function runAgent(
       },
       recordHookRun: recordFunctionHookRun,
       onLlmCall: setHookRunStep,
+      continuationBudget,
       userNudge: '',
       maxSteps: 6,
     }
@@ -887,6 +1004,12 @@ export async function runAgent(
               break
             }
 
+            // A remediation cycle is a machine-initiated new turn (decision 5):
+            // consume one grant from the shared budget before running it. The
+            // local cap (MAX_POST_TURN_REVIEW_CYCLES) tightens inside the shared
+            // cap — once the budget is exhausted, no further remediation runs.
+            if (!continuationBudget.tryGrant()) break
+
             const remediation = { madeEdits: false }
             await runWithAgentRunReadFileLimits(runReadLimits, async () => {
               await runParentContinuationTurn({
@@ -922,13 +1045,31 @@ export async function runAgent(
       )
     }
 
+    // C3 run→drain fold-back (decision 5): report the machine turns this run
+    // spent in-process (closeout / pre-review / remediation grants) back to the
+    // renderer *before* the terminal `done` triggers its next queue drain, so
+    // the drain-time budget check sees the full turn-tree spend. Epoch-guarded
+    // + monotonic on the renderer side (decision 16).
+    sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer
     sendChunk(deferredDone ?? { type: 'done' })
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })
+    // Fold back any in-run spend even on the error path — grants consumed before
+    // the failure still count against the turn tree (decision 5).
+    sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
     sendChunk({ type: 'done' })
   } finally {
+    // B3: agent work has stopped (turn end, error, or abort) — fire `stop`
+    // detached (decision 3). Fired before `endHookRunRecording` so the dispatch
+    // begins while this run's recording session is still open; being detached it
+    // is never awaited, so it cannot delay the turn's `done` above.
+    fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+    // Drop this run's ledger entry (decision 5): the renderer stays authoritative
+    // across the turn tree and re-seeds the spent count on the next run, so the
+    // per-run seed here need not persist — this keeps the ledger map bounded.
+    budgetLedger.forget(turnTreeId)
     runAbort.clear()
     clearAgentRunTodos()
     setTodoToolPostProcess(null)

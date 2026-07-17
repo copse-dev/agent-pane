@@ -69,6 +69,14 @@ export interface ToolGatePayload {
   toolName: string
   /** Tool input the model proposed; the value a rewrite (`updatedInput`) edits. */
   input: Record<string, unknown>
+  /**
+   * File contents for a `read_file` gate (Cursor `beforeReadFile` `content`), so
+   * a redaction / secret-detection hook can inspect the bytes and deny before
+   * they reach the model (B4). Absent for non-read gates and when the file could
+   * not be read; the host fills it at the fire site (the read happens after the
+   * gate, so the host reads it eagerly for read_file when hooks are enabled).
+   */
+  fileContent?: string
 }
 
 /**
@@ -118,6 +126,12 @@ export interface SubagentStartPayload {
 export interface SubagentStopPayload {
   /** The subagent type/kind that finished. */
   subagentType: string
+  /**
+   * How the subagent finished (Cursor `status`). A `followup_message` is only
+   * consumed on `completed` (vendor contract), so the terminal status travels
+   * with the payload for both the wire shape and the follow-up gate.
+   */
+  status: 'completed' | 'error' | 'aborted'
 }
 
 /**
@@ -345,6 +359,15 @@ export interface HookContext {
    * runner is skipped, never a hard failure.
    */
   runCommandHook?: CommandHookRunner
+  /**
+   * Agent-session identity (real conversation / generation ids + running model)
+   * the host captures at the fire site and dialect adapters stamp onto wire
+   * payloads (B4). Opaque to `packages/agent`; absent outside an active run (the
+   * marshaller then emits empty ids, as it did before B4). Captured **by value**
+   * at dispatch so a detached `stop` hook still marshals the finished turn's
+   * identity even after the run's recording context is torn down (decision 3).
+   */
+  agentSession?: AgentSessionInfo
 }
 
 /**
@@ -364,6 +387,49 @@ export interface FunctionHookContext extends HookContext {
   emitChunk?: (chunk: AgentStreamChunk) => void
   /** Read-only view of live loop state (decision 15). */
   loopState?: HookLoopState
+}
+
+/**
+ * One selected model parameter, as the Cursor agent-session wire contract shapes
+ * them: `model_params` is an **array** of `{ id, value }` string pairs (e.g.
+ * `{ id: 'context', value: '1m' }`), not an object (B4; Cursor hooks reference).
+ */
+export interface HookModelParam {
+  id: string
+  value: string
+}
+
+/**
+ * The identity of the model actually running a turn, stamped onto every Cursor
+ * agent-session wire payload (B4; vendor contract `model` / `model_id` /
+ * `model_params`). Sourced host-side from thread-model tracking + the resolved
+ * run model (incl. a subagent's local fallback once D1 wires subagent hooks).
+ */
+export interface HookAgentSessionModel {
+  /** Legacy model slug configured for the run (Cursor `model`). */
+  model: string
+  /** Structured id for the selected model (Cursor `model_id`). */
+  modelId: string
+  /** Selected model parameters as `{ id, value }` pairs (Cursor `model_params`). */
+  modelParams: HookModelParam[]
+}
+
+/**
+ * The agent-session identity a dialect adapter stamps onto a wire payload (B4):
+ * the real conversation / generation ids from the active run and the running
+ * model. `packages/agent` treats this as opaque pass-through data — the host
+ * builds it (from thread id / turn id / resolved model) and threads it through
+ * {@link HookContext.agentSession}; only host-side dialect adapters read it, and
+ * only the Cursor dialect stamps `model` on agent-session events (Claude carries
+ * an optional `model` on `sessionStart` only, per its contract — H4 fire site).
+ */
+export interface AgentSessionInfo {
+  /** Stable conversation id across turns — Cursor `conversation_id` (thread id). */
+  conversationId: string
+  /** The generation that changes each turn — Cursor `generation_id` (turn id). */
+  generationId: string
+  /** Running model identity; absent when unknown (e.g. no active run). */
+  model?: HookAgentSessionModel
 }
 
 type MaybePromise<T> = T | Promise<T>
@@ -403,4 +469,24 @@ export interface BlockingHook<E extends HookEventName = HookEventName> {
     payload: HookEventPayloads[E],
     context: FunctionHookContext,
   ): MaybePromise<BlockingHookOutcome | undefined>
+}
+
+/**
+ * A registered first-party *async* (detached) function hook (C1). Dispatched
+ * through the detached executor — never awaited (decision 3) — so it can only
+ * return an {@link AsyncHookOutcome}: no `decision` / `updatedInput` /
+ * `injectContext` at the type level (decisions 4 & 11). Its output channel is the
+ * pending-message queue (C2), so C1 collects any outcome to a host callback stub
+ * without wiring the queue. Method syntax matches {@link BlockingHook} so hooks
+ * for different events co-store without a cast.
+ */
+export interface AsyncHook<E extends HookEventName = HookEventName> {
+  /** Stable id for spine attribution, the Sources UI, and dedup. */
+  id: string
+  /** Canonical event this hook subscribes to. */
+  event: E
+  run(
+    payload: HookEventPayloads[E],
+    context: FunctionHookContext,
+  ): MaybePromise<AsyncHookOutcome | undefined>
 }

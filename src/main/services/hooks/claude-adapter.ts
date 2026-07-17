@@ -310,7 +310,11 @@ function outcomeFromExitZero(stdout: string): {
 export const claudeAdapter: DialectAdapter = {
   dialect: 'claude',
 
-  marshalToolGateRequest(_hook, payload) {
+  // `_session` (B4 agent-session identity) is accepted for interface parity but
+  // unused: Claude's PreToolUse contract has no conversation/generation/model
+  // fields — Claude carries an optional `model` on `sessionStart` only (H4 fire
+  // site), matching the vendor audit in docs/plans/hooks-and-feature-packs.md.
+  marshalToolGateRequest(_hook, payload, _session) {
     const mapped = claudeToolForTool(payload.toolName, payload.input)
     if (!mapped) return null
     return {

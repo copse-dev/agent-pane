@@ -16,6 +16,7 @@ import {
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
   DEFAULT_COMPARISON_JUDGE_MODEL,
@@ -31,6 +32,7 @@ import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
+import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -50,6 +52,7 @@ export type SettingsSection =
   | 'mcp'
   | 'sources'
   | 'appearance'
+  | 'ssh'
   | 'experimental'
 
 /**
@@ -59,6 +62,7 @@ export type SettingsSection =
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
+export const DEFAULT_ACCENT_COLOR = '#2A9D8F'
 // Ships on by default as a gentle wash that matches the default "Rose" app
 // icon (its #F472B6 mark). Users can dial it up, recolour it, or set the
 // strength to Off for the plain neutral surfaces.
@@ -71,6 +75,26 @@ const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   strong: '10%',
 }
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+function accentTextColor(color: string): '#101918' | '#ffffff' {
+  const linearChannel = (offset: number): number => {
+    const channel = Number.parseInt(color.slice(offset, offset + 2), 16) / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  }
+  const red = linearChannel(1)
+  const green = linearChannel(3)
+  const blue = linearChannel(5)
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+  return luminance > 0.179 ? '#101918' : '#ffffff'
+}
+
+/** Apply the interaction hue and keep text on solid accent fills readable. */
+export function applyUiAccent(color: string): void {
+  if (!HEX_COLOR.test(color)) return
+  const root = document.documentElement
+  root.style.setProperty('--accent-color', color)
+  root.style.setProperty('--text-on-accent', accentTextColor(color))
+}
 
 export function isUiTintStrength(value: unknown): value is UiTintStrength {
   return value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'
@@ -136,6 +160,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
@@ -292,6 +317,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+          <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
@@ -777,18 +803,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Interface tint</legend>
+              <legend>Interface colours</legend>
               <p class="settings-fieldset-desc">
-                Wash a colour through every surface — panels, sidebars, hovers, and the chat
-                background. Kept subtle by design; leave the strength at Off for the plain neutral
-                theme. Works in both light and dark.
+                Accent colour is used for links, primary buttons, selected items, focus indicators,
+                and your chat messages. Interface tint adds a separate, subtle wash through neutral
+                surfaces. Both work in light and dark themes.
               </p>
               <label>
-                Tint colour
+                Accent colour
+                <input type="color" name="uiAccentColor" />
+              </label>
+              <label>
+                Interface tint colour
                 <input type="color" name="uiTintColor" />
               </label>
               <label>
-                Strength
+                Interface tint strength
                 <select name="uiTintStrength">
                   <option value="off">Off</option>
                   <option value="subtle">Subtle</option>
@@ -816,6 +846,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 ).join('')}
               </div>
             </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="ssh">
+            <h3>SSH</h3>
+            <p class="settings-section-desc">
+              Connect Copse to a remote Linux workspace over SSH — shell, git, search, and file
+              tools run on the host while the UI stays local.
+            </p>
+            <div id="settings-ssh-workspace-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="experimental">
@@ -921,6 +960,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 Model used for advisor consultations. Pick a configured cloud provider; defaults to
                 <code>claude-opus-4-8</code>.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Orchestration strategy</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="orchestrationStrategyEnabled" />
+                Let the agent delegate implementation steps to a cheaper worker model
+              </label>
+              <p class="field-hint">
+                The inverse of the advisor strategy: the chat model stays the orchestrator and a
+                <code>delegate_step</code> tool hands each bounded implementation step — with the
+                context it needs — to a cheaper/faster worker model running as a subagent with
+                read/edit/shell tools. Each step returns the worker’s report plus a working-tree
+                snapshot, so the orchestrator reviews what changed before delegating the next step.
+                While off, the tool is not registered.
+              </p>
+              <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
+              <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Model that implements delegated steps. Pick something cheaper/faster than your chat
+                model; defaults to <code>claude-haiku-4-5</code>.
               </p>
             </fieldset>
 
@@ -1057,6 +1120,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const acpAgentsSection = createAcpAgentsSection(api)
   qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
+
+  const sshWorkspaceSection = createSshWorkspaceSection(api, {
+    // Live-persist toggles must wake listeners (e.g. projects "+ Remote" button)
+    // without requiring the dialog Save button.
+    onChanged: (): void => {
+      store.emit('settings_changed')
+    },
+  })
+  qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
@@ -1198,10 +1270,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     // Pull in the lazily-loaded section content so matched blocks (e.g. the ACP
-    // agents list) render fully rather than as an empty shell.
+    // agents list / SSH host list) render fully rather than as an empty shell.
     if (!searchContentLoaded) {
       searchContentLoaded = true
       void acpAgentsSection.refresh()
+      void sshWorkspaceSection.refresh()
       void refreshSources()
     }
 
@@ -1248,6 +1321,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger a which/ps scan (Experimental) or fs walk (Sources) on open.
         if (id === 'experimental') void acpAgentsSection.refresh()
+        if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
       }
     })
@@ -1652,8 +1726,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       searchInput.value = ''
     }
     applySearch('')
-    showSection(pendingSection ?? 'general')
+    const openedSection = pendingSection ?? 'general'
+    showSection(openedSection)
     pendingSection = null
+    // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
+    // lazy section content here too.
+    if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
+    if (openedSection === 'experimental') void acpAgentsSection.refresh()
+    if (openedSection === 'usage') void usageSection.refresh()
+    if (openedSection === 'sources') void refreshSources()
     searchInput.focus()
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
@@ -1680,6 +1761,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         form.elements.namedItem('advisorModel') as HTMLSelectElement,
         api,
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
+      )
+      const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
+        | string
+        | undefined
+      await populateModelSelect(
+        form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
+        api,
+        orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
       const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
       await populateModelSelect(
@@ -1723,6 +1812,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         store.getState().autoPortraitRightPanel
       ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
         store.getState().rightPanelPosition
+
+      const savedAccentColor = await api.settings.get('uiAccentColor')
+      ;(form.elements.namedItem('uiAccentColor') as HTMLInputElement).value =
+        typeof savedAccentColor === 'string' && HEX_COLOR.test(savedAccentColor)
+          ? savedAccentColor
+          : DEFAULT_ACCENT_COLOR
 
       const savedTintColor = await api.settings.get('uiTintColor')
       ;(form.elements.namedItem('uiTintColor') as HTMLInputElement).value =
@@ -1782,6 +1877,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const externalDeny = parseFloat(data.get('safetyExternalDenyThreshold') as string)
 
+      const accentColorRaw = data.get('uiAccentColor')
+      const uiAccentColor =
+        typeof accentColorRaw === 'string' && HEX_COLOR.test(accentColorRaw)
+          ? accentColorRaw
+          : DEFAULT_ACCENT_COLOR
       const tintColorRaw = data.get('uiTintColor')
       const uiTintColor =
         typeof tintColorRaw === 'string' && /^#[0-9a-fA-F]{6}$/.test(tintColorRaw)
@@ -1797,7 +1897,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'smallTasksModel',
         ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
-      for (const key of ['comparisonModelA', 'comparisonModelB', 'comparisonJudgeModel'] as const) {
+      for (const key of [
+        'advisorModel',
+        'orchestrationWorkerModel',
+        'comparisonModelA',
+        'comparisonModelB',
+        'comparisonJudgeModel',
+      ] as const) {
         await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
       }
       await saveSimpleFields(data, api)
@@ -1805,6 +1911,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
       await api.settings.set('rightPanelPosition', rightPanelPosition)
+      await api.settings.set('uiAccentColor', uiAccentColor)
       await api.settings.set('uiTintColor', uiTintColor)
       await api.settings.set('uiTintStrength', uiTintStrength)
       if (isAppIconVariant(appIconVariant)) {
@@ -1841,6 +1948,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       store.emit('settings_changed')
       window.dispatchEvent(new Event('copse:skills-changed'))
       document.documentElement.dataset['theme'] = theme
+      applyUiAccent(uiAccentColor)
       applyUiTint(uiTintColor, uiTintStrength)
       closeSettingsDialog()
     })()

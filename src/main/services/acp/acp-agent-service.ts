@@ -16,7 +16,8 @@ import type {
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
-import { acpModelValue } from '@shared/acp.ts'
+import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
@@ -77,10 +78,10 @@ import {
  * Sessions are persistent per thread (issue #605): the agent process and ACP
  * session live in `acp-session-pool.ts` across turns, so the agent keeps its
  * own memory (no transcript replay on reuse) and background helpers it spawned
- * survive between turns. After a transport drop, an agent that advertises
- * `session/resume` keeps that memory on the next connection; history is replayed
- * only into a genuinely fresh session — first turn, config change, failed
- * resume, or idle reap.
+ * survive between turns. After a transport drop **or an idle reap**, an agent
+ * that advertises `session/resume` keeps that memory on the next connection
+ * (issue #830); history is replayed only into a genuinely fresh session —
+ * first turn, config change, or a failed/unavailable resume.
  */
 
 export interface RunAcpAgentOptions {
@@ -262,6 +263,10 @@ export async function runWithAcpRetry<T>(
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
+  if (isActiveSshWorkspace()) {
+    throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
+  }
+
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
@@ -453,6 +458,9 @@ export async function runAcpAgentFromSettings(
  * Returns `null` when the agent is unknown/disabled or exposes no model selector.
  */
 export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSelector | null> {
+  if (isActiveSshWorkspace()) {
+    throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
+  }
   const agent = getAcpAgent(agentId)
   if (!agent) return null
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
@@ -598,7 +606,7 @@ function pickPermissionOption(
 
 /** Back `fs/read_text_file` with a workspace-scoped read (path sandbox enforced). */
 async function readTextFile(req: ReadTextFileRequest): Promise<ReadTextFileResponse> {
-  const absPath = resolveWorkspacePath(req.path)
+  const absPath = await resolveWorkspacePath(req.path)
   const content = await fsp.readFile(absPath, 'utf-8')
   return { content: sliceLines(content, req.line, req.limit) }
 }
@@ -710,8 +718,8 @@ async function writeViaDiffQueue(
   signal: AbortSignal,
   queueWrites: Set<string>,
 ): Promise<WriteTextFileResponse> {
-  const absPath = resolveWorkspacePath(req.path)
-  const relPath = toRelativePath(absPath)
+  const absPath = await resolveWorkspacePath(req.path)
+  const relPath = await toRelativePath(absPath)
   let before = ''
   try {
     before = await fsp.readFile(absPath, 'utf-8')

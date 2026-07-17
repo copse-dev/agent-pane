@@ -315,15 +315,16 @@ maxBytes})`, `execPty(...)`, and `sftp()` handles; watches liveness and
   target-aware async variant; the allowed-roots allowlist keys on
   `(host, path)`.
 - **Open flow**: "Open remote folder…" — pick a host (from
-  `sshWorkspaceHosts` / `~/.ssh/config`), then a minimal remote directory
-  browser built on `WorkspaceFs.readdir` (the native `dialog.showOpenDialog`
-  at `register-handlers.ts:197` is local-only).
+  `sshWorkspaceHosts` / `~/.ssh/config`), **or add/import a host inline in
+  the same dialog**, then a minimal remote directory browser built on
+  `WorkspaceFs.readdir` (the native `dialog.showOpenDialog` at
+  `register-handlers.ts:197` is local-only).
 - **Settings**: new "SSH hosts" section in
   `renderer/views/settings-dialog.ts` (nav button + `data-section` panel +
   mount, same pattern as the Remote-agents fieldset at :316); host CRUD,
   strict-host-key toggle, agent-forwarding opt-in, passphrase storage using
   the existing key-host mount pattern.
-- **Status surfaces**: footer indicator `⚡ user@host`, disconnect banner
+- **Status surfaces**: titlebar `user@host`, disconnect banner
   with reconnect action, and capability warnings (no rg / no watch).
 - **External editors** (`editors/editor-launcher.ts:55`): opening a local
   editor on a remote path is meaningless; either hide the affordance for SSH

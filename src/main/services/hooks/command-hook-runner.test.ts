@@ -25,17 +25,23 @@ function missingCommandHook(onFailure: CommandHook['onFailure']): CommandHook<'t
 }
 
 describe('host command-hook runner (A2 real spawn)', () => {
-  it('abstains for a non-toolGate event (no fire site wired yet)', async () => {
+  it('abstains for an event with no fire site wired yet', async () => {
     const runner = createCommandHookRunner()
-    const stopHook: CommandHook<'stop'> = {
+    // `afterToolUse` (D2) has no runner branch yet, so the runner abstains
+    // without spawning — even a failClosed hook is a clean no-op.
+    const unwiredHook: CommandHook<'afterToolUse'> = {
       id: 'copse-nonexistent-hook-xyz',
-      event: 'stop',
+      event: 'afterToolUse',
       executor: 'command',
       dialect: 'cursor',
       command: 'copse-nonexistent-hook-xyz',
       onFailure: 'closed',
     }
-    const result = await runner.run(stopHook, { status: 'completed' }, {})
+    const result = await runner.run(
+      unwiredHook,
+      { toolName: 'run_shell', toolCallId: 'call-1', isError: false },
+      {},
+    )
     assert.deepEqual(result, { outcome: null, failed: false })
   })
 
