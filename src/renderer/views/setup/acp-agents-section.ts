@@ -150,7 +150,8 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         'not bundled with Copse — install it with the command shown, then sign it in. ' +
         'Configured agents appear in the model picker as their own group; open a folder ' +
         "before using one, since it acts in that workspace and its writes go through Copse's " +
-        'diff-approval queue.',
+        'diff-approval queue. Not available in SSH remote workspaces (agents are not spawned ' +
+        'on the remote host).',
     ),
     el('h4', { class: 'provider-form-title' }, 'Known agents'),
     knownHost,

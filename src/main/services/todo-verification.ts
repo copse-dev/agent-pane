@@ -29,7 +29,7 @@ export async function verifyTodoCheck(
     case 'fileExists': {
       let absPath: string
       try {
-        absPath = resolveWorkspacePath(check.path)
+        absPath = await resolveWorkspacePath(check.path)
       } catch (err) {
         const msg = errorMessage(err)
         return { passed: false, detail: msg }

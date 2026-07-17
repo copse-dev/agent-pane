@@ -187,13 +187,24 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       // against the newly selected model rather than waiting for the next keystroke.
       void runContextEstimate()
     },
-    () => {
-      composer.focus()
+    {
+      isSshWorkspace: (): boolean => {
+        const { activeProjectId, projects } = store.getState()
+        if (!activeProjectId) return false
+        return Boolean(projects.find((p) => p.id === activeProjectId)?.sshHost)
+      },
+      onClose: (): void => {
+        composer.focus()
+      },
     },
   )
   // Re-sync the picker whenever the active thread changes (new thread,
-  // thread switch, or thread deletion that shifts the active pointer).
+  // thread switch, or thread deletion that shifts the active pointer), and when
+  // the project changes so ACP options hide/show with SSH workspaces.
   store.on('threads_changed', () => {
+    modelPicker.refresh()
+  })
+  store.on('projects_changed', () => {
     modelPicker.refresh()
   })
   const branchControl = mountFooterBranchStatus(branchHost, store, api)

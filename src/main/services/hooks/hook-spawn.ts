@@ -10,7 +10,7 @@
 // This module lives host-side (`src/main/services/hooks/`) — execution-guidance
 // rule 4: spawning is Electron-adjacent host code, never `packages/agent`.
 import { spawn } from 'node:child_process'
-import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { childHookEnv } from './hook-depth.ts'
 
 /** Default per-hook timeout. Vendor-specific overrides live in each adapter (decision 13, H4). */
 export const DEFAULT_HOOK_TIMEOUT_MS = 5_000
@@ -50,9 +50,11 @@ export interface HookSpawnOptions {
  * dialect exit-code table (decision 9) is the single place failure semantics
  * are decided.
  *
- * The process inherits `envForRendererChildProcess()` — the same secret-scrubbed
- * env as `run_shell`, so LLM provider keys never reach hook scripts (non-LLM
- * tool tokens remain; that is the documented trust boundary, docs/cursor-hooks.md).
+ * The process inherits `childHookEnv()` — the same secret-scrubbed env as
+ * `run_shell` (so LLM provider keys never reach hook scripts; non-LLM tool
+ * tokens remain, the documented trust boundary in docs/cursor-hooks.md) plus a
+ * bumped `COPSE_HOOK_DEPTH` so a Copse re-entered from the hook suppresses its
+ * own hooks (decision 5 recursion guard).
  */
 export function spawnHookProcess(
   command: string,
@@ -88,7 +90,7 @@ export function spawnHookProcess(
     const child = spawn(command, {
       cwd: opts.cwd,
       shell: true,
-      env: envForRendererChildProcess(),
+      env: childHookEnv(),
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(opts.signal ? { signal: opts.signal } : {}),
     })
