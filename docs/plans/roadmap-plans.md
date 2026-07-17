@@ -52,15 +52,17 @@ grinding out large amounts of work before those PRs merge.
   (`src/main/services/roadmap-issue-import.ts`). Issues already pinned by an item are
   shown but not re-importable.
 - **Complexity on save** — saving a prompt (create, edit, or import) classifies its
-  complexity one-shot as `low` / `medium` / `high` via the small-tasks model, with a 10s
-  timeout and the #557 heuristic classifier as fallback
+  complexity one-shot as `low` / `medium` / `high` via the small-tasks model only
   (`src/main/services/roadmap-complexity.ts`; vocabulary in
-  `src/shared/roadmap/complexity.ts`). The save itself is immediate: the note persists
-  first and the verdict is stamped in the background (`stampRoadmapComplexity`), with a
-  `roadmap:changed` push so the pane picks up the badge when it lands; a stamp whose
-  prompt was re-edited or deleted mid-flight is dropped. Stored in the `complexity`
-  frontmatter field and shown as a badge on the list row. Status/notes-only edits keep
-  the stored stamp — no model call.
+  `src/shared/roadmap/complexity.ts`). The ask spells out per-word anchors and says
+  medium is not a safe default — small models otherwise middle-anchor a bare three-way
+  choice. No keyword or model-routing heuristic fallback: when the model is unavailable
+  or unparseable the item simply stays unstamped (same stance as fit-check). The save
+  itself is immediate: the note persists first and the verdict is stamped in the
+  background (`stampRoadmapComplexity`), with a `roadmap:changed` push so the pane picks
+  up the badge when it lands; a stamp whose prompt was re-edited or deleted mid-flight
+  is dropped. Stored in the `complexity` frontmatter field and shown as a badge on the
+  list row. Status/notes-only edits keep the stored stamp — no model call.
 - **Check fit** — for a pinned item, an on-demand button asks the small-tasks model
   whether executing the prompt would plausibly resolve the pinned issue
   (`src/main/services/roadmap-fit-check.ts`, `getIssue` on the GitHub backend). Verdict
