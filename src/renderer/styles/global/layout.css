@@ -146,6 +146,7 @@
   padding: 2px 0 var(--spacing-sm) 0;
 }
 .chat-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -186,12 +187,16 @@
 .chat-row:hover .chat-delete {
   opacity: 1;
 }
-/* Animated "…" to the left of a running thread title. Opacity walks across the
-   three dots (same glyph as the overflow icon) so the ellipsis reads as busy. */
+/* Animated "…" in the thread-row indent gutter (not an extra flex column), so
+   a running mark doesn't shove the title right of idle siblings. Opacity walks
+   across the three dots (same glyph as the overflow icon). */
 .chat-running-status {
-  flex-shrink: 0;
-  margin-right: 4px;
+  position: absolute;
+  left: var(--spacing-sm);
+  top: 50%;
+  transform: translateY(-50%);
   color: var(--accent);
+  pointer-events: none;
 }
 .chat-running-status path {
   animation: chat-running-dot 1.2s ease-in-out infinite;

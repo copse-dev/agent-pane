@@ -44,29 +44,32 @@ describe('thread running status dots', () => {
       'running-status',
     )
 
-    const placement = await browser.execute(() => {
-      const row = document.querySelector('.chat-row.is-running')
-      const dots = row?.querySelector('.chat-running-status')
-      const title = row?.querySelector('.chat-title')
-      if (!row || !dots || !title) return null
+    const placement = await browser.execute((idleTitle) => {
+      const rows = [...document.querySelectorAll<HTMLElement>('.chats-list .chat-row')]
+      const running = rows.find((r) => r.classList.contains('is-running'))
+      const idle = rows.find((r) => r.querySelector('.chat-title')?.textContent === idleTitle)
+      const dots = running?.querySelector('.chat-running-status')
+      const runningTitle = running?.querySelector('.chat-title')
+      const idleTitleEl = idle?.querySelector('.chat-title')
+      if (!running || !idle || !dots || !runningTitle || !idleTitleEl) return null
       const dotsRect = dots.getBoundingClientRect()
-      const titleRect = title.getBoundingClientRect()
+      const runningTitleRect = runningTitle.getBoundingClientRect()
+      const idleTitleRect = idleTitleEl.getBoundingClientRect()
+      const rowRect = running.getBoundingClientRect()
       return {
-        dotsLeftOfTitle: dotsRect.right <= titleRect.left + 1,
+        dotsLeftOfTitle: dotsRect.right <= runningTitleRect.left + 1,
+        dotsInGutter: dotsRect.left >= rowRect.left && dotsRect.right <= runningTitleRect.left + 1,
+        titlesAligned: Math.abs(runningTitleRect.left - idleTitleRect.left) <= 1,
+        idleHasDots: Boolean(idle.querySelector('.chat-running-status')),
         pathCount: dots.querySelectorAll('path').length,
       }
-    })
+    }, idleThreadTitle)
     await expect(placement).not.toBeNull()
     await expect(placement?.dotsLeftOfTitle).toBe(true)
+    await expect(placement?.dotsInGutter).toBe(true)
+    await expect(placement?.titlesAligned).toBe(true)
+    await expect(placement?.idleHasDots).toBe(false)
     await expect(placement?.pathCount).toBe(3)
-
-    const idleHasDots = await browser.execute((title) => {
-      const rows = [...document.querySelectorAll('.chats-list .chat-row')]
-      const row = rows.find((r) => r.querySelector('.chat-title')?.textContent === title)
-      if (!row) return null
-      return Boolean(row.querySelector('.chat-running-status'))
-    }, idleThreadTitle)
-    await expect(idleHasDots).toBe(false)
 
     await saveElementScreenshot('#pane-projects', 'thread-running-status-dots.png')
 
