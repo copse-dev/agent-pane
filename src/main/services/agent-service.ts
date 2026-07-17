@@ -81,6 +81,10 @@ import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
 import {
+  runWithOrchestrationContext,
+  resolveOrchestrationWorkerModelId,
+} from './orchestration-runner.ts'
+import {
   runModelComparison,
   setModelComparisonContext,
   isAutoComparisonEnabled,
@@ -737,6 +741,26 @@ export async function runAgent(
         } finally {
           setAdvisorContext(null)
         }
+      }
+      if (name === 'delegate_step') {
+        // Orchestration strategy: the parent stays the orchestrator while a
+        // cheaper worker model implements this one step as a subagent; the
+        // tool result carries the worker's report + working-tree snapshot so
+        // the parent observes between steps. ALS-scoped like explore so
+        // fanned-out independent steps each keep their own context. A
+        // delegated step is file-mutating by design, so it gates the
+        // post-turn review like a direct edit would.
+        turnChangedFiles = true
+        return runWithOrchestrationContext(
+          {
+            parentToolCallId: toolCallId,
+            parentGoal,
+            workerModel: resolveOrchestrationWorkerModelId(),
+            registry,
+            onChunk: sendChunk,
+          },
+          () => registry.execute(name, args, signal),
+        )
       }
       if (name === 'compare_models') {
         // Manual trigger: run the two-model diff comparison on demand, with

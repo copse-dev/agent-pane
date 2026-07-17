@@ -108,7 +108,7 @@ export interface SubagentMessage {
 
 export interface SubagentSession {
   id: string
-  kind: 'explore' | 'investigate_ci'
+  kind: 'explore' | 'investigate_ci' | 'delegate'
   status: 'running' | 'done' | 'error'
   prompt: string
   summary: string | null
