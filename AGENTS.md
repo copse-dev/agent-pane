@@ -195,6 +195,12 @@ decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
 - `npm test` runs Node's test runner over `src/**/*.test.ts` (esbuild-bundled into `dist-test/`).
 - `npm run test:e2e` is WebdriverIO + `@wdio/electron-service` and needs a display. It passes under
   `npm run test:e2e` on this headless VM (WDIO auto-starts Xvfb on Linux).
+- **Don't block the machine on e2e while iterating.** When a remote e2e host is available
+  (`.tmp/remote-e2e/host.json` exists, or one can be provisioned), prefer
+  `npm run e2e:remote -- run --detach` — it snapshots the working tree (uncommitted changes
+  included), runs the oracle-selected specs on a cloud container, and leaves results in
+  `.tmp/remote-e2e/runs/<run-id>/`; finish with `e2e:remote -- wait <run-id>` and keep working in
+  between. See [`ci-runners/README.md`](ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
 
 For _which tier a test belongs in_ — favour unit/component tests, reserve e2e for broad validation
 and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) — read
