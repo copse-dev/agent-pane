@@ -9,6 +9,7 @@ import {
   dockerRunCommand,
   gitSshCommand,
   newRunId,
+  defaultRemoteE2eVolumeSizeGb,
   packageLockHash,
   parseOraclePlan,
   registryImageRef,
@@ -130,6 +131,22 @@ describe('registry helpers', () => {
       assert.equal(
         resolveRegistry({ registry: 'rg.fr-par.scw.cloud/from-flag/' }),
         'rg.fr-par.scw.cloud/from-flag',
+      )
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_CI_REGISTRY']
+      else process.env['COPSE_CI_REGISTRY'] = previous
+    }
+  })
+
+  it('defaults root volume to 40GB for registry pull and 80GB for on-host bake', () => {
+    const previous = process.env['COPSE_CI_REGISTRY']
+    delete process.env['COPSE_CI_REGISTRY']
+    try {
+      assert.equal(defaultRemoteE2eVolumeSizeGb({}), 80)
+      assert.equal(defaultRemoteE2eVolumeSizeGb({ registry: 'rg.fr-par.scw.cloud/copse' }), 40)
+      assert.equal(
+        defaultRemoteE2eVolumeSizeGb({ registry: 'rg.fr-par.scw.cloud/copse', rebuild: true }),
+        80,
       )
     } finally {
       if (previous === undefined) delete process.env['COPSE_CI_REGISTRY']

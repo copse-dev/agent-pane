@@ -90,6 +90,12 @@ const DEFAULT_NAME = 'copse-remote-e2e'
 const DEFAULT_SCW_TYPE = 'PLAY2-MICRO'
 const DEFAULT_AWS_INSTANCE_TYPE = 'c7i.xlarge'
 const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
+/**
+ * Registry-pull hosts skip on-host `docker compose build` scratch, so they can
+ * use a smaller SBS/EBS root. On-host bake still needs {@link DEFAULT_VOLUME_SIZE_GB}.
+ * Scaleway cannot shrink volumes after create — pick the right size at `up`.
+ */
+const DEFAULT_VOLUME_SIZE_GB_PULL = 40
 const REMOTE_BASE = '/srv/remote-e2e'
 const LOCAL_STATE_DIR = '.tmp/remote-e2e'
 const IMAGE = 'copse-ci-runner:latest'
@@ -165,7 +171,8 @@ up options (Scaleway default; prefix 'aws' for EC2):
   --region / --key-name / --key-path / --subnet-id / --security-group-id   (AWS, as runners:burst)
   --name <tag>                 Fleet tag (default: ${DEFAULT_NAME})
   --ttl-minutes <n>            Auto-shutdown backstop; 0 disables (default: ${String(DEFAULT_TTL_MINUTES)})
-  --volume-size-gb <n>         Root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB)}; bake needs ~80)
+  --volume-size-gb <n>         Root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB_PULL)} with registry
+                               pull, ${String(DEFAULT_VOLUME_SIZE_GB)} for on-host bake / --rebuild)
   --replace                    Provision even if a saved host already exists
 
 run options:
@@ -452,6 +459,13 @@ export function resolveRegistry(options: Options): string | undefined {
   const fromEnv = process.env[REGISTRY_ENV]
   if (fromEnv !== undefined && fromEnv.length > 0) return fromEnv.replace(/\/+$/, '')
   return undefined
+}
+
+/** Default root disk for `up`: smaller when the host will only pull a pre-baked image. */
+export function defaultRemoteE2eVolumeSizeGb(options: Options): number {
+  const willBakeOnHost =
+    resolveRegistry(options) === undefined || hasFlag(options, 'rebuild')
+  return willBakeOnHost ? DEFAULT_VOLUME_SIZE_GB : DEFAULT_VOLUME_SIZE_GB_PULL
 }
 
 function requireRegistry(options: Options): string {
@@ -751,10 +765,16 @@ async function upCommand(options: Options, provider: Provider): Promise<void> {
     'ttl-minutes',
   )
   const volumeSizeGb = positiveInt(
-    optionWithDefault(options, 'volume-size-gb', String(DEFAULT_VOLUME_SIZE_GB)),
+    optionWithDefault(options, 'volume-size-gb', String(defaultRemoteE2eVolumeSizeGb(options))),
     'volume-size-gb',
   )
   const keyPath = optionWithDefault(options, 'key-path', '')
+  console.log(
+    `==> Root volume ${String(volumeSizeGb)} GB` +
+      (option(options, 'volume-size-gb') === undefined
+        ? ` (default for ${resolveRegistry(options) !== undefined && !hasFlag(options, 'rebuild') ? 'registry pull' : 'on-host bake'})`
+        : ''),
+  )
 
   let host: CloudHost
   let record: HostRecord

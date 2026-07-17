@@ -220,6 +220,9 @@ BUILD_GH_TOKEN=ghp_... SCW_SECRET_KEY=... \
 
 SCW_SECRET_KEY=... COPSE_CI_REGISTRY=rg.fr-par.scw.cloud/<namespace> \
   npm run e2e:remote -- up                           # pull + ready in minutes
+# Registry pull defaults to a 40 GB root (no on-host bake scratch). On-host bake
+# / --rebuild still defaults to 80 GB. Override with --volume-size-gb (SBS cannot
+# shrink after create).
 
 npm run e2e:remote -- run                            # oracle subset of your diff
 npm run e2e:remote -- run --all --shard 2 --detach   # full CI suite, 2 containers
