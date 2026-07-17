@@ -4,12 +4,16 @@ import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import {
   planAcpAutoSetup,
   requestAcpPackageInstallApproval,
+  updateCurrentAcpAgentModels,
   type AcpAutoSetupInput,
 } from './acp-auto-setup.ts'
 import { setApprovalHandler } from '../approval.ts'
+import { listAcpAgents } from './acp-agent-registry.ts'
+import { setSetting } from '../storage/settings.ts'
 
-afterEach(() => {
+afterEach(async () => {
   setApprovalHandler(null)
+  await setSetting('registeredAcpAgents', [])
 })
 
 const claude: KnownAcpAgent = {
@@ -164,5 +168,37 @@ describe('ACP package install approval', () => {
     assert.equal(await requestAcpPackageInstallApproval([codex, claude]), false)
     assert.match(body, /@agentclientprotocol\/codex-acp/)
     assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
+    assert.match(body, /Socket Firewall \(sfw\).*first install it globally/)
+    assert.match(body, /lifecycle scripts disabled/)
+  })
+})
+
+describe('updateCurrentAcpAgentModels', () => {
+  it('merges models onto the latest registry config after asynchronous work', async () => {
+    await setSetting('registeredAcpAgents', [
+      {
+        id: 'claude-agent-acp',
+        title: 'User renamed Claude',
+        command: 'custom-claude-acp',
+        env: { CLAUDE_CONFIG_DIR: '/custom' },
+        enabled: false,
+      },
+    ])
+
+    const updated = await updateCurrentAcpAgentModels('claude-agent-acp', [
+      { value: 'sonnet', label: 'Sonnet' },
+    ])
+
+    assert.equal(updated, true)
+    assert.deepEqual(listAcpAgents(), [
+      {
+        id: 'claude-agent-acp',
+        title: 'User renamed Claude',
+        command: 'custom-claude-acp',
+        env: { CLAUDE_CONFIG_DIR: '/custom' },
+        availableModels: [{ value: 'sonnet', label: 'Sonnet' }],
+        enabled: false,
+      },
+    ])
   })
 })
