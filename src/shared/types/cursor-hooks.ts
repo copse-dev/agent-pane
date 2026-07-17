@@ -14,6 +14,8 @@ export const CURSOR_HOOK_EVENTS = [
   'beforeSubmitPrompt',
   'afterFileEdit',
   'stop',
+  'subagentStart',
+  'subagentStop',
 ] as const
 
 export type CursorHookEvent = (typeof CURSOR_HOOK_EVENTS)[number]
@@ -37,14 +39,17 @@ export function isCursorPermissionHookEvent(
 /**
  * Events Copse actually fires (vs parsed for discovery only). The permission
  * gates plus `beforeSubmitPrompt` (B1 — compose path), `afterFileEdit`
- * (B2 — the diff-queue / write-tool site), and `stop` (B3 — fired the moment
- * agent work stops, at turn end or abort).
+ * (B2 — the diff-queue / write-tool site), `stop` (B3 — fired the moment agent
+ * work stops, at turn end or abort), and `subagentStart` / `subagentStop`
+ * (D1 — the subagent spawn gate + detached completion, matcher on subagent type).
  */
 export const CURSOR_WIRED_HOOK_EVENTS = [
   ...CURSOR_PERMISSION_HOOK_EVENTS,
   'beforeSubmitPrompt',
   'afterFileEdit',
   'stop',
+  'subagentStart',
+  'subagentStop',
 ] as const
 
 /** Whether Copse actually fires this event (drives the Sources "supported" badge). */

@@ -299,10 +299,19 @@ function syncSubagentTimeline(
       const sig = JSON.stringify(innerToolCalls)
       let wrap = existing.get(key)
       if (!wrap || subagentInnerToolsSig.get(wrap) !== sig) {
+        // Rebuilding recreates every inner tool collapsed; carry over the ids
+        // the user expanded so their disclosure survives the tick.
+        const openInner = new Set<string>()
+        wrap?.querySelectorAll<HTMLElement>('.subagent-inner-tool[open]').forEach((node) => {
+          const id = node.dataset['toolId']
+          if (id) openInner.add(id)
+        })
         const fresh = el('div', { class: 'subagent-inner-tools' })
         fresh.dataset['timelineKey'] = key
         for (const inner of innerToolCalls) {
-          fresh.append(createInnerToolCard(inner))
+          const entry = createInnerToolCard(inner)
+          if (openInner.has(inner.id)) entry.setAttribute('open', '')
+          fresh.append(entry)
         }
         subagentInnerToolsSig.set(fresh, sig)
         void annotateFileReferences(fresh, api)
@@ -1055,6 +1064,9 @@ export function mountConversation(
         populateSubagentCard(card, item.toolCall, item.label, api)
         toolCardSignatures.set(card, sig)
       } else {
+        // The stale node was already claimed out of `existing`, so the cleanup
+        // below won't drop it — remove it here or the rebuilt card duplicates.
+        card?.remove()
         card = createToolCard(item, api)
         toolCardKeys.set(card, key)
         toolCardSignatures.set(card, sig)
@@ -1064,6 +1076,16 @@ export function mountConversation(
         const status = aggregateToolStatus(item.toolCalls)
         ;(card as HTMLDetailsElement).open =
           status === 'running' || userExpandedGroups.has(item.key)
+        // A changed group card is rebuilt from scratch with every item collapsed;
+        // reapply the per-item expansion captured above so an item the user
+        // opened (or an expanded individual card absorbed into this group)
+        // survives the per-step rebuild.
+        card
+          .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
+          .forEach((entry) => {
+            const id = entry.dataset['toolId']
+            if (id && userExpandedTools.has(id)) entry.open = true
+          })
       } else {
         const tc = item.toolCall
         const running = tc.status === 'running' || tc.subagent?.status === 'running'

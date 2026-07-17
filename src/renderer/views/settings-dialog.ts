@@ -16,6 +16,7 @@ import {
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
   DEFAULT_COMPARISON_JUDGE_MODEL,
@@ -31,6 +32,7 @@ import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
+import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -50,6 +52,7 @@ export type SettingsSection =
   | 'mcp'
   | 'sources'
   | 'appearance'
+  | 'ssh'
   | 'experimental'
 
 /**
@@ -157,6 +160,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
@@ -313,6 +317,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+          <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
@@ -843,6 +848,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
           </section>
 
+          <section class="settings-section" data-section="ssh">
+            <h3>SSH</h3>
+            <p class="settings-section-desc">
+              Connect Copse to a remote Linux workspace over SSH — shell, git, search, and file
+              tools run on the host while the UI stays local.
+            </p>
+            <div id="settings-ssh-workspace-host" class="settings-mount"></div>
+          </section>
+
           <section class="settings-section" data-section="experimental">
             <h3>Experimental</h3>
             <p class="settings-section-desc">
@@ -946,6 +960,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 Model used for advisor consultations. Pick a configured cloud provider; defaults to
                 <code>claude-opus-4-8</code>.
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Orchestration strategy</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="orchestrationStrategyEnabled" />
+                Let the agent delegate implementation steps to a cheaper worker model
+              </label>
+              <p class="field-hint">
+                The inverse of the advisor strategy: the chat model stays the orchestrator and a
+                <code>delegate_step</code> tool hands each bounded implementation step — with the
+                context it needs — to a cheaper/faster worker model running as a subagent with
+                read/edit/shell tools. Each step returns the worker’s report plus a working-tree
+                snapshot, so the orchestrator reviews what changed before delegating the next step.
+                While off, the tool is not registered.
+              </p>
+              <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
+              <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Model that implements delegated steps. Pick something cheaper/faster than your chat
+                model; defaults to <code>claude-haiku-4-5</code>.
               </p>
             </fieldset>
 
@@ -1082,6 +1120,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const acpAgentsSection = createAcpAgentsSection(api)
   qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
+
+  const sshWorkspaceSection = createSshWorkspaceSection(api, {
+    // Live-persist toggles must wake listeners (e.g. projects "+ Remote" button)
+    // without requiring the dialog Save button.
+    onChanged: (): void => {
+      store.emit('settings_changed')
+    },
+  })
+  qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
@@ -1223,10 +1270,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     // Pull in the lazily-loaded section content so matched blocks (e.g. the ACP
-    // agents list) render fully rather than as an empty shell.
+    // agents list / SSH host list) render fully rather than as an empty shell.
     if (!searchContentLoaded) {
       searchContentLoaded = true
       void acpAgentsSection.refresh()
+      void sshWorkspaceSection.refresh()
       void refreshSources()
     }
 
@@ -1273,6 +1321,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger a which/ps scan (Experimental) or fs walk (Sources) on open.
         if (id === 'experimental') void acpAgentsSection.refresh()
+        if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
       }
     })
@@ -1677,8 +1726,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       searchInput.value = ''
     }
     applySearch('')
-    showSection(pendingSection ?? 'general')
+    const openedSection = pendingSection ?? 'general'
+    showSection(openedSection)
     pendingSection = null
+    // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
+    // lazy section content here too.
+    if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
+    if (openedSection === 'experimental') void acpAgentsSection.refresh()
+    if (openedSection === 'usage') void usageSection.refresh()
+    if (openedSection === 'sources') void refreshSources()
     searchInput.focus()
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
@@ -1705,6 +1761,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         form.elements.namedItem('advisorModel') as HTMLSelectElement,
         api,
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
+      )
+      const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
+        | string
+        | undefined
+      await populateModelSelect(
+        form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
+        api,
+        orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
       const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
       await populateModelSelect(
@@ -1833,7 +1897,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'smallTasksModel',
         ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
-      for (const key of ['comparisonModelA', 'comparisonModelB', 'comparisonJudgeModel'] as const) {
+      for (const key of [
+        'advisorModel',
+        'orchestrationWorkerModel',
+        'comparisonModelA',
+        'comparisonModelB',
+        'comparisonJudgeModel',
+      ] as const) {
         await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
       }
       await saveSimpleFields(data, api)
