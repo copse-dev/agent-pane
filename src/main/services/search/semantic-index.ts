@@ -460,6 +460,31 @@ export async function searchSemanticContent(
  * which our {@link gortexHomeDir} HOME override scopes to Copse userData, so we
  * never drop a `.gortex.yaml` into the user's repo.
  */
+/**
+ * Excludes already written to gortex's global `config.yaml`, parsed directly
+ * (no daemon, no subprocess) so {@link ensureGortexExcludes} can skip re-adding
+ * patterns and avoid a spawn-per-pattern storm on every workspace open.
+ */
+async function readGortexExcludes(): Promise<Set<string>> {
+  const out = new Set<string>()
+  let raw: string
+  try {
+    raw = await readFile(join(gortexHomeDir(), '.gortex', 'config.yaml'), 'utf8')
+  } catch {
+    return out
+  }
+  let inExclude = false
+  for (const line of raw.split('\n')) {
+    // Top-level `exclude:` key opens the block; any other non-indented key ends it.
+    if (/^\S/.test(line)) inExclude = /^exclude:\s*$/.test(line)
+    else if (inExclude) {
+      const match = line.match(/^\s*-\s*(.+?)\s*$/)
+      if (match?.[1]) out.add(match[1].trim())
+    }
+  }
+  return out
+}
+
 async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
   const existing = gortexExcludesReady
   if (existing) return existing
@@ -470,16 +495,29 @@ async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
     // for repos that aren't git-tracked and for Copse's own dist-* variants.
     const gitPatterns = await computeGitIgnoreExcludes(workspaceRoot).catch(() => [])
     const patterns = [...new Set<string>([...GORTEX_EXCLUDE_PATTERNS, ...gitPatterns])]
-    for (const pattern of patterns) {
-      // Best-effort + idempotent: re-adding a pattern is a no-op, and a single
-      // failed exclude must not block the index build.
+    // Only spawn `exclude add` for patterns NOT already in gortex's config.
+    // `exclude add` is one subprocess per call; a dev checkout that has run e2e
+    // many times accumulates hundreds of uniquely-named `.wdio-*` dirs, so
+    // blindly re-adding every pattern meant hundreds of gortex spawns (plus a
+    // re-index) on every workspace open — a startup CPU spin. Reading the
+    // current set is a plain file read (no daemon, no spawn); when nothing is
+    // new (the common case after the first open) we spawn zero processes and
+    // gortex doesn't re-index.
+    const present = await readGortexExcludes()
+    const missing = patterns.filter((p) => !present.has(p))
+    for (const pattern of missing) {
+      // Best-effort: a single failed exclude must not block the index build.
       await runCommand(
         gortexCmd(),
         ['config', 'exclude', 'add', pattern, '--global', '--no-progress'],
         gortexRunOpts(workspaceRoot),
       ).catch(() => undefined)
     }
-    await resetPreExcludeIndex(workspaceRoot)
+    // Only shed the pre-exclude index when we actually changed the exclude set;
+    // otherwise the daemon needn't re-index at all.
+    if (missing.length > 0) {
+      await resetPreExcludeIndex(workspaceRoot)
+    }
   })()
 
   gortexExcludesReady = ready
