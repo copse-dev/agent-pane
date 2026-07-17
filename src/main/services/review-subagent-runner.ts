@@ -34,6 +34,7 @@ export interface RunPostTurnReviewOptions {
 
 export interface PostTurnReviewResult {
   summary: string
+  issuesFound: boolean
   usage: ModelUsage
 }
 
@@ -120,8 +121,9 @@ export async function runPostTurnReview(
     })
 
     // The shared review system prompt now asks for a trailing REVIEW_JSON line;
-    // these legacy single-shot consumers (model comparison, standalone review)
-    // only want the human-facing verdict, so strip it here.
-    return { summary: parseReviewVerdict(summary).summary, usage }
+    // model-comparison consumers only want the human-facing verdict, while the
+    // standalone retry path also needs `issuesFound` for the review card.
+    const verdict = parseReviewVerdict(summary)
+    return { summary: verdict.summary, issuesFound: verdict.issuesFound, usage }
   })
 }

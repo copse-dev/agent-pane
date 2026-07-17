@@ -1,4 +1,4 @@
-import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
 import type { CoerceToolArgsFn } from '@copse/agent/parse-text-tool-calls.ts'
 import {
   buildReviewPrompt,
@@ -61,6 +61,9 @@ export interface RunParentContinuationOptions {
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
   coerceTextToolCallArgs?: CoerceToolArgsFn
   onEditTool?: (name: string) => void
+  /** Spine-recording sink + step attribution for hooks fired in continuation loops (decision 6). */
+  recordHookRun?: AgentLoopOptions['recordHookRun']
+  onLlmCall?: AgentLoopOptions['onLlmCall']
 }
 
 function filterReviewTools(registry: ToolRegistry): LLMTool[] {
@@ -111,6 +114,8 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
     ...(opts.coerceTextToolCallArgs !== undefined
       ? { coerceTextToolCallArgs: opts.coerceTextToolCallArgs }
       : {}),
+    ...(opts.recordHookRun !== undefined ? { recordHookRun: opts.recordHookRun } : {}),
+    ...(opts.onLlmCall !== undefined ? { onLlmCall: opts.onLlmCall } : {}),
     executeTool: async (name, args, signal, toolCallId) => {
       opts.onEditTool?.(name)
       return opts.executeTool(name, args, signal, toolCallId)

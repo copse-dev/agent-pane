@@ -7,6 +7,8 @@ export const FETCH_TIMEOUTS = {
   modelList: 4_000,
   /** Cloud API key validation round-trips. */
   apiKeyValidation: 8_000,
+  /** Claude / Codex subscription plan-usage polls (fail soft on timeout). */
+  planUsage: 8_000,
   /** Local safety-classification chat completion. */
   safetyClassification: 8_000,
   /** LM Studio model-download status poll. */

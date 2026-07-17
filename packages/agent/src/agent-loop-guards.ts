@@ -48,9 +48,9 @@ export const DUPLICATE_TOOL_RESULT_PREFIX =
   '[Duplicate tool call skipped — same arguments as a recent step. Use prior results, run_shell if needed, or answer in text.]'
 
 /**
- * True while any todo is still pending or in progress. The loop uses this to
- * swap the finalize nudge for {@link OPEN_TODOS_FINALIZE_NUDGE} so a run does
- * not end with the plan half-done.
+ * True while any todo is still pending or in progress. The `todo-finalize-closeout`
+ * hook (and the closeout loop) use this so a run does not end with the plan
+ * half-done.
  */
 export function hasOpenTodos(todos: readonly TodoItem[]): boolean {
   return todos.some((t) => t.status === 'pending' || t.status === 'in_progress')

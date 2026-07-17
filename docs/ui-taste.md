@@ -178,12 +178,38 @@ Fix (in [`conversation.css`](../src/renderer/styles/global/conversation.css)):
 Do not put `pre-wrap` back on the message container “for convenience”; it regresses every multi-block
 agent summary.
 
+## To-dos panel: cancelled means gone
+
+The inline To-dos panel (`todo-panel.ts`) lists the **active plan only**. Cancelled items
+are omitted from the DOM (same product read as ACP plans: cancelled = no longer part of the
+plan). When every item is cancelled — or the thread has no todos — hide the panel entirely;
+do not leave a `0/0 done` shell with struck-through or muted ghost rows. Strikethrough is for
+**completed** work, not cancelled work. Spec:
+[`tests/e2e/todo-display.e2e.ts`](../tests/e2e/todo-display.e2e.ts).
+
+## Portrait / vertical chrome (narrow tall windows)
+
+On tall portrait windows (or when the right panel is pinned to **bottom**), keep mode switching
+reachable without a crowded titlebar:
+
+- Titlebar keeps **Open in editor** + **Panel** labeled; secondary mode buttons (Terminal, Changes,
+  PRs, Browser, …) become icon-only.
+- A labeled `.portrait-panel-bar` sits under `.input-footer` (between status and the stacked panel),
+  matching the Settings button height band and spanning the chat column.
+- When the chat column is too narrow for every labeled mode, trailing buttons collapse into a `…`
+  overflow menu (Panel stays visible; same idea as the footer compact overflow) rather than wrapping
+  or scrolling. Spec:
+  [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the
 target state, asserts the DOM/layout behavior, and saves a screenshot — not just `npm run check` or a
 manual VNC glance.
 
+- Primary-chat model labels (`.message-model`) appear only when a thread's assistant turns used more
+  than one picker model — keep them muted chrome (`--font-size-xs`, tertiary text), never inside
+  `.message-text`. Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
 - For the footer fix, [`tests/e2e/settings-footer.e2e.ts`](../tests/e2e/settings-footer.e2e.ts)
   scrolls content beneath the bar and asserts (a) the footer's bottom is flush with the scrollport
   bottom (gap ≤ 1px) and (b) `elementFromPoint` at the bottom edge resolves to the footer, not
@@ -196,3 +222,32 @@ manual VNC glance.
 - Pin `#app` to `window.innerWidth` in [`tests/e2e/helpers/screenshot.ts`](../tests/e2e/helpers/screenshot.ts)
   (`prepareE2eScreenshot`) so captures are not wider than the Electron window — otherwise table
   columns clip off the right edge of the PNG.
+
+## Transcript status callouts
+
+Review and comparison results should read as annotations in the transcript, not rounded cards or
+pills. Use a square, thin status rail and a subtle horizontal color wash that fades into the chat
+background. Reserve the rail hue for state (accent, error, etc.); avoid a full perimeter border,
+rounded container corners, or a solid tinted block around these secondary results.
+
+## Conditional split panes
+
+Do not permanently reserve space for a secondary viewer that has no content yet. When a pane has a
+primary summary and an optional detail surface (for example, PR description plus selected-file
+diff), let the primary surface flex into the unused area. Restore the bounded split only once the
+secondary content is loading or visible, and keep its selector adjacent to the expanded primary
+surface so the next action remains discoverable.
+
+## Accent colour versus interface tint
+
+The accent and tint are separate controls. Accent is semantic interaction emphasis: links, primary
+actions, focus, selected rows, and user-authored message highlights. Interface tint is only a subtle
+wash through otherwise neutral surfaces. Derive hover and link shades from the accent per theme,
+and derive foreground text from the chosen solid accent so custom colours do not leave primary
+buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
+
+## Sidebar selections
+
+Chat rows use flat, square selection and hover fills with a slim inset accent rail. Avoid rounded
+row highlights here: they read like detached pills instead of a selection within a continuous
+sidebar list.

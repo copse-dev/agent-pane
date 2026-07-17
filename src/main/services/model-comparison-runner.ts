@@ -15,7 +15,7 @@ import {
   COMPARISON_MODEL_A_SETTING,
   COMPARISON_MODEL_B_SETTING,
   buildComparisonJudgePrompt,
-  comparisonApprovalBody,
+  comparisonApprovalPickerIntro,
   comparisonNeedsApproval,
   comparisonReviewersDistinct,
   resolveComparisonModels,
@@ -59,23 +59,25 @@ async function ensureApproved(
   models: ComparisonModels,
   threadId: string,
   signal: AbortSignal,
-): Promise<boolean> {
-  if (!comparisonNeedsApproval(models, isBillableModel)) return true
-  if (approvedThreads.has(threadId)) return true
-  if (signal.aborted) return false
-  const { approved, remember } = await requestApproval({
+): Promise<ComparisonModels | null> {
+  if (!comparisonNeedsApproval(models, isBillableModel)) return models
+  if (approvedThreads.has(threadId)) return models
+  if (signal.aborted) return null
+  const { approved, remember, comparisonModels } = await requestApproval({
     type: 'model-compare',
     title: 'Compare models on this diff?',
-    body: comparisonApprovalBody(models, isBillableModel),
+    body: comparisonApprovalPickerIntro(),
+    comparisonModels: models,
     allowRemember: true,
     rememberLabel: 'Always run comparisons in this chat',
   })
   // The user may have hit Stop while the modal was open; don't start a billable
   // run for an aborted turn.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- signal.aborted can flip during the awaited approval; TS narrows it from the guard above
-  if (signal.aborted) return false
-  if (approved && remember) approvedThreads.add(threadId)
-  return approved
+  if (signal.aborted) return null
+  if (!approved) return null
+  if (remember) approvedThreads.add(threadId)
+  return comparisonModels ?? models
 }
 
 async function reviewWith(
@@ -143,7 +145,8 @@ export async function runModelComparison(
     return { summary: msg, comparison: skipped }
   }
 
-  if (!(await ensureApproved(models, ctx.threadId, signal))) {
+  const approvedModels = await ensureApproved(models, ctx.threadId, signal)
+  if (!approvedModels) {
     const declined = errorComparison(
       models,
       signal.aborted ? 'Comparison cancelled.' : 'Comparison declined.',
@@ -152,9 +155,22 @@ export async function runModelComparison(
     return { summary: 'Model comparison was declined.', comparison: declined }
   }
 
+  if (!comparisonReviewersDistinct(approvedModels)) {
+    const msg = `Comparison skipped: reviewers A and B are the same model (${approvedModels.a}). Pick two different models.`
+    const skipped = errorComparison(approvedModels, msg)
+    ctx.onChunk({ type: 'model_comparison', comparison: skipped })
+    return { summary: msg, comparison: skipped }
+  }
+
   ctx.onChunk({
     type: 'model_comparison',
-    comparison: { status: 'running', models, reviewA: '', reviewB: '', synthesis: '' },
+    comparison: {
+      status: 'running',
+      models: approvedModels,
+      reviewA: '',
+      reviewB: '',
+      synthesis: '',
+    },
   })
 
   const usageByModel: Record<string, ModelUsage> = {}
@@ -179,14 +195,14 @@ export async function runModelComparison(
     // its own provider failure to an inline note (reviewOrNote), so one model's
     // error never rejects the batch and leaves the other paid review orphaned.
     const [reviewA, reviewB] = await Promise.all([
-      reviewOrNote(models.a, ctx, signal, accumulate(models.a)),
-      reviewOrNote(models.b, ctx, signal, accumulate(models.b)),
+      reviewOrNote(approvedModels.a, ctx, signal, accumulate(approvedModels.a)),
+      reviewOrNote(approvedModels.b, ctx, signal, accumulate(approvedModels.b)),
     ])
 
-    const judgeProvider = await buildProvider(models.judge)
-    const judgePrompt = buildComparisonJudgePrompt(ctx.parentGoal, models, reviewA, reviewB)
+    const judgeProvider = await buildProvider(approvedModels.judge)
+    const judgePrompt = buildComparisonJudgePrompt(ctx.parentGoal, approvedModels, reviewA, reviewB)
     const judged = await completeTextWithUsage(judgeProvider, judgePrompt, JUDGE_TIMEOUT_MS)
-    accumulate(models.judge)(judged.usage)
+    accumulate(approvedModels.judge)(judged.usage)
 
     const synthesis = judged.text.trim() || '(judge returned no comparison)'
     // The per-model `usage` chunks emitted above already update the thread's usage
@@ -196,7 +212,7 @@ export async function runModelComparison(
 
     const comparison: ModelComparison = {
       status: 'done',
-      models,
+      models: approvedModels,
       reviewA,
       reviewB,
       synthesis,
@@ -206,7 +222,7 @@ export async function runModelComparison(
     return { summary: synthesis, comparison }
   } catch (err) {
     const error = signal.aborted ? 'Comparison cancelled.' : errorMessage(err)
-    const failed = errorComparison(models, error)
+    const failed = errorComparison(approvedModels, error)
     ctx.onChunk({ type: 'model_comparison', comparison: failed })
     return { summary: `Model comparison failed: ${error}`, comparison: failed }
   }

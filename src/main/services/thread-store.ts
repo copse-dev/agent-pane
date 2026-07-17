@@ -20,7 +20,15 @@ import {
   type RefResolver,
 } from '@shared/threads/fold.ts'
 import { parseOkfMessage } from '@shared/threads/okf-message.ts'
-import { parseSpine, serializeSpine, type ThreadMeta } from '@shared/threads/spine-schema.ts'
+import {
+  parseSpine,
+  parseSpineEntries,
+  rebuildSpinePreservingNonMessageLines,
+  serializeSpineEntries,
+  serializeSpineLine,
+  type SpineHookRunLine,
+  type ThreadMeta,
+} from '@shared/threads/spine-schema.ts'
 import {
   remoteAgentPrIndexKey,
   type RemoteAgentLink,
@@ -116,6 +124,14 @@ function listFilesRecursive(dir: string, base: string = dir): string[] {
  * references exist, a crash mid-write never leaves the spine pointing at a
  * missing file (the previous spine still resolves against the still-present old
  * files). Stale files from a shrunk message set are pruned last (best-effort).
+ *
+ * The spine is regenerated from `thread.messages` alone, but non-message lines
+ * (hook_run records, future line types) live only in `events.jsonl` — so the
+ * rewrite read-merges the existing file to carry them through (decision 6 of
+ * docs/plans/hooks-and-feature-packs.md; see
+ * {@link rebuildSpinePreservingNonMessageLines} for why read-merge-write was
+ * chosen over carrying them in memory). Blobs those preserved lines reference
+ * are exempted from pruning.
  */
 function writeThread(projectId: string, thread: Thread): void {
   const dir = threadDir(projectId, thread.id)
@@ -123,14 +139,16 @@ function writeThread(projectId: string, thread: Thread): void {
 
   const { spine, files } = explodeThread(thread.messages, sha256)
   for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
-  writeFileSync(join(dir, EVENTS_FILE), serializeSpine(spine))
+  const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+  const { body, preservedRefs } = rebuildSpinePreservingNonMessageLines(existingRaw, spine)
+  writeFileSync(join(dir, EVENTS_FILE), body)
   writeFileSync(join(dir, META_FILE), `${JSON.stringify(metaOf(thread))}\n`)
 
-  pruneStaleFiles(dir, files)
+  pruneStaleFiles(dir, files, preservedRefs)
 }
 
-function pruneStaleFiles(dir: string, files: FileToWrite[]): void {
-  const keep = new Set(files.map((f) => f.ref))
+function pruneStaleFiles(dir: string, files: FileToWrite[], preservedRefs: string[] = []): void {
+  const keep = new Set([...files.map((f) => f.ref), ...preservedRefs])
   for (const contentDir of CONTENT_DIRS) {
     const root = join(dir, contentDir)
     if (!existsSync(root)) continue
@@ -549,7 +567,9 @@ export function createThread(projectId: string, thread: Thread): Promise<void> {
  * re-finalize / edit without reordering history) and is otherwise appended;
  * writing files before the spine keeps a crash from leaving the spine pointing
  * at a missing file. `meta.json` is left to `updateMeta` — the renderer bumps
- * `updatedAt` through it around the same time.
+ * `updatedAt` through it around the same time. The rewrite works on verbatim
+ * spine entries so non-message lines (hook_run and unknown future types) keep
+ * their exact bytes and positions.
  */
 export function appendMessage(
   projectId: string,
@@ -561,11 +581,41 @@ export function appendMessage(
     mkdirSync(dir, { recursive: true })
     const { line, files } = explodeMessage(message, sha256)
     for (const file of files) writeFileEnsuringDir(join(dir, file.ref), file.contents)
-    const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '')
-    const existingIndex = spine.findIndex((entry) => entry.id === message.id)
-    if (existingIndex >= 0) spine[existingIndex] = line
-    else spine.push(line)
-    writeFileSync(join(dir, EVENTS_FILE), serializeSpine(spine))
+    const entries = parseSpineEntries(safeRead(join(dir, EVENTS_FILE)) ?? '')
+    const raw = serializeSpineLine(line)
+    const existingIndex = entries.findIndex(
+      (entry) => entry.line?.type === 'message' && entry.line.id === message.id,
+    )
+    if (existingIndex >= 0) entries[existingIndex] = { raw, line }
+    else entries.push({ raw, line })
+    writeFileSync(join(dir, EVENTS_FILE), serializeSpineEntries(entries))
+  })
+}
+
+/**
+ * Append one hook execution record (decision 6: always-on spine recording).
+ * Blobs (raw stdout/stderr, toolset fingerprint) are written before the line so
+ * a crash never leaves the spine pointing at a missing file — the same commit
+ * ordering as message appends. Content-addressed blobs (`blobs/toolset-*.json`)
+ * are deduped by skipping the write when the file already exists.
+ */
+export function appendHookRun(
+  projectId: string,
+  threadId: string,
+  line: SpineHookRunLine,
+  blobs: FileToWrite[] = [],
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    for (const blob of blobs) {
+      const full = join(dir, blob.ref)
+      if (!existsSync(full)) writeFileEnsuringDir(full, blob.contents)
+    }
+    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
   })
 }
 

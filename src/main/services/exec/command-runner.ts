@@ -9,6 +9,7 @@ import {
   COMMAND_RUNNER_DEFAULT_TIMEOUT_MS,
 } from './subprocess-output-cap.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
+import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
 
 export interface CommandResult {
   stdout: string
@@ -41,20 +42,12 @@ export interface RunCommandOptions {
 function prepareGitInvocation(
   args: string[],
   env: NodeJS.ProcessEnv,
-): { args: string[]; env: NodeJS.ProcessEnv } {
+): { args: string[]; env: NodeJS.ProcessEnv; releaseGitSsh?: () => void } {
+  const gitSsh = leaseGitSshEnv(env)
   return {
-    // --no-pager: never invoke a pager (which would hang waiting on a terminal).
-    // core.pager=cat: belt-and-suspenders for subcommands that bypass --no-pager.
-    // color.ui=false: disable color globally (`git --no-color` is not a valid global flag).
-    args: ['--no-pager', '-c', 'core.pager=cat', '-c', 'color.ui=false', ...args],
-    env: {
-      ...env,
-      GIT_OPTIONAL_LOCKS: '0',
-      GIT_PAGER: 'cat',
-      // Never block on credential / SSH host-key prompts.
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_SSH_COMMAND: env['GIT_SSH_COMMAND'] ?? 'ssh -oBatchMode=yes',
-    },
+    args: withGitInvocationArgs(args),
+    env: gitSsh.env,
+    releaseGitSsh: gitSsh.release,
   }
 }
 
@@ -73,10 +66,12 @@ export function runCommand(
   // tool tokens (GITHUB_TOKEN, NPM_TOKEN, AWS_*). Callers that genuinely need
   // a secret can pass it explicitly via `opts.env`.
   let spawnEnv: NodeJS.ProcessEnv = envForRendererChildProcess()
+  let releaseGitSsh: (() => void) | undefined
   if (cmd === 'git') {
     const git = prepareGitInvocation(args, spawnEnv)
     spawnArgs = git.args
     spawnEnv = git.env
+    releaseGitSsh = git.releaseGitSsh
   }
   if (opts.env) {
     spawnEnv = { ...spawnEnv, ...opts.env }
@@ -134,6 +129,7 @@ export function runCommand(
         if (timer) clearTimeout(timer)
         cancelKill?.()
         opts.signal?.removeEventListener('abort', onAbort)
+        releaseGitSsh?.()
         if (!opts.unsandboxed) afterSandboxedCommand()
         fn()
       }

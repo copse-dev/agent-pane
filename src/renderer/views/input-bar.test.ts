@@ -68,6 +68,7 @@ function createApi(options: {
     settings: {
       availableProviders: async () => ({ anthropic: true, openai: true }),
       extraProviders: async () => [],
+      get: async () => undefined,
       set: async () => {},
     },
     skills: {
