@@ -355,7 +355,7 @@ export interface ScalewayTtlTerminate {
 }
 
 export function resolveScalewaySecretKey(): string | undefined {
-  const fromEnv = process.env.SCW_SECRET_KEY?.trim()
+  const fromEnv = process.env['SCW_SECRET_KEY']?.trim()
   if (fromEnv) return fromEnv
   try {
     const raw = capture('scw', ['config', 'dump', '-o', 'json']).trim()
@@ -400,6 +400,10 @@ ZONE=$(cat /opt/copse-burst/scw-zone)
 META=$(curl -fsS --max-time 15 http://169.254.42.42/conf?format=json)
 SERVER_ID=$(printf '%s' "$META" | jq -r '.id // empty')
 IP_ID=$(printf '%s' "$META" | jq -r '.public_ip.id // .public_ips[0].id // empty')
+# API terminate deletes l_ssd but only detaches SBS — capture ids before the server vanishes.
+mapfile -t VOLUME_IDS < <(printf '%s' "$META" | jq -r '
+  (.volumes // {}) | to_entries[] | .value | select(type == "object") | .id // empty
+')
 if [[ -z "$SERVER_ID" ]]; then
   echo "copse TTL: could not read server id from Scaleway metadata" >&2
   exit 1
@@ -427,7 +431,7 @@ for attempt in 1 2 3 4 5 6 7 8; do
     echo "copse TTL: terminate accepted (HTTP $code)"
     break
   fi
-  # 404 = already gone; treat as success so IP cleanup still runs.
+  # 404 = already gone; treat as success so IP/volume cleanup still runs.
   if [[ "$code" == "404" ]]; then
     echo "copse TTL: server already gone (HTTP 404)"
     break
@@ -440,6 +444,25 @@ if [[ ! "$code" =~ ^2 ]] && [[ "$code" != "404" ]]; then
   echo "copse TTL: failed to terminate $SERVER_ID after retries (last HTTP $code)" >&2
   exit 1
 fi
+for volume_id in "\${VOLUME_IDS[@]}"; do
+  [[ -z "$volume_id" ]] && continue
+  echo "copse TTL: deleting SBS volume $volume_id"
+  vol_code=000
+  for attempt in 1 2 3 4 5 6 7 8; do
+    vol_code=$(api DELETE "/block/v1alpha1/zones/$ZONE/volumes/$volume_id" || true)
+    if [[ "$vol_code" =~ ^2 ]] || [[ "$vol_code" == "404" ]]; then
+      echo "copse TTL: volume delete done (HTTP $vol_code)"
+      break
+    fi
+    echo "copse TTL: volume delete HTTP $vol_code (attempt $attempt); body follows" >&2
+    cat /tmp/copse-ttl-api.body >&2 || true
+    sleep $((attempt * 2))
+  done
+  if [[ ! "$vol_code" =~ ^2 ]] && [[ "$vol_code" != "404" ]]; then
+    echo "copse TTL: failed to delete volume $volume_id (last HTTP $vol_code)" >&2
+    exit 1
+  fi
+done
 if [[ -n "$IP_ID" ]]; then
   echo "copse TTL: deleting flexible IP $IP_ID"
   ip_code=$(api DELETE "/instance/v1/zones/$ZONE/ips/$IP_ID" || true)

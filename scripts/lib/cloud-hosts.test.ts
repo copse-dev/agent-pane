@@ -158,6 +158,8 @@ describe('userDataScript', () => {
     assert.match(script, /fr-par-1/)
     assert.match(script, /scw-test-secret/)
     assert.match(script, /\/instance\/v1\/zones\/\$ZONE\/ips\/\$IP_ID/)
+    // terminate only detaches SBS; TTL must delete volumes explicitly.
+    assert.match(script, /\/block\/v1alpha1\/zones\/\$ZONE\/volumes\//)
   })
 })
 
