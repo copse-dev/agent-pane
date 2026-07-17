@@ -106,6 +106,11 @@ export interface SpineHookRunDecision {
   injectContextChars?: number
   agentMessageChars?: number
   userMessageChars?: number
+  /**
+   * Character count of an async queued follow-up the hook emitted (D1:
+   * `subagentStop`'s `followup_message`, routed to the pending-message queue).
+   */
+  queuedMessageChars?: number
 }
 
 /**

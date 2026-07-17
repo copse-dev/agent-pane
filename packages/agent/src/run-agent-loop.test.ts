@@ -608,6 +608,41 @@ src/renderer/views/projects-pane.ts
     )
   })
 
+  it('closeout is tightened by the shared continuation budget (decision 5)', async () => {
+    // With the shared budget already exhausted, no closeout turn may run — the
+    // local cap (MAX_TODO_CLOSEOUT_ATTEMPTS) is a tightener *inside* the shared
+    // cap, so a grant of 0 means the plan's open todos ride into the still-open
+    // note without a single machine closeout turn.
+    let closeoutTurns = 0
+    const provider: LLMProvider = {
+      async *stream(messages) {
+        const last = messages.at(-1)
+        const content =
+          last && 'content' in last && typeof last.content === 'string' ? last.content : ''
+        if (content.includes('open todos')) {
+          closeoutTurns++
+          yield { type: 'text', text: 'closing out' }
+        }
+        yield { type: 'done' }
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'big task' }],
+      tools: [{ name: 'update_todos', description: 'x', parameters: {} }],
+      maxSteps: 1,
+      getOpenTodos: () => [{ id: '1', content: 'Pending step', status: 'pending' }],
+      continuationBudget: { tryGrant: () => false, remaining: () => 0 },
+      onChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+    })
+    assert.equal(closeoutTurns, 0, 'no closeout turn runs once the shared budget is exhausted')
+    assert.ok(
+      chunks.some((c) => c.type === 'text' && c.text.includes('task plan still has open items')),
+    )
+  })
+
   it('leaves API-valid history (no orphan tool_use) after mid-batch abort', async () => {
     const controller = new AbortController()
     const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]

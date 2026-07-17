@@ -7,6 +7,8 @@ export function parseAgentRunPayload(rawPrompt: string): {
   priorTodos: TodoItem[]
   workingBrief?: string
   model?: string
+  turnTreeId?: string
+  continuationBudgetUsed?: number
 } {
   try {
     const parsed = JSON.parse(rawPrompt) as AgentRunPayload | UserContent
@@ -18,6 +20,13 @@ export function parseAgentRunPayload(rawPrompt: string): {
         priorTodos: payload.priorTodos ?? [],
         ...(payload.workingBrief !== undefined ? { workingBrief: payload.workingBrief } : {}),
         ...(typeof payload.model === 'string' && payload.model ? { model: payload.model } : {}),
+        ...(typeof payload.turnTreeId === 'string' && payload.turnTreeId
+          ? { turnTreeId: payload.turnTreeId }
+          : {}),
+        ...(typeof payload.continuationBudgetUsed === 'number' &&
+        Number.isFinite(payload.continuationBudgetUsed)
+          ? { continuationBudgetUsed: payload.continuationBudgetUsed }
+          : {}),
       }
     }
     return { userContent: parsed, invokedSkills: [], priorTodos: [] }
