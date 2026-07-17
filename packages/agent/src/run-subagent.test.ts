@@ -250,4 +250,21 @@ describe('runSubagent', () => {
     })
     assert.match(summary, /no summary|Exploration completed/)
   })
+
+  it('words the empty-summary fallback for the session kind', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const { summary } = await runSubagent({
+      provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
+      prompt: 'Add the flag',
+      parentGoal: 'test',
+      tools: [],
+      parentToolCallId: 'parent-4',
+      signal: controller.signal,
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+      kind: 'delegate',
+    })
+    assert.equal(summary, 'Worker finished with no report.')
+  })
 })
