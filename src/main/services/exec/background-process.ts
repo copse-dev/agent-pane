@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import { spawnBackgroundProcess } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { terminateProcessTree } from './subprocess-kill.ts'
 import {
@@ -32,6 +33,8 @@ interface BackgroundProcess {
   portBinding: boolean
   /** Detected loopback URL (e.g. http://localhost:3000), or null until announced. */
   url: string | null
+  /** When true, `url` refers to the remote host's loopback (not openable locally until #771). */
+  urlRemote: boolean
   exited: boolean
   exitCode: number | null
 }
@@ -43,6 +46,8 @@ export interface BackgroundProcessInfo {
   cwd: string
   startedAt: number
   url: string | null
+  /** When true, `url` is on the remote host's loopback — not openable locally until tunnels (#771). */
+  urlRemote: boolean
   running: boolean
   exitCode: number | null
 }
@@ -77,6 +82,18 @@ export function detectServerUrl(output: string): string | null {
   return null
 }
 
+/** Classify a detected dev-server URL for local vs SSH workspace execution. */
+export function classifyDetectedServerUrl(output: string): {
+  url: string | null
+  urlRemote: boolean
+} {
+  const url = detectServerUrl(output)
+  if (!url) return { url: null, urlRemote: false }
+  // Use the fail-safe helper: remote projects with SSH disabled must not throw
+  // from URL classification (background log scraping is best-effort).
+  return { url, urlRemote: isActiveSshWorkspace() }
+}
+
 function toInfo(entry: BackgroundProcess): BackgroundProcessInfo {
   return {
     id: entry.id,
@@ -84,6 +101,7 @@ function toInfo(entry: BackgroundProcess): BackgroundProcessInfo {
     cwd: entry.cwd,
     startedAt: entry.startedAt,
     url: entry.url,
+    urlRemote: entry.urlRemote,
     running: !entry.exited,
     exitCode: entry.exitCode,
   }
@@ -94,7 +112,11 @@ function onOutput(entry: BackgroundProcess, chunk: Buffer): void {
   // Only a port-binding task is a server we should surface a URL for; a plain
   // task's "port" mentions would be noise.
   if (entry.portBinding && entry.url === null) {
-    entry.url = detectServerUrl(entry.output.toString())
+    const classified = classifyDetectedServerUrl(entry.output.toString())
+    if (classified.url) {
+      entry.url = classified.url
+      entry.urlRemote = classified.urlRemote
+    }
   }
 }
 
@@ -137,6 +159,7 @@ export async function startBackgroundProcess(
     output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES),
     portBinding,
     url: null,
+    urlRemote: false,
     exited: false,
     exitCode: null,
   }

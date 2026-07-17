@@ -1,7 +1,11 @@
-# Releasing Copse for macOS (pre-release)
+# Releasing Copse for macOS
 
 How to cut a signed, notarized macOS build of Copse and ship it to pre-release
 testers, with automatic updates via `electron-updater`.
+
+The supported GA target is macOS 26 or newer on Apple Silicon (`arm64`) and Intel
+(`x64`). Run the [general release checklist](release-checklist.md) for every
+published release; this file covers the macOS packaging mechanics.
 
 Because Copse runs arbitrary shell commands and spawns `node-pty`, it is **not
 distributed through the Mac App Store / TestFlight** (the App Sandbox those
@@ -137,5 +141,8 @@ it is active only in the packaged macOS build.
   availability release is therefore explicitly macOS-only; Linux and Windows are
   not distributed GA targets until they have an equivalent command-execution
   containment boundary.
+- **Forward recovery only.** Downgrades are not supported. Follow
+  [recovery.md](recovery.md) for backup, migration, and corrective-release
+  guidance.
 - **CI cost.** The release runs on a GitHub-hosted `macos-14` runner; a
   self-hosted Mac is also available (the e2e runners) if minutes become a concern.

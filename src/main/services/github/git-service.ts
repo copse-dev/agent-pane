@@ -1,13 +1,15 @@
 import * as fsp from 'node:fs/promises'
-import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { errorMessage } from '@shared/errors.ts'
 import { getWorkspaceRoot, resolveWorkspacePath, toRelativePath } from '../workspace.ts'
+import { getActiveWorkspaceFs } from '../workspace-fs/get-workspace-fs.ts'
 import { runCommand } from '../exec/command-runner.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
+import { spawnInProjectSandbox } from '../../project-sandbox/spawn.ts'
 import { leaseGitSshEnv, withGitInvocationArgs } from '../ssh-workspace/git-ssh-env.ts'
-import { isGitAvailable } from '../tool-availability.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
+import { isGitAvailableForTarget } from '../tool-availability.ts'
 import { detectLanguage } from '../language.ts'
 import { parseGithubRepoSlug } from '@shared/git/github-link-steering.ts'
 import { appendCommitAttribution } from '@shared/git/commit-attribution.ts'
@@ -187,48 +189,90 @@ export function classifyGitBlob(stdout: string, code: number): GitBlobResult {
  * it escapes the root) and return it workspace-relative, so blob pathspecs are
  * normalized the same way working-tree reads are (`resolveWorkspacePath`).
  */
-export function resolveWorkspaceRelativeGitPath(path: string): string {
-  return toRelativePath(resolveWorkspacePath(path))
+export async function resolveWorkspaceRelativeGitPath(path: string): Promise<string> {
+  return toRelativePath(await resolveWorkspacePath(path))
 }
 
-function gitObjectSpec(ref: string, path: string): string {
-  const gitPath = toGitShowPath(resolveWorkspaceRelativeGitPath(path))
+async function gitObjectSpec(ref: string, path: string): Promise<string> {
+  const gitPath = toGitShowPath(await resolveWorkspaceRelativeGitPath(path))
   return ref === ':' ? `:${gitPath}` : `${ref}:${gitPath}`
 }
 
 async function readGitBlob(ref: string, path: string): Promise<GitBlobResult> {
-  const { stdout, code } = await runGit(['show', gitObjectSpec(ref, path)])
+  const { stdout, code } = await runGit(['show', await gitObjectSpec(ref, path)])
   return classifyGitBlob(stdout, code)
 }
 
 async function readWorkingTree(path: string): Promise<string> {
   try {
-    const abs = resolveWorkspacePath(path)
-    return await fsp.readFile(abs, 'utf-8')
+    const abs = await resolveWorkspacePath(path)
+    return await getActiveWorkspaceFs().readFile(abs, 'utf-8')
   } catch {
     return ''
   }
 }
 
 const GIT_IMAGE_MAX_BYTES = 50 * 1024 * 1024
+interface TemporaryGitIndex {
+  path: string
+  cleanup(): Promise<void>
+}
 
-function runGitBuffer(args: string[]): { stdout: Buffer; code: number } {
+/**
+ * Allocate the throwaway Git index on the filesystem where Git will run. A
+ * remote command cannot use a client-local tmpdir path, and must never fall
+ * back to the user's real index when the override is unavailable.
+ */
+async function createTemporaryGitIndex(root: string): Promise<TemporaryGitIndex> {
+  if (!isActiveSshWorkspace()) {
+    const path = join(tmpdir(), `copse-backup-${String(process.pid)}-${String(Date.now())}.index`)
+    return {
+      path,
+      cleanup: async (): Promise<void> => {
+        await fsp.rm(path, { force: true }).catch(() => {})
+      },
+    }
+  }
+
+  const { stdout, code } = await runCommand('mktemp', ['-d', '-t', 'copse-backup.XXXXXX'], {
+    cwd: root,
+  })
+  const dir = stdout.trim()
+  if (code !== 0 || !dir) throw new Error('Could not create remote temporary Git index')
+  return {
+    path: `${dir}/index`,
+    cleanup: async (): Promise<void> => {
+      await runCommand('rm', ['-rf', '--', dir], { cwd: root }).catch(() => undefined)
+    },
+  }
+}
+
+async function runGitBuffer(args: string[]): Promise<{ stdout: Buffer; code: number }> {
   const cwd = getWorkspaceRoot()
   if (!cwd) return { stdout: Buffer.alloc(0), code: 1 }
   const baseEnv = envForRendererChildProcess()
   const gitSsh = leaseGitSshEnv(baseEnv)
   try {
     const prepared = withGitInvocationArgs(args)
-    const result = spawnSync('git', prepared, {
+    const proc = await spawnInProjectSandbox('git', prepared, {
       cwd,
       env: gitSsh.env,
-      encoding: 'buffer',
-      maxBuffer: GIT_IMAGE_MAX_BYTES,
+      stdio: 'pipe',
     })
-    // spawnSync types stdout as non-null, but it is null at runtime when the
-    // process fails to spawn (e.g. ENOENT), so the fallback is a real guard.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    return { stdout: result.stdout ?? Buffer.alloc(0), code: result.status ?? 1 }
+    return await new Promise<{ stdout: Buffer; code: number }>((resolve, reject) => {
+      const chunks: Buffer[] = []
+      let total = 0
+      proc.stdout?.on('data', (chunk: Buffer) => {
+        total += chunk.length
+        if (total <= GIT_IMAGE_MAX_BYTES) chunks.push(chunk)
+      })
+      proc.on('close', (code) => {
+        resolve({ stdout: Buffer.concat(chunks), code: code ?? 1 })
+      })
+      proc.on('error', (err) => {
+        reject(err)
+      })
+    })
   } finally {
     gitSsh.release()
   }
@@ -238,17 +282,16 @@ function bufferToDataUrl(buf: Buffer, mime: string): string {
   return `data:${mime};base64,${buf.toString('base64')}`
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await -- mirrors the async readWorkingTreeImage; both feed the async blob fallback
 async function readGitBlobImage(ref: string, path: string, mime: string): Promise<string | null> {
-  const { stdout, code } = runGitBuffer(['show', gitObjectSpec(ref, path)])
+  const { stdout, code } = await runGitBuffer(['show', await gitObjectSpec(ref, path)])
   if (code !== 0 || stdout.length === 0) return null
   return bufferToDataUrl(stdout, mime)
 }
 
 async function readWorkingTreeImage(path: string, mime: string): Promise<string | null> {
   try {
-    const abs = resolveWorkspacePath(path)
-    const buf = await fsp.readFile(abs)
+    const abs = await resolveWorkspacePath(path)
+    const buf = await getActiveWorkspaceFs().readFileBytes(abs)
     if (buf.length === 0) return null
     return bufferToDataUrl(buf, mime)
   } catch {
@@ -293,7 +336,7 @@ async function getGitImageDiff(path: string, staged: boolean, mime: string): Pro
 }
 
 export async function isInsideGitWorkTree(): Promise<boolean> {
-  if (!isGitAvailable() || !getWorkspaceRoot()) return false
+  if (!(await isGitAvailableForTarget()) || !getWorkspaceRoot()) return false
   const { stdout, code } = await runGit(['rev-parse', '--is-inside-work-tree'])
   return code === 0 && stdout.trim() === 'true'
 }
@@ -302,7 +345,7 @@ export async function isInsideGitWorkTree(): Promise<boolean> {
 export async function getGithubRepoSlug(
   root: string | null = getWorkspaceRoot(),
 ): Promise<string | null> {
-  if (!isGitAvailable() || !root) return null
+  if (!(await isGitAvailableForTarget()) || !root) return null
   const inside = await runGit(['rev-parse', '--is-inside-work-tree'], root)
   if (inside.code !== 0 || inside.stdout.trim() !== 'true') return null
   const { stdout, code } = await runGit(['remote', 'get-url', 'origin'], root)
@@ -327,22 +370,24 @@ export async function getGithubRepoSlug(
  */
 export async function createWorktreeBackup(label: string): Promise<string | null> {
   const root = getWorkspaceRoot()
-  if (!isGitAvailable() || !root || !(await isInsideGitWorkTree())) return null
+  if (!(await isGitAvailableForTarget()) || !root || !(await isInsideGitWorkTree())) return null
 
-  const tmpIndex = join(tmpdir(), `copse-backup-${String(process.pid)}-${String(Date.now())}.index`)
+  let tempIndex: TemporaryGitIndex | undefined
   // A throwaway index isolates our `add -A` from the user's staged state; the
   // identity env lets `commit-tree` succeed even when the repo has no user.name.
   const env: NodeJS.ProcessEnv = {
-    GIT_INDEX_FILE: tmpIndex,
+    GIT_INDEX_FILE: '',
     GIT_AUTHOR_NAME: 'Copse',
     GIT_AUTHOR_EMAIL: 'copse@localhost',
     GIT_COMMITTER_NAME: 'Copse',
     GIT_COMMITTER_EMAIL: 'copse@localhost',
   }
-  const run = (args: string[]): Promise<{ stdout: string; code: number }> =>
-    runCommand('git', args, { cwd: root, env })
 
   try {
+    tempIndex = await createTemporaryGitIndex(root)
+    env['GIT_INDEX_FILE'] = tempIndex.path
+    const run = (args: string[]): Promise<{ stdout: string; code: number }> =>
+      runCommand('git', args, { cwd: root, env })
     const head = await runGit(['rev-parse', '--verify', 'HEAD'])
     const hasHead = head.code === 0 && head.stdout.trim() !== ''
     // Seed the throwaway index from HEAD so deletions show up in the snapshot.
@@ -361,7 +406,7 @@ export async function createWorktreeBackup(label: string): Promise<string | null
   } catch {
     return null
   } finally {
-    await fsp.rm(tmpIndex, { force: true }).catch(() => {})
+    await tempIndex?.cleanup()
   }
 }
 
@@ -381,7 +426,7 @@ export async function createWorktreeBackup(label: string): Promise<string | null
  * pre-session absence.
  */
 export async function restoreWorktreeBackup(ref: string, paths: string[]): Promise<boolean> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return false
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return false
   if (paths.length === 0) return true
   // Restore one path at a time so a single path git cannot match (a pre-session
   // deletion the agent left absent, which the snapshot also lacks — nothing to
@@ -404,7 +449,7 @@ export async function restoreWorktreeBackup(ref: string, paths: string[]): Promi
     // that path best-effort rather than reporting a failed restore.
     if (code === 0) continue
     try {
-      await fsp.rm(resolveWorkspacePath(path), { force: true })
+      await getActiveWorkspaceFs().rm(await resolveWorkspacePath(path), { force: true })
     } catch {
       ok = false
     }
@@ -420,7 +465,7 @@ export async function restoreWorktreeBackup(ref: string, paths: string[]): Promi
  * git is unavailable or there is nothing to prune.
  */
 export async function pruneWorktreeBackups(keep: number): Promise<void> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return
   const { stdout, code } = await runGit([
     'for-each-ref',
     '--format=%(refname)',
@@ -442,7 +487,7 @@ export async function pruneWorktreeBackups(keep: number): Promise<void> {
 }
 
 export async function getGitStatus(): Promise<GitStatusResult | null> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
   const { stdout: prefix, code: prefixCode } = await runGit(['rev-parse', '--show-prefix'])
   if (prefixCode !== 0) return null
   const { stdout, code } = await runGit(['status', '--porcelain=v1', '-z'])
@@ -490,7 +535,7 @@ export async function getGitChangeStats(): Promise<{
   additions: number
   deletions: number
 } | null> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
   const unstaged = await runGit(['diff', '--numstat'])
   const staged = await runGit(['diff', '--cached', '--numstat'])
   const u = unstaged.code === 0 ? sumDiffNumstat(unstaged.stdout) : { additions: 0, deletions: 0 }
@@ -501,7 +546,7 @@ export async function getGitChangeStats(): Promise<{
 }
 
 export async function checkoutGitBranch(branch: string): Promise<void> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) {
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) {
     throw new Error('No git repository is open.')
   }
 
@@ -594,7 +639,7 @@ export async function getDefaultBranch(): Promise<string | null> {
 }
 
 export async function getGitFileDiff(path: string, staged: boolean): Promise<GitFileDiff | null> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
 
   const mime = imageMimeType(path)
   if (mime) return getGitImageDiff(path, staged, mime)
@@ -658,7 +703,7 @@ function normalizeGitDiffText(text: string): string {
 }
 
 export async function getGitStatusText(): Promise<string> {
-  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   const { stdout, stderr, code } = await runGit(['status', '--short'])
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no output)'
@@ -677,7 +722,7 @@ async function getUntrackedDiff(paths: string[]): Promise<string> {
 }
 
 export async function getGitDiffText(path?: string, staged = false): Promise<string> {
-  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   const args = ['diff', ...(staged ? ['--cached'] : []), '--', ...(path ? [path] : [])]
   const { stdout, stderr, code } = await runGit(args)
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
@@ -711,7 +756,7 @@ export async function commitWithAttribution(
   models: string[],
   stageAll: boolean,
 ): Promise<string> {
-  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!getWorkspaceRoot()) return 'No workspace open.'
 
   if (stageAll) {
@@ -739,7 +784,7 @@ export async function commitWithAttribution(
  * check can't be bypassed.
  */
 export async function getGitShowText(ref: string, path?: string): Promise<string> {
-  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   if (!getWorkspaceRoot()) return 'No workspace open.'
   const trimmedRef = ref.trim()
   if (!trimmedRef) return 'A git ref (commit, tag, or branch) is required.'
@@ -763,7 +808,7 @@ export async function getGitShowText(ref: string, path?: string): Promise<string
       // Resolves + validates the path against the workspace boundary; throws when
       // it escapes the root. Caught here so the service is self-contained even if
       // a caller skips its own validation.
-      args = ['show', gitObjectSpec(trimmedRef, path)]
+      args = ['show', await gitObjectSpec(trimmedRef, path)]
     } catch (err) {
       return errorMessage(err)
     }
@@ -774,7 +819,7 @@ export async function getGitShowText(ref: string, path?: string): Promise<string
 }
 
 export async function getGitLogText(maxCount: number, path?: string): Promise<string> {
-  if (!isGitAvailable()) return 'git is not available on this system.'
+  if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   const args = [
     'log',
     `--max-count=${String(maxCount)}`,

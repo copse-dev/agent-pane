@@ -45,3 +45,13 @@ export type StreamChunk =
     }
   /** Two-model diff-review comparison (running placeholder, then the full result). */
   | { type: 'model_comparison'; comparison: ModelComparison }
+  /**
+   * Auto-continuation budget fold-back (C3 run→drain direction, decision 5).
+   * Emitted once just before the terminal `done`: `used` is the machine turns
+   * this run spent in-process (todo closeout / pre-review gate / remediation
+   * cycles) for `turnTreeId`, so the renderer folds it onto the turn tree's
+   * counter and its next queue drain respects the shared cap. Non-visual — the
+   * renderer updates state only (no DOM), and it is dropped when the turn tree's
+   * epoch has moved on (a human action reset the budget, decision 16).
+   */
+  | { type: 'continuation_budget'; used: number; turnTreeId: string }
