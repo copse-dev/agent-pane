@@ -133,6 +133,7 @@ describe('memories pane', () => {
       assert.equal(title?.value, 'Build command')
       assert.equal(tags?.value, 'ops, ci')
       assert.equal(body?.value, 'Run npm build')
+      assert.equal(viewer.querySelector('.memories-meta')?.textContent, 'Updated 2026-07-04')
       // Delete is offered for an existing note.
       assert.equal(viewer.querySelector<HTMLButtonElement>('.memories-btn-danger')?.hidden, false)
     } finally {

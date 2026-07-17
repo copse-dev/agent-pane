@@ -13,7 +13,7 @@
 // compose-path equivalent, so no Claude hooks participate — matching the vendor
 // audit in docs/plans/hooks-and-feature-packs.md.
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorBeforeSubmitPromptHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
@@ -39,7 +39,7 @@ export interface BeforeSubmitPromptDecision {
  */
 export async function runBeforeSubmitPromptHooks(
   prompt: string,
-  opts: DialectDiscoverOpts & { signal?: AbortSignal },
+  opts: DialectDiscoverOpts & { signal?: AbortSignal; agentSession?: AgentSessionInfo },
 ): Promise<BeforeSubmitPromptDecision> {
   const payload: HookEventPayloads['beforeSubmitPrompt'] = { prompt }
 
@@ -57,6 +57,7 @@ export async function runBeforeSubmitPromptHooks(
   const { outcomes } = await registry.emit('beforeSubmitPrompt', payload, {
     runCommandHook: createCommandHookRunner(),
     ...(opts.signal ? { signal: opts.signal } : {}),
+    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
   const merged = mergeBlockingOutcomes(outcomes)
 

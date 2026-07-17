@@ -163,6 +163,21 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /not configured/)
   })
 
+  it('omits ACP agents on SSH workspaces and marks a stale selection unavailable', async () => {
+    const api = mockApi({
+      available: { anthropic: true },
+      acpAgents: [{ id: 'cursor', title: 'Cursor', command: 'cursor-agent', enabled: true }],
+    })
+    const options = await fetchModelOptions(api, 'acp:cursor', { sshWorkspace: true })
+    assert.ok(!options.some((o) => o.group?.includes('(ACP)') && !o.disabled))
+    assert.ok(!options.some((o) => o.value === 'acp:cursor' && !o.disabled))
+    const stale = options.find((o) => o.value === 'acp:cursor')
+    assert.ok(stale)
+    assert.equal(stale.disabled, true)
+    assert.match(stale.label, /unavailable on SSH/)
+    assert.ok(options.some((o) => o.group === 'Cloud models'))
+  })
+
   it('keeps a selected-but-unconfigured remote agent selectable with a clear label', async () => {
     const options = await fetchModelOptions(mockApi(), 'remote-agent:cursor#composer-2')
     const current = options.find((o) => o.value === 'remote-agent:cursor#composer-2')

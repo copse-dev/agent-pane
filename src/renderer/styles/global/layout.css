@@ -5,7 +5,11 @@
   justify-content: center;
   gap: 6px;
   width: 100%;
-  padding: var(--spacing-sm) var(--spacing-md);
+  box-sizing: border-box;
+  height: var(--chrome-action-band-height);
+  min-height: var(--chrome-action-band-height);
+  max-height: var(--chrome-action-band-height);
+  padding: 0 var(--spacing-md);
   font-size: var(--font-size-sm);
   color: var(--text-muted);
   background: transparent;
@@ -13,6 +17,7 @@
   border-top: 1px solid var(--border);
   cursor: pointer;
   -webkit-app-region: no-drag;
+  flex-shrink: 0;
 }
 .projects-settings-btn:hover {
   color: var(--text-primary);
@@ -110,6 +115,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .project-row:hover {
   background: var(--bg-hover);
 }
@@ -139,7 +149,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: 100%;
+  width: auto;
+  margin-inline: var(--spacing-xs);
+  border-radius: 0;
   text-align: left;
   padding: 4px var(--spacing-sm) 4px 28px;
   font-size: var(--font-size-sm);
@@ -154,6 +166,7 @@
 .chat-row.selected {
   background: var(--bg-selected);
   color: var(--text-primary);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
 .chat-title {
   flex: 1 1 auto;
@@ -217,6 +230,7 @@
   overflow: hidden;
   min-width: 0;
   min-height: 0;
+  border-top: 1px solid var(--border-subtle);
   --chat-composer-height: 148px;
   background:
     radial-gradient(
@@ -267,7 +281,7 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding-bottom: var(--chat-composer-height);
+  padding-bottom: calc(var(--chat-composer-height) + var(--spacing-md));
 }
 .pane-files {
   width: var(--files-width, 480px);
@@ -425,6 +439,7 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 .git-changes-host {
   flex: 1;
@@ -441,6 +456,7 @@
   padding: var(--spacing-sm);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .git-changes-bulk-actions {
   display: flex;
@@ -828,6 +844,7 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 .git-diff-editor-wrap {
   flex: 1;
@@ -1108,6 +1125,7 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 .browser-body {
   flex: 1;
@@ -1249,6 +1267,7 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
+  border-top: 1px solid var(--border-subtle);
 }
 .file-viewer.is-drop-target,
 #input-bar.is-drop-target {

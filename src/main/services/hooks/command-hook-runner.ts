@@ -25,7 +25,8 @@ import type {
   HookEventPayloads,
 } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
-import { recordCommandHookRun } from '../hook-run-recorder.ts'
+import { recordCommandHookRun, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
+import { hookRecursionGuardTripped } from './hook-depth.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
 import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
@@ -43,6 +44,37 @@ function isBeforeSubmitPromptPayload(
   payload: unknown,
 ): payload is HookEventPayloads['beforeSubmitPrompt'] {
   return typeof payload === 'object' && payload !== null && 'prompt' in payload
+}
+
+function isAfterFileEditPayload(payload: unknown): payload is HookEventPayloads['afterFileEdit'] {
+  return typeof payload === 'object' && payload !== null && 'filePath' in payload
+}
+
+function isStopPayload(payload: unknown): payload is HookEventPayloads['stop'] {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'status' in payload &&
+    !('subagentType' in payload)
+  )
+}
+
+function isSubagentStartPayload(payload: unknown): payload is HookEventPayloads['subagentStart'] {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'subagentType' in payload &&
+    !('status' in payload)
+  )
+}
+
+function isSubagentStopPayload(payload: unknown): payload is HookEventPayloads['subagentStop'] {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'subagentType' in payload &&
+    'status' in payload
+  )
 }
 
 /**
@@ -78,6 +110,7 @@ async function spawnInterpretResolve(
   request: unknown,
   interpret: (spawn: HookSpawnResult) => DialectInterpretation,
   context: HookContext,
+  recordingSnapshot: HookRunRecordingSnapshot | null | undefined,
 ): Promise<CommandHookResult> {
   if (request === null) return ABSTAIN
 
@@ -90,18 +123,24 @@ async function spawnInterpretResolve(
   const interpretation = interpret(spawn)
 
   // Always-on spine recording (decision 6): one hook_run line per execution,
-  // raw stdout AND stderr as blobs, next to the normalized decision.
-  recordCommandHookRun({
-    event: interpretation.spineEvent,
-    hookId: hook.id,
-    startedAt: spawn.startedAt,
-    durationMs: spawn.durationMs,
-    exitCode: spawn.exitCode,
-    parseOk: interpretation.parseOk,
-    decision: interpretation.spineDecision,
-    stdout: spawn.stdout,
-    stderr: spawn.stderr,
-  })
+  // raw stdout AND stderr as blobs, next to the normalized decision. Detached
+  // async hooks pass a `recordingSnapshot` captured at their fire site so the
+  // line survives `endHookRunRecording` (decision 3); blocking hooks pass
+  // `undefined` and record against the live context.
+  recordCommandHookRun(
+    {
+      event: interpretation.spineEvent,
+      hookId: hook.id,
+      startedAt: spawn.startedAt,
+      durationMs: spawn.durationMs,
+      exitCode: spawn.exitCode,
+      parseOk: interpretation.parseOk,
+      decision: interpretation.spineDecision,
+      stdout: spawn.stdout,
+      stderr: spawn.stderr,
+    },
+    recordingSnapshot,
+  )
 
   if (interpretation.failed) {
     if (interpretation.runtimeError !== undefined) {
@@ -110,31 +149,63 @@ async function spawnInterpretResolve(
     return resolveFailure(hook, interpretation)
   }
 
-  return { outcome: interpretation.outcome, failed: false }
+  return {
+    outcome: interpretation.outcome,
+    failed: false,
+    // Async follow-up (D1 subagentStop) rides through to the queue channel via
+    // emitAsync's `onAsyncOutcome`; absent on every blocking-event run.
+    ...(interpretation.queueMessage ? { queueMessage: interpretation.queueMessage } : {}),
+  }
 }
 
 /**
  * Build the host command-hook runner injected into `HookContext.runCommandHook`.
  * A2 wired the `toolGate` event (the permission gate); B1 adds
- * `beforeSubmitPrompt` (the compose path). Other canonical events land their fire
- * sites in later phases and register no command hooks yet, so they abstain.
+ * `beforeSubmitPrompt` (the compose path); B2 adds `afterFileEdit` (the
+ * diff-queue / write-tool site); B3 adds `stop` (turn end / abort, dispatched
+ * detached — decision 3); D1 adds `subagentStart` (blocking spawn gate, matcher
+ * on subagent type) and `subagentStop` (detached completion, `followup_message`
+ * routed to the queue channel). Other canonical events land their fire sites in
+ * later phases and register no command hooks yet, so they abstain.
  */
-export function createCommandHookRunner(): CommandHookRunner {
+export function createCommandHookRunner(opts?: {
+  /**
+   * Recording context captured synchronously at a detached fire site (`stop`,
+   * `subagentStop`, …). When set, command-hook spine lines record against it so
+   * they survive `endHookRunRecording` (decision 3/6). Omit for blocking hooks,
+   * which record against the live context.
+   */
+  recordingSnapshot?: HookRunRecordingSnapshot | null
+}): CommandHookRunner {
+  const recordingSnapshot = opts?.recordingSnapshot
   return {
     async run<E extends HookEventName>(
       hook: CommandHook<E>,
       payload: HookEventPayloads[E],
       context: HookContext,
     ): Promise<CommandHookResult> {
+      // Recursion guard (decision 5): if this Copse is itself running inside a
+      // hook (`COPSE_HOOK_DEPTH` ≥ MAX), suppress all command-hook spawns so a
+      // hook that re-enters Copse cannot drive an unbounded hook→Copse→hook
+      // loop. Abstaining (never fail-hard) matches a command hook that returns
+      // no decision — the action proceeds, one nested level breaks the loop.
+      if (hookRecursionGuardTripped()) return ABSTAIN
+
+      // Every wired agent-session event stamps the real conversation / generation
+      // ids + running model onto its wire payload (B4); the host captures it at
+      // the fire site and hands it through the context (opaque to packages/agent).
+      const session = context.agentSession
+
       if (hook.event === 'toolGate' && isToolGatePayload(payload)) {
         const adapter = getDialectAdapter(hook.dialect)
         if (!adapter) return ABSTAIN
         return spawnInterpretResolve(
           hook,
           adapter,
-          adapter.marshalToolGateRequest(hook, payload),
+          adapter.marshalToolGateRequest(hook, payload, session),
           (spawn) => adapter.interpretToolGate(spawn, payload),
           context,
+          recordingSnapshot,
         )
       }
 
@@ -147,9 +218,70 @@ export function createCommandHookRunner(): CommandHookRunner {
         return spawnInterpretResolve(
           hook,
           adapter,
-          marshal(hook, payload),
+          marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'afterFileEdit' && isAfterFileEditPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalAfterFileEditRequest?.bind(adapter)
+        const interpret = adapter?.interpretAfterFileEdit?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'stop' && isStopPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalStopRequest?.bind(adapter)
+        const interpret = adapter?.interpretStop?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'subagentStart' && isSubagentStartPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalSubagentStartRequest?.bind(adapter)
+        const interpret = adapter?.interpretSubagentStart?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'subagentStop' && isSubagentStopPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalSubagentStopRequest?.bind(adapter)
+        const interpret = adapter?.interpretSubagentStop?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
         )
       }
 
