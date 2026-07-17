@@ -173,3 +173,34 @@ describe('leaseGitSshEnv', () => {
     }
   })
 })
+
+describe('leaseSshAskpassEnv environment inheritance', () => {
+  let testDir = ''
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'copse-ssh-askpass-env-'))
+    resetSshAskpassForTests()
+    setSshAskpassUserDataDirForTests(testDir)
+  })
+
+  afterEach(() => {
+    resetSshAskpassForTests()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('preserves PATH/HOME/SSH_AUTH_SOCK from the base env for ProxyCommand', () => {
+    const lease = leaseSshAskpassEnv({
+      PATH: '/custom/bin:/usr/bin',
+      HOME: '/home/proxy-user',
+      SSH_AUTH_SOCK: '/tmp/agent.sock',
+    })
+    try {
+      assert.equal(lease.env['PATH'], '/custom/bin:/usr/bin')
+      assert.equal(lease.env['HOME'], '/home/proxy-user')
+      assert.equal(lease.env['SSH_AUTH_SOCK'], '/tmp/agent.sock')
+      assert.ok(lease.env['SSH_ASKPASS'])
+    } finally {
+      lease.release()
+    }
+  })
+})

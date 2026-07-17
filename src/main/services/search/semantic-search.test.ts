@@ -1,6 +1,8 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { setSetting } from '../storage/settings.ts'
+import { storageSet } from '../storage/storage.ts'
 import {
   buildSemanticSearchPromptBlock,
   executeSemanticSearch,
@@ -10,6 +12,7 @@ import {
   setSemanticBackendForTest,
   setSemanticIndexReadyForTest,
   setSemanticSearchExecutorForTest,
+  isSemanticSearchAvailable,
 } from './semantic-index.ts'
 
 describe('semantic-search', () => {
@@ -25,6 +28,21 @@ describe('semantic-search', () => {
       buildSemanticSearchPromptBlock(),
       /search_codebase \(auto\/semantic\) or semantic_search/,
     )
+  })
+
+  it('returns unavailable when semantic backend is disabled on SSH workspaces', async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [{ id: 'dev', label: 'Dev', host: 'h.example' }])
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: '/remote/repo', sshHost: 'dev' }])
+    setWorkspaceRootForTest('/remote/repo')
+    setSemanticBackendForTest('gortex')
+    assert.equal(isSemanticSearchAvailable(), false)
+    assert.match(semanticIndexBuildingNote(), /SSH remote workspaces/)
+    await setSetting('sshWorkspaceEnabled', false)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    setWorkspaceRootForTest(null)
   })
 
   it('executes native semantic search once the index is ready', async () => {
