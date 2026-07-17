@@ -448,6 +448,10 @@ export interface ApiClient {
     /** Subscribe to background roadmap changes (e.g. a complexity stamp landing
      * after a save returned). Returns an unsubscribe function. */
     onChanged: (handler: () => void) => () => void
+    setThread: (
+      id: string,
+      threadId: string,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
   }
   skills: {
     list: () => Promise<SkillSummary[]>

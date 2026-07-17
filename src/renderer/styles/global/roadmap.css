@@ -66,6 +66,20 @@
 .roadmap-issue-chip:hover {
   text-decoration: underline;
 }
+/* Started-thread chip — shown while the thread tracked on the item still
+   exists; clicking it reopens that thread. */
+.roadmap-thread-chip {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--accent);
+  cursor: pointer;
+}
+.roadmap-thread-chip:hover {
+  text-decoration: underline;
+}
 
 /* Complexity badge — stamped on save by the small-tasks model (or heuristic). */
 .roadmap-complexity-badge {

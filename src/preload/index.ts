@@ -584,6 +584,8 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('roadmap:changed', listener)
       }
     },
+    setThread: (id: string, threadId: string) =>
+      ipcRenderer.invoke('roadmap:setThread', id, threadId),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
