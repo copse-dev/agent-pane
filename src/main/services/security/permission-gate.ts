@@ -2,6 +2,7 @@ import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
 import { runPermissionDecisionHooks } from '../hooks/permission-decision.ts'
+import { snapshotHookRunContext } from '../hook-run-recorder.ts'
 import { haltRunFromBlockingHook } from '../hooks/halt-run.ts'
 import { currentAgentSessionInfo } from '../hooks/agent-session.ts'
 import { getActiveRunThread } from '../thread-models.ts'
@@ -310,12 +311,16 @@ function firePermissionDecision(toolName: string, decision: HookDecision): void 
   const agentSession = currentAgentSessionInfo()
   const threadId = agentSession.conversationId || getActiveRunThread() || 'permission'
   const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  // Snapshot the recording context now, synchronously (decision 3/6): the
+  // dispatch is detached and may settle after this turn's window closes.
+  const recordingSnapshot = snapshotHookRunContext()
   void runPermissionDecisionHooks(toolName, decision, {
     threadId,
     turnTreeId,
     workspaceRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession,
+    recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] permissionDecision dispatch error:', errorMessage(err))
   })

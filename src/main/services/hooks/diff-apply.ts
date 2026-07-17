@@ -27,6 +27,7 @@ import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { copseBeforeDiffApplyHooks, copseAfterDiffApplyHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { withRunDeadlinePaused } from './run-deadline.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
 import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
@@ -107,6 +108,11 @@ export type RunAfterDiffApplyHooksOpts = DialectDiscoverOpts & {
   turnTreeId: TurnTreeId
   /** Session identity captured by value at the fire site (B4 + decision 3). */
   agentSession?: AgentSessionInfo
+  /**
+   * Recording context snapshotted synchronously at the fire site so a detached
+   * hook's `hook_run` spine line survives `endHookRunRecording` (decision 3/6).
+   */
+  recordingSnapshot?: HookRunRecordingSnapshot | null
   /** Detached executor; defaults to the process-wide shared instance. */
   dispatcher?: AsyncHookDispatcher
 }
@@ -138,8 +144,10 @@ export async function runAfterDiffApplyHooks(
     dispatcher,
     threadId: opts.threadId,
     turnTreeId: opts.turnTreeId,
-    runCommandHook: createCommandHookRunner(),
-    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
+    runCommandHook: createCommandHookRunner(
+      opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
+    ),
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 

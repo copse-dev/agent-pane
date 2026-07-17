@@ -397,12 +397,17 @@ function firePostTurnReviewHook(
 ): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
   const workspaceRoot = getWorkspaceRoot()
+  // Snapshot the recording context now, synchronously, like `fireStopHook`:
+  // `postTurnReview` fires just before the terminal `done` and the dispatch is
+  // detached, so the hook may settle after `endHookRunRecording` (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
   void runPostTurnReviewHooks(payload, {
     threadId,
     turnTreeId,
     workspaceRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession: currentAgentSessionInfo(),
+    recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] postTurnReview hook dispatch error:', errorMessage(err))
   })

@@ -16,6 +16,7 @@ import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runAfterFileEditHooks } from './hooks/after-file-edit.ts'
 import { runBeforeDiffApplyHooks, runAfterDiffApplyHooks } from './hooks/diff-apply.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
+import { snapshotHookRunContext } from './hook-run-recorder.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
@@ -451,7 +452,7 @@ async function fireBeforeDiffApply(path: string): Promise<{ blocked: boolean; re
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return { blocked: false, reason: '' }
   const workspaceRoot = getWorkspaceRoot()
   try {
-    const decision = await runBeforeDiffApplyHooks(resolveWorkspacePath(path), {
+    const decision = await runBeforeDiffApplyHooks(await resolveWorkspacePath(path), {
       workspaceRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
       agentSession: currentAgentSessionInfo(),
@@ -479,16 +480,23 @@ function fireAfterDiffApply(path: string, applied: boolean): void {
   const agentSession = currentAgentSessionInfo()
   const threadId = agentSession.conversationId || 'diff-apply'
   const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
-  void runAfterDiffApplyHooks(
-    { filePath: resolveWorkspacePath(path), applied },
-    {
-      threadId,
-      turnTreeId,
-      workspaceRoot,
-      projectTrusted: isWorkspaceTrusted(workspaceRoot),
-      agentSession,
-    },
-  ).catch((err: unknown) => {
+  // Snapshot the recording context now, synchronously, like `fireStopHook`: the
+  // dispatch below is detached and the path resolution is async, so the live
+  // context may be gone by the time the hook's `hook_run` line records
+  // (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
+  void (async () =>
+    runAfterDiffApplyHooks(
+      { filePath: await resolveWorkspacePath(path), applied },
+      {
+        threadId,
+        turnTreeId,
+        workspaceRoot,
+        projectTrusted: isWorkspaceTrusted(workspaceRoot),
+        agentSession,
+        recordingSnapshot,
+      },
+    ))().catch((err: unknown) => {
     console.warn(`[hooks] afterDiffApply dispatch error for ${path}:`, errorMessage(err))
   })
 }
