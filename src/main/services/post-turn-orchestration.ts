@@ -1,5 +1,6 @@
 import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
 import type { CoerceToolArgsFn } from '@copse/agent/parse-text-tool-calls.ts'
+import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import {
   buildReviewPrompt,
   parseReviewVerdict,
@@ -64,6 +65,13 @@ export interface RunParentContinuationOptions {
   /** Spine-recording sink + step attribution for hooks fired in continuation loops (decision 6). */
   recordHookRun?: AgentLoopOptions['recordHookRun']
   onLlmCall?: AgentLoopOptions['onLlmCall']
+  /**
+   * Shared auto-continuation budget for this turn tree (decision 5). Each
+   * pre-review todo attempt consumes one grant, so the gate runs at most
+   * `min(MAX_PRE_REVIEW_TODO_ATTEMPTS, remaining)` times — the local cap tightens
+   * inside the shared cap.
+   */
+  continuationBudget?: ContinuationGrant
 }
 
 function filterReviewTools(registry: ToolRegistry): LLMTool[] {
@@ -87,6 +95,10 @@ function executeReviewTool(
 export async function runPreReviewTodoGate(opts: RunParentContinuationOptions): Promise<void> {
   for (let attempt = 0; attempt < MAX_PRE_REVIEW_TODO_ATTEMPTS; attempt++) {
     if (!hasOpenTodos(opts.getOpenTodos())) return
+    // Each pre-review attempt is a machine-initiated new turn (decision 5):
+    // consume one grant so the local cap tightens inside the shared budget. When
+    // the budget is exhausted, the gate stops (the open todos ride into review).
+    if (opts.continuationBudget && !opts.continuationBudget.tryGrant()) return
     await runParentContinuationTurn({
       ...opts,
       userNudge: OPEN_TODOS_PRE_REVIEW_NUDGE,
@@ -116,6 +128,9 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
       : {}),
     ...(opts.recordHookRun !== undefined ? { recordHookRun: opts.recordHookRun } : {}),
     ...(opts.onLlmCall !== undefined ? { onLlmCall: opts.onLlmCall } : {}),
+    ...(opts.continuationBudget !== undefined
+      ? { continuationBudget: opts.continuationBudget }
+      : {}),
     executeTool: async (name, args, signal, toolCallId) => {
       opts.onEditTool?.(name)
       return opts.executeTool(name, args, signal, toolCallId)
