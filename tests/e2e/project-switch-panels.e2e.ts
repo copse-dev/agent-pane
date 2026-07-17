@@ -13,10 +13,14 @@ async function clickProject(name: string): Promise<void> {
 
 async function approveUnsandboxedTerminalIfPrompted(): Promise<void> {
   const dialog = await $('#approval-dialog')
-  if (!(await dialog.isDisplayed())) return
+  const approvalShown = await dialog
+    .waitForDisplayed({ timeout: process.platform === 'darwin' ? 1_000 : 10_000 })
+    .then(() => true)
+    .catch(() => false)
+  if (!approvalShown) return
 
-  await expect(dialog.$('h2')).toHaveText('Open unsandboxed terminal?')
-  await dialog.$('.approve-btn').click()
+  await expect(dialog.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
+  await dialog.$('.approval-approve').click()
   await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 }
 

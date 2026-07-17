@@ -35,9 +35,14 @@ describe('agent tasks in terminal tab', () => {
     // platforms without an OS sandbox. Resolve that prompt before submitting
     // the agent's run_shell call, which has its own approval below.
     const terminalApproval = await $('#approval-dialog')
-    if (await terminalApproval.isDisplayed().catch(() => false)) {
+    const terminalApprovalShown = await terminalApproval
+      .waitForDisplayed({ timeout: process.platform === 'darwin' ? 1_000 : 10_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (terminalApprovalShown) {
       await expect(terminalApproval.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
       await terminalApproval.$('.approval-approve').click()
+      await terminalApproval.waitForDisplayed({ reverse: true, timeout: 10_000 })
     }
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 
