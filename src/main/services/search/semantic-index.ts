@@ -1,4 +1,5 @@
-import { access, mkdir, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { app } from 'electron'
@@ -8,7 +9,7 @@ import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { toRelativePath } from '../workspace.ts'
+import { getWorkspaceRoot, toRelativePath } from '../workspace.ts'
 import {
   indexBuildStarted,
   indexBuildFinished,
@@ -74,6 +75,19 @@ export function semanticThreadCap(): number {
  */
 export function gortexCpuLimitEnv(): NodeJS.ProcessEnv {
   return { GOMAXPROCS: String(semanticThreadCap()) }
+}
+
+/**
+ * Soft memory ceiling for the gortex daemon (Go's `GOMEMLIMIT`). A backstop only:
+ * repo scoping (see {@link scopeGortexToActiveRepo}) keeps the tracked set to the
+ * active workspace, but if that ever regresses this bounds the Go heap so the
+ * daemon can't grow without limit and OOM-kill the app. Overridable for large
+ * checkouts via `COPSE_GORTEX_MEM_LIMIT` (e.g. `6GiB`).
+ */
+const GORTEX_MEM_LIMIT = process.env['COPSE_GORTEX_MEM_LIMIT'] ?? '4GiB'
+
+export function gortexMemLimitEnv(): NodeJS.ProcessEnv {
+  return { GOMEMLIMIT: GORTEX_MEM_LIMIT }
 }
 
 export type SemanticBackend = 'gortex' | 'vera'
@@ -240,8 +254,10 @@ function gortexRunOpts(
     lowPriority: true,
     // HOME scopes ~/.gortex (daemon socket hash, sqlite store, config) to our
     // userData dir; GOMAXPROCS bounds the Go scheduler so a background index
-    // can't pin every core (#517).
-    env: { HOME: gortexHomeDir(), ...gortexCpuLimitEnv() },
+    // can't pin every core (#517); GOMEMLIMIT caps the daemon's heap so a
+    // runaway index can't OOM the machine. The daemon inherits this env from the
+    // `daemon start` invocation, so the ceiling applies for its whole lifetime.
+    env: { HOME: gortexHomeDir(), ...gortexCpuLimitEnv(), ...gortexMemLimitEnv() },
     ...extra,
   }
 }
@@ -506,10 +522,167 @@ async function resetPreExcludeIndex(workspaceRoot: string): Promise<void> {
   }
 }
 
+/**
+ * Extract the tracked repo paths from gortex's global `config.yaml` (the file
+ * `track`/`untrack` edit). Minimal parse of the `repos:` block — we only need the
+ * `- path:` entries, not a full YAML dependency, and must not pick up entries
+ * from sibling blocks (`exclude:`).
+ */
+export function parseTrackedRepos(configYaml: string): string[] {
+  const paths: string[] = []
+  let inRepos = false
+  for (const line of configYaml.split('\n')) {
+    // A non-indented line starts a new top-level key; we're in `repos:` only
+    // while indented list items follow it.
+    if (/^\S/.test(line)) inRepos = /^repos:\s*$/.test(line)
+    else if (inRepos) {
+      const match = line.match(/^\s*-\s*path:\s*(.+?)\s*$/)
+      if (match?.[1]) paths.push(match[1])
+    }
+  }
+  return paths
+}
+
+/** Which tracked repos to untrack so the daemon is scoped to just `activeRoot`. */
+export function reposToUntrackForActive(tracked: string[], activeRoot: string): string[] {
+  const active = resolve(activeRoot)
+  return tracked.filter((p) => resolve(p) !== active)
+}
+
+async function listTrackedGortexRepos(): Promise<string[]> {
+  const configPath = join(gortexHomeDir(), '.gortex', 'config.yaml')
+  try {
+    return parseTrackedRepos(await readFile(configPath, 'utf8'))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Scope the shared daemon to the active workspace: untrack every other repo so a
+ * large, non-active checkout (a 100k-file monorepo you opened once) can't keep
+ * its graph warm and bloat the daemon across sessions. gortex has no per-repo
+ * priority knob, so untrack + reload is the lever; the active repo is re-tracked
+ * by the caller, and switching workspaces re-indexes the newly-active one.
+ */
+async function scopeGortexToActiveRepo(activeRoot: string): Promise<void> {
+  const others = reposToUntrackForActive(await listTrackedGortexRepos(), activeRoot)
+  if (others.length === 0) return
+  for (const path of others) {
+    await runCommand(
+      gortexCmd(),
+      ['untrack', path, '--no-progress'],
+      gortexRunOpts(activeRoot),
+    ).catch(() => undefined)
+  }
+  // Reload so the daemon drops the untracked graphs and frees their memory now,
+  // rather than carrying them until the next restart.
+  await runCommand(
+    gortexCmd(),
+    ['daemon', 'reload', '--no-progress'],
+    gortexRunOpts(activeRoot),
+  ).catch(() => undefined)
+}
+
+/**
+ * RSS above which a daemon found at boot is treated as an oversized zombie and
+ * reaped. Left running across sessions the daemon keeps a graph per repo ever
+ * opened and grows unbounded (observed 3.5→10 GB); a healthy scoped,
+ * GOMEMLIMIT-capped daemon stays well under this and is reused as-is.
+ */
+const GORTEX_ORPHAN_REAP_RSS_MB = 2048
+
+/** Whether a boot-time process (by RSS + command) is an oversized gortex daemon worth reaping. */
+export function isOversizedGortexDaemon(rssMb: number, command: string): boolean {
+  return /gortex/i.test(command) && rssMb >= GORTEX_ORPHAN_REAP_RSS_MB
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // ESRCH → gone; EPERM → exists but not signal-able by us (still "alive").
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+function pidRssAndCommand(pid: number): Promise<{ rssMb: number; command: string } | null> {
+  return new Promise((resolve_) => {
+    execFile('ps', ['-p', String(pid), '-o', 'rss=,command='], (err, stdout) => {
+      const match = err ? null : stdout.trim().match(/^(\d+)\s+(.*)$/)
+      resolve_(match ? { rssMb: Number(match[1]) / 1024, command: match[2] ?? '' } : null)
+    })
+  })
+}
+
+/**
+ * Reap an oversized gortex daemon left over from a previous session, read from
+ * its pidfile. Run at the very start of boot — before Copse loads its window and
+ * renderer — so a multi-GB zombie's memory is freed while our own footprint is
+ * still minimal, instead of the two together exceeding RAM and the OS OOM-killing
+ * us mid-boot (the failure this fix targets).
+ *
+ * Kills the pid directly rather than via `gortex daemon stop`, which performs a
+ * slow graceful snapshot while holding all that memory; needs no reachable daemon
+ * or configured backend. A healthy, appropriately-sized daemon is left running so
+ * its warm index is reused. Best-effort — any failure just leaves the daemon.
+ */
+export async function reapOversizedGortexDaemon(): Promise<void> {
+  // Whole body is best-effort: this runs on the boot path, so any failure
+  // (missing pidfile, app not ready, ps unavailable) must leave the daemon and
+  // never throw into `whenReady`.
+  try {
+    const pidFile = join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid')
+    let pid: number
+    try {
+      pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10)
+    } catch {
+      return // no pidfile → nothing running from a prior session
+    }
+    if (!Number.isInteger(pid) || pid <= 1 || !pidIsAlive(pid)) return
+    const info = await pidRssAndCommand(pid)
+    // The `gortex` command check also guards against pid reuse (the pidfile can
+    // outlive the process it named).
+    if (!info || !isOversizedGortexDaemon(info.rssMb, info.command)) return
+    process.kill(pid, 'SIGTERM')
+    // A wedged/oversized daemon may not honor SIGTERM promptly; escalate to
+    // SIGKILL so we never leave the memory resident and lose the OOM-killer race.
+    for (let i = 0; i < 20; i++) {
+      await delay(100)
+      if (!pidIsAlive(pid)) return
+    }
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    // Best-effort — a leftover daemon is preferable to a failed boot.
+  }
+}
+
+/**
+ * Stop the detached gortex daemon. It is spawned `--detach` (ppid 1) and, without
+ * this, outlives Copse — each session it re-tracks/indexes and the orphaned
+ * daemons accumulate multi-GB graphs until the machine OOM-kills the app on the
+ * next launch. Best-effort and idempotent; called from the app before-quit path.
+ */
+export async function stopGortexDaemon(): Promise<void> {
+  if (activeBackend !== 'gortex' || !gortexCommand) return
+  const cwd = getWorkspaceRoot() ?? gortexHomeDir()
+  await runCommand(
+    gortexCmd(),
+    ['daemon', 'stop', '--no-progress'],
+    gortexRunOpts(cwd, { timeout_ms: 15_000 }),
+  ).catch(() => undefined)
+  gortexDaemonReady = null
+}
+
 async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
   if (!(await ensureGortexDaemon(workspaceRoot))) {
     throw new Error('gortex daemon failed to start')
   }
+  // Keep the daemon scoped to the active workspace before (re)building its index,
+  // so a previously-opened large repo's graph is dropped and its memory freed
+  // rather than kept warm alongside this one.
+  await scopeGortexToActiveRepo(workspaceRoot)
   // Register excludes (and shed any pre-exclude index) before track so the very
   // first build already honors them, rather than indexing ~3 GB once first.
   await ensureGortexExcludes(workspaceRoot)
