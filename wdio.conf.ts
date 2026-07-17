@@ -4,8 +4,12 @@ import electronBinary from 'electron'
 import { randomInt } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { isMochaTimeoutError, withTimeout } from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
+
+/** Cap how long afterTest may talk to a possibly-dead Electron session. */
+const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
@@ -60,10 +64,15 @@ export const config: Options.Testrunner = {
     timeout: 30_000,
   },
   afterTest: async (test, _context, result) => {
+    // A Mocha timeout almost always means chromedriver lost the renderer. Skip
+    // post-test WebDriver traffic entirely — screenshot/pageSource/execute would
+    // each sit on connectionRetryTimeout and then deleteSession would too,
+    // burning the outer shard-retry budget (main tip a73ba769 / e2e shard 8).
+    if (isMochaTimeoutError(result?.error)) return
+
     // On failure, dump a screenshot + page source to e2e-failure-artifacts/ so
     // CI can upload them for debugging the constrained-runner render/OOM flakes.
-    // Best-effort: if the renderer or whole runner has crashed the session is
-    // already gone, so swallow any error here rather than masking the real one.
+    // Best-effort + hard-capped: if the session is wedged, bail quickly.
     if (!result?.passed) {
       try {
         const dir = join(process.cwd(), 'e2e-failure-artifacts')
@@ -71,13 +80,31 @@ export const config: Options.Testrunner = {
         const base = `${String(test.title ?? 'e2e-test')
           .replace(/[^a-z0-9]+/gi, '-')
           .slice(0, 80)}-${Date.now()}`
-        await browser.saveScreenshot(join(dir, `${base}.png`))
-        writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
+        await withTimeout(
+          (async () => {
+            await browser.saveScreenshot(join(dir, `${base}.png`))
+            writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
+          })(),
+          AFTER_TEST_SESSION_BUDGET_MS,
+          'afterTest failure artifacts',
+        )
       } catch {
         // session/runner likely already dead — nothing to capture
       }
     }
-    await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test')
+
+    try {
+      await withTimeout(
+        assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test'),
+        AFTER_TEST_SESSION_BUDGET_MS,
+        'afterTest toast assertion',
+      )
+    } catch (error) {
+      // Passing tests must still fail on real toast assertions (and on a session
+      // too wedged to answer). For already-failed tests, swallow — the primary
+      // error is enough, and a second afterTest failure just burns teardown time.
+      if (result?.passed) throw error
+    }
   },
   beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
