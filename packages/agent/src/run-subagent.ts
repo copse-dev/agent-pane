@@ -98,6 +98,15 @@ export interface RunSubagentResult {
   summary: string
 }
 
+// A subagent that ends without any assistant text still owes its parent a
+// summary line; word it for the session kind so a delegated implementation
+// step is never reported as an exploration.
+const NO_SUMMARY_FALLBACK: Record<SubagentSession['kind'], string> = {
+  explore: 'Exploration completed with no summary.',
+  investigate_ci: 'Investigation completed with no findings report.',
+  delegate: 'Worker finished with no report.',
+}
+
 function buildUserTask(prompt: string, parentGoal: string, paths?: string[]): string {
   const parts = [`Parent task context: ${parentGoal}`, '', `Exploration query: ${prompt}`]
   if (paths?.length) {
@@ -269,7 +278,7 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
     const assistantTexts = session.messages
       .filter((m) => m.role === 'assistant' && m.content.trim())
       .map((m) => m.content.trim())
-    summary = assistantTexts.at(-1) ?? 'Exploration completed with no summary.'
+    summary = assistantTexts.at(-1) ?? NO_SUMMARY_FALLBACK[kind]
 
     session.status = 'done'
     session.summary = summary
