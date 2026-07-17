@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url'
 
 const GORTEX_VERSION = 'v0.60.0'
 const REPO = 'zzet/gortex'
-const OUT_DIR = resolve('vendor/gortex')
+const OUT_DIR = resolve(process.env['GORTEX_OUT_DIR'] || 'vendor/gortex')
 const BIN_NAME = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
+const TARGET_ARCH = process.env['GORTEX_TARGET_ARCH'] || process.arch
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const CHECKSUMS_PATH = join(SCRIPT_DIR, 'gortex-checksums.json')
@@ -76,25 +77,29 @@ async function verifyChecksum(archivePath: string, asset: string): Promise<void>
 }
 
 function assetName(): string | null {
-  if (process.platform === 'darwin' && process.arch === 'arm64') {
+  if (process.platform === 'darwin' && TARGET_ARCH === 'arm64') {
     return 'gortex_darwin_arm64.tar.gz'
   }
-  if (process.platform === 'darwin' && process.arch === 'x64') {
+  if (process.platform === 'darwin' && TARGET_ARCH === 'x64') {
     return 'gortex_darwin_amd64.tar.gz'
   }
-  if (process.platform === 'linux' && process.arch === 'x64') {
+  if (process.platform === 'linux' && TARGET_ARCH === 'x64') {
     return 'gortex_linux_amd64.tar.gz'
   }
-  if (process.platform === 'linux' && process.arch === 'arm64') {
+  if (process.platform === 'linux' && TARGET_ARCH === 'arm64') {
     return 'gortex_linux_arm64.tar.gz'
   }
-  if (process.platform === 'win32' && process.arch === 'x64') {
+  if (process.platform === 'win32' && TARGET_ARCH === 'x64') {
     return 'gortex_windows_amd64.zip'
   }
   return null
 }
 
 async function binaryReady(): Promise<boolean> {
+  // A cross-architecture binary may not be executable on this host. Release CI
+  // downloads the second macOS architecture into an isolated output directory
+  // and combines both verified binaries with lipo before packaging.
+  if (TARGET_ARCH !== process.arch) return false
   try {
     const binPath = join(OUT_DIR, BIN_NAME)
     await access(binPath)
@@ -171,7 +176,7 @@ async function main(): Promise<void> {
   const asset = assetName()
   if (!asset) {
     console.warn(
-      `[fetch-gortex] no prebuilt binary for ${process.platform}/${process.arch} — install gortex manually or rely on vera`,
+      `[fetch-gortex] no prebuilt binary for ${process.platform}/${TARGET_ARCH} — install gortex manually or rely on vera`,
     )
     return
   }
@@ -210,7 +215,11 @@ async function main(): Promise<void> {
       await chmod(outPath, 0o755)
     }
 
-    execFileSync(outPath, ['version'], { stdio: 'inherit' })
+    if (TARGET_ARCH === process.arch) {
+      execFileSync(outPath, ['version'], { stdio: 'inherit' })
+    } else {
+      console.log(`[fetch-gortex] installed verified cross-architecture binary for ${TARGET_ARCH}`)
+    }
     const sizeMb = ((await stat(outPath)).size / (1024 * 1024)).toFixed(1)
     console.log(`[fetch-gortex] installed ${outPath} (${sizeMb} MB)`)
   } finally {

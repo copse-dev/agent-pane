@@ -117,6 +117,8 @@ jobs:
         with:
           ref: ${{ needs.preflight.outputs.release_sha }}
       - uses: ./.github/actions/setup
+      - name: Build a universal bundled gortex
+        run: npm run prepare:gortex:mac
       - name: Require signing and notarization credentials
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -160,16 +162,27 @@ jobs:
             spctl -a -vvv -t install "$app"
             xcrun stapler validate "$app"
             test -x "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex"
+            app_arch="$(lipo "$app/Contents/MacOS/Copse" -archs)"
+            gortex_arch="$(lipo "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex" -archs)"
+            if [ "$gortex_arch" != "$app_arch" ]; then
+              echo "Bundled gortex architecture $gortex_arch does not match app architecture $app_arch"
+              exit 1
+            fi
             "$app/Contents/Resources/app.asar.unpacked/dist/resources/gortex/gortex" version
             test -s "$app/Contents/Resources/app-update.yml"
             grep -q '^provider: github$' "$app/Contents/Resources/app-update.yml"
+            grep -q '^owner: copse-dev$' "$app/Contents/Resources/app-update.yml"
+            grep -q '^repo: agent-pane$' "$app/Contents/Resources/app-update.yml"
             "$app/Contents/MacOS/Copse" --release-smoke-test
           done
           test -s release/latest-mac.yml
           test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
-          shasum -a 256 release/*.dmg release/*.zip release/latest-mac.yml > release/SHA256SUMS
+          for zip in release/*.zip; do
+            grep -Fq "$(basename "$zip")" release/latest-mac.yml
+          done
+          shasum -a 256 release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml > release/SHA256SUMS
       - name: Attest tested release artifacts
         uses: actions/attest@v4
         with:

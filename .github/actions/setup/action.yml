@@ -79,7 +79,7 @@ runs:
     # (sudo prompts for a password, apt may be unavailable), so provision ripgrep
     # — and the Electron e2e system libs — on the host once instead (see PR #371).
     - run: sudo apt-get update && sudo apt-get install -y ripgrep
-      if: runner.environment == 'github-hosted'
+      if: runner.environment == 'github-hosted' && runner.os == 'Linux'
       shell: bash
     # Self-hosted macOS runner: provision ripgrep + coreutils via Homebrew (no
     # apt). coreutils supplies `gtimeout`, which the e2e shard step uses to cap a
