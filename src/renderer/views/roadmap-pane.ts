@@ -342,8 +342,9 @@ export function mountRoadmapPane(
         { class: 'roadmap-row-meta' },
         el('span', { class: `roadmap-status-badge is-${status}` }, status),
       )
-      // Complexity is stamped on save (roadmap-complexity.ts); older items
-      // that predate stamping simply have no badge.
+      // Complexity is stamped in the background shortly after a save
+      // (roadmap-complexity.ts); freshly saved items and older items that
+      // predate stamping simply have no badge yet.
       const complexity = item.fields['complexity']
       if (isRoadmapComplexity(complexity)) {
         meta.append(
@@ -351,7 +352,7 @@ export function mountRoadmapPane(
             'span',
             {
               class: `roadmap-complexity-badge is-${complexity}`,
-              title: 'Estimated prompt complexity (classified on save)',
+              title: 'Estimated prompt complexity (classified after save)',
             },
             complexity,
           ),
@@ -649,6 +650,11 @@ export function mountRoadmapPane(
       if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
     }),
     store.on('files_pane_changed', () => {
+      if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
+    }),
+    // Saves return before their complexity stamp lands (roadmap-complexity.ts);
+    // pick the badge up when main says the stamp arrived.
+    api.roadmap.onChanged(() => {
       if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
     }),
     store.on('workspace_changed', () => {
