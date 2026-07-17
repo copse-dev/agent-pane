@@ -72,6 +72,14 @@ export function upsertAgent(list: AcpAgentConfig[], agent: AcpAgentConfig): AcpA
   return next
 }
 
+/** Keep cached selector choices when a partial ACP probe omits that selector. */
+export function selectorChoicesAfterProbe<T>(
+  cached: T[],
+  selector: { choices: T[] } | null,
+): T[] {
+  return selector?.choices ?? cached
+}
+
 export function removeAgent(list: AcpAgentConfig[], id: string): AcpAgentConfig[] {
   return list.filter((a) => a.id !== id)
 }
@@ -321,8 +329,8 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       void api.acp
         .probeAgent(id)
         .then((probe) => {
-          detectedModels = probe.models?.choices ?? []
-          detectedModes = probe.modes?.choices ?? []
+          detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models)
+          detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes)
           if (probe.models) {
             setModelOptions(probe.models.choices, modelSelect.value || probe.models.currentValue)
           }

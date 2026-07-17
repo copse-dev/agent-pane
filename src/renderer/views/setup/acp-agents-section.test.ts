@@ -9,10 +9,24 @@ import {
   parseArgsText,
   parseEnvText,
   removeAgent,
+  selectorChoicesAfterProbe,
   slugify,
   upsertAgent,
   validateDraft,
 } from './acp-agents-section.ts'
+
+describe('selectorChoicesAfterProbe', () => {
+  const cached = [{ value: 'cached', label: 'Cached' }]
+
+  it('preserves cached choices when a partial probe omits the selector', () => {
+    assert.equal(selectorChoicesAfterProbe(cached, null), cached)
+  })
+
+  it('replaces cached choices when the probe returned that selector', () => {
+    const detected = [{ value: 'fresh', label: 'Fresh' }]
+    assert.equal(selectorChoicesAfterProbe(cached, { choices: detected }), detected)
+  })
+})
 
 describe('env parse/format round-trip', () => {
   it('parses KEY=value lines and skips blanks and malformed lines', () => {
