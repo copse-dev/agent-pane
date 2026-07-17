@@ -40,6 +40,7 @@ import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSessionStartHooks } from './cursor-adapter.ts'
 import { claudeSessionStartHooks } from './claude-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import { snapshotHookRunContext, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
 import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 import { currentAgentSessionInfo } from './agent-session.ts'
@@ -70,6 +71,12 @@ export type RunSessionStartHooksOpts = DialectDiscoverOpts & {
   turnTreeId: TurnTreeId
   /** Session identity captured by value at the fire site (B4 + decision 3). */
   agentSession?: AgentSessionInfo
+  /**
+   * Recording context snapshotted synchronously at the fire site so a detached
+   * `sessionStart` hook's `hook_run` spine line survives `endHookRunRecording`
+   * (decision 3/6). Without it the record is dropped or misattributed.
+   */
+  recordingSnapshot?: HookRunRecordingSnapshot | null
   /** Detached executor; defaults to the process-wide shared instance. */
   dispatcher?: AsyncHookDispatcher
 }
@@ -82,8 +89,11 @@ export type RunSessionStartHooksOpts = DialectDiscoverOpts & {
  * hook (decision 4). Bound to the emitting thread — the store and the queue are
  * both keyed by it.
  */
-export function sessionStartOutcomeSink(threadId: string): (record: AsyncOutcomeRecord) => void {
-  const queueSink = hookQueueOutcomeSink(threadId)
+export function sessionStartOutcomeSink(
+  threadId: string,
+  recordingSnapshot?: HookRunRecordingSnapshot | null,
+): (record: AsyncOutcomeRecord) => void {
+  const queueSink = hookQueueOutcomeSink(threadId, recordingSnapshot)
   return (record) => {
     if (record.outcome.sessionEnv) mergeSessionEnv(threadId, record.outcome.sessionEnv)
     queueSink(record)
@@ -125,10 +135,12 @@ export async function runSessionStartHooks(
     dispatcher,
     threadId: opts.threadId,
     turnTreeId: opts.turnTreeId,
-    runCommandHook: createCommandHookRunner(),
+    runCommandHook: createCommandHookRunner(
+      opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
+    ),
     // Collects each hook's `env` into the session store (H4) and forwards any
     // queue-message / halt through the shared channel (decision 4).
-    onAsyncOutcome: sessionStartOutcomeSink(opts.threadId),
+    onAsyncOutcome: sessionStartOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 
@@ -158,6 +170,11 @@ export function fireSessionStartHook(
   // detached (decision 3) and may marshal after this run's recording context is
   // set up/torn down. `conversationId` is the thread id (B4).
   const agentSession = currentAgentSessionInfo({ conversationId: threadId })
+  // Snapshot the recording context now, synchronously, like `fireStopHook`: a
+  // detached `sessionStart` hook may settle after this run's recording window
+  // closes, and its `hook_run` line must still attribute to the emitting turn
+  // (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
   const payload: HookEventPayloads['sessionStart'] = { firstTurn: opts.firstTurn }
   void runSessionStartHooks(payload, {
     threadId,
@@ -165,6 +182,7 @@ export function fireSessionStartHook(
     workspaceRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession,
+    recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] sessionStart hook dispatch error:', errorMessage(err))
   })
