@@ -72,6 +72,7 @@ interface RoadmapCalls {
     removeAttachmentIds?: string[]
   }[]
   attachmentData: string[]
+  setStatus: { id: string; status: string }[]
   delete: string[]
   issueUrl: string[]
   openExternal: string[]
@@ -119,6 +120,7 @@ function makeApi(
     create: [],
     update: [],
     attachmentData: [],
+    setStatus: [],
     delete: [],
     issueUrl: [],
     openExternal: [],
@@ -188,6 +190,13 @@ function makeApi(
       attachmentData: async (id: string, attachmentId: string) => {
         calls.attachmentData.push(`${id}/${attachmentId}`)
         return 'data:image/png;base64,QUJD'
+      },
+      setStatus: async (id: string, status: string) => {
+        calls.setStatus.push({ id, status })
+        const item = items.find((i) => i.id === id)
+        if (!item) return null
+        item.status = status
+         return { ...item }
       },
       delete: async (id: string) => {
         calls.delete.push(id)
@@ -444,6 +453,88 @@ describe('roadmap pane', () => {
       ])
       const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
       assert.deepEqual(badges, ['done'])
+    } finally {
+      unmount()
+    }
+  })
+
+  it('marks an item done from the list row without selecting it', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Ship the thing', 'ready')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const toggle = list.querySelector<HTMLElement>('.roadmap-done-toggle')
+      assert.ok(toggle)
+      assert.equal(toggle.title, 'Mark done')
+      toggle.click()
+      await flush()
+      assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'done' }])
+      assert.equal(calls.update.length, 0, 'status-only IPC, not a full update')
+      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
+      assert.deepEqual(badges, ['done'])
+      // The toggle click must not select the row into the editor.
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
+      // The re-rendered row now offers reopen instead.
+      assert.equal(
+        list.querySelector<HTMLElement>('.roadmap-done-toggle')?.title,
+        'Reopen (set ready)',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('reopens a done item from the list row', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Shipped already', 'done')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
+      await flush()
+      assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'ready' }])
+      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
+      assert.deepEqual(badges, ['ready'])
+    } finally {
+      unmount()
+    }
+  })
+
+  it('offers no row toggle for archived items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Old idea', 'archived')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(list.querySelector('.roadmap-done-toggle'), null)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('syncs the open editor status select when its item is marked done', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Ship the thing', 'ready')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLSelectElement>('.roadmap-status-select')?.value,
+        'done',
+        'a later Save must not quietly revert the flip',
+      )
+      // Saving now keeps the flipped status.
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.equal(calls.update[0]?.status, 'done')
     } finally {
       unmount()
     }

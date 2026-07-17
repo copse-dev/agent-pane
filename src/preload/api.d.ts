@@ -447,6 +447,10 @@ export interface ApiClient {
       removeAttachmentIds?: string[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     attachmentData: (id: string, attachmentId: string) => Promise<string | null>
+    setStatus: (
+      id: string,
+      status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{

@@ -620,6 +620,30 @@ export function mountRoadmapPane(
           ),
         )
       }
+
+      // One-click status flip without opening the editor: ✓ marks a live item
+      // done, ↺ reopens a done one. Archived items keep the editor-only flow.
+      // A span with role=button, like the issue chip — rows are <button>s and
+      // buttons cannot nest.
+      if (status !== 'archived') {
+        const isDone = status === 'done'
+        const toggle = el(
+          'span',
+          {
+            class: 'roadmap-done-toggle',
+            role: 'button',
+            title: isDone ? 'Reopen (set ready)' : 'Mark done',
+            'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
+          },
+          isDone ? '↺' : '✓',
+        )
+        toggle.addEventListener('click', (e) => {
+          // The row itself selects the item; the toggle only flips status.
+          e.stopPropagation()
+          void setStatus(item, isDone ? 'ready' : 'done')
+        })
+         meta.append(toggle)
+      }
       main.append(
         el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
         meta,
@@ -746,6 +770,19 @@ export function mountRoadmapPane(
     selectedId = null
     renderList()
     renderEditor()
+  }
+
+  // Row-level status flip (✓ / ↺). Status-only IPC — never re-classifies the
+  // prompt. If the flipped item is open in the editor, sync its status select
+  // first so the dirty check passes and a later Save can't quietly revert it.
+  async function setStatus(item: RoadmapItem, status: RoadmapStatus): Promise<void> {
+    try {
+      const updated = await api.roadmap.setStatus(item.id, status)
+      if (updated && selectedId === item.id) statusSelect.value = status
+      await refresh({ preserveDirty: true })
+    } catch (err) {
+      showError(ipcErrorMessage(err, 'Could not update the roadmap item status.'))
+    }
   }
 
   async function checkFit(): Promise<void> {

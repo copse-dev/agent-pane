@@ -37,7 +37,11 @@ grinding out large amounts of work before those PRs merge.
   store: a backlog list with per-item status badges plus an inline editor to jot a new
   prompt (with optional notes) and update an item's prompt / notes / status. Backed by
   `roadmap:*` IPC handlers (`register-handlers.ts`) that only touch `Roadmap`-typed
-  notes; the pane can be popped out into its own window like the other panes.
+  notes; the pane can be popped out into its own window like the other panes. Each
+  list row also carries a one-click mark-done toggle (✓ → `done`, shown struck
+  through; ↺ on a done row → `ready`) over a status-only `roadmap:setStatus` IPC that
+  mirrors the tool's `set_status` — no prompt round-trip, so the stored complexity
+  is never re-classified. Archived items keep the editor-only flow.
 - **Issue pinning** — an item can be pinned to the GitHub issue it is meant to solve.
   Stored as a canonical short ref (`#123` / `owner/repo#123`) in the note's `issue`
   frontmatter field (`src/shared/git/issue-ref.ts` parses pasted forms, including full
