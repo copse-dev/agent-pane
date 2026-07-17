@@ -74,6 +74,17 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
 
 export type { AcpAutoSetupResult }
 
+/** Merge detected models onto the latest persisted config, never a pre-await snapshot. */
+export async function updateCurrentAcpAgentModels(
+  agentId: string,
+  models: NonNullable<AcpAgentConfig['availableModels']>,
+): Promise<boolean> {
+  const config = listAcpAgents().find((agent) => agent.id === agentId)
+  if (!config) return false
+  await upsertAcpAgent({ ...config, availableModels: models })
+  return true
+}
+
 /**
  * Map a catalog preset to a fresh, enabled agent config. The sandbox preset is
  * deliberately NOT copied here: the catalog is its source of truth, resolved at
@@ -125,7 +136,6 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
     failed: [],
   }
   const inputs = await detectPresetInputs()
-  const existing = new Map(listAcpAgents().map((agent) => [agent.id, agent]))
   const plan = planAcpAutoSetup(inputs)
 
   const installedNow = new Set<string>()
@@ -169,11 +179,10 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
   // availableModels once the probe finally succeeds.
   for (const known of plan.refreshModels) {
     if (signal.aborted) break
-    const config = existing.get(known.id)
-    if (!config) continue
     const models = await probeModels(known, cwd)
-    if (models) {
-      await upsertAcpAgent({ ...config, availableModels: models })
+    // Approval, installs, and the probe can all take long enough for settings
+    // to change. Merge onto the registry only after those awaits complete.
+    if (models && (await updateCurrentAcpAgentModels(known.id, models))) {
       result.modelsDetected.push(known.id)
     }
   }
@@ -192,7 +201,8 @@ export async function requestAcpPackageInstallApproval(
     body:
       'Copse found missing ACP adapters and wants to install these global npm packages:\n\n' +
       packages.map((pkg) => `• ${pkg}`).join('\n') +
-      '\n\nThe packages are installed through Socket Firewall with lifecycle scripts disabled.',
+      '\n\nIf Socket Firewall (sfw) is not installed, Copse will first install it globally. ' +
+      'The adapter packages are then installed through Socket Firewall with lifecycle scripts disabled.',
     type: 'shell',
     allowRemember: false,
   })
