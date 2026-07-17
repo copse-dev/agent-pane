@@ -67,8 +67,29 @@ BUILD_STAMP := $(STAMP_DIR)/build.stamp
 
 # Source that, when changed, should trigger a rebuild of `dist/`. Evaluated when
 # the Makefile is parsed; new files are picked up on the next `make` invocation.
-BUILD_SRC := $(shell find src packages scripts -type f 2>/dev/null) \
+# `assets` is included because scripts/build.mts copies it into dist/ wholesale.
+BUILD_SRC_DIRS := src packages scripts assets
+BUILD_SRC := $(shell find $(BUILD_SRC_DIRS) -type f 2>/dev/null) \
              package.json tsconfig.json tsconfig.node.json tsconfig.web.json
+
+# find-based prerequisites only notice files that still exist. A branch switch
+# that merely deletes or renames a module leaves every surviving file older
+# than the stamp, so make declares dist/ "up to date" while the bundle still
+# contains the deleted code. Fingerprint the file *list* into a stamp that is
+# refreshed (at parse time) whenever the list changes; ordinary mtime logic
+# then forces the rebuild.
+SRC_LIST_STAMP := $(STAMP_DIR)/src-list.stamp
+SRC_LIST_SUM := $(shell find $(BUILD_SRC_DIRS) -type f 2>/dev/null | sort | cksum | cut -d' ' -f1)
+ifneq ($(SRC_LIST_SUM),$(shell cat $(SRC_LIST_STAMP) 2>/dev/null))
+$(shell mkdir -p $(STAMP_DIR) && echo '$(SRC_LIST_SUM)' > $(SRC_LIST_STAMP))
+endif
+
+# The build stamp only proves a build *ran* — not that dist/ still holds its
+# output. `npm run dev` writes watch-mode bundles (a partial set, dev flags)
+# into the same dist/, and a hand-deleted dist/ leaves the stamp behind. If the
+# main bundle is missing or newer than the stamp, dist/ was touched outside
+# make: drop the stamp so the next build re-syncs it.
+$(shell if [ -f $(BUILD_STAMP) ] && { [ ! -f dist/main/index.js ] || [ dist/main/index.js -nt $(BUILD_STAMP) ]; }; then rm -f $(BUILD_STAMP); fi)
 
 # ----------------------------------------------------------------------------
 # Help
@@ -282,7 +303,7 @@ $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 .PHONY: build
 build: $(BUILD_STAMP)
 
-$(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) | $(STAMP_DIR)
+$(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) $(SRC_LIST_STAMP) | $(STAMP_DIR)
 	@echo "==> Source changed — clearing dist/ and rebuilding…"
 	rm -rf dist
 	@$(USE_NVM); npm run build
@@ -299,4 +320,4 @@ run: build
 .PHONY: clean
 clean:
 	@echo "==> Removing dist/ and build/deps stamps…"
-	rm -rf dist $(DEPS_STAMP) $(BUILD_STAMP)
+	rm -rf dist $(DEPS_STAMP) $(BUILD_STAMP) $(SRC_LIST_STAMP)
