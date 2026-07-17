@@ -24,6 +24,7 @@ describe('settings-writable', () => {
     assert.equal(parseRendererWritableSetting('theme', 'dark'), 'dark')
     assert.equal(parseRendererWritableSetting('appIconVariant', 'aurora'), 'aurora')
     assert.equal(parseRendererWritableSetting('autoPortraitRightPanel', false), false)
+    assert.equal(parseRendererWritableSetting('uiAccentColor', '#2A9D8F'), '#2A9D8F')
   })
 
   it('accepts a non-negative integer post-turn-review diff threshold, rejects negatives', () => {
@@ -51,7 +52,7 @@ describe('settings-writable', () => {
     assert.deepEqual(parsed.webAllowedOrigins, ['https://duckduckgo.com', 'http://localhost:*'])
   })
 
-  it('parses the renderer bundle without cursorHooksEnabled (storage-only, no UI yet)', () => {
+  it('parses a bundle without cursorHooksEnabled (older renderer bundles omit it)', () => {
     const parsed = securitySettingsSchema.parse({
       localServerUrl: 'http://127.0.0.1:1234/v1',
       safetyClassifierEnabled: true,

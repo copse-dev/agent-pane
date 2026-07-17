@@ -77,8 +77,8 @@ import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
-import { listCursorHooksAsSummaries } from '../services/skills/cursor-hooks.ts'
-import { listClaudeHooks } from '../services/skills/claude-hooks.ts'
+import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
+import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -171,6 +171,10 @@ import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
+import {
+  invalidateCursorCloudModelsCache,
+  listCursorCloudModels,
+} from '../services/remote/cursor-cloud-models.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
 import {
   gatewayListDir,
@@ -579,6 +583,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // back so the renderer can prompt for explicit consent and retry.
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
+    if (p === 'cursor') invalidateCursorCloudModelsCache()
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -751,10 +756,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
     const [cursor, claude] = await Promise.all([
-      listCursorHooksAsSummaries(opts),
+      listCursorHooksForSources(opts),
       listClaudeHooks(opts),
     ])
-    return [...cursor, ...claude]
+    return { hooks: [...cursor.hooks, ...claude], warnings: cursor.warnings }
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
@@ -884,6 +889,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       return fetchRemoteArtifactImageDataUrl({ agentId: parsedAgentId, path: parsedPath })
     },
   )
+  ipcMain.handle('remoteAgent:models', (event) => {
+    assertMainFrameSender(event, win)
+    return listCursorCloudModels()
+  })
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
     return detectAcpAgents()

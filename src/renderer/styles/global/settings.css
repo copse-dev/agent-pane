@@ -83,7 +83,7 @@ dialog.settings-overlay::backdrop {
 .settings-nav-btn {
   text-align: left;
   padding: 10px var(--spacing-md);
-  border-radius: var(--radius);
+  border-radius: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
@@ -92,11 +92,10 @@ dialog.settings-overlay::backdrop {
   color: var(--text-primary);
 }
 .settings-nav-btn.active {
-  background: var(--bg-hover);
+  background: var(--bg-selected);
   color: var(--text-primary);
   font-weight: 600;
-  /* Distinguish "selected" from mere hover, which shares the same fill. */
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
 /* Cross-section search box, pinned above the section list in the sidebar. */
 .settings-search {
@@ -220,7 +219,7 @@ dialog.settings-overlay::backdrop {
 }
 .settings-buttons button[type='submit'] {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: var(--spacing-md) var(--spacing-xl);
 }
@@ -867,6 +866,28 @@ dialog.settings-overlay::backdrop {
 .sources-badge-project {
   color: var(--warning, #d29922);
   border-color: var(--warning, #d29922);
+}
+/* Hooks list states: authoring warnings, unwired events, runtime failures. */
+.sources-badge-warning {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
+.sources-row-warning {
+  border-color: var(--warning, #d29922);
+}
+.sources-badge-unsupported {
+  color: var(--text-muted);
+  border-style: dashed;
+}
+.sources-badge-error {
+  color: var(--error);
+  border-color: var(--error);
+}
+.sources-row-error {
+  font-size: 11px;
+  color: var(--error);
+  word-break: break-word;
+  margin-top: 2px;
 }
 .sources-row-detail {
   font-size: 11px;

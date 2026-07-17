@@ -2,7 +2,7 @@ import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HookSummary } from '@shared/types/hooks.ts'
+import type { HooksListResult } from '@shared/types/hooks.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -114,6 +114,14 @@ export interface ApiClient {
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
     onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
+    /**
+     * An async hook's `queueMessage` output (decision 4), bridged from the host.
+     * The renderer lands it in the thread's pending queue with origin + epoch;
+     * a stale-epoch send-now is downgraded to held (decision 16).
+     */
+    onHookQueueMessage: (
+      handler: (payload: import('@shared/types/hooks.ts').HookQueueMessagePayload) => void,
+    ) => () => void
   }
   diff: {
     approve: (path: string) => Promise<void>
@@ -235,6 +243,8 @@ export interface ApiClient {
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) => Promise<string>
     artifactImageDataUrl: (agentId: string, path: string) => Promise<string>
+    /** Live Cursor Cloud Agent models from `GET /v1/models` (empty without a key). */
+    models: () => Promise<Array<{ id: string; label: string }>>
   }
   acp: {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
@@ -271,6 +281,9 @@ export interface ApiClient {
       safetyModel: string
       reviewModel?: string
       autoRunSandboxCommands: boolean
+      // Optional so bundles that don't render the toggle (e.g. the LM Studio
+      // connection save) don't clobber the persisted value.
+      cursorHooksEnabled?: boolean
       mcpAutoAllowReadOnly: boolean
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
@@ -401,7 +414,7 @@ export interface ApiClient {
     list: () => Promise<CursorPluginSummary[]>
   }
   hooks: {
-    list: () => Promise<HookSummary[]>
+    list: () => Promise<HooksListResult>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

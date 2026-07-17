@@ -62,6 +62,9 @@ describe('follow-up suggestion bubbles', () => {
       await $('.project-new-thread-btn').click()
       await expect($('.follow-up-suggestions')).not.toBeDisplayed()
 
+      const showMore = await $('.chats-show-more')
+      if (await showMore.isExisting()) await showMore.click()
+
       await browser.execute(() => {
         const rows = [...document.querySelectorAll('.chats-list .chat-row')]
         const previous = rows.find((row) => !row.classList.contains('selected'))

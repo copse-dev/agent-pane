@@ -2,6 +2,7 @@ import { el, clear } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
+import { knowledgeDate } from './knowledge-date.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -323,7 +324,7 @@ export function mountRoadmapPane(
     }
     if (item?.updatedAt) {
       metaLine.hidden = false
-      metaLine.textContent = `Updated ${item.updatedAt}`
+      metaLine.textContent = `Updated ${knowledgeDate(item.updatedAt)}`
     } else {
       metaLine.hidden = true
       metaLine.textContent = ''
