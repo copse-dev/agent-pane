@@ -12,14 +12,14 @@ function countingBacking(seed: Record<string, unknown> = {}): {
   let reads = 0
   return {
     backing: {
-      get(key) {
+      get(key): unknown {
         reads += 1
         return data.get(key)
       },
-      set(key, value) {
+      set(key, value): void {
         data.set(key, value)
       },
-      delete(key) {
+      delete(key): void {
         data.delete(key)
       },
     },
