@@ -66,9 +66,12 @@ export const config: Options.Testrunner = {
   // Electron session relaunches (`browser.reloadSession()`) are slow on the
   // resource-constrained GitHub runner, so specs that reload mid-test can blow
   // the default 30s mocha timeout. Give them headroom (local runs finish in <5s).
+  // Agent-loop specs that wait on approval + tool cards also need >60s under
+  // CI load; 90s matches the per-spec overrides already used by terminal-display
+  // / double-submit (leftover hardening from closed #983).
   mochaOpts: {
     ...baseConfig.mochaOpts,
-    timeout: 60_000,
+    timeout: 90_000,
   },
   beforeSession(config, capabilities) {
     process.env.COPSE_E2E_CI = '1'
