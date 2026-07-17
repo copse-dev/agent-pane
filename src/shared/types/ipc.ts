@@ -321,6 +321,7 @@ export interface IpcEventMap {
       questions: { question: string; options?: string[] }[]
     },
   ]
+  'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'ssh:prompt_request': [
     {
       id: string

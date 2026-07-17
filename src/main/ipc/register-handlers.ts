@@ -77,8 +77,8 @@ import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
-import { listCursorHooksForSources } from '../services/skills/cursor-hooks.ts'
-import { listClaudeHooks } from '../services/skills/claude-hooks.ts'
+import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
+import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,

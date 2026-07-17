@@ -12,8 +12,12 @@ import {
 /**
  * Visual eval for issue A4 (docs/plans/hooks-and-feature-packs.md): the
  * Settings → Sources → Hooks panel must show the cursorHooksEnabled security
- * toggle, per-entry validation warnings (unknown event, empty command), and an
- * "unsupported" badge on events Copse declares but does not fire.
+ * toggle, per-entry validation warnings (unknown event, empty command), and
+ * plain rows for the wired Cursor lifecycle events. As of B3, every Cursor
+ * event Copse can declare has a fire site (permission gates + beforeSubmitPrompt
+ * + afterFileEdit + stop), so no Cursor hook renders the "unsupported" badge any
+ * more — that badge's rendering is pinned in the component test
+ * `src/renderer/views/settings-sources-hooks.test.ts` with a synthetic fixture.
  *
  * Note: `.sources-badge` is CSS-upcased (text-transform), so badge text is
  * matched case-insensitively (#879).
@@ -28,7 +32,7 @@ describe('settings sources hooks', () => {
       hooks: {
         // Valid permission hook — wired, renders as a plain row.
         beforeShellExecution: [{ command: './audit.sh' }],
-        // Declared-but-unwired event — must get the "unsupported" badge.
+        // Wired in B3 (turn end / abort) — renders as a plain supported row.
         stop: [{ command: './notify.sh' }],
         // Unknown event — must surface as a warning row, not vanish.
         notARealEvent: [{ command: './nope.sh' }],
@@ -44,7 +48,7 @@ describe('settings sources hooks', () => {
     resetUserData()
   })
 
-  it('shows the toggle, validation warnings, and unsupported badge', async () => {
+  it('shows the toggle, validation warnings, and wired hook rows', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
@@ -83,10 +87,11 @@ describe('settings sources hooks', () => {
     assert.ok(!shellRow.badges.some((b) => /unsupported/i.test(b)))
     assert.equal(shellRow.detail, 'Cursor · ./audit.sh')
 
-    // The declared-but-unwired `stop` hook is badged unsupported.
+    // The `stop` hook is wired in B3, so it renders as a plain supported row —
+    // no "unsupported" badge.
     const stopRow = rows.find((r) => r.title === 'stop')
     assert.ok(stopRow, `expected a stop row in ${JSON.stringify(rows)}`)
-    assert.ok(stopRow.badges.some((b) => /unsupported/i.test(b)))
+    assert.ok(!stopRow.badges.some((b) => /unsupported/i.test(b)))
 
     // Both authoring problems surface as warning rows with the source path.
     const warningRows = rows.filter((r) => r.isWarning)
@@ -99,9 +104,9 @@ describe('settings sources hooks', () => {
     }
 
     // Two shots: the fieldset top (toggle + security copy + warning rows), then
-    // the last row — the unwired `stop` hook — showing its "unsupported" badge
-    // (the full list is taller than the dialog scrollport, so a whole-list
-    // element capture would clip behind the sticky Save/Cancel footer).
+    // the last row scrolled into view (the full list is taller than the dialog
+    // scrollport, so a whole-list element capture would clip behind the sticky
+    // Save/Cancel footer).
     await saveElementScreenshot('fieldset:has(#sources-hooks-list)', 'settings-sources-hooks.png')
     await browser.execute(() => {
       document
@@ -110,7 +115,7 @@ describe('settings sources hooks', () => {
     })
     await saveElementScreenshot(
       '#sources-hooks-list .sources-row:last-child',
-      'settings-sources-hooks-unsupported.png',
+      'settings-sources-hooks-last-row.png',
     )
   })
 })

@@ -11,6 +11,10 @@ import { assertMainFrameSender } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
 import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
+import { getSetting } from './storage/settings.ts'
+import { isWorkspaceTrusted } from './security/workspace-trust.ts'
+import { runAfterFileEditHooks } from './hooks/after-file-edit.ts'
+import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -383,7 +387,39 @@ export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
   if (op === 'mkdir') return applyMkdir(entry)
   if (op === 'delete') return applyDelete(entry)
   if (op === 'rename') return applyRename(entry)
-  return applyWrite(entry)
+  const result = await applyWrite(entry)
+  // Fire the canonical `afterFileEdit` hook once the content edit has landed on
+  // disk (B2). This is the single choke point every write path funnels through
+  // — direct apply, GUI approve / approve-all, and the headless resolver — so
+  // the event fires exactly once per successful write regardless of mode. Only
+  // content writes qualify: delete / rename / mkdir are not file *edits* in
+  // Cursor's afterFileEdit sense.
+  if (result.status === 'written') await fireAfterFileEdit(entry.path)
+  return result
+}
+
+/**
+ * Fire the `afterFileEdit` hooks for a just-written path (B2). Blocking by
+ * default — the write path awaits this so a formatter hook finishes before the
+ * agent proceeds (decision 2). Gated behind `cursorHooksEnabled` (default off),
+ * the same flag the tool-gate path uses, because honouring hooks spawns
+ * user/project scripts. A hook failure can never fail the edit that already
+ * landed: the runner resolves per-dialect failure semantics internally, and a
+ * defensive catch here swallows any unexpected throw.
+ */
+async function fireAfterFileEdit(path: string): Promise<void> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  try {
+    await runAfterFileEditHooks(resolveWorkspacePath(path), {
+      workspaceRoot,
+      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      // Real conversation/generation ids + running model on the wire payload (B4).
+      agentSession: currentAgentSessionInfo(),
+    })
+  } catch (err) {
+    console.warn(`[hooks] afterFileEdit hook error for ${path}:`, errorMessage(err))
+  }
 }
 
 async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {

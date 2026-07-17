@@ -24,6 +24,7 @@ describe('settings-writable', () => {
     assert.equal(parseRendererWritableSetting('theme', 'dark'), 'dark')
     assert.equal(parseRendererWritableSetting('appIconVariant', 'aurora'), 'aurora')
     assert.equal(parseRendererWritableSetting('autoPortraitRightPanel', false), false)
+    assert.equal(parseRendererWritableSetting('uiAccentColor', '#2A9D8F'), '#2A9D8F')
   })
 
   it('accepts a non-negative integer post-turn-review diff threshold, rejects negatives', () => {
