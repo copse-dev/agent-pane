@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -69,6 +77,33 @@ describe('knowledge-store', () => {
 
     const ids = loadKnowledgeNotes().map((n) => n.id)
     assert.deepEqual(ids, [first.id, second.id, third.id])
+  })
+
+  it('does not reuse an index cache entry from another project', () => {
+    restoreWorkspace()
+    const restoreA = setWorkspaceRootForTest('/home/dev/project-a')
+    const noteA = addKnowledgeNote({ type: 'Memory', title: 'Same', body: 'a' })
+    const indexA = join(knowledgeDir(), 'index.jsonl')
+    restoreA()
+
+    const restoreB = setWorkspaceRootForTest('/home/dev/project-b')
+    const noteB = addKnowledgeNote({ type: 'Memory', title: 'Same', body: 'b' })
+    const indexB = join(knowledgeDir(), 'index.jsonl')
+    restoreB()
+
+    // UUIDs and timestamps have fixed-width serialization, so these records are
+    // equal-sized. Pin their mtimes too, reproducing the old cache collision.
+    assert.equal(statSync(indexA).size, statSync(indexB).size)
+    const fixedTime = new Date('2026-01-01T00:00:00.000Z')
+    utimesSync(indexA, fixedTime, fixedTime)
+    utimesSync(indexB, fixedTime, fixedTime)
+
+    const restoreAForRead = setWorkspaceRootForTest('/home/dev/project-a')
+    assert.equal(getKnowledgeNote(noteA.id)?.id, noteA.id)
+    restoreAForRead()
+
+    restoreWorkspace = setWorkspaceRootForTest('/home/dev/project-b')
+    assert.equal(getKnowledgeNote(noteB.id)?.id, noteB.id)
   })
 
   it('updates status by id without disturbing order, and reports unknown ids', () => {

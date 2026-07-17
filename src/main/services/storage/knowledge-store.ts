@@ -94,6 +94,7 @@ let rootOverride: string | null = null
 /** @internal test helper — point the store at a temp dir instead of `~/.copse`. */
 export function setKnowledgeRootForTest(path: string | null): void {
   rootOverride = path
+  clearIndexCache()
 }
 
 function knowledgeBaseDir(): string {
@@ -251,6 +252,7 @@ function isIndexRecord(value: unknown): value is IndexRecord {
  * dropping tombstoned ids. Missing/corrupt file → empty map. */
 // Cache the index in memory; reload when the file changes.
 let cachedIndex: Map<string, IndexRecord> | null = null
+let cachedIndexFile: string | null = null
 let cachedIndexMtime: number | null = null
 let cachedIndexSize: number | null = null
 
@@ -261,12 +263,18 @@ function foldIndex(): Map<string, IndexRecord> {
     stat = statSync(file)
   } catch {
     cachedIndex = null
+    cachedIndexFile = null
     cachedIndexMtime = null
     cachedIndexSize = null
     return new Map<string, IndexRecord>()
   }
   // Return cached index if the file hasn't changed
-  if (cachedIndex !== null && cachedIndexMtime === stat.mtimeMs && cachedIndexSize === stat.size) {
+  if (
+    cachedIndex !== null &&
+    cachedIndexFile === file &&
+    cachedIndexMtime === stat.mtimeMs &&
+    cachedIndexSize === stat.size
+  ) {
     return cachedIndex
   }
   // Read and parse the index (cached on success).
@@ -276,6 +284,7 @@ function foldIndex(): Map<string, IndexRecord> {
     raw = readFileSync(file, 'utf8')
   } catch {
     cachedIndex = new Map<string, IndexRecord>()
+    cachedIndexFile = file
     cachedIndexMtime = stat.mtimeMs
     cachedIndexSize = stat.size
     return cachedIndex
@@ -294,6 +303,7 @@ function foldIndex(): Map<string, IndexRecord> {
     if (record.deleted) records.delete(id)
   }
   cachedIndex = records
+  cachedIndexFile = file
   cachedIndexMtime = stat.mtimeMs
   cachedIndexSize = stat.size
   return records
@@ -302,6 +312,7 @@ function foldIndex(): Map<string, IndexRecord> {
 /** Clear the index cache (called when the index is modified). */
 export function clearIndexCache(): void {
   cachedIndex = null
+  cachedIndexFile = null
   cachedIndexMtime = null
   cachedIndexSize = null
 }
