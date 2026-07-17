@@ -463,8 +463,7 @@ export function resolveRegistry(options: Options): string | undefined {
 
 /** Default root disk for `up`: smaller when the host will only pull a pre-baked image. */
 export function defaultRemoteE2eVolumeSizeGb(options: Options): number {
-  const willBakeOnHost =
-    resolveRegistry(options) === undefined || hasFlag(options, 'rebuild')
+  const willBakeOnHost = resolveRegistry(options) === undefined || hasFlag(options, 'rebuild')
   return willBakeOnHost ? DEFAULT_VOLUME_SIZE_GB : DEFAULT_VOLUME_SIZE_GB_PULL
 }
 
