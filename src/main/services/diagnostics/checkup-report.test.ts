@@ -163,6 +163,21 @@ describe('buildCheckupReport', () => {
     assert.equal(getCheck(report, 'mcp-summary').status, 'ok')
   })
 
+  it('warns about MCP servers blocked by workspace trust instead of reporting healthy', () => {
+    const report = buildCheckupReport(
+      baseSnapshot({
+        mcp: [{ name: 'proj', state: 'untrusted', toolCount: 0, error: 'workspace not trusted' }],
+      }),
+    )
+    const blocked = getCheck(report, 'mcp-proj')
+    assert.equal(blocked.status, 'warn')
+    assert.match(blocked.detail, /not trusted/)
+    // The summary must not read as healthy when nothing connected and one is blocked.
+    const summary = getCheck(report, 'mcp-summary')
+    assert.equal(summary.status, 'warn')
+    assert.match(summary.detail, /blocked \(untrusted\)/)
+  })
+
   it('warns when semantic search is unavailable', () => {
     const report = buildCheckupReport(
       baseSnapshot({ semantic: { available: false, backend: null, bundled: false } }),

@@ -198,6 +198,10 @@ export function buildCheckupReport(s: CheckupSnapshot): CheckupReport {
   // MCP servers.
   const mcpErrors = s.mcp.filter((m) => m.state === 'error')
   const mcpConnected = s.mcp.filter((m) => m.state === 'connected')
+  // Project servers in an untrusted workspace are never spawned — they carry an
+  // explanatory `error` but state 'untrusted', so treat them as their own warning
+  // rather than letting them read as healthy (they didn't start).
+  const mcpUntrusted = s.mcp.filter((m) => m.state === 'untrusted')
   if (s.mcp.length === 0) {
     add({
       id: 'mcp',
@@ -217,13 +221,30 @@ export function buildCheckupReport(s: CheckupSnapshot): CheckupReport {
         fix: 'Check the server command/URL and credentials in your mcp.json, then reload MCP servers in Settings → MCP servers.',
       })
     }
+    for (const m of mcpUntrusted) {
+      add({
+        id: `mcp-${m.name}`,
+        category: 'MCP',
+        label: `MCP: ${m.name}`,
+        status: 'warn',
+        detail:
+          m.error ??
+          'Not started: this project-defined MCP server is blocked because the workspace is not trusted.',
+        fix: 'Trust this workspace in Settings → MCP servers so its project servers can start (an untrusted, cloned repo cannot auto-run MCP servers).',
+      })
+    }
     const toolTotal = mcpConnected.reduce((sum, m) => sum + m.toolCount, 0)
+    const parts = [`${mcpConnected.length.toString()} connected (${toolTotal.toString()} tools)`]
+    if (mcpErrors.length > 0) parts.push(`${mcpErrors.length.toString()} failed`)
+    if (mcpUntrusted.length > 0) parts.push(`${mcpUntrusted.length.toString()} blocked (untrusted)`)
+    const problems = mcpErrors.length + mcpUntrusted.length
     add({
       id: 'mcp-summary',
       category: 'MCP',
       label: 'MCP servers',
-      status: mcpConnected.length > 0 || mcpErrors.length === 0 ? 'ok' : 'warn',
-      detail: `${mcpConnected.length.toString()} connected (${toolTotal.toString()} tools), ${mcpErrors.length.toString()} failed.`,
+      // Only "healthy" when nothing is broken, or at least something connected.
+      status: problems === 0 || mcpConnected.length > 0 ? 'ok' : 'warn',
+      detail: `${parts.join(', ')}.`,
     })
   }
 
