@@ -19,6 +19,7 @@ import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { getGitDiffText } from './github/git-service.ts'
+import { subagentHookCallbacks } from './hooks/subagent.ts'
 
 export interface RunPostTurnReviewOptions {
   parentGoal: string
@@ -118,6 +119,9 @@ export async function runPostTurnReview(
       systemPrompt: REVIEW_SYSTEM_PROMPT,
       userTask: prompt,
       usageModel,
+      // subagentStart gate + subagentStop notification (D1); no-op when
+      // cursorHooksEnabled is off.
+      ...subagentHookCallbacks({ usageModel }),
     })
 
     // The shared review system prompt now asks for a trailing REVIEW_JSON line;

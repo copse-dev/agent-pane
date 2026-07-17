@@ -201,24 +201,15 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
-      # e2e shard fan-out is runner-dependent. The GitHub-hosted nightly keeps 8
-      # shards to stay under the 2-core/7GB OOM ceiling (see the e2e job comment).
-      # PR/push runs on the self-hosted Linux Docker `copse-e2e` fleet (see #422),
-      # where 8 shards just means paying the (mostly-cached but non-trivial, and
-      # occasionally cold) dep restore + Electron setup up to 8× across the fleet.
-      # Fewer, larger shards there cut that repeated setup without duplicating any
-      # spec: wdio `--shard current/total` and the `subset` round-robin both
-      # partition the specs disjointly, so a lower total just makes each slice
-      # bigger. Tune the self-hosted count below to your fleet size.
+      # Keep every full e2e run at 8 shards. Both runner classes have a tight
+      # memory ceiling: GitHub-hosted is 7 GB and each self-hosted `copse-e2e`
+      # container is capped at 6 GB. Packing the suite into 3 shards makes each
+      # container launch too many sequential Electron sessions; accumulated
+      # Electron/gortex processes then OOM-crash unrelated late-running specs.
+      # `--shard` and the subset round-robin still partition specs disjointly.
       - id: shards
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" = "schedule" ]; then
-            { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
-          else
-            { echo "total=3"; echo "list=[1,2,3]"; } >> "$GITHUB_OUTPUT"
-          fi
+          { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
 
   # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
   # Prettier `--write` — and commit the result back onto the head branch. This
@@ -455,19 +446,12 @@ jobs:
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Shard count is runner-dependent (computed by the precheck `shards` step):
-    #   - hosted nightly: 8. Each shard runs its slice as one sequential wdio
-    #     process, relaunching Electron per spec. On the 2-core/7GB runner, once a
-    #     shard runs too many specs the accumulated electron/gortex processes
-    #     exhaust it and a later spec's Electron fails to boot or OOM-crashes the
-    #     runner ("shutdown signal"). #339's data showed 8 stays under that limit
-    #     even in the densest spec range.
-    #   - self-hosted PR/push: 3. These run on the Linux Docker `copse-e2e`
-    #     runners (see #422), which have the headroom 8 was protecting against, so
-    #     the only thing 8 buys there is paying dep restore + Electron setup up to
-    #     8× across the fleet. Fewer, larger shards cut that repeated (and
-    #     sometimes cold) setup — the dominant wall-clock cost — without
-    #     duplicating any spec. Tune to the `copse-e2e` runner count.
+    # Every full run uses 8 shards. Each shard runs its slice as one sequential
+    # wdio process, relaunching Electron per spec. Both the hosted runner (7 GB)
+    # and self-hosted container (6 GB cap) eventually exhaust memory when a shard
+    # launches too many Electron/gortex processes; a later unrelated spec then
+    # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
+    # 8 shards stays under that limit even in the densest spec range.
     # The per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt
     # 1 finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
@@ -506,9 +490,11 @@ jobs:
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
-      # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
-      # each attempt in `timeout` so a wedged session is killed and retried
-      # (a plain hang would otherwise never exit and stall the job).
+      # only a fresh xvfb+Electron launch does. Retry the entire shard, cleaning
+      # orphaned session processes before each attempt and when the step exits.
+      # The runners are one job per PID-isolated container, so this cannot touch
+      # another job. Wrap each attempt in `timeout` so a plain hang cannot stall
+      # the job indefinitely.
       # Oracle gate (see the precheck job's plan step): `full` shards the whole
       # suite; `subset` distributes only the planned specs round-robin across the
       # same 8 shards (so no shard exceeds the per-shard memory budget the count
@@ -550,7 +536,25 @@ jobs:
           # fall back to no inner timeout (the step `timeout-minutes` still caps
           # a wedged run) so the command can't die with "timeout: not found".
           TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
+
+          cleanup_e2e_processes() {
+            # Bracketed patterns avoid matching this shell's own command line.
+            # A failed deleteSession can orphan any of these; self-hosted runner
+            # containers are reused, so clean before attempt 1 as well as retries.
+            pkill -TERM -f '[e]lectron/dist/electron' 2>/dev/null || true
+            pkill -TERM -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
+            pkill -TERM -f '[X]vfb' 2>/dev/null || true
+            pkill -TERM -f '[g]ortex' 2>/dev/null || true
+            sleep 1
+            pkill -KILL -f '[e]lectron/dist/electron' 2>/dev/null || true
+            pkill -KILL -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
+            pkill -KILL -f '[X]vfb' 2>/dev/null || true
+            pkill -KILL -f '[g]ortex' 2>/dev/null || true
+          }
+
+          trap cleanup_e2e_processes EXIT
           for attempt in 1 2 3; do
+            cleanup_e2e_processes
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"
