@@ -74,8 +74,7 @@ export function createPanePopoutWindow(mode: PopoutMode): BrowserWindow {
   })
 
   void win.loadFile(join(__dirname, '../renderer/index.html'), {
-    search: `popout=${mode}`,
-    query: bootTheme.query,
+    query: { popout: mode, ...bootTheme.query },
   })
   return win
 }
