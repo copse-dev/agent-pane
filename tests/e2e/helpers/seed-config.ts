@@ -2814,7 +2814,11 @@ export function seedHeldQueueFixture(workspaceRoot: string): void {
   })
 }
 
-/** One running + one idle thread so the sidebar running-dots mark is visible. */
+/**
+ * Two idle threads for the running-status sidebar eval. A live mock turn flips
+ * the selected thread to `running` — persisted `running` is cleared on load by
+ * `resumePendingQueues`.
+ */
 export function seedThreadRunningStatusFixture(workspaceRoot: string): {
   runningThreadTitle: string
   idleThreadTitle: string
@@ -2832,7 +2836,7 @@ export function seedThreadRunningStatusFixture(workspaceRoot: string): {
       {
         id: 'e2e-running-thread',
         title: runningThreadTitle,
-        status: 'running',
+        status: 'idle',
         messages: [
           {
             id: 'msg-user-run',
@@ -2872,5 +2876,6 @@ export function seedThreadRunningStatusFixture(workspaceRoot: string): {
       },
     ],
   })
+  writeSettings({ model: 'claude-sonnet-4-6' })
   return { runningThreadTitle, idleThreadTitle }
 }

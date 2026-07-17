@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
+import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadRunningStatusFixture } from './helpers/seed-config.ts'
 
@@ -18,12 +19,20 @@ describe('thread running status dots', () => {
     resetUserData()
   })
 
-  it('shows animated dots left of a running thread title', async () => {
+  it('shows animated dots left of a running thread title', async function () {
+    // Live mock turn + screenshot; default 30s mocha timeout is too tight.
+    this.timeout(90_000)
+
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(runningThreadTitle)
 
+    // Persisted `running` is cleared on load (resumePendingQueues), so drive a
+    // live mock turn to put the selected thread into a real running state.
+    await setComposerValue('Keep going. [[mock:delay_ms 8000]]')
+    await $('.submit-btn').click()
+
     const runningRow = await $('.chat-row.is-running')
-    await expect(runningRow).toExist()
+    await runningRow.waitForExist({ timeout: 15_000 })
     await expect(runningRow.$('.chat-title')).toHaveText(runningThreadTitle)
     await expect(runningRow.$('.chat-running-status')).toExist()
     await expect(runningRow.$('.chat-running-status')).toHaveAttribute(
@@ -60,5 +69,8 @@ describe('thread running status dots', () => {
     await expect(idleHasDots).toBe(false)
 
     await saveElementScreenshot('#pane-projects', 'thread-running-status-dots.png')
+
+    await $('.stop-btn').click()
+    await runningRow.waitForExist({ reverse: true, timeout: 10_000 })
   })
 })
