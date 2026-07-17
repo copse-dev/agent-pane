@@ -142,7 +142,7 @@ describe('acp-session-pool', () => {
     assert.equal(acpSessionPoolSize(), 2)
   })
 
-  it('dispose and idle-reap evict; the next acquire is fresh', async () => {
+  it('dispose and idle-reap evict; non-resumable agents reacquire fresh', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const createTransport = makeTransportFactory(log)
 
@@ -158,6 +158,34 @@ describe('acp-session-pool', () => {
     const reaped = reapIdleAcpSessions(Date.now() + 61_000, 60_000)
     assert.deepEqual(reaped, ['t1'])
     assert.equal(acpSessionPoolSize(), 0)
+
+    // Agents without session/resume still need a full history replay after reap.
+    const afterReap = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.equal(afterReap.fresh, true)
+    assert.equal(afterReap.entry.open.resumed, false)
+  })
+
+  it('idle-reaps a resumable session then restores it via session/resume (#830)', async () => {
+    const log: AgentLog = { spawns: 0, promptSessions: [] }
+    const createTransport = makeResumableTransportFactory(log)
+    const first = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    first.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(first.entry.open, 'one', undefined)
+    const originalSessionId = first.entry.open.session.sessionId
+
+    // Idle reaper tears down the live process but keeps the opaque session ID
+    // so the next turn can resume without Copse replaying the transcript.
+    assert.deepEqual(reapIdleAcpSessions(Date.now() + 61_000, 60_000), ['t1'])
+    assert.equal(acpSessionPoolSize(), 0)
+
+    const resumed = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
+    assert.equal(resumed.fresh, false)
+    assert.equal(resumed.entry.open.resumed, true)
+    assert.equal(resumed.entry.open.session.sessionId, originalSessionId)
+    resumed.entry.open.handlers.current = sink([])
+    await runAcpSessionPrompt(resumed.entry.open, 'two', undefined)
+    assert.equal(log.spawns, 2)
+    assert.deepEqual(log.promptSessions, [originalSessionId, originalSessionId])
   })
 
   it('resumes a dropped resumable session without replaying history', async () => {

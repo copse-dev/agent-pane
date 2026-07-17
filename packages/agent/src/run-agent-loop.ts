@@ -48,13 +48,10 @@ import {
   isAgentRunTimeoutAbort,
   isStreamOutputRunaway,
 } from './agent-loop-limits.ts'
-import {
-  hasOpenTodos,
-  OPEN_TODOS_FINALIZE_NUDGE,
-  OPEN_TODOS_FINALIZE_NUDGE_STRICT,
-  OPEN_TODOS_STILL_OPEN_MESSAGE,
-  MAX_TODO_CLOSEOUT_ATTEMPTS,
-} from './agent-loop-guards.ts'
+import { hasOpenTodos, OPEN_TODOS_STILL_OPEN_MESSAGE } from './agent-loop-guards.ts'
+import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry.ts'
+import type { HookContext } from './hooks/canonical-events.ts'
+import type { ContinuationGrant } from './hooks/continuation-budget.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -100,6 +97,25 @@ export interface AgentLoopOptions {
   coerceTextToolCallArgs?: CoerceToolArgsFn
   /** When set, finalize is blocked while todos remain open. */
   getOpenTodos?: () => readonly TodoItem[]
+  /**
+   * Shared auto-continuation budget for this turn tree (decision 5). When set,
+   * each todo-closeout turn consumes one grant, so closeout runs at most
+   * `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` times — the local cap is a
+   * tightener inside the shared cap. Absent (most callers / tests) → closeout is
+   * bounded by its local cap alone, unchanged.
+   */
+  continuationBudget?: ContinuationGrant
+  /**
+   * Spine-recording sink for hook executions fired inside the loop (decision 6).
+   * Injected by the host — the loop and registry never import persistence.
+   */
+  recordHookRun?: HookContext['recordHookRun']
+  /**
+   * Called after each reserved LLM call with the running call count. The host
+   * uses it to attribute hook executions to their emitting step (decision 6);
+   * purely observational, never awaited.
+   */
+  onLlmCall?: (count: number) => void
 }
 
 const FINALIZE_NUDGE =
@@ -117,6 +133,7 @@ type LlmCallBudget = {
   deadline: AgentRunDeadline
   signal?: AbortSignal
   onRunDeadlineActivity?: () => void
+  onLlmCall?: (count: number) => void
 }
 
 function recordRunActivity(budget: LlmCallBudget): void {
@@ -133,6 +150,7 @@ function runBudgetExhausted(budget: LlmCallBudget): boolean {
 function reserveLlmCall(budget: LlmCallBudget): boolean {
   if (runBudgetExhausted(budget)) return false
   budget.llmCalls++
+  budget.onLlmCall?.(budget.llmCalls)
   return true
 }
 
@@ -339,6 +357,8 @@ type AgentStepContext = {
   maxContextTokens?: number
   toolSchemaReserveTokens: number
   onHistoryTrimmed?: () => void
+  recordHookRun?: HookContext['recordHookRun']
+  continuationBudget?: ContinuationGrant
 }
 
 /** One tool-enabled turn after injecting a user nudge (used for todo closeout). */
@@ -439,16 +459,32 @@ async function runToolEnabledNudgeTurn(
   return { answerText: assistantText.trim(), executedTools: false }
 }
 
-/** Run up to {@link MAX_TODO_CLOSEOUT_ATTEMPTS} tool-enabled nudge turns while
- * open todos remain, escalating the nudge after the first attempt. Returns true
- * once no todos are open. */
+/**
+ * Run tool-enabled closeout turns while open todos remain. Nudge selection and
+ * the attempt budget live in `beforeFinalize` hooks (M0.3); this site only
+ * fires the event and runs the returned `injectContext` as a nudge. Returns
+ * true once no todos are open.
+ */
 async function closeOpenTodosBeforeFinalize(
   ctx: AgentStepContext,
   getOpenTodos: () => readonly TodoItem[],
 ): Promise<boolean> {
-  for (let attempt = 0; attempt < MAX_TODO_CLOSEOUT_ATTEMPTS; attempt++) {
-    if (!hasOpenTodos(getOpenTodos())) return true
-    const nudge = attempt === 0 ? OPEN_TODOS_FINALIZE_NUDGE : OPEN_TODOS_FINALIZE_NUDGE_STRICT
+  const registry = createHookRegistry()
+  const hookContext: HookContext = {
+    ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+    ...(ctx.recordHookRun !== undefined ? { recordHookRun: ctx.recordHookRun } : {}),
+  }
+  for (let attempt = 0; ; attempt++) {
+    const openTodos = getOpenTodos()
+    if (!hasOpenTodos(openTodos)) return true
+    const result = await registry.emit('beforeFinalize', { openTodos, attempt }, hookContext)
+    const nudge = mergeBlockingOutcomes(result.outcomes).injectContext
+    if (!nudge) break
+    // A closeout turn is a machine-initiated new turn (decision 5): consume one
+    // grant from the shared budget before running it, so closeout is bounded by
+    // `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` — the local cap tightens
+    // inside the shared cap. No budget wired → local cap alone (unchanged).
+    if (ctx.continuationBudget && !ctx.continuationBudget.tryGrant()) break
     await runToolEnabledNudgeTurn(ctx, nudge)
     if (ctx.signal?.aborted) break
   }
@@ -680,6 +716,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     onRunDeadlineActivity,
     coerceTextToolCallArgs,
     getOpenTodos,
+    recordHookRun,
+    onLlmCall,
   } = opts
   const deadline = runDeadline ?? new AgentRunDeadline(runTimeoutMs, runHardMaxMs)
   const budget: LlmCallBudget = {
@@ -688,6 +726,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     deadline,
     ...(signal !== undefined ? { signal } : {}),
     ...(onRunDeadlineActivity !== undefined ? { onRunDeadlineActivity } : {}),
+    ...(onLlmCall !== undefined ? { onLlmCall } : {}),
   }
   let steps = 0
   let finishedWithAnswer = false
@@ -960,11 +999,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   }
 
   if (!signal?.aborted && !finishedWithAnswer && !hitRunLimit) {
-    // When open todos remain, run up to MAX_TODO_CLOSEOUT_ATTEMPTS tool-enabled
-    // closeout turns so the model reconciles the plan via update_todos — a
-    // plain-text "all done" no longer satisfies finalize. Only once the plan is
-    // clean (or after closeout gives up) do we fall through to the text-only
-    // finalize that produces the user-facing answer.
+    // When open todos remain, fire `beforeFinalize` (M0.3) to select closeout
+    // nudges so the model reconciles the plan via update_todos — a plain-text
+    // "all done" no longer satisfies finalize. Only once the plan is clean (or
+    // after closeout gives up) do we fall through to the text-only finalize
+    // that produces the user-facing answer.
     const stepCtx: AgentStepContext = {
       provider,
       messages,
@@ -980,6 +1019,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       ...(maxContextTokens !== undefined ? { maxContextTokens } : {}),
       toolSchemaReserveTokens,
       ...(onHistoryTrimmed !== undefined ? { onHistoryTrimmed } : {}),
+      ...(recordHookRun !== undefined ? { recordHookRun } : {}),
+      ...(opts.continuationBudget !== undefined
+        ? { continuationBudget: opts.continuationBudget }
+        : {}),
     }
 
     if (getOpenTodos && hasOpenTodos(getOpenTodos())) {

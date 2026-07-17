@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),
-    set: (root: string) => ipcRenderer.invoke('workspace:set', root),
+    set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
     onOpened: (handler: (root: string) => void) => {
@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('api', {
         type: string
         allowRemember?: boolean
         rememberLabel?: string
+        comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => {
       const listener = (
@@ -92,6 +93,7 @@ contextBridge.exposeInMainWorld('api', {
           type: string
           allowRemember?: boolean
           rememberLabel?: string
+          comparisonModels?: { a: string; b: string; judge: string }
         },
       ): void => {
         handler(req)
@@ -158,6 +160,20 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:refresh_context_estimate', listener)
       }
     },
+    onHookQueueMessage: (
+      handler: (payload: import('@shared/types/hooks.ts').HookQueueMessagePayload) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        payload: import('@shared/types/hooks.ts').HookQueueMessagePayload,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('agent:hook_queue_message', listener)
+      return (): void => {
+        ipcRenderer.off('agent:hook_queue_message', listener)
+      }
+    },
   },
   diff: {
     approve: (path: string) => ipcRenderer.invoke('diff:approve', path),
@@ -203,11 +219,58 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   approval: {
-    respond: (id: string, approved: boolean, remember?: boolean) =>
-      ipcRenderer.invoke('approval:respond', id, approved, remember),
+    respond: (
+      id: string,
+      approved: boolean,
+      remember?: boolean,
+      comparisonModels?: { a: string; b: string; judge: string },
+    ) => ipcRenderer.invoke('approval:respond', id, approved, remember, comparisonModels),
   },
   ask: {
     respond: (id: string, answers: string[]) => ipcRenderer.invoke('ask:respond', id, answers),
+  },
+  sshPrompt: {
+    respond: (id: string, value: string) => ipcRenderer.invoke('ssh-prompt:respond', id, value),
+    onRequest: (
+      handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: { id: string; prompt: string; kind: 'confirm' | 'secret' },
+      ): void => {
+        handler(req)
+      }
+      ipcRenderer.on('ssh:prompt_request', listener)
+      return (): void => {
+        ipcRenderer.off('ssh:prompt_request', listener)
+      }
+    },
+  },
+  sshWorkspace: {
+    listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
+    listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
+    getStates: () => ipcRenderer.invoke('ssh-workspace:getStates'),
+    connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
+    disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
+    reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),
+    listDirectory: (hostId: string, dirPath: string) =>
+      ipcRenderer.invoke('ssh-workspace:listDirectory', hostId, dirPath),
+    registerRoot: (hostId: string, dirPath: string) =>
+      ipcRenderer.invoke('ssh-workspace:registerRoot', hostId, dirPath),
+    onConnectionChanged: (
+      handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        states: import('@shared/types/ssh-workspace.ts').SshConnectionState[],
+      ): void => {
+        handler(states)
+      }
+      ipcRenderer.on('ssh:connection_changed', listener)
+      return (): void => {
+        ipcRenderer.off('ssh:connection_changed', listener)
+      }
+    },
   },
   mcp: {
     list: () => ipcRenderer.invoke('mcp:list'),
@@ -358,6 +421,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('remoteAgent:downloadArtifact', agentId, path),
     artifactImageDataUrl: (agentId: string, path: string) =>
       ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
+    models: () => ipcRenderer.invoke('remoteAgent:models'),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
@@ -405,6 +469,7 @@ contextBridge.exposeInMainWorld('api', {
     record: (input: import('@shared/usage/usage-event.ts').UsageRecordInput) =>
       ipcRenderer.invoke('usage:record', input),
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
+    getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),
@@ -544,6 +609,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     clearMockScript() {
       return ipcRenderer.invoke('test:clearMockScript')
+    },
+    requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
+      return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
     },
   })
 }

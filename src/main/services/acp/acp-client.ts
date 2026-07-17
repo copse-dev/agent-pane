@@ -34,7 +34,9 @@ import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.
 import {
   formatArgvForShell,
   isProjectSandboxEnabled,
+  resolveSandboxShellExecutable,
   shellForSandboxWrap,
+  withSandboxShellPath,
 } from '../../project-sandbox/spawn.ts'
 
 export type { AcpModelChoice, AcpModelSelector }
@@ -182,9 +184,9 @@ async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildP
       const file = argv[0]
       if (!file) throw new Error('sandbox wrap produced empty argv')
       const tmpDir = ensureWorkspaceTmpDir()
-      const child = spawn(file, argv.slice(1), {
+      const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
         cwd: config.cwd,
-        env: { ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir },
+        env: withSandboxShellPath({ ...env, TMPDIR: tmpDir, TMP: tmpDir, TEMP: tmpDir }),
         stdio,
       })
       child.once('close', release)

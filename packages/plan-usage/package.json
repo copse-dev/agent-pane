@@ -1,0 +1,12 @@
+{
+  "name": "@copse/plan-usage",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone subscription plan-usage client: Claude and Codex rate-limit windows (5h/weekly) via provider JSON endpoints — fail-soft, no host-app imports",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  }
+}

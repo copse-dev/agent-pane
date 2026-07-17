@@ -67,8 +67,29 @@ BUILD_STAMP := $(STAMP_DIR)/build.stamp
 
 # Source that, when changed, should trigger a rebuild of `dist/`. Evaluated when
 # the Makefile is parsed; new files are picked up on the next `make` invocation.
-BUILD_SRC := $(shell find src packages scripts -type f 2>/dev/null) \
+# `assets` is included because scripts/build.mts copies it into dist/ wholesale.
+BUILD_SRC_DIRS := src packages scripts assets
+BUILD_SRC := $(shell find $(BUILD_SRC_DIRS) -type f 2>/dev/null) \
              package.json tsconfig.json tsconfig.node.json tsconfig.web.json
+
+# find-based prerequisites only notice files that still exist. A branch switch
+# that merely deletes or renames a module leaves every surviving file older
+# than the stamp, so make declares dist/ "up to date" while the bundle still
+# contains the deleted code. Fingerprint the file *list* into a stamp that is
+# refreshed (at parse time) whenever the list changes; ordinary mtime logic
+# then forces the rebuild.
+SRC_LIST_STAMP := $(STAMP_DIR)/src-list.stamp
+SRC_LIST_SUM := $(shell find $(BUILD_SRC_DIRS) -type f 2>/dev/null | sort | cksum | cut -d' ' -f1)
+ifneq ($(SRC_LIST_SUM),$(shell cat $(SRC_LIST_STAMP) 2>/dev/null))
+$(shell mkdir -p $(STAMP_DIR) && echo '$(SRC_LIST_SUM)' > $(SRC_LIST_STAMP))
+endif
+
+# The build stamp only proves a build *ran* — not that dist/ still holds its
+# output. `npm run dev` writes watch-mode bundles (a partial set, dev flags)
+# into the same dist/, and a hand-deleted dist/ leaves the stamp behind. If the
+# main bundle is missing or newer than the stamp, dist/ was touched outside
+# make: drop the stamp so the next build re-syncs it.
+$(shell if [ -f $(BUILD_STAMP) ] && { [ ! -f dist/main/index.js ] || [ dist/main/index.js -nt $(BUILD_STAMP) ]; }; then rm -f $(BUILD_STAMP); fi)
 
 # ----------------------------------------------------------------------------
 # Help
@@ -248,12 +269,32 @@ check-node:
 # terminal fails to launch. The flag is scoped to this one invocation, so it
 # doesn't touch your global config. See the "Hardened npm profiles" section of
 # the README.
+#
+# On macOS, `npm ci` after a lockfile change (e.g. switching branches) can die
+# with ENOTEMPTY/EBUSY/EPERM while pruning stale packages — Spotlight, Finder,
+# or an editor briefly holds a file inside a directory npm is rmdir-ing. The
+# tree it leaves behind is half-pruned, so every rerun fails the same way until
+# node_modules is removed by hand. Detect that failure class from npm's output,
+# wipe node_modules, and retry once; any other failure (or a second one) still
+# aborts loudly.
+NPM_CI := npm ci --ignore-scripts=false
+
 .PHONY: deps
 deps: $(DEPS_STAMP)
 
 $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 	@echo "==> Dependencies out of date — running 'npm ci' (scripts forced on)…"
-	@$(USE_NVM); npm ci --ignore-scripts=false
+	@$(USE_NVM); \
+	log="$(STAMP_DIR)/npm-ci.log"; \
+	if ! $(NPM_CI) 2>&1 | tee "$$log"; then \
+	  if grep -qE 'code (ENOTEMPTY|EBUSY|EPERM)' "$$log"; then \
+	    echo "==> npm ci hit a filesystem race pruning node_modules — wiping it and retrying…"; \
+	    rm -rf node_modules; \
+	    $(NPM_CI); \
+	  else \
+	    exit 1; \
+	  fi; \
+	fi
 	touch $(DEPS_STAMP)
 
 # --- build ------------------------------------------------------------------
@@ -262,7 +303,7 @@ $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 .PHONY: build
 build: $(BUILD_STAMP)
 
-$(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) | $(STAMP_DIR)
+$(BUILD_STAMP): $(DEPS_STAMP) $(BUILD_SRC) $(SRC_LIST_STAMP) | $(STAMP_DIR)
 	@echo "==> Source changed — clearing dist/ and rebuilding…"
 	rm -rf dist
 	@$(USE_NVM); npm run build
@@ -279,4 +320,4 @@ run: build
 .PHONY: clean
 clean:
 	@echo "==> Removing dist/ and build/deps stamps…"
-	rm -rf dist $(DEPS_STAMP) $(BUILD_STAMP)
+	rm -rf dist $(DEPS_STAMP) $(BUILD_STAMP) $(SRC_LIST_STAMP)

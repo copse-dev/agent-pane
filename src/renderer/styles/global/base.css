@@ -15,7 +15,7 @@
    readable accent highlight in both themes. */
 ::selection {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 html,
 body {
