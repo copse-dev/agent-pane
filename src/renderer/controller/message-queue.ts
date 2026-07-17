@@ -94,6 +94,13 @@ export function startHumanTurnTree(store: AppStore, threadId: string): string {
  * resets the budget, so a fold-back from the *old* turn tree must be dropped —
  * never clobber the reset. The counter only moves up (monotonic within a turn
  * tree, matching the ledger's `seed`).
+ *
+ * A thread that never minted an epoch (no `currentEpoch`) still folds back:
+ * the run keyed its ledger by the thread id (the main-process fallback), so a
+ * fold-back carrying `turnTreeId === threadId` is this thread's own spend, not
+ * a stale one — dropping it would undercount and let the next run exceed the
+ * cap. A human reset always mints an epoch, so once `currentEpoch` exists the
+ * thread-id fallback no longer matches and genuinely stale reports still drop.
  */
 export function foldBackContinuationUsed(
   store: AppStore,
@@ -102,7 +109,9 @@ export function foldBackContinuationUsed(
   used: number,
 ): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)
-  if (!thread || thread.currentEpoch === undefined || thread.currentEpoch !== turnTreeId) return
+  if (!thread) return
+  const currentKey = thread.currentEpoch ?? threadId
+  if (currentKey !== turnTreeId) return
   const next = Math.max(thread.continuationUsed ?? 0, used)
   if (next === (thread.continuationUsed ?? 0)) return
   const threads = store

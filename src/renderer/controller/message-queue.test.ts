@@ -928,3 +928,25 @@ test('run→drain fold-back is dropped for a stale turn tree (decision 16)', () 
     'a fold-back from the old turn tree must not clobber the reset',
   )
 })
+
+test('run→drain fold-back applies via the thread-id fallback when no epoch was minted', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  // No currentEpoch: the run keyed its ledger by the thread id (main-process
+  // fallback), so a fold-back carrying that key is this thread's own spend.
+  setContinuationUsed(store, threadId, 0)
+
+  foldBackContinuationUsed(store, threadId, threadId, 2)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 2)
+})
+
+test('run→drain fold-back with a foreign key is dropped when no epoch was minted', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, 0)
+
+  foldBackContinuationUsed(store, threadId, 'tree-other', 3)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 0)
+})
