@@ -72,7 +72,7 @@ runs:
     # node_modules cache hits next time. So this layer is pure waste on the hit path
     # and redundant on the miss path.
     - uses: actions/setup-node@v6
-      with: { node-version: '22' }
+      with: { node-version-file: '.nvmrc' }
     # ripgrep backs the app's code-search services at runtime; the unit suite
     # and the e2e app both exercise them. GitHub-hosted runners have passwordless
     # sudo + apt, so install it there. Self-hosted runners typically have neither
