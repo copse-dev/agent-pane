@@ -35,7 +35,7 @@ found:
   `when: regex → tool/text` mock scripts (`src/shared/llm/mock-script.ts`)
   and `MockLLMProvider` (`packages/llm/src/mock-provider.ts`) have no Electron
   dependency — today they run in the main process behind
-  `COPSE_PANEL_MOCK_LLM=1`, but they can run *inside* the browser mock, so a
+  `COPSE_PANEL_MOCK_LLM=1`, but they can run _inside_ the browser mock, so a
   demo link can accept a prompt and play back a scripted streaming response
   with tool cards and approvals.
 - **Hosting exists.** `pages.yml` already deploys `site/` to copse.dev.
@@ -48,7 +48,7 @@ found:
 - **Terminal** — xterm renders fine in a browser; node-pty is gone. Demo
   replays canned scrollback into xterm.
 - **Everything behind IPC** — fs, git, gh, agent loop, sandbox, MCP — is
-  mocked. Fine for demos; it means a demo link never *proves* main-process
+  mocked. Fine for demos; it means a demo link never _proves_ main-process
   behavior, so those specs stay Electron e2e (see tier boundary below).
 - **Window chrome** — native menus, pane popout, titlebar integration behave
   differently or not at all; demo hides or approximates them.
@@ -70,7 +70,7 @@ found:
 
 ### M1 — shared fixtures + scenario picker
 
-- Extract the fixture *data* from `tests/e2e/helpers/seed-config.ts` into a
+- Extract the fixture _data_ from `tests/e2e/helpers/seed-config.ts` into a
   shared module (`tests/fixtures/` or `src/shared/fixtures/`) consumed by both
   the e2e seeding path (explode to disk, unchanged behavior) and `demo-api`
   (served in-memory).
@@ -120,17 +120,17 @@ today, and compare. If they still fall over, the flake is content-level and
 the tier buys review UX only — still worth M0–M3, not worth a migration.
 
 **Tier boundary if the spike passes.** The demo tier can absorb e2e-only
-specs whose real-runtime need is *geometry/computed style* (roughly:
+specs whose real-runtime need is _geometry/computed style_ (roughly:
 `chat-layout-styling`, `footer-compact`, the markdown geometry family,
 `mermaid-diagram`, `scroll-to-bottom`, `settings-footer`,
 `portrait-right-panel`). Specs needing **real IPC, webview, pty, real
 git/fs, or Monaco file workers** stay Electron e2e, as do the live-model
 evals (`wdio.eval.conf.ts`). `docs/testing-strategy.md` gains a row:
 
-| Question the test answers             | Tier            |
-| ------------------------------------- | --------------- |
-| Sizing/geometry over mocked backend   | demo (browser)  |
-| Monaco / terminal / webview / main IPC| e2e (Electron)  |
+| Question the test answers              | Tier           |
+| -------------------------------------- | -------------- |
+| Sizing/geometry over mocked backend    | demo (browser) |
+| Monaco / terminal / webview / main IPC | e2e (Electron) |
 
 ## Risks
 
