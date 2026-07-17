@@ -166,7 +166,6 @@ app
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     registerAllHandlers(win, registry)
-
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
