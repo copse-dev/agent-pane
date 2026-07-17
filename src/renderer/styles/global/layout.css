@@ -186,6 +186,32 @@
 .chat-row:hover .chat-delete {
   opacity: 1;
 }
+/* Animated "…" to the left of a running thread title. Opacity walks across the
+   three dots (same glyph as the overflow icon) so the ellipsis reads as busy. */
+.chat-running-status {
+  flex-shrink: 0;
+  margin-right: 4px;
+  color: var(--accent);
+}
+.chat-running-status path {
+  animation: chat-running-dot 1.2s ease-in-out infinite;
+}
+.chat-running-status path:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.chat-running-status path:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes chat-running-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
 /* Bell on a background thread/project awaiting the user. Uses the warning
    accent and a gentle pulse so it reads as "needs attention" without shouting. */
 .chat-attention-bell {
@@ -209,6 +235,10 @@
 @media (prefers-reduced-motion: reduce) {
   .chat-attention-bell {
     animation: none;
+  }
+  .chat-running-status path {
+    animation: none;
+    opacity: 0.7;
   }
 }
 .chats-show-more {
