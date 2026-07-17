@@ -4,6 +4,7 @@ import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
 import { assertProviderHostAllowed } from './provider-host-policy.ts'
+import { validateCredentialBaseUrl } from './credential-url.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
@@ -116,6 +117,7 @@ export function createExtraCloudProvider(
   apiKey: string,
   approvedHosts: readonly string[] = [],
 ): LLMProvider {
+  validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,

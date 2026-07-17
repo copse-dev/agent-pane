@@ -92,6 +92,20 @@ describe('extra-providers-store', () => {
     assert.equal(getResolvedExtraProvider('evil'), null)
   })
 
+  it('rejects unsafe credential URLs before asking for host approval', async () => {
+    let approvalRequested = false
+    setApprovalHandler(async () => {
+      approvalRequested = true
+      return { approved: true, remember: true }
+    })
+    await assert.rejects(
+      () => saveExtraProvider({ label: 'Plaintext', baseUrl: 'http://api.example.com/v1' }),
+      /only use http: for loopback hosts/,
+    )
+    assert.equal(approvalRequested, false)
+    assert.equal(getResolvedExtraProvider('example'), null)
+  })
+
   it('reverts a built-in override on delete but keeps its key', async () => {
     await saveExtraProvider({ slug: 'mistral', includeUsage: false })
     setApiKey('mistral', 'sk-mistral')

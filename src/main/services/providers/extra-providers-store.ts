@@ -12,6 +12,7 @@ import {
   type StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import { providerSlugFromBaseUrl, uniqueProviderSlug } from '@copse/llm/provider-slug.ts'
+import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import { getSetting, setSetting, deleteApiKey, resolveApiKey } from '../storage/settings.ts'
 import { ensureProviderHostApproved } from './approved-provider-hosts.ts'
 import { fetchHuggingFaceModels } from './huggingface-models.ts'
@@ -65,6 +66,7 @@ export async function saveExtraProvider(
   const isBuiltin = BUILTIN_EXTRA_PROVIDER_SLUGS.includes(slug)
   const baseUrl = record.baseUrl?.trim()
   if (!isBuiltin && baseUrl) {
+    validateCredentialBaseUrl(baseUrl, 'Provider base URL')
     await ensureProviderHostApproved(baseUrl)
   }
 

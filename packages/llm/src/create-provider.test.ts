@@ -209,6 +209,19 @@ describe('createExtraCloudProvider host allowlist', () => {
     }, /not approved/)
   })
 
+  it('rejects plaintext custom providers even when their host is approved', () => {
+    assert.throws(
+      () =>
+        createExtraCloudProvider(
+          { ...custom, baseUrl: 'http://api.together.xyz/v1' },
+          'model',
+          'sk-test',
+          ['api.together.xyz'],
+        ),
+      /only use http: for loopback hosts/,
+    )
+  })
+
   it('allows a local provider without approval', () => {
     const local: ExtraProvider = {
       ...custom,

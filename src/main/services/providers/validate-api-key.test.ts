@@ -87,4 +87,27 @@ describe('validateExtraProviderApiKey', () => {
       globalThis.fetch = original
     }
   })
+
+  it('rejects an approved plaintext custom URL without making a request', async () => {
+    let fetched = false
+    const original = globalThis.fetch
+    globalThis.fetch = async (): Promise<Response> => {
+      fetched = true
+      return { ok: true, status: 200, statusText: 'OK' } as Response
+    }
+    try {
+      const result = await validateExtraProviderApiKey(
+        {
+          ...PRESET('mistral'),
+          baseUrl: 'http://api.mistral.example/v1',
+        },
+        'secret',
+      )
+      assert.equal(result.ok, false)
+      assert.match(result.error ?? '', /only use http: for loopback hosts/)
+      assert.equal(fetched, false)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
 })

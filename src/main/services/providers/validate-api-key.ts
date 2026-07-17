@@ -4,6 +4,7 @@ import { assertApprovedProviderHost } from './approved-provider-hosts.ts'
 import { getResolvedExtraProvider } from './extra-providers-store.ts'
 import { getSetting } from '../storage/settings.ts'
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
+import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 
 // Same overridable base the model catalog fetch uses (openrouter-models.ts): the
 // hidden `openRouterApiBase` setting lets e2e point validation at a local
@@ -159,8 +160,11 @@ export async function validateExtraProviderApiKey(
     return { ok: false, error: `Key should start with ${provider.keyPrefix}`, formatOk: false }
   }
 
-  // Host allowlist (issue #438) — never send the key to an unapproved host.
+  // Validate the complete credential-bearing URL before the host allowlist.
+  // Approval is not permission to use plaintext HTTP, embedded credentials, or
+  // a private/link-local endpoint.
   try {
+    validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
     assertApprovedProviderHost(provider.baseUrl)
   } catch (err) {
     return {
@@ -173,6 +177,7 @@ export async function validateExtraProviderApiKey(
   try {
     const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, {
       headers: { Authorization: `Bearer ${trimmed}` },
+      redirect: 'manual',
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
     })
     if (res.status === 401 || res.status === 403) {
