@@ -1,8 +1,7 @@
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
-import { runPermissionHooks } from '../skills/cursor-hooks.ts'
-import { runClaudePreToolUseHooks } from '../skills/claude-hooks.ts'
-import type { CursorPermissionHookEvent } from '@shared/types/cursor-hooks.ts'
+import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
+import { currentAgentSessionInfo } from '../hooks/agent-session.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
@@ -450,91 +449,65 @@ export async function ensureTerminalPermitted(): Promise<boolean> {
   return true
 }
 
-/** Map a tool call to the Cursor permission-hook event + payload it should fire. */
-function cursorHookForTool(
-  toolName: string,
-  args: unknown,
-): { event: CursorPermissionHookEvent; payload: Record<string, unknown> } | null {
-  if (toolName === 'run_shell') {
-    const command = shellCommandFromArgs(args) ?? ''
-    return { event: 'beforeShellExecution', payload: { command, cwd: getWorkspaceRoot() ?? '' } }
-  }
-  if (toolName.startsWith('mcp__')) {
-    return { event: 'beforeMCPExecution', payload: { tool_name: toolName, tool_input: args } }
-  }
-  if (toolName === 'read_file') {
-    const rawPath =
-      typeof args === 'object' && args !== null ? (args as { path?: unknown }).path : undefined
-    const path = typeof rawPath === 'string' ? rawPath : ''
-    return { event: 'beforeReadFile', payload: { file_path: path, content: '' } }
-  }
-  return null
-}
-
-/** Map a Copse tool call to the Claude PreToolUse tool_name + tool_input. */
-function claudePreToolUseForTool(
-  toolName: string,
-  args: unknown,
-): { toolName: string; toolInput: Record<string, unknown> } | null {
-  if (toolName === 'run_shell') {
-    const command = shellCommandFromArgs(args) ?? ''
-    return { toolName: 'Bash', toolInput: { command } }
-  }
-  if (toolName.startsWith('mcp__')) {
-    const toolInput =
-      typeof args === 'object' && args !== null ? { ...(args as Record<string, unknown>) } : {}
-    return { toolName, toolInput }
-  }
-  if (toolName === 'read_file') {
-    const rawPath =
-      typeof args === 'object' && args !== null ? (args as { path?: unknown }).path : undefined
-    const path = typeof rawPath === 'string' ? rawPath : ''
-    return { toolName: 'Read', toolInput: { file_path: path } }
-  }
-  return null
+/**
+ * Prompt the user to confirm a tool call a hook returned `ask` for — the same
+ * approval path a policy `ask` uses (B4). The hook's `agentMessage` / `userMessage`
+ * (if any) heads the prompt body so the user sees *why* the hook wants review.
+ */
+async function promptHookAsk(check: PermissionCheck, decision: HookGateDecision): Promise<boolean> {
+  const detail = decision.agentMessage ?? decision.userMessage
+  const bodyLines: string[] = []
+  if (detail) bodyLines.push(detail, '')
+  bodyLines.push(JSON.stringify(check.args, null, 2))
+  const { approved } = await requestApproval({
+    title: `Hook asks to confirm: ${check.toolName}`,
+    body: bodyLines.join('\n'),
+    type: check.toolName === 'run_shell' || check.toolName === 'run_background' ? 'shell' : 'mcp',
+  })
+  return approved
 }
 
 /**
- * Run matching Cursor hooks and Claude Code PreToolUse hooks for this tool call.
- * Hooks can only *block* — an allow/ask still falls through to Copse's own gate — so
- * a deny here is the one short-circuit. Gated behind `cursorHooksEnabled` (default off)
- * because honouring hooks spawns user/project scripts on the agent's hot path. The same
- * flag covers both Cursor `hooks.json` and Claude `.claude/settings.json` hooks (#639).
+ * Run the tool-gate hooks (Cursor `hooks.json` + Claude `.claude/settings.json`)
+ * for this tool call, via the canonical `toolGate` event and its dialect adapters
+ * (A2). Gated behind `cursorHooksEnabled` (default off) because honouring hooks
+ * spawns user/project scripts on the agent's hot path; the same flag covers both
+ * dialects (#639). Returns whether the call may proceed to Copse's own gate:
+ *
+ *   - **deny** — the call is blocked. A message-bearing deny *throws* so the
+ *     hook's reason reaches the model as the tool result (the existing
+ *     agent-visible deny path, same as a strict-mode / web deny); a bare deny
+ *     returns false, which the tool loop renders as the plain user rejection.
+ *   - **ask** — escalates to Copse's approval prompt (never a silent allow/deny,
+ *     B4). Approval falls through to the normal gate; a decline blocks the call.
+ *   - **allow** — falls through: a hook can only *tighten* the gate, never
+ *     auto-approve something Copse would otherwise prompt about.
  */
-async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
+async function applyToolGateHooks(check: PermissionCheck): Promise<boolean> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return true
 
   const workspaceRoot = getWorkspaceRoot()
   const projectTrusted = isWorkspaceTrusted(workspaceRoot)
 
-  const cursorMapped = cursorHookForTool(check.toolName, check.args)
-  if (cursorMapped) {
-    const decision = await runPermissionHooks(cursorMapped.event, cursorMapped.payload, {
-      workspaceRoot,
-      projectTrusted,
-    })
-    if (decision.permission === 'deny') {
-      console.warn(
-        `[cursor-hooks] ${cursorMapped.event} denied ${check.toolName}` +
-          (decision.agentMessage ? `: ${decision.agentMessage}` : ''),
-      )
-      return false
+  const decision = await runToolGateHooks(
+    { toolName: check.toolName, args: check.args },
+    { workspaceRoot, projectTrusted, agentSession: currentAgentSessionInfo() },
+  )
+
+  if (decision.permission === 'deny') {
+    if (decision.agentMessage) {
+      // Surface the hook's message to the agent via the tool-result error path.
+      throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
     }
+    console.warn(`[hooks] toolGate denied ${check.toolName}`)
+    return false
   }
 
-  const claudeMapped = claudePreToolUseForTool(check.toolName, check.args)
-  if (claudeMapped) {
-    const decision = await runClaudePreToolUseHooks(claudeMapped.toolName, claudeMapped.toolInput, {
-      workspaceRoot,
-      projectTrusted,
-    })
-    if (decision.permission === 'deny') {
-      console.warn(
-        `[claude-hooks] PreToolUse denied ${check.toolName}` +
-          (decision.agentMessage ? `: ${decision.agentMessage}` : ''),
-      )
-      return false
-    }
+  if (decision.permission === 'ask') {
+    const approved = await promptHookAsk(check, decision)
+    if (approved) return true
+    if (decision.agentMessage) throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
+    return false
   }
 
   return true
@@ -554,7 +527,7 @@ async function cursorHooksAllow(check: PermissionCheck): Promise<boolean> {
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
   const { toolName, args } = check
 
-  if (!(await cursorHooksAllow(check))) return false
+  if (!(await applyToolGateHooks(check))) return false
 
   // Read-only runs block mutating tools and any MCP tool not provably read-only.
   // Allowed tools fall through to the normal gates below — read-only mode never

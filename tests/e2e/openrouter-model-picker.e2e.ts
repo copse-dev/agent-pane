@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
-import { $, browser } from '@wdio/globals'
+import { $, $$, browser } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 
@@ -132,6 +132,114 @@ describe('OpenRouter model picker', () => {
     )
 
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
+  })
+
+  it('moves the highlighted model with arrow keys and applies it with Enter', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    // Prior specs may leave the menu open; the trigger toggles, so close first.
+    await browser.keys('Escape')
+    await $('.model-picker-menu').waitForDisplayed({ reverse: true, timeout: 2_000 })
+    await $('.model-picker-trigger').click()
+    await $('.model-picker-menu .model-picker-option').waitForDisplayed({ timeout: 5_000 })
+    assert.equal(
+      await browser.execute(() =>
+        document.activeElement?.classList.contains('model-picker-filter'),
+      ),
+      true,
+      'filter should be focused when the picker opens',
+    )
+
+    const initialOptions = await browser.execute(() =>
+      [
+        ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
+      ].map((option) => ({
+        text: option.textContent?.trim() ?? '',
+        active: option.getAttribute('aria-selected'),
+      })),
+    )
+    assert.deepEqual(
+      initialOptions,
+      [
+        { text: 'Qwen3 235B A22B (free)', active: 'true' },
+        { text: 'anthropic/claude-3.5-sonnet (custom)', active: 'false' },
+      ],
+      'the currently applied model should be highlighted when the picker opens',
+    )
+
+    await browser.keys('ArrowDown')
+    const afterArrow = await browser.execute(() =>
+      [
+        ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
+      ].map((option) => ({
+        text: option.textContent?.trim() ?? '',
+        active: option.getAttribute('aria-selected'),
+        hasActiveClass: option.classList.contains('is-active'),
+      })),
+    )
+    assert.deepEqual(afterArrow, [
+      { text: 'Qwen3 235B A22B (free)', active: 'false', hasActiveClass: false },
+      {
+        text: 'anthropic/claude-3.5-sonnet (custom)',
+        active: 'true',
+        hasActiveClass: true,
+      },
+    ])
+    await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-keyboard.png')
+
+    // prepareE2eScreenshot can steal focus; put it back before applying.
+    await $('.model-picker-filter').click()
+    await browser.keys('Enter')
+    await $('.model-picker-menu').waitForDisplayed({ reverse: true, timeout: 5_000 })
+    assert.equal(
+      (await $('.model-picker-label').getText()).trim(),
+      'anthropic/claude-3.5-sonnet (custom)',
+    )
+    assert.equal(
+      await browser.execute(() => document.activeElement?.classList.contains('prompt-input')),
+      true,
+      'composer should be focused after closing the picker',
+    )
+  })
+
+  it('filters visible models immediately as text is entered', async () => {
+    await $('.prompt-input').waitForExist({ timeout: 15_000 })
+    await browser.keys('Escape')
+    await $('.model-picker-trigger').click()
+    const filter = await $('.model-picker-filter')
+    assert.equal(
+      await browser.execute(() =>
+        document.activeElement?.classList.contains('model-picker-filter'),
+      ),
+      true,
+      'filter should be focused when the picker opens',
+    )
+
+    await filter.setValue('qwen')
+    await browser.waitUntil(
+      async () => (await $$('.model-picker-option').map((option) => option.getText())).length === 1,
+      { timeout: 2_000, timeoutMsg: 'model picker did not filter after typing' },
+    )
+    assert.deepEqual(await $$('.model-picker-option').map((option) => option.getText()), [
+      'Qwen3 235B A22B (free)',
+    ])
+    assert.deepEqual(await $$('.model-picker-group-label').map((label) => label.getText()), [
+      'OPENROUTER',
+    ])
+
+    await filter.setValue('no-such-model')
+    await $('.model-picker-empty').waitForDisplayed()
+    assert.equal((await $('.model-picker-empty').getText()).trim(), 'No matching models')
+    assert.equal((await $$('.model-picker-option')).length, 0)
+
+    await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-filter.png')
+
+    await browser.keys('Escape')
+    await $('.model-picker-menu').waitForDisplayed({ reverse: true })
+    assert.equal(
+      await browser.execute(() => document.activeElement?.classList.contains('prompt-input')),
+      true,
+      'composer should be focused after dismissing the picker with Escape',
+    )
   })
 
   it('exposes an OpenRouter API key field and custom model input in the OpenRouter provider form', async () => {

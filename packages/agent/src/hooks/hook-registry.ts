@@ -10,8 +10,14 @@
 // This module lives in `packages/agent` and imports nothing from the host app
 // (execution-guidance rule 4).
 import { errorMessage } from '../internal-utils.ts'
-import type { BlockingHookOutcome, HookDecision, HookHaltRun } from './hook-outcome.ts'
 import type {
+  AsyncHookOutcome,
+  BlockingHookOutcome,
+  HookDecision,
+  HookHaltRun,
+} from './hook-outcome.ts'
+import type {
+  AsyncHook,
   BlockingHook,
   FunctionHookContext,
   HookContext,
@@ -20,6 +26,8 @@ import type {
   HookRunRecord,
 } from './canonical-events.ts'
 import type { CommandHook, CommandHookResult } from './command-executor.ts'
+import type { AsyncDispatcher, AsyncDispatchDisposition } from './async-dispatcher.ts'
+import type { TurnTreeId } from './turn-tree.ts'
 
 /**
  * Feed one execution to the host's spine-recording sink (decision 6).
@@ -54,6 +62,60 @@ export interface HookEmitResult {
 }
 
 /**
+ * One async hook's outcome, tagged with its author and the emitting epoch
+ * (decision 16). The detached executor is fire-and-forget, so an async outcome
+ * cannot influence the current action; it is reported to a host callback for the
+ * pending-message-queue channel (C2). C1 carries the `turnTreeId` on the record
+ * so C2 can check staleness — C1 wires no queue itself.
+ */
+export interface AsyncOutcomeRecord {
+  event: HookEventName
+  hookId: string
+  /** Emitting turn-tree epoch this outcome belongs to (decision 16). */
+  turnTreeId: TurnTreeId
+  outcome: AsyncHookOutcome
+}
+
+/**
+ * Cross-cutting context for firing a *detached async* event ({@link
+ * HookRegistry.emitAsync}). Extends the function-hook context with the three
+ * things the detached executor needs: the shared {@link AsyncDispatcher} that
+ * owns the per-thread concurrency cap + FIFO (decision 13), the owning thread,
+ * and the emitting {@link TurnTreeId} carried on every dispatch (decision 16).
+ * An optional `onAsyncOutcome` sink collects outcomes for the C2 queue channel.
+ *
+ * The `signal` inherited from {@link HookContext} is **not** forwarded to the
+ * dispatched hooks: decision 3 says an already-dispatched hook runs to its own
+ * completion even after abort, so the detached run context strips it — abort
+ * halts *emission* here, never in-flight work.
+ */
+export interface AsyncEmitContext extends FunctionHookContext {
+  /** Shared detached executor (per-thread cap + FIFO). */
+  dispatcher: AsyncDispatcher
+  /** Thread the concurrency cap + FIFO are scoped to. */
+  threadId: string
+  /** Emitting turn-tree epoch, carried on every dispatch (decision 16). */
+  turnTreeId: TurnTreeId
+  /** Collects async outcomes for the C2 pending-message-queue channel (stub in C1). */
+  onAsyncOutcome?: (record: AsyncOutcomeRecord) => void
+}
+
+/**
+ * The synchronous accounting {@link HookRegistry.emitAsync} returns: how many
+ * hooks were dispatched now, deferred into the FIFO, or dropped over the pending
+ * cap. Returned synchronously *by design* — the caller learns the dispatch
+ * disposition without ever awaiting a hook's completion (decision 3).
+ */
+export interface AsyncEmitResult {
+  /** Dispatched immediately (under the concurrency cap). */
+  running: number
+  /** Deferred into the pending-dispatch FIFO (over cap, still detached). */
+  pending: number
+  /** Dropped because the pending FIFO was full (recorded via the drop sink). */
+  dropped: number
+}
+
+/**
  * Thrown when a first-party function hook throws. Fail-hard (decision 9): the
  * error is a bug in first-party code and must surface, never be swallowed into a
  * fail-open `allow`. The original error is preserved as `cause`.
@@ -77,12 +139,28 @@ export class HookRegistry {
   // Command (spawned-process) hooks share the registry (decision 1) but run via
   // the host-injected runner, not in-process, so they live in their own map.
   private readonly commandHooks = new Map<HookEventName, CommandHook[]>()
+  // First-party *async* (detached) function hooks — dispatched through the
+  // detached executor (C1), never awaited (decision 3). Separate map because
+  // their outcome type is separate (decisions 4 & 11).
+  private readonly asyncHooks = new Map<HookEventName, AsyncHook[]>()
 
   /** Register a first-party blocking function hook. Later registrations run later. */
   register<E extends HookEventName>(hook: BlockingHook<E>): void {
     const list = this.blockingHooks.get(hook.event)
     if (list) list.push(hook)
     else this.blockingHooks.set(hook.event, [hook])
+  }
+
+  /**
+   * Register a first-party *async* (detached) function hook (C1). Dispatched via
+   * {@link emitAsync} through the shared executor, never awaited. Later
+   * registrations dispatch later (order within an event is not a promise — the
+   * FIFO has "no ordering promises", decision 13).
+   */
+  registerAsync<E extends HookEventName>(hook: AsyncHook<E>): void {
+    const list = this.asyncHooks.get(hook.event)
+    if (list) list.push(hook)
+    else this.asyncHooks.set(hook.event, [hook])
   }
 
   /**
@@ -104,6 +182,11 @@ export class HookRegistry {
   /** Command hooks registered for `event`, in registration order (empty when none). */
   commandHooksFor(event: HookEventName): readonly CommandHook[] {
     return this.commandHooks.get(event) ?? []
+  }
+
+  /** Async function hooks registered for `event`, in registration order (empty when none). */
+  asyncHooksFor(event: HookEventName): readonly AsyncHook[] {
+    return this.asyncHooks.get(event) ?? []
   }
 
   /**
@@ -203,6 +286,107 @@ export class HookRegistry {
       if (result.outcome) outcomes.push({ hookId: hook.id, outcome: result.outcome })
     }
   }
+
+  /**
+   * Fire a *detached async* canonical event (C1; decisions 3, 13, 16). Every
+   * registered async function hook and every registered command hook for the
+   * event is handed to the shared {@link AsyncDispatcher}, which spawns it under
+   * the per-thread concurrency cap or defers it into the pending FIFO — **and
+   * this method never awaits any of them.** It returns synchronously with the
+   * dispatch accounting, so the caller (`void registry.emitAsync(...)`) learns
+   * how work was scheduled without blocking on a single hook (decision 3, "no
+   * drain barrier").
+   *
+   * Every dispatch carries the emitting {@link TurnTreeId} (decision 16) so a
+   * late output can be checked for staleness in C2/C3. Abort stops *emission* —
+   * the harness stops calling this — but a hook already dispatched runs to its
+   * own completion: the run context strips the abort signal (see
+   * {@link detachedHookContext}) so an in-flight process is never killed.
+   *
+   * Async outcomes (from function hooks) are reported to `onAsyncOutcome` for the
+   * C2 queue channel; C1 wires no queue. Command hooks for async observation
+   * events (`stop`) are notification-only, so their blocking outcome is ignored
+   * here (they record their own spine line via the runner).
+   */
+  emitAsync<E extends HookEventName>(
+    event: E,
+    payload: HookEventPayloads[E],
+    context: AsyncEmitContext,
+  ): AsyncEmitResult {
+    const { dispatcher, threadId, turnTreeId, onAsyncOutcome } = context
+    const hookContext = detachedHookContext(context)
+    const summary: AsyncEmitResult = { running: 0, pending: 0, dropped: 0 }
+
+    const tally = (disposition: AsyncDispatchDisposition): void => {
+      if (disposition === 'running') summary.running += 1
+      else if (disposition === 'pending') summary.pending += 1
+      else summary.dropped += 1
+    }
+
+    for (const hook of this.asyncHooks.get(event) ?? []) {
+      tally(
+        dispatcher.dispatch({
+          event,
+          hookId: hook.id,
+          executor: 'function',
+          threadId,
+          turnTreeId,
+          run: async () => {
+            const outcome = await hook.run(payload, hookContext)
+            if (outcome && onAsyncOutcome) {
+              onAsyncOutcome({ event, hookId: hook.id, turnTreeId, outcome })
+            }
+          },
+        }),
+      )
+    }
+
+    const runner = hookContext.runCommandHook
+    if (runner) {
+      for (const hook of this.commandHooks.get(event) ?? []) {
+        tally(
+          dispatcher.dispatch({
+            event,
+            hookId: hook.id,
+            executor: 'command',
+            threadId,
+            turnTreeId,
+            run: async () => {
+              // The runner records its own spine line and resolves dialect
+              // failure; async observation events return no actionable decision
+              // off the critical path, so the result is intentionally dropped.
+              // A future async command output channel (queueMessage) routes
+              // through C2, not here.
+              await runner.run(hook, payload, hookContext)
+            },
+          }),
+        )
+      }
+    }
+
+    return summary
+  }
+}
+
+/**
+ * Build the context a *detached* hook runs with: the base function-hook context
+ * minus the emit-only fields (dispatcher / thread / epoch / outcome sink) and —
+ * critically — minus the abort `signal`. Decision 3: an already-dispatched hook
+ * runs to its own completion even after abort, so forwarding the signal (which a
+ * command runner would wire into its process spawn) would let abort *kill*
+ * in-flight work — exactly the drain/kill barrier the detached executor must not
+ * have. Fields are copied only when present to stay clean under
+ * `exactOptionalPropertyTypes`.
+ */
+function detachedHookContext(context: AsyncEmitContext): FunctionHookContext {
+  const detached: FunctionHookContext = {}
+  if (context.resolveGithubRepoSlug) detached.resolveGithubRepoSlug = context.resolveGithubRepoSlug
+  if (context.recordHookRun) detached.recordHookRun = context.recordHookRun
+  if (context.runCommandHook) detached.runCommandHook = context.runCommandHook
+  if (context.agentSession) detached.agentSession = context.agentSession
+  if (context.emitChunk) detached.emitChunk = context.emitChunk
+  if (context.loopState) detached.loopState = context.loopState
+  return detached
 }
 
 /**

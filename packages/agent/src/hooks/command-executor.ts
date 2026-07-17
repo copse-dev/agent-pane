@@ -53,6 +53,19 @@ export interface CommandHook<E extends HookEventName = HookEventName> {
    * applies it verbatim — it is never fail-hard.
    */
   onFailure: CommandHookFailureMode
+  /**
+   * Working directory the process spawns in. Dialect-agnostic spawn attribute
+   * (every dialect resolves relative commands against the directory of the
+   * config that declared it). Set by the adapter at discovery; the host runner
+   * spawns in it. Absent = the runner's default (workspace root / cwd).
+   */
+  cwd?: string
+  /**
+   * Per-hook timeout in milliseconds (decision 13; vendor defaults live in the
+   * adapter). A dialect-agnostic spawn attribute the host runner enforces.
+   * Absent = the runner's default.
+   */
+  timeoutMs?: number
 }
 
 /**
