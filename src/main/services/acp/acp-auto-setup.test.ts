@@ -1,7 +1,20 @@
-import { describe, it } from 'node:test'
+import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
-import { planAcpAutoSetup, type AcpAutoSetupInput } from './acp-auto-setup.ts'
+import {
+  planAcpAutoSetup,
+  requestAcpPackageInstallApproval,
+  updateCurrentAcpAgentModels,
+  type AcpAutoSetupInput,
+} from './acp-auto-setup.ts'
+import { setApprovalHandler } from '../approval.ts'
+import { listAcpAgents } from './acp-agent-registry.ts'
+import { setSetting } from '../storage/settings.ts'
+
+afterEach(async () => {
+  setApprovalHandler(null)
+  await setSetting('registeredAcpAgents', [])
+})
 
 const claude: KnownAcpAgent = {
   id: 'claude-agent-acp',
@@ -19,6 +32,15 @@ const cursor: KnownAcpAgent = {
   command: 'cursor-agent',
   args: ['acp'],
   requiresClient: 'cursor-agent',
+  preset: true,
+}
+const codex: KnownAcpAgent = {
+  id: 'codex',
+  title: 'Codex',
+  command: 'codex-acp',
+  args: [],
+  installPackage: '@agentclientprotocol/codex-acp',
+  autoInstall: true,
   preset: true,
 }
 const nonPreset: KnownAcpAgent = {
@@ -65,6 +87,18 @@ describe('planAcpAutoSetup', () => {
     ])
     assert.deepEqual(plan.install, [])
     assert.deepEqual(plan.register, [])
+  })
+
+  it('installs + registers a standalone npm preset with no gating client', () => {
+    const plan = planAcpAutoSetup([input(codex, { clientInstalled: true, agentInstalled: false })])
+    assert.deepEqual(
+      plan.install.map((k) => k.id),
+      ['codex'],
+    )
+    assert.deepEqual(
+      plan.register.map((k) => k.id),
+      ['codex'],
+    )
   })
 
   it('never installs a non-npm preset (Cursor); registers only when its binary exists', () => {
@@ -121,5 +155,50 @@ describe('planAcpAutoSetup', () => {
       input(claude, { configured: true, agentInstalled: false, hasModels: false }),
     ])
     assert.deepEqual(plan.refreshModels, [])
+  })
+})
+
+describe('ACP package install approval', () => {
+  it('requires explicit approval and names every global package', async () => {
+    let body = ''
+    setApprovalHandler(async (request) => {
+      body = request.body
+      return { approved: false, remember: false }
+    })
+    assert.equal(await requestAcpPackageInstallApproval([codex, claude]), false)
+    assert.match(body, /@agentclientprotocol\/codex-acp/)
+    assert.match(body, /@agentclientprotocol\/claude-agent-acp/)
+    assert.match(body, /Socket Firewall \(sfw\).*first install it globally/)
+    assert.match(body, /lifecycle scripts disabled/)
+  })
+})
+
+describe('updateCurrentAcpAgentModels', () => {
+  it('merges models onto the latest registry config after asynchronous work', async () => {
+    await setSetting('registeredAcpAgents', [
+      {
+        id: 'claude-agent-acp',
+        title: 'User renamed Claude',
+        command: 'custom-claude-acp',
+        env: { CLAUDE_CONFIG_DIR: '/custom' },
+        enabled: false,
+      },
+    ])
+
+    const updated = await updateCurrentAcpAgentModels('claude-agent-acp', [
+      { value: 'sonnet', label: 'Sonnet' },
+    ])
+
+    assert.equal(updated, true)
+    assert.deepEqual(listAcpAgents(), [
+      {
+        id: 'claude-agent-acp',
+        title: 'User renamed Claude',
+        command: 'custom-claude-acp',
+        env: { CLAUDE_CONFIG_DIR: '/custom' },
+        availableModels: [{ value: 'sonnet', label: 'Sonnet' }],
+        enabled: false,
+      },
+    ])
   })
 })
