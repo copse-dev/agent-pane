@@ -306,6 +306,7 @@ export function createCommandHookRunner(opts?: {
           marshal(hook, payload, session),
           (spawn) => interpret(spawn, payload),
           context,
+          recordingSnapshot,
         )
       }
 

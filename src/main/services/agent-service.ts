@@ -362,6 +362,11 @@ function fireAfterToolUseHook(args: {
   // detached (decision 3) and may marshal after this turn's recording context is
   // torn down (B4).
   const agentSession = currentAgentSessionInfo()
+  // Snapshot the recording context now, synchronously, like `fireStopHook`: a
+  // detached `afterToolUse` hook may settle after `endHookRunRecording` clears
+  // the live context, and its `hook_run` line must still attribute to the
+  // emitting turn (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
   const input =
     typeof args.input === 'object' && args.input !== null
       ? (args.input as Record<string, unknown>)
@@ -381,6 +386,7 @@ function fireAfterToolUseHook(args: {
       workspaceRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
       agentSession,
+      recordingSnapshot,
     },
   ).catch((err: unknown) => {
     console.warn('[hooks] afterToolUse hook dispatch error:', errorMessage(err))
