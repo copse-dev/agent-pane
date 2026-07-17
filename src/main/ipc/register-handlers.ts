@@ -424,13 +424,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle(
     'roadmap:create',
-    (
-      event,
-      rawPrompt: unknown,
-      rawNotes: unknown,
-      rawIssue: unknown,
-      rawAttachments: unknown,
-    ) => {
+    (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown, rawAttachments: unknown) => {
       assertMainFrameSender(event, win)
       const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
