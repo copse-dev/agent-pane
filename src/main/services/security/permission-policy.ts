@@ -73,6 +73,23 @@ export type ShellPermissionDecision =
   | { action: 'prompt'; reasons: string[] }
   | { action: 'deny'; reasons: string[] }
 
+export type TerminalPermissionDecision =
+  | { action: 'allow' }
+  | { action: 'prompt'; reason: 'sandbox-unavailable' | 'widened-network' }
+
+/**
+ * A sandboxed terminal can open without prompting only while the project
+ * sandbox's process-global network policy is at its normal deny-all baseline.
+ */
+export function decideTerminalPermission(input: {
+  sandboxEnabled: boolean
+  networkScopeActive: boolean
+}): TerminalPermissionDecision {
+  if (!input.sandboxEnabled) return { action: 'prompt', reason: 'sandbox-unavailable' }
+  if (input.networkScopeActive) return { action: 'prompt', reason: 'widened-network' }
+  return { action: 'allow' }
+}
+
 export function decideShellPermission(
   command: string,
   opts: {

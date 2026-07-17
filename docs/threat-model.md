@@ -98,9 +98,9 @@ project-defined MCP servers are gated behind workspace trust, the
   profile; external commands prompt and run outside only when approved.
 - **Global network-scope guard.** When a sandboxed ACP agent or a loopback
   background task temporarily widens ASRT's process-global network allowlist,
-  all shell and background-start commands require explicit approval until the
-  final scope releases. This prevents unrelated auto-run commands inheriting
-  temporary network egress.
+  all shell commands, background starts, and newly opened integrated terminals
+  require explicit approval until the final scope releases. This prevents
+  unrelated auto-run work inheriting temporary network egress.
 - **Integrated terminal confinement.** The terminal PTY uses that same project
   seatbelt on macOS. Where no OS sandbox is available, opening the terminal
   presents an explicit warning and approval because it is a full-host shell.

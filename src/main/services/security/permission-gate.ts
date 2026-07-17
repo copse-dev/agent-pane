@@ -18,6 +18,7 @@ import { getSetting, setSetting } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
+  decideTerminalPermission,
   decideMcpPermission,
   decideWebFetchPermission,
   decideWebSearchPermission,
@@ -79,6 +80,10 @@ export interface ShellCommandPermissionOptions {
   sandboxEnabled?: boolean
   autoRun?: boolean
   networkScopeAlreadyApplies?: boolean
+}
+
+export interface TerminalPermissionOptions {
+  sandboxEnabled?: boolean
 }
 
 /**
@@ -494,11 +499,32 @@ async function checkBackgroundProcessPermission(args: unknown): Promise<boolean>
 /**
  * The integrated terminal uses the project seatbelt when available. On a
  * platform without that boundary (or after ASRT initialization failed), opening
- * it creates a full-host shell and must be an explicit user decision. (#662)
+ * it creates a full-host shell and must be an explicit user decision. A new
+ * terminal also prompts while the process-global sandbox network scope is
+ * widened, because it would inherit that temporary egress. (#662, #803)
  */
-export async function ensureTerminalPermitted(): Promise<boolean> {
+export async function ensureTerminalPermitted(
+  opts: TerminalPermissionOptions = {},
+): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
-  if (isProjectSandboxEnabled()) return true
+  const decision = decideTerminalPermission({
+    sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
+    networkScopeActive: isSandboxNetworkScopeActive(),
+  })
+  if (decision.action === 'allow') return true
+
+  if (decision.reason === 'widened-network') {
+    const { approved } = await requestApproval({
+      title: 'Open terminal with widened network access?',
+      body:
+        'The project sandbox network is temporarily widened for another process. ' +
+        'A new integrated terminal would inherit that network access until the scope closes.',
+      type: 'shell',
+      allowRemember: false,
+    })
+    return approved
+  }
+
   const { approved } = await requestApproval({
     title: 'Open unsandboxed terminal?',
     body:
