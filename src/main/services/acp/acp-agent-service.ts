@@ -24,14 +24,14 @@ import {
   streamRetryDelayMs,
 } from '@copse/llm/stream-retry.ts'
 import {
-  listAcpAgentModels,
+  probeAcpAgent,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
+  type AcpAgentProbe,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
-  type AcpModelSelector,
 } from './acp-client.ts'
-import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
+import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
@@ -289,6 +289,11 @@ export async function runAcpAgentFromSettings(
   }
 
   const model = options.model ?? agent.model
+  // The ACP session mode to start each session in (issue #607): the user's
+  // choice, or `acceptEdits` for a Claude preset that will actually spawn
+  // sandboxed. Part of the spawn config so a change respawns the pooled session
+  // (the mode is applied once, at `session/new`, not switched live like model).
+  const permissionMode = resolveAcpPermissionMode(agent, willSandboxAcpAgent(sandbox))
   // Hand the agent the user's MCP servers so its session mounts them itself
   // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
   // to "no forwarded servers" instead of failing it.
@@ -303,6 +308,7 @@ export async function runAcpAgentFromSettings(
     ...(agent.env ? { env: agent.env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -453,22 +459,24 @@ export async function runAcpAgentFromSettings(
 }
 
 /**
- * Discover the models a configured ACP agent offers (for the settings picker).
- * Resolves the agent + workspace, then probes it via {@link listAcpAgentModels}.
- * Returns `null` when the agent is unknown/disabled or exposes no model selector.
+ * Probe a configured ACP agent for the models and session modes it offers (for
+ * the settings picker, issue #607). Resolves the agent + workspace, then probes
+ * it via {@link probeAcpAgent}. Returns `{ models: null, modes: null }` when the
+ * agent is unknown/disabled; otherwise each selector is `null` when the agent
+ * exposes none of that kind.
  */
-export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSelector | null> {
+export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
   if (isActiveSshWorkspace()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
   const agent = getAcpAgent(agentId)
-  if (!agent) return null
+  if (!agent) return { models: null, modes: null }
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
-  return listAcpAgentModels({
+  return probeAcpAgent({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),

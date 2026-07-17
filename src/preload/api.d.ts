@@ -27,7 +27,7 @@ import type {
   StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpModelSelector, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 
 export type { DetectedAcpAgent }
@@ -272,10 +272,11 @@ export interface ApiClient {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
     detectAgents: () => Promise<DetectedAcpAgent[]>
     /**
-     * Probe a configured agent for the models it offers (spawns it, opens a
-     * throwaway session). `null` when the agent exposes no model selector.
+     * Probe a configured agent for the models and session (permission) modes it
+     * offers (spawns it, opens a throwaway session). Each selector is `null`
+     * when the agent exposes none of that kind (issue #607).
      */
-    listModels: (agentId: string) => Promise<AcpModelSelector | null>
+    probeAgent: (agentId: string) => Promise<AcpAgentProbe>
     /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
      * clients, Socket-Firewall-install missing npm adapters, register + detect

@@ -58,7 +58,9 @@ const resumeCandidates = new Map<string, { fingerprint: string; sessionId: strin
 let reaper: NodeJS.Timeout | null = null
 
 /** Everything that decides whether an existing session can serve this turn.
- * `model` is deliberately excluded — it switches live via set_config_option. */
+ * `model` is deliberately excluded — it switches live via set_config_option.
+ * `permissionMode` IS included (issue #607): unlike model, it's applied once at
+ * `session/new`, so a change needs a fresh session to take effect. */
 export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
   return JSON.stringify({
     command: config.command,
@@ -67,6 +69,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
     cwd: config.cwd,
     sandbox: config.sandbox ?? null,
     mcpServers: config.mcpServers ?? [],
+    permissionMode: config.permissionMode ?? null,
   })
 }
 
