@@ -23,6 +23,7 @@ import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
 import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
 import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
+import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
@@ -153,6 +154,7 @@ app
     initAskUser(win)
     initSshAskpassServer(app.getPath('userData'))
     initSshPrompt(win)
+    initSshWorkspaceIpc(win)
     initDiffQueue(win)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
@@ -215,8 +217,15 @@ app
     ipcMain.handle('agent:run', async (event, threadIdArg: unknown, rawPrompt: string) => {
       assertMainFrameSender(event, win)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const { userContent, invokedSkills, priorTodos, workingBrief, model } =
-        parseAgentRunPayload(rawPrompt)
+      const {
+        userContent,
+        invokedSkills,
+        priorTodos,
+        workingBrief,
+        model,
+        turnTreeId,
+        continuationBudgetUsed,
+      } = parseAgentRunPayload(rawPrompt)
 
       // Hydrate from persisted storage on first use after a restart
       if (!messageHistory.has(threadId)) {
@@ -232,6 +241,8 @@ app
         priorTodos,
         ...(workingBrief !== undefined ? { workingBrief } : {}),
         ...(model !== undefined ? { model } : {}),
+        ...(turnTreeId !== undefined ? { turnTreeId } : {}),
+        ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
       })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)

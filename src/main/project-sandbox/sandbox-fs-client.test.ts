@@ -26,7 +26,7 @@ describe('sandbox-fs-client', () => {
     const dir = await mkdtemp(join(tmpdir(), 'copse-sbfs-'))
     try {
       clearAllowedWorkspaceRootsForTest()
-      const root = registerAllowedWorkspaceRoot(dir)
+      const root = await registerAllowedWorkspaceRoot(dir)
       const restore = setWorkspaceRootForTest(root)
       await writeFile(join(dir, 'a.txt'), 'hello', 'utf-8')
       const text = await gatewayReadFile(join(dir, 'a.txt'))
@@ -47,7 +47,7 @@ describe('sandbox-fs-client', () => {
     try {
       await mkdir(dir, { recursive: true })
       clearAllowedWorkspaceRootsForTest()
-      const root = registerAllowedWorkspaceRoot(dir)
+      const root = await registerAllowedWorkspaceRoot(dir)
       const restore = setWorkspaceRootForTest(root)
       await writeFile(join(dir, 'visible.txt'), 'ok', 'utf-8')
       const dirents = await gatewayListDir(root)
@@ -106,13 +106,13 @@ describe('sandbox-fs-client', () => {
     const outside = await mkdtemp(join(tmpdir(), 'copse-sbfs-out-'))
     try {
       clearAllowedWorkspaceRootsForTest()
-      const root = registerAllowedWorkspaceRoot(ws)
+      const root = await registerAllowedWorkspaceRoot(ws)
       const restore = setWorkspaceRootForTest(root)
       // Dangling symlink: its target does not exist yet, so it slips past
       // resolveWorkspacePath's existing-prefix realpath and looks like a new file.
       const escapeTarget = join(outside, 'authorized_keys')
       await symlink(escapeTarget, join(root, 'deploy.conf'))
-      const abs = resolveWorkspacePath('deploy.conf')
+      const abs = await resolveWorkspacePath('deploy.conf')
       // Without the write-target guard, the write would follow the symlink out
       // of the workspace and clobber `escapeTarget`.
       await assert.rejects(gatewayWriteFile(abs, 'pwned'), /symlink that escapes/)
@@ -128,9 +128,9 @@ describe('sandbox-fs-client', () => {
     const ws = await mkdtemp(join(tmpdir(), 'copse-sbfs-ok-'))
     try {
       clearAllowedWorkspaceRootsForTest()
-      const root = registerAllowedWorkspaceRoot(ws)
+      const root = await registerAllowedWorkspaceRoot(ws)
       const restore = setWorkspaceRootForTest(root)
-      const abs = resolveWorkspacePath(join('sub', 'new.txt'))
+      const abs = await resolveWorkspacePath(join('sub', 'new.txt'))
       await gatewayWriteFile(abs, 'ok')
       assert.equal(await readFile(abs, 'utf-8'), 'ok')
       restore()

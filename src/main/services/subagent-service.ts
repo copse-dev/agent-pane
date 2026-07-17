@@ -14,6 +14,7 @@ import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildExploreSearchRoutingAddon } from '@copse/agent/search-routing.ts'
 import { isSemanticSearchAvailable } from './search/semantic-index.ts'
+import { subagentHookCallbacks } from './hooks/subagent.ts'
 
 export interface RunExploreSubagentOptions {
   parentToolCallId: string
@@ -98,6 +99,9 @@ export async function runExploreSubagent(
       systemPromptSuffix: buildExploreSearchRoutingAddon(isSemanticSearchAvailable()),
       usageModel,
       ...(localFallback !== undefined ? { localFallback } : {}),
+      // subagentStart gate + subagentStop notification (D1); no-op callbacks
+      // when cursorHooksEnabled is off, so the explore path is unchanged.
+      ...subagentHookCallbacks({ usageModel }),
     })
 
     const usage = session.usage ?? { inputTokens: 0, outputTokens: 0 }

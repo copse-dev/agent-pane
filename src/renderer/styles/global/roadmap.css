@@ -1,3 +1,18 @@
+/* Roadmap search input — sits inline in the header when wide, wraps
+   onto its own row when the panel is narrow (flex-wrap: wrap on the
+   header lets the buttons drop to a second line). */
+.roadmap-search-input {
+  flex: 1;
+  min-width: 80px;
+  max-width: 240px;
+}
+/* Right-align the action buttons group. */
+.roadmap-action-buttons {
+  display: flex;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
 /* Roadmap pane (issue #556; #645 Phase 3). The pane reuses the memories pane's
    layout primitives (memories.css) and the git-changes list classes; these rules
    only add what is roadmap-specific — the per-item lifecycle status badge and

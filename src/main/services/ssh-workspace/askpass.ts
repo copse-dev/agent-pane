@@ -137,6 +137,14 @@ export function initSshAskpassServer(userDataDirectory?: string): void {
   server.unref()
 }
 
+/**
+ * Build a child-process env with the SSH/git askpass bridge wired in.
+ *
+ * `baseEnv` is the **complete** environment for the child (typically
+ * `process.env` or a filtered derivative). OpenSSH call sites must not pass
+ * `{}` — Node replaces the child env entirely, which strips PATH/HOME/
+ * SSH_AUTH_SOCK and breaks ProxyCommand hosts.
+ */
 export function leaseSshAskpassEnv(baseEnv: NodeJS.ProcessEnv): SshAskpassLease {
   if (!isAskpassAvailable() && !userDataDirOverride) {
     return { env: baseEnv, release: (): void => {} }

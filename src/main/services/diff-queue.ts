@@ -1,9 +1,9 @@
 import { errorMessage } from '@shared/errors.ts'
-import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
 import { assertWorkspaceWriteTarget, resolveWorkspacePath } from './workspace.ts'
+import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './search/file-index.ts'
 import { getGitStatus } from './github/git-service.ts'
@@ -192,7 +192,8 @@ export function getPendingAfterContent(path: string): string | null {
 
 async function readCurrentContent(path: string): Promise<string> {
   try {
-    return await fsp.readFile(resolveWorkspacePath(path), 'utf-8')
+    const fs = getActiveWorkspaceFs()
+    return await fs.readFile(await resolveWorkspacePath(path), 'utf-8')
   } catch {
     return ''
   }
@@ -411,7 +412,7 @@ async function fireAfterFileEdit(path: string): Promise<void> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
   const workspaceRoot = getWorkspaceRoot()
   try {
-    await runAfterFileEditHooks(resolveWorkspacePath(path), {
+    await runAfterFileEditHooks(await resolveWorkspacePath(path), {
       workspaceRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
       // Real conversation/generation ids + running model on the wire payload (B4).
@@ -423,10 +424,11 @@ async function fireAfterFileEdit(path: string): Promise<void> {
 }
 
 async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
+  const fs = getActiveWorkspaceFs()
   let current = ''
   try {
-    current = await fsp.readFile(absPath, 'utf-8')
+    current = await fs.readFile(absPath, 'utf-8')
   } catch {
     /* file absent on disk — treated as empty, matching staging snapshot for new files */
   }
@@ -434,9 +436,9 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
-    assertWorkspaceWriteTarget(absPath)
-    await fsp.mkdir(dirname(absPath), { recursive: true })
-    await fsp.writeFile(absPath, entry.after, 'utf-8')
+    await assertWorkspaceWriteTarget(absPath)
+    await fs.mkdir(dirname(absPath), { recursive: true })
+    await fs.writeFile(absPath, entry.after, 'utf-8')
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
@@ -444,10 +446,11 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
 }
 
 async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
+  const fs = getActiveWorkspaceFs()
   let current: string
   try {
-    current = await fsp.readFile(absPath, 'utf-8')
+    current = await fs.readFile(absPath, 'utf-8')
   } catch {
     // Deletion is idempotent: if the file is already gone the desired end state
     // is met, so report success instead of failing the (whole) approval. This is
@@ -460,7 +463,7 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
-    await fsp.rm(absPath)
+    await fs.rm(absPath)
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
@@ -469,11 +472,12 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
 
 async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
   if (!entry.renameTo) return { status: 'error', error: 'rename target missing' }
-  const fromAbs = resolveWorkspacePath(entry.path)
-  const toAbs = resolveWorkspacePath(entry.renameTo)
+  const fromAbs = await resolveWorkspacePath(entry.path)
+  const toAbs = await resolveWorkspacePath(entry.renameTo)
+  const fs = getActiveWorkspaceFs()
   let current: string
   try {
-    current = await fsp.readFile(fromAbs, 'utf-8')
+    current = await fs.readFile(fromAbs, 'utf-8')
   } catch {
     return { status: 'error', error: `File not found: ${entry.path}` }
   }
@@ -482,15 +486,15 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
   }
   // Don't clobber an existing destination.
   try {
-    await fsp.access(toAbs)
+    await fs.access(toAbs)
     return { status: 'error', error: `Destination already exists: ${entry.renameTo}` }
   } catch {
     /* destination is free */
   }
   try {
-    assertWorkspaceWriteTarget(toAbs)
-    await fsp.mkdir(dirname(toAbs), { recursive: true })
-    await fsp.rename(fromAbs, toAbs)
+    await assertWorkspaceWriteTarget(toAbs)
+    await fs.mkdir(dirname(toAbs), { recursive: true })
+    await fs.rename(fromAbs, toAbs)
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
@@ -498,10 +502,10 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
 }
 
 async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
   try {
-    assertWorkspaceWriteTarget(absPath)
-    await fsp.mkdir(absPath, { recursive: true })
+    await assertWorkspaceWriteTarget(absPath)
+    await getActiveWorkspaceFs().mkdir(absPath, { recursive: true })
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
