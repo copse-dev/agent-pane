@@ -57,11 +57,15 @@ function makeRoadmapItem(
 }
 
 // Minimal api with a controllable file index + file reader + roadmap store.
-// queryResult lets a test swap what the next index.query resolves to.
+// queryResult lets a test swap what the next index.query resolves to; roadmap
+// accepts a thunk so a test can hand out unresolved promises (fetch races).
 function stubApi(
   calls: ApiCalls,
   queryResult: () => string[],
-  options?: { roadmap?: Record<string, unknown>[]; roadmapEnabled?: boolean },
+  options?: {
+    roadmap?: Record<string, unknown>[] | (() => Promise<Record<string, unknown>[]>)
+    roadmapEnabled?: boolean
+  },
 ): ApiClient {
   const api = {
     index: {
@@ -83,7 +87,8 @@ function stubApi(
     roadmap: {
       list: (): Promise<Record<string, unknown>[]> => {
         calls.roadmapLists++
-        return Promise.resolve(options?.roadmap ?? [])
+        const items = options?.roadmap
+        return typeof items === 'function' ? items() : Promise.resolve(items ?? [])
       },
     },
   }
@@ -111,7 +116,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   let result: string[]
 
   function mount(options?: {
-    roadmap?: Record<string, unknown>[]
+    roadmap?: Record<string, unknown>[] | (() => Promise<Record<string, unknown>[]>)
     roadmapEnabled?: boolean
   }): void {
     document.body.innerHTML = ''
@@ -253,6 +258,39 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
       openFileSearchDialog()
       await tick(0)
       assert.equal(dialog.querySelector('.file-search-section'), null)
+      assert.equal(dialog.querySelectorAll('.file-search-roadmap-item').length, 0)
+    })
+
+    it('drops the previous open’s items while a reopen’s fetch is pending', async () => {
+      // Hand each open an explicitly-resolvable fetch so the race is
+      // deterministic: reopen before resolving and the stale snapshot
+      // (possibly another workspace's) must not render.
+      let resolveList: ((items: Record<string, unknown>[]) => void) | undefined
+      mount({
+        roadmapEnabled: true,
+        roadmap: () =>
+          new Promise<Record<string, unknown>[]>((resolve) => {
+            resolveList = resolve
+          }),
+      })
+      result = []
+      openFileSearchDialog()
+      await tick(0)
+      resolveList?.(roadmap) // first open's fetch lands
+      await typeQuery('onboarding')
+      assert.equal(dialog.querySelectorAll('.file-search-roadmap-item').length, 2)
+
+      closeFileSearchDialog()
+      openFileSearchDialog() // second open: its fetch stays pending
+      await tick(0)
+      await typeQuery('onboarding')
+      assert.equal(
+        dialog.querySelectorAll('.file-search-roadmap-item').length,
+        0,
+        'stale items from the previous open must not render',
+      )
+      resolveList?.([]) // the fresh (empty) snapshot lands and re-runs the query
+      await tick(0)
       assert.equal(dialog.querySelectorAll('.file-search-roadmap-item').length, 0)
     })
 

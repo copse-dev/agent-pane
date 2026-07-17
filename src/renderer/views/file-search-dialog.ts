@@ -89,8 +89,12 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
   let results: SearchEntry[] = []
   let selectedIdx = 0
   // Roadmap items are fetched once per palette open (the backlog is small);
-  // an empty list doubles as "feature disabled" and "no items".
+  // an empty list doubles as "feature disabled" and "no items". Cleared on
+  // every open and guarded by a token so a previous open's snapshot (possibly
+  // from another workspace) never renders, and a slower older fetch cannot
+  // overwrite a newer one.
   let roadmapItems: RoadmapItem[] = []
+  let roadmapToken = 0
   // Each query bumps this token; a stale resolution (a slower earlier query
   // landing after a newer one) is discarded by comparing against the latest.
   let queryToken = 0
@@ -183,12 +187,16 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
   }
 
   async function loadRoadmapItems(): Promise<void> {
+    const token = ++roadmapToken
+    let items: RoadmapItem[]
     try {
       const enabled = (await api.settings.get('roadmapPlansEnabled')) === true
-      roadmapItems = enabled ? await api.roadmap.list() : []
+      items = enabled ? await api.roadmap.list() : []
     } catch {
-      roadmapItems = []
+      items = []
     }
+    if (token !== roadmapToken) return // superseded by a newer open's fetch
+    roadmapItems = items
   }
 
   async function choose(idx: number): Promise<void> {
@@ -244,8 +252,10 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
     empty.hidden = true
     dialog.showModal()
     input.focus()
-    // Refresh the roadmap snapshot for this open; if the user out-typed the
+    // Refresh the roadmap snapshot for this open (dropping the previous
+    // open's, which may be another workspace's); if the user out-typed the
     // fetch, re-run their query so roadmap matches appear once loaded.
+    roadmapItems = []
     void loadRoadmapItems().then(() => {
       if (dialog.open && input.value.trim()) void runQuery(input.value)
     })
