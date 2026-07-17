@@ -93,7 +93,7 @@ describe('Roadmap item attachments', () => {
       async () => (await $('.roadmap-attachment-badge').isExisting()) === true,
       { timeout: 10_000, timeoutMsg: 'expected the list row to show an attachment badge' },
     )
-    assert.equal(await $('.roadmap-attachment-badge').getText(), '📎 2')
+    assert.equal(await $('.roadmap-attachment-badge').getText(), '2')
 
     // ...and reopening the item renders chips hydrated from disk, image thumb included.
     await $('.roadmap-row').click()
@@ -116,7 +116,7 @@ describe('Roadmap item attachments', () => {
     await browser.waitUntil(
       async () => {
         const badge = $('.roadmap-attachment-badge')
-        return (await badge.isExisting()) && (await badge.getText()) === '📎 1'
+        return (await badge.isExisting()) && (await badge.getText()) === '1'
       },
       { timeout: 10_000, timeoutMsg: 'expected the badge to drop to one attachment' },
     )

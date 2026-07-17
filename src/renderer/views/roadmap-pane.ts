@@ -12,6 +12,7 @@ import {
 import { knowledgeDate } from './knowledge-date.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { attachmentIcon } from '../dom/attachment-icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -611,7 +612,10 @@ export function mountRoadmapPane(
               class: 'roadmap-attachment-badge',
               title: `${String(attachmentCount)} attachment${attachmentCount === 1 ? '' : 's'}`,
             },
-            `📎 ${String(attachmentCount)}`,
+            // The shared paperclip SVG (attachment-icons.ts) — theme-aware
+            // `currentColor` stroke, never an emoji glyph.
+            attachmentIcon('file', 'ui-icon roadmap-attachment-badge-icon'),
+            String(attachmentCount),
           ),
         )
       }

@@ -173,14 +173,21 @@
   outline: 1px dashed var(--accent);
   outline-offset: -4px;
 }
-/* 📎 count in the list row. */
+/* Paperclip + count in the list row (shared attachment-icons.ts SVG). */
 .roadmap-attachment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 10px;
   line-height: 1.4;
   padding: 0 6px;
   border-radius: var(--radius);
   background: var(--bg-hover);
   color: var(--text-muted);
+}
+.roadmap-attachment-badge-icon {
+  width: 10px;
+  height: 10px;
 }
 
 /* Import-from-issues picker (viewer column). */

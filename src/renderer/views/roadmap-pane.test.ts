@@ -796,7 +796,11 @@ describe('roadmap pane', () => {
         () => list.querySelector('.roadmap-attachment-badge') !== null,
         'expected an attachment-count badge on the list row',
       )
-      assert.equal(list.querySelector('.roadmap-attachment-badge')?.textContent, '📎 2')
+      const badge = list.querySelector('.roadmap-attachment-badge')
+      assert.ok(badge)
+      assert.equal(badge.textContent, '2')
+      // Iconography is the shared paperclip SVG, not an emoji glyph.
+      assert.equal(badge.querySelector('svg')?.getAttribute('data-icon'), 'file')
     } finally {
       unmount()
     }
