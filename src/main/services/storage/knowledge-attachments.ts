@@ -74,19 +74,25 @@ export function saveKnowledgeAttachments(
 ): KnowledgeAttachment[] {
   if (inputs.length === 0) return []
   const dir = noteAttachmentsDir(noteId)
-  mkdirSync(dir, { recursive: true })
-  return inputs.map((input) => {
-    const decoded = decodeDataUrl(input.dataUrl)
-    if (!decoded) {
+  // Decode and validate every payload before writing the first file, so a bad
+  // input mid-list rejects the whole batch without leaving partial files that
+  // no metadata references.
+  const decoded = inputs.map((input) => {
+    const payload = decodeDataUrl(input.dataUrl)
+    if (!payload) {
       throw new Error(`Attachment ${JSON.stringify(input.name)} is not a base64 data URL.`)
     }
     const att: KnowledgeAttachment = {
       id: randomUUID(),
       name: input.name.trim() || 'attachment',
-      mimeType: sanitizeMimeType(input.mimeType || decoded.mimeType),
-      size: decoded.data.length,
+      mimeType: sanitizeMimeType(input.mimeType || payload.mimeType),
+      size: payload.data.length,
     }
-    writeFileSync(join(dir, attachmentFileName(att)), decoded.data)
+    return { att, data: payload.data }
+  })
+  mkdirSync(dir, { recursive: true })
+  return decoded.map(({ att, data }) => {
+    writeFileSync(join(dir, attachmentFileName(att)), data)
     return att
   })
 }

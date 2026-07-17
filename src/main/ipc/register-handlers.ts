@@ -449,13 +449,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
       if (attachments.length === 0) return note
       // Attachment files are keyed by the note id, so they land in a second
-      // step once addKnowledgeNote has minted it.
+      // step once addKnowledgeNote has minted it. If that metadata write fails
+      // (or the note vanished under a concurrent delete), remove the payloads
+      // again — nothing references them, and a "saved" item must never look
+      // attachment-free while files linger on disk.
       const saved = saveKnowledgeAttachments(note.id, attachments)
-      return (
-        updateKnowledgeNote(note.id, {
+      let updated: ReturnType<typeof updateKnowledgeNote> = null
+      try {
+        updated = updateKnowledgeNote(note.id, {
           fields: { ...note.fields, [ATTACHMENTS_FIELD]: serializeKnowledgeAttachments(saved) },
-        }) ?? note
-      )
+        })
+      } finally {
+        if (!updated) deleteAllKnowledgeAttachments(note.id)
+      }
+      return updated ?? note
     },
   )
 
@@ -497,33 +504,40 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         delete fields['fit']
         delete fields['fitDetail']
       }
+      const current = parseKnowledgeAttachments(existing.fields[ATTACHMENTS_FIELD])
+      const removeSet = new Set(removeAttachmentIds)
+      const removed = current.filter((att) => removeSet.has(att.id))
+      let saved: ReturnType<typeof saveKnowledgeAttachments> = []
       if (addAttachments.length > 0 || removeAttachmentIds.length > 0) {
-        const current = parseKnowledgeAttachments(existing.fields[ATTACHMENTS_FIELD])
-        const removeSet = new Set(removeAttachmentIds)
         const kept = current.filter((att) => !removeSet.has(att.id))
         if (kept.length + addAttachments.length > MAX_NOTE_ATTACHMENTS) {
           throw new IpcValidationError(
             `A roadmap item can hold at most ${String(MAX_NOTE_ATTACHMENTS)} attachments`,
           )
         }
-        // Save the new payloads before deleting the removed ones, so a failed
-        // save leaves the stored metadata still matching the files on disk.
-        const saved = saveKnowledgeAttachments(id, addAttachments)
-        deleteKnowledgeAttachmentFiles(
-          id,
-          current.filter((att) => removeSet.has(att.id)),
-        )
+        saved = saveKnowledgeAttachments(id, addAttachments)
         const next = [...kept, ...saved]
         if (next.length > 0) fields[ATTACHMENTS_FIELD] = serializeKnowledgeAttachments(next)
         // Literal key (= ATTACHMENTS_FIELD): no-dynamic-delete bars computed deletes.
         else delete fields['attachments']
       }
-      const updated = updateKnowledgeNote(id, {
-        title: roadmapTitleFromPrompt(prompt),
-        body: prompt,
-        status,
-        fields,
-      })
+      // Persist the metadata before touching existing payload files: if the
+      // note write fails, the old files stay on disk and stay referenced —
+      // the freshly saved ones are merely orphaned, and are removed below.
+      // Only after the note durably stops referencing the removed attachments
+      // may their files go.
+      let updated: ReturnType<typeof updateKnowledgeNote> = null
+      try {
+        updated = updateKnowledgeNote(id, {
+          title: roadmapTitleFromPrompt(prompt),
+          body: prompt,
+          status,
+          fields,
+        })
+      } finally {
+        if (!updated) deleteKnowledgeAttachmentFiles(id, saved)
+      }
+      if (updated) deleteKnowledgeAttachmentFiles(id, removed)
       if (updated && promptChanged) {
         void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
       }

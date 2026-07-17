@@ -267,6 +267,15 @@ function pasteFiles(target: Element, files: File[]): void {
   target.dispatchEvent(event)
 }
 
+/** Dispatch a paste whose payload appears only under `clipboardData.items` —
+ * how Chromium can deliver a pasted screenshot (`files` empty). */
+function pasteFilesViaItems(target: Element, files: File[]): void {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  const items = files.map((file) => ({ kind: 'file', getAsFile: (): File => file }))
+  Object.assign(event, { clipboardData: { items, files: [] } })
+  target.dispatchEvent(event)
+}
+
 function mountHosts(): { list: HTMLElement; viewer: HTMLElement } {
   const list = document.createElement('div')
   const viewer = document.createElement('div')
@@ -788,6 +797,30 @@ describe('roadmap pane', () => {
         'expected an attachment-count badge on the list row',
       )
       assert.equal(list.querySelector('.roadmap-attachment-badge')?.textContent, '📎 2')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('claims a pasted image surfaced only via clipboardData.items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const form = viewer.querySelector('.roadmap-form')
+      assert.ok(form)
+      // Chromium sometimes exposes a pasted screenshot only under `items` —
+      // the handler must still claim it (else the chat composer's document-
+      // level listener grabs it for the wrong surface).
+      pasteFilesViaItems(form, [new File(['png-bytes'], 'shot.png', { type: 'image/png' })])
+      await waitFor(
+        () => viewer.querySelectorAll('.roadmap-attachment-chip').length === 1,
+        'expected the items-only paste to render as a chip',
+      )
+      assert.equal(viewer.querySelector('.roadmap-attachment-name')?.textContent, 'shot.png')
     } finally {
       unmount()
     }

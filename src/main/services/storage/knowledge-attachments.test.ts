@@ -66,6 +66,17 @@ describe('knowledge-attachments', () => {
     assert.equal(at(saved, 0).size, 2)
   })
 
+  it('writes no files when any payload in the batch is invalid', () => {
+    assert.throws(() => {
+      saveKnowledgeAttachments('note-1', [
+        { name: 'ok.png', mimeType: 'image/png', dataUrl: `data:image/png;base64,${PNG_BASE64}` },
+        { name: 'bad', mimeType: 'text/plain', dataUrl: 'not-a-data-url' },
+      ])
+    }, /not a base64 data URL/)
+    // All-or-nothing: the valid first payload must not linger unreferenced.
+    assert.ok(!existsSync(join(knowledgeDir(), 'attachments', 'note-1')))
+  })
+
   it('rejects payloads that are not base64 data URLs', () => {
     assert.throws(() => {
       saveKnowledgeAttachments('note-1', [

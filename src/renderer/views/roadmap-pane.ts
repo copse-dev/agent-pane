@@ -907,7 +907,14 @@ export function mountRoadmapPane(
   // for the composer even while the roadmap editor has focus. Plain text
   // pastes fall through to the focused field untouched.
   form.addEventListener('paste', (e) => {
-    const files = Array.from(e.clipboardData?.files ?? [])
+    // Read `items` first — the same source the composer's handler uses — so a
+    // pasted image that Chromium surfaces only there is still claimed here;
+    // `files` is the fallback (and what synthetic test events provide).
+    const files = Array.from(e.clipboardData?.items ?? [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null)
+    if (files.length === 0) files.push(...Array.from(e.clipboardData?.files ?? []))
     if (files.length === 0) return
     e.preventDefault()
     e.stopPropagation()
