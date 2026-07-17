@@ -412,7 +412,7 @@ async function fireAfterFileEdit(path: string): Promise<void> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
   const workspaceRoot = getWorkspaceRoot()
   try {
-    await runAfterFileEditHooks(resolveWorkspacePath(path), {
+    await runAfterFileEditHooks(await resolveWorkspacePath(path), {
       workspaceRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
       // Real conversation/generation ids + running model on the wire payload (B4).
