@@ -1,5 +1,4 @@
-import { dialog, ipcMain, shell } from 'electron'
-import type { BrowserWindow } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
@@ -122,7 +121,7 @@ import {
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
-import { classifyRoadmapComplexity } from '../services/roadmap-complexity.ts'
+import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
@@ -361,14 +360,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     existing: Record<string, string>,
     notes: string,
     issue: string,
-    complexity?: string,
   ): Record<string, string> {
     const { notes: _n, issue: _i, ...rest } = existing
     return {
       ...rest,
       ...(notes ? { notes } : {}),
       ...(issue ? { issue } : {}),
-      ...(complexity ? { complexity } : {}),
+    }
+  }
+
+  // Complexity stamps land after the save returns (stampRoadmapComplexity), so
+  // tell the panes when one arrives rather than making them poll. Broadcast to
+  // every window: the roadmap pane may live in a detached pop-out with its own
+  // renderer, not just the main window.
+  const notifyRoadmapChanged = (): void => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('roadmap:changed')
     }
   }
 
@@ -393,27 +400,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle(
     'roadmap:create',
-    async (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown) => {
+    (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown) => {
       assertMainFrameSender(event, win)
       const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
       const issue = parseRoadmapIssue(rawIssue)
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
-      // One-shot on save: timeout + heuristic fallback inside keep this bounded.
-      const complexity = await classifyRoadmapComplexity(prompt)
-      return addKnowledgeNote({
+      const note = addKnowledgeNote({
         type: ROADMAP_TYPE,
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
         status: 'ready',
-        fields: roadmapFields({}, notes, issue, complexity),
+        fields: roadmapFields({}, notes, issue),
       })
+      // Saving is immediate; the complexity classification (a model round-trip)
+      // stamps the note in the background and the pane refreshes on the event.
+      void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
+      return note
     },
   )
 
   ipcMain.handle(
     'roadmap:update',
-    async (
+    (
       event,
       rawId: unknown,
       rawPrompt: unknown,
@@ -430,23 +439,29 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
       const existing = getKnowledgeNote(id)
       if (!existing || existing.type !== ROADMAP_TYPE) return null
+      const promptChanged = prompt !== existing.body
+      const fields = roadmapFields(existing.fields, notes, issue)
       // Re-classify only when the prompt itself changed — a status or notes
-      // edit keeps the stored complexity without a model round-trip.
-      const complexity =
-        prompt === existing.body ? undefined : await classifyRoadmapComplexity(prompt)
-      const fields = roadmapFields(existing.fields, notes, issue, complexity)
+      // edit keeps the stored complexity without a model round-trip. The stale
+      // stamp is dropped now (it graded the old prompt) and the fresh one lands
+      // in the background so the save itself is immediate.
+      if (promptChanged) delete fields['complexity']
       // A stored fit verdict judges a specific prompt/issue pair; either side
       // changing invalidates it (and its reasoning).
-      if (prompt !== existing.body || issue !== (existing.fields['issue'] ?? '')) {
+      if (promptChanged || issue !== (existing.fields['issue'] ?? '')) {
         delete fields['fit']
         delete fields['fitDetail']
       }
-      return updateKnowledgeNote(id, {
+      const updated = updateKnowledgeNote(id, {
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
         status,
         fields,
       })
+      if (updated && promptChanged) {
+        void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
+      }
+      return updated
     },
   )
 
@@ -498,7 +513,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
-    return importIssuesAsRoadmapItems(issues)
+    return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
   })
 
   // Advisory fit check of an item's prompt against its pinned issue,
