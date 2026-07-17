@@ -11,7 +11,7 @@
 // exit-code tables — lives in `src/main/services/hooks/` (execution-guidance
 // rule 4); `packages/agent` stays Electron-free. A2's dialect adapters populate
 // the fields left abstract here (matchers, wire marshalling, the exit-code table).
-import type { BlockingHookOutcome } from './hook-outcome.ts'
+import type { BlockingHookOutcome, HookQueueMessage } from './hook-outcome.ts'
 import type { HookContext, HookEventName, HookEventPayloads } from './canonical-events.ts'
 
 /**
@@ -81,6 +81,15 @@ export interface CommandHookResult {
   failed: boolean
   /** How the dialect resolved a failure (decision 9); undefined unless `failed`. */
   failureMode?: CommandHookFailureMode
+  /**
+   * An async command hook's queued follow-up (D1: `subagentStop`'s
+   * `followup_message`, Cursor's `stop`-style loop). The **only** async output
+   * channel is the pending-message queue (decision 4), so a detached command
+   * hook that wants to auto-continue reports the message here; `emitAsync`
+   * forwards it to `onAsyncOutcome` for the C2 queue channel (never a bespoke
+   * protocol). Absent on blocking-event runs and notification-only completions.
+   */
+  queueMessage?: HookQueueMessage
 }
 
 /**
