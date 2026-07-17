@@ -32,7 +32,11 @@ import { navigateToChange } from '../controller/panels.ts'
 import { createTodoListEl } from './todo-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
-import { retryComparison, retryReview } from '../controller/retry-review-comparison.ts'
+import {
+  dismissComparison,
+  retryComparison,
+  retryReview,
+} from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
@@ -1199,9 +1203,16 @@ export function mountConversation(
     const thread = getActiveThread(store)
     if (thread?.comparison) {
       const threadId = thread.id
-      const card = createComparisonCardEl(thread.comparison, api, () => {
-        retryComparison(store, api, threadId)
-      })
+      const card = createComparisonCardEl(
+        thread.comparison,
+        api,
+        () => {
+          retryComparison(store, api, threadId)
+        },
+        () => {
+          dismissComparison(store, threadId)
+        },
+      )
       card.setAttribute('data-comparison-card', '')
       list.append(card)
     }
