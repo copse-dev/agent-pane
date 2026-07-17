@@ -52,8 +52,11 @@ const ciExclude = [
 export const config: Options.Testrunner = {
   ...baseConfig,
   exclude: [...(baseConfig.exclude ?? []), ...ciExclude],
-  specFileRetries: 1,
-  specFileRetriesDelay: 2,
+  // A dead Electron session cannot recover inside the same wdio process, and
+  // an in-process retry leaves its orphaned children competing with the retry.
+  // The workflow retries the whole shard after cleaning those processes, which
+  // gives the spec a genuinely fresh session instead.
+  specFileRetries: 0,
   // A crashed Electron renderer leaves chromedriver unable to answer
   // deleteSession. The base 120s transport timeout then stalls teardown for two
   // minutes and consumes the shard's outer retry budget. CI already retries the

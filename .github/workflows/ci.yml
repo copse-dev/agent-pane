@@ -490,9 +490,11 @@ jobs:
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
-      # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
-      # each attempt in `timeout` so a wedged session is killed and retried
-      # (a plain hang would otherwise never exit and stall the job).
+      # only a fresh xvfb+Electron launch does. Retry the entire shard, cleaning
+      # orphaned session processes before each attempt and when the step exits.
+      # The runners are one job per PID-isolated container, so this cannot touch
+      # another job. Wrap each attempt in `timeout` so a plain hang cannot stall
+      # the job indefinitely.
       # Oracle gate (see the precheck job's plan step): `full` shards the whole
       # suite; `subset` distributes only the planned specs round-robin across the
       # same 8 shards (so no shard exceeds the per-shard memory budget the count
@@ -534,7 +536,25 @@ jobs:
           # fall back to no inner timeout (the step `timeout-minutes` still caps
           # a wedged run) so the command can't die with "timeout: not found".
           TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
+
+          cleanup_e2e_processes() {
+            # Bracketed patterns avoid matching this shell's own command line.
+            # A failed deleteSession can orphan any of these; self-hosted runner
+            # containers are reused, so clean before attempt 1 as well as retries.
+            pkill -TERM -f '[e]lectron/dist/electron' 2>/dev/null || true
+            pkill -TERM -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
+            pkill -TERM -f '[X]vfb' 2>/dev/null || true
+            pkill -TERM -f '[g]ortex' 2>/dev/null || true
+            sleep 1
+            pkill -KILL -f '[e]lectron/dist/electron' 2>/dev/null || true
+            pkill -KILL -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
+            pkill -KILL -f '[X]vfb' 2>/dev/null || true
+            pkill -KILL -f '[g]ortex' 2>/dev/null || true
+          }
+
+          trap cleanup_e2e_processes EXIT
           for attempt in 1 2 3; do
+            cleanup_e2e_processes
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"
