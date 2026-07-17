@@ -59,7 +59,7 @@
           "default": false
         },
         "loop_limit": {
-          "description": "Per-script auto-continuation limit (decision 5), tighten-only. Bounds this hook's machine-turn contributions to min(loop_limit, global remaining). null means unlimited, which is clamped to the global auto-continuation budget with a warning — human-in-the-loop is the floor.",
+          "description": "RESERVED (parsed + validated, not yet enforced — plan row C5). Per-script auto-continuation limit (decision 5), tighten-only: will bound this hook's machine-turn contributions to min(loop_limit, global remaining). Today only the global auto-continuation budget (cap 5) applies; null (unlimited) already warns because human-in-the-loop is the floor.",
           "type": ["integer", "null"],
           "minimum": 0
         },

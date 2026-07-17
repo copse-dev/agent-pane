@@ -299,7 +299,7 @@ function parseCopseEntry(
   if (loopLimitRaw === null) {
     loopLimit = null
     warn(
-      `${position} "loop_limit: null" (unlimited) is clamped to the global auto-continuation budget — human-in-the-loop is the floor`,
+      `${position} "loop_limit: null" (unlimited) has no effect: only the global auto-continuation budget applies (per-script enforcement pending, plan row C5) — human-in-the-loop is the floor`,
       event,
     )
   } else if (typeof loopLimitRaw === 'number') {
