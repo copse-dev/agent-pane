@@ -66,13 +66,16 @@ import {
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
 const DEFAULT_NAME = 'copse-burst'
 const DEFAULT_RUNNER_GROUP = 'default'
-// Burst cloud hosts serve the check tier only, NOT e2e: across 137 recent e2e
-// jobs, every failure clustered on burst-provisioned hosts (timeout-shaped —
-// mocha 60/90s limits, renderer loss, session-DELETE cascades) while the local
-// ci-runners/ fleet was 100% clean. The `burst` marker label makes these hosts
-// identifiable in job logs; a beefy cloud host can still opt into e2e capacity
-// explicitly via `--runner-labels ...,copse-e2e`.
-const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
+// Split-tier slot layout: ONE e2e-capable slot per host plus checks-only slots
+// for the rest. Running two Electron e2e suites concurrently on a 4-vCPU burst
+// host pushed the slowest specs over their fixed mocha timeouts (observed: all
+// recent e2e failures clustered on burst hosts under queue pressure, while the
+// same runners passed when a host ran a single e2e shard). One e2e lane per
+// host removes the contention without giving up burst e2e capacity; the extra
+// slots still serve the light check tier. The `burst` marker label makes these
+// hosts identifiable per-job in triage.
+const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks,burst'
+const DEFAULT_RUNNER_CHECKS_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
 const DEFAULT_RUNNERS_PER_INSTANCE = 2
 const DEFAULT_TARGET_REF = 'main'
 const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
@@ -97,6 +100,7 @@ interface RunnerConfig {
   remoteUser: string
   runnerGroup: string
   runnerLabels: string
+  runnerChecksLabels: string
   runnersPerInstance: number
   sshHost: 'public' | 'private'
   targetRef: string
@@ -151,7 +155,8 @@ Common options:
   --key-path <path>             SSH private key path. Required for AWS, optional for Scaleway.
   --target-repo <owner/repo>    Repo baked into the runner image (default: ${DEFAULT_TARGET_REPO}).
   --target-ref <ref>            Ref baked into the runner image (default: ${DEFAULT_TARGET_REF}).
-  --runner-labels <labels>      Labels to register (default: ${DEFAULT_RUNNER_LABELS}).
+  --runner-labels <labels>      Labels for the e2e-capable slot (default: ${DEFAULT_RUNNER_LABELS}).
+  --runner-checks-labels <l>    Labels for the checks-only slots (default: ${DEFAULT_RUNNER_CHECKS_LABELS}).
   --runner-group <group>        GitHub runner group (default: ${DEFAULT_RUNNER_GROUP}).
   --ttl-minutes <n>             Auto-terminate hosts after n minutes; 0 disables (default: ${String(DEFAULT_TTL_MINUTES)}).
   --volume-size-gb <n>          Root volume size in GB for AWS EBS / Scaleway SBS (default: ${String(DEFAULT_VOLUME_SIZE_GB)}).
@@ -228,6 +233,11 @@ function buildRunnerConfig(
     remoteUser: optionWithDefault(options, 'remote-user', defaults.remoteUser),
     runnerGroup: optionWithDefault(options, 'runner-group', DEFAULT_RUNNER_GROUP),
     runnerLabels: optionWithDefault(options, 'runner-labels', DEFAULT_RUNNER_LABELS),
+    runnerChecksLabels: optionWithDefault(
+      options,
+      'runner-checks-labels',
+      DEFAULT_RUNNER_CHECKS_LABELS,
+    ),
     runnersPerInstance: positiveInt(
       optionWithDefault(options, 'runners-per-instance', String(defaults.runnersPerInstance)),
       'runners-per-instance',
@@ -307,6 +317,9 @@ function remoteEnv(config: RunnerConfig): string {
     `TARGET_REPO=${config.targetRepo}`,
     `TARGET_REF=${config.targetRef}`,
     `RUNNER_LABELS=${config.runnerLabels}`,
+    `RUNNER_CHECKS_LABELS=${config.runnerChecksLabels}`,
+    // Activates the checks-only sibling service in ci-runners/docker-compose.yml.
+    'COMPOSE_PROFILES=split-tiers',
     `RUNNER_GROUP=${config.runnerGroup}`,
     'EPHEMERAL=true',
     '',
@@ -362,7 +375,10 @@ async function provisionHost(
           '. ./.env',
           'set +a',
           'export DOCKER_BUILDKIT=1',
-          `docker compose up -d --build --pull always --scale runner=${String(config.runnersPerInstance)}`,
+          // Split-tier layout: exactly one e2e-capable `runner` slot per host;
+          // remaining slots are checks-only so concurrent e2e shards never
+          // contend on one host (see DEFAULT_RUNNER_LABELS comment).
+          `docker compose up -d --build --pull always --scale runner=1 --scale runner-checks=${String(Math.max(0, config.runnersPerInstance - 1))}`,
           'docker compose ps',
         ].join(' && '),
       )}`,
