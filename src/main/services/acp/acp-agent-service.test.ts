@@ -12,7 +12,7 @@ import {
   isAcpConnectionDropped,
   isRetryableAcpError,
   isTransientProviderError,
-  listAcpModelsForAgent,
+  probeAcpAgentForSettings,
   permissionResponseFor,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
@@ -450,7 +450,7 @@ describe('ACP on SSH workspaces', () => {
       (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
     await assert.rejects(
-      () => listAcpModelsForAgent('cursor'),
+      () => probeAcpAgentForSettings('cursor'),
       (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
   })

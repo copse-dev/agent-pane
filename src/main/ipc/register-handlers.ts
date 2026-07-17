@@ -74,7 +74,7 @@ import {
   listExternalEditors,
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
-import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
+import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
 import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
@@ -924,10 +924,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return detectAcpAgents()
   })
-  ipcMain.handle('acp:listModels', (event, agentId: unknown) => {
+  ipcMain.handle('acp:probeAgent', (event, agentId: unknown) => {
     assertMainFrameSender(event, win)
-    if (typeof agentId !== 'string') throw new Error('acp:listModels requires an agent id')
-    return listAcpModelsForAgent(agentId)
+    if (typeof agentId !== 'string') throw new Error('acp:probeAgent requires an agent id')
+    return probeAcpAgentForSettings(agentId)
   })
   ipcMain.handle('acp:autoSetup', (event) => {
     assertMainFrameSender(event, win)

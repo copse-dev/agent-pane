@@ -184,6 +184,13 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         resultFormat: 'markdown',
       }
     }
+    // The agent's permission (session) mode changed — either from our own
+    // `session/set_mode` (issue #607) or an autonomous switch by the agent. We
+    // set the mode once at session open and don't re-drive it, and Copse has no
+    // in-chat mode indicator, so there's no chunk to emit; drop it explicitly
+    // rather than through the fall-through so the intent is on the record.
+    case 'current_mode_update':
+      return null
     default:
       return null
   }
