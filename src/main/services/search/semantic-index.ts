@@ -9,7 +9,7 @@ import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
-import { getWorkspaceRoot, toRelativePath } from '../workspace.ts'
+import { toRelativePath } from '../workspace.ts'
 import {
   indexBuildStarted,
   indexBuildFinished,
@@ -707,12 +707,20 @@ export async function reapOversizedGortexDaemon(): Promise<void> {
  */
 export async function stopGortexDaemon(): Promise<void> {
   if (activeBackend !== 'gortex' || !gortexCommand) return
-  const cwd = getWorkspaceRoot() ?? gortexHomeDir()
-  await runCommand(
-    gortexCmd(),
-    ['daemon', 'stop', '--no-progress'],
-    gortexRunOpts(cwd, { timeout_ms: 15_000 }),
-  ).catch(() => undefined)
+  // Signal the daemon directly from its pidfile rather than shelling out to
+  // `gortex daemon stop`: the CLI stop waits for a final snapshot, and its
+  // subprocess spawn + graceful wait can hold app quit for many seconds —
+  // observed as wdio session-DELETE timeouts cascading through an e2e shard
+  // (the lingering app also blocks the next launch via the single-instance
+  // lock). SIGTERM is immediate; the daemon flushes what it can on its way
+  // down, and the index is derived data — rebuilt on next open if needed.
+  try {
+    const pidFile = join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid')
+    const pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10)
+    if (Number.isInteger(pid) && pid > 1) process.kill(pid, 'SIGTERM')
+  } catch {
+    // No pidfile / daemon already gone / not signal-able — nothing to reap.
+  }
   gortexDaemonReady = null
 }
 
