@@ -33,6 +33,7 @@ import type { RunSubagentOptions, SubagentStartDecision } from '@copse/agent/run
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSubagentStartHooks, cursorSubagentStopHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import { snapshotHookRunContext, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
 import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -108,6 +109,12 @@ export type RunSubagentStopHooksOpts = DialectDiscoverOpts & {
   turnTreeId: TurnTreeId
   /** Session identity captured by value at the fire site (B4 + decision 3). */
   agentSession?: AgentSessionInfo
+  /**
+   * Recording context snapshotted synchronously at the fire site so a detached
+   * `subagentStop` hook's `hook_run` spine line survives `endHookRunRecording`
+   * (decision 3/6). Without it the record is dropped or misattributed.
+   */
+  recordingSnapshot?: HookRunRecordingSnapshot | null
   /** Detached executor; defaults to the process-wide shared instance. */
   dispatcher?: AsyncHookDispatcher
 }
@@ -140,7 +147,9 @@ export async function runSubagentStopHooks(
     dispatcher,
     threadId: opts.threadId,
     turnTreeId: opts.turnTreeId,
-    runCommandHook: createCommandHookRunner(),
+    runCommandHook: createCommandHookRunner(
+      opts.recordingSnapshot !== undefined ? { recordingSnapshot: opts.recordingSnapshot } : {},
+    ),
     // A `followup_message` outcome lands in the renderer's pending queue via this
     // sink (decision 4). The C3 budget consumes it at drain time; a stale-epoch
     // send-now is downgraded to held on the renderer side (decision 16).
@@ -194,6 +203,11 @@ export function subagentHookCallbacks(opts: {
       // Epoch: the parent run's turn/generation id (the per-submission stand-in),
       // falling back to the thread id — the same convention `fireStopHook` uses.
       const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+      // Snapshot the recording context now, synchronously, like `fireStopHook`:
+      // a detached `subagentStop` hook may settle after `endHookRunRecording`
+      // clears the live context, and its `hook_run` line must still attribute to
+      // the emitting turn (decision 3/6).
+      const recordingSnapshot = snapshotHookRunContext()
       void runSubagentStopHooks(
         { subagentType, status },
         {
@@ -202,6 +216,7 @@ export function subagentHookCallbacks(opts: {
           workspaceRoot,
           projectTrusted: isWorkspaceTrusted(workspaceRoot),
           agentSession,
+          recordingSnapshot,
         },
       ).catch((err: unknown) => {
         console.warn('[hooks] subagentStop dispatch error:', errorMessage(err))
