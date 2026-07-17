@@ -11,7 +11,9 @@ import {
 function formatInfo(info: BackgroundProcessInfo): string {
   const state = info.running
     ? info.url
-      ? `running at ${info.url}`
+      ? info.urlRemote
+        ? `running at ${info.url} (remote host)`
+        : `running at ${info.url}`
       : 'running'
     : `exited${info.exitCode !== null ? ` (code ${String(info.exitCode)})` : ''}`
   return `[${info.id}] ${info.command} — ${state}`
@@ -70,7 +72,14 @@ export const runBackgroundTool = defineTool({
       const logs = getBackgroundProcessLogs(info.id)
       lines.push('', 'The task exited immediately. Recent output:', tailLogs(logs ?? ''))
     } else if (info.url) {
-      lines.push('', `Open it with browser_navigate → ${info.url}`)
+      if (info.urlRemote) {
+        lines.push(
+          '',
+          `Server listening at ${info.url} on the remote host (port forwarding is not available yet — tunnels are tracked in issue #771).`,
+        )
+      } else {
+        lines.push('', `Open it with browser_navigate → ${info.url}`)
+      }
     } else if (allow_port_binding) {
       lines.push(
         '',

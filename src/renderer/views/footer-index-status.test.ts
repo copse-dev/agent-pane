@@ -118,4 +118,18 @@ describe('footer index status chip', () => {
     push({ fileIndex: { phase: 'ready' }, semantic: { phase: 'unavailable' } })
     assert.equal(chipEl().hidden, true)
   })
+
+  it('labels a file-only build distinctly when semantic is unavailable (SSH)', () => {
+    const { api, push } = makeApi(idle)
+    destroy = mountFooterIndexStatus(document.body, api).destroy
+    push({
+      fileIndex: { phase: 'building', startedAt: Date.now() - 20_000 },
+      semantic: { phase: 'unavailable' },
+    })
+    const chip = chipEl()
+    assert.equal(chip.hidden, false)
+    assert.match(chip.textContent, /^Building file index… 20s$/)
+    assert.match(chip.title, /semantic code index: unavailable/)
+    assert.doesNotMatch(chip.title, /no backend installed/)
+  })
 })

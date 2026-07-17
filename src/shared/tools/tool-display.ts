@@ -25,6 +25,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   gh_run_list: 'List CI runs',
   gh_run_view: 'View CI run logs',
   investigate_ci: 'Investigate CI',
+  delegate_step: 'Delegate step',
   get_ci_status: 'CI status',
   wait_for_ci_checks: 'Wait for CI',
   get_ci_failure_logs: 'CI failure logs',

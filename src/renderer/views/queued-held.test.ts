@@ -4,7 +4,12 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { enqueueUserMessage } from '../controller/message-queue.ts'
+import {
+  continuationBudgetHeldNote,
+  drainMessageQueue,
+  enqueueUserMessage,
+} from '../controller/message-queue.ts'
+import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import { mountConversation } from './conversation.ts'
 
 // C2 held-state UI (decisions 5 & 16). A hook-originated message downgraded to
@@ -103,5 +108,53 @@ describe('held queued message (component)', () => {
       'the released item leaves the queue',
     )
     assert.notEqual(thread?.currentEpoch, 'epoch-stale', 'release starts a fresh turn tree')
+  })
+
+  // C3 (decision 5): a hook follow-up that arrives once the turn tree's
+  // auto-continuation budget is exhausted flips to *held* at drain time — the
+  // **same held UI** as C2's stale-epoch downgrade, only the seed reason differs
+  // (over budget vs stale). This asserts the C3 drain-time path renders that UI
+  // plus the visible budget note, so no new WDIO visual is needed.
+  it('renders the held UI + budget note for an over-budget hook follow-up (drain-time)', () => {
+    const store = createStore()
+    const api = fakeApi()
+    const threadId = createThread(store)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, api)
+
+    // Exhaust the budget, then a hook follow-up arrives and the queue drains.
+    store.setState({
+      threads: store
+        .getState()
+        .threads.map((t) =>
+          t.id !== threadId ? t : { ...t, continuationUsed: DEFAULT_CONTINUATION_BUDGET },
+        ),
+    })
+    const messageId = addMessage(store, threadId, 'user', 'over-budget follow-up')
+    enqueueUserMessage(store, threadId, {
+      messageId,
+      payload: { content: 'over-budget follow-up' },
+      createdAt: 1,
+      origin: { kind: 'hook', hookId: 'todo-closeout', event: 'stop' },
+      epoch: 'e1',
+    })
+
+    drainMessageQueue(store, api, threadId)
+
+    assert.equal(api.runs.length, 0, 'the over-budget follow-up did not auto-submit')
+    const heldItem = document.querySelector<HTMLElement>(
+      '.conversation-queued .msg-queued.msg-held',
+    )
+    assert.ok(heldItem, 'the over-budget follow-up renders with the held UI')
+    assert.ok(document.querySelector('.msg-held .queued-release'), 'held UI offers Release')
+    // The visible thread note explaining the hold is added to the thread.
+    assert.ok(
+      store
+        .getState()
+        .threads.find((t) => t.id === threadId)
+        ?.messages.some((m) => m.content === continuationBudgetHeldNote()),
+      'a visible budget note is added to the thread',
+    )
   })
 })
