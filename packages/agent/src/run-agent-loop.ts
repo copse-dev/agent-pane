@@ -51,6 +51,7 @@ import {
 import { hasOpenTodos, OPEN_TODOS_STILL_OPEN_MESSAGE } from './agent-loop-guards.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry.ts'
 import type { HookContext } from './hooks/canonical-events.ts'
+import type { ContinuationGrant } from './hooks/continuation-budget.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -96,6 +97,14 @@ export interface AgentLoopOptions {
   coerceTextToolCallArgs?: CoerceToolArgsFn
   /** When set, finalize is blocked while todos remain open. */
   getOpenTodos?: () => readonly TodoItem[]
+  /**
+   * Shared auto-continuation budget for this turn tree (decision 5). When set,
+   * each todo-closeout turn consumes one grant, so closeout runs at most
+   * `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` times — the local cap is a
+   * tightener inside the shared cap. Absent (most callers / tests) → closeout is
+   * bounded by its local cap alone, unchanged.
+   */
+  continuationBudget?: ContinuationGrant
   /**
    * Spine-recording sink for hook executions fired inside the loop (decision 6).
    * Injected by the host — the loop and registry never import persistence.
@@ -349,6 +358,7 @@ type AgentStepContext = {
   toolSchemaReserveTokens: number
   onHistoryTrimmed?: () => void
   recordHookRun?: HookContext['recordHookRun']
+  continuationBudget?: ContinuationGrant
 }
 
 /** One tool-enabled turn after injecting a user nudge (used for todo closeout). */
@@ -470,6 +480,11 @@ async function closeOpenTodosBeforeFinalize(
     const result = await registry.emit('beforeFinalize', { openTodos, attempt }, hookContext)
     const nudge = mergeBlockingOutcomes(result.outcomes).injectContext
     if (!nudge) break
+    // A closeout turn is a machine-initiated new turn (decision 5): consume one
+    // grant from the shared budget before running it, so closeout is bounded by
+    // `min(MAX_TODO_CLOSEOUT_ATTEMPTS, remaining)` — the local cap tightens
+    // inside the shared cap. No budget wired → local cap alone (unchanged).
+    if (ctx.continuationBudget && !ctx.continuationBudget.tryGrant()) break
     await runToolEnabledNudgeTurn(ctx, nudge)
     if (ctx.signal?.aborted) break
   }
@@ -1005,6 +1020,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       toolSchemaReserveTokens,
       ...(onHistoryTrimmed !== undefined ? { onHistoryTrimmed } : {}),
       ...(recordHookRun !== undefined ? { recordHookRun } : {}),
+      ...(opts.continuationBudget !== undefined
+        ? { continuationBudget: opts.continuationBudget }
+        : {}),
     }
 
     if (getOpenTodos && hasOpenTodos(getOpenTodos())) {

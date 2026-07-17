@@ -85,150 +85,157 @@
       <a class="back-link" href="index.html">← Back to Copse</a>
 
       <h1>Privacy Policy</h1>
-      <p class="date">Last updated: June 2025</p>
+      <p class="date">Last updated: July 2026</p>
 
       <div class="short-version">
         <p>
-          <strong>Your data stays on your machine.</strong> Copse is an offline-first desktop app.
-          It doesn't send your code, prompts, or conversations to any server unless you explicitly
-          choose to use a cloud model provider.
+          <strong>Copse has no hosted backend and sends no product telemetry.</strong> Data stays on
+          your machine until you configure or use a feature that talks directly to another service,
+          such as a cloud model, remote agent, MCP server, website, or the GitHub update feed.
         </p>
       </div>
 
       <h2>The Short Version</h2>
       <ul>
         <li>
-          <strong>No cloud by default.</strong> Copse only connects to the internet when you
-          configure a cloud model (Anthropic, OpenAI) or an LM Studio server on another machine.
+          <strong>No Copse account or backend.</strong> The desktop app talks directly to services
+          you configure; Copse does not operate an intermediary service for your prompts or code.
         </li>
         <li>
           <strong>No telemetry.</strong> No analytics, no crash reporting, no usage data collection.
-          We don't know how often you use the app or what you work on.
-        </li>
-        <li><strong>No accounts.</strong> There's no signup, no login, no user identifier.</li>
-        <li>
-          <strong>Your API keys stay local.</strong> They're stored in your machine's settings and
-          never transmitted to Copse's servers — because Copse doesn't have any.
-        </li>
-      </ul>
-
-      <h2>What Copse Does with Your Data</h2>
-
-      <h3>On-device processing (default)</h3>
-      <p>
-        When you use a local model (e.g. via LM Studio), everything happens on your machine. Your
-        prompts, your code, your conversations — all stay local. No data leaves your computer.
-      </p>
-
-      <h3>Cloud model providers (optional)</h3>
-      <p>
-        If you configure a cloud model, your prompts and conversation history are sent directly to
-        that provider's API (Anthropic, OpenAI, etc.). This is handled by the app's main process
-        talking directly to the provider's servers — Copse itself never receives, stores, or
-        intermediates your data.
-      </p>
-      <p>
-        The provider's own privacy policy applies to that data. Copse has no control over what they
-        store or how they use it.
-      </p>
-
-      <h3>MCP servers (optional)</h3>
-      <p>
-        If you connect MCP servers, those servers may make network requests. Copse does not
-        intercept, log, or store data flowing through MCP servers. You configure and approve each
-        server individually.
-      </p>
-
-      <h3>Local storage</h3>
-      <p>Copse stores minimal data locally on your machine:</p>
-      <ul>
-        <li>Settings and configuration (model URLs, API key references, UI preferences)</li>
-        <li>Conversation history (stored locally, encrypted at rest if you enable it)</li>
-        <li>Project metadata (open folders, recent files)</li>
-        <li>LM Studio model listings (cached locally for performance)</li>
-      </ul>
-      <p>
-        None of this data is transmitted to any external server unless you explicitly configure a
-        cloud model or MCP server that does so.
-      </p>
-
-      <h2>What Copse Does Not Do</h2>
-
-      <h3>No analytics or telemetry</h3>
-      <p>
-        Copse includes no analytics, crash reporting, usage tracking, or telemetry of any kind. We
-        don't know:
-      </p>
-      <ul>
-        <li>How often you use the app</li>
-        <li>What projects you're working on</li>
-        <li>What prompts you send</li>
-        <li>What models you use</li>
-        <li>Whether the app crashes</li>
-      </ul>
-      <p>Your usage is completely private.</p>
-
-      <h3>No data collection</h3>
-      <p>
-        Copse does not collect, transmit, or store any data on external servers. There are no
-        servers operated by Copse that receive user data. The only network connections the app makes
-        are:
-      </p>
-      <ul>
-        <li>Direct connections to cloud model APIs you configure (Anthropic, OpenAI, etc.)</li>
-        <li>Connections to LM Studio on your local network (if configured)</li>
-        <li>Connections to MCP servers you configure (if any)</li>
-      </ul>
-
-      <h3>No third-party SDKs</h3>
-      <p>
-        Copse contains no third-party analytics SDKs, crash reporters, or tracking libraries. Every
-        network request originates from the app's own code and goes only to destinations you
-        explicitly configure.
-      </p>
-
-      <h2>Permissions</h2>
-      <p>Copse requests only the permissions needed for its features:</p>
-      <ul>
-        <li><strong>File system access</strong> — Required to read and write your project files</li>
-        <li>
-          <strong>Network access</strong> — Only used when you configure cloud models or MCP
-          servers. Local mode requires no network access.
+          Maintainers do not automatically receive diagnostics.
         </li>
         <li>
-          <strong>Shell access</strong> — Only when you approve a command. macOS seatbelt sandbox
-          provides additional containment.
+          <strong>External features send data.</strong> Cloud models, remote agents, MCP/ACP,
+          browser sessions, custom tools, hooks, and updates have the data flows described below.
         </li>
         <li>
-          <strong>Clipboard access</strong> — Optional, for copying content between the editor and
-          chat
+          <strong>Local does not mean encrypted.</strong> Conversations are stored as ordinary
+          files. API keys use OS secure storage when available; otherwise plaintext storage requires
+          explicit consent.
         </li>
       </ul>
 
-      <h2>Security</h2>
-      <p>Copse is designed with security as a core principle:</p>
-      <ul>
-        <li>API keys are stored locally and encrypted at rest</li>
-        <li>Shell commands run through approval prompts and a macOS seatbelt sandbox</li>
-        <li>
-          Package installs are detected and routed through Socket Firewall with scripts disabled
-        </li>
-        <li>MCP servers require per-server approval before spawning</li>
-        <li>All data stays on your machine unless you explicitly configure cloud providers</li>
-      </ul>
+      <h2>Data Sent to Services You Choose</h2>
 
-      <h2>Open Source</h2>
+      <h3>Model providers</h3>
       <p>
-        Copse is open source. You can review our code at any time to verify these privacy claims:
+        A cloud model request can include your prompt and images, earlier conversation, system
+        instructions, tool definitions, tool calls and results, and source or file content included
+        in context. Requests go directly from the app's main process to the configured provider.
+        Local providers remain local only when their configured endpoint is local.
       </p>
       <p>
-        <a href="https://github.com/jonathanKingston/agent-pane">View Source Code on GitHub</a>
+        Provider-key validation and model-list refreshes also contact the provider. The provider's
+        privacy, retention, logging, and training policies apply after it receives the data.
+      </p>
+
+      <h3>Remote agents</h3>
+      <p>
+        Selecting a Cursor or Anthropic remote agent sends the current prompt and images. The first
+        handoff can also include prior user/assistant conversation and the current Git branch. A
+        repo-backed session sends the repository URL and branch so the service can clone or mount
+        the project; Claude's repo-backed flow also sends the configured GitHub token to the service
+        for that mount. The remote service may modify a branch or open a pull request according to
+        the selected settings.
+      </p>
+
+      <h3>MCP and ACP</h3>
+      <p>
+        MCP servers receive tool arguments, which may contain paths, file content, prompt-derived
+        text, or other workspace data. Results return through Copse and are stored in the thread. An
+        MCP server can be a local process or remote HTTP service and controls its own networking,
+        logs, and retention. Project MCP configuration is workspace-trust gated; server and tool
+        approvals apply according to your settings.
+      </p>
+      <p>
+        An ACP agent is an external program running on the same machine. Copse gives it the prompt,
+        workspace path, selected MCP configuration, and any tools exposed through the optional
+        localhost bridge. Copse strips its provider keys from the inherited base environment, but
+        values explicitly configured for the agent are passed to it. The ACP program may have its
+        own credentials, storage, and network behavior.
+      </p>
+
+      <h3>Browser and web tools</h3>
+      <p>
+        Websites opened in Copse receive normal browser requests and any data entered into them. The
+        interactive browser and agent automation use separate persistent profiles, so the agent does
+        not inherit the user's interactive logins. Agent snapshots, screenshots, and interaction
+        results may be sent to the selected model as tool results and are stored in the thread.
+        Browser cookies and site storage remain in their local profiles.
+      </p>
+
+      <h3>Custom tools and hooks</h3>
+      <p>
+        User-installed custom tools and configured hooks run code on the device and can read or
+        transmit whatever their implementation and permissions allow. Review them as code, not as
+        passive configuration.
+      </p>
+
+      <h3>Updates</h3>
+      <p>
+        The packaged macOS app checks its GitHub Releases update feed on launch. Copse asks before
+        downloading an update. Once downloaded, the update installs when you restart or next quit.
+        Development builds do not use the feed.
+      </p>
+
+      <h2>Credentials and Environment Scanning</h2>
+      <p>
+        Keys entered in Settings are written to <code>settings.json</code>. Electron secure storage
+        encrypts them with the OS account's key store when available. If it is unavailable, Copse
+        refuses to persist the key until you explicitly approve base64 plaintext storage. Base64 is
+        recoverable by anyone who can read the file.
+      </p>
+      <p>
+        Environment-only keys are not written to <code>settings.json</code>. The environment-key
+        scan runs only when you choose it. It reads <code>process.env</code> and a fixed allow-list
+        of shell startup files in the main process and shows the renderer only masked previews.
+        Importing a detected key turns it into a stored key.
+      </p>
+
+      <h2>Local Storage</h2>
+      <p>Copse stores data locally, including:</p>
+      <ul>
+        <li>settings, credentials, provider configuration, projects, and UI preferences;</li>
+        <li>conversation messages, reasoning, tool calls/results, images, hooks, and subagents;</li>
+        <li>separate browser profiles and agent-browser screenshots;</li>
+        <li>semantic-search indexes; and</li>
+        <li>short-lived Git worktree backup refs inside opened repositories.</li>
+      </ul>
+      <p>
+        Conversations are integrity-hashed but are not encrypted by Copse. Disk encryption and OS
+        account permissions protect them at rest. Deleting a local record does not delete copies
+        already retained by an external provider, agent, server, or website.
+      </p>
+
+      <h2>Telemetry, Exports, and Diagnostics</h2>
+      <p>
+        Copse includes no product analytics, crash reporter, or automatic diagnostic upload. The
+        built-in thread export is deliberately complete, not secret-redacted: it can include
+        prompts, source code, paths, attachments, tool data, reasoning, and nested agent
+        transcripts. Inspect and redact a copy before sharing it through GitHub or email. Never
+        share settings, environment dumps, shell startup files, or browser profiles.
+      </p>
+
+      <h2>More Detail and Source Code</h2>
+      <p>
+        The complete feature-by-feature data-flow and storage inventory is maintained with the
+        source code:
+      </p>
+      <p>
+        <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/privacy-data-flow.md"
+          >Read the data-flow documentation</a
+        >
+        ·
+        <a href="https://github.com/copse-dev/agent-pane">View source code on GitHub</a>
       </p>
 
       <h2>Contact</h2>
       <p>
-        If you have questions about this privacy policy or how Copse handles data, please open an
-        issue on our GitHub repository.
+        For privacy questions and ordinary bugs, use
+        <a href="https://github.com/copse-dev/agent-pane/issues">GitHub Issues</a> without including
+        sensitive data. Report suspected vulnerabilities privately to
+        <a href="mailto:security@copse.dev">security@copse.dev</a>.
       </p>
     </div>
   </body>

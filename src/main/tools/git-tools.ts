@@ -12,10 +12,12 @@ import { resolveWorkspacePath } from '../services/workspace.ts'
 import { getActiveRunThread, getThreadModels } from '../services/thread-models.ts'
 
 /** Reject paths that escape the workspace (absolute, `..`, symlink-out) before handing them to git. */
-function validateGitPath(path: string | undefined): { ok: true } | { ok: false; error: string } {
+async function validateGitPath(
+  path: string | undefined,
+): Promise<{ ok: true } | { ok: false; error: string }> {
   if (path === undefined) return { ok: true }
   try {
-    resolveWorkspacePath(path)
+    await resolveWorkspacePath(path)
     return { ok: true }
   } catch (err) {
     return { ok: false, error: errorMessage(err) }
@@ -44,7 +46,7 @@ export const gitDiffTool = defineTool({
       .describe('Show staged (cached) diff instead of unstaged.'),
   }),
   execute: async ({ path, staged }) => {
-    const valid = validateGitPath(path)
+    const valid = await validateGitPath(path)
     if (!valid.ok) return valid.error
     return getGitDiffText(path, staged)
   },
@@ -93,7 +95,7 @@ export const gitShowTool = defineTool({
       ),
   }),
   execute: async ({ ref, path }) => {
-    const valid = validateGitPath(path)
+    const valid = await validateGitPath(path)
     if (!valid.ok) return valid.error
     return getGitShowText(ref, path)
   },
@@ -107,7 +109,7 @@ export const gitLogTool = defineTool({
     path: z.string().optional().describe('Limit to commits touching this file.'),
   }),
   execute: async ({ max_count, path }) => {
-    const valid = validateGitPath(path)
+    const valid = await validateGitPath(path)
     if (!valid.ok) return valid.error
     return getGitLogText(max_count, path)
   },

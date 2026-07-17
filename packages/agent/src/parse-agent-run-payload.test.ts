@@ -54,4 +54,24 @@ describe('parseAgentRunPayload', () => {
       false,
     )
   })
+
+  it('parses the turn-tree epoch + spent continuation budget (C3 / decision 5)', () => {
+    const r = parseAgentRunPayload(
+      JSON.stringify({ content: 'go', turnTreeId: 'tree-1', continuationBudgetUsed: 3 }),
+    )
+    assert.equal(r.turnTreeId, 'tree-1')
+    assert.equal(r.continuationBudgetUsed, 3)
+  })
+
+  it('omits the turn-tree fields when absent or invalid', () => {
+    const bare = parseAgentRunPayload(JSON.stringify({ content: 'go' }))
+    assert.equal('turnTreeId' in bare, false)
+    assert.equal('continuationBudgetUsed' in bare, false)
+    // An empty epoch / non-finite count is dropped rather than threaded through.
+    const bad = parseAgentRunPayload(
+      JSON.stringify({ content: 'go', turnTreeId: '', continuationBudgetUsed: Number.NaN }),
+    )
+    assert.equal('turnTreeId' in bad, false)
+    assert.equal('continuationBudgetUsed' in bad, false)
+  })
 })

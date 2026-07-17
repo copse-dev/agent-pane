@@ -12,6 +12,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
 import { isRemoteAgentModel } from '@shared/remote-agent.ts'
+import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 
 /**
  * A **held** queued message (decisions 5 & 16): `autoDispatch: false` means the
@@ -21,6 +22,25 @@ import { isRemoteAgentModel } from '@shared/remote-agent.ts'
  */
 export function isHeldMessage(item: QueuedUserMessage): boolean {
   return item.autoDispatch === false
+}
+
+/**
+ * Whether a queued message is a **machine-initiated** continuation (decision 5):
+ * a hook-originated item (hook send-now, `stop` / `subagentStop` follow-ups).
+ * Only these consume the auto-continuation budget at drain time — human-authored
+ * queued messages never do.
+ */
+export function isMachineContinuation(item: QueuedUserMessage): boolean {
+  return item.origin?.kind === 'hook'
+}
+
+/**
+ * Visible thread note shown when a machine follow-up is held because the turn
+ * tree's auto-continuation budget is exhausted (decision 5). Explains why it did
+ * not auto-submit and that a human release resumes it (starting a fresh budget).
+ */
+export function continuationBudgetHeldNote(): string {
+  return `Auto-continuation budget reached — ${String(DEFAULT_CONTINUATION_BUDGET)} machine-initiated follow-ups have run in this turn. The next hook follow-up is held; release it to continue (that starts a fresh turn with a reset budget).`
 }
 
 /**
@@ -51,9 +71,53 @@ export function startHumanTurnTree(store: AppStore, threadId: string): string {
   const epoch = newEpoch()
   const threads = store
     .getState()
-    .threads.map((t) => (t.id !== threadId ? t : { ...t, currentEpoch: epoch }))
+    // A fresh turn tree resets the auto-continuation budget (decision 5): a
+    // human-initiated submission is the floor, and the machine-turn counter
+    // starts over.
+    .threads.map((t) =>
+      t.id !== threadId ? t : { ...t, currentEpoch: epoch, continuationUsed: 0 },
+    )
   store.setState({ threads })
   return epoch
+}
+
+/**
+ * Fold a finished run's in-process machine-turn spend back onto the thread's
+ * per-turn-tree counter (C3 run→drain direction, decision 5). The run seeds
+ * the main-process ledger from `Thread.continuationUsed` (drain→run) and spends
+ * against it as its in-run tighteners (todo closeout / pre-review gate /
+ * remediation) run; this closes the loop so the renderer's *next* queue drain
+ * sees that spend and still enforces the shared cap.
+ *
+ * Guarded on the turn-tree epoch (decision 16): a human action since the run
+ * started (typed prompt / send-now / release) mints a fresh `currentEpoch` and
+ * resets the budget, so a fold-back from the *old* turn tree must be dropped —
+ * never clobber the reset. The counter only moves up (monotonic within a turn
+ * tree, matching the ledger's `seed`).
+ *
+ * A thread that never minted an epoch (no `currentEpoch`) still folds back:
+ * the run keyed its ledger by the thread id (the main-process fallback), so a
+ * fold-back carrying `turnTreeId === threadId` is this thread's own spend, not
+ * a stale one — dropping it would undercount and let the next run exceed the
+ * cap. A human reset always mints an epoch, so once `currentEpoch` exists the
+ * thread-id fallback no longer matches and genuinely stale reports still drop.
+ */
+export function foldBackContinuationUsed(
+  store: AppStore,
+  threadId: string,
+  turnTreeId: string,
+  used: number,
+): void {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  if (!thread) return
+  const currentKey = thread.currentEpoch ?? threadId
+  if (currentKey !== turnTreeId) return
+  const next = Math.max(thread.continuationUsed ?? 0, used)
+  if (next === (thread.continuationUsed ?? 0)) return
+  const threads = store
+    .getState()
+    .threads.map((t) => (t.id !== threadId ? t : { ...t, continuationUsed: next }))
+  store.setState({ threads })
 }
 
 function refreshPayload(
@@ -70,6 +134,14 @@ function refreshPayload(
     // than the global default. Read at dispatch time so a change made while the
     // message was queued still takes effect. Absent → main uses the global default.
     ...(thread?.model !== undefined ? { model: thread.model } : {}),
+    // C3: thread the turn-tree epoch + the machine turns already spent so the
+    // main-process continuation ledger keys and seeds the same counter this
+    // renderer enforces at drain time (decision 5 / 16). Read at dispatch time so
+    // a queue-drain continuation carries the up-to-date spent count.
+    ...(thread?.currentEpoch !== undefined ? { turnTreeId: thread.currentEpoch } : {}),
+    ...(thread?.continuationUsed !== undefined
+      ? { continuationBudgetUsed: thread.continuationUsed }
+      : {}),
   }
 }
 
@@ -112,23 +184,59 @@ export function drainMessageQueue(store: AppStore, api: ApiClient, threadId: str
 
   // Held items (decision 5): `drainMessageQueue` skips them entirely — a held
   // message never auto-submits at idle; only an explicit human action dispatches
-  // it. Drain the first *auto-dispatching* item and leave every held item queued
-  // (still shown in the pinned panel with a release action). A queue of only
-  // held items drains nothing.
-  const next = pending.find((item) => !isHeldMessage(item))
-  if (!next) return
+  // it. A queue of only held items drains nothing.
+  //
+  // Auto-continuation budget (decision 5): a machine-initiated continuation (a
+  // hook-originated item) consumes one unit of the turn tree's budget when it
+  // *drains* — checked here, not at enqueue. Over budget, the item flips to
+  // **held** (`autoDispatch: false`) with a visible thread note; the drain then
+  // continues past it, so a human-authored item behind an over-budget machine
+  // item still submits. Human-authored items never consume budget.
+  let used = thread.continuationUsed ?? 0
+  let next: QueuedUserMessage | undefined
+  const heldByBudget: string[] = []
+  for (const item of pending) {
+    if (isHeldMessage(item)) continue
+    if (isMachineContinuation(item)) {
+      if (!canContinue(used)) {
+        heldByBudget.push(item.messageId)
+        continue
+      }
+      used += 1
+      next = item
+      break
+    }
+    next = item
+    break
+  }
+
+  if (!next && heldByBudget.length === 0) return
+
   const rest = pending.filter((item) => item !== next)
+  const budgetHeld = new Set(heldByBudget)
   const threads = store.getState().threads.map((t) => {
     if (t.id !== threadId) return t
     const { pendingMessages: _removed, ...restThread } = t
     const messages = movePendingUserMessagesToEnd(t.messages, pending)
-    return rest.length > 0
-      ? { ...restThread, messages, pendingMessages: rest, updatedAt: Date.now() }
-      : { ...restThread, messages, updatedAt: Date.now() }
+    // Flip over-budget machine items to held so the pinned panel offers Release.
+    const nextPending = rest.map((item) =>
+      budgetHeld.has(item.messageId) ? { ...item, autoDispatch: false as const } : item,
+    )
+    const base =
+      nextPending.length > 0
+        ? { ...restThread, messages, pendingMessages: nextPending, updatedAt: Date.now() }
+        : { ...restThread, messages, updatedAt: Date.now() }
+    // Record the machine turn we are about to dispatch so the next drain (and the
+    // run payload's seed) reflect it (decision 5).
+    return next && isMachineContinuation(next) ? { ...base, continuationUsed: used } : base
   })
   store.setState({ threads })
+
+  // One visible note when the budget forced items to held (decision 5).
+  if (heldByBudget.length > 0) addMessage(store, threadId, 'error', continuationBudgetHeldNote())
+
   store.emit('threads_changed')
-  dispatchAgentRun(store, api, threadId, next.payload)
+  if (next) dispatchAgentRun(store, api, threadId, next.payload)
 }
 
 export function movePendingUserMessagesToEnd(
@@ -350,10 +458,10 @@ export function enqueueHookMessage(
 /**
  * Release a **held** queued message (decisions 5 & 16): an explicit human action
  * that clears the hold and submits it, starting a **fresh turn tree** (new
- * `currentEpoch`) with a reset budget — C3 owns the budget-ledger reset; C2
- * clears the hold, mints the new epoch, and dispatches. Reuses the send-now path
- * so a release while the agent runs interrupts like any human send-now, and a
- * release at idle drains immediately.
+ * `currentEpoch`) with a reset budget — C3 resets the machine-turn counter here
+ * (`continuationUsed: 0`) as it clears the hold, mints the new epoch, and
+ * dispatches. Reuses the send-now path so a release while the agent runs
+ * interrupts like any human send-now, and a release at idle drains immediately.
  */
 export function releaseHeldMessage(
   store: AppStore,
@@ -371,6 +479,8 @@ export function releaseHeldMessage(
     return {
       ...t,
       currentEpoch: epoch,
+      // A human release starts a fresh turn tree with a reset budget (decision 5).
+      continuationUsed: 0,
       pendingMessages: (t.pendingMessages ?? []).map((p) => {
         if (p.messageId !== messageId) return p
         // Clear the hold so the item can dispatch (and auto-drain if left queued).

@@ -3,7 +3,12 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { detectTextEncoding, isLikelyBinaryText, readTextLineRange } from './read-text-file.ts'
+import {
+  detectTextEncoding,
+  isLikelyBinaryText,
+  readTextLineRange,
+  readTextLineRangeFromUtf8Content,
+} from './read-text-file.ts'
 
 describe('read-text-file', () => {
   it('detects UTF-8 BOM and strips content', () => {
@@ -58,5 +63,15 @@ describe('read-text-file', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it('readTextLineRangeFromUtf8Content strips UTF-8 BOM and CRLF like readTextLineRange', () => {
+    const result = readTextLineRangeFromUtf8Content('\ufeffline1\r\nline2\r\n', {
+      startLine: 1,
+      maxLines: 10,
+      maxChars: 100,
+    })
+    assert.equal(result.text, 'line1\nline2')
+    assert.equal(result.totalLines, 2)
   })
 })

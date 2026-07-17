@@ -202,6 +202,39 @@ Secrets are read from environment variables (`GITHUB_RUNNER_PAT` and
 in shell history. `down` terminates instances tagged with the burst fleet name
 (default `copse-burst`).
 
+## Remote e2e dev hosts (`npm run e2e:remote`)
+
+The same image doubles as the **remote e2e dev loop** (see
+[`docs/plans/remote-e2e-dev-loop.md`](../docs/plans/remote-e2e-dev-loop.md)):
+run the e2e suite from your **working tree** on an on-demand cloud host, so
+your machine stays free while it runs. These hosts are _not_ GitHub runners —
+no registration, no runner PAT; the only secret is `BUILD_GH_TOKEN` at image
+build time, exactly like a burst host.
+
+```bash
+BUILD_GH_TOKEN=ghp_... npm run e2e:remote -- up      # Scaleway PLAY2-MICRO by default
+npm run e2e:remote -- run                            # oracle subset of your diff
+npm run e2e:remote -- run --all --shard 2 --detach   # full CI suite, 2 containers
+npm run e2e:remote -- wait <run-id>
+npm run e2e:remote -- down --yes
+```
+
+Each run pushes a snapshot commit (staged + unstaged + untracked) to a bare
+repo on the host and starts a fresh one-shot container from this image with
+[`exec-run.sh`](exec-run.sh) as the entrypoint override: checkout → seed the
+baked deps (same `.lockhash` contract as the setup action) → build → wdio
+under Xvfb → collect logs + changed reference screenshots. Results land in
+`.tmp/remote-e2e/runs/<run-id>/` locally; the exit code mirrors wdio's.
+
+Dev hosts carry their own tag namespace (`copse-remote-e2e` /
+`copse-remote-e2e-hosts`), so `e2e:remote down` can never terminate burst CI
+capacity and `runners:burst down` can never take a dev host. The same
+TTL-shutdown backstop applies (`--ttl-minutes`, default 240) — `down --yes`
+remains the real cleanup. After a `package-lock.json` change, runs warn and
+fall back to `npm ci`; run `npm run e2e:remote -- rebake` to refresh the baked
+layer. A spare machine with Docker + passwordless sudo works too:
+`npm run e2e:remote -- adopt --host user@box`.
+
 ## Do we need new PAT tokens?
 
 There are **three distinct token roles**. You do **not** need three separate
