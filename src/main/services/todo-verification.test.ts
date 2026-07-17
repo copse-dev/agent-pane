@@ -25,7 +25,7 @@ describe('verifyTodoCheck', () => {
 
   it('fileExists rejects paths outside the workspace', async () => {
     const ws = mkdtempSync(join(tmpdir(), 'copse-todo-'))
-    registerAllowedWorkspaceRoot(ws)
+    await registerAllowedWorkspaceRoot(ws)
     cleanupRoot = setWorkspaceRootForTest(ws)
 
     const result = await verifyTodoCheck(
@@ -41,7 +41,7 @@ describe('verifyTodoCheck', () => {
     const ws = mkdtempSync(join(tmpdir(), 'copse-todo-'))
     mkdirSync(join(ws, 'src'))
     writeFileSync(join(ws, 'src', 'ok.ts'), 'ok')
-    registerAllowedWorkspaceRoot(ws)
+    await registerAllowedWorkspaceRoot(ws)
     cleanupRoot = setWorkspaceRootForTest(ws)
 
     const result = await verifyTodoCheck(

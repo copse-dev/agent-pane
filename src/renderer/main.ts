@@ -30,10 +30,12 @@ import {
   openSettingsDialog,
   isSettingsDialogOpen,
   closeSettingsDialog,
+  applyUiAccent,
   applyUiTint,
   isUiTintStrength,
   DEFAULT_TINT_COLOR,
   DEFAULT_TINT_STRENGTH,
+  DEFAULT_ACCENT_COLOR,
 } from './views/settings-dialog.ts'
 import { resolveTheme, applyThemeToDocument, watchSystemTheme } from './dom/theme.ts'
 import {
@@ -42,8 +44,10 @@ import {
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
 import { mountContextWarningBanner } from './views/context-warning-banner.ts'
+import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
+import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -147,8 +151,12 @@ function requireElement(id: string): HTMLElement {
 // Catch-all for IPC/promise failures that would otherwise vanish silently
 // (many call sites dispatch with `void api.…()`). Surface them to the user.
 window.addEventListener('unhandledrejection', (event) => {
-  // Monaco throws when diff compute races model disposal (e.g. staged-diff accept).
-  if (event.reason instanceof Error && event.reason.message === 'no diff result available') {
+  // Monaco throws when diff compute races model disposal (e.g. staged-diff accept)
+  // or when hideUnchangedRegions refresh cancels an in-flight compute.
+  if (
+    event.reason instanceof Error &&
+    (event.reason.message === 'no diff result available' || event.reason.message === 'Canceled')
+  ) {
     event.preventDefault()
     return
   }
@@ -167,10 +175,12 @@ async function boot(): Promise<void> {
   mountOnboardingDialog(store, api)
   mountApprovalDialog(api, store)
   mountAskUserDialog(api, store)
+  mountSshPromptDialog(api)
   mountFileSearchDialog(store, api)
   mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
   const contextWarningBanner = mountContextWarningBanner(api)
+  mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
@@ -203,8 +213,10 @@ async function boot(): Promise<void> {
       store.emit('theme_changed', nextTheme)
     },
   )
-  // Restore the whole-app tint before the layout paints so surfaces come up
-  // already tinted rather than flashing neutral then shifting.
+  // Restore the interaction accent and whole-app tint before the layout paints
+  // so controls and surfaces do not flash their defaults before shifting.
+  const savedAccentColor = await api.settings.get('uiAccentColor')
+  applyUiAccent(typeof savedAccentColor === 'string' ? savedAccentColor : DEFAULT_ACCENT_COLOR)
   const savedTintColor = await api.settings.get('uiTintColor')
   const savedTintStrength = await api.settings.get('uiTintStrength')
   applyUiTint(
@@ -350,7 +362,7 @@ function mountFullLayout(): void {
   const inputRoot = requireElement('input-bar')
   mountInputBar(inputRoot, store, api)
   const conversationRoot = requireElement('conversation')
-  mountConversation(conversationRoot, store, api)
+  mountConversation(conversationRoot, store, api, inputRoot)
   mountConversationSearch(conversationRoot)
   if (!inputRoot.querySelector('.prompt-input')) {
     throw new Error('Chat composer failed to mount (#input-bar missing .prompt-input)')

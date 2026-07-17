@@ -1,5 +1,6 @@
-import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
 import type { CoerceToolArgsFn } from '@copse/agent/parse-text-tool-calls.ts'
+import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import {
   buildReviewPrompt,
   parseReviewVerdict,
@@ -29,6 +30,7 @@ import type {
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithAgentRunReadFileLimits } from './agent-run-read-limits.ts'
+import { subagentHookCallbacks } from './hooks/subagent.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { getGitDiffText } from './github/git-service.ts'
 
@@ -61,6 +63,16 @@ export interface RunParentContinuationOptions {
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
   coerceTextToolCallArgs?: CoerceToolArgsFn
   onEditTool?: (name: string) => void
+  /** Spine-recording sink + step attribution for hooks fired in continuation loops (decision 6). */
+  recordHookRun?: AgentLoopOptions['recordHookRun']
+  onLlmCall?: AgentLoopOptions['onLlmCall']
+  /**
+   * Shared auto-continuation budget for this turn tree (decision 5). Each
+   * pre-review todo attempt consumes one grant, so the gate runs at most
+   * `min(MAX_PRE_REVIEW_TODO_ATTEMPTS, remaining)` times — the local cap tightens
+   * inside the shared cap.
+   */
+  continuationBudget?: ContinuationGrant
 }
 
 function filterReviewTools(registry: ToolRegistry): LLMTool[] {
@@ -84,6 +96,10 @@ function executeReviewTool(
 export async function runPreReviewTodoGate(opts: RunParentContinuationOptions): Promise<void> {
   for (let attempt = 0; attempt < MAX_PRE_REVIEW_TODO_ATTEMPTS; attempt++) {
     if (!hasOpenTodos(opts.getOpenTodos())) return
+    // Each pre-review attempt is a machine-initiated new turn (decision 5):
+    // consume one grant so the local cap tightens inside the shared budget. When
+    // the budget is exhausted, the gate stops (the open todos ride into review).
+    if (opts.continuationBudget && !opts.continuationBudget.tryGrant()) return
     await runParentContinuationTurn({
       ...opts,
       userNudge: OPEN_TODOS_PRE_REVIEW_NUDGE,
@@ -110,6 +126,11 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
     ...(opts.getLastUsage !== undefined ? { getLastUsage: opts.getLastUsage } : {}),
     ...(opts.coerceTextToolCallArgs !== undefined
       ? { coerceTextToolCallArgs: opts.coerceTextToolCallArgs }
+      : {}),
+    ...(opts.recordHookRun !== undefined ? { recordHookRun: opts.recordHookRun } : {}),
+    ...(opts.onLlmCall !== undefined ? { onLlmCall: opts.onLlmCall } : {}),
+    ...(opts.continuationBudget !== undefined
+      ? { continuationBudget: opts.continuationBudget }
       : {}),
     executeTool: async (name, args, signal, toolCallId) => {
       opts.onEditTool?.(name)
@@ -203,6 +224,10 @@ export async function runPostTurnReviewOnce(
       systemPrompt: REVIEW_SYSTEM_PROMPT,
       userTask: prompt,
       usageModel: opts.usageModel,
+      // D1: the post-turn review subagent goes through the same lifecycle gate
+      // as every other subagent spawn — a `subagentStart` deny hook blocks it
+      // and `subagentStop` fires on completion (all four runSubagent callers).
+      ...subagentHookCallbacks({ usageModel: opts.usageModel }),
     }),
   )
 

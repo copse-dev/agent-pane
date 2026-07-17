@@ -11,6 +11,12 @@ const modelsByThread = new Map<string, Set<string>>()
 // "current run" pointer is enough to tell a tool which thread it belongs to.
 let activeRunThreadId: string | null = null
 
+// The resolved model (post-fallback) the active run is actually executing on.
+// This is the "model actually running" the Cursor hook agent-session payloads
+// report (B4); distinct from `modelsByThread`, which is the *set* of models a
+// thread ever used (for commit attribution).
+let activeRunModel: string | null = null
+
 /** Record a model id observed for a thread (no-op for blank ids). */
 export function recordThreadModel(threadId: string, model: string): void {
   if (!threadId || !model) return
@@ -35,12 +41,27 @@ export function setActiveRunThread(threadId: string | null): void {
 
 /** Clear the active-run pointer only if it still points at this thread. */
 export function clearActiveRunThread(threadId: string): void {
-  if (activeRunThreadId === threadId) activeRunThreadId = null
+  if (activeRunThreadId === threadId) {
+    activeRunThreadId = null
+    // No active run ⇒ no active model. The app serializes runs, so clearing the
+    // model here keeps the two pointers consistent without touching every finally.
+    activeRunModel = null
+  }
 }
 
 /** Thread whose run is currently executing tools, or null when idle. */
 export function getActiveRunThread(): string | null {
   return activeRunThreadId
+}
+
+/** Record the resolved model the active run is executing on (blank clears it). */
+export function setActiveRunModel(model: string | null): void {
+  activeRunModel = model && model.length > 0 ? model : null
+}
+
+/** The model the active run is executing on, or null when idle / unknown. */
+export function getActiveRunModel(): string | null {
+  return activeRunModel
 }
 
 /** Drop tracked models for a thread (e.g. when it is deleted). */

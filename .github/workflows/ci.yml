@@ -55,12 +55,11 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    # Fork code gets a deliberately small, read-only check tier on an ephemeral
-    # GitHub-hosted runner. Same-repo work can use the configured check fleet.
-    runs-on: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # GitHub-hosted: the self-hosted check fleet (6 GB cgroup) has been
+    # cgroup-killing `tsc` / `eslint .` under load (exit 137) across many PRs.
+    # Hosted runners have enough headroom for the static gate; heavier jobs
+    # below still prefer CHECKS_RUNNER when set.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
@@ -80,8 +79,42 @@ jobs:
           # Same-repo runs keep credentials for the oracle's base ref fetches.
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       - uses: ./.github/actions/setup
-      - run: npm run typecheck
-      - run: npm run lint
+      # Retry once on exit 137 (SIGKILL / cgroup OOM). The check fleet caps each
+      # runner at ~6 GB; under load, tsc/eslint can get killed even though a
+      # second attempt on a quieter container succeeds. Real type/lint errors
+      # exit non-137 and still fail the gate immediately.
+      - name: Typecheck
+        run: |
+          set +e
+          npm run typecheck
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -ne 137 ]; then exit "$status"; fi
+          echo "::warning::typecheck OOM-killed (137); retrying once"
+          sleep 10
+          npm run typecheck
+      - name: Lint
+        env:
+          # Cap the V8 heap so eslint stays inside the ~6 GB check-runner cgroup
+          # instead of racing other jobs for the whole container.
+          NODE_OPTIONS: --max-old-space-size=3072
+        run: |
+          # Typecheck just exited; give the cgroup a beat to reclaim before
+          # eslint's peak allocation, then retry a couple of times on 137.
+          sleep 15
+          attempt=1
+          while true; do
+            set +e
+            npm run lint
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then exit 0; fi
+            if [ "$status" -ne 137 ] || [ "$attempt" -ge 3 ]; then exit "$status"; fi
+            echo "::warning::lint OOM-killed (137); retry $attempt/3"
+            attempt=$((attempt + 1))
+            sleep 20
+          done
       - run: npm run format:check
       - run: npm run check:dead-code
       # Fail closed on high/critical dependency advisories. This runs after the
@@ -171,30 +204,27 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null || true
           node scripts/check-screenshots.mts --plan --base "$BASE_SHA"
-      # e2e shard fan-out is runner-dependent. The GitHub-hosted nightly keeps 8
-      # shards to stay under the 2-core/7GB OOM ceiling (see the e2e job comment).
-      # PR/push runs on the self-hosted Linux Docker `copse-e2e` fleet (see #422),
-      # where 8 shards just means paying the (mostly-cached but non-trivial, and
-      # occasionally cold) dep restore + Electron setup up to 8× across the fleet.
-      # Fewer, larger shards there cut that repeated setup without duplicating any
-      # spec: wdio `--shard current/total` and the `subset` round-robin both
-      # partition the specs disjointly, so a lower total just makes each slice
-      # bigger. Tune the self-hosted count below to your fleet size.
+      # Keep every full e2e run at 8 shards. Both runner classes have a tight
+      # memory ceiling: GitHub-hosted is 7 GB and each self-hosted `copse-e2e`
+      # container is capped at 6 GB. Packing the suite into 3 shards makes each
+      # container launch too many sequential Electron sessions; accumulated
+      # Electron/gortex processes then OOM-crash unrelated late-running specs.
+      # `--shard` and the subset round-robin still partition specs disjointly.
       - id: shards
-        env:
-          EVENT: ${{ github.event_name }}
         run: |
-          if [ "$EVENT" = "schedule" ]; then
-            { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
-          else
-            { echo "total=3"; echo "list=[1,2,3]"; } >> "$GITHUB_OUTPUT"
-          fi
+          { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
 
   # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
   # Prettier `--write` — and commit the result back onto the head branch. This
   # is the "fixer" half of the format gate; `precheck` still runs `lint` +
   # `format:check` as the "gate" half, which stays honest when this job is off
   # (no PAT) or can't run (fork PR).
+  #
+  # Scope to files changed vs the PR base (not the whole tree): full-repo
+  # `eslint . --fix` + `prettier --write .` regularly OOM-kill (exit 137) on
+  # the 6 GB check runners under fleet load, painting every PR red before
+  # precheck even starts. Diff-scoped autofix is enough — the gate half still
+  # checks the whole tree — and keeps peak memory proportional to the PR.
   #
   # A SEPARATE job rather than folded into `precheck`: precheck checks out the
   # merge ref (fetch-depth: 0) so the e2e oracle can diff against base, whereas
@@ -213,22 +243,48 @@ jobs:
   # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Same rationale as precheck: avoid 6 GB self-hosted OOM on eslint/prettier.
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.head_ref }}
+          fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - uses: ./.github/actions/setup
-      # `|| true`: a non-autofixable lint error must not abort the run — we still
-      # want the fixes ESLint did apply to land. Real lint failures stay the job
-      # of precheck's `lint` gate, not this fixer.
-      - name: ESLint --fix
-        run: npx eslint . --fix || true
-      - name: Prettier --write
-        run: npm run format
+      # `|| true` on eslint: a non-autofixable lint error must not abort the run —
+      # we still want the fixes ESLint did apply to land. Real lint failures stay
+      # the job of precheck's `lint` gate, not this fixer. Prettier retries once
+      # on OOM (137); a second kill fails the job so a wedged runner is visible.
+      - name: Autofix changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          fi
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD \
+              | grep -E '\.(cjs|css|cts|js|json|jsx|md|mjs|mts|ts|tsx|yaml|yml)$' \
+              || true
+          )
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No autofixable files changed vs base."
+            exit 0
+          fi
+          echo "Autofixing ${#files[@]} changed file(s)"
+          npx eslint --fix -- "${files[@]}" || true
+          set +e
+          npx prettier --write -- "${files[@]}"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then exit 0; fi
+          if [ "$status" -ne 137 ]; then exit "$status"; fi
+          echo "::warning::prettier OOM-killed (137); retrying once"
+          sleep 10
+          npx prettier --write -- "${files[@]}"
       - name: Commit and push fixes
         run: |
           if git diff --quiet; then
@@ -243,7 +299,9 @@ jobs:
   check:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: coverage/esbuild has been dying with "service was stopped" on the
+    # 6 GB self-hosted check fleet under load (same class of flake as precheck OOM).
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
@@ -269,7 +327,8 @@ jobs:
   bench:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: no Electron/display need; avoid the saturated self-hosted check queue.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
@@ -341,7 +400,9 @@ jobs:
   build:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Hosted: produces the dist artifact for e2e; self-hosted check fleet is only
+    # needed for Electron e2e shards below.
+    runs-on: ubuntu-latest
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
@@ -388,19 +449,12 @@ jobs:
     # slice of specs via wdio's `--shard current/total`. The shared `dist` artifact
     # from the `build` job is unpacked here rather than rebuilt per shard.
     #
-    # Shard count is runner-dependent (computed by the precheck `shards` step):
-    #   - hosted nightly: 8. Each shard runs its slice as one sequential wdio
-    #     process, relaunching Electron per spec. On the 2-core/7GB runner, once a
-    #     shard runs too many specs the accumulated electron/gortex processes
-    #     exhaust it and a later spec's Electron fails to boot or OOM-crashes the
-    #     runner ("shutdown signal"). #339's data showed 8 stays under that limit
-    #     even in the densest spec range.
-    #   - self-hosted PR/push: 3. These run on the Linux Docker `copse-e2e`
-    #     runners (see #422), which have the headroom 8 was protecting against, so
-    #     the only thing 8 buys there is paying dep restore + Electron setup up to
-    #     8× across the fleet. Fewer, larger shards cut that repeated (and
-    #     sometimes cold) setup — the dominant wall-clock cost — without
-    #     duplicating any spec. Tune to the `copse-e2e` runner count.
+    # Every full run uses 8 shards. Each shard runs its slice as one sequential
+    # wdio process, relaunching Electron per spec. Both the hosted runner (7 GB)
+    # and self-hosted container (6 GB cap) eventually exhaust memory when a shard
+    # launches too many Electron/gortex processes; a later unrelated spec then
+    # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
+    # 8 shards stays under that limit even in the densest spec range.
     # The per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt
     # 1 finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
@@ -439,9 +493,11 @@ jobs:
       # The Electron/Chromedriver e2e session occasionally fails to start on the
       # runner ("DevToolsActivePort file doesn't exist" / "POST /session" timeout).
       # The hang wedges the whole wdio run, so in-process retries don't recover —
-      # only a fresh xvfb+Electron launch does. Retry the entire shard, and wrap
-      # each attempt in `timeout` so a wedged session is killed and retried
-      # (a plain hang would otherwise never exit and stall the job).
+      # only a fresh xvfb+Electron launch does. Retry the entire shard, cleaning
+      # orphaned session processes before each attempt and when the step exits.
+      # The runners are one job per PID-isolated container, so this cannot touch
+      # another job. Wrap each attempt in `timeout` so a plain hang cannot stall
+      # the job indefinitely.
       # Oracle gate (see the precheck job's plan step): `full` shards the whole
       # suite; `subset` distributes only the planned specs round-robin across the
       # same 8 shards (so no shard exceeds the per-shard memory budget the count
@@ -483,7 +539,25 @@ jobs:
           # fall back to no inner timeout (the step `timeout-minutes` still caps
           # a wedged run) so the command can't die with "timeout: not found".
           TIMEOUT="$(command -v timeout || command -v gtimeout || true)"
+
+          cleanup_e2e_processes() {
+            # Bracketed patterns avoid matching this shell's own command line.
+            # A failed deleteSession can orphan any of these; self-hosted runner
+            # containers are reused, so clean before attempt 1 as well as retries.
+            pkill -TERM -f '[e]lectron/dist/electron' 2>/dev/null || true
+            pkill -TERM -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
+            pkill -TERM -f '[X]vfb' 2>/dev/null || true
+            pkill -TERM -f '[g]ortex' 2>/dev/null || true
+            sleep 1
+            pkill -KILL -f '[e]lectron/dist/electron' 2>/dev/null || true
+            pkill -KILL -f '[e]lectron-chromedriver/bin/chromedriver' 2>/dev/null || true
+            pkill -KILL -f '[X]vfb' 2>/dev/null || true
+            pkill -KILL -f '[g]ortex' 2>/dev/null || true
+          }
+
+          trap cleanup_e2e_processes EXIT
           for attempt in 1 2 3; do
+            cleanup_e2e_processes
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
               echo "::endgroup::"
@@ -898,16 +972,33 @@ jobs:
   # have their own explicit safe-tier result below: they may pass only after
   # `precheck` actually ran on a GitHub-hosted runner, never merely because all
   # code-executing jobs were skipped.
+  #
+  # Concurrency supersession: top-level `cancel-in-progress` cancels in-flight
+  # jobs when a newer push/sync arrives on the same ref. Those cancelled jobs
+  # must not paint the superseded SHA's `CI Passed` red — tip CI is the gate
+  # that matters. We detect supersession by comparing this run's head SHA to
+  # the live tip; genuine cancels of the tip (manual cancel, runner death with
+  # no tip move) still fail. Sibling-matrix cancels after a real shard failure
+  # still fail because `ANY_FAILURE` is true first.
   ci-passed:
     name: CI Passed
     if: always()
     needs: [precheck, check, bench, build, e2e]
-    runs-on: >-
-      ${{ github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository &&
-          'ubuntu-latest' || vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    # Tiny aggregate gate — keep on hosted so a saturated self-hosted check
+    # fleet cannot leave a green pipeline without its required status check.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Check upstream job results
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
         run: |
           FORK_PR=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           if $FORK_PR; then
@@ -921,7 +1012,7 @@ jobs:
           fi
           MODE="${{ needs.precheck.outputs.mode }}"
           ANY_FAILURE=${{ contains(needs.*.result, 'failure') }}
-          ANY_BAD=${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+          ANY_CANCELLED=${{ contains(needs.*.result, 'cancelled') }}
           CORE_OK=${{ needs.precheck.result == 'success' }}
           # Skip-mode runs (screenshots-only pushes, e.g. the e2e screenshot
           # bot's own commits) intentionally do not execute check/build/e2e;
@@ -937,8 +1028,32 @@ jobs:
             echo "All CI jobs passed (heavy jobs intentionally skipped: mode=skip)."
             exit 0
           fi
-          if $ANY_BAD; then
-            echo "One or more CI jobs failed or were cancelled:"
+          if $ANY_FAILURE; then
+            echo "One or more CI jobs failed:"
+            echo '${{ toJSON(needs) }}'
+            exit 1
+          fi
+          if $ANY_CANCELLED; then
+            # Fail closed if we cannot resolve tip — a tip cancel must stay red.
+            if [ -n "$PR_NUMBER" ]; then
+              TIP_SHA=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha) || {
+                echo "Could not resolve PR tip SHA; treating cancel as failure."
+                echo '${{ toJSON(needs) }}'
+                exit 1
+              }
+            else
+              TIP_SHA=$(gh api "repos/${REPOSITORY}/commits/${REF_NAME}" --jq .sha) || {
+                echo "Could not resolve branch tip SHA; treating cancel as failure."
+                echo '${{ toJSON(needs) }}'
+                exit 1
+              }
+            fi
+            if [ -n "$TIP_SHA" ] && [ "$TIP_SHA" != "$RUN_HEAD_SHA" ]; then
+              echo "Run superseded by newer tip ${TIP_SHA} (this SHA=${RUN_HEAD_SHA}); cancelled jobs are concurrency noise."
+              echo '${{ toJSON(needs) }}'
+              exit 0
+            fi
+            echo "One or more CI jobs were cancelled while still at tip (${RUN_HEAD_SHA}):"
             echo '${{ toJSON(needs) }}'
             exit 1
           fi

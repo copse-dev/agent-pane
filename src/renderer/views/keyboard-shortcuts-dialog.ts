@@ -49,6 +49,7 @@ const SECTIONS: ShortcutSection[] = [
       { label: 'New thread', keys: ['Mod', 'N'] },
       { label: 'Open folder…', keys: ['Mod', 'O'] },
       { label: 'Settings', keys: ['Mod', ','] },
+      { label: 'Model picker', keys: ['Mod', 'Shift', 'M'] },
       { label: 'Keyboard shortcuts', keys: ['Mod', '/'] },
       { label: 'Stop agent / close overlay', keys: ['Esc'] },
     ],

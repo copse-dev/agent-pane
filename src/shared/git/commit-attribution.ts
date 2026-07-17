@@ -45,11 +45,4 @@ export function appendCommitAttribution(message: string, models: string[]): stri
 }
 
 /** True when the user's message is about making a commit (commit, committed, committing, commits). */
-export function shouldSteerCommit(userMessage: string): boolean {
-  return /\bcommit(s|ted|ting)?\b/i.test(userMessage)
-}
-
-/** Contextual steering: prefer the git_commit tool so attribution is added automatically. */
-export function buildCommitSteeringPrompt(): string {
-  return 'When you create a commit, use the git_commit tool rather than `run_shell git commit` so the Co-Authored-By: Copse trailer and the models used are added automatically.'
-}
+export { shouldSteerCommit, buildCommitSteeringPrompt } from '@copse/agent/commit-steering.ts'

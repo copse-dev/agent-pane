@@ -38,8 +38,13 @@ describe('agent tasks in terminal tab', () => {
     // A plain command still prompts for approval on platforms without an OS
     // sandbox (Linux CI); approve it so the command runs.
     const dialog = await $('#approval-dialog')
-    if (await dialog.isDisplayed().catch(() => false)) {
+    const approvalShown = await dialog
+      .waitForDisplayed({ timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false)
+    if (approvalShown) {
       await dialog.$('.approval-approve').click()
+      await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
     }
 
     // The command appears as an entry in the left rail's Agent tasks section.

@@ -3,10 +3,11 @@ import micromatch from 'micromatch'
 import { defineTool } from '@shared/types'
 import { resolveSearchText } from '@copse/agent/search-routing.ts'
 import { resolveReadablePath, getWorkspaceRoot } from '../services/workspace.ts'
-import { isRgAvailable } from '../services/tool-availability.ts'
+import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
 import { slowCodeSearch } from '../services/search/slow-code-search.ts'
+import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 
 export const searchCodeTool = defineTool({
   name: 'search_code',
@@ -42,9 +43,9 @@ export const searchCodeTool = defineTool({
     if (searchPattern === undefined) {
       return 'Provide a search pattern via `pattern` (its alias `query` also works).'
     }
-    const searchRoot = path ? resolveReadablePath(path) : root
+    const searchRoot = path ? await resolveReadablePath(path) : root
 
-    if (!isRgAvailable()) {
+    if (!(await isRgAvailableForTarget()) && !isActiveSshWorkspace()) {
       return slowCodeSearch({
         searchRoot,
         pattern: searchPattern,
