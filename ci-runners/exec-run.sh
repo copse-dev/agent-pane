@@ -92,8 +92,9 @@ finish() {
     rm -rf "${TREE}"
   fi
   # Written last: the local CLI treats this file's existence as run completion.
-  FINISHED=1
-  echo "${code}" > "${RUN_DIR}/status"
+  # FINISHED only flips once the write landed, so the EXIT trap still retries
+  # the status write if this one fails.
+  echo "${code}" > "${RUN_DIR}/status" && FINISHED=1
   exit "${code}"
 }
 
