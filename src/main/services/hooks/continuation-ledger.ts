@@ -14,9 +14,11 @@
 // subagent follow-ups) and enforces the drain-time held check on the thread's
 // per-turn-tree counter. It passes the already-spent count to the run on the
 // payload, which the run {@link ContinuationLedger.seed}s here so the in-run
-// tighteners share the same counter (drain → run direction). Folding the run's
-// in-run spend back so the renderer's *next* drain sees it lands with E3 (the
-// post-turn-orchestration migration onto turn-boundary events + the C3 budget).
+// tighteners share the same counter (drain → run direction). The run reports
+// its in-run spend back with a `continuation_budget` chunk just before the
+// terminal `done` (run → drain direction), which the renderer folds onto
+// `Thread.continuationUsed` (epoch-guarded, monotonic) — so the shared cap
+// holds in both directions within one turn tree.
 import { ContinuationLedger } from '@copse/agent/hooks/continuation-budget.ts'
 
 let ledger: ContinuationLedger | null = null

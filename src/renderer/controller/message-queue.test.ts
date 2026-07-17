@@ -17,6 +17,7 @@ import {
   drainMessageQueue,
   enqueueHookMessage,
   enqueueUserMessage,
+  foldBackContinuationUsed,
   isHeldMessage,
   isStaleEpoch,
   movePendingUserMessagesToEnd,
@@ -887,4 +888,43 @@ test('budget reset (decision 5): releaseHeldMessage resets the budget for the fr
   // as that tree's first machine turn (1 of a fresh 5) — down from the exhausted
   // cap, so further follow-ups are allowed again instead of being held.
   assert.equal(getThread(store, threadId).continuationUsed, 1)
+})
+
+test('run→drain fold-back (decision 5): folds the run in-run spend onto the same turn tree', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  setCurrentEpoch(store, threadId, 'tree-1')
+  setContinuationUsed(store, threadId, 1) // the renderer seeded 1 drain-time continuation
+
+  // The run spent 3 machine turns total (seed 1 + 2 in-run tighteners); fold back.
+  foldBackContinuationUsed(store, threadId, 'tree-1', 3)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 3)
+})
+
+test('run→drain fold-back is monotonic within a turn tree (never lowers the counter)', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  setCurrentEpoch(store, threadId, 'tree-1')
+  setContinuationUsed(store, threadId, 4)
+
+  foldBackContinuationUsed(store, threadId, 'tree-1', 2)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 4, 'a lower report never wins')
+})
+
+test('run→drain fold-back is dropped for a stale turn tree (decision 16)', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  // A human action since the run started minted a new epoch + reset the budget.
+  setCurrentEpoch(store, threadId, 'tree-2')
+  setContinuationUsed(store, threadId, 0)
+
+  foldBackContinuationUsed(store, threadId, 'tree-1', 3)
+
+  assert.equal(
+    getThread(store, threadId).continuationUsed,
+    0,
+    'a fold-back from the old turn tree must not clobber the reset',
+  )
 })

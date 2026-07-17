@@ -1021,11 +1021,20 @@ export async function runAgent(
       )
     }
 
+    // C3 run→drain fold-back (decision 5): report the machine turns this run
+    // spent in-process (closeout / pre-review / remediation grants) back to the
+    // renderer *before* the terminal `done` triggers its next queue drain, so
+    // the drain-time budget check sees the full turn-tree spend. Epoch-guarded
+    // + monotonic on the renderer side (decision 16).
+    sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer
     sendChunk(deferredDone ?? { type: 'done' })
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })
+    // Fold back any in-run spend even on the error path — grants consumed before
+    // the failure still count against the turn tree (decision 5).
+    sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
     sendChunk({ type: 'done' })
   } finally {
     // B3: agent work has stopped (turn end, error, or abort) — fire `stop`

@@ -81,6 +81,36 @@ export function startHumanTurnTree(store: AppStore, threadId: string): string {
   return epoch
 }
 
+/**
+ * Fold a finished run's in-process machine-turn spend back onto the thread's
+ * per-turn-tree counter (C3 run→drain direction, decision 5). The run seeds
+ * the main-process ledger from `Thread.continuationUsed` (drain→run) and spends
+ * against it as its in-run tighteners (todo closeout / pre-review gate /
+ * remediation) run; this closes the loop so the renderer's *next* queue drain
+ * sees that spend and still enforces the shared cap.
+ *
+ * Guarded on the turn-tree epoch (decision 16): a human action since the run
+ * started (typed prompt / send-now / release) mints a fresh `currentEpoch` and
+ * resets the budget, so a fold-back from the *old* turn tree must be dropped —
+ * never clobber the reset. The counter only moves up (monotonic within a turn
+ * tree, matching the ledger's `seed`).
+ */
+export function foldBackContinuationUsed(
+  store: AppStore,
+  threadId: string,
+  turnTreeId: string,
+  used: number,
+): void {
+  const thread = store.getState().threads.find((t) => t.id === threadId)
+  if (!thread || thread.currentEpoch === undefined || thread.currentEpoch !== turnTreeId) return
+  const next = Math.max(thread.continuationUsed ?? 0, used)
+  if (next === (thread.continuationUsed ?? 0)) return
+  const threads = store
+    .getState()
+    .threads.map((t) => (t.id !== threadId ? t : { ...t, continuationUsed: next }))
+  store.setState({ threads })
+}
+
 function refreshPayload(
   store: AppStore,
   threadId: string,
