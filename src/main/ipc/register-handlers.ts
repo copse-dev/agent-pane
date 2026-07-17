@@ -1,5 +1,4 @@
-import { dialog, ipcMain, shell } from 'electron'
-import type { BrowserWindow } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
@@ -362,9 +361,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   }
 
   // Complexity stamps land after the save returns (stampRoadmapComplexity), so
-  // tell the pane when one arrives rather than making it poll.
+  // tell the panes when one arrives rather than making them poll. Broadcast to
+  // every window: the roadmap pane may live in a detached pop-out with its own
+  // renderer, not just the main window.
   const notifyRoadmapChanged = (): void => {
-    if (!win.isDestroyed()) win.webContents.send('roadmap:changed')
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('roadmap:changed')
+    }
   }
 
   // Empty string unpins; anything else must canonicalize or the save is
