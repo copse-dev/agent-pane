@@ -407,6 +407,9 @@ const UNPRICED_GUTTER_W = 150
  */
 export const UNSCORED_ROW_LIMIT = 8
 
+/** Highest-intellect unpriced models shown as gutter dots; rest go to a list. */
+export const UNPRICED_GUTTER_LIMIT = 14
+
 export function renderFrontierSvg(
   points: readonly FrontierPoint[],
   size: { width?: number; height?: number } = {},
@@ -665,8 +668,12 @@ export function renderFrontierSvg(
         'no price yet',
       ),
     )
+    // Cap the gutter so a big verified feed can't grow a tower of hundreds of
+    // dots; the overflow is summarised in a banded disclosure by the panel.
+    const sortedUnpriced = [...unpriced].sort((a, b) => b.intellect - a.intellect)
+    const shownUnpriced = sortedUnpriced.slice(0, UNPRICED_GUTTER_LIMIT)
     let prevY = -Infinity
-    for (const u of [...unpriced].sort((a, b) => b.intellect - a.intellect)) {
+    for (const u of shownUnpriced) {
       const dotY = y(u.intellect)
       const labelYPos = Math.max(dotY + 3, prevY + 10)
       prevY = labelYPos
@@ -713,6 +720,21 @@ export function renderFrontierSvg(
             class: 'gutter-unpriced-label',
           },
           `${displayModelLabel(u.id)} · ${u.estimated ? '~' : ''}${String(u.intellect)}`,
+        ),
+      )
+    }
+    if (sortedUnpriced.length > shownUnpriced.length) {
+      svg.append(
+        svgEl(
+          'text',
+          {
+            x: String(dotX),
+            y: String(MARGIN.top + plotH - 4),
+            'font-size': '9',
+            fill: 'var(--text-muted)',
+            class: 'gutter-unpriced-more',
+          },
+          `+${String(sortedUnpriced.length - shownUnpriced.length)} more below`,
         ),
       )
     }
@@ -844,6 +866,87 @@ export function unscoredPricedModels(
     }
   }
   return out.sort((a, b) => a.costPerMTok - b.costPerMTok || a.id.localeCompare(b.id))
+}
+
+export interface BandedRow {
+  id: string
+  intellect: number
+  estimated?: boolean | undefined
+  costPerMTok?: number | undefined
+}
+
+/**
+ * Group rows into descending 10-point intellect bands, each row rendered as a
+ * compact "name · ~intellect · $price" chip. Turns a flat wall of hundreds of
+ * names into a scannable table where a reader can find "the dominated models
+ * around intellect 40". Rows within a band sort by intellect then price.
+ */
+export function renderBandedModelList(rows: readonly BandedRow[]): HTMLElement {
+  const bands = new Map<number, BandedRow[]>()
+  for (const r of rows) {
+    const band = Math.floor(r.intellect / 10) * 10
+    const list = bands.get(band) ?? []
+    list.push(r)
+    bands.set(band, list)
+  }
+  const table = el('div', { class: 'frontier-banded' })
+  for (const band of [...bands.keys()].sort((a, b) => b - a)) {
+    const list = (bands.get(band) ?? []).sort(
+      (a, b) => b.intellect - a.intellect || (a.costPerMTok ?? 0) - (b.costPerMTok ?? 0),
+    )
+    const chips = list
+      .map((r) => {
+        const price =
+          r.costPerMTok === undefined ? '' : ` · $${String(Number(r.costPerMTok.toFixed(2)))}`
+        return `${displayModelLabel(r.id)} (${r.estimated ? '~' : ''}${String(r.intellect)}${price})`
+      })
+      .join(' · ')
+    table.append(
+      el(
+        'div',
+        { class: 'frontier-band-row' },
+        el('span', { class: 'frontier-band-key' }, `${String(band)}–${String(band + 9)}`),
+        el('span', { class: 'frontier-band-count' }, String(list.length)),
+        el('span', { class: 'frontier-band-models' }, chips),
+      ),
+    )
+  }
+  return table
+}
+
+/**
+ * Group priced-but-unscored models by the provider prefix in their id
+ * (`huggingface:vendor/model:route` → "huggingface"), cheapest first within a
+ * group. The provider is the meaningful axis for "what could I score next".
+ */
+export function renderProviderGroupedList(
+  rows: ReadonlyArray<{ id: string; costPerMTok: number }>,
+): HTMLElement {
+  const groups = new Map<string, Array<{ id: string; costPerMTok: number }>>()
+  for (const r of rows) {
+    const sep = r.id.indexOf(':')
+    const provider = sep > 0 && !r.id.slice(0, sep).includes('/') ? r.id.slice(0, sep) : 'cloud'
+    const list = groups.get(provider) ?? []
+    list.push(r)
+    groups.set(provider, list)
+  }
+  const table = el('div', { class: 'frontier-banded' })
+  for (const provider of [...groups.keys()].sort()) {
+    const list = (groups.get(provider) ?? []).sort((a, b) => a.costPerMTok - b.costPerMTok)
+    const chips = list
+      .map((r) => `${displayModelLabel(r.id)} ($${String(Number(r.costPerMTok.toFixed(2)))})`)
+      .join(' · ')
+    table.append(
+      el(
+        'div',
+        { class: 'frontier-band-row' },
+        el('span', { class: 'frontier-band-key' }, provider),
+        el('span', { class: 'frontier-band-count' }, String(list.length)),
+        el('span', { class: 'frontier-band-models' }, chips),
+      ),
+    )
+  }
+  return table
 }
 
 export interface IntellectFrontierPanel {
@@ -1035,20 +1138,19 @@ export function createIntellectFrontierPanel(
             {},
             `${String(dominatedLive.length)} live-scored models are dominated (better value exists at their level)`,
           ),
-          el(
-            'p',
-            {},
-            dominatedLive
-              .map(
-                (p) =>
-                  `${displayModelLabel(p.id)} (${p.intellectEstimated ? '~' : ''}${String(p.intellect)} at $${String(Number(p.costPerMTok.toFixed(2)))})`,
-              )
-              .join(' · '),
+          renderBandedModelList(
+            dominatedLive.map((p) => ({
+              id: p.id,
+              intellect: p.intellect,
+              estimated: p.intellectEstimated,
+              costPerMTok: p.costPerMTok,
+            })),
           ),
         ),
       )
     }
     const unscoredList = lastGutters.unscored ?? []
+    const unpricedList = lastGutters.unpriced ?? []
     let chart: SVGSVGElement | HTMLElement
     try {
       chart =
@@ -1065,6 +1167,30 @@ export function createIntellectFrontierPanel(
     }
     chartHost.replaceChildren(
       chart,
+      // Scored-but-unpriced overflow (the gutter shows only the top few),
+      // grouped into intellect bands.
+      ...(unpricedList.length > UNPRICED_GUTTER_LIMIT
+        ? [
+            el(
+              'details',
+              { class: 'field-hint frontier-unpriced-list' },
+              el(
+                'summary',
+                {},
+                `${String(unpricedList.length)} scored models with no price data yet`,
+              ),
+              renderBandedModelList(
+                unpricedList.map((u) => ({
+                  id: u.id,
+                  intellect: u.intellect,
+                  estimated: u.estimated,
+                })),
+              ),
+            ),
+          ]
+        : []),
+      // Priced-but-unscored models, grouped by provider (the natural axis —
+      // "here's what DeepInfra offers that we can't score yet").
       ...(unscoredList.length > UNSCORED_ROW_LIMIT
         ? [
             el(
@@ -1075,16 +1201,7 @@ export function createIntellectFrontierPanel(
                 {},
                 `${String(unscoredList.length)} priced models without an intellect score`,
               ),
-              el(
-                'p',
-                {},
-                unscoredList
-                  .map(
-                    (u) =>
-                      `${displayModelLabel(u.id)} ($${String(Number(u.costPerMTok.toFixed(2)))})`,
-                  )
-                  .join(' · '),
-              ),
+              renderProviderGroupedList(unscoredList),
             ),
           ]
         : []),

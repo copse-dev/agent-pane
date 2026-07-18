@@ -656,6 +656,31 @@ dialog.settings-overlay::backdrop {
 .frontier-fieldset {
   position: relative;
 }
+.frontier-banded {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.frontier-band-row {
+  display: grid;
+  grid-template-columns: 52px 28px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.frontier-band-key {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.frontier-band-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}
+.frontier-band-models {
+  color: var(--text-muted);
+}
 .frontier-tooltip {
   position: absolute;
   z-index: 30;

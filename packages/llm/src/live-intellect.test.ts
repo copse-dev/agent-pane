@@ -102,6 +102,24 @@ describe('liveIntellectCandidates', () => {
     assert.equal(kimi.costPerMTok, 5.4)
   })
 
+  it('treats a zero or absent price as unpriced, not as a $0 candidate', () => {
+    const { candidates, hintOnly } = liveIntellectCandidates([
+      { id: 'claude-fable-5', intellect: 60 },
+      { id: 'claude-opus-4-8', intellect: 56 },
+      // AA free tier reports these with no usable price → belong in hintOnly,
+      // never plotted at $0 where all but one would be dominated.
+      { id: 'zero-priced', intellect: 40, inputPricePerMTok: 0, outputPricePerMTok: 0 },
+      { id: 'no-price-field', intellect: 38 },
+      { id: 'real-price', intellect: 42, inputPricePerMTok: 1, outputPricePerMTok: 3 },
+    ])
+    assert.ok(!candidates.some((c) => c.id === 'zero-priced'))
+    assert.ok(hintOnly.some((h) => h.id === 'zero-priced'))
+    assert.ok(hintOnly.some((h) => h.id === 'no-price-field'))
+    const real = candidates.find((c) => c.id === 'real-price')
+    assert.ok(real)
+    assert.ok(Math.abs(real.costPerMTok - 1.4) < 1e-9)
+  })
+
   it('returns nothing at all from an unverified cohort', () => {
     const { candidates, hintOnly, verification } = liveIntellectCandidates([
       { id: 'claude-opus-4-8', intellect: 61 },

@@ -125,6 +125,20 @@ export interface LiveIntellectResult {
 }
 
 /**
+ * The feed's blended price for a model, or null when it carries no usable
+ * price. A real inference price is strictly positive; the AA free tier reports
+ * many models with a zero/absent price, and accepting those as "$0" would pile
+ * hundreds of models onto the free axis where all but one are dominated. Such
+ * models are unpriced, not free — only genuine on-device models are free.
+ */
+function liveBlendedPrice(live: LiveAaModel): number | null {
+  const input = live.inputPricePerMTok
+  if (typeof input !== 'number' || !(input > 0)) return null
+  const output = live.outputPricePerMTok
+  return blendedRate(input, typeof output === 'number' && output > 0 ? output : input)
+}
+
+/**
  * Frontier candidates for live models that are NOT already curated (curated
  * measurements always win — the reviewed number is never displaced by a feed).
  * Returns no candidates at all when the cohort fails verification: wrong-scale
@@ -143,11 +157,12 @@ export function liveIntellectCandidates(
   const pricedCurated: FrontierCandidate[] = []
   const curatedSeen = new Set<string>()
   for (const live of liveModels) {
+    const price = liveBlendedPrice(live)
     const resolved = resolveIntellectModelId(live.id)
     if (resolved !== null) {
       // Curated model: the reviewed measurement is the score; the feed may
       // still contribute the missing price coordinate.
-      if (typeof live.inputPricePerMTok !== 'number' || curatedSeen.has(resolved)) continue
+      if (price === null || curatedSeen.has(resolved)) continue
       const curated = getIntellectScore(resolved)
       if (!curated) continue
       curatedSeen.add(resolved)
@@ -155,22 +170,16 @@ export function liveIntellectCandidates(
         id: resolved,
         intellect: curated.value,
         intellectEstimated: curated.estimated === true,
-        costPerMTok: blendedRate(
-          live.inputPricePerMTok,
-          live.outputPricePerMTok ?? live.inputPricePerMTok,
-        ),
+        costPerMTok: price,
       })
       continue
     }
-    if (typeof live.inputPricePerMTok === 'number') {
+    if (price !== null) {
       candidates.push({
         id: live.id,
         intellect: live.intellect,
         intellectEstimated: true,
-        costPerMTok: blendedRate(
-          live.inputPricePerMTok,
-          live.outputPricePerMTok ?? live.inputPricePerMTok,
-        ),
+        costPerMTok: price,
       })
     } else {
       hintOnly.push({ id: live.id, intellect: live.intellect })
