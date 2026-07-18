@@ -482,9 +482,21 @@ async function promptHookAsk(check: PermissionCheck, decision: HookGateDecision)
  *     B4). Approval falls through to the normal gate; a decline blocks the call.
  *   - **allow** — falls through: a hook can only *tighten* the gate, never
  *     auto-approve something Copse would otherwise prompt about.
+ *
+ * A hook may also **rewrite** the tool input (`updatedInput`, H1). The rewrite
+ * is returned here (not applied yet); {@link ensureToolPermitted} applies it and
+ * lets the downstream policy gates (`analyzeShellCommand` / `decideShellPermission`)
+ * re-run on the rewritten input — a rewrite is never trusted without re-analysis.
  */
-async function applyToolGateHooks(check: PermissionCheck): Promise<boolean> {
-  if (!getSetting<boolean>('cursorHooksEnabled', false)) return true
+interface ToolGateHookOutcome {
+  /** Whether the call may proceed to Copse's own gate (false = blocked). */
+  ok: boolean
+  /** Final hook-rewritten tool input (H1), when the pipeline rewrote it. */
+  updatedInput?: Record<string, unknown>
+}
+
+async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookOutcome> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return { ok: true }
 
   const workspaceRoot = getWorkspaceRoot()
   const projectTrusted = isWorkspaceTrusted(workspaceRoot)
@@ -500,17 +512,19 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<boolean> {
       throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
     }
     console.warn(`[hooks] toolGate denied ${check.toolName}`)
-    return false
+    return { ok: false }
   }
+
+  const rewrite = decision.updatedInput !== undefined ? { updatedInput: decision.updatedInput } : {}
 
   if (decision.permission === 'ask') {
     const approved = await promptHookAsk(check, decision)
-    if (approved) return true
+    if (approved) return { ok: true, ...rewrite }
     if (decision.agentMessage) throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
-    return false
+    return { ok: false }
   }
 
-  return true
+  return { ok: true, ...rewrite }
 }
 
 /**
@@ -525,9 +539,20 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<boolean> {
  * diff queue or get an explicit case here; do not rely on the default branch.
  */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
-  const { toolName, args } = check
+  const gate = await applyToolGateHooks(check)
+  if (!gate.ok) return false
 
-  if (!(await applyToolGateHooks(check))) return false
+  // H1: a hook rewrote the tool input. Apply the rewrite *in place* so (a) the
+  // policy gates below re-run `analyzeShellCommand` / `decideShellPermission` on
+  // the rewritten input — a rewrite that turns a contained command into an
+  // external one is caught by the matrix, never auto-allowed — and (b) the tool
+  // executes with the rewritten input (ToolRegistry passes a fresh parsed-args
+  // object, so mutating it is safe and is what carries the rewrite to execute()).
+  if (gate.updatedInput && typeof check.args === 'object' && check.args !== null) {
+    Object.assign(check.args, gate.updatedInput)
+  }
+
+  const { toolName, args } = check
 
   // Read-only runs block mutating tools and any MCP tool not provably read-only.
   // Allowed tools fall through to the normal gates below — read-only mode never
