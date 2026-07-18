@@ -1,6 +1,7 @@
 import {
   clampPercent,
   errorMessage,
+  isAuthRejectionError,
   isRecord,
   readJsonBody,
   toIsoTimestamp,
@@ -243,7 +244,7 @@ export async function fetchCursorPlanUsage(
     return { status: 'ok', provider: 'cursor', usage }
   } catch (err) {
     const message = errorMessage(err)
-    if (/HTTP 401|HTTP 403|not_authenticated|Invalid origin/i.test(message)) {
+    if (isAuthRejectionError(message) || /not_authenticated|Invalid origin/i.test(message)) {
       return {
         status: 'unavailable',
         provider: 'cursor',

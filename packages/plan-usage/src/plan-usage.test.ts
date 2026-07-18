@@ -131,6 +131,25 @@ describe('fetchClaudePlanUsage', () => {
     assert.match(result.reason, /user:profile/)
   })
 
+  it('maps rejected Claude credentials to a concise sign-in hint', async () => {
+    const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
+      fetch: jsonFetch(
+        {
+          type: 'error',
+          error: {
+            type: 'authentication_error',
+            message: 'Invalid authentication credentials',
+          },
+          request_id: 'req_011Cd5RChA2NLVzY1EV634KW',
+        },
+        401,
+      ),
+    })
+    assert.equal(result.status, 'unavailable')
+    assert.match(result.reason, /credentials were rejected/i)
+    assert.doesNotMatch(result.reason, /req_011Cd5RChA2NLVzY1EV634KW/)
+  })
+
   it('parses five_hour and seven_day windows', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({
@@ -329,7 +348,7 @@ describe('fetchClaudePlanUsage', () => {
 
   it('returns error on HTTP failure without throwing', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
-      fetch: jsonFetch({ error: { message: 'nope' } }, 401),
+      fetch: jsonFetch({ error: { message: 'nope' } }, 500),
     })
     assert.equal(result.status, 'error')
   })
@@ -480,6 +499,23 @@ describe('fetchCodexPlanUsage', () => {
   it('returns unavailable without token', async () => {
     const result = await fetchCodexPlanUsage({ accessToken: null })
     assert.equal(result.status, 'unavailable')
+  })
+
+  it('maps rejected Codex credentials to a concise sign-in hint', async () => {
+    const result = await fetchCodexPlanUsage(
+      { accessToken: 'tok' },
+      {
+        fetch: jsonFetch(
+          {
+            detail: 'Invalid authentication credentials',
+          },
+          401,
+        ),
+      },
+    )
+    assert.equal(result.status, 'unavailable')
+    assert.match(result.reason, /codex login/i)
+    assert.doesNotMatch(result.reason, /Invalid authentication credentials/)
   })
 })
 
