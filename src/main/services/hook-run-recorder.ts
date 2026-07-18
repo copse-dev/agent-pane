@@ -10,6 +10,7 @@ import {
   type SpineHookRunDecision,
   type SpineHookRunLine,
 } from '@shared/threads/spine-schema.ts'
+import { hookCardFromSpineLine, type HookCard } from '@shared/hooks/hook-card.ts'
 import { fingerprintToolset, type ToolsetFingerprint } from '@shared/threads/toolset-fingerprint.ts'
 import { appendHookRun } from './thread-store.ts'
 import { storageGet } from './storage/storage.ts'
@@ -47,6 +48,35 @@ interface HookRunRecordingContext {
 }
 
 let current: HookRunRecordingContext | null = null
+
+/**
+ * Live hook-card sink (decision 10). Set per-run by the agent service so a
+ * `hook_run` spine append also emits a `hook_run` stream chunk, letting the
+ * renderer show the hook-card family *as it runs* — the same card it would fold
+ * from the spine on reload. Optional and best-effort: recording never depends on
+ * a sink being present (observability, not behavior), and a throwing sink is
+ * swallowed so a UI hiccup can't break a hook run.
+ */
+let liveSink: ((card: HookCard) => void) | null = null
+
+/** Register the live hook-card sink for a run (cleared in the run's finally). */
+export function setHookRunLiveSink(sink: (card: HookCard) => void): void {
+  liveSink = sink
+}
+
+/** Clear the live hook-card sink (idempotent; only clears the given sink). */
+export function clearHookRunLiveSink(sink: (card: HookCard) => void): void {
+  if (liveSink === sink) liveSink = null
+}
+
+function emitLiveHookCard(line: SpineHookRunLine): void {
+  if (!liveSink) return
+  try {
+    liveSink(hookCardFromSpineLine(line))
+  } catch (err) {
+    console.warn('[hook-run-recorder] live hook-card sink threw:', err)
+  }
+}
 
 /**
  * Start attributing hook executions to an agent run. Resolves the project from
@@ -129,6 +159,9 @@ function toolsetBlobs(ctx: HookRunRecordingContext): FileToWrite[] {
 }
 
 function persist(ctx: HookRunRecordingContext, line: SpineHookRunLine, blobs: FileToWrite[]): void {
+  // Emit the live card first so the renderer shows the run promptly; the spine
+  // append is the durable record history folds from (both derive one card).
+  emitLiveHookCard(line)
   appendHookRun(ctx.projectId, ctx.threadId, line, blobs).catch((err: unknown) => {
     console.warn(`[hook-run-recorder] failed to append hook_run for "${line.hookId}":`, err)
   })

@@ -41,6 +41,10 @@ export interface StoreEvents {
   context_updated: [threadId: string]
   todos_changed: [threadId: string]
   review_changed: [threadId: string, messageId: string]
+  // A hook card (execution / decision / halt) was attached to a message's turn
+  // (decision 10). Carries the message it anchored to so the view re-renders
+  // just that message's hook-card family live, mirroring `tool_call_updated`.
+  hook_card_added: [threadId: string, messageId: string]
   comparison_changed: [threadId: string]
   git_branch_changed: []
   composer_draft_flush: []
