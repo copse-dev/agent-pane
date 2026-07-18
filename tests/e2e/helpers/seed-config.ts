@@ -215,6 +215,7 @@ export function seedEmptyProject(
     mockFollowUps?: boolean
     model?: string
     modelComparisonEnabled?: boolean
+    advisorModel?: string
     localServerUrl?: string
     localDefaultModel?: string
     subagentModel?: string
@@ -253,6 +254,9 @@ export function seedEmptyProject(
   }
   if (options?.modelComparisonEnabled !== undefined) {
     settings.modelComparisonEnabled = options.modelComparisonEnabled
+  }
+  if (options?.advisorModel) {
+    settings.advisorModel = options.advisorModel
   }
   if (options?.localServerUrl) {
     settings.localServerUrl = options.localServerUrl
