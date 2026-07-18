@@ -178,9 +178,10 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
     if (token !== queryToken) return // superseded by a newer query
     results = [
       ...files.map((path): SearchEntry => ({ kind: 'file', path })),
-      ...matchRoadmapItems(roadmapItems, trimmed).map(
-        (item): SearchEntry => ({ kind: 'roadmap', item }),
-      ),
+      ...matchRoadmapItems(roadmapItems, trimmed).map((item): SearchEntry => ({
+        kind: 'roadmap',
+        item,
+      })),
     ]
     selectedIdx = 0
     renderResults()
