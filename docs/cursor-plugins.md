@@ -115,6 +115,7 @@ servers from Settings after changing plugin MCP configs.
 
 ## Related files
 
+- [`docs/packs.md`](packs.md) — the feature-pack manifest that **extends** this plugin.json shape with hooks/prompt/ui/settings/storage slots + the pack lifecycle (P1)
 - `src/main/services/cursor-plugins.ts` — discovery and manifest parsing
 - `src/main/services/skills-registry.ts` — skill indexing
 - `src/main/services/mcp-registry.ts` — MCP spawn and tool registration
