@@ -48,11 +48,9 @@ import {
 } from './providers/provider-selection.ts'
 import { requestApproval } from './approval.ts'
 import {
-  applyReviewTodoUpdates,
-  buildReviewRemediationNudge,
-  MAX_POST_TURN_REVIEW_CYCLES,
   reviewSpendApprovalBody,
   runParentContinuationTurn,
+  runPostTurnReviewCycle,
   runPostTurnReviewOnce,
   runPreReviewTodoGate,
   type RunParentContinuationOptions,
@@ -336,6 +334,21 @@ function withHookHaltStopReason(
 ): Extract<StreamChunk, { type: 'done' }> {
   if (reason === undefined || done.stopReason !== undefined) return done
   return { ...done, stopReason: reason }
+}
+
+/**
+ * The C3 run→drain budget fold-back chunk (E3, decision 5). Carries how many
+ * machine-initiated new turns this run spent in-process (todo closeout, the
+ * pre-review gate, remediation cycles) plus the turn-tree epoch it belongs to,
+ * so the renderer can fold the count onto its per-turn-tree counter — but only
+ * when the epoch still matches (a human action since minted a new turn tree with
+ * a reset budget, decision 16). Non-visual: the renderer updates state only.
+ */
+function continuationBudgetChunk(
+  used: number,
+  turnTreeId: TurnTreeId,
+): Extract<StreamChunk, { type: 'continuation_budget' }> {
+  return { type: 'continuation_budget', used, turnTreeId }
 }
 
 /**
@@ -714,10 +727,14 @@ export async function runAgent(
     // Set when the agent already ran a comparison via the `compare_models` tool
     // this turn, so the auto-on-review trigger doesn't run a second (billable) one.
     let comparisonRanThisTurn = false
-    // The agent loop's terminal `done` chunk is held back until the post-turn
-    // review finishes, so the thread doesn't flip to idle (and drain its queued
-    // messages) while the review is still running.
-    let deferredDone: Extract<StreamChunk, { type: 'done' }> | null = null
+    // E3: the run emits a single terminal `done` at the very end, after the
+    // post-turn orchestration (pre-review gate + review/remediation) has run —
+    // there is no held-back `done` chunk (the deferred-`done` dance is gone). The
+    // main loop's own `done` is suppressed (not forwarded); we keep only its
+    // `stopReason` so the one terminal `done` carries the model's completion
+    // reason. The thread stays "running" because that orchestration is awaited
+    // inline below, not because a chunk is withheld.
+    let loopStopReason: string | undefined
 
     const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills })
 
@@ -1057,7 +1074,9 @@ export async function runAgent(
           getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
           onChunk: (chunk) => {
             if (chunk.type === 'done') {
-              deferredDone = chunk
+              // Suppress the loop's terminal `done` (E3): the run emits one
+              // terminal `done` after post-turn work. Keep its stop reason.
+              loopStopReason = chunk.stopReason
               return
             }
             sendChunk(chunk)
@@ -1135,13 +1154,16 @@ export async function runAgent(
 
     // Post-turn review: read-only review over the working diff, with an optional
     // bounded parent remediation loop when the reviewer requests follow-up. Runs
-    // before the deferred `done` so the thread stays "running" until it lands.
+    // before the single terminal `done` so the thread stays "running" until it
+    // lands (E3: the orchestration is awaited inline — no held-back `done`).
     //
     // Cost gates (#584): (a) skip when the working diff is empty / below
     // `postTurnReviewMinChangedLines` — there's nothing worth a review LLM run; and
     // (b) when the review would use a billable model, ask once per chat for spend
     // approval (remembered) so paid reviews on every file-mutating turn are opt-in.
-    // A free / local review model runs on the full diff with no prompt.
+    // A free / local review model runs on the full diff with no prompt. The
+    // host-interactive gate resolution stays here; `runPostTurnReviewCycle` owns
+    // the review/remediation *sequencing* + the shared C3 budget (decision 5).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
     if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
       const reviewRoute = await buildReviewRoute()
@@ -1149,7 +1171,6 @@ export async function runAgent(
       const reviewUsageModel = reviewRoute?.usageModel ?? model
       const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
       const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
-
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
       const reviewApproved =
@@ -1157,90 +1178,58 @@ export async function runAgent(
         !isBillableModel(reviewUsageModel) ||
         (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
 
-      if (nothingToReview) {
+      const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
+        inputTokens += u.inputTokens
+        outputTokens += u.outputTokens
         sendChunk({
-          type: 'post_turn_review',
-          status: 'skipped',
-          summary: 'Nothing to review in the working diff.',
+          type: 'usage',
+          model: reviewUsageModel,
+          inputTokens: u.inputTokens,
+          outputTokens: u.outputTokens,
         })
-      } else if (!reviewApproved) {
-        sendChunk({
-          type: 'post_turn_review',
-          status: 'skipped',
-          summary: controller.signal.aborted
-            ? 'Review cancelled.'
-            : `Review skipped — spending on ${reviewUsageModel} was not approved.`,
-        })
-      } else {
-        for (let cycle = 0; cycle < MAX_POST_TURN_REVIEW_CYCLES; cycle++) {
-          sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
-          try {
-            const review = await runPostTurnReviewOnce({
-              parentGoal,
-              todos: getAgentRunTodos(),
-              provider: reviewProvider,
-              registry,
-              contextWindow: reviewContextWindow,
-              toolSchemaReserve: reviewToolSchemaReserve,
-              signal: controller.signal,
-              usageModel: reviewUsageModel,
-              onUsage: (u) => {
-                inputTokens += u.inputTokens
-                outputTokens += u.outputTokens
-                sendChunk({
-                  type: 'usage',
-                  model: reviewUsageModel,
-                  inputTokens: u.inputTokens,
-                  outputTokens: u.outputTokens,
-                })
+      }
+
+      await runPostTurnReviewCycle({
+        reviewUsageModel,
+        nothingToReview,
+        reviewApproved,
+        signal: controller.signal,
+        getTodos: () => getAgentRunTodos(),
+        setTodos: (todos) => {
+          setAgentRunTodos(todos)
+        },
+        emitChunk: sendChunk,
+        continuationBudget,
+        runReviewOnce: (todos) =>
+          runPostTurnReviewOnce({
+            parentGoal,
+            todos,
+            provider: reviewProvider,
+            registry,
+            contextWindow: reviewContextWindow,
+            toolSchemaReserve: reviewToolSchemaReserve,
+            signal: controller.signal,
+            usageModel: reviewUsageModel,
+            onUsage: onReviewUsage,
+          }),
+        runRemediationTurn: async (nudge) => {
+          const remediation = { madeEdits: false }
+          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+            await runParentContinuationTurn({
+              ...parentContinuationBase,
+              userNudge: nudge,
+              maxSteps: 8,
+              onEditTool: (name: string): void => {
+                if (isEditTool(name)) {
+                  turnChangedFiles = true
+                  remediation.madeEdits = true
+                }
               },
             })
-
-            const todosAfterReview = applyReviewTodoUpdates(getAgentRunTodos(), review.verdict)
-            if (todosAfterReview.length > 0 || getAgentRunTodos().length > 0) {
-              setAgentRunTodos(todosAfterReview)
-            }
-
-            sendChunk({
-              type: 'post_turn_review',
-              status: 'done',
-              summary: review.summary,
-              issuesFound: review.verdict.issuesFound,
-            })
-
-            const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
-            if (!review.verdict.requestFollowUp || lastCycle || controller.signal.aborted) {
-              break
-            }
-
-            // A remediation cycle is a machine-initiated new turn (decision 5):
-            // consume one grant from the shared budget before running it. The
-            // local cap (MAX_POST_TURN_REVIEW_CYCLES) tightens inside the shared
-            // cap — once the budget is exhausted, no further remediation runs.
-            if (!continuationBudget.tryGrant()) break
-
-            const remediation = { madeEdits: false }
-            await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-              await runParentContinuationTurn({
-                ...parentContinuationBase,
-                userNudge: buildReviewRemediationNudge(review.verdict),
-                maxSteps: 8,
-                onEditTool: (name: string): void => {
-                  if (isEditTool(name)) {
-                    turnChangedFiles = true
-                    remediation.madeEdits = true
-                  }
-                },
-              })
-            })
-            if (!remediation.madeEdits) break
-          } catch (err) {
-            const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
-            sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
-            break
-          }
-        }
-      }
+          })
+          return remediation
+        },
+      })
     }
 
     // Auto model comparison: when this turn changed files and the harness is set
@@ -1254,14 +1243,14 @@ export async function runAgent(
       )
     }
 
-    // C3 run→drain fold-back (decision 5): report the machine turns this run
-    // spent in-process (closeout / pre-review / remediation grants) back to the
-    // renderer *before* the terminal `done` triggers its next queue drain, so
-    // the drain-time budget check sees the full turn-tree spend. Epoch-guarded
-    // + monotonic on the renderer side (decision 16).
-    sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer
-    sendChunk(withHookHaltStopReason(deferredDone ?? { type: 'done' }, hookHaltStopReason))
+    const terminalDone: Extract<StreamChunk, { type: 'done' }> =
+      loopStopReason !== undefined ? { type: 'done', stopReason: loopStopReason } : { type: 'done' }
+    // C3 run→drain fold-back (E3): report the machine turns this run spent
+    // in-process (closeout / pre-review / remediation) so the renderer folds them
+    // back onto the turn tree's counter and its *next* queue drain respects the
+    // shared cap. Emitted before the terminal `done` (which triggers the drain).
+    sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
+    sendChunk(withHookHaltStopReason(terminalDone, hookHaltStopReason))
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })

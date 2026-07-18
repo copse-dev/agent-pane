@@ -327,7 +327,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'continuation_budget': {
-        // C3 run→drain fold-back (decision 5): record the machine turns this
+        // C3 run→drain fold-back (decision 5 / E3): record the machine turns this
         // run spent in-process so the next queue drain respects the shared cap.
         // Arrives just before `done`, which triggers the drain.
         foldBackContinuationUsed(store, threadId, chunk.turnTreeId, chunk.used)
