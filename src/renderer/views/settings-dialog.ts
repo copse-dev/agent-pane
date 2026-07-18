@@ -1380,11 +1380,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (h.supported === false) {
       extraBadges.push({ text: 'unsupported', className: 'sources-badge-unsupported' })
     }
+    // The `sandbox: false` escape (F3, decision 7) runs the hook OUTSIDE the
+    // project sandbox — badge it so the user sees the elevated risk they granted.
+    if (h.sandbox === false) {
+      extraBadges.push({ text: 'outside sandbox', className: 'sources-badge-unsandboxed' })
+    }
     if (h.lastError) {
       extraBadges.push({ text: 'error', className: 'sources-badge-error' })
     }
+    const familyLabel =
+      h.family === 'claude' ? 'Claude Code' : h.family === 'copse' ? 'Copse' : 'Cursor'
     const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
-    const detail = `${h.family === 'claude' ? 'Claude Code' : 'Cursor'} · ${h.command}`
+    const detail = `${familyLabel} · ${h.command}`
     const row = makeSourceRow(title, h.scope, detail, {
       badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
       extraBadges,

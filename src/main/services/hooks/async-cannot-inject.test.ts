@@ -24,6 +24,8 @@ function cleanSpawn(stdout: string): HookSpawnResult {
     exitCode: 0,
     timedOut: false,
     spawnError: false,
+    sandboxed: false,
+    sandboxViolationCount: 0,
     startedAt: Date.now(),
     durationMs: 1,
   }

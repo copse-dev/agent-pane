@@ -62,6 +62,16 @@ const FAILED_HOOK: HookSummary = {
   lastError: 'printed invalid JSON — response ignored',
 }
 
+const UNSANDBOXED_HOOK: HookSummary = {
+  family: 'copse',
+  event: 'toolGate',
+  command: './escape.sh',
+  source: '/home/user/.copse/hooks.json',
+  scope: 'user',
+  supported: true,
+  sandbox: false,
+}
+
 const WARNING: HookValidationWarning = {
   source: '/home/user/.cursor/hooks.json',
   scope: 'user',
@@ -123,6 +133,15 @@ describe('settings sources → hooks list', () => {
     const badge = list.querySelector('.sources-badge-unsupported')
     assert.ok(badge)
     assert.equal(badge.textContent, 'unsupported')
+  })
+
+  it('badges a `sandbox: false` (Copse) hook as running outside the sandbox (F3)', async () => {
+    const list = await openSources({ hooks: [UNSANDBOXED_HOOK], warnings: [] })
+    const badge = list.querySelector('.sources-badge-unsandboxed')
+    assert.ok(badge)
+    assert.equal(badge.textContent, 'outside sandbox')
+    // The Copse family label is used (not the Cursor fallback).
+    assert.equal(list.querySelector('.sources-row-detail')?.textContent, 'Copse · ./escape.sh')
   })
 
   it('shows the per-hook runtime error badge and message', async () => {

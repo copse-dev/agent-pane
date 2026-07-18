@@ -85,15 +85,15 @@ intentional no-opinion.
 
 ## Copse-native fields
 
-| Field        | Type                      | Meaning                                                                                                                                                                                                                                                                                                                                                            |
-| ------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `onFailure`  | `"open"` \| `"closed"`    | How a failure (crash / timeout / invalid JSON) resolves (decision 9). `open` (default) is no-opinion so a broken hook never wedges the agent; `closed` **blocks** the gated action. Same knob as Cursor `failClosed: true`.                                                                                                                                        |
-| `sandbox`    | boolean (default `true`)  | Whether the hook runs inside the project sandbox (decision 7). `sandbox: false` is the escape, surfaced in the trust prompt. **Parsed in F1; enforcement is F3** and macOS-only — a default, not a guarantee.                                                                                                                                                      |
-| `async`      | boolean (default `false`) | Opt into **detached** dispatch (decision 2). Honoured only on `afterFileEdit`; on a blocking decision event (`toolGate`, `beforeSubmitPrompt`, `subagentStart`) it is warned about and ignored.                                                                                                                                                                    |
-| `loop_limit` | integer \| `null`         | **Reserved — parsed + validated, not yet enforced** (plan row C5). Per-script auto-continuation limit (decision 5), **tighten-only**: will bound this hook's machine-turn contributions to `min(loop_limit, global remaining)`. Today only the global auto-continuation budget (cap 5) applies; `null` (unlimited) already warns — human-in-the-loop is the floor. |
-| `timeout`    | number (seconds)          | Per-hook timeout override. Default 30s.                                                                                                                                                                                                                                                                                                                            |
-| `matcher`    | regex string              | Filters which actions the hook fires for: the canonical tool name for `toolGate` / `afterToolUse`, the subagent type for `subagentStart` / `subagentStop`. A malformed regex skips the hook (skip-and-warn).                                                                                                                                                       |
-| `glob`       | string \| string[]        | For `afterFileEdit` only — the hook fires only for edited paths matching a glob (absolute, workspace-relative, and basename are all tried).                                                                                                                                                                                                                        |
+| Field        | Type                      | Meaning                                                                                                                                                                                                                                             |
+| ------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onFailure`  | `"open"` \| `"closed"`    | How a failure (crash / timeout / invalid JSON) resolves (decision 9). `open` (default) is no-opinion so a broken hook never wedges the agent; `closed` **blocks** the gated action. Same knob as Cursor `failClosed: true`.                         |
+| `sandbox`    | boolean (default `true`)  | Whether the hook runs inside the project sandbox (decision 7). `sandbox: false` is the escape — it runs **outside** the sandbox and Sources badges it "outside sandbox". **Enforced in F3** (macOS seatbelt); a default, not a guarantee elsewhere. |
+| `async`      | boolean (default `false`) | Opt into **detached** dispatch (decision 2). Honoured only on `afterFileEdit`; on a blocking decision event (`toolGate`, `beforeSubmitPrompt`, `subagentStart`) it is warned about and ignored.                                                     |
+| `loop_limit` | integer \| `null`         | Per-script auto-continuation limit (decision 5), **tighten-only**. Bounds this hook's machine-turn contributions to `min(loop_limit, global remaining)`. `null` (unlimited) is clamped to the global budget with a warning.                         |
+| `timeout`    | number (seconds)          | Per-hook timeout override. Default 30s.                                                                                                                                                                                                             |
+| `matcher`    | regex string              | Filters which actions the hook fires for: the canonical tool name for `toolGate` / `afterToolUse`, the subagent type for `subagentStart` / `subagentStop`. A malformed regex skips the hook (skip-and-warn).                                        |
+| `glob`       | string \| string[]        | For `afterFileEdit` only — the hook fires only for edited paths matching a glob (absolute, workspace-relative, and basename are all tried).                                                                                                         |
 
 ## Reliability and trust
 
@@ -103,20 +103,27 @@ intentional no-opinion.
 - **Trust gate.** User hooks (`~/.copse/hooks.json`) are always honoured (you installed
   them). Project hooks (`<workspace>/.copse/hooks.json`) run only when the workspace is
   trusted, because honouring them spawns scripts from a possibly-cloned repo.
-- <a id="security"></a>**Sandbox by default (F3).** Hooks are intended to run inside the
-  project sandbox; `sandbox: false` requests running **outside** it. F1 parses and surfaces
-  this field, and the trust prompt calls out any `sandbox: false` escape. The
-  sandbox-by-default spawn reversal + enforcement lands in F3 and is macOS-only — treat
-  "sandboxed" as a default, not a guarantee, until then.
+- <a id="security"></a>**Sandbox by default (F3).** Hook processes run **inside the
+  project sandbox by default** (F3 reversed the earlier outside-sandbox spawn — decision 7).
+  This applies to every dialect: Cursor and Claude hooks cannot express the escape, so they
+  are always sandboxed-by-default; only the Copse `sandbox: false` field opts a hook **out**,
+  running it outside the sandbox with full authority (Sources badges it "outside sandbox").
+  Enforcement is **macOS-only** (seatbelt via ASRT); on Linux / Windows
+  `isProjectSandboxEnabled()` is hard-false, so "sandboxed" is a _default, not a guarantee_.
+  A **sandbox-blocked** hook is never a silent fail-open: the block is recorded on the spine
+  (`sandboxBlocked: true`, keyed off runner-side violation signals — never the hook's own
+  stdout, issue #104), surfaced in Sources as a per-hook error, and resolved through the
+  hook's `onFailure` (`closed` → deny; `open` → no-opinion but still recorded).
 - **Always-on spine recording.** Every hook execution writes a `hook_run` line to the
   thread spine with stdout **and** stderr captured, next to the normalized decision and a
   `parse_ok` flag (decision 6), so a debug print that corrupts a response is visible.
 
 ## Scope: what F1 does and does not do
 
-F1 adds the dialect adapter, discovery, parsing, matchers, wire marshalling, the per-event
+F1 added the dialect adapter, discovery, parsing, matchers, wire marshalling, the per-event
 `onFailure` table, unsupported-capability reporting, the published JSON schema, and Sources
-listing. It does **not** implement the F2 Copse-native event fire sites
-(`beforeDiffApply` / `afterDiffApply` / `permissionDecision`) or the F3 sandbox-by-default
-spawn reversal — the `sandbox` / `loop_limit` fields are parsed and carried so those phases
-can consume them.
+listing. F2 wired the Copse-native event fire sites (`beforeDiffApply` / `afterDiffApply` /
+`permissionDecision` / `postTurnReview`). **F3** consumes the `sandbox` field: the
+sandbox-by-default spawn reversal (macOS enforcement), the `sandbox: false` escape surfaced
+in Sources, and blocked-by-sandbox recording. The `loop_limit` field is still parsed /
+carried for C3's drain-time budget enforcement.

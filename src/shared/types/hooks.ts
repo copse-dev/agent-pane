@@ -33,10 +33,18 @@ export interface HookSummary {
    */
   supported?: boolean
   /**
-   * First runtime failure observed this session (crash / timeout / invalid JSON),
-   * surfaced as a per-hook error indicator. Never affects fail-open semantics.
+   * First runtime failure observed this session (crash / timeout / invalid JSON,
+   * **or a blocked-by-sandbox run** — F3, decision 7), surfaced as a per-hook
+   * error indicator. Never affects fail-open semantics.
    */
   lastError?: string
+  /**
+   * Whether this hook opted **out** of the project sandbox (Copse `sandbox: false`,
+   * decision 7 / F3). Present and `false` only for the escape — Sources badges it
+   * "outside sandbox" so the risk is visible; omitted means sandboxed-by-default
+   * (the norm, and all Cursor / Claude hooks, which cannot express the escape).
+   */
+  sandbox?: boolean
 }
 
 /** A malformed / unrecognised `hooks.json` entry, surfaced as a warning row. */
