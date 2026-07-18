@@ -87,7 +87,10 @@ import { listSkills, initSkillsRegistry } from '../services/skills/skills-regist
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
-import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
+import {
+  listCopseHooksForSources,
+  listUnsandboxedProjectHooks,
+} from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -916,6 +919,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       scope: parsed.scope,
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
+  })
+  // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
+  // declare `sandbox: false` at the consent moment. Read-only display parsing —
+  // trust-independent by design (the whole point is showing this BEFORE trust).
+  ipcMain.handle('hooks:unsandboxedProjectHooks', async () => {
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    return listUnsandboxedProjectHooks(root)
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
