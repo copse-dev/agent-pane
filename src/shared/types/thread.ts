@@ -1,6 +1,8 @@
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
+import type { HookCard } from '../hooks/hook-card.ts'
+export type { HookCard } from '../hooks/hook-card.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
@@ -242,6 +244,26 @@ export interface Message {
    * (in position, one per reviewed turn) rather than as a single trailing card.
    */
   review?: ThreadReview
+  /**
+   * Provenance when this turn was started by a hook follow-up (decision 10). The
+   * message role stays `user` for the LLM; `origin` lives purely in the data
+   * model so the transcript can mark a hook-originated turn (a hook send-now /
+   * `stop`-follow-up that dispatched). Carried through the spine so the marker
+   * survives a reload (history stays honest about authorship). `editedByUser`
+   * flips `true` once a human edits a hook-queued message before it dispatches.
+   */
+  origin?: QueuedMessageOrigin
+  editedByUser?: boolean
+  /**
+   * Hook cards (executions / deny-ask decisions / halts) that fired during this
+   * message's turn (decision 10). **Display-only and derived** — populated at
+   * fold time from the thread's always-on spine `hook_run` records (decision 6)
+   * and appended live from the `hook_run` stream chunk. Never persisted via the
+   * message explode path: the spine's `hook_run` lines are the single source of
+   * truth, so this resolves purely from spine data (decision 17), never from live
+   * hook registration.
+   */
+  hookCards?: HookCard[]
   createdAt: number
 }
 

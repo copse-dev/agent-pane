@@ -33,12 +33,15 @@ import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import {
   beginHookRunRecording,
+  clearHookRunLiveSink,
   endHookRunRecording,
   recordFunctionHookRun,
   snapshotHookRunContext,
+  setHookRunLiveSink,
   setHookRunStep,
   setHookRunToolset,
 } from './hook-run-recorder.ts'
+import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
   buildSubagentRoute,
@@ -707,6 +710,13 @@ export async function runAgent(
   // Attribute hook executions (function + command) to this run's spine records
   // (decision 6 — always-on).
   beginHookRunRecording(threadId)
+  // G1 (decision 10): mirror each spine `hook_run` append onto the live stream as
+  // a `hook_run` chunk so the hook-card family appears as it runs — the renderer
+  // anchors it to the current turn's message. Cleared in the finally.
+  const hookCardSink = (card: HookCard): void => {
+    sendChunk({ type: 'hook_run', card })
+  }
+  setHookRunLiveSink(hookCardSink)
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
   // H4 (decision 13): register this run's idle deadline so host-side blocking
@@ -1313,6 +1323,7 @@ export async function runAgent(
     clearRunDeadline(threadId, runAbort.deadline)
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
+    clearHookRunLiveSink(hookCardSink)
     endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
     clearHaltTarget(threadId, turnTreeId)

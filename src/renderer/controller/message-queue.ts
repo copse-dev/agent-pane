@@ -120,6 +120,23 @@ export function foldBackContinuationUsed(
   store.setState({ threads })
 }
 
+/**
+ * Stamp hook provenance (decision 10) onto a message so a hook-originated turn
+ * stays marked once it dispatches (leaving the pending queue) and — via the
+ * spine — after a reload. Keeps the message role `user` for the LLM.
+ */
+function setMessageHookOrigin(
+  store: AppStore,
+  messageId: string,
+  origin: QueuedMessageOrigin,
+): void {
+  const threads = store.getState().threads.map((t) => ({
+    ...t,
+    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, origin })),
+  }))
+  store.setState({ threads })
+}
+
 function refreshPayload(
   store: AppStore,
   threadId: string,
@@ -335,6 +352,15 @@ export function updateQueuedMessageText(
   )
   store.setState({ threads })
   setMessageContent(store, messageId, text)
+  // Keep the message honest: editing a hook-originated message flips
+  // `editedByUser` on the bubble too (decision 10), matching the queued item.
+  if (item.origin?.kind === 'hook') {
+    const withEdit = store.getState().threads.map((t) => ({
+      ...t,
+      messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, editedByUser: true })),
+    }))
+    store.setState({ threads: withEdit })
+  }
   store.emit('threads_changed')
 }
 
@@ -435,8 +461,12 @@ export function enqueueHookMessage(
   const thread = store.getState().threads.find((t) => t.id === threadId)
   if (!thread) return
 
-  // Create the user bubble the queue view renders; `origin` keeps it attributable.
+  // Create the user bubble the queue view renders; `origin` keeps it attributable
+  // (decision 10) — stamped on the Message too so a hook-originated turn stays
+  // marked once it dispatches and leaves the pending queue (and after a reload,
+  // via the spine). The message role stays `user` for the LLM.
   const messageId = addMessage(store, threadId, 'user', input.text)
+  setMessageHookOrigin(store, messageId, input.origin)
   const stale = isStaleEpoch(thread, input.epoch)
   const item: QueuedUserMessage = {
     messageId,

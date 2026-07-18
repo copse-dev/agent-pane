@@ -1,5 +1,6 @@
 import type {
   ModelUsage,
+  QueuedMessageOrigin,
   SubagentSession,
   Thread,
   ThreadReview,
@@ -91,6 +92,14 @@ export interface SpineMessageLine {
   model?: string
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
+  /**
+   * Hook provenance when this turn was started by a hook follow-up (decision
+   * 10). Persisted so the transcript can mark a hook-originated turn after a
+   * reload; `editedByUser` records that a human edited the hook's text before it
+   * dispatched (authorship stays honest). Absent = human-authored.
+   */
+  origin?: QueuedMessageOrigin
+  editedByUser?: boolean
   toolCalls: SpineToolCall[]
 }
 
