@@ -180,9 +180,11 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
     }
     return redactedRemoteProvider(
       createOpenRouterProvider(openRouterModelId(model), apiKey, promptCacheKey, {
-        // Privacy routing (default on): only zero-data-retention, non-training
-        // upstream endpoints. Toggled in Settings → Providers → OpenRouter.
+        // Privacy routing, toggled in Settings → Providers → OpenRouter:
+        // ZDR-only endpoints by default, and providers that train on inputs
+        // stay excluded unless explicitly allowed.
         zdrOnly: getSetting<boolean>('openRouterZdrOnly', true),
+        allowTraining: getSetting<boolean>('openRouterAllowTraining', false),
       }),
     )
   }

@@ -12,10 +12,14 @@ every published entry.
   recovery documentation.
 - Privacy: OpenRouter requests now route only to zero-data-retention,
   non-training endpoints by default (`provider.zdr` +
-  `data_collection: "deny"`, toggleable in Settings → Providers → OpenRouter);
-  direct OpenAI requests send `store: false`. Settings → Providers badges each
-  provider's default retention/training policy and the model picker flags
-  providers that may train on inputs. See docs/provider-data-policies.md.
+  `data_collection: "deny"`, two independent toggles in Settings → Providers
+  → OpenRouter — turning ZDR off keeps training excluded unless separately
+  allowed); the model picker lists only ZDR-capable OpenRouter models while
+  ZDR routing is on, and a model with no compliant endpoint fails fast with
+  an actionable message instead of being retried. Direct OpenAI requests
+  send `store: false`. Settings → Providers badges each provider's default
+  retention/training policy and the model picker flags providers that may
+  train on inputs. See docs/provider-data-policies.md.
 
 ## Release-note process
 

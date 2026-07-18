@@ -107,7 +107,8 @@ async function openRouterOptions(
   let group = OPENROUTER_GROUP
   try {
     const zdrOnly = (await api.settings.get('openRouterZdrOnly')) !== false
-    const note = pickerPrivacyNote(openRouterDataPolicy(zdrOnly))
+    const allowTraining = (await api.settings.get('openRouterAllowTraining')) === true
+    const note = pickerPrivacyNote(openRouterDataPolicy(zdrOnly, allowTraining))
     group = note ? `${OPENROUTER_GROUP} — ${note}` : `${OPENROUTER_GROUP} (ZDR routing)`
   } catch {
     /* keep the plain heading */

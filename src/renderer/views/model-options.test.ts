@@ -13,6 +13,7 @@ interface MockOpts {
   lmStudioModels?: string[]
   openRouterModelSetting?: string
   openRouterZdrOnlySetting?: boolean
+  openRouterAllowTrainingSetting?: boolean
   acpAgents?: AcpAgentConfig[]
 }
 
@@ -38,6 +39,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
       get: async (key: string) => {
         if (key === 'openRouterModel') return opts.openRouterModelSetting ?? ''
         if (key === 'openRouterZdrOnly') return opts.openRouterZdrOnlySetting ?? null
+        if (key === 'openRouterAllowTraining') return opts.openRouterAllowTrainingSetting ?? null
         if (key === 'registeredAcpAgents') return opts.acpAgents ?? null
         return null
       },
@@ -83,7 +85,8 @@ describe('fetchModelOptions visibility', () => {
     )
     assert.ok(zdrOn.some((o) => o.group === 'OpenRouter (ZDR routing)'))
 
-    // Explicitly off → upstream policies apply, and the heading says so.
+    // Explicitly off → upstream retention applies (training still denied), and
+    // the heading says so.
     const zdrOff = await fetchModelOptions(
       mockApi({
         available: { openrouter: true },
@@ -93,6 +96,18 @@ describe('fetchModelOptions visibility', () => {
       '',
     )
     assert.ok(zdrOff.some((o) => o.group === 'OpenRouter — retention varies by provider'))
+
+    // Both relaxed → the heading carries the may-train warning.
+    const training = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true },
+        openRouterModels,
+        openRouterZdrOnlySetting: false,
+        openRouterAllowTrainingSetting: true,
+      }),
+      '',
+    )
+    assert.ok(training.some((o) => o.group === 'OpenRouter — may train on your data'))
   })
 
   it('flags Hugging Face as partner-dependent in its group heading', async () => {

@@ -166,17 +166,32 @@ export function dataPolicyForProvider(provider: {
 }
 
 /**
- * OpenRouter's effective policy depends on whether Copse's ZDR-only routing is
- * enabled (`openRouterZdrOnly` setting, default on). With it off, upstream
- * providers apply their own retention/training policies per request.
+ * OpenRouter's effective policy depends on Copse's routing settings:
+ * `openRouterZdrOnly` (default on) restricts routing to zero-data-retention
+ * endpoints, and `openRouterAllowTraining` (default off) controls whether
+ * `data_collection: "deny"` is sent. Retention and training are separate
+ * OpenRouter policy axes, so relaxing ZDR does not by itself re-admit
+ * providers that train — only the explicit allow-training opt-in does.
  */
-export function openRouterDataPolicy(zdrOnly: boolean): ProviderDataPolicy {
+export function openRouterDataPolicy(zdrOnly: boolean, allowTraining = false): ProviderDataPolicy {
+  // ZDR endpoints cannot train ("Providers that do not retain your data are
+  // also unable to train on your data" — OpenRouter ZDR docs), so ZDR-only
+  // routing yields the zero-retention policy regardless of the training flag.
   if (zdrOnly) return POLICIES_BY_SLUG['openrouter'] as ProviderDataPolicy
+  if (allowTraining) {
+    return {
+      retainsPrompts: null,
+      trainsOnData: true,
+      zdr: 'request',
+      note: 'ZDR-only routing is OFF and may-train providers are allowed: requests can be routed to upstream endpoints that retain prompts and use them for training (common for free models).',
+      policyUrl: 'https://openrouter.ai/docs/guides/features/zdr',
+    }
+  }
   return {
     retainsPrompts: null,
-    trainsOnData: null,
+    trainsOnData: false,
     zdr: 'request',
-    note: 'ZDR-only routing is OFF: each request is routed to an upstream provider that applies its own retention and training policy (free models commonly train on inputs).',
+    note: 'ZDR-only routing is OFF: upstream endpoints may retain prompts under their own policies, but data_collection:"deny" still excludes providers that train on or store inputs.',
     policyUrl: 'https://openrouter.ai/docs/guides/features/zdr',
   }
 }

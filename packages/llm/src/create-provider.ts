@@ -94,19 +94,25 @@ export const createLMStudioProvider = createLocalOpenAIProvider
 // Without it a model id can be load-balanced onto an endpoint that ignores
 // function calling, so the model narrates instead of emitting tool calls.
 //
-// `zdrOnly` (default ON, `openRouterZdrOnly` setting) additionally sends
-// `zdr: true` (route only to zero-data-retention endpoints) and
-// `data_collection: 'deny'` (exclude providers that store or train on inputs).
-// See https://openrouter.ai/docs/guides/features/zdr. The trade-off: models
-// with no ZDR endpoint — most `:free` variants — return a no-endpoints error
-// until the setting is turned off in Settings → Providers → OpenRouter.
+// Retention and training are separate OpenRouter policy axes, controlled by
+// two independent options (see https://openrouter.ai/docs/guides/features/zdr):
+//
+// - `zdrOnly` (default ON, `openRouterZdrOnly` setting) sends `zdr: true`,
+//   routing only to zero-data-retention endpoints. Trade-off: models with no
+//   ZDR endpoint — most `:free` variants — fail with a routing error until
+//   the setting is turned off in Settings → Providers → OpenRouter.
+// - `allowTraining` (default OFF, `openRouterAllowTraining` setting) controls
+//   `data_collection: 'deny'`, which excludes providers that store or train
+//   on inputs. Kept independent of `zdrOnly` so relaxing ZDR (to reach
+//   retained-but-not-trained endpoints) does not silently re-admit trainers.
 export function createOpenRouterProvider(
   model: string,
   apiKey: string,
   promptCacheKey?: string,
-  opts: { zdrOnly?: boolean } = {},
+  opts: { zdrOnly?: boolean; allowTraining?: boolean } = {},
 ): LLMProvider {
   const zdrOnly = opts.zdrOnly ?? true
+  const allowTraining = opts.allowTraining ?? false
   return new OpenAIProvider(model, {
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
@@ -114,7 +120,8 @@ export function createOpenRouterProvider(
     extraBody: {
       provider: {
         require_parameters: true,
-        ...(zdrOnly ? { zdr: true, data_collection: 'deny' } : {}),
+        ...(zdrOnly ? { zdr: true } : {}),
+        ...(allowTraining ? {} : { data_collection: 'deny' }),
       },
     },
     ...(promptCacheKey ? { promptCacheKey } : {}),

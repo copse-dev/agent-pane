@@ -17,14 +17,28 @@ documentation; see sources).
 
 ## What Copse sends by default
 
-- **OpenRouter — ZDR-only routing, on by default.** Every OpenRouter request
-  carries `provider: { zdr: true, data_collection: "deny" }`, restricting
-  routing to endpoints that neither retain prompts at rest nor use them for
-  training. OpenRouter itself stores no prompts unless logging is explicitly
-  opted into. Trade-off: models with no zero-retention endpoint — including
-  most `:free` variants — fail with a "no endpoints" error while the setting
-  is on. Toggle: Settings → Providers → OpenRouter → "Only route to
-  zero-data-retention providers (ZDR)" (`openRouterZdrOnly`).
+- **OpenRouter — privacy routing on by default, on two independent axes**
+  (retention and training are separate policy dimensions in OpenRouter's
+  routing, controlled by two toggles in Settings → Providers → OpenRouter):
+  - `provider: { zdr: true }` (`openRouterZdrOnly`, default ON) restricts
+    routing to zero-data-retention endpoints. While on, the model picker only
+    lists models with a ZDR endpoint (from OpenRouter's auto-updated
+    `/endpoints/zdr` feed; the picker filter fails open, request-level
+    enforcement does not), and a model with no compliant endpoint fails with
+    a deterministic routing error — surfaced immediately (not retried) with a
+    pointer to these toggles.
+  - `data_collection: "deny"` (`openRouterAllowTraining`, default OFF)
+    excludes providers that store or train on inputs. It stays active even
+    when the ZDR toggle is turned off, so relaxing retention (to reach
+    retained-but-not-trained endpoints) never silently re-admits trainers;
+    only the explicit allow-training opt-in drops it (needed for most
+    `:free` models).
+
+  OpenRouter itself stores no prompts unless logging is explicitly opted
+  into. The per-request `zdr` parameter ORs with any account-level ZDR
+  settings, so Copse's default achieves maximum enforcement without
+  dashboard configuration.
+
 - **OpenAI — `store: false` on every direct request.** OpenAI stores Chat
   Completions/Responses output for 30 days by default on new accounts
   ("application state"); Copse opts each request out. This does not affect

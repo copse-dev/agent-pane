@@ -139,10 +139,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // security IPC.
   roleModels: z.record(z.string().max(64), z.string().max(256)),
   openRouterModel: z.string().max(256),
-  // Restrict OpenRouter routing to zero-data-retention, non-training upstream
-  // endpoints (provider.zdr + data_collection:"deny"). Default ON; the read
-  // side (provider-selection.ts) treats a missing value as true.
+  // Restrict OpenRouter routing to zero-data-retention endpoints
+  // (provider.zdr). Default ON; the read side (provider-selection.ts) treats
+  // a missing value as true.
   openRouterZdrOnly: z.boolean(),
+  // Allow OpenRouter to route to providers that may store or train on inputs
+  // (drops data_collection:"deny"). Default OFF; independent of the ZDR
+  // toggle so relaxing retention never silently re-admits trainers.
+  openRouterAllowTraining: z.boolean(),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
   postTurnReviewEnabled: z.boolean(),

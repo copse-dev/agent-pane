@@ -86,10 +86,17 @@ describe('openRouterDataPolicy', () => {
     assert.equal(policy.trainsOnData, false)
   })
 
-  it('is unknown/upstream-dependent with ZDR-only routing off', () => {
+  it('still excludes trainers with ZDR-only off (retention unknown, training denied)', () => {
     const policy = openRouterDataPolicy(false)
     assert.equal(policy.retainsPrompts, null)
-    assert.equal(policy.trainsOnData, null)
+    assert.equal(policy.trainsOnData, false)
+  })
+
+  it('marks may-train routing only with the explicit allow-training opt-in', () => {
+    const policy = openRouterDataPolicy(false, true)
+    assert.equal(policy.retainsPrompts, null)
+    assert.equal(policy.trainsOnData, true)
+    assert.equal(pickerPrivacyNote(policy), 'may train on your data')
   })
 })
 

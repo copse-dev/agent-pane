@@ -171,9 +171,18 @@ describe('provider data-retention request defaults', () => {
     })
   })
 
-  it('drops the ZDR routing constraints when zdrOnly is off, keeping require_parameters', async () => {
+  it('keeps the training exclusion when only zdrOnly is turned off', async () => {
     const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
       zdrOnly: false,
+    }) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.provider, { require_parameters: true, data_collection: 'deny' })
+  })
+
+  it('drops data_collection only with the explicit allowTraining opt-in', async () => {
+    const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
+      zdrOnly: false,
+      allowTraining: true,
     }) as OpenAIProvider
     const request = await captureRequest(provider)
     assert.deepEqual(request.provider, { require_parameters: true })

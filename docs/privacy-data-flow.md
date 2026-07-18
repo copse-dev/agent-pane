@@ -41,10 +41,11 @@ configured address is local.
 
 By default Copse requests the most protective handling each provider offers at
 the request level: OpenRouter traffic is restricted to zero-data-retention,
-non-training upstream endpoints (`openRouterZdrOnly`, on by default, toggleable
-in Settings → Providers → OpenRouter), and direct OpenAI requests carry
-`store: false`. Settings → Providers badges each provider with its default
-retention/training posture; see
+non-training upstream endpoints (two independent toggles in Settings →
+Providers → OpenRouter — `openRouterZdrOnly` on and `openRouterAllowTraining`
+off by default; relaxing ZDR keeps training excluded), and direct OpenAI
+requests carry `store: false`. Settings → Providers badges each provider with
+its default retention/training posture; see
 [provider-data-policies.md](provider-data-policies.md).
 
 Experimental on-device PII redaction can redact the text the user typed before a

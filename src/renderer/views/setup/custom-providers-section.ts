@@ -300,10 +300,14 @@ export function createCustomProvidersSection(
   // so an unsaved edit survives chip switches and only persists on dialog Save.
   let openRouterModelValue = ''
   let pendingOpenRouterModel: string | null = null
-  // OpenRouter ZDR-only routing toggle (default ON). Same pending pattern: the
-  // checkbox edits `pendingOpenRouterZdr`, flushed to the setting on Save.
+  // OpenRouter privacy-routing toggles. Same pending pattern: the checkboxes
+  // edit the `pending*` values, flushed to the settings on Save. ZDR-only
+  // defaults ON; allow-training defaults OFF — they are independent axes
+  // (retention vs training) in OpenRouter's routing policy.
   let openRouterZdrValue = true
   let pendingOpenRouterZdr: boolean | null = null
+  let openRouterAllowTrainingValue = false
+  let pendingOpenRouterAllowTraining: boolean | null = null
 
   function chipKeys(): string[] {
     const extraById = new Map(providers.map((p) => [p.id, p]))
@@ -435,17 +439,24 @@ export function createCustomProvidersSection(
     )
   }
 
-  // ---- OpenRouter ZDR-only routing toggle ----------------------------------
-  // Default ON: every OpenRouter request carries provider.zdr=true and
-  // data_collection="deny", so prompts only reach zero-retention, non-training
-  // upstreams. Turning it off widens routing to every endpoint (including most
-  // ":free" models, which commonly train on inputs).
-  function openRouterZdrField(): HTMLElement {
-    const box = el('input', { type: 'checkbox' })
-    box.checked = pendingOpenRouterZdr ?? openRouterZdrValue
-    box.addEventListener('change', () => {
-      pendingOpenRouterZdr = box.checked
+  // ---- OpenRouter privacy-routing toggles ----------------------------------
+  // Two independent axes (see @copse/llm/data-policies.ts):
+  // - ZDR-only (default ON): provider.zdr=true routes only to zero-retention
+  //   endpoints. Models without one — most ":free" variants — fail routing.
+  // - Allow may-train providers (default OFF): drops data_collection:"deny".
+  //   Kept separate so relaxing ZDR never silently re-admits trainers.
+  function openRouterPrivacyFields(): HTMLElement {
+    const zdrBox = el('input', { type: 'checkbox' })
+    zdrBox.checked = pendingOpenRouterZdr ?? openRouterZdrValue
+    zdrBox.addEventListener('change', () => {
+      pendingOpenRouterZdr = zdrBox.checked
       // Re-render so the privacy badge in the form title tracks the choice.
+      renderForm()
+    })
+    const trainBox = el('input', { type: 'checkbox' })
+    trainBox.checked = pendingOpenRouterAllowTraining ?? openRouterAllowTrainingValue
+    trainBox.addEventListener('change', () => {
+      pendingOpenRouterAllowTraining = trainBox.checked
       renderForm()
     })
     return el(
@@ -454,13 +465,24 @@ export function createCustomProvidersSection(
       el(
         'label',
         { class: 'checkbox-label' },
-        box,
+        zdrBox,
         ' Only route to zero-data-retention providers (ZDR)',
       ),
       el(
         'span',
         { class: 'field-hint' },
-        'Sends provider.zdr and data_collection:"deny" with every request, excluding endpoints that retain prompts or train on them. Models without a ZDR endpoint — including most free ones — will fail with a no-endpoints error while this is on.',
+        'Sends provider.zdr with every request, restricting routing to endpoints that never store prompts. Models without a ZDR endpoint fail with a routing error while this is on, and the picker only lists ZDR-capable models.',
+      ),
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        trainBox,
+        ' Allow providers that may train on prompts',
+      ),
+      el(
+        'span',
+        { class: 'field-hint' },
+        'Off (default): data_collection:"deny" excludes providers that store or train on inputs — even when the ZDR toggle above is off. Turn on only if you need models served exclusively by may-train providers (common for free models).',
       ),
     )
   }
@@ -469,7 +491,10 @@ export function createCustomProvidersSection(
   function fixedForm(fixed: FixedProvider): HTMLElement {
     const policy =
       fixed.id === 'openrouter'
-        ? openRouterDataPolicy(pendingOpenRouterZdr ?? openRouterZdrValue)
+        ? openRouterDataPolicy(
+            pendingOpenRouterZdr ?? openRouterZdrValue,
+            pendingOpenRouterAllowTraining ?? openRouterAllowTrainingValue,
+          )
         : dataPolicyForProvider({ id: fixed.id })
     const form = el(
       'div',
@@ -477,7 +502,7 @@ export function createCustomProvidersSection(
       el('h4', { class: 'provider-form-title' }, fixed.label, privacyBadgeEl(privacyBadge(policy))),
       keyField(fixed.id, `${fixed.label} API key`, fixed.placeholder, fixed.hint),
     )
-    if (fixed.id === 'openrouter') form.append(openRouterZdrField(), openRouterModelField())
+    if (fixed.id === 'openrouter') form.append(openRouterPrivacyFields(), openRouterModelField())
     if (policy) form.append(policyHintEl(policy))
     return form
   }
@@ -838,6 +863,12 @@ export function createCustomProvidersSection(
       } catch {
         openRouterZdrValue = true
       }
+      try {
+        // Default OFF: only an explicit stored `true` admits may-train providers.
+        openRouterAllowTrainingValue = (await api.settings.get('openRouterAllowTraining')) === true
+      } catch {
+        openRouterAllowTrainingValue = false
+      }
     }
     // Let native providers (LM Studio) re-run their own detection.
     await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
@@ -871,11 +902,16 @@ export function createCustomProvidersSection(
       openRouterModelValue = trimmed
       pendingOpenRouterModel = null
     }
-    // Persist the ZDR-only routing toggle only when it was touched.
+    // Persist the privacy-routing toggles only when they were touched.
     if (pendingOpenRouterZdr !== null) {
       await api.settings.set('openRouterZdrOnly', pendingOpenRouterZdr)
       openRouterZdrValue = pendingOpenRouterZdr
       pendingOpenRouterZdr = null
+    }
+    if (pendingOpenRouterAllowTraining !== null) {
+      await api.settings.set('openRouterAllowTraining', pendingOpenRouterAllowTraining)
+      openRouterAllowTrainingValue = pendingOpenRouterAllowTraining
+      pendingOpenRouterAllowTraining = null
     }
   }
 
