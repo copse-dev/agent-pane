@@ -645,7 +645,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
             )
           }
         }
-        const { result, editStats } = normalizeToolExecuteResult(raw)
+        const { result, editStats, resultFormat } = normalizeToolExecuteResult(raw)
         toolResults.push({ toolCallId: tc.id, result })
         onChunk({
           type: 'tool_result',
@@ -653,6 +653,7 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
           result,
           isError: false,
           ...(editStats ? { editStats } : {}),
+          ...(resultFormat ? { resultFormat } : {}),
         })
       } catch (err) {
         const msg = errorMessage(err)

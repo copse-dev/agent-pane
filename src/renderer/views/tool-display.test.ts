@@ -123,6 +123,36 @@ describe('tool call display (component)', () => {
     )
   })
 
+  it('renders the advisor result as attributed markdown, not raw text', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      id: 'tc-advisor',
+      name: 'advisor',
+      args: {},
+      status: 'done',
+      resultFormat: 'markdown',
+      result:
+        '**Advisor — claude-opus-4-8**\n\n**Key risk:** the diff is large.\n\n- ship the smallest slice',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = document.querySelector('.tool-card[data-tool-id="tc-advisor"]')
+    assert.ok(card, 'expected an advisor tool card')
+    const resultEl = card.querySelector('.tool-result')
+    assert.ok(resultEl, 'expected a tool-result section')
+    assert.ok(resultEl.classList.contains('tool-result-markdown'))
+    // The advisor model is named (so its output is distinct from the executor's),
+    // and the bold/list markdown renders instead of literal ** and - markers.
+    assert.ok(resultEl.querySelector('strong'), 'expected rendered bold, not literal **')
+    assert.ok(resultEl.querySelector('li'), 'expected a rendered list item')
+    assert.ok(resultEl.textContent.includes('claude-opus-4-8'))
+    assert.equal(resultEl.textContent.includes('**Advisor'), false)
+  })
+
   it('renders an ACP markdown result as markdown, not literal code fences', () => {
     const store = createStore()
     const threadId = createThread(store)

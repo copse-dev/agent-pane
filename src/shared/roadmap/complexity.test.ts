@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { isRoadmapComplexity, parseComplexityWord, tierToComplexity } from './complexity.ts'
+import { isRoadmapComplexity, parseComplexityWord, bandToComplexity } from './complexity.ts'
 
 describe('parseComplexityWord', () => {
   it('reads a bare verdict', () => {
@@ -20,11 +20,11 @@ describe('parseComplexityWord', () => {
   })
 })
 
-describe('tierToComplexity', () => {
-  it('maps the three classifier tiers', () => {
-    assert.equal(tierToComplexity('fast'), 'low')
-    assert.equal(tierToComplexity('balanced'), 'medium')
-    assert.equal(tierToComplexity('frontier'), 'high')
+describe('bandToComplexity', () => {
+  it('maps the three intellect bands', () => {
+    assert.equal(bandToComplexity('low'), 'low')
+    assert.equal(bandToComplexity('mid'), 'medium')
+    assert.equal(bandToComplexity('top'), 'high')
   })
 })
 
