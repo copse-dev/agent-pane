@@ -134,11 +134,29 @@ export function runCommand(
         fn()
       }
 
+      // Once accumulated output reaches its cap, DROP further chunks instead of
+      // re-appending: `appendFlatCapped` re-scans and re-truncates the whole
+      // capped buffer on every chunk, so a subprocess that keeps emitting past
+      // the cap spins O(chunks × cap) and churns multi-MB allocations (observed
+      // as ~250 MB/cycle GC thrash that starved the event loop). Track raw bytes
+      // (O(1) per chunk) and stop once over the cap; the process keeps draining
+      // its pipe and exits normally, we just ignore the overflow we'd discard
+      // anyway.
+      let rawStdoutBytes = 0
+      let stdoutCapped = false
+      let rawStderrBytes = 0
+      let stderrCapped = false
       proc.stdout?.on('data', (d: Buffer) => {
+        rawStdoutBytes += d.length
+        if (stdoutCapped) return
         stdout = appendFlatCapped(stdout, d.toString(), stdoutMaxBytes)
+        if (rawStdoutBytes >= stdoutMaxBytes) stdoutCapped = true
       })
       proc.stderr?.on('data', (d: Buffer) => {
+        rawStderrBytes += d.length
+        if (stderrCapped) return
         stderr = appendFlatCapped(stderr, d.toString(), COMMAND_OUTPUT_MAX_BYTES)
+        if (rawStderrBytes >= COMMAND_OUTPUT_MAX_BYTES) stderrCapped = true
       })
 
       proc.on('close', (code) => {
