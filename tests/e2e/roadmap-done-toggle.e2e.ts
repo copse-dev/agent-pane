@@ -39,9 +39,15 @@ describe('roadmap done toggle', () => {
 
     await $('.roadmap-prompt-input').setValue('Ship the metrics export command')
     await $('.roadmap-save-btn').click()
-    // Save stamps complexity first (small-tasks model with a bounded timeout,
-    // heuristic fallback) — allow for the model path being unavailable.
+    // The note persists immediately; the row appears without waiting on the
+    // background complexity stamp (which needs a model that may be absent here).
     await $('.roadmap-row').waitForExist({ timeout: 20_000 })
+
+    // Saving selects the new item into the editor. Deselect first so the
+    // editor is at its empty state — the point of the assertion below is that
+    // the toggle flips status *without* selecting the row back into the editor.
+    await $('.roadmap-cancel-btn').click()
+    await $('.roadmap-empty').waitForDisplayed({ timeout: 10_000 })
 
     const toggle = $('.roadmap-done-toggle')
     await toggle.waitForDisplayed({ timeout: 10_000 })

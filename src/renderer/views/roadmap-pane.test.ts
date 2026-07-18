@@ -196,7 +196,7 @@ function makeApi(
         const item = items.find((i) => i.id === id)
         if (!item) return null
         item.status = status
-         return { ...item }
+        return { ...item }
       },
       delete: async (id: string) => {
         calls.delete.push(id)

@@ -642,7 +642,7 @@ export function mountRoadmapPane(
           e.stopPropagation()
           void setStatus(item, isDone ? 'ready' : 'done')
         })
-         meta.append(toggle)
+        meta.append(toggle)
       }
       main.append(
         el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
