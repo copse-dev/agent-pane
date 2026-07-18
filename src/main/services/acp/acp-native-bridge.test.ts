@@ -2,6 +2,7 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
+import { getAdvisorContext } from '../advisor-runner-context.ts'
 import {
   startAcpNativeBridge,
   BRIDGE_TOOL_NAMES,
@@ -147,6 +148,92 @@ describe('startAcpNativeBridge', () => {
     assert.equal(shellResult.content[0]?.text, 'ran npm test')
     assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
+  })
+
+  it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'advisor',
+      description: 'Consult a stronger advisor model',
+      parameters: z.object({}),
+      execute: () => Promise.resolve('Advice: do the smallest slice first.'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal)
+    assert.ok(bridge)
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const list = await rpc(bridge, LIST_TOOLS)
+    const names = (list.json as { result: { tools: { name: string }[] } }).result.tools.map(
+      (tool) => tool.name,
+    )
+    assert.ok(names.includes('advisor'), 'advisor should be offered when registered')
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'advisor', arguments: {} },
+    })
+    const result = (call.json as { result: { content: { text: string }[] } }).result
+    assert.equal(result.content[0]?.text, 'Advice: do the smallest slice first.')
+  })
+
+  it('isolates advisor context between concurrent ACP thread bridges', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'advisor',
+      description: 'Report the bound executor context',
+      parameters: z.object({}),
+      execute: async () => {
+        const context = getAdvisorContext()
+        // Force the two HTTP calls to overlap; a shared mutable slot would let
+        // the later request replace the earlier request's context here.
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        const first = context?.getTranscript()[0]
+        return `${context?.executorModel ?? 'missing'}:${first?.role ?? 'missing'}`
+      },
+    })
+    const bridgeA = await startAcpNativeBridge(registry, new AbortController().signal)
+    const bridgeB = await startAcpNativeBridge(registry, new AbortController().signal)
+    assert.ok(bridgeA)
+    assert.ok(bridgeB)
+    try {
+      bridgeA.setAdvisorContext({
+        advisorModel: 'advisor-a',
+        executorModel: 'executor-a',
+        getTranscript: () => [{ role: 'user', content: 'thread a' }],
+      })
+      bridgeB.setAdvisorContext({
+        advisorModel: 'advisor-b',
+        executorModel: 'executor-b',
+        getTranscript: () => [{ role: 'assistant', content: 'thread b' }],
+      })
+      for (const init of initialized()) {
+        await Promise.all([rpc(bridgeA, init), rpc(bridgeB, init)])
+      }
+      const call = (
+        id: number,
+      ): {
+        jsonrpc: string
+        id: number
+        method: string
+        params: { name: string; arguments: Record<string, never> }
+      } => ({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name: 'advisor', arguments: {} },
+      })
+      const [resultA, resultB] = await Promise.all([rpc(bridgeA, call(6)), rpc(bridgeB, call(7))])
+      const text = (result: Awaited<ReturnType<typeof rpc>>): string | undefined =>
+        (result.json as { result: { content: { text: string }[] } }).result.content[0]?.text
+      assert.equal(text(resultA), 'executor-a:user')
+      assert.equal(text(resultB), 'executor-b:assistant')
+    } finally {
+      await Promise.all([bridgeA.close(), bridgeB.close()])
+    }
   })
 
   it('refuses tools outside the curated list even when registered', async () => {

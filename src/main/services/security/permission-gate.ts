@@ -529,6 +529,10 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
         reason: decision.haltRun.reason,
       })
     }
+    // Block the triggering call too: `haltRun` outranks everything (decision 12),
+    // so the tool must not execute once before the abort is observed — regardless
+    // of whether the hook also set `permission: 'deny'`.
+    return { ok: false }
   }
 
   if (decision.permission === 'deny') {

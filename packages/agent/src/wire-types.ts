@@ -80,11 +80,25 @@ export interface ToolEditStats {
 }
 
 /** What a tool's `execute` hands back to the loop. */
-export type ToolExecuteResult = string | { result: string; editStats?: ToolEditStats }
+export type ToolExecuteResult =
+  | string
+  | {
+      result: string
+      editStats?: ToolEditStats
+      /**
+       * Tags the result as agent-authored Markdown so the renderer runs it
+       * through the Markdown pipeline instead of a raw `<pre>` (see the
+       * matching field on {@link ToolCall}). Most built-in tools return
+       * structured plain text and omit this; tools whose result is prose
+       * (e.g. `advisor`) set it so headings, lists and code render.
+       */
+      resultFormat?: 'markdown'
+    }
 
 export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   result: string
   editStats?: ToolEditStats
+  resultFormat?: 'markdown'
 } {
   if (typeof value === 'string') return { result: value }
   return value
