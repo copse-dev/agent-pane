@@ -88,6 +88,51 @@ describe('comparison panel', () => {
     assert.equal(card.querySelector('.card-retry-button'), null)
   })
 
+  it('shows a dismiss button on a failed card and fires the callback once', () => {
+    let calls = 0
+    const card = createComparisonCardEl(failed, fakeApi(), undefined, () => {
+      calls++
+    })
+    const button = card.querySelector<HTMLButtonElement>('.card-dismiss-button')
+    assert.ok(button, 'expected a dismiss button on the failed comparison card')
+    button.click()
+    button.click()
+    assert.equal(calls, 1, 'dismiss fires once then disables itself')
+    assert.equal(button.disabled, true)
+  })
+
+  it('renders retry before dismiss when both handlers are given', () => {
+    const card = createComparisonCardEl(
+      failed,
+      fakeApi(),
+      () => {},
+      () => {},
+    )
+    const buttons = [...card.querySelectorAll('.comparison-panel-header button')]
+    assert.deepEqual(
+      buttons.map((b) => b.className),
+      ['card-retry-button', 'card-dismiss-button'],
+    )
+  })
+
+  it('omits the dismiss button when no onDismiss handler is given', () => {
+    const card = createComparisonCardEl(failed, fakeApi(), () => {})
+    assert.equal(card.querySelector('.card-dismiss-button'), null)
+  })
+
+  it('does not show a dismiss button on successful or running cards', () => {
+    const dismiss = (): void => {}
+    const doneCard = createComparisonCardEl(done, fakeApi(), undefined, dismiss)
+    assert.equal(doneCard.querySelector('.card-dismiss-button'), null)
+    const runningCard = createComparisonCardEl(
+      { status: 'running', models: done.models, reviewA: '', reviewB: '', synthesis: '' },
+      fakeApi(),
+      undefined,
+      dismiss,
+    )
+    assert.equal(runningCard.querySelector('.card-dismiss-button'), null)
+  })
+
   it('linkifies file paths printed in a reviewer column', async () => {
     const card = createComparisonCardEl(
       { ...done, reviewA: 'The change in src/main/index.ts is risky.' },
