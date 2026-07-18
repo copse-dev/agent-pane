@@ -1,0 +1,675 @@
+{
+  "cursor": {
+    "toolGate/shell": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "beforeShellExecution",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "command": "echo \"hello from a hook\"",
+      "cwd": "/fixture/workspace"
+    },
+    "toolGate/mcp": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "beforeMCPExecution",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "tool_name": "mcp__example__run",
+      "tool_input": {
+        "query": "weather",
+        "limit": 3
+      }
+    },
+    "toolGate/read": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "beforeReadFile",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "file_path": "/fixture/workspace/README.md",
+      "content": "synthetic file bytes\n"
+    },
+    "beforeSubmitPrompt": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "beforeSubmitPrompt",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "prompt": "Fix the failing test.",
+      "attachments": []
+    },
+    "afterFileEdit": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "afterFileEdit",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "file_path": "/fixture/workspace/src/example.ts",
+      "edits": []
+    },
+    "stop": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "stop",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "status": "completed"
+    },
+    "afterToolUse/shell": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "afterShellExecution",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "command": "echo \"hello from a hook\"",
+      "output": "hello from a hook\n",
+      "duration": 42
+    },
+    "afterToolUse/mcp": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "afterMCPExecution",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "tool_name": "mcp__example__run",
+      "tool_input": "{\"query\":\"weather\",\"limit\":3}",
+      "result_json": "{\"result\":\"sunny\"}",
+      "duration": 108
+    },
+    "subagentStart": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "subagentStart",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "subagent_type": "explore",
+      "subagent_model": "claude-sonnet-4"
+    },
+    "subagentStop": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "subagentStop",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "subagent_type": "explore",
+      "status": "completed"
+    },
+    "sessionStart": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "sessionStart",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "session_id": "conv-fixture-1",
+      "is_background_agent": false,
+      "composer_mode": "agent"
+    }
+  },
+  "claude": {
+    "toolGate/shell": {
+      "session_id": "",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "permission_mode": "default",
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "tool_input": {
+        "command": "echo \"hello from a hook\""
+      }
+    },
+    "toolGate/mcp": {
+      "session_id": "",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "permission_mode": "default",
+      "hook_event_name": "PreToolUse",
+      "tool_name": "mcp__example__run",
+      "tool_input": {
+        "query": "weather",
+        "limit": 3
+      }
+    },
+    "toolGate/read": {
+      "session_id": "",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "permission_mode": "default",
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Read",
+      "tool_input": {
+        "file_path": "/fixture/workspace/README.md"
+      }
+    },
+    "sessionStart": {
+      "session_id": "conv-fixture-1",
+      "transcript_path": "",
+      "cwd": "/fixture/workspace",
+      "hook_event_name": "SessionStart",
+      "source": "startup",
+      "model": "claude-sonnet-4"
+    }
+  },
+  "copse": {
+    "toolGate/shell": {
+      "hook_event_name": "toolGate",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "tool_name": "run_shell",
+      "input": {
+        "command": "echo \"hello from a hook\""
+      }
+    },
+    "toolGate/mcp": {
+      "hook_event_name": "toolGate",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "tool_name": "mcp__example__run",
+      "input": {
+        "query": "weather",
+        "limit": 3
+      }
+    },
+    "toolGate/read": {
+      "hook_event_name": "toolGate",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "tool_name": "read_file",
+      "input": {
+        "path": "/fixture/workspace/README.md"
+      },
+      "file_content": "synthetic file bytes\n"
+    },
+    "beforeSubmitPrompt": {
+      "hook_event_name": "beforeSubmitPrompt",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "prompt": "Fix the failing test."
+    },
+    "afterFileEdit": {
+      "hook_event_name": "afterFileEdit",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "file_path": "/fixture/workspace/src/example.ts"
+    },
+    "stop": {
+      "hook_event_name": "stop",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "status": "completed"
+    },
+    "afterToolUse/shell": {
+      "hook_event_name": "afterToolUse",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "tool_name": "run_shell",
+      "tool_call_id": "call-shell-1",
+      "is_error": false,
+      "input": {
+        "command": "echo \"hello from a hook\""
+      },
+      "output": "hello from a hook\n",
+      "duration": 42
+    },
+    "afterToolUse/mcp": {
+      "hook_event_name": "afterToolUse",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "tool_name": "mcp__example__run",
+      "tool_call_id": "call-mcp-1",
+      "is_error": false,
+      "input": {
+        "query": "weather",
+        "limit": 3
+      },
+      "output": "{\"result\":\"sunny\"}",
+      "duration": 108
+    },
+    "subagentStart": {
+      "hook_event_name": "subagentStart",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "subagent_type": "explore",
+      "subagent_model": "claude-sonnet-4"
+    },
+    "subagentStop": {
+      "hook_event_name": "subagentStop",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "subagent_type": "explore",
+      "status": "completed"
+    },
+    "sessionStart": {
+      "hook_event_name": "sessionStart",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "first_turn": true,
+      "session_id": "conv-fixture-1"
+    },
+    "beforeDiffApply": {
+      "hook_event_name": "beforeDiffApply",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "file_path": "/fixture/workspace/src/example.ts"
+    },
+    "afterDiffApply": {
+      "hook_event_name": "afterDiffApply",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "file_path": "/fixture/workspace/src/example.ts",
+      "applied": true
+    },
+    "permissionDecision": {
+      "hook_event_name": "permissionDecision",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "tool_name": "run_shell",
+      "decision": "allow"
+    },
+    "postTurnReview": {
+      "hook_event_name": "postTurnReview",
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": {
+        "model": "claude-sonnet-4",
+        "model_id": "anthropic/claude-sonnet-4",
+        "model_params": [
+          {
+            "id": "context",
+            "value": "1m"
+          },
+          {
+            "id": "thinking",
+            "value": "high"
+          }
+        ]
+      },
+      "issues_found": true,
+      "summary": "The diff drops error handling in fetchUser()."
+    }
+  }
+}
