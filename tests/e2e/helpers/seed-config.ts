@@ -2813,3 +2813,69 @@ export function seedHeldQueueFixture(workspaceRoot: string): void {
     ],
   })
 }
+
+/**
+ * Two idle threads for the running-status sidebar eval. A live mock turn flips
+ * the selected thread to `running` — persisted `running` is cleared on load by
+ * `resumePendingQueues`.
+ */
+export function seedThreadRunningStatusFixture(workspaceRoot: string): {
+  runningThreadTitle: string
+  idleThreadTitle: string
+} {
+  const projectId = 'e2e-thread-running-status-project'
+  const runningThreadTitle = 'Agent working'
+  const idleThreadTitle = 'Idle thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: 'e2e-running-thread',
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-running-thread',
+        title: runningThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-run',
+            role: 'user',
+            content: 'Keep working on the refactor.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-run',
+            role: 'assistant',
+            content: 'Working on it…',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+      {
+        id: 'e2e-idle-thread',
+        title: idleThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-idle',
+            role: 'user',
+            content: 'Earlier finished turn.',
+            toolCalls: [],
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
+      },
+    ],
+  })
+  writeSettings({ model: 'claude-sonnet-4-6' })
+  return { runningThreadTitle, idleThreadTitle }
+}
