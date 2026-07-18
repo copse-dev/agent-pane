@@ -425,7 +425,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
-    listModels: (agentId: string) => ipcRenderer.invoke('acp:listModels', agentId),
+    probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probeAgent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:autoSetup'),
   },
   settings: {
@@ -640,6 +640,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
+    },
+    requestAcpPackageInstallApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
   })
 }

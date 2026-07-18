@@ -98,8 +98,12 @@ big decision:
   agents without the capability keep the prior text-only behaviour.
   ([#831](https://github.com/copse-dev/agent-pane/issues/831))
 
-The behavioral follow-up (Tier 2) is tracked in
-[#832](https://github.com/copse-dev/agent-pane/issues/832).
+The behavioural follow-up (Tier 2) is tracked in
+[#832](https://github.com/copse-dev/agent-pane/issues/832) and implemented as
+`npm run probe:acp:behavior` — see
+[`docs/acp-capability-probe.md`](acp-capability-probe.md#tier-2--behavioural-probe-npm-run-probeacpbehavior).
+Run it against real signed-in agents to fill `docs/acp-behavior-matrix.md`
+(git-ignored); CI covers the extraction with in-memory fake agents.
 
 ## Caveat: slash-command counts are a race
 

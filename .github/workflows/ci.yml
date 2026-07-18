@@ -483,7 +483,11 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/boost || true
           sudo docker image prune --all --force >/dev/null 2>&1 || true
           df -h /
-      - uses: actions/download-artifact@v8
+      # Outer retry: actions/download-artifact marks intermittent CDN 403s
+      # ("Error from intermediary") as non-retryable, and with fail-fast:true a
+      # single shard's download flake cancels the whole e2e matrix (see
+      # actions/download-artifact#464 and main run 29591165512).
+      - uses: ./.github/actions/download-artifact-retry
         with:
           name: dist-tar
       - run: tar -xf dist.tar
