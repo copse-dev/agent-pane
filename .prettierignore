@@ -10,3 +10,10 @@ tests/e2e/electron-shell/.e2e-env.json
 tests/fixtures/git-changes-repo/
 # E2E markdown fixture with intentional hard-break trailing spaces + &nbsp;.
 tests/fixtures/job-description-metadata.md
+# Vendored upstream hook schemas (G3) — pinned byte-identical to upstream; never
+# reformatted so the drift detector compares against exactly what was published.
+schemas/vendor/*.json
+# Hook wire-payload snapshots (G4) — a generated artifact written byte-exact by
+# payload-snapshots.test.ts (UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1); the test compares
+# against these bytes, so prettier must not reformat them (decision 14).
+src/main/services/hooks/__snapshots__/*.json

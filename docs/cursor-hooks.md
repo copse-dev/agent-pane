@@ -7,7 +7,9 @@ can observe, block, or annotate the action that triggered it.
 
 This document records the Cursor hooks contract, what Copse honours today, and what
 remains for fuller parity. It is the hooks counterpart to
-[`docs/cursor-plugins.md`](./cursor-plugins.md).
+[`docs/cursor-plugins.md`](./cursor-plugins.md). For the cross-cutting architecture — the
+unified registry, canonical events, executors, async/budget/epoch, spine, sandbox, and UI
+that are dialect-agnostic — see [`docs/hooks.md`](./hooks.md).
 
 ## On-disk layout
 
@@ -246,6 +248,55 @@ This is the same trust boundary described in
 [`docs/supply-chain-security.md`](./supply-chain-security.md): trusting a workspace means
 trusting the code it can cause to run.
 
+## Vendored upstream schemas & drift detection (G3)
+
+Copse pins committed copies of the upstream hook-config JSON schemas for both
+foreign dialects under [`schemas/vendor/`](../schemas/vendor/) —
+`claude-code-settings.schema.json` (Claude Code, from SchemaStore) and
+`cursor-hooks.schema.json` (the community `cursor-hooks` npm schema). See
+[`schemas/vendor/README.md`](../schemas/vendor/README.md) for provenance, pins,
+and the re-vendoring steps.
+
+These exist for exactly two purposes, and are subject to two hard rules — they
+are **never fetched over the network** at runtime or in CI, and they are **never
+a load gate** (a config that violates an upstream schema still loads):
+
+1. **Warn-level authoring lint.** Parsing a foreign config uses the schema's
+   published event list to warn when a hooks group targets an event the vendor
+   recognises but Copse does not act on yet (vs an outright typo). The valid
+   hooks still load; the warning surfaces in Settings → Sources.
+2. **CI drift detector** (`src/main/services/hooks/vendor-schema-drift.test.ts`)
+   diffs each vendored schema's published events against the events our adapters
+   wire. Every published event must be either wired or listed in an explicit
+   intentionally-unsupported set (`src/shared/hooks/vendored-hook-schemas.ts`); an
+   upstream release adding an unaccounted event fails CI until it is wired or
+   documented. Copse currently wires Claude `PreToolUse` + `SessionStart` and the
+   Cursor events above; the long tail of Claude events (`Notification`,
+   `TeammateIdle`, …) is intentionally-unsupported v1.
+
+## Wire payload snapshots (G4)
+
+Every dialect wire **request** payload — the stdin JSON a Cursor / Claude / Copse
+hook actually receives — is snapshot-tested against a committed golden fixture
+[`src/main/services/hooks/__snapshots__/wire-payloads.json`](../src/main/services/hooks/__snapshots__/wire-payloads.json)
+by [`src/main/services/hooks/payload-snapshots.test.ts`](../src/main/services/hooks/payload-snapshots.test.ts).
+The test marshals a fixed synthetic payload (with a fixed agent-session identity,
+so the B4 `model` fields are captured) for every canonical event each dialect
+declares a marshaller for — including the tool-flavor splits (shell / MCP / read
+for `toolGate`, shell / MCP for `afterToolUse`) — and asserts the result is
+byte-identical to the fixture.
+
+This implements **decision 14** of
+[`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md):
+pre-v1 with zero consumers we do not version payloads, but the request direction
+is the stability contract, so **changing a snapshot is a publish-time stability
+audit** — the reviewed JSON diff of the golden fixture _is_ the stability
+declaration. Regenerate the fixture (and review the diff) with:
+
+```bash
+UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1 npm test
+```
+
 ## Gaps and future work
 
 1. **Content rewriting** — `updated_input` on tool gates (rewrite the proposed tool
@@ -272,7 +323,13 @@ trusting the code it can cause to run.
 - `src/main/services/security/permission-gate.ts` — calls the tool-gate hooks
 - `src/shared/types/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
 - `src/shared/types/hooks.ts` — shared `HookSummary` for Sources / `hooks:list`
+- `src/shared/hooks/vendored-hook-schemas.ts` — published-event mirrors + intentionally-unsupported sets (G3)
+- `schemas/vendor/` — pinned upstream Cursor + Claude hook schemas (G3); see its `README.md`
+- `src/main/services/hooks/vendor-schema-drift.test.ts` — CI drift detector (G3)
+- `src/main/services/hooks/payload-snapshots.test.ts` — dialect wire payload snapshot tests (G4)
+- `src/main/services/hooks/__snapshots__/wire-payloads.json` — committed golden wire-payload fixture (G4)
 - `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
+- `docs/hooks.md` — dialect-agnostic hooks architecture umbrella
 - `docs/claude-hooks.md` — Claude Code hooks contract
 - `docs/cursor-plugins.md` — sibling exploration of Cursor plugin support
 - `docs/supply-chain-security.md` — trust boundaries for executed code
