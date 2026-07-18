@@ -302,6 +302,23 @@ export function renderFrontierSvg(points: readonly FrontierPoint[]): SVGSVGEleme
     )
   }
 
+  // Direct labels sit right of their point; when several models cluster (the
+  // frontier bunches near the top-right), push later labels down so none
+  // overlap. Deterministic: processed in y order.
+  const labelY = new Map<string, number>()
+  const placed: Array<{ px: number; py: number }> = []
+  for (const p of [...points].sort((a, b) => y(a.intellect) - y(b.intellect))) {
+    const px = x(p.costPerMTok) + 8
+    let py = y(p.intellect) + 3
+    for (const prev of placed) {
+      if (Math.abs(px - prev.px) < 120 && py - prev.py < 10 && py - prev.py > -10) {
+        py = prev.py + 10
+      }
+    }
+    placed.push({ px, py })
+    labelY.set(p.id, py)
+  }
+
   // Points, with a larger transparent hit target and a native tooltip carrying
   // the full derivation.
   for (const p of points) {
@@ -331,7 +348,7 @@ export function renderFrontierSvg(points: readonly FrontierPoint[]): SVGSVGEleme
       'text',
       {
         x: String(x(p.costPerMTok) + 8),
-        y: String(y(p.intellect) + 3),
+        y: String(labelY.get(p.id) ?? y(p.intellect) + 3),
         'font-size': '9',
         fill: 'var(--text-secondary)',
         class: 'frontier-label',

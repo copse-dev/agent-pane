@@ -170,7 +170,10 @@ function extraProviderOptions(
     const value = toExtraProviderModel(provider.id, id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    entries.push({ value, label, group: provider.label })
+    // Intellect-only hint (extra-provider ids carry no catalog pricing),
+    // matched via the measurement alias map.
+    const hint = modelIntellectHint(id)
+    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group: provider.label })
   }
 
   for (const model of provider.models) add(model.id, model.label ?? model.id)

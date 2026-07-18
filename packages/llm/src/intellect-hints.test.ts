@@ -29,7 +29,10 @@ describe('cloudModelIntellectHint', () => {
 describe('modelIntellectHint', () => {
   it('gives an intellect-only hint for alias and vendor id forms', () => {
     assert.equal(modelIntellectHint('Opus 4.8'), 'intellect 56')
-    assert.equal(modelIntellectHint('moonshotai/kimi-k2.6'), 'intellect 54')
+    assert.equal(modelIntellectHint('claude-fable-5[1m]'), 'intellect 60')
+    // June-cohort measurement equated onto canonical — shown as an estimate.
+    assert.equal(modelIntellectHint('moonshotai/kimi-k2.6'), 'intellect ~49')
+    assert.equal(modelIntellectHint('MiniMaxAI/MiniMax-M3:novita'), 'intellect ~50')
     assert.equal(modelIntellectHint('totally-unknown'), null)
   })
 })

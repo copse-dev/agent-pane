@@ -24,18 +24,41 @@ describe('getIntellectScore', () => {
     assert.equal(getIntellectScore('made-up-model'), null)
   })
 
-  it('resolves alias and provider-prefixed forms to the same measurement', () => {
-    const direct = getIntellectScore('claude-opus-4-8')
+  it('resolves alias and structurally-wrapped forms to the same measurement', () => {
+    const direct = getIntellectScore('claude-fable-5')
     assert.ok(direct)
-    // ACP picker label, OpenRouter id, and a provider-prefixed value all
-    // resolve to the one measurement — never a second score.
-    assert.deepEqual(getIntellectScore('Opus 4.8'), direct)
-    assert.deepEqual(getIntellectScore('anthropic/claude-opus-4-8'), direct)
-    assert.deepEqual(getIntellectScore('openrouter:anthropic/claude-opus-4-8'), direct)
-    // Open-weights measurement reachable under its vendor id.
-    assert.equal(getIntellectScore('moonshotai/kimi-k2.6')?.value, 54)
-    // A prefix strip must not invent matches for unknown ids.
+    assert.equal(direct.value, 60)
+    // ACP picker label, OpenRouter id, provider prefix, option suffix, agent
+    // segment, and serving-route tag all resolve to the one measurement.
+    assert.deepEqual(getIntellectScore('Fable 5'), direct)
+    assert.deepEqual(getIntellectScore('anthropic/claude-fable-5'), direct)
+    assert.deepEqual(getIntellectScore('openrouter:anthropic/claude-fable-5'), direct)
+    assert.deepEqual(getIntellectScore('claude-fable-5[1m]'), direct)
+    assert.deepEqual(getIntellectScore('acp:claude-agent-acp#claude-fable-5[1m]'), direct)
+    assert.deepEqual(
+      getIntellectScore('huggingface:MiniMaxAI/MiniMax-M3:novita'),
+      getIntellectScore('MiniMaxAI/MiniMax-M3'),
+    )
+    // Wrapper stripping must not invent matches for unknown models.
     assert.equal(getIntellectScore('lmstudio:unknown/model'), null)
+    assert.equal(getIntellectScore('acp:cursor#default[]'), null)
+  })
+
+  it('equates a June-cohort (v4.0) measurement onto the canonical scale as a flagged estimate', () => {
+    // MiniMax-M3 was measured at 55 when Opus 4.8 read 61; on the canonical
+    // v4.1 scale (Opus = 56) the fitted map translates it to 50 — estimated,
+    // and marked extrapolated because 55 sits below the anchor range.
+    const m3 = getIntellectScore('MiniMaxAI/MiniMax-M3')
+    assert.ok(m3)
+    assert.equal(m3.value, 50)
+    assert.equal(m3.estimated, true)
+    assert.match(m3.basis ?? '', /equated v4\.0→v4\.1/)
+    assert.match(m3.basis ?? '', /extrapolated beyond anchor range/)
+    // The raw v4.0 fact is untouched — only the canonical projection is derived.
+    const explanation = explainIntellectScore('MiniMaxAI/MiniMax-M3')
+    assert.ok(explanation)
+    assert.equal(explanation.steps[0]?.value, 55)
+    assert.equal(explanation.steps[1]?.step, 'equated')
   })
 
   it('every synced measurement carries a citation and version', () => {

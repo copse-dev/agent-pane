@@ -55,17 +55,36 @@ export interface IntellectExplanation {
 }
 
 /**
- * Resolve any id/label form a model appears under (bare catalog id, an alias
- * from the sync data such as an OpenRouter id or ACP picker label, or a
- * provider-prefixed value like `lmstudio:<id>`) to the measurement's catalog
- * id. Null when nothing matches — never a fuzzy guess.
+ * Resolve any id/label form a model appears under to the measurement's catalog
+ * id: bare ids, aliases from the sync data (OpenRouter ids, ACP picker
+ * labels), and the app's structural wrappers — provider prefixes
+ * (`lmstudio:<id>`), ACP agent segments (`acp:<agent>#<model>`), option
+ * suffixes (`claude-fable-5[1m]`), and serving-route tags on a vendor path
+ * (`MiniMaxAI/MiniMax-M3:novita`). Only wrappers are stripped — the model name
+ * itself is never fuzzy-matched. Null when nothing resolves.
  */
 export function resolveIntellectModelId(id: string): string | null {
   if (id in MODEL_INTELLECT_RAW) return id
   const aliased = INTELLECT_ALIASES[id]
   if (aliased !== undefined) return aliased
+  // Option suffix: `<model>[...]` (e.g. "[1m]", "[fast=true]").
+  const unbracketed = id.replace(/\[[^\]]*\]$/, '')
+  if (unbracketed !== id) return resolveIntellectModelId(unbracketed)
+  // ACP form `<agent>#<model>`: the model is the part after the last '#'.
+  const hash = id.lastIndexOf('#')
+  if (hash >= 0) return resolveIntellectModelId(id.slice(hash + 1))
+  // Provider prefix `<provider>:<rest>`.
   const sep = id.indexOf(':')
-  if (sep > 0) return resolveIntellectModelId(id.slice(sep + 1))
+  if (sep > 0) {
+    const stripped = resolveIntellectModelId(id.slice(sep + 1))
+    if (stripped !== null) return stripped
+  }
+  // Serving-route tag on a vendor path: `vendor/model:tag` (only when a '/'
+  // remains, so a bare word after a colon is never mistaken for a model).
+  const lastColon = id.lastIndexOf(':')
+  if (lastColon > 0 && id.slice(0, lastColon).includes('/')) {
+    return resolveIntellectModelId(id.slice(0, lastColon))
+  }
   return null
 }
 

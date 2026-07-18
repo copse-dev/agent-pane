@@ -22,14 +22,18 @@ import { z } from 'zod'
 
 const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
-const GENERATED_PATH = resolve('src/shared/llm/model-catalog.generated.ts')
+const GENERATED_PATH = resolve('packages/llm/src/model-catalog.generated.ts')
 
 // Mirror of TRACKED_MODELS in src/shared/llm/model-catalog.ts (see header
 // comment for why this is duplicated). model-catalog.test.ts enforces parity.
 const TRACKED_MODELS = [
   'claude-sonnet-4-6',
+  'claude-fable-5',
+  'claude-sonnet-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
+  'gpt-5.6-sol',
+  'gpt-5.5',
   'gpt-5',
   'gpt-5-mini',
   'gpt-4o',

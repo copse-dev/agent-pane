@@ -40,8 +40,12 @@ export const DEFAULT_CLOUD_MODEL = 'claude-sonnet-4-6'
 
 export const TRACKED_MODELS = [
   DEFAULT_CLOUD_MODEL,
+  'claude-fable-5',
+  'claude-sonnet-5',
   'claude-opus-4-8',
   'claude-haiku-4-5',
+  'gpt-5.6-sol',
+  'gpt-5.5',
   'gpt-5',
   'gpt-5-mini',
   'gpt-4o',

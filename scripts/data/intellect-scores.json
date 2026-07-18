@@ -1,8 +1,24 @@
 {
-  "$comment": "Curated intelligence-index measurements, the reviewed source of truth for scripts/sync-intellect.mts. RULES: (1) values are cited facts — every entry needs a real source and asOf date, never a guess; (2) canonicalVersion is the permanent display scale — it only changes as a deliberate, breaking re-baseline; (3) a model may have one entry per indexVersion (that overlap is what makes it an equating anchor); (4) fitted equating maps are crystallised here by the sync script at first fit and are then reused verbatim — pass --refit to deliberately refit after adding anchors; (5) aliases are alternate id/label forms the same weights appear under across providers (OpenRouter ids, ACP picker labels) — lookup keys only, they never create a second measurement.",
+  "$comment": "Curated intelligence-index measurements, the reviewed source of truth for scripts/sync-intellect.mts. RULES: (1) values are cited facts — every entry needs a real source and asOf date, never a guess; (2) canonicalVersion is the permanent display scale — it only changes as a deliberate, breaking re-baseline; (3) a model may have one entry per indexVersion (that overlap is what makes it an equating anchor); (4) fitted equating maps are crystallised here by the sync script at first fit and are then reused verbatim — pass --refit to deliberately refit after adding anchors; (5) aliases are alternate id/label forms the same weights appear under across providers (OpenRouter ids, ACP picker labels) — lookup keys only, they never create a second measurement. VERSION NOTE: v4.0 is the pre-renormalisation scale of June 2026 (the cohort where Opus 4.8 = 61, GPT-5.5 = 60); v4.1 is the July 2026 renormalisation (AA article 'Artificial Analysis Intelligence Index v4.1: a shift toward agentic workloads') where the same Opus 4.8 checkpoint reads 56. Never compare raw values across the two.",
   "canonicalVersion": "v4.1",
   "attribution": "Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)",
   "scores": [
+    {
+      "modelId": "claude-fable-5",
+      "value": 60,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), via Latent Space AINews Kimi K3 coverage: Fable 5 = 60, GPT-5.6 = 59, Kimi K3 = 57, Opus 4.8 = 56",
+      "asOf": "2026-07-16",
+      "aliases": ["Fable 5", "Claude Fable 5", "anthropic/claude-fable-5", "claude-fable-5-latest"]
+    },
+    {
+      "modelId": "gpt-5.6-sol",
+      "value": 59,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), chart label 'GPT-5.6' (AA's frontier GPT-5.6 Sol entry), via Latent Space AINews Kimi K3 coverage, 2026-07-16",
+      "asOf": "2026-07-16",
+      "aliases": ["GPT-5.6 Sol", "openai/gpt-5.6-sol"]
+    },
     {
       "modelId": "claude-opus-4-8",
       "value": 56,
@@ -10,6 +26,41 @@
       "source": "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), via Latent Space AINews Kimi K3 coverage: Fable 5 = 60, GPT-5.6 = 59, Kimi K3 = 57, Opus 4.8 = 56",
       "asOf": "2026-07-16",
       "aliases": ["Opus 4.8", "anthropic/claude-opus-4-8", "claude-opus-4-8-latest"]
+    },
+    {
+      "modelId": "claude-opus-4-8",
+      "value": 61,
+      "indexVersion": "v4.0",
+      "source": "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): 'Claude Opus 4.8 currently leads the index at 61, followed by GPT-5.5 at 60', https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18"
+    },
+    {
+      "modelId": "gpt-5.5",
+      "value": 55,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis Intelligence Index v4.1 (July 2026 leaderboard): Fable 5 = 60, GPT-5.6 Sol = 59, Opus 4.8 = 56, GPT-5.5 = 55; see https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-1",
+      "asOf": "2026-07-18",
+      "aliases": ["GPT-5.5", "openai/gpt-5.5"]
+    },
+    {
+      "modelId": "gpt-5.5",
+      "value": 60,
+      "indexVersion": "v4.0",
+      "source": "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): 'Claude Opus 4.8 currently leads the index at 61, followed by GPT-5.5 at 60', https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18"
+    },
+    {
+      "modelId": "claude-sonnet-5",
+      "value": 53,
+      "indexVersion": "v4.1",
+      "source": "@ArtificialAnlys: 'Claude Sonnet 5 achieves 53 on the Artificial Analysis Intelligence Index' (Adaptive Reasoning, max effort), 2026-07-02",
+      "asOf": "2026-07-02",
+      "aliases": [
+        "Sonnet 5",
+        "Claude Sonnet 5",
+        "anthropic/claude-sonnet-5",
+        "claude-sonnet-5-latest"
+      ]
     },
     {
       "modelId": "claude-sonnet-4-6",
@@ -28,14 +79,46 @@
       "aliases": ["Haiku 4.5", "anthropic/claude-haiku-4-5", "claude-haiku-4-5-latest"]
     },
     {
+      "modelId": "moonshotai/kimi-k3",
+      "value": 57,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), via Latent Space AINews Kimi K3 coverage: 'Kimi K3 scores 57 on the Artificial Analysis Intelligence Index'",
+      "asOf": "2026-07-16",
+      "aliases": ["Kimi K3", "moonshot/kimi-k3"]
+    },
+    {
       "modelId": "moonshotai/kimi-k2.6",
       "value": 54,
-      "indexVersion": "v4.1",
-      "source": "Artificial Analysis open-weights leaders (July 2026): Kimi K2.6 (Reasoning) and MiMo V2.5 Pro tie at 54 on the Intelligence Index, https://artificialanalysis.ai/models/open-source, retrieved 2026-07-18",
-      "asOf": "2026-07-18",
-      "aliases": ["Kimi K2.6", "moonshotai/kimi-k2-6"]
+      "indexVersion": "v4.0",
+      "source": "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): M3 at 55 'edging ahead of Kimi K2.6 and MiMo-V2.5-Pro, both sitting at 54', https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18",
+      "aliases": ["Kimi K2.6", "moonshotai/kimi-k2-6", "moonshot/kimi-k2.6"]
+    },
+    {
+      "modelId": "MiniMaxAI/MiniMax-M3",
+      "value": 55,
+      "indexVersion": "v4.0",
+      "source": "@ArtificialAnlys: 'MiniMax-M3 scores 55 on the Artificial Analysis Intelligence Index' (June 2026 index cohort, Opus 4.8 = 61), https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18",
+      "aliases": ["MiniMax-M3", "minimax/minimax-m3"]
     }
   ],
-  "equatingPairs": [],
-  "equating": []
+  "equatingPairs": [
+    {
+      "from": "v4.0",
+      "to": "v4.1"
+    }
+  ],
+  "equating": [
+    {
+      "from": "v4.0",
+      "to": "v4.1",
+      "a": 1,
+      "b": -5,
+      "anchorCount": 2,
+      "anchorMin": 60,
+      "anchorMax": 61,
+      "fittedAsOf": "2026-07-18"
+    }
+  ]
 }

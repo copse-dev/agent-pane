@@ -31,7 +31,6 @@ import { createEnvKeyDetectSection } from './setup/env-key-detect-section.ts'
 import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
-import { createIntellectFrontierPanel } from './intellect-frontier-panel.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import {
@@ -400,8 +399,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <div id="settings-model-routing-host" class="settings-mount"></div>
-
-            <div id="settings-intellect-frontier-host" class="settings-mount"></div>
 
             <div id="settings-gh-cli-host" class="settings-mount"></div>
 
@@ -1214,9 +1211,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const modelRoutingSection = createModelRoutingSection(api)
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
-  const intellectFrontierPanel = createIntellectFrontierPanel(() => api.lmStudio.models())
-  qsRequired(overlay, '#settings-intellect-frontier-host').append(intellectFrontierPanel.root)
-
   const usageSection = createUsageSection(api, store)
   qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
 
@@ -1335,7 +1329,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   async function refreshLocalModelSelects(): Promise<void> {
     await modelRoutingSection.refresh()
-    await intellectFrontierPanel.refresh()
   }
 
   function makeSourceRow(

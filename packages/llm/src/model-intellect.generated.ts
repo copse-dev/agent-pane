@@ -21,6 +21,24 @@ export const INTELLECT_ATTRIBUTION =
   'Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)'
 
 export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
+  'MiniMaxAI/MiniMax-M3': [
+    {
+      value: 55,
+      indexVersion: 'v4.0',
+      source:
+        "@ArtificialAnlys: 'MiniMax-M3 scores 55 on the Artificial Analysis Intelligence Index' (June 2026 index cohort, Opus 4.8 = 61), https://artificialanalysis.ai/articles/minimax-m3",
+      asOf: '2026-06-18',
+    },
+  ],
+  'claude-fable-5': [
+    {
+      value: 60,
+      indexVersion: 'v4.1',
+      source:
+        'Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), via Latent Space AINews Kimi K3 coverage: Fable 5 = 60, GPT-5.6 = 59, Kimi K3 = 57, Opus 4.8 = 56',
+      asOf: '2026-07-16',
+    },
+  ],
   'claude-haiku-4-5': [
     {
       value: 24,
@@ -31,6 +49,13 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     },
   ],
   'claude-opus-4-8': [
+    {
+      value: 61,
+      indexVersion: 'v4.0',
+      source:
+        "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): 'Claude Opus 4.8 currently leads the index at 61, followed by GPT-5.5 at 60', https://artificialanalysis.ai/articles/minimax-m3",
+      asOf: '2026-06-18',
+    },
     {
       value: 56,
       indexVersion: 'v4.1',
@@ -48,30 +73,101 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-07-02',
     },
   ],
+  'claude-sonnet-5': [
+    {
+      value: 53,
+      indexVersion: 'v4.1',
+      source:
+        "@ArtificialAnlys: 'Claude Sonnet 5 achieves 53 on the Artificial Analysis Intelligence Index' (Adaptive Reasoning, max effort), 2026-07-02",
+      asOf: '2026-07-02',
+    },
+  ],
+  'gpt-5.5': [
+    {
+      value: 60,
+      indexVersion: 'v4.0',
+      source:
+        "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): 'Claude Opus 4.8 currently leads the index at 61, followed by GPT-5.5 at 60', https://artificialanalysis.ai/articles/minimax-m3",
+      asOf: '2026-06-18',
+    },
+    {
+      value: 55,
+      indexVersion: 'v4.1',
+      source:
+        'Artificial Analysis Intelligence Index v4.1 (July 2026 leaderboard): Fable 5 = 60, GPT-5.6 Sol = 59, Opus 4.8 = 56, GPT-5.5 = 55; see https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-1',
+      asOf: '2026-07-18',
+    },
+  ],
+  'gpt-5.6-sol': [
+    {
+      value: 59,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), chart label 'GPT-5.6' (AA's frontier GPT-5.6 Sol entry), via Latent Space AINews Kimi K3 coverage, 2026-07-16",
+      asOf: '2026-07-16',
+    },
+  ],
   'moonshotai/kimi-k2.6': [
     {
       value: 54,
+      indexVersion: 'v4.0',
+      source:
+        "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): M3 at 55 'edging ahead of Kimi K2.6 and MiMo-V2.5-Pro, both sitting at 54', https://artificialanalysis.ai/articles/minimax-m3",
+      asOf: '2026-06-18',
+    },
+  ],
+  'moonshotai/kimi-k3': [
+    {
+      value: 57,
       indexVersion: 'v4.1',
       source:
-        'Artificial Analysis open-weights leaders (July 2026): Kimi K2.6 (Reasoning) and MiMo V2.5 Pro tie at 54 on the Intelligence Index, https://artificialanalysis.ai/models/open-source, retrieved 2026-07-18',
-      asOf: '2026-07-18',
+        "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), via Latent Space AINews Kimi K3 coverage: 'Kimi K3 scores 57 on the Artificial Analysis Intelligence Index'",
+      asOf: '2026-07-16',
     },
   ],
 }
 
 /** Alternate id/label forms (OpenRouter ids, ACP labels) → catalog model id. */
 export const INTELLECT_ALIASES: Record<string, string> = {
+  'anthropic/claude-fable-5': 'claude-fable-5',
   'anthropic/claude-haiku-4-5': 'claude-haiku-4-5',
   'anthropic/claude-opus-4-8': 'claude-opus-4-8',
   'anthropic/claude-sonnet-4-6': 'claude-sonnet-4-6',
+  'anthropic/claude-sonnet-5': 'claude-sonnet-5',
+  'Claude Fable 5': 'claude-fable-5',
+  'Claude Sonnet 5': 'claude-sonnet-5',
+  'claude-fable-5-latest': 'claude-fable-5',
   'claude-haiku-4-5-latest': 'claude-haiku-4-5',
   'claude-opus-4-8-latest': 'claude-opus-4-8',
   'claude-sonnet-4-6-latest': 'claude-sonnet-4-6',
+  'claude-sonnet-5-latest': 'claude-sonnet-5',
+  'Fable 5': 'claude-fable-5',
+  'GPT-5.5': 'gpt-5.5',
+  'GPT-5.6 Sol': 'gpt-5.6-sol',
   'Haiku 4.5': 'claude-haiku-4-5',
   'Kimi K2.6': 'moonshotai/kimi-k2.6',
+  'Kimi K3': 'moonshotai/kimi-k3',
+  'MiniMax-M3': 'MiniMaxAI/MiniMax-M3',
+  'minimax/minimax-m3': 'MiniMaxAI/MiniMax-M3',
+  'moonshot/kimi-k2.6': 'moonshotai/kimi-k2.6',
+  'moonshot/kimi-k3': 'moonshotai/kimi-k3',
   'moonshotai/kimi-k2-6': 'moonshotai/kimi-k2.6',
+  'openai/gpt-5.5': 'gpt-5.5',
+  'openai/gpt-5.6-sol': 'gpt-5.6-sol',
   'Opus 4.8': 'claude-opus-4-8',
   'Sonnet 4.6': 'claude-sonnet-4-6',
+  'Sonnet 5': 'claude-sonnet-5',
 }
 
-export const INTELLECT_EQUATING_MAPS: readonly EquatingMap[] = []
+export const INTELLECT_EQUATING_MAPS: readonly EquatingMap[] = [
+  {
+    from: 'v4.0',
+    to: 'v4.1',
+    a: 1,
+    b: -5,
+    anchorCount: 2,
+    anchorMin: 60,
+    anchorMax: 61,
+    fittedAsOf: '2026-07-18',
+  },
+]
