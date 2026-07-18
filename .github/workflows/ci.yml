@@ -59,11 +59,12 @@ jobs:
   # Folding the former standalone `plan-e2e` job in here drops a duplicate
   # checkout + node setup (and its rounded-up billed minute) from every run.
   precheck:
-    # GitHub-hosted: the self-hosted check fleet (6 GB cgroup) has been
-    # cgroup-killing `tsc` / `eslint .` under load (exit 137) across many PRs.
-    # Hosted runners have enough headroom for the static gate; heavier jobs
-    # below still prefer CHECKS_RUNNER when set.
-    runs-on: ubuntu-latest
+    # Prefer the self-hosted check fleet (CHECKS_RUNNER) to conserve Actions
+    # minutes; falls back to GitHub-hosted ubuntu-latest when the var is unset.
+    # History: the 6 GB self-hosted cgroup has cgroup-killed `tsc` / `eslint .`
+    # under load (exit 137). If that recurs, add fleet headroom rather than
+    # re-pinning the static gate to hosted.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
     # Consumed by the e2e job: how much of the e2e tier this run needs (mode/
@@ -257,8 +258,9 @@ jobs:
   # secret is unset (commit lands, just no CI re-trigger — pre-PAT behaviour).
   autoformat:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    # Same rationale as precheck: avoid 6 GB self-hosted OOM on eslint/prettier.
-    runs-on: ubuntu-latest
+    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
+    # when unset. Watch for 6 GB self-hosted OOM on eslint/prettier (see precheck).
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write
     steps:
@@ -313,9 +315,11 @@ jobs:
   check:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Hosted: coverage/esbuild has been dying with "service was stopped" on the
-    # 6 GB self-hosted check fleet under load (same class of flake as precheck OOM).
-    runs-on: ubuntu-latest
+    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
+    # when unset. History: coverage/esbuild has died with "service was stopped" on
+    # the 6 GB self-hosted fleet under load (same class as precheck OOM) — add
+    # headroom if it recurs.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
@@ -341,8 +345,9 @@ jobs:
   bench:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Hosted: no Electron/display need; avoid the saturated self-hosted check queue.
-    runs-on: ubuntu-latest
+    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
+    # when unset. No Electron/display need.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
@@ -414,9 +419,9 @@ jobs:
   build:
     needs: precheck
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    # Hosted: produces the dist artifact for e2e; self-hosted check fleet is only
-    # needed for Electron e2e shards below.
-    runs-on: ubuntu-latest
+    # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
+    # when unset. Produces the dist artifact consumed by the e2e shards below.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     # Build dist once and hand it to every e2e shard. Previously each shard ran
     # its own `npm run build`; an earlier attempt to share dist via upload/
     # download dropped some Monaco worker files, breaking specs that open the
@@ -1029,9 +1034,11 @@ jobs:
     name: CI Passed
     if: always()
     needs: [precheck, check, bench, build, e2e]
-    # Tiny aggregate gate — keep on hosted so a saturated self-hosted check
-    # fleet cannot leave a green pipeline without its required status check.
-    runs-on: ubuntu-latest
+    # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
+    # minutes; hosted fallback when unset. Fails closed either way: if the fleet
+    # is saturated this stays pending (never green), so it can't wave a run
+    # through without its required status check.
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
       pull-requests: read
