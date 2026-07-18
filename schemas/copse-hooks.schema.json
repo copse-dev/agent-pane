@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://copse.dev/schemas/copse-hooks.schema.json",
+  "title": "Copse hooks configuration (.copse/hooks.json)",
+  "description": "The official schema for Copse's native hook config format. A hook maps a canonical event to a spawned command. Discovered from ~/.copse/hooks.json (always trusted) and <workspace>/.copse/hooks.json (only when the workspace is trusted). See docs/copse-hooks.md and docs/plans/hooks-and-feature-packs.md (F1).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Config format version. Optional; reserved for forward compatibility.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "hooks": {
+      "description": "Canonical event name to an array of hook entries. Only the wired events listed here are active in this release; other canonical events are accepted but reported as unsupported in Sources.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "toolGate": { "$ref": "#/$defs/hookArray" },
+        "beforeSubmitPrompt": { "$ref": "#/$defs/hookArray" },
+        "afterFileEdit": { "$ref": "#/$defs/hookArray" },
+        "stop": { "$ref": "#/$defs/hookArray" },
+        "subagentStart": { "$ref": "#/$defs/hookArray" },
+        "subagentStop": { "$ref": "#/$defs/hookArray" },
+        "afterToolUse": { "$ref": "#/$defs/hookArray" },
+        "sessionStart": { "$ref": "#/$defs/hookArray" }
+      }
+    }
+  },
+  "$defs": {
+    "hookArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/hook" }
+    },
+    "hook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "description": "The command line Copse spawns for this hook. Relative commands resolve against the directory of the declaring hooks.json.",
+          "type": "string",
+          "minLength": 1
+        },
+        "onFailure": {
+          "description": "How a failure (crash / timeout / invalid JSON) resolves (decision 9). 'open' (default) treats the failure as no-opinion so a broken hook never wedges the agent; 'closed' blocks the gated action.",
+          "type": "string",
+          "enum": ["open", "closed"],
+          "default": "open"
+        },
+        "sandbox": {
+          "description": "Whether the hook runs inside the project sandbox (decision 7). Sandboxed by default (true); 'sandbox: false' is the escape, surfaced in the trust prompt. Enforcement is macOS-only and lands in a later phase (F3) — this is a default, not a guarantee.",
+          "type": "boolean",
+          "default": true
+        },
+        "async": {
+          "description": "Opt into detached async dispatch (decision 2). Only honoured on events whose default is blocking but that allow an async opt-in (afterFileEdit); ignored (with a warning) on fixed blocking decision events (toolGate, beforeSubmitPrompt, subagentStart).",
+          "type": "boolean",
+          "default": false
+        },
+        "loop_limit": {
+          "description": "RESERVED (parsed + validated, not yet enforced — plan row C5). Per-script auto-continuation limit (decision 5), tighten-only: will bound this hook's machine-turn contributions to min(loop_limit, global remaining). Today only the global auto-continuation budget (cap 5) applies; null (unlimited) already warns because human-in-the-loop is the floor.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "timeout": {
+          "description": "Per-hook timeout in seconds. Overrides the dialect default (30s). A non-positive or non-numeric value falls back to the default.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "matcher": {
+          "description": "Optional regular expression filtering which actions the hook fires for. The field it tests against depends on the event: the canonical tool name for toolGate / afterToolUse, and the subagent type for subagentStart / subagentStop. An absent matcher fires for every action; a malformed regex skips the hook (with a warning).",
+          "type": "string"
+        },
+        "glob": {
+          "description": "Optional path glob(s) for afterFileEdit — the hook fires only for edited paths matching one of the globs. Matched against the absolute path, the workspace-relative path, and the basename. An absent glob fires for every edit.",
+          "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
+        }
+      }
+    }
+  }
+}

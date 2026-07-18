@@ -9,7 +9,7 @@
 export type HookScope = 'user' | 'project'
 
 /** Which product's on-disk schema produced this hook. */
-export type HookFamily = 'cursor' | 'claude'
+export type HookFamily = 'cursor' | 'claude' | 'copse'
 
 /** A single discovered hook command for diagnostics / Settings → Sources. */
 export interface HookSummary {
