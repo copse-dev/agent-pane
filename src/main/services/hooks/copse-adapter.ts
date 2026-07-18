@@ -18,13 +18,14 @@
 // reports `failed` + the hook's `onFailure`; the shared runner turns that into
 // deny/allow.
 //
-// **Scope discipline (F1):** F1 parses + surfaces `sandbox` / `async` /
-// `onFailure` / `loop_limit`. It does **not** implement the F2 Copse-native
-// event fire sites (`beforeDiffApply` / `afterDiffApply` / `permissionDecision`)
-// nor the F3 sandbox-by-default spawn reversal — those fields are carried on the
-// {@link CommandHook} for F2/F3/C3 to consume. Canonical events with no wired
-// fire site (F2-native, first-party assembly events) parse but surface
-// `supported: false` in Sources.
+// **F2 — Copse-native events wired.** The four Copse-native events
+// (`beforeDiffApply` blocking, `afterDiffApply` / `permissionDecision` /
+// `postTurnReview` async observation) now have discovery + marshal/interpret
+// here and are listed in {@link COPSE_SUPPORTED_EVENTS}; their host fire sites
+// live in `diff-apply.ts` / `permission-decision.ts` / `post-turn-review.ts`.
+// Cursor / Claude declare none of these (Copse-native), so only the Copse
+// adapter marshals them. F3's sandbox-by-default spawn reversal is still not
+// implemented — `sandbox` is parsed/carried only.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -58,10 +59,10 @@ import { type HookSpawnResult } from './hook-spawn.ts'
 export const COPSE_DEFAULT_HOOK_TIMEOUT_MS = 30_000
 
 /**
- * The canonical events the Copse dialect can currently **declare and fire** in
- * F1 — exactly the events with a wired fire site (A2/B/D/H4). Copse also accepts
- * declarations for the not-yet-wired canonical events (F2-native diff-apply /
- * permission-decision, first-party assembly events) but reports them
+ * The canonical events the Copse dialect can currently **declare and fire** —
+ * exactly the events with a wired fire site (A2/B/D/H4 + the F2 Copse-native
+ * events). Copse also accepts declarations for the not-yet-wired canonical
+ * events (first-party assembly events, `compaction`) but reports them
  * `supported: false` (decision 8: unknown events warned, known-but-unwired
  * badged unsupported). The published JSON schema enumerates this exact set.
  */
@@ -74,6 +75,11 @@ export const COPSE_SUPPORTED_EVENTS: readonly HookEventName[] = [
   'subagentStop',
   'afterToolUse',
   'sessionStart',
+  // F2 Copse-native events.
+  'beforeDiffApply',
+  'afterDiffApply',
+  'permissionDecision',
+  'postTurnReview',
 ]
 
 /** Whether Copse currently wires a fire site for `event` (else: badge unsupported). */
@@ -90,6 +96,7 @@ const FIXED_BLOCKING_DECISION_EVENTS: readonly HookEventName[] = [
   'toolGate',
   'beforeSubmitPrompt',
   'subagentStart',
+  'beforeDiffApply',
 ]
 
 /** A parsed Copse hook command together with the config that declared it. */
@@ -623,6 +630,89 @@ export async function copseSessionStartHooks(
     })
 }
 
+/**
+ * Discover the Copse `beforeDiffApply` hooks whose glob covers the diff's path
+ * (F2, Copse-native). Blocking decision — a hook may deny / halt before a queued
+ * (or direct) diff lands; the fire site reduces the outcomes like the tool gate.
+ * Reuses the `afterFileEdit` glob matcher (the payload is a file path).
+ */
+export async function copseBeforeDiffApplyHooks(
+  payload: HookEventPayloads['beforeDiffApply'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'beforeDiffApply'>[]> {
+  const { hooks } = await discoverCopseHooksDetailed(opts)
+  return hooks
+    .filter(
+      (h) =>
+        h.event === 'beforeDiffApply' &&
+        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+    )
+    .map((h) => {
+      auditProjectHook(h)
+      return toCommandHook(h, 'beforeDiffApply')
+    })
+}
+
+/**
+ * Discover the Copse `afterDiffApply` hooks whose glob covers the diff's path
+ * (F2, Copse-native). Async observation — dispatched detached; a `queueMessage`
+ * follow-up routes through the pending-message queue (decision 4).
+ */
+export async function copseAfterDiffApplyHooks(
+  payload: HookEventPayloads['afterDiffApply'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'afterDiffApply'>[]> {
+  const { hooks } = await discoverCopseHooksDetailed(opts)
+  return hooks
+    .filter(
+      (h) =>
+        h.event === 'afterDiffApply' &&
+        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+    )
+    .map((h) => {
+      auditProjectHook(h)
+      return toCommandHook(h, 'afterDiffApply')
+    })
+}
+
+/**
+ * Discover the Copse `permissionDecision` hooks whose matcher covers the gated
+ * tool name (F2, Copse-native). Async observation — a clean post-verdict
+ * notification an audit logger (#840) can consume; it can never change the
+ * verdict that already happened.
+ */
+export async function copsePermissionDecisionHooks(
+  payload: HookEventPayloads['permissionDecision'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'permissionDecision'>[]> {
+  const { hooks } = await discoverCopseHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'permissionDecision' && copseMatcherMatches(h, payload.toolName))
+    .map((h) => {
+      auditProjectHook(h)
+      return toCommandHook(h, 'permissionDecision')
+    })
+}
+
+/**
+ * Discover the Copse `postTurnReview` hooks (F2, Copse-native). Async
+ * observation fired after a post-turn review verdict; no matcher subject (the
+ * event is turn-scoped, not tool/subagent-scoped), so a declared matcher is
+ * ignored and every hook fires.
+ */
+export async function copsePostTurnReviewHooks(
+  _payload: HookEventPayloads['postTurnReview'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'postTurnReview'>[]> {
+  const { hooks } = await discoverCopseHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'postTurnReview')
+    .map((h) => {
+      auditProjectHook(h)
+      return toCommandHook(h, 'postTurnReview')
+    })
+}
+
 // ---------------------------------------------------------------------------
 // wire marshalling (both directions)
 //
@@ -991,6 +1081,100 @@ export const copseAdapter: DialectAdapter = {
       failed: false,
       parseOk: true,
       ...(env ? { sessionEnv: env } : {}),
+    }
+  },
+
+  marshalBeforeDiffApplyRequest(_hook, payload, session) {
+    return { ...copseEnvelope('beforeDiffApply', session), file_path: payload.filePath }
+  },
+
+  interpretBeforeDiffApply(spawn, _payload) {
+    // Blocking allow/deny gate over a queued (or direct) diff apply. `ask`
+    // normalizes to `deny` (a diff apply cannot pause a spawned hook for
+    // interactive approval — the user already approves diffs in the panel),
+    // matching the `subagentStart` contract.
+    const pre = interpretPrelude(spawn, 'beforeDiffApply')
+    if ('done' in pre) return pre.done
+    const { outcome, spineDecision } = copseBlockingOutcome(pre.parsed)
+    if (outcome?.decision === 'ask') {
+      outcome.decision = 'deny'
+      spineDecision.permission = 'deny'
+    }
+    return { outcome, spineEvent: 'beforeDiffApply', spineDecision, failed: false, parseOk: true }
+  },
+
+  marshalAfterDiffApplyRequest(_hook, payload, session) {
+    return {
+      ...copseEnvelope('afterDiffApply', session),
+      file_path: payload.filePath,
+      applied: payload.applied,
+    }
+  },
+
+  interpretAfterDiffApply(spawn, _payload) {
+    // Async observation (decision 3): the diff already landed / was rejected, so
+    // no control-flow decision is honoured post-hoc; a `queueMessage` follow-up
+    // may route through the pending-message queue (decision 4).
+    const pre = interpretPrelude(spawn, 'afterDiffApply')
+    if ('done' in pre) return pre.done
+    const queueMessage = copseQueueMessage(pre.parsed)
+    return {
+      outcome: null,
+      spineEvent: 'afterDiffApply',
+      spineDecision: queueMessage ? { queuedMessageChars: queueMessage.text.length } : {},
+      failed: false,
+      parseOk: true,
+      ...(queueMessage ? { queueMessage } : {}),
+    }
+  },
+
+  marshalPermissionDecisionRequest(_hook, payload, session) {
+    return {
+      ...copseEnvelope('permissionDecision', session),
+      tool_name: payload.toolName,
+      decision: payload.decision,
+    }
+  },
+
+  interpretPermissionDecision(spawn, _payload) {
+    // Async observation (decision 3): a clean post-verdict notification for an
+    // audit logger (#840). It can never change the verdict that already
+    // happened; a `queueMessage` follow-up may route through the queue.
+    const pre = interpretPrelude(spawn, 'permissionDecision')
+    if ('done' in pre) return pre.done
+    const queueMessage = copseQueueMessage(pre.parsed)
+    return {
+      outcome: null,
+      spineEvent: 'permissionDecision',
+      spineDecision: queueMessage ? { queuedMessageChars: queueMessage.text.length } : {},
+      failed: false,
+      parseOk: true,
+      ...(queueMessage ? { queueMessage } : {}),
+    }
+  },
+
+  marshalPostTurnReviewRequest(_hook, payload, session) {
+    return {
+      ...copseEnvelope('postTurnReview', session),
+      issues_found: payload.issuesFound,
+      summary: payload.summary,
+    }
+  },
+
+  interpretPostTurnReview(spawn, _payload) {
+    // Async observation (decision 3): the review already produced its verdict,
+    // so no control-flow decision is honoured; a `queueMessage` follow-up may
+    // route through the pending-message queue (decision 4).
+    const pre = interpretPrelude(spawn, 'postTurnReview')
+    if ('done' in pre) return pre.done
+    const queueMessage = copseQueueMessage(pre.parsed)
+    return {
+      outcome: null,
+      spineEvent: 'postTurnReview',
+      spineDecision: queueMessage ? { queuedMessageChars: queueMessage.text.length } : {},
+      failed: false,
+      parseOk: true,
+      ...(queueMessage ? { queueMessage } : {}),
     }
   },
 
