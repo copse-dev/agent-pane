@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { discoverCursorPluginRoots, resolvePluginSkillsDir } from './cursor-plugins.ts'
 import { listBundledCursorPluginRoots } from './bundled-cursor-skills.ts'
+import { getBuiltinSkillsRoot } from './builtin-skills.ts'
 import { getSetting } from '../storage/settings.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import {
@@ -173,6 +174,14 @@ async function collectDiscoveryRoots(): Promise<Array<{ root: string; source: Sk
     roots.push({ root: resolved, source: 'plugin-path' })
   }
 
+  // First-party skills shipped with Copse (e.g. /checkup). Added last so a
+  // user/project/plugin skill of the same name takes precedence (first-writer
+  // wins during discovery), letting anyone override a built-in.
+  const builtinRoot = getBuiltinSkillsRoot()
+  if (builtinRoot && (await pathExists(builtinRoot))) {
+    roots.push({ root: builtinRoot, source: 'bundled' })
+  }
+
   return roots
 }
 
@@ -210,6 +219,25 @@ export function listSkills(): SkillSummary[] {
     skillPath,
     externalLinks,
   }))
+}
+
+/**
+ * Skills the model may be told about in its system-prompt catalog. Excludes any
+ * skill whose frontmatter sets `disable-model-invocation: true` — those stay
+ * user-only: they remain in {@link listSkills} (so the `/name` picker and manual
+ * invocation still work) but are never advertised to the model, so it cannot
+ * pick them up on its own.
+ */
+export function listModelInvocableSkills(): SkillSummary[] {
+  return cachedSkills
+    .filter((skill) => !skill.disableModelInvocation)
+    .map(({ name, description, source, skillPath, externalLinks }) => ({
+      name,
+      description,
+      source,
+      skillPath,
+      externalLinks,
+    }))
 }
 
 export function getSkill(name: string): SkillMetadata | null {
