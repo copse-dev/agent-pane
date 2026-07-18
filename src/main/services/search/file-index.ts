@@ -3,6 +3,7 @@ import { isRgAvailableForTarget } from '../tool-availability.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { toRelativePath } from '../workspace.ts'
 import { indexBuildStarted, indexBuildFinished } from './index-status.ts'
+import { isIgnoredWorkspacePath } from './index-ignore.ts'
 import {
   FILE_INDEX_LIST_MAX_BYTES,
   FILE_INDEX_LIST_TIMEOUT_MS,
@@ -83,15 +84,23 @@ export function buildIndex(workspaceRoot: string): Promise<void> {
 }
 
 /**
- * Resolve once no file-index build is in flight (immediately when none is).
- * Workspace open schedules the build without blocking the renderer, so index
- * consumers (find_files, `@` file references, workspace links) briefly ride
- * the in-flight build here instead of seeing "no index" during boot.
+ * Resolve as soon as SOME index is available: immediately when a snapshot
+ * exists (even if a rebuild is in flight — `runBuild` only swaps the index in
+ * at the end, so a stale snapshot is always coherent), otherwise ride the one
+ * in-flight build. Workspace open schedules the build without blocking the
+ * renderer, so index consumers (find_files, `@` file references, workspace
+ * links) briefly wait for the first build here instead of seeing "no index"
+ * during boot.
+ *
+ * Deliberately NOT a wait-for-quiescence loop: the recursive workspace watcher
+ * re-arms a rebuild on every file write, so on a busy workspace (an agent
+ * writing files, e2e saving screenshots into the repo) `while (buildInFlight)`
+ * starved consumers indefinitely — observed as the `@` mention picker hanging
+ * past its timeout on CI, where the no-rg walk makes each rebuild slow.
  */
 export async function whenFileIndexReady(): Promise<void> {
-  while (buildInFlight) {
-    await buildInFlight.catch(() => undefined)
-  }
+  if (index) return
+  await buildInFlight?.catch(() => undefined)
 }
 
 export function getIndex(): FileIndex | null {
@@ -111,7 +120,11 @@ async function walkPaths(root: string, dir: string): Promise<string[]> {
   const paths: string[] = []
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
   for (const e of entries) {
-    if (e.name.startsWith('.') || e.name === 'node_modules') continue
+    if (e.name.startsWith('.')) continue
+    // Reuse the indexers' ignore list (dist*, vendor, node_modules) at every
+    // depth: this fallback runs where rg is absent (e.g. CI containers), and
+    // walking build output made each rebuild take tens of seconds there.
+    if (e.isDirectory() && isIgnoredWorkspacePath(e.name)) continue
     const full = `${dir}/${e.name}`
     if (e.isDirectory()) paths.push(...(await walkPaths(root, full)))
     else paths.push(await toRelativePath(full))
