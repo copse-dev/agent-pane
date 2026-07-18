@@ -107,9 +107,11 @@ describe('OpenRouter model picker', () => {
       return { groupLabels, optionLabels }
     })
 
+    // ZDR-only routing is on by default, so the group heading carries the
+    // routing-state annotation (see @copse/llm/data-policies.ts).
     assert.ok(
-      picker.groupLabels.includes('OpenRouter'),
-      `expected an OpenRouter group, saw ${JSON.stringify(picker.groupLabels)}`,
+      picker.groupLabels.includes('OpenRouter (ZDR routing)'),
+      `expected an OpenRouter (ZDR routing) group, saw ${JSON.stringify(picker.groupLabels)}`,
     )
     // Free + tool-capable model is offered.
     assert.ok(
@@ -223,7 +225,7 @@ describe('OpenRouter model picker', () => {
       'Qwen3 235B A22B (free)',
     ])
     assert.deepEqual(await $$('.model-picker-group-label').map((label) => label.getText()), [
-      'OPENROUTER',
+      'OPENROUTER (ZDR ROUTING)',
     ])
 
     await filter.setValue('no-such-model')
