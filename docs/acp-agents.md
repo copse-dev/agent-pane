@@ -34,11 +34,13 @@ approval UX.
 - Your configured **MCP servers** (stdio, plus http when the agent supports it)
   are handed to the agent via `session/new`, so it can mount them itself. The
   same trust and enable gating applies as for Copse's own connections.
-- A curated slice of **Copse's own tools** (GitHub/CI, semantic search,
-  staged-diff visibility, web/browser) is offered as a per-session localhost MCP
-  server (the **native-tool bridge**, issue #602) when the agent supports http
-  MCP servers. Calls execute inside Copse, so the normal permission gate and
-  approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
+- A curated, context-free slice of **Copse's own tools** (workspace
+  read/search/edit, Git, shell/background commands, GitHub/CI, staged-diff
+  visibility, and web/browser) is offered as a per-session localhost MCP server
+  (the **native-tool bridge**, issue #602) when the agent supports http MCP
+  servers. Calls execute through the same `ToolRegistry` as built-in model runs,
+  so the normal path validation, diff queue, permission policy, sandbox escape,
+  and approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
 - Known agents (the Claude and Gemini catalog entries) are **spawned under the
   workspace seatbelt** on macOS when the project sandbox is active (issue
   #590): writes confined to the workspace, home denied except the agent's own
@@ -47,9 +49,10 @@ approval UX.
   no per-config copy — and the config's optional `sandbox` field overrides them
   (an object for custom confines, `false` to opt out). The agent's shell
   children inherit the same confines, and approval prompts cannot override the
-  sandbox — sandboxed turns get a prompt note telling the agent so. Agent-run
-  `git push`/`npm install` fail inside the sandbox — use Copse's own tools (or
-  the bridge) for those.
+  agent's own shell sandbox. Sandboxed turns steer commands through the bridge's
+  `run_shell`: that reuses Copse's native permission decision and can run
+  approved external commands outside the agent sandbox. Direct agent-shell
+  `git push`/`npm install` still fail inside the sandbox.
 - **Sessions persist per thread** (issue #605): follow-up turns reuse the same
   agent process and ACP session, so the agent keeps its own context (no
   transcript replay) and background helpers it spawned keep running between
@@ -103,14 +106,15 @@ also edit it directly (e.g. from the app DevTools console with
 `window.api.settings.set('registeredAcpAgents', [...])`). Each entry matches the
 `AcpAgentConfig` shape:
 
-| Field     | Required | Notes                                                              |
-| --------- | -------- | ------------------------------------------------------------------ |
-| `id`      | yes      | Lowercase slug (`a-z`, `0-9`, `-`). The model value is `acp:<id>`. |
-| `title`   | yes      | Shown in the model picker.                                         |
-| `command` | yes      | Executable to spawn (absolute path or on `PATH`).                  |
-| `args`    | no       | Arguments passed to the command.                                   |
-| `env`     | no       | Extra environment variables for the agent process.                 |
-| `enabled` | yes      | Only enabled agents appear in the picker.                          |
+| Field            | Required | Notes                                                              |
+| ---------------- | -------- | ------------------------------------------------------------------ |
+| `id`             | yes      | Lowercase slug (`a-z`, `0-9`, `-`). The model value is `acp:<id>`. |
+| `title`          | yes      | Shown in the model picker.                                         |
+| `command`        | yes      | Executable to spawn (absolute path or on `PATH`).                  |
+| `args`           | no       | Arguments passed to the command.                                   |
+| `env`            | no       | Extra environment variables for the agent process.                 |
+| `permissionMode` | no       | ACP **session mode** to start each session in — see below.         |
+| `enabled`        | yes      | Only enabled agents appear in the picker.                          |
 
 Example value:
 
@@ -130,6 +134,30 @@ Example value:
 Once saved, pick **Gemini CLI** from the model dropdown (under **ACP agents**)
 and chat as usual. Open a folder first — the agent needs a workspace to act in.
 
+### Permission mode (relaxing the agent's prompting)
+
+In ACP **client** mode, whether the agent asks for approval is entirely the
+_agent's_ own policy — Copse just renders the `session/request_permission`
+dialog it sends. ACP exposes that policy as **session modes** (e.g. Claude
+Code's `default` / `acceptEdits` / `bypassPermissions` / `plan`). Set
+`permissionMode` on the agent config (or pick one in the **Permission mode**
+dropdown after **Detect models**) and Copse applies it with `session/set_mode`
+right after the session is created — before the first prompt — so the agent's
+own prompting is relaxed or tightened for the whole session. The dropdown is
+populated from the modes the agent advertises in `session/new`; leave it on
+**Agent default** to keep the agent's own behavior. An unknown/stale value
+silently degrades to the agent's default rather than failing the turn.
+
+> **Sandboxed Claude presets default to `acceptEdits`.** When a Claude preset
+> runs under the workspace seatbelt (issue #590), the seatbelt already contains
+> writes to the workspace and scratch dirs and the post-turn audit surfaces
+> anything that bypassed the diff queue — so prompt-per-edit adds friction
+> without adding safety. Copse therefore defaults those sandboxed sessions to
+> `acceptEdits` unless you set `permissionMode` yourself. Unsandboxed agents
+> keep their own default prompting. Note that approving a request never lifts
+> the seatbelt: a sandboxed agent that asks to touch a genuinely denied path
+> (system `/tmp`, network) still fails with `EPERM` even after you approve it.
+
 ### A note on secrets
 
 The spawned agent runs its own model loop, so Copse **scrubs its own cloud LLM
@@ -143,15 +171,15 @@ tokens such as `GITHUB_TOKEN` are passed through.
 ACP client mode and the **built-in Copse agent loop** (cloud/local models such as
 Fable or Sonnet) do **not** expose the same tool surface today:
 
-| Capability                              | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                  |
-| --------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Read/search files                       | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent's own tools (e.g. Read/Grep/Bash) via ACP |
-| Edit files                              | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` → Copse diff-approval queue         |
-| Shell / CLI                             | `run_shell` (structured; prefer dedicated tools for reads)                                  | External agent's shell tool                              |
-| Git / GitHub                            | `git_*`, `gh_*`, CI tools                                                                   | External agent (may shell out)                           |
-| MCP servers                             | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)   |
-| GitHub/CI, semantic search, web/browser | Copse `ToolRegistry`                                                                        | Native-tool bridge (localhost MCP, approval-gated)       |
-| Skills, todo/plan tools                 | Copse `ToolRegistry`                                                                        | **Not forwarded**                                        |
+| Capability                       | Built-in Copse (native model)                                                               | ACP client (`acp:<id>`)                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Read/search files                | `read_file`, `search_codebase`, `search_code`, … (default) or `explore` subagent (optional) | External agent tools, plus equivalent bridged Copse tools                           |
+| Edit files                       | `write_file` / `str_replace` → diff approval when needed                                    | `fs/write_text_file` or bridged edit tools → same queue                             |
+| Shell / CLI                      | `run_shell` (structured; prefer dedicated tools for reads)                                  | Bridged `run_shell` / `run_background` (preferred); private shell remains sandboxed |
+| Git / GitHub                     | `git_*`, `gh_*`, CI tools                                                                   | Equivalent bridged Copse tools                                                      |
+| MCP servers                      | Copse `ToolRegistry` (`mcp__*` tools)                                                       | Forwarded via `session/new` (agent mounts them itself)                              |
+| Shared context-free native tools | Copse `ToolRegistry`                                                                        | Native-tool bridge (localhost MCP, approval-gated)                                  |
+| Skills, todo/plan tools          | Copse `ToolRegistry`                                                                        | **Not forwarded**                                                                   |
 
 **Default native behavior** (Settings → Local models → _Route reads and searches
 through exploration subagents_ **off**) exposes direct read/search tools so native
@@ -168,9 +196,12 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
 - **No terminals.** `terminal/*` requests are not backed yet.
 - **Sessions are per-thread and idle-bounded.** The agent process and its ACP
   session persist across turns in a thread (issue #605), so the agent keeps its
-  own memory and background helpers survive between turns — but a session idle
-  for 10 minutes is reaped, and a config change or failed turn respawns it; in
-  those cases the prior conversation is replayed once as a compact preamble.
+  own memory and background helpers survive between turns. A session idle for
+  10 minutes is reaped to free the process; agents that advertise
+  `session/resume` (Claude, Codex) restore the same session on the next turn
+  without a transcript replay (issue #830). Agents without resume (or a failed
+  resume), and config changes that force a new session, still get a one-shot
+  history preamble.
 - **Text only on input.** Image attachments are dropped before the prompt is
   sent (the agent receives the text blocks).
 - **Native-tool bridge is http-only.** Agents that support only stdio MCP
@@ -181,6 +212,10 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
   catalog agent out (#590).
+- **Not available on SSH workspaces.** ACP agents are local stdio processes; they
+  are hidden from the chat model picker and rejected at session open when the
+  active project is an SSH remote. Use a cloud/local model (or open a local
+  folder) instead. Remoting ACP over SSH is not implemented.
 
 ## Comparing agents (capability probe)
 
@@ -188,12 +223,15 @@ Not sure what a given agent actually supports? `npm run probe:acp` spawns each
 installed agent, runs the `initialize` / `session/new` handshake (no prompt, no
 tokens), and writes a support matrix comparing session resume, prompt content
 types, MCP transports, modes, models, auth, and any `_meta` each adapter
-tunnels. See [`docs/acp-capability-probe.md`](acp-capability-probe.md).
+tunnels. For write routing / permission payloads / mid-turn `_meta` under a real
+turn, use `npm run probe:acp:behavior` (issue #832; spends tokens). See
+[`docs/acp-capability-probe.md`](acp-capability-probe.md).
 
 ## See also
 
 - [`docs/acp-capability-probe.md`](acp-capability-probe.md) — the Tier-1
-  capability probe and support matrix (`npm run probe:acp`).
+  capability probe, Tier-2 behavioural probe, and support matrices
+  (`npm run probe:acp` / `npm run probe:acp:behavior`).
 - [`docs/plans/acp-client-support.md`](plans/acp-client-support.md) — the design
   notes and phased rollout.
 - [Agent Client Protocol](https://agentclientprotocol.com/) — the protocol spec

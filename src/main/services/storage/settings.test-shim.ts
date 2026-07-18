@@ -38,6 +38,10 @@ export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   return !!((envVar && process.env[envVar]) || hasApiKey(provider))
 }
 
+export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
+  return apiKeys.has(provider) ? true : null
+}
+
 export function resolveApiKey(provider: KeyProvider): string | null {
   const stored = getApiKey(provider)
   if (stored) return stored

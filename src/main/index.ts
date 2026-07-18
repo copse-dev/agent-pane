@@ -21,9 +21,13 @@ import { loadCustomTools } from './services/mcp/custom-tools-registry.ts'
 import { disposeAllAcpSessions } from './services/acp/acp-session-pool.ts'
 import { initApproval } from './services/approval.ts'
 import { initAskUser } from './services/ask-user.ts'
+import { initSshPrompt } from './services/ssh-workspace/ssh-prompt.ts'
+import { initSshAskpassServer } from './services/ssh-workspace/askpass.ts'
+import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.ts'
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
+import { reapOversizedGortexDaemon, stopGortexDaemon } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
@@ -45,6 +49,7 @@ import {
   listFreeOpenRouterModels,
   invalidateOpenRouterModelsCache,
 } from './services/providers/openrouter-models.ts'
+import { invalidateCursorCloudModelsCache } from './services/remote/cursor-cloud-models.ts'
 import {
   detectLmStudio,
   downloadLmStudioModel,
@@ -54,6 +59,7 @@ import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
 import { storageGet, storageSet } from './services/storage/storage.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
+import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
 import { clearRemoteAgentSession } from './services/remote/remote-agent-client.ts'
 import { shutdownBrowserSession } from './services/browser/session-manager.ts'
@@ -111,6 +117,12 @@ app
       return
     }
 
+    // Before we allocate our window/renderer: reap an oversized gortex daemon
+    // left over from a previous (possibly SIGKILLed) session. Freeing its memory
+    // while our own footprint is still minimal is what keeps a multi-GB zombie
+    // from pushing the machine over its ceiling and OOM-killing us mid-boot.
+    await reapOversizedGortexDaemon()
+
     await checkToolAvailability()
     await initProjectSandbox()
 
@@ -139,13 +151,21 @@ app
       },
     }
 
+    // C2: forward an async hook's queued message to the renderer's pending queue
+    // (decision 4). Same window-guarded send as `agent:chunk`.
+    setHookQueueMessageSender((payload) => {
+      if (!win.isDestroyed()) win.webContents.send('agent:hook_queue_message', payload)
+    })
+
     initApproval(win)
     initAskUser(win)
+    initSshAskpassServer(app.getPath('userData'))
+    initSshPrompt(win)
+    initSshWorkspaceIpc(win)
     initDiffQueue(win)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
     registerAllHandlers(win, registry)
-
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -203,8 +223,15 @@ app
     ipcMain.handle('agent:run', async (event, threadIdArg: unknown, rawPrompt: string) => {
       assertMainFrameSender(event, win)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const { userContent, invokedSkills, priorTodos, workingBrief, model } =
-        parseAgentRunPayload(rawPrompt)
+      const {
+        userContent,
+        invokedSkills,
+        priorTodos,
+        workingBrief,
+        model,
+        turnTreeId,
+        continuationBudgetUsed,
+      } = parseAgentRunPayload(rawPrompt)
 
       // Hydrate from persisted storage on first use after a restart
       if (!messageHistory.has(threadId)) {
@@ -220,6 +247,8 @@ app
         priorTodos,
         ...(workingBrief !== undefined ? { workingBrief } : {}),
         ...(model !== undefined ? { model } : {}),
+        ...(turnTreeId !== undefined ? { turnTreeId } : {}),
+        ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
       })
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
@@ -271,6 +300,7 @@ app
       assertMainFrameSender(event, win)
       invalidateLmStudioModelsCache()
       invalidateOpenRouterModelsCache()
+      invalidateCursorCloudModelsCache()
     })
 
     ipcMain.handle('agent:abort', (event, threadIdArg: unknown) => {
@@ -391,7 +421,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
   await drainWriteQueue()
-  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox()])
+  // Reap the detached gortex daemon too — left running it accumulates multi-GB
+  // graphs across sessions and OOM-kills the app on a later launch.
+  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
 }
 
 app.on('before-quit', (event) => {

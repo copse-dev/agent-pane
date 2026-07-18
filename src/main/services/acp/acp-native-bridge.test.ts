@@ -2,6 +2,7 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
+import { getAdvisorContext } from '../advisor-runner-context.ts'
 import {
   startAcpNativeBridge,
   BRIDGE_TOOL_NAMES,
@@ -36,8 +37,17 @@ function testRegistry(executed: string[]): ToolRegistry {
   })
   registry.register({
     name: 'run_shell',
-    description: 'Not bridgeable',
+    description: 'Run a shell command',
     parameters: z.object({ command: z.string() }),
+    execute: ({ command }) => {
+      executed.push(`run_shell:${command}`)
+      return Promise.resolve(`ran ${command}`)
+    },
+  })
+  registry.register({
+    name: 'ask_user',
+    description: 'Native-loop orchestration tool; not bridgeable',
+    parameters: z.object({ question: z.string() }),
     execute: () => Promise.resolve('should never run over the bridge'),
   })
   return registry
@@ -95,7 +105,11 @@ describe('startAcpNativeBridge', () => {
 
   it('serves only curated tools and executes through the registry gate', async () => {
     const executed: string[] = []
-    setPermissionGateForTests(() => Promise.resolve(true))
+    const permissionChecks: string[] = []
+    setPermissionGateForTests((check) => {
+      permissionChecks.push(check.toolName)
+      return Promise.resolve(true)
+    })
     bridge = await startAcpNativeBridge(testRegistry(executed), new AbortController().signal)
     assert.ok(bridge, 'bridge should start when a bridgeable tool is registered')
 
@@ -105,7 +119,7 @@ describe('startAcpNativeBridge', () => {
       .result.tools
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      ['staged_diffs'],
+      ['staged_diffs', 'run_shell'],
     )
     // Schemas must be draft 2020-12, not the openapi-3.0 flavor: the agent
     // forwards them to the Anthropic API, which 400s on `nullable` / boolean
@@ -123,18 +137,115 @@ describe('startAcpNativeBridge', () => {
     const result = (call.json as { result: { content: { text: string }[] } }).result
     assert.equal(result.content[0]?.text, 'no pending diffs')
     assert.deepEqual(executed, ['staged_diffs'])
+
+    const shellCall = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'run_shell', arguments: { command: 'npm test' } },
+    })
+    const shellResult = (shellCall.json as { result: { content: { text: string }[] } }).result
+    assert.equal(shellResult.content[0]?.text, 'ran npm test')
+    assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
+    assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
+  })
+
+  it('offers the advisor tool when registered, so an ACP executor can consult it', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'advisor',
+      description: 'Consult a stronger advisor model',
+      parameters: z.object({}),
+      execute: () => Promise.resolve('Advice: do the smallest slice first.'),
+    })
+    bridge = await startAcpNativeBridge(registry, new AbortController().signal)
+    assert.ok(bridge)
+
+    for (const init of initialized()) await rpc(bridge, init)
+    const list = await rpc(bridge, LIST_TOOLS)
+    const names = (list.json as { result: { tools: { name: string }[] } }).result.tools.map(
+      (tool) => tool.name,
+    )
+    assert.ok(names.includes('advisor'), 'advisor should be offered when registered')
+
+    const call = await rpc(bridge, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'advisor', arguments: {} },
+    })
+    const result = (call.json as { result: { content: { text: string }[] } }).result
+    assert.equal(result.content[0]?.text, 'Advice: do the smallest slice first.')
+  })
+
+  it('isolates advisor context between concurrent ACP thread bridges', async () => {
+    setPermissionGateForTests(() => Promise.resolve(true))
+    const registry = testRegistry([])
+    registry.register({
+      name: 'advisor',
+      description: 'Report the bound executor context',
+      parameters: z.object({}),
+      execute: async () => {
+        const context = getAdvisorContext()
+        // Force the two HTTP calls to overlap; a shared mutable slot would let
+        // the later request replace the earlier request's context here.
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        const first = context?.getTranscript()[0]
+        return `${context?.executorModel ?? 'missing'}:${first?.role ?? 'missing'}`
+      },
+    })
+    const bridgeA = await startAcpNativeBridge(registry, new AbortController().signal)
+    const bridgeB = await startAcpNativeBridge(registry, new AbortController().signal)
+    assert.ok(bridgeA)
+    assert.ok(bridgeB)
+    try {
+      bridgeA.setAdvisorContext({
+        advisorModel: 'advisor-a',
+        executorModel: 'executor-a',
+        getTranscript: () => [{ role: 'user', content: 'thread a' }],
+      })
+      bridgeB.setAdvisorContext({
+        advisorModel: 'advisor-b',
+        executorModel: 'executor-b',
+        getTranscript: () => [{ role: 'assistant', content: 'thread b' }],
+      })
+      for (const init of initialized()) {
+        await Promise.all([rpc(bridgeA, init), rpc(bridgeB, init)])
+      }
+      const call = (
+        id: number,
+      ): {
+        jsonrpc: string
+        id: number
+        method: string
+        params: { name: string; arguments: Record<string, never> }
+      } => ({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: { name: 'advisor', arguments: {} },
+      })
+      const [resultA, resultB] = await Promise.all([rpc(bridgeA, call(6)), rpc(bridgeB, call(7))])
+      const text = (result: Awaited<ReturnType<typeof rpc>>): string | undefined =>
+        (result.json as { result: { content: { text: string }[] } }).result.content[0]?.text
+      assert.equal(text(resultA), 'executor-a:user')
+      assert.equal(text(resultB), 'executor-b:assistant')
+    } finally {
+      await Promise.all([bridgeA.close(), bridgeB.close()])
+    }
   })
 
   it('refuses tools outside the curated list even when registered', async () => {
     setPermissionGateForTests(() => Promise.resolve(true))
     bridge = await startAcpNativeBridge(testRegistry([]), new AbortController().signal)
     assert.ok(bridge)
-    assert.ok(!BRIDGE_TOOL_NAMES.includes('run_shell'))
+    assert.ok(!BRIDGE_TOOL_NAMES.includes('ask_user'))
     const call = await rpc(bridge, {
       jsonrpc: '2.0',
-      id: 3,
+      id: 4,
       method: 'tools/call',
-      params: { name: 'run_shell', arguments: { command: 'rm -rf /' } },
+      params: { name: 'ask_user', arguments: { question: 'Continue?' } },
     })
     const result = (call.json as { result: { content: { text: string }[]; isError?: boolean } })
       .result
@@ -191,8 +302,8 @@ describe('isBridgedNativeToolTitle', () => {
   })
 
   it('rejects a copse-prefixed title for a tool we do not bridge', () => {
-    assert.ok(!isBridgedNativeToolTitle('copse-run_shell'))
-    assert.ok(!isBridgedNativeToolTitle('copse-delete_file'))
+    assert.ok(!isBridgedNativeToolTitle('copse-ask_user'))
+    assert.ok(!isBridgedNativeToolTitle('copse-explore'))
     // A bridged name with trailing chars is a different, unknown tool.
     assert.ok(!isBridgedNativeToolTitle('copse-gh_pr_lists'))
   })

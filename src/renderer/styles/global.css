@@ -8,6 +8,7 @@
 @import './global/conversation.css';
 @import './global/markdown.css';
 @import './global/tool-cards.css';
+@import './global/hook-cards.css';
 @import './global/input-bar.css';
 @import './global/welcome.css';
 @import './global/diff.css';
@@ -15,6 +16,7 @@
 @import './global/onboarding.css';
 @import './global/approval.css';
 @import './global/ask-user.css';
+@import './global/ssh-prompt.css';
 @import './global/mcp.css';
 @import './global/composer-extras.css';
 @import './global/file-search.css';
@@ -23,5 +25,6 @@
 @import './global/todo.css';
 @import './global/toasts.css';
 @import './global/context-warning.css';
+@import './global/ssh-workspace.css';
 @import './global/memories.css';
 @import './global/roadmap.css';

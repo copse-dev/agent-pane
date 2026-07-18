@@ -1,6 +1,7 @@
 import type {
   Message,
   ModelUsage,
+  QueuedMessageOrigin,
   SubagentMessage,
   SubagentSession,
   Thread,
@@ -8,10 +9,12 @@ import type {
   ToolCall,
   TranscriptAttachment,
 } from '@shared/types'
+import { hookCardFromSpineLine } from '../hooks/hook-card.ts'
 import {
   type ContentRef,
   type HashFn,
   type ImageRef,
+  type SpineEntry,
   type SpineMessageLine,
   type SpineSubagentRef,
   type SpineToolCall,
@@ -46,7 +49,10 @@ interface MessageLike {
   images?: string[]
   commandSummary?: string
   attachments?: TranscriptAttachment[]
+  model?: string
   review?: ThreadReview
+  origin?: QueuedMessageOrigin
+  editedByUser?: boolean
 }
 
 export interface ExplodedMessage {
@@ -81,6 +87,11 @@ function explodeToolCall(
     status: tc.status === 'error' ? 'error' : 'done',
     result,
     ...(tc.editStats !== undefined ? { editStats: tc.editStats } : {}),
+    // ACP display metadata (issue #264): `kind` drives the same grouping/labels
+    // as built-in tools; `resultFormat` keeps agent-authored Markdown rendering
+    // through the Markdown pipeline after a reload instead of a raw <pre>.
+    ...(tc.kind !== undefined ? { kind: tc.kind } : {}),
+    ...(tc.resultFormat !== undefined ? { resultFormat: tc.resultFormat } : {}),
   }
 
   if (tc.subagent) {
@@ -157,7 +168,10 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
   if (msg.attachments !== undefined && msg.attachments.length > 0)
     line.attachments = msg.attachments
+  if (msg.model !== undefined) line.model = msg.model
   if (msg.review !== undefined) line.review = msg.review
+  if (msg.origin !== undefined) line.origin = msg.origin
+  if (msg.editedByUser !== undefined) line.editedByUser = msg.editedByUser
 
   for (const tc of msg.toolCalls) {
     const { spine, files: tcFiles } = explodeToolCall(tc, hash)
@@ -222,6 +236,8 @@ function foldToolCall(
     status: spine.status,
     result,
     ...(spine.editStats !== undefined ? { editStats: spine.editStats } : {}),
+    ...(spine.kind !== undefined ? { kind: spine.kind } : {}),
+    ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
   }
 
   if (spine.subagent) {
@@ -297,7 +313,10 @@ function foldOne(
 
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
   if (line.attachments !== undefined) msg.attachments = line.attachments
+  if (line.model !== undefined) msg.model = line.model
   if (line.review !== undefined) msg.review = line.review
+  if (line.origin !== undefined) msg.origin = line.origin
+  if (line.editedByUser !== undefined) msg.editedByUser = line.editedByUser
   return msg
 }
 
@@ -318,8 +337,59 @@ export function foldMessage(
     ...(m.images !== undefined ? { images: m.images } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),
     ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
+    ...(m.model !== undefined ? { model: m.model } : {}),
     ...(m.review !== undefined ? { review: m.review } : {}),
+    ...(m.origin !== undefined ? { origin: m.origin } : {}),
+    ...(m.editedByUser !== undefined ? { editedByUser: m.editedByUser } : {}),
   }
+}
+
+/**
+ * Attach the thread's always-on `hook_run` spine records to the messages they
+ * fired within, as display-only {@link Message.hookCards} (decisions 6, 10 &
+ * 17). Hook runs are appended to `events.jsonl` mid-turn, so each anchors to the
+ * message that precedes it in the spine — the same anchoring
+ * {@link rebuildSpinePreservingNonMessageLines} uses to keep them positioned
+ * across full rewrites. A run with no preceding message (or one whose anchor
+ * message is absent from `messages`) attaches to the first message, so it is
+ * never silently dropped.
+ *
+ * Pure: takes the parsed spine entries (message + hook_run + unknown lines in
+ * file order) and returns messages with `hookCards` populated. Cards are derived
+ * here, never persisted via {@link explodeMessage} — the spine `hook_run` lines
+ * are the single source of truth (decision 17), so this is the one place they
+ * become renderable.
+ */
+export function attachHookCards(messages: Message[], entries: SpineEntry[]): Message[] {
+  const cardsByAnchor = new Map<string | null, ReturnType<typeof hookCardFromSpineLine>[]>()
+  let lastMessageId: string | null = null
+  for (const entry of entries) {
+    if (entry.line?.type === 'message') {
+      lastMessageId = entry.line.id
+      continue
+    }
+    if (entry.line?.type !== 'hook_run') continue
+    const list = cardsByAnchor.get(lastMessageId)
+    const card = hookCardFromSpineLine(entry.line)
+    if (list) list.push(card)
+    else cardsByAnchor.set(lastMessageId, [card])
+  }
+  if (cardsByAnchor.size === 0) return messages
+
+  const known = new Set(messages.map((m) => m.id))
+  // Cards anchored to no message (before the first message) or to a message that
+  // no longer exists fall onto the first message so they stay visible.
+  const orphans: ReturnType<typeof hookCardFromSpineLine>[] = [...(cardsByAnchor.get(null) ?? [])]
+  for (const [anchor, cards] of cardsByAnchor) {
+    if (anchor !== null && !known.has(anchor)) orphans.push(...cards)
+  }
+
+  return messages.map((m, index) => {
+    const own = cardsByAnchor.get(m.id) ?? []
+    const extra = index === 0 ? orphans : []
+    const hookCards = [...extra, ...own]
+    return hookCards.length > 0 ? { ...m, hookCards } : m
+  })
 }
 
 /** Reconstruct a full {@link Thread} from its metadata, spine, and file resolver. */

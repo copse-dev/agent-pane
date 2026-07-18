@@ -1,13 +1,20 @@
-import { describe, it } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PermissionOption, RequestPermissionRequest } from '@agentclientprotocol/sdk'
+import { ACP_UNSUPPORTED_ON_SSH_MESSAGE } from '@shared/acp.ts'
+import { setSetting } from '../storage/settings.ts'
+import { storageSet } from '../storage/storage.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   AcpTurnFailure,
   buildAcpPrompt,
+  buildAcpPromptContent,
   isAcpConnectionDropped,
   isRetryableAcpError,
   isTransientProviderError,
+  probeAcpAgentForSettings,
   permissionResponseFor,
+  runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
   runWithAcpRetry,
   sliceLines,
@@ -302,10 +309,12 @@ describe('buildAcpPrompt', () => {
     const sandboxed = buildAcpPrompt('hello', [], { sandboxed: true })
     assert.match(sandboxed, /Environment note: this session runs inside a filesystem sandbox/)
     assert.match(sandboxed, /hello$/)
-    // The note must steer away from hardcoded /tmp and warn that approval
-    // cannot override the sandbox.
+    // The note must steer away from hardcoded /tmp, distinguish the agent's
+    // private shell from Copse's bridge, and point at the shared escape path.
     assert.match(sandboxed, /\$TMPDIR/)
-    assert.match(sandboxed, /approval\s+prompts cannot override/i)
+    assert.match(sandboxed, /cannot unsandbox your own shell/i)
+    assert.match(sandboxed, /copse[\s\S]+run_shell/i)
+    assert.match(sandboxed, /approved external work outside this sandbox/i)
     assert.doesNotMatch(buildAcpPrompt('hello', [], { sandboxed: false }), /Environment note:/)
   })
 
@@ -357,5 +366,92 @@ describe('buildAcpPrompt', () => {
       skills: '\n\n## Invoked skills\n\nBODY',
     })
     assert.match(prompt, /--- New message ---\ngo\n\n## Invoked skills\n\nBODY$/)
+  })
+})
+
+describe('buildAcpPromptContent', () => {
+  it('returns a single text block when images are not requested', () => {
+    const blocks = buildAcpPromptContent(
+      [
+        { type: 'text', text: 'describe this' },
+        { type: 'image', dataUrl: 'data:image/png;base64,abc123' },
+      ],
+      [],
+      { includeNotes: false },
+    )
+    assert.equal(blocks.length, 1)
+    const first = blocks[0]
+    assert.ok(first)
+    assert.equal(first.type, 'text')
+    assert.match(first.text, /describe this$/)
+  })
+
+  it('appends ACP image content blocks when includeImages is true (issue #831)', () => {
+    const blocks = buildAcpPromptContent(
+      [
+        { type: 'text', text: 'what is in this screenshot?' },
+        { type: 'image', dataUrl: 'data:image/png;base64,abc123' },
+        { type: 'image', dataUrl: 'data:image/jpeg;base64,def456' },
+      ],
+      [],
+      { includeNotes: false, includeImages: true },
+    )
+    assert.equal(blocks.length, 3)
+    assert.equal(blocks[0]?.type, 'text')
+    assert.deepEqual(blocks[1], { type: 'image', mimeType: 'image/png', data: 'abc123' })
+    assert.deepEqual(blocks[2], { type: 'image', mimeType: 'image/jpeg', data: 'def456' })
+  })
+
+  it('still produces a text block for image-only prompts when images are included', () => {
+    const blocks = buildAcpPromptContent(
+      [{ type: 'image', dataUrl: 'data:image/png;base64,onlyimg' }],
+      [],
+      { includeNotes: false, includeImages: true },
+    )
+    assert.equal(blocks.length, 2)
+    const first = blocks[0]
+    assert.ok(first)
+    assert.equal(first.type, 'text')
+    assert.equal(first.text, '')
+    assert.deepEqual(blocks[1], { type: 'image', mimeType: 'image/png', data: 'onlyimg' })
+  })
+})
+
+describe('ACP on SSH workspaces', () => {
+  beforeEach(async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: '/remote/project', sshHost: 'dev' }])
+    setWorkspaceRootForTest('/remote/project')
+  })
+
+  afterEach(() => {
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    void setSetting('sshWorkspaceEnabled', false)
+    void setSetting('sshWorkspaceHosts', [])
+  })
+
+  it('rejects session open and model detect with a clear unsupported message', async () => {
+    await assert.rejects(
+      () =>
+        runAcpAgentFromSettings({
+          threadId: 't1',
+          agentId: 'cursor',
+          userPrompt: 'hi',
+          priorMessages: [],
+          signal: new AbortController().signal,
+          onChunk: () => undefined,
+        }),
+      (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
+    )
+    await assert.rejects(
+      () => probeAcpAgentForSettings('cursor'),
+      (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
+    )
   })
 })

@@ -1,6 +1,8 @@
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
+import type { HookCard } from '../hooks/hook-card.ts'
+export type { HookCard } from '../hooks/hook-card.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
@@ -22,11 +24,54 @@ export type {
 
 export type ThreadStatus = 'idle' | 'running' | 'error'
 
+/**
+ * Provenance of a queued message (decision 10). A queued message can be authored
+ * by a human (origin absent) or produced by an async hook's `queueMessage`
+ * output — the only async output channel (decision 4). The message role stays
+ * `user` for the LLM; `origin` lives purely in the data model so the UI can
+ * attribute it and the spine stays honest about authorship.
+ */
+export interface QueuedMessageOrigin {
+  kind: 'hook'
+  /** Registered hook id that produced the message. */
+  hookId: string
+  /** Canonical event the hook fired on (e.g. `stop`, `afterToolUse`). */
+  event: string
+}
+
 /** User message waiting for the current agent run to finish. */
 export interface QueuedUserMessage {
   messageId: string
   payload: AgentRunPayload
   createdAt: number
+  /**
+   * Where the message came from (decision 10). Absent = human-authored. A
+   * hook-originated message keeps `kind: 'hook'` even after a human edits it
+   * (that flips {@link editedByUser} instead), so authorship is never lost.
+   */
+  origin?: QueuedMessageOrigin
+  /**
+   * True once a human edits a hook-originated message (decision 10). The origin
+   * stays `kind: 'hook'`; this records that the text no longer matches the hook's
+   * output so the spine stays honest.
+   */
+  editedByUser?: boolean
+  /**
+   * **Held** (decisions 5 & 16). When `false`, `drainMessageQueue` skips this
+   * item entirely — it never auto-submits at idle; only an explicit human action
+   * (release / send-now) dispatches it, starting a fresh turn tree. Absent means
+   * a normal auto-draining queued message. Only ever `false` (never `true`) so a
+   * "held" item is unrepresentable as auto-dispatching (execution-guidance rule
+   * 3). Set when a stale-epoch hook send-now downgrades (decision 16), and — in
+   * C3 — when an over-budget hook message arrives.
+   */
+  autoDispatch?: false
+  /**
+   * Emitting turn-tree epoch (decision 16) for hook-originated items. Compared
+   * against the thread's current turn tree to detect a stale late output; a
+   * stale send-now downgrades to held rather than aborting an unrelated turn.
+   */
+  epoch?: string
 }
 
 export interface ContextTrimRecord {
@@ -47,8 +92,14 @@ export interface ContextSnapshot {
 
 /** Verdict from the post-turn review subagent for the most recent editing turn. */
 export interface ThreadReview {
-  status: 'running' | 'done' | 'error'
+  status: 'running' | 'done' | 'error' | 'skipped'
   summary: string
+  /**
+   * Structured signal from the review subagent (`REVIEW_JSON.issuesFound`).
+   * Absent on older persisted reviews; when explicitly `false` the renderer
+   * collapses the review card by default.
+   */
+  issuesFound?: boolean
 }
 
 /**
@@ -99,6 +150,27 @@ export interface Thread {
   remoteAgentLink?: RemoteAgentLink
   /** Prompts submitted while the agent is running; drained FIFO when idle. */
   pendingMessages?: QueuedUserMessage[]
+  /**
+   * Epoch (turn-tree id) of the current, human-initiated turn tree (decision
+   * 16). Set when a human submission / release / send-now starts a fresh turn
+   * tree; an async hook's `queueMessage` output carries the epoch of the turn it
+   * was emitted from, and an epoch that no longer matches this is **stale** — its
+   * send-now downgrades to a held queued message instead of aborting an unrelated
+   * turn. The authoritative turn-tree ledger is C3; C2 tracks the current epoch
+   * so the staleness check (decision 16) has a reference point.
+   */
+  currentEpoch?: string
+  /**
+   * Machine-initiated new turns already spent in the current turn tree (decision
+   * 5, C3). Counts queue-drain continuations (hook send-now, stop / subagent
+   * follow-ups) as they auto-dispatch; when it reaches the cap
+   * (`DEFAULT_CONTINUATION_BUDGET`), `drainMessageQueue` flips a further
+   * machine-originated message to **held** instead of auto-submitting. Reset to 0
+   * when a human action (typed prompt / release) starts a fresh turn tree. The
+   * run seeds the main-process ledger with this so its in-run tighteners
+   * (closeout / pre-review / remediation) share one counter per turn tree.
+   */
+  continuationUsed?: number
   /** True while a queued message is being edited; suspends FIFO draining. */
   queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
@@ -161,11 +233,37 @@ export interface Message {
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
   /**
+   * Primary-chat model that produced this assistant message (picker id for the
+   * turn). Surfaced in the transcript only when the thread used more than one
+   * primary model — subagent models live on {@link SubagentSession.model}.
+   */
+  model?: string
+  /**
    * Post-turn review verdict for the editing turn this message concluded. Set on
    * the turn's final assistant message so the review joins the transcript inline
    * (in position, one per reviewed turn) rather than as a single trailing card.
    */
   review?: ThreadReview
+  /**
+   * Provenance when this turn was started by a hook follow-up (decision 10). The
+   * message role stays `user` for the LLM; `origin` lives purely in the data
+   * model so the transcript can mark a hook-originated turn (a hook send-now /
+   * `stop`-follow-up that dispatched). Carried through the spine so the marker
+   * survives a reload (history stays honest about authorship). `editedByUser`
+   * flips `true` once a human edits a hook-queued message before it dispatches.
+   */
+  origin?: QueuedMessageOrigin
+  editedByUser?: boolean
+  /**
+   * Hook cards (executions / deny-ask decisions / halts) that fired during this
+   * message's turn (decision 10). **Display-only and derived** — populated at
+   * fold time from the thread's always-on spine `hook_run` records (decision 6)
+   * and appended live from the `hook_run` stream chunk. Never persisted via the
+   * message explode path: the spine's `hook_run` lines are the single source of
+   * truth, so this resolves purely from spine data (decision 17), never from live
+   * hook registration.
+   */
+  hookCards?: HookCard[]
   createdAt: number
 }
 

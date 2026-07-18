@@ -13,7 +13,7 @@ import type {
   TranscriptAttachment,
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
-import type { ModelComparison, Thread, ThreadReview } from '@shared/types'
+import type { HookCard, ModelComparison, Thread, ThreadReview } from '@shared/types'
 
 export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
@@ -205,6 +205,7 @@ export function addMessage(
   content = '',
   images?: string[],
   attachments?: TranscriptAttachment[],
+  opts?: { model?: string },
 ): string {
   const id = randomUUID()
   const { threads } = store.getState()
@@ -221,6 +222,7 @@ export function addMessage(
               content,
               ...(images?.length ? { images } : {}),
               ...(attachments?.length ? { attachments } : {}),
+              ...(opts?.model !== undefined ? { model: opts.model } : {}),
               toolCalls: [],
               createdAt: Date.now(),
             },
@@ -361,6 +363,33 @@ export function updateToolCall(
   }))
   store.setState({ threads: updated })
   store.emit('tool_call_updated', messageId, toolCallId)
+}
+
+/**
+ * Append a live hook card (decision 10) to the message its turn fired within.
+ * The card is derived from the same spine `hook_run` record history folds from
+ * (decision 6), so a live turn and a reloaded thread render the same hook-card
+ * family. Deduped by spine id so a re-delivered chunk never doubles a card.
+ */
+export function addHookCard(store: AppStore, messageId: string, card: HookCard): void {
+  const { threads } = store.getState()
+  let threadId: string | undefined
+  const updated = threads.map((t) => {
+    if (!t.messages.some((m) => m.id === messageId)) return t
+    threadId = t.id
+    return {
+      ...t,
+      messages: t.messages.map((m) => {
+        if (m.id !== messageId) return m
+        const existing = m.hookCards ?? []
+        if (existing.some((c) => c.id === card.id)) return m
+        return { ...m, hookCards: [...existing, card] }
+      }),
+    }
+  })
+  if (threadId === undefined) return
+  store.setState({ threads: updated })
+  store.emit('hook_card_added', threadId, messageId)
 }
 
 export function updateUsage(store: AppStore, threadId: string, usage: ThreadUsage): void {

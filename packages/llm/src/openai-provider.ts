@@ -32,6 +32,9 @@ export class OpenAIProvider implements LLMProvider {
   // key but the SDK requires a non-empty value. `extraBody` is merged into every
   // request body — used to pass provider-specific fields (e.g. OpenRouter's
   // `provider: { require_parameters: true }`) that aren't in the OpenAI schema.
+  // `promptCacheKey` is sent as OpenAI's `prompt_cache_key`: a stable per-thread
+  // hint that routes a conversation's repeated turns to the same cache, raising
+  // prompt-cache hit rates (and lowering cost) on providers that honour it (#584).
   constructor(
     model: string,
     opts: {
@@ -39,11 +42,13 @@ export class OpenAIProvider implements LLMProvider {
       apiKey?: string
       includeUsage?: boolean
       extraBody?: Record<string, unknown>
+      promptCacheKey?: string
     } = {},
   ) {
     this.model = model
     this.includeUsage = opts.includeUsage ?? !opts.baseURL
     this.extraBody = opts.extraBody
+    this.promptCacheKey = opts.promptCacheKey
     this.client = new OpenAI({
       apiKey: opts.apiKey ?? process.env['OPENAI_API_KEY'] ?? 'not-needed',
       ...(opts.baseURL ? { baseURL: opts.baseURL } : {}),
@@ -52,6 +57,7 @@ export class OpenAIProvider implements LLMProvider {
 
   private readonly includeUsage: boolean
   private readonly extraBody: Record<string, unknown> | undefined
+  private readonly promptCacheKey: string | undefined
 
   stream(
     messages: LLMMessage[],
@@ -79,6 +85,7 @@ export class OpenAIProvider implements LLMProvider {
             messages: toOpenAIMessages(messages),
             ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
             ...(mappedTools ? { tools: mappedTools } : {}),
+            ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
             ...(self.extraBody ?? {}),
           },
           { signal },

@@ -9,6 +9,7 @@ interface CapturedChatCompletionRequest {
   stream?: boolean
   stream_options?: { include_usage?: boolean }
   provider?: { require_parameters?: boolean }
+  prompt_cache_key?: string
 }
 
 interface ChatCompletionChunk {
@@ -138,6 +139,35 @@ describe('OpenAIProvider request options', () => {
 
     assert.deepEqual(captured.request?.provider, { require_parameters: true })
     assert.equal(captured.request.stream_options?.include_usage, true)
+  })
+
+  it('sends prompt_cache_key when a promptCacheKey is configured', async () => {
+    const provider = new OpenAIProvider('gpt-test', {
+      apiKey: 'test-openai-key',
+      promptCacheKey: 'thread-abc',
+    })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+
+    assert.equal(captured.request?.prompt_cache_key, 'thread-abc')
+  })
+
+  it('omits prompt_cache_key when no promptCacheKey is configured', async () => {
+    const provider = new OpenAIProvider('gpt-test', { apiKey: 'test-openai-key' })
+    const captured: { request?: CapturedChatCompletionRequest } = {}
+    withFakeCreate(provider, (request) => {
+      captured.request = request
+      return streamEvents([{ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }])
+    })
+
+    await collect(provider)
+
+    assert.equal(captured.request?.prompt_cache_key, undefined)
   })
 })
 

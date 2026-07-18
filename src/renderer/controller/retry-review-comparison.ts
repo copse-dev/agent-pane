@@ -36,6 +36,15 @@ export function retryReview(
   void api.agent.retryReview(threadId, retryPayload(store, threadId))
 }
 
+/**
+ * Dismiss a failed comparison card without re-running it. Clearing the thread's
+ * comparison removes the card on the next sync; autosave persists the removal so
+ * the failure doesn't resurface on reload.
+ */
+export function dismissComparison(store: AppStore, threadId: string): void {
+  setThreadComparison(store, threadId, null)
+}
+
 /** Re-run the two-model comparison for a thread whose comparison card failed. */
 export function retryComparison(store: AppStore, api: ApiClient, threadId: string): void {
   const thread = store.getState().threads.find((t) => t.id === threadId)

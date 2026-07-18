@@ -1,25 +1,27 @@
 import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentConfig, AcpAutoSetupResult } from '@shared/types/acp.ts'
-import { listAcpAgentModels } from './acp-client.ts'
+import { probeAcpAgent } from './acp-client.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
 import { resolveOnPath } from './acp-detect.ts'
 import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
+import { requestApproval } from '../approval.ts'
 
 /**
- * One-shot "just works" setup for the curated ACP presets (Claude, Cursor),
- * run when the ACP settings tab opens. For each preset it:
+ * "Just works" setup for curated ACP presets. It runs when ACP settings opens.
+ * Any host-wide package installation is still gated by an explicit approval.
+ * For each preset it:
  *
- *  1. Detects the agent binary and its gating client (`claude`, `cursor-agent`).
- *  2. Installs a missing npm adapter through Socket Firewall — but only when its
- *     client is present and the adapter opts in (`autoInstall`). Script-installed
+ *  1. Detects the agent binary and any gating client (`claude`, `cursor-agent`).
+ *  2. Installs a missing npm adapter through Socket Firewall when the adapter opts
+ *     in (`autoInstall`) and its client prerequisite is present. Script-installed
  *     binaries (Cursor) are never auto-installed; the UI shows their command.
  *  3. Registers a ready-to-use config for any preset whose binary is available.
  *  4. Best-effort detects + caches the agent's models (needs an open folder), so
  *     they appear in the picker without a manual "Detect".
  *
- * The planning half is a pure function so the install/register decisions are unit
- * tested without spawning anything.
+ * The planning half is a pure function so the install/register/update decisions
+ * are unit tested without spawning anything.
  */
 
 export interface AcpAutoSetupInput {
@@ -72,6 +74,25 @@ export function planAcpAutoSetup(inputs: readonly AcpAutoSetupInput[]): AcpAutoS
 
 export type { AcpAutoSetupResult }
 
+/** Merge detected models onto the latest persisted config, never a pre-await snapshot. */
+export async function updateCurrentAcpAgentModels(
+  agentId: string,
+  models: NonNullable<AcpAgentConfig['availableModels']>,
+): Promise<boolean> {
+  return updateCurrentAcpAgentSelectors(agentId, { availableModels: models })
+}
+
+/** Merge detected selector fields onto the latest persisted config. */
+async function updateCurrentAcpAgentSelectors(
+  agentId: string,
+  selectors: ProbedSelectorFields,
+): Promise<boolean> {
+  const config = listAcpAgents().find((agent) => agent.id === agentId)
+  if (!config) return false
+  await upsertAcpAgent({ ...config, ...selectors })
+  return true
+}
+
 /**
  * Map a catalog preset to a fresh, enabled agent config. The sandbox preset is
  * deliberately NOT copied here: the catalog is its source of truth, resolved at
@@ -99,17 +120,10 @@ export function runAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult
   return inFlight
 }
 
-async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
-  const result: AcpAutoSetupResult = {
-    installed: [],
-    registered: [],
-    modelsDetected: [],
-    failed: [],
-  }
+async function detectPresetInputs(): Promise<AcpAutoSetupInput[]> {
   const existing = new Map(listAcpAgents().map((agent) => [agent.id, agent]))
   const presets = KNOWN_ACP_AGENTS.filter((known) => known.preset)
-
-  const inputs: AcpAutoSetupInput[] = await Promise.all(
+  return Promise.all(
     presets.map(async (known) => ({
       known,
       agentInstalled: (await resolveOnPath(known.command)) !== null,
@@ -120,17 +134,34 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
       hasModels: (existing.get(known.id)?.availableModels?.length ?? 0) > 0,
     })),
   )
+}
+
+async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupResult> {
+  const result: AcpAutoSetupResult = {
+    installed: [],
+    registered: [],
+    modelsDetected: [],
+    failed: [],
+  }
+  const inputs = await detectPresetInputs()
   const plan = planAcpAutoSetup(inputs)
 
   const installedNow = new Set<string>()
-  for (const known of plan.install) {
-    if (signal.aborted || !known.installPackage) break
-    const ok = await installGlobalNpmPackage(known.installPackage, signal)
-    if (ok) {
-      installedNow.add(known.id)
-      result.installed.push(known.id)
-    } else {
-      result.failed.push({ id: known.id, reason: 'package install failed' })
+  const installApproved = await requestAcpPackageInstallApproval(plan.install)
+  if (!installApproved) {
+    for (const known of plan.install) {
+      result.failed.push({ id: known.id, reason: 'package install not approved' })
+    }
+  } else {
+    for (const known of plan.install) {
+      if (signal.aborted || !known.installPackage) break
+      const ok = await installGlobalNpmPackage(known.installPackage, signal)
+      if (ok) {
+        installedNow.add(known.id)
+        result.installed.push(known.id)
+      } else {
+        result.failed.push({ id: known.id, reason: 'package install failed' })
+      }
     }
   }
 
@@ -142,51 +173,82 @@ async function performAcpAutoSetup(signal: AbortSignal): Promise<AcpAutoSetupRes
     if (!input?.agentInstalled && !installedNow.has(known.id)) continue
 
     let config = presetToConfig(known)
-    const models = await probeModels(known, cwd)
-    if (models) {
-      config = { ...config, availableModels: models }
-      result.modelsDetected.push(known.id)
+    const probed = await probeSelectors(known, cwd)
+    if (probed.availableModels || probed.availablePermissionModes) {
+      config = { ...config, ...probed }
+      if (probed.availableModels) result.modelsDetected.push(known.id)
     }
     await upsertAcpAgent(config)
     result.registered.push(known.id)
   }
 
-  // Retry model detection for agents registered on an earlier run without models
-  // (installed/authenticated since). Preserves the user's config; only fills in
-  // availableModels once the probe finally succeeds.
+  // Retry selector detection for agents registered on an earlier run without
+  // models (installed/authenticated since). Merge onto the latest registry
+  // entry because approval, installs, and probing may outlive settings changes.
   for (const known of plan.refreshModels) {
     if (signal.aborted) break
-    const config = existing.get(known.id)
-    if (!config) continue
-    const models = await probeModels(known, cwd)
-    if (models) {
-      await upsertAcpAgent({ ...config, availableModels: models })
-      result.modelsDetected.push(known.id)
+    const probed = await probeSelectors(known, cwd)
+    if (
+      (probed.availableModels || probed.availablePermissionModes) &&
+      (await updateCurrentAcpAgentSelectors(known.id, probed))
+    ) {
+      if (probed.availableModels) result.modelsDetected.push(known.id)
     }
   }
 
   return result
 }
 
+/** Ask before mutating the user's global npm installation. */
+export async function requestAcpPackageInstallApproval(
+  agents: readonly KnownAcpAgent[],
+): Promise<boolean> {
+  const packages = agents.flatMap((agent) => (agent.installPackage ? [agent.installPackage] : []))
+  if (packages.length === 0) return true
+  const { approved } = await requestApproval({
+    title: 'Install ACP adapters globally?',
+    body:
+      'Copse found missing ACP adapters and wants to install these global npm packages:\n\n' +
+      packages.map((pkg) => `• ${pkg}`).join('\n') +
+      '\n\nIf Socket Firewall (sfw) is not installed, Copse will first install it globally. ' +
+      'The adapter packages are then installed through Socket Firewall with lifecycle scripts disabled.',
+    type: 'shell',
+    allowRemember: false,
+  })
+  return approved
+}
+
 /**
- * Best-effort probe of a known agent's model selector. Returns the flattened
- * choices, or null when there's no open folder or the probe fails (auth, network,
- * timeout) — callers keep the agent registered and the user can "Detect models".
+ * Cached-selector fields (models + session modes) discovered from one probe, to
+ * spread onto a registered {@link AcpAgentConfig}. Empty object when the probe
+ * found neither (or failed) — callers still register the agent, and the user can
+ * fill these in later with "Detect models".
  */
-async function probeModels(
+type ProbedSelectorFields = Pick<AcpAgentConfig, 'availableModels' | 'availablePermissionModes'>
+
+/**
+ * Best-effort probe of a known agent's models and session modes (issue #607).
+ * Returns the cached-selector fields, or `{}` when there's no open folder or the
+ * probe fails (auth, network, timeout) — callers keep the agent registered
+ * regardless and the user can "Detect models" later.
+ */
+async function probeSelectors(
   known: KnownAcpAgent,
   cwd: string | null,
-): Promise<AcpAgentConfig['availableModels'] | null> {
-  if (!cwd) return null
+): Promise<ProbedSelectorFields> {
+  if (!cwd) return {}
   try {
-    const selector = await listAcpAgentModels({
+    const probe = await probeAcpAgent({
       command: known.command,
       cwd,
       ...(known.args.length ? { args: known.args } : {}),
       ...(known.sandbox ? { sandbox: known.sandbox } : {}),
     })
-    return selector?.choices.length ? selector.choices : null
+    return {
+      ...(probe.models?.choices.length ? { availableModels: probe.models.choices } : {}),
+      ...(probe.modes?.choices.length ? { availablePermissionModes: probe.modes.choices } : {}),
+    }
   } catch {
-    return null
+    return {}
   }
 }

@@ -150,7 +150,13 @@ export async function buildReviewRoute(): Promise<SubagentRoute | null> {
 // Builds the provider for the main agent loop. LM Studio models are encoded as
 // `lmstudio:<modelId>`; the legacy `lm-studio` value resolves to the configured
 // model or the first one the server has loaded (never the bogus "local-model").
-export async function buildProvider(model: string): Promise<LLMProvider> {
+//
+// `promptCacheKey` (typically the thread id) is forwarded to OpenAI-compatible
+// cloud providers as `prompt_cache_key` so a conversation's repeated turns route
+// to the same prompt cache, lifting hit rates and lowering cost (#584). It is
+// intentionally omitted for local servers (LM Studio, Ollama, …), which don't
+// honour it and can reject unknown request fields.
+export async function buildProvider(model: string, promptCacheKey?: string): Promise<LLMProvider> {
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()
@@ -172,7 +178,9 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
         'OpenRouter is not configured. Add an OpenRouter API key in Settings or choose another model.',
       )
     }
-    return redactedRemoteProvider(createOpenRouterProvider(openRouterModelId(model), apiKey))
+    return redactedRemoteProvider(
+      createOpenRouterProvider(openRouterModelId(model), apiKey, promptCacheKey),
+    )
   }
   const extra = extraProviderForModel(getResolvedExtraProviders(), model)
   if (extra) {
@@ -196,16 +204,24 @@ export async function buildProvider(model: string): Promise<LLMProvider> {
   }
   if (model.startsWith('gpt')) {
     return redactedRemoteProvider(
-      createProvider(model, {
-        openAiApiKey: storedOrEnvApiKey('openai'),
-      }),
+      createProvider(
+        model,
+        {
+          openAiApiKey: storedOrEnvApiKey('openai'),
+        },
+        promptCacheKey,
+      ),
     )
   }
   return redactedRemoteProvider(
-    createProvider(model, {
-      anthropicApiKey: storedOrEnvApiKey('anthropic'),
-      openAiApiKey: storedOrEnvApiKey('openai'),
-    }),
+    createProvider(
+      model,
+      {
+        anthropicApiKey: storedOrEnvApiKey('anthropic'),
+        openAiApiKey: storedOrEnvApiKey('openai'),
+      },
+      promptCacheKey,
+    ),
   )
 }
 

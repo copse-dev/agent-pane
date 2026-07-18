@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { formatArgvForShell, shellForSandboxWrap } from './spawn.ts'
+import {
+  formatArgvForShell,
+  resolveSandboxShellExecutable,
+  shellForSandboxWrap,
+  withSandboxShellPath,
+} from './spawn.ts'
 
 describe('formatArgvForShell', () => {
   it('keeps workspace and Electron paths with spaces as single shell words', () => {
@@ -47,5 +52,21 @@ describe('shellForSandboxWrap', () => {
     } finally {
       process.env['PATH'] = originalPath
     }
+  })
+})
+
+describe('resolveSandboxShellExecutable', () => {
+  it('rewrites bare bash/sh to absolute paths so GUI Electron PATH cannot ENOENT', () => {
+    assert.equal(resolveSandboxShellExecutable('bash'), '/bin/bash')
+    assert.equal(resolveSandboxShellExecutable('sh'), '/bin/sh')
+    assert.equal(resolveSandboxShellExecutable('/bin/bash'), '/bin/bash')
+  })
+})
+
+describe('withSandboxShellPath', () => {
+  it('prepends /bin and /usr/bin when missing from a snapshotted child env', () => {
+    const env = withSandboxShellPath({ PATH: '/custom/bin', HOME: '/tmp' })
+    assert.match(env['PATH'] ?? '', /^\/usr\/bin:\/bin:\/custom\/bin$/)
+    assert.equal(env['HOME'], '/tmp')
   })
 })

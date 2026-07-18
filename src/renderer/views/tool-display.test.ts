@@ -2,7 +2,12 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import { addMessage, addToolCall, createThread } from '@shared/store/thread-helpers.ts'
+import {
+  addMessage,
+  addToolCall,
+  createThread,
+  updateToolCall,
+} from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 
@@ -88,6 +93,64 @@ describe('tool call display (component)', () => {
     assert.equal(failed.getAttribute('data-status'), 'error')
     // The errored read must NOT be folded into the reading group.
     assert.equal(document.querySelector('.tool-card-group [data-tool-id="tc-read-2"]'), null)
+  })
+
+  it('keeps a user-expanded group item open across a tool update rebuild', () => {
+    const { store, messageId } = mountWithTools()
+
+    const group = document.querySelector('.tool-card-group') as HTMLDetailsElement
+    const item = group.querySelector('[data-tool-id="tc-read-1"]') as HTMLDetailsElement
+    group.open = true
+    item.open = true
+
+    // A group member changing rebuilds the whole group card from scratch (its
+    // signature covers every member); the expanded item must survive — it used
+    // to snap shut on every agent step.
+    updateToolCall(store, messageId, 'tc-list-1', { result: 'd main\nf index.ts\nf util.ts' })
+
+    const groups = document.querySelectorAll('.tool-card-group')
+    assert.equal(groups.length, 1, 'rebuild must replace the group card, not duplicate it')
+    const groupAfter = groups[0] as HTMLDetailsElement
+    assert.ok(groupAfter, 'expected the group card to still render')
+    assert.equal(groupAfter.hasAttribute('open'), true, 'group should stay open')
+    const itemAfter = groupAfter.querySelector('[data-tool-id="tc-read-1"]')
+    assert.ok(itemAfter, 'expected the reading item to still render')
+    assert.equal(itemAfter.hasAttribute('open'), true, 'expanded item should stay open')
+    // The item the user never touched stays collapsed.
+    assert.equal(
+      groupAfter.querySelector('[data-tool-id="tc-list-1"]')?.hasAttribute('open'),
+      false,
+    )
+  })
+
+  it('renders the advisor result as attributed markdown, not raw text', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', '')
+    addToolCall(store, messageId, {
+      id: 'tc-advisor',
+      name: 'advisor',
+      args: {},
+      status: 'done',
+      resultFormat: 'markdown',
+      result:
+        '**Advisor — claude-opus-4-8**\n\n**Key risk:** the diff is large.\n\n- ship the smallest slice',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const card = document.querySelector('.tool-card[data-tool-id="tc-advisor"]')
+    assert.ok(card, 'expected an advisor tool card')
+    const resultEl = card.querySelector('.tool-result')
+    assert.ok(resultEl, 'expected a tool-result section')
+    assert.ok(resultEl.classList.contains('tool-result-markdown'))
+    // The advisor model is named (so its output is distinct from the executor's),
+    // and the bold/list markdown renders instead of literal ** and - markers.
+    assert.ok(resultEl.querySelector('strong'), 'expected rendered bold, not literal **')
+    assert.ok(resultEl.querySelector('li'), 'expected a rendered list item')
+    assert.ok(resultEl.textContent.includes('claude-opus-4-8'))
+    assert.equal(resultEl.textContent.includes('**Advisor'), false)
   })
 
   it('renders an ACP markdown result as markdown, not literal code fences', () => {

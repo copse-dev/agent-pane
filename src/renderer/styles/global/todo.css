@@ -1,7 +1,9 @@
 /* Todo plan panel */
 .conversation-todos-host {
   flex-shrink: 0;
-  padding: var(--spacing-sm) var(--spacing-md) 0;
+  width: min(calc(100% - 2 * var(--spacing-xl)), var(--chat-content-max));
+  margin-inline: auto;
+  padding: var(--spacing-sm) 0 0;
 }
 .todo-panel {
   border: 1px solid var(--border);
@@ -105,15 +107,30 @@
    position and one per turn, and scrolls with the conversation. */
 .review-panel {
   margin-top: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--text-secondary);
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  padding: var(--spacing-sm) var(--spacing-md);
+  border: 0;
+  border-left: 2px solid var(--text-secondary);
+  border-radius: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text-secondary) 7%, transparent),
+    transparent 72%
+  );
+  padding: var(--spacing-sm) var(--spacing-lg);
   font-size: 13px;
+}
+.messages-list > [data-review-card] {
+  width: min(100%, var(--chat-content-max));
+  margin-inline: auto;
 }
 .review-panel-error {
   border-left-color: var(--danger, #d9534f);
+}
+.review-panel.review-panel-error {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--danger, #d9534f) 7%, transparent),
+    transparent 72%
+  );
 }
 /* Retry action on a failed review/comparison card — pushed to the right edge of
    the header (no cost badge is present in the error state that would claim it). */
@@ -141,6 +158,30 @@
   opacity: 0.5;
   cursor: default;
 }
+/* Icon-only dismiss (×) on a failed comparison card. Claims the right edge when
+   it stands alone; sits flush after the retry button when both are present. */
+.card-dismiss-button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.card-retry-button + .card-dismiss-button {
+  margin-left: 0;
+}
+.card-dismiss-button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+.card-dismiss-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .review-panel-icon {
   display: inline-flex;
   align-items: center;
@@ -154,6 +195,14 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-secondary);
+}
+/* Clean reviews render as a collapsed <details>; the header is the <summary>. */
+.review-panel > summary.review-panel-header {
+  cursor: pointer;
+  list-style: none;
+}
+.review-panel > summary.review-panel-header::-webkit-details-marker {
+  display: none;
 }
 .review-panel-body {
   margin-top: var(--spacing-xs);
@@ -169,15 +218,30 @@
    review card's inline-in-transcript placement (see syncComparisonPanel). */
 .comparison-panel {
   margin-top: var(--spacing-sm);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent, var(--text-secondary));
-  border-radius: var(--radius);
-  background: var(--bg-elevated);
-  padding: var(--spacing-sm) var(--spacing-md);
+  border: 0;
+  border-left: 2px solid var(--accent, var(--text-secondary));
+  border-radius: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent, var(--text-secondary)) 7%, transparent),
+    transparent 72%
+  );
+  padding: var(--spacing-sm) var(--spacing-lg);
   font-size: 13px;
+}
+.messages-list > [data-comparison-card] {
+  width: min(100%, var(--chat-content-max));
+  margin-inline: auto;
 }
 .comparison-panel-error {
   border-left-color: var(--danger, #d9534f);
+}
+.comparison-panel.comparison-panel-error {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--danger, #d9534f) 7%, transparent),
+    transparent 72%
+  );
 }
 .comparison-panel-icon {
   display: inline-flex;

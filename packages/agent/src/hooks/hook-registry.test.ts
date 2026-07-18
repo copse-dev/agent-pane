@@ -1,0 +1,383 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  HookRegistry,
+  HookExecutionError,
+  createHookRegistry,
+  mergeBlockingOutcomes,
+  FIRST_PARTY_HOOKS,
+  type HookOutcomeRecord,
+} from './hook-registry.ts'
+import {
+  HOOK_EVENT_NAMES,
+  HOOK_EVENT_SPECS,
+  type BlockingHook,
+  type HookRunRecord,
+} from './canonical-events.ts'
+
+const emptyContext = {}
+
+const turnStartPayload = { userText: 'do the thing', priorTodos: [] as const }
+const finalizePayload = { openTodos: [] as const, attempt: 0 }
+
+describe('canonical event catalogue — M0 events unchanged', () => {
+  // A1 widened the catalogue to the full v1 enumeration (pinned exhaustively in
+  // canonical-event-catalogue.test.ts). This test only guards that the two M0
+  // events keep their original blocking-assembly kind — the behavior existing
+  // turnStart/beforeFinalize hooks depend on.
+  it('keeps turnStart and beforeFinalize as blocking assembly events', () => {
+    assert.ok(HOOK_EVENT_NAMES.includes('turnStart'))
+    assert.ok(HOOK_EVENT_NAMES.includes('beforeFinalize'))
+    for (const name of ['turnStart', 'beforeFinalize'] as const) {
+      assert.equal(HOOK_EVENT_SPECS[name].dispatch, 'blocking')
+      assert.equal(HOOK_EVENT_SPECS[name].role, 'assembly')
+    }
+  })
+})
+
+describe('HookRegistry.emit — zero registered hooks changes nothing', () => {
+  it('resolves to an empty result for an event with no hooks', async () => {
+    const registry = new HookRegistry()
+    const result = await registry.emit('turnStart', turnStartPayload, emptyContext)
+    assert.deepEqual(result.outcomes, [])
+  })
+
+  it('beforeFinalize with closed todos is a no-op (hook abstains)', async () => {
+    const registry = createHookRegistry()
+    assert.deepEqual(
+      (await registry.emit('beforeFinalize', finalizePayload, emptyContext)).outcomes,
+      [],
+    )
+  })
+})
+
+describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize + E1 step-boundary lists', () => {
+  it('registers turn-start and beforeFinalize hooks in their assembly orders', () => {
+    assert.deepEqual(
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
+      ['todo-steering', 'github-link-steering', 'commit-steering', 'todo-pin'],
+    )
+    assert.deepEqual(
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').map((h) => h.id),
+      ['todo-finalize-closeout'],
+    )
+  })
+
+  it('registers the four E1 step-boundary nudge hooks', () => {
+    assert.deepEqual(
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'stepBoundary').map((h) => h.id),
+      ['stuck-finalize-nudge', 'loop-nudge', 'truncation-continue', 'reasoning-runaway'],
+    )
+  })
+})
+
+describe('HookRegistry.emit — function executor', () => {
+  it('runs hooks in registration order and records each returned outcome', async () => {
+    const registry = new HookRegistry()
+    const order: string[] = []
+    registry.register({
+      id: 'first',
+      event: 'turnStart',
+      run: () => {
+        order.push('first')
+        return { injectContext: 'A' }
+      },
+    })
+    registry.register({
+      id: 'second',
+      event: 'turnStart',
+      run: () => {
+        order.push('second')
+        return { injectContext: 'B' }
+      },
+    })
+
+    const result = await registry.emit('turnStart', turnStartPayload, emptyContext)
+    assert.deepEqual(order, ['first', 'second'])
+    assert.deepEqual(result.outcomes, [
+      { hookId: 'first', outcome: { injectContext: 'A' } },
+      { hookId: 'second', outcome: { injectContext: 'B' } },
+    ])
+  })
+
+  it('omits hooks that abstain (return void)', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'noop', event: 'beforeFinalize', run: () => undefined })
+    registry.register({ id: 'opinion', event: 'beforeFinalize', run: () => ({ decision: 'deny' }) })
+
+    const result = await registry.emit('beforeFinalize', finalizePayload, emptyContext)
+    assert.deepEqual(result.outcomes, [{ hookId: 'opinion', outcome: { decision: 'deny' } }])
+  })
+
+  it('awaits async hook handlers', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'async',
+      event: 'turnStart',
+      run: async () => Promise.resolve({ injectContext: 'later' }),
+    })
+    const result = await registry.emit('turnStart', turnStartPayload, emptyContext)
+    assert.deepEqual(result.outcomes, [{ hookId: 'async', outcome: { injectContext: 'later' } }])
+  })
+
+  it('only dispatches hooks registered for the fired event', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 't', event: 'turnStart', run: () => ({ injectContext: 'T' }) })
+    registry.register({ id: 'f', event: 'beforeFinalize', run: () => ({ injectContext: 'F' }) })
+
+    const result = await registry.emit('turnStart', turnStartPayload, emptyContext)
+    assert.deepEqual(result.outcomes, [{ hookId: 't', outcome: { injectContext: 'T' } }])
+    assert.deepEqual(
+      registry.hooksFor('beforeFinalize').map((h) => h.id),
+      ['f'],
+    )
+  })
+
+  it('stops dispatching once the run is aborted', async () => {
+    const registry = new HookRegistry()
+    const controller = new AbortController()
+    const seen: string[] = []
+    registry.register({
+      id: 'aborts',
+      event: 'turnStart',
+      run: () => {
+        seen.push('aborts')
+        controller.abort()
+        return { injectContext: 'A' }
+      },
+    })
+    registry.register({
+      id: 'skipped',
+      event: 'turnStart',
+      run: () => {
+        seen.push('skipped')
+        return { injectContext: 'B' }
+      },
+    })
+
+    const result = await registry.emit('turnStart', turnStartPayload, { signal: controller.signal })
+    assert.deepEqual(seen, ['aborts'])
+    assert.deepEqual(result.outcomes, [{ hookId: 'aborts', outcome: { injectContext: 'A' } }])
+  })
+})
+
+describe('HookRegistry.emit — sequential updatedInput pipeline (H1)', () => {
+  it('threads each hook rewrite into the next hook (registration order)', async () => {
+    const registry = new HookRegistry()
+    const seen: string[] = []
+    registry.register({
+      id: 'first',
+      event: 'toolGate',
+      run: (payload) => {
+        seen.push(String(payload.input['command']))
+        return { updatedInput: { command: 'from-first' } }
+      },
+    })
+    registry.register({
+      id: 'second',
+      event: 'toolGate',
+      run: (payload) => {
+        // The second hook must observe the first hook's rewrite, not the original.
+        seen.push(String(payload.input['command']))
+        return { updatedInput: { command: `${String(payload.input['command'])}+second` } }
+      },
+    })
+
+    const payload = { toolName: 'run_shell', input: { command: 'original' } }
+    const result = await registry.emit('toolGate', payload, emptyContext)
+
+    // Each hook saw the prior rewrite; the payload holds the *final* threaded input.
+    assert.deepEqual(seen, ['original', 'from-first'])
+    assert.deepEqual(payload.input, { command: 'from-first+second' })
+    assert.deepEqual(
+      result.outcomes.map((o) => o.outcome.updatedInput),
+      [{ command: 'from-first' }, { command: 'from-first+second' }],
+    )
+  })
+
+  it('merges a partial rewrite, preserving untouched input fields', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'rewrites-command-only',
+      event: 'toolGate',
+      run: () => ({ updatedInput: { command: 'safe' } }),
+    })
+    const payload = { toolName: 'run_shell', input: { command: 'danger', timeout: 30 } }
+    await registry.emit('toolGate', payload, emptyContext)
+    // The rewrite touched `command`; `timeout` is preserved (merge, not replace).
+    assert.deepEqual(payload.input, { command: 'safe', timeout: 30 })
+  })
+
+  it('leaves the payload untouched when no hook rewrites the input', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'no-rewrite', event: 'toolGate', run: () => ({ decision: 'allow' }) })
+    const payload = { toolName: 'run_shell', input: { command: 'ls' } }
+    await registry.emit('toolGate', payload, emptyContext)
+    assert.deepEqual(payload.input, { command: 'ls' })
+  })
+})
+
+describe('HookRegistry.emit — fail-hard (decision 9)', () => {
+  it('propagates a throwing hook as HookExecutionError, never swallowing it', async () => {
+    const registry = new HookRegistry()
+    const boom = new Error('kaboom')
+    registry.register({
+      id: 'thrower',
+      event: 'turnStart',
+      run: () => {
+        throw boom
+      },
+    })
+
+    await assert.rejects(
+      () => registry.emit('turnStart', turnStartPayload, emptyContext),
+      (err: unknown) => {
+        assert.ok(err instanceof HookExecutionError)
+        assert.equal(err.hookId, 'thrower')
+        assert.equal(err.event, 'turnStart')
+        assert.equal(err.cause, boom)
+        return true
+      },
+    )
+  })
+})
+
+describe('HookRegistry.emit — spine-recording sink (decision 6)', () => {
+  it('reports every execution to the sink with its outcome and timing', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'opinion', event: 'turnStart', run: () => ({ injectContext: 'A' }) })
+    registry.register({ id: 'abstains', event: 'turnStart', run: () => undefined })
+
+    const records: HookRunRecord[] = []
+    await registry.emit('turnStart', turnStartPayload, {
+      recordHookRun: (record) => records.push(record),
+    })
+
+    assert.deepEqual(
+      records.map((r) => [r.event, r.hookId, r.outcome]),
+      [
+        ['turnStart', 'opinion', { injectContext: 'A' }],
+        ['turnStart', 'abstains', null],
+      ],
+    )
+    for (const record of records) {
+      assert.equal(typeof record.startedAt, 'number')
+      assert.ok(record.durationMs >= 0)
+      assert.equal(record.error, undefined)
+    }
+  })
+
+  it('records a throwing hook before failing hard (execution is never unrecorded)', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'thrower',
+      event: 'turnStart',
+      run: () => {
+        throw new Error('kaboom')
+      },
+    })
+
+    const records: HookRunRecord[] = []
+    await assert.rejects(
+      () =>
+        registry.emit('turnStart', turnStartPayload, {
+          recordHookRun: (record) => records.push(record),
+        }),
+      HookExecutionError,
+    )
+    assert.equal(records.length, 1)
+    const [record] = records
+    assert.ok(record)
+    assert.equal(record.hookId, 'thrower')
+    assert.equal(record.outcome, null)
+    assert.equal(record.error, 'kaboom')
+  })
+
+  it('swallows sink errors — recording can never change loop behavior', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'fine', event: 'turnStart', run: () => ({ injectContext: 'A' }) })
+
+    const result = await registry.emit('turnStart', turnStartPayload, {
+      recordHookRun: () => {
+        throw new Error('sink exploded')
+      },
+    })
+    assert.deepEqual(result.outcomes, [{ hookId: 'fine', outcome: { injectContext: 'A' } }])
+  })
+})
+
+describe('HookRegistry — extensibility (M0 acceptance)', () => {
+  it('registering an additional no-op hook needs no loop code and leaves other hooks intact', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'existing',
+      event: 'turnStart',
+      run: () => ({ injectContext: 'keep' }),
+    })
+
+    // The extensibility proof: a brand-new hook slots into the same seam.
+    let called = false
+    const extra: BlockingHook<'turnStart'> = {
+      id: 'brand-new-noop',
+      event: 'turnStart',
+      run: () => {
+        called = true
+        return undefined
+      },
+    }
+    registry.register(extra)
+
+    const result = await registry.emit('turnStart', turnStartPayload, emptyContext)
+    assert.equal(called, true)
+    assert.deepEqual(result.outcomes, [{ hookId: 'existing', outcome: { injectContext: 'keep' } }])
+  })
+})
+
+describe('mergeBlockingOutcomes', () => {
+  const record = (hookId: string, outcome: HookOutcomeRecord['outcome']): HookOutcomeRecord => ({
+    hookId,
+    outcome,
+  })
+
+  it('is empty for no records', () => {
+    assert.deepEqual(mergeBlockingOutcomes([]), {})
+  })
+
+  it('concatenates injected context in order', () => {
+    const merged = mergeBlockingOutcomes([
+      record('a', { injectContext: 'first' }),
+      record('b', { injectContext: 'second' }),
+    ])
+    assert.deepEqual(merged, { injectContext: 'first\n\nsecond' })
+  })
+
+  it('first haltRun wins and outranks nothing else being dropped', () => {
+    const merged = mergeBlockingOutcomes([
+      record('a', { haltRun: { reason: 'one' }, injectContext: 'ctx' }),
+      record('b', { haltRun: { reason: 'two' } }),
+    ])
+    assert.deepEqual(merged, { haltRun: { reason: 'one' }, injectContext: 'ctx' })
+  })
+
+  it('keeps the most restrictive decision', () => {
+    assert.deepEqual(
+      mergeBlockingOutcomes([
+        record('a', { decision: 'allow' }),
+        record('b', { decision: 'deny' }),
+      ]),
+      { decision: 'deny' },
+    )
+    assert.deepEqual(
+      mergeBlockingOutcomes([record('a', { decision: 'ask' }), record('b', { decision: 'allow' })]),
+      { decision: 'ask' },
+    )
+  })
+
+  it('shallow-merges updatedInput in registration order', () => {
+    const merged = mergeBlockingOutcomes([
+      record('a', { updatedInput: { command: 'ls', flag: 1 } }),
+      record('b', { updatedInput: { flag: 2 } }),
+    ])
+    assert.deepEqual(merged, { updatedInput: { command: 'ls', flag: 2 } })
+  })
+})

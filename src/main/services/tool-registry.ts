@@ -25,6 +25,16 @@ export function setPermissionGateForTests(fn: PermissionGateFn | null): void {
   permissionGateOverride = fn
 }
 
+/**
+ * Append a hook's current-turn injected context (H2) to a tool result, keeping
+ * the result's structured shape (edit stats) intact. A blank line separates the
+ * tool output from the injected system-reminder block.
+ */
+function appendInjectedContext(result: ToolExecuteResult, block: string): ToolExecuteResult {
+  if (typeof result === 'string') return `${result}\n\n${block}`
+  return { ...result, result: `${result.result}\n\n${block}` }
+}
+
 export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>()
 
@@ -95,9 +105,19 @@ export class ToolRegistry {
       })
       if (blockReason) return blockReason
     }
-    const permitted = await ensurePermitted({ toolName: name, args: parsed })
+    // The check is passed by reference so the gate can stamp back a hook's
+    // current-turn injected context (H2) — read off the same object after.
+    const check: PermissionCheck = { toolName: name, args: parsed }
+    const permitted = await ensurePermitted(check)
     if (!permitted) return `User rejected the ${name} tool call.`
-    return tool.execute(parsed, signal)
+    const result = await tool.execute(parsed, signal)
+    // H2: a `toolGate` hook injected context into the current turn. Append the
+    // pre-built system-reminder block (10k-capped) to this call's textual
+    // result so the model reads it right after the tool output.
+    if (check.injectContext !== undefined && check.injectContext.length > 0) {
+      return appendInjectedContext(result, check.injectContext)
+    }
+    return result
   }
 
   /** Execute and unwrap structured tool results (e.g. file-edit line stats). */
@@ -105,7 +125,11 @@ export class ToolRegistry {
     name: string,
     rawArgs: unknown,
     signal: AbortSignal,
-  ): Promise<{ result: string; editStats?: { additions: number; deletions: number } }> {
+  ): Promise<{
+    result: string
+    editStats?: { additions: number; deletions: number }
+    resultFormat?: 'markdown'
+  }> {
     return normalizeToolExecuteResult(await this.execute(name, rawArgs, signal))
   }
 

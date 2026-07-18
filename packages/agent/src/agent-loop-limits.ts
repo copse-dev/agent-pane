@@ -30,9 +30,6 @@ export function isStreamOutputRunaway(
 /** Idle budget for a run; resets on {@link AgentRunDeadline.recordActivity}. */
 export const AGENT_RUN_IDLE_TIMEOUT_MS = 15 * 60 * 1000
 
-/** @deprecated use {@link AGENT_RUN_IDLE_TIMEOUT_MS} */
-export const AGENT_RUN_TIMEOUT_MS = AGENT_RUN_IDLE_TIMEOUT_MS
-
 /** Absolute wall-clock cap on a single agent run regardless of activity. */
 export const AGENT_RUN_HARD_MAX_MS = 60 * 60 * 1000
 
@@ -42,15 +39,6 @@ export const AGENT_RUN_ABORT_REASON_TIMEOUT = 'copse:agent-run-timeout'
 /** Subagent inner loops: step budget plus headroom for finalize / forced text. */
 export function defaultMaxLlmCallsForSteps(maxSteps: number): number {
   return Math.min(DEFAULT_MAX_LLM_CALLS, maxSteps + 3)
-}
-
-/** @deprecated use {@link AgentRunDeadline.isExpired} */
-export function isRunPastDeadline(
-  runStartedAt: number,
-  runTimeoutMs: number,
-  now = Date.now(),
-): boolean {
-  return now - runStartedAt >= runTimeoutMs
 }
 
 /**
@@ -63,6 +51,13 @@ export class AgentRunDeadline {
   private lastActivityAt: number
   private pauseStartedAt: number | null = null
   private accumulatedPauseMs = 0
+  // Reference count so nested pauses compose (decision 13, H4): a blocking hook
+  // that fires *inside* an already-paused region (e.g. a `toolGate` hook during
+  // `executeToolBatch`'s pause) pauses/resumes the same deadline without the
+  // inner `resume` prematurely un-pausing the outer region. Only the outermost
+  // resume records the elapsed pause; a single pause/resume pair (the pre-H4
+  // usage) behaves exactly as before.
+  private pauseDepth = 0
   private readonly idleTimeoutMs: number
   private readonly hardMaxMs: number
 
@@ -88,11 +83,15 @@ export class AgentRunDeadline {
   }
 
   pause(now = Date.now()): void {
-    if (this.pauseStartedAt === null) this.pauseStartedAt = now
+    if (this.pauseDepth === 0 && this.pauseStartedAt === null) this.pauseStartedAt = now
+    this.pauseDepth += 1
   }
 
   resume(now = Date.now()): void {
-    if (this.pauseStartedAt !== null) {
+    if (this.pauseDepth === 0) return
+    this.pauseDepth -= 1
+    // Only the outermost resume records the elapsed pause and re-arms the clock.
+    if (this.pauseDepth === 0 && this.pauseStartedAt !== null) {
       this.accumulatedPauseMs += now - this.pauseStartedAt
       this.pauseStartedAt = null
     }

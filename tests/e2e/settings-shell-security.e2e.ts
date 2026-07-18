@@ -24,6 +24,8 @@ describe('shell security settings', () => {
     await expect(dialog).toBeDisplayed()
     await dialog.$('button[data-section="local-models"]').click()
     await expect(dialog.$('input[name="safetyClassifierEnabled"]')).toBeExisting()
+    await expect(dialog.$('input[name="postTurnReviewMinChangedLines"]')).toHaveValue('1')
+    assert.match(await dialog.getText(), /asked to approve the spend once per chat/)
     assert.equal(await dialog.$('input[name="safetySandboxAllowThreshold"]').isExisting(), false)
     assert.doesNotMatch(await dialog.getText(), /Sandbox auto-allow confidence/)
 

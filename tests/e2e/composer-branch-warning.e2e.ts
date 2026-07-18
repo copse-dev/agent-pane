@@ -28,7 +28,7 @@ describe('composer branch warning', () => {
     const warning = await $('.composer-branch-warning')
     await expect(warning).toBeDisplayed()
     await expect(warning.$('.composer-branch-warning-text')).toHaveText(
-      `This thread is for branch "${seed.mismatchBranch}". Check out that branch to continue.`,
+      `This thread is for branch "${seed.mismatchBranch}". Check it out, or continue on the current branch.`,
     )
     await expect(warning.$('.composer-branch-checkout-btn')).toHaveText('Check out')
 

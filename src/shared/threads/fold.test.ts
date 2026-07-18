@@ -1,9 +1,21 @@
 import { createHash } from 'node:crypto'
-import { deepStrictEqual, strictEqual, throws } from 'node:assert/strict'
+import { deepStrictEqual, ok, strictEqual, throws } from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Message, Thread } from '@shared/types'
-import { explodeThread, foldThread, type FileToWrite, type RefResolver } from './fold.ts'
-import type { ThreadMeta } from './spine-schema.ts'
+import {
+  attachHookCards,
+  explodeThread,
+  foldThread,
+  type FileToWrite,
+  type RefResolver,
+} from './fold.ts'
+import {
+  SPINE_SCHEMA_VERSION,
+  serializeSpineLine,
+  parseSpineEntries,
+  type SpineHookRunLine,
+  type ThreadMeta,
+} from './spine-schema.ts'
 
 const hash = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex')
 
@@ -126,6 +138,41 @@ test('round-trips tool calls with inline args and a spilled result', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips ACP tool-call display metadata (kind + resultFormat)', () => {
+  // External ACP agents tag calls with a kind ('read', 'execute', …) and
+  // Markdown-formatted results; both must survive persistence or reloaded
+  // threads lose their grouping, shell labels, and Markdown rendering.
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc1',
+          name: 'Read src/x.ts (1 - 40)',
+          args: { file_path: 'src/x.ts' },
+          status: 'done',
+          result: '1\tcontents',
+          kind: 'read',
+          resultFormat: 'markdown',
+        },
+        {
+          id: 'tc2',
+          name: 'git status',
+          args: { command: 'git status' },
+          status: 'done',
+          result: '```console\nclean\n```',
+          kind: 'execute',
+          resultFormat: 'markdown',
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 test('distinguishes a null result from an empty-string result', () => {
   const messages: Message[] = [
     {
@@ -192,6 +239,20 @@ test('round-trips a nested subagent session', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips a per-message primary-chat model', () => {
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: 'from sonnet',
+      model: 'claude-sonnet-4-6',
+      toolCalls: [],
+      createdAt: 1,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 test('preserves thread metadata around the messages', () => {
   const m = meta({
     title: 'Kept',
@@ -232,4 +293,132 @@ test('error-role messages round-trip', () => {
     { id: 'e1', role: 'error', content: 'boom', toolCalls: [], createdAt: 1 },
   ]
   deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
+// decision 10: a hook-originated turn's provenance is persisted on the spine so
+// the origin marker survives a reload (history stays honest about authorship).
+test('round-trips a hook-originated turn origin + editedByUser', () => {
+  const messages: Message[] = [
+    {
+      id: 'u1',
+      role: 'user',
+      content: 'finish the open todos before stopping',
+      toolCalls: [],
+      origin: { kind: 'hook', hookId: 'todo-closeout', event: 'stop' },
+      editedByUser: true,
+      createdAt: 1,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
+// `hookCards` is display-only (decision 17): derived from the spine `hook_run`
+// lines at read time, never persisted via explode. A pure fold round-trip that
+// starts without hookCards must not invent any.
+test('the message explode path never persists derived hookCards', () => {
+  const messages: Message[] = [
+    { id: 'u1', role: 'user', content: 'hi', toolCalls: [], createdAt: 1 },
+  ]
+  const { spine } = explodeThread(messages, hash)
+  // Nothing about the message line carries hook cards.
+  const [line] = spine
+  ok(line)
+  deepStrictEqual(line.toolCalls, [])
+  strictEqual('hookCards' in line, false)
+})
+
+function hookRun(id: string, overrides: Partial<SpineHookRunLine> = {}): SpineHookRunLine {
+  return {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'hook_run',
+    id,
+    event: 'stop',
+    hookId: 'todo-closeout',
+    executor: 'command',
+    startedAt: 0,
+    durationMs: 5,
+    exitCode: 0,
+    parseOk: true,
+    decision: { permission: 'deny' },
+    ...overrides,
+  }
+}
+
+// decision 6 + 10 + 17: hook_run spine lines are attached to the message they
+// fired within (the one that precedes them in the file) as display-only cards.
+test('attachHookCards anchors hook runs to the preceding message', () => {
+  const messages: Message[] = [
+    { id: 'u1', role: 'user', content: 'go', toolCalls: [], createdAt: 1 },
+    { id: 'a1', role: 'assistant', content: 'done', toolCalls: [], createdAt: 2 },
+  ]
+  const raw = [
+    serializeSpineLine({
+      v: SPINE_SCHEMA_VERSION,
+      type: 'message',
+      id: 'u1',
+      role: 'user',
+      content: { ref: 'messages/u1.md', sha256: 'x' },
+      toolCalls: [],
+    }),
+    serializeSpineLine(hookRun('h1')),
+    serializeSpineLine({
+      v: SPINE_SCHEMA_VERSION,
+      type: 'message',
+      id: 'a1',
+      role: 'assistant',
+      content: { ref: 'messages/a1.md', sha256: 'y' },
+      toolCalls: [],
+    }),
+  ].join('\n')
+
+  const withCards = attachHookCards(messages, parseSpineEntries(raw))
+  const first = withCards[0]
+  ok(first)
+  const cards = first.hookCards
+  ok(cards)
+  strictEqual(cards.length, 1)
+  const card0 = cards[0]
+  ok(card0)
+  strictEqual(card0.status, 'deny')
+  const second = withCards[1]
+  ok(second)
+  strictEqual(second.hookCards, undefined)
+})
+
+test('attachHookCards keeps orphan runs (no/absent anchor) on the first message', () => {
+  const messages: Message[] = [
+    { id: 'a1', role: 'assistant', content: 'x', toolCalls: [], createdAt: 1 },
+  ]
+  // A hook_run before any message line (anchor = null) and one anchored to a
+  // deleted message id both fall onto the first message rather than vanish.
+  const raw = [
+    serializeSpineLine(hookRun('h-null')),
+    serializeSpineLine({
+      v: SPINE_SCHEMA_VERSION,
+      type: 'message',
+      id: 'a1',
+      role: 'assistant',
+      content: { ref: 'messages/a1.md', sha256: 'y' },
+      toolCalls: [],
+    }),
+  ].join('\n')
+  const withCards = attachHookCards(messages, parseSpineEntries(raw))
+  const first = withCards[0]
+  ok(first)
+  const cards = first.hookCards
+  ok(cards)
+  strictEqual(cards.length, 1)
+  const card0 = cards[0]
+  ok(card0)
+  strictEqual(card0.id, 'h-null')
+})
+
+test('attachHookCards is a no-op when there are no hook runs', () => {
+  const messages: Message[] = [
+    { id: 'a1', role: 'assistant', content: 'x', toolCalls: [], createdAt: 1 },
+  ]
+  const { spine } = explodeThread(messages, hash)
+  const raw = spine.map((l) => serializeSpineLine(l)).join('\n')
+  const same = attachHookCards(messages, parseSpineEntries(raw))
+  strictEqual(same[0], messages[0])
 })

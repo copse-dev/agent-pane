@@ -22,7 +22,7 @@ Example `hooks.json`:
 {
   "version": 1,
   "hooks": {
-    "beforeShellExecution": [{ "command": "./hooks/audit.sh" }],
+    "beforeShellExecution": [{ "command": "./hooks/audit.sh", "failClosed": true }],
     "beforeMCPExecution": [{ "command": "node hooks/mcp-guard.js" }],
     "beforeReadFile": [{ "command": "./hooks/redact.sh" }]
   }
@@ -30,64 +30,162 @@ Example `hooks.json`:
 ```
 
 `command` is a shell command spawned with the directory of the `hooks.json` as its
-working directory, so relative paths resolve against the config.
+working directory, so relative paths resolve against the config. A hook may set
+`"failClosed": true` to make a crash / timeout / invalid JSON **block** the action
+instead of failing open (see Reliability and trust below).
 
 ## Hook events and I/O
 
 Each hook receives a base payload — `conversation_id`, `generation_id`,
-`hook_event_name`, `workspace_roots` — plus event-specific fields.
+`hook_event_name`, `workspace_roots` — plus event-specific fields. Every
+agent-session event also carries the **model identity** of the model actually
+running the turn: `model` (slug), `model_id`, and `model_params` (Cursor's
+`{ id, value }[]` array — e.g. `context_window` / `max_output_tokens`), matching
+the vendor contract (B4).
 
-| Event                  | stdin (event fields)      | stdout                                   | Copse                   |
-| ---------------------- | ------------------------- | ---------------------------------------- | ----------------------- |
-| `beforeShellExecution` | `command`, `cwd`          | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured             |
-| `beforeMCPExecution`   | `tool_name`, `tool_input` | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured             |
-| `beforeReadFile`       | `file_path`, `content`    | `{ permission: "allow"\|"deny" }`        | ✅ honoured (path only) |
-| `beforeSubmitPrompt`   | `prompt`, `attachments`   | `{ continue: boolean }`                  | ❌ not wired            |
-| `afterFileEdit`        | `file_path`, `edits`      | none (notification)                      | ❌ not wired            |
-| `stop`                 | `status`                  | none (notification)                      | ❌ not wired            |
+| Event                  | stdin (event fields)                                 | stdout                                   | Copse         |
+| ---------------------- | ---------------------------------------------------- | ---------------------------------------- | ------------- |
+| `beforeShellExecution` | `command`, `cwd`                                     | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeMCPExecution`   | `tool_name`, `tool_input`                            | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeReadFile`       | `file_path`, `content`                               | `{ permission: "allow"\|"deny" }`        | ✅ honoured   |
+| `beforeSubmitPrompt`   | `prompt`, `attachments`                              | `{ continue: boolean }`                  | ✅ wired (B1) |
+| `afterFileEdit`        | `file_path`, `edits`                                 | none (notification)                      | ✅ wired (B2) |
+| `stop`                 | `status`                                             | none (notification)                      | ✅ wired (B3) |
+| `afterShellExecution`  | `command`, `output`, `duration`                      | none (notification)                      | ✅ wired (D2) |
+| `afterMCPExecution`    | `tool_name`, `tool_input`, `result_json`, `duration` | none (notification)                      | ✅ wired (D2) |
 
-Permission responses may also carry `agentMessage` / `userMessage`. Copse logs the
-`agentMessage` from a denying hook; surfacing it into the conversation is future work.
+The real `conversation_id` (thread id) and `generation_id` (turn id) come from
+the active run (B4); they are empty strings only when a hook fires outside any
+agent turn.
+
+### Matchers (per-event, D3)
+
+A hook entry may carry an optional `matcher` — a **regex string** that filters
+when the hook runs. Which field the regex is tested against depends on the event
+(matching Cursor's "which field the matcher applies to depends on the hook"):
+
+| Event(s)                                       | matcher matched against       |
+| ---------------------------------------------- | ----------------------------- |
+| `beforeShellExecution` / `afterShellExecution` | the full shell command string |
+| `beforeMCPExecution` / `afterMCPExecution`     | the (MCP) tool name           |
+| `beforeReadFile`                               | the tool type (`Read`)        |
+| `afterFileEdit`                                | the tool type (`Write`)       |
+| `beforeSubmitPrompt`                           | the value `UserPromptSubmit`  |
+| `stop`                                         | the value `Stop`              |
+| `subagentStart` / `subagentStop`               | the subagent type             |
+
+```json
+{
+  "hooks": {
+    "beforeShellExecution": [{ "command": "./approve-network.sh", "matcher": "curl|wget|nc " }],
+    "beforeMCPExecution": [{ "command": "./mcp-guard.sh", "matcher": "db__query" }],
+    "subagentStart": [{ "command": "./validate-explore.sh", "matcher": "explore|shell" }]
+  }
+}
+```
+
+Semantics:
+
+- **No matcher fires for every action** — Cursor's default. (For `afterFileEdit`,
+  Copse _additionally_ supports a `glob` convenience field, matched against the
+  edited **path**; see below.)
+- **An invalid regex skips the hook** (skip-and-warn). Cursor's docs do not
+  specify invalid-matcher behavior; Copse chooses to skip rather than fail-open
+  so a broken matcher can never accidentally deny (or observe) every action. The
+  skip is logged once with the offending pattern.
+- **MCP tool names** are Copse's canonical form (`mcp__<server>__<tool>`), so an
+  MCP matcher is written against that — e.g. `db__query` matches
+  `mcp__db__query`. (Cursor's dedicated `beforeMCPExecution` / `afterMCPExecution`
+  events are not in its published "available matchers" list; Copse matches them
+  by tool name, the natural analogue of Cursor's `MCP:<tool_name>` tool-type
+  token used by the generic `preToolUse` hook.)
+- **`afterFileEdit` has two independent filters** that must _both_ pass: the
+  Copse-convenience `glob` (**path**, `string | string[]`, B2) and the Cursor
+  native `matcher` (**tool type** `Write`, D3). They are distinct fields with
+  distinct meanings — `glob` narrows by which file changed, `matcher` narrows by
+  the edit tool type. Since every Copse edit funnels through the diff-queue write
+  path, a `Write` matcher matches and a `TabWrite` matcher never does (Copse has
+  no inline-tab edits).
+
+Matcher evaluation is centralized in the Cursor adapter
+(`cursorMatcherMatches` / `cursorMatcherSubject`) and applied at discovery — the
+adapter's dispatch-side filter — so every event runs the same matcher code with
+only its subject field differing (decision 8: adapters own matchers).
+
+Permission responses may also carry `agentMessage` / `userMessage`. A denying
+hook's `agentMessage` is now **surfaced to the agent** as the tool-result reason
+(B4) — a message-bearing `deny` fails the call with that reason so the model sees
+why. A hook `ask` **escalates to Copse's approval prompt** (the same prompt a
+policy `ask` uses): approving lets the call proceed, declining blocks it. A hook
+still can only _tighten_ the gate — an `allow` never auto-approves something
+Copse would otherwise prompt about.
+
+`beforeReadFile` receives the file **content** on stdin (B4), so a redaction /
+secret-detection hook can inspect the bytes and `deny`. Cursor's `beforeReadFile`
+response is `allow` / `deny` only — there is no content-rewrite field in the
+vendor contract — so "redaction" is expressed as _deny on inspection_, not by
+returning modified content.
 
 ## What Copse supports
 
-| Capability                   | Status        | Notes                                                                                     |
-| ---------------------------- | ------------- | ----------------------------------------------------------------------------------------- |
-| **Permission hooks**         | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate |
-| **User hooks**               | Supported     | `~/.cursor/hooks.json`, always honoured                                                   |
-| **Project hooks**            | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                    |
-| **Hook discovery / list**    | Supported     | `hooks:list` IPC returns `CursorHookSummary[]` for diagnostics                            |
-| **Lifecycle hooks**          | Not supported | `beforeSubmitPrompt`, `afterFileEdit`, `stop` need agent-loop / write-path wiring         |
-| **`beforeReadFile` content** | Partial       | Hook sees the path but not the file contents (read happens after the gate)                |
-| **Content rewriting**        | Not supported | Hooks can block but not yet mutate prompts, read output, or edits                         |
-| **Plugin-contributed hooks** | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                |
-| **Settings UI**              | Not supported | Toggle exists in storage (`cursorHooksEnabled`); no dedicated Settings section yet        |
+| Capability                    | Status        | Notes                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Permission hooks**          | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                                                                                                                                                                                              |
+| **User hooks**                | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                                                                                                                                                                                                |
+| **Project hooks**             | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                                                                                                                                                                                                 |
+| **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                                                                                                                                                                                             |
+| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt` (B1), `afterFileEdit` (B2), `stop` (B3), `afterShellExecution` / `afterMCPExecution` (D2) are wired; every declared Cursor event now fires                                                                                                                                                                        |
+| **Post-tool observation**     | Supported     | `afterShellExecution` / `afterMCPExecution` (D2) fire **detached** after each shell / MCP tool result — payload flavors of the one canonical `afterToolUse` event (the tool name picks the flavor, like the permission gates map onto `toolGate`). Notification-only; the output snapshot is capped before it reaches the hook's stdin |
+| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin (B4) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)                                                                                                                                                                                |
+| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event (B4), sourced from the model actually running                                                                                                                                                                                                                       |
+| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                                                                                                                                                                                    |
+| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                                                                                                                                                                                              |
+| **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                                                                                                                                                                                             |
+| **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                     |
 
 ### Enablement
 
 Hooks are **off by default**. Honouring a hook spawns a user/project script on the
-agent's hot path, so it is gated behind the `cursorHooksEnabled` security setting. When
-disabled the gate skips discovery entirely (no overhead).
+agent's hot path, so it is gated behind the `cursorHooksEnabled` security setting
+(Settings → Sources → Hooks). When disabled the gate skips discovery entirely (no
+overhead); the Sources panel still lists discovered hooks so authoring problems are
+visible before enabling.
 
 ### Implementation
 
-Discovery, parsing, and the stdio runner live in
-[`src/main/services/cursor-hooks.ts`](../src/main/services/cursor-hooks.ts):
+Cursor is a **dialect adapter** (A2 of the hooks platform,
+[`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md), decision 8:
+"dialect by source path"). Discovery, parsing, matchers, wire marshalling in both
+directions, and the per-event exit-code table all live in
+[`src/main/services/hooks/cursor-adapter.ts`](../src/main/services/hooks/cursor-adapter.ts):
 
 - `listCursorHooks()` — discovered hooks for the current context (diagnostics / `hooks:list`)
-- `runPermissionHooks(event, payload, opts)` — spawn the hooks for an event and reduce
-  their responses to a single decision
+- `cursorToolGateHooks(payload, opts)` — the Cursor command hooks matching a tool gate,
+  as canonical `CommandHook`s (their `onFailure` set from `failClosed`)
+- `cursorAdapter` — the `DialectAdapter` the shared runner delegates to (marshalling +
+  the exit-code table)
 
-The permission gate ([`permission-gate.ts`](../src/main/services/permission-gate.ts))
-maps a tool call to its hook event and consults `runPermissionHooks` before its own
-logic. Hooks can only **tighten** the gate: a `deny` blocks the call, but an `allow`
-still flows through Copse's normal prompting — a hook can never auto-approve something
-Copse would otherwise ask about.
+The shared process spawn (stdin marshalling, stdout/stderr capture, timeout, output cap)
+lives in [`hook-spawn.ts`](../src/main/services/hooks/hook-spawn.ts); the host runner in
+[`command-hook-runner.ts`](../src/main/services/hooks/command-hook-runner.ts) spawns each
+hook and applies its dialect's failure semantics.
+
+The permission gate ([`permission-gate.ts`](../src/main/services/security/permission-gate.ts))
+maps a tool call onto the canonical `toolGate` event and calls
+`runToolGateHooks` ([`tool-gate.ts`](../src/main/services/hooks/tool-gate.ts)), which fires
+the hooks through the registry → runner → adapter seam. Hooks can only **tighten** the gate:
+a `deny` blocks the call, but an `allow` still flows through Copse's normal prompting — a
+hook can never auto-approve something Copse would otherwise ask about.
 
 ### Reliability and trust
 
-- **Fail open.** A missing config, crash, timeout (5s), or unparseable response is
-  treated as `allow`, so a broken hook never silently wedges the agent.
+- **Fail open by default, `failClosed` honoured.** A missing config, crash, timeout (5s),
+  or unparseable response is treated as `allow`, so a broken hook never silently wedges
+  the agent. But Cursor's per-hook `failClosed: true` (`{ "command": …, "failClosed": true }`)
+  reverses that for **that** hook: a crash / timeout / invalid JSON **blocks** the action
+  instead — the vendor contract for imported security hooks (decision 9). The Cursor
+  adapter reports the failure + the hook's resolved `onFailure`; the runner turns it into
+  a deny (`failClosed`) or a no-op (the default).
 - **No LLM secrets.** Hook processes inherit `envForRendererChildProcess()` — the same
   scrubbed environment as `run_shell`, so provider _LLM_ API keys never reach hook
   scripts. Note this is **not** an empty environment: non-LLM tool tokens that the agent
@@ -106,10 +204,9 @@ Enabling Cursor hooks hands real, local execution authority to whoever authored 
 
 **Enabling `cursorHooksEnabled` and trusting a workspace grants that repo's
 `.cursor/hooks.json` arbitrary local code execution on every gated tool call.** Each
-matching hook `command` is spawned through a shell (`shell: true`) on the agent's hot
-path, with the directory of the `hooks.json` as its working directory. A trusted repo's
-hooks run with the same authority as any other process you launch — they are **not**
-confined to the agent's project sandbox.
+matching hook `command` is spawned through a shell on the agent's hot path, with the
+directory of the `hooks.json` as its working directory. A trusted repo's hooks run with
+whatever authority the sandbox leaves them (see below).
 
 Concretely, "trusting a workspace" with hooks enabled also means:
 
@@ -117,9 +214,14 @@ Concretely, "trusting a workspace" with hooks enabled also means:
   (`beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`) spawns the repo's
   hook command first. A cloned or third-party repo can ship a `hooks.json` that runs
   whatever it likes, repeatedly, for the lifetime of the session.
-- **Runs outside the sandbox.** Hook commands are ordinary child processes; they are not
-  subject to the project sandbox that constrains agent shell/file tools. They can read
-  and write anywhere your user account can.
+- **Sandboxed by default (F3, macOS-only).** As of F3 (decision 7 of the
+  [hooks platform plan](./plans/hooks-and-feature-packs.md)), hook processes run **inside
+  the project sandbox by default** — the same workspace-scoped seatbelt that constrains the
+  agent's shell/file tools. Cursor / Claude hooks cannot opt out (only the Copse dialect's
+  `sandbox: false` can). **Enforcement is macOS-only**: on Linux / Windows there is no OS
+  sandbox, so a hook still runs with full user authority — treat "sandboxed" as a _default,
+  not a guarantee_. A hook the sandbox blocks is recorded on the spine and surfaced in
+  Sources; it is never a silent fail-open.
 - **Tool tokens are in the environment.** Hook processes inherit the scrubbed
   `envForRendererChildProcess()` environment. That strips _LLM provider_ keys, but
   **non-LLM tool tokens used by the agent (e.g. `GITHUB_TOKEN`) remain in `env`** and are
@@ -146,21 +248,31 @@ trusting the code it can cause to run.
 
 ## Gaps and future work
 
-1. **Lifecycle hooks** — wire `beforeSubmitPrompt` (compose path), `afterFileEdit`
-   (diff queue / write tools), and `stop` (end of an agent run).
-2. **Surface `agentMessage`** — feed a denying hook's message back into the conversation
-   instead of only logging it.
-3. **`beforeReadFile` content** — pass file contents and honour content rewrites/redaction.
-4. **Settings UI** — expose `cursorHooksEnabled` and discovered hooks (event, command,
-   scope) alongside the plugins list.
-5. **Plugin-contributed hooks** — if Cursor adds a `hooks` slot to `plugin.json`, load
+1. **Content rewriting** — `updated_input` on tool gates (rewrite the proposed tool
+   input, re-running policy analysis) is Phase H1, not yet wired.
+2. **Hook cards** — deny/ask decisions and hook executions surface today through the
+   existing text / approval-prompt channels; the dedicated right-aligned hook-card
+   UI family is Phase G1. `userMessage` on a plain deny (no approval prompt) waits
+   for that card surface.
+3. **Claude `SessionStart` model** — the wire payload type carries the running model
+   (`AgentSessionInfo`), but Claude's optional `model` on `sessionStart` needs the
+   `sessionStart` fire site, which is Phase H4; Cursor agent-session events carry
+   model identity now (B4).
+4. **Plugin-contributed hooks** — if Cursor adds a `hooks` slot to `plugin.json`, load
    them via the shared `cursor-plugins` discovery module.
 
 ## Related files
 
-- `src/main/services/cursor-hooks.ts` — discovery, parsing, and the stdio runner
-- `src/main/services/permission-gate.ts` — maps tool calls to permission hooks
+- `src/main/services/hooks/cursor-adapter.ts` — Cursor dialect adapter: discovery, parsing
+  (incl. `failClosed`), matchers, wire marshalling, exit-code table
+- `src/main/services/hooks/claude-adapter.ts` — Claude Code PreToolUse dialect adapter (#639)
+- `src/main/services/hooks/hook-spawn.ts` — shared process spawn + stdout/stderr capture
+- `src/main/services/hooks/command-hook-runner.ts` — host runner; applies dialect failure semantics
+- `src/main/services/hooks/tool-gate.ts` — maps tool calls onto the canonical `toolGate` event
+- `src/main/services/security/permission-gate.ts` — calls the tool-gate hooks
 - `src/shared/types/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
-- `src/main/services/child-process-env.ts` — secret-scrubbed env for hook processes
+- `src/shared/types/hooks.ts` — shared `HookSummary` for Sources / `hooks:list`
+- `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
+- `docs/claude-hooks.md` — Claude Code hooks contract
 - `docs/cursor-plugins.md` — sibling exploration of Cursor plugin support
 - `docs/supply-chain-security.md` — trust boundaries for executed code

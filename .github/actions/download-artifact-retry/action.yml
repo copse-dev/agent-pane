@@ -1,0 +1,107 @@
+name: Download artifact (retry)
+description: >-
+  Wrap actions/download-artifact@v8 with outer retries. GitHub's artifact CDN
+  intermittently returns 403 from an intermediary and marks it non-retryable
+  inside the action (actions/download-artifact#464). Without an outer retry, a
+  single flake on one e2e shard fail-fast-cancels the whole matrix.
+
+inputs:
+  name:
+    description: Artifact name to download
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download ${{ inputs.name }} (attempt 1/5)
+      id: a1
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.name }}
+
+    - name: Back off before retry 2
+      if: steps.a1.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::artifact download attempt 1 failed; retrying in 5s"
+        sleep 5
+
+    - name: Download ${{ inputs.name }} (attempt 2/5)
+      id: a2
+      if: steps.a1.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.name }}
+
+    - name: Back off before retry 3
+      if: steps.a1.outcome == 'failure' && steps.a2.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::artifact download attempt 2 failed; retrying in 10s"
+        sleep 10
+
+    - name: Download ${{ inputs.name }} (attempt 3/5)
+      id: a3
+      if: steps.a1.outcome == 'failure' && steps.a2.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.name }}
+
+    - name: Back off before retry 4
+      if: >-
+        steps.a1.outcome == 'failure' &&
+        steps.a2.outcome == 'failure' &&
+        steps.a3.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::artifact download attempt 3 failed; retrying in 20s"
+        sleep 20
+
+    - name: Download ${{ inputs.name }} (attempt 4/5)
+      id: a4
+      if: >-
+        steps.a1.outcome == 'failure' &&
+        steps.a2.outcome == 'failure' &&
+        steps.a3.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.name }}
+
+    - name: Back off before retry 5
+      if: >-
+        steps.a1.outcome == 'failure' &&
+        steps.a2.outcome == 'failure' &&
+        steps.a3.outcome == 'failure' &&
+        steps.a4.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::warning::artifact download attempt 4 failed; retrying in 30s"
+        sleep 30
+
+    - name: Download ${{ inputs.name }} (attempt 5/5)
+      id: a5
+      if: >-
+        steps.a1.outcome == 'failure' &&
+        steps.a2.outcome == 'failure' &&
+        steps.a3.outcome == 'failure' &&
+        steps.a4.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.name }}
+
+    - name: Fail if ${{ inputs.name }} download never succeeded
+      if: >-
+        steps.a1.outcome != 'success' &&
+        steps.a2.outcome != 'success' &&
+        steps.a3.outcome != 'success' &&
+        steps.a4.outcome != 'success' &&
+        steps.a5.outcome != 'success'
+      shell: bash
+      run: |
+        echo "::error::Failed to download artifact '${{ inputs.name }}' after 5 attempts (likely GitHub artifact CDN 403 flake)"
+        exit 1

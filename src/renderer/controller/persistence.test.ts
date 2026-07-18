@@ -227,6 +227,42 @@ test('clearing an optional field sends an explicit undefined so it is deleted on
   autosave.detach()
 })
 
+test('clearing a comparison persists via comparison_changed with an explicit undefined', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const comparison = {
+    status: 'error' as const,
+    models: { a: 'model-a', b: 'model-b', judge: 'model-j' },
+    reviewA: '',
+    reviewB: '',
+    synthesis: '',
+    error: 'Comparison declined.',
+  }
+  const store = createStore({
+    activeProjectId: 'p1',
+    threads: [thread('t1', { comparison })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+
+  // Baseline: create t1 with the failed comparison.
+  store.emit('threads_changed')
+  await waitDebounce()
+  assert.equal(calls.creates.length, 1)
+
+  // Dismiss: the thread drops the key entirely; only comparison_changed fires
+  // (the thread is idle, so no other autosave trigger accompanies it).
+  store.setState({ threads: [thread('t1')] })
+  store.emit('comparison_changed', 't1')
+  await waitDebounce()
+
+  const patch = calls.metas.at(-1)?.patch as Record<string, unknown> | undefined
+  assert.ok(patch, 'a meta patch should be emitted')
+  assert.ok('comparison' in patch)
+  assert.equal(patch['comparison'], undefined)
+  autosave.detach()
+})
+
 test('a finalized message is appended immediately on message_done', async () => {
   __resetPersistenceForTest()
   const { api, calls } = fakeApi()

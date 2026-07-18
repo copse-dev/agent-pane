@@ -134,29 +134,62 @@ jobs:
           echo "PR #$PR_NUMBER: screenshot-only conflict — keeping the PR's shots"
           git checkout --ours -- tests/e2e/screenshots/
           git add tests/e2e/screenshots/
+          # The reconcile push authenticates with SCREENSHOTS_PAT, a classic PAT
+          # without `workflow` scope. If main advanced a file under
+          # .github/workflows/, the merge folds that change in and GitHub rejects
+          # the push ("refusing to allow a Personal Access Token to create or
+          # update workflow ... without workflow scope"), hard-failing the job. We
+          # can't drop main's workflow change either — reverting it to --ours would
+          # undo it when the PR merges — so hand these off to a human instead of
+          # failing red. Granting the PAT `workflow` scope lets CI resolve these
+          # automatically. `--cached` diff vs HEAD lists what the merge would push.
+          wf="$(git diff --cached --name-only -- .github/workflows/ || true)"
+          if [ -n "$wf" ]; then
+            echo "PR #$PR_NUMBER: merge updates workflow files the PAT can't push — needs a human:"
+            printf '%s\n' "$wf"
+            git merge --abort
+            {
+              echo "workflow=true"
+              echo "workflow-files<<EOF"
+              printf '%s\n' "$wf"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git commit --no-edit
           git push
           echo "resolved=true" >> "$GITHUB_OUTPUT"
       - name: Comment when manual resolution is needed
-        if: steps.merge.outputs.manual == 'true'
+        if: steps.merge.outputs.manual == 'true' || steps.merge.outputs.workflow == 'true'
         uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ matrix.pr.number }}
           MANUAL_FILES: ${{ steps.merge.outputs.manual-files }}
+          WORKFLOW_FILES: ${{ steps.merge.outputs.workflow-files }}
         with:
           script: |
             const marker = '<!-- reconcile-screenshots-manual -->';
-            const files = (process.env.MANUAL_FILES || '').split('\n').filter(Boolean);
-            const lines = files.map((p) => `- \`${p}\``);
+            const manual = (process.env.MANUAL_FILES || '').split('\n').filter(Boolean);
+            const workflow = (process.env.WORKFLOW_FILES || '').split('\n').filter(Boolean);
+            // Two reasons CI can't finish the merge for you: a non-screenshot file
+            // genuinely conflicts, or main advanced a workflow file that CI's PAT
+            // isn't scoped to push. Both need a human to merge/rebase `main`.
+            const bullets = (process.env.WORKFLOW_FILES ? workflow : manual).map((p) => `- \`${p}\``);
+            const reason = process.env.WORKFLOW_FILES
+              ? '`main` advanced and screenshot conflicts were resolved automatically, but the ' +
+                'merge updates these **workflow** files, which CI\'s token isn\'t scoped to push. ' +
+                'Merge or rebase `main` by hand (or grant the `SCREENSHOTS_PAT` the `workflow` scope ' +
+                'to let CI resolve these automatically):'
+              : '`main` advanced and screenshot conflicts were resolved automatically, but ' +
+                'these **non-screenshot** files conflict and can\'t be auto-merged. ' +
+                'Resolve them by hand (merge or rebase `main`):';
             const body = [
               marker,
               '### Merge conflict needs a human',
               '',
-              '`main` advanced and screenshot conflicts were resolved automatically, but ' +
-                'these **non-screenshot** files conflict and can\'t be auto-merged. ' +
-                'Resolve them by hand (merge or rebase `main`):',
+              reason,
               '',
-              lines.join('\n'),
+              bullets.join('\n'),
             ].join('\n');
             const number = Number(process.env.PR_NUMBER);
             const { data: comments } = await github.rest.issues.listComments({

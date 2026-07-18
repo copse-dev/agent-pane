@@ -15,7 +15,8 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
-import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
   DEFAULT_COMPARISON_JUDGE_MODEL,
@@ -31,6 +32,7 @@ import { createLmStudioSection } from './setup/lm-studio-section.ts'
 import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
+import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -44,13 +46,7 @@ import {
 } from '@shared/command-routing.ts'
 
 export type SettingsSection =
-  | 'general'
-  | 'usage'
-  | 'local-models'
-  | 'mcp'
-  | 'sources'
-  | 'appearance'
-  | 'experimental'
+  'general' | 'usage' | 'local-models' | 'mcp' | 'sources' | 'appearance' | 'ssh' | 'experimental'
 
 /**
  * Whole-app tint (Appearance ▸ Interface tint). The hue is mixed into every
@@ -59,6 +55,7 @@ export type SettingsSection =
  * tokens.css folds into every --bg-* surface (see its --tint-* comment).
  */
 export type UiTintStrength = 'off' | 'subtle' | 'medium' | 'strong'
+export const DEFAULT_ACCENT_COLOR = '#2A9D8F'
 // Ships on by default as a gentle wash that matches the default "Rose" app
 // icon (its #F472B6 mark). Users can dial it up, recolour it, or set the
 // strength to Off for the plain neutral surfaces.
@@ -71,6 +68,26 @@ const TINT_STRENGTH_AMOUNTS: Record<UiTintStrength, string> = {
   strong: '10%',
 }
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+function accentTextColor(color: string): '#101918' | '#ffffff' {
+  const linearChannel = (offset: number): number => {
+    const channel = Number.parseInt(color.slice(offset, offset + 2), 16) / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  }
+  const red = linearChannel(1)
+  const green = linearChannel(3)
+  const blue = linearChannel(5)
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
+  return luminance > 0.179 ? '#101918' : '#ffffff'
+}
+
+/** Apply the interaction hue and keep text on solid accent fills readable. */
+export function applyUiAccent(color: string): void {
+  if (!HEX_COLOR.test(color)) return
+  const root = document.documentElement
+  root.style.setProperty('--accent-color', color)
+  root.style.setProperty('--text-on-accent', accentTextColor(color))
+}
 
 export function isUiTintStrength(value: unknown): value is UiTintStrength {
   return value === 'off' || value === 'subtle' || value === 'medium' || value === 'strong'
@@ -97,8 +114,8 @@ export function applyUiTint(color: string, strength: UiTintStrength): void {
  */
 interface SettingField {
   name: string
-  kind: 'checkbox' | 'text'
-  default: boolean | string
+  kind: 'checkbox' | 'text' | 'number'
+  default: boolean | string | number
   /** Whether the save handler writes this field via api.settings.set. */
   save: boolean
 }
@@ -117,6 +134,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
+  { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 1, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
   { name: 'skillSandboxGuidance', kind: 'checkbox', default: true, save: true },
@@ -135,6 +153,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
+  { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
@@ -144,6 +163,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
+  { name: 'cursorHooksEnabled', kind: 'checkbox', default: false, save: false },
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
   { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
@@ -164,6 +184,12 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
           : String(field.default)
     }
   }
+}
+
+/** Parse a `number`-kind field's form value, clamping to a non-negative integer. */
+function parseNonNegativeInt(value: string, fallback: number): number {
+  const n = Number.parseInt(value, 10)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
 }
 
 /**
@@ -190,6 +216,9 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
     if (!field.save) continue
     if (field.kind === 'checkbox') {
       await api.settings.set(field.name, data.get(field.name) === 'on')
+    } else if (field.kind === 'number') {
+      const value = (data.get(field.name) as string | null) ?? ''
+      await api.settings.set(field.name, parseNonNegativeInt(value, field.default as number))
     } else {
       const value = (data.get(field.name) as string | null) ?? ''
       const trimmed = field.name === 'customInstructions'
@@ -281,6 +310,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
+          <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
@@ -469,9 +499,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <section class="settings-section" data-section="usage">
             <h3>Usage</h3>
             <p class="settings-section-desc">
-              Estimated cloud spend and local (free) model token usage across all workspaces.
-              Costs are approximate and use catalog pricing, including Anthropic prompt-cache rates
-              when cache tokens are reported.
+              Subscription plan windows (Claude / Codex) when those CLIs are signed
+              in, plus estimated cloud spend and local (free) model token usage
+              across all workspaces. Plan fetch is best-effort and never blocks
+              Copse. Costs are approximate and use catalog pricing, including
+              Anthropic prompt-cache rates when cache tokens are reported.
             </p>
             <div id="settings-usage-host" class="settings-mount"></div>
           </section>
@@ -508,6 +540,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="postTurnReviewEnabled" />
                 Review the diff with a subagent after each editing turn
               </label>
+              <label>
+                Skip that review below this many changed lines (1 = only skip an empty
+                diff, 0 = always review)
+                <input
+                  type="number"
+                  name="postTurnReviewMinChangedLines"
+                  min="0"
+                  step="1"
+                  class="settings-number-input"
+                />
+              </label>
+              <p class="field-hint">
+                When the review runs on a paid model, you'll be asked to approve the spend
+                once per chat. Set a local review model above to review for free.
+              </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="safetyClassifierEnabled" />
                 Use instruct model to identify dangerous external shell commands for strict-mode blocking
@@ -676,9 +723,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Hooks</legend>
               <p class="settings-fieldset-desc">
-                Cursor hooks from <code>~/.cursor/hooks.json</code> (user) and, when the workspace
-                is trusted, <code>.cursor/hooks.json</code> (project). Permission hooks can block or
-                gate the agent's tool calls.
+                Cursor hooks from <code>~/.cursor/hooks.json</code> and Claude Code hooks from
+                <code>~/.claude/settings.json</code> (user). When the workspace is trusted, also
+                <code>.cursor/hooks.json</code> and <code>.claude/settings.json</code> (project).
+                Permission hooks can block or gate the agent's tool calls.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="cursorHooksEnabled" />
+                Run Cursor hooks
+              </label>
+              <p class="field-hint">
+                Off by default. Enabling this runs user/project scripts on the agent's hot path —
+                each gated tool call spawns matching hook commands with local execution authority.
+                Project hooks additionally require workspace trust, the same bar as running the
+                repo's build scripts. Hooks fail open: a crashing hook never blocks the agent.
               </p>
               <div id="sources-hooks-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -738,18 +796,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Interface tint</legend>
+              <legend>Interface colours</legend>
               <p class="settings-fieldset-desc">
-                Wash a colour through every surface — panels, sidebars, hovers, and the chat
-                background. Kept subtle by design; leave the strength at Off for the plain neutral
-                theme. Works in both light and dark.
+                Accent colour is used for links, primary buttons, selected items, focus indicators,
+                and your chat messages. Interface tint adds a separate, subtle wash through neutral
+                surfaces. Both work in light and dark themes.
               </p>
               <label>
-                Tint colour
+                Accent colour
+                <input type="color" name="uiAccentColor" />
+              </label>
+              <label>
+                Interface tint colour
                 <input type="color" name="uiTintColor" />
               </label>
               <label>
-                Strength
+                Interface tint strength
                 <select name="uiTintStrength">
                   <option value="off">Off</option>
                   <option value="subtle">Subtle</option>
@@ -777,6 +839,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 ).join('')}
               </div>
             </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="ssh">
+            <h3>SSH</h3>
+            <p class="settings-section-desc">
+              Connect Copse to a remote Linux workspace over SSH — shell, git, search, and file
+              tools run on the host while the UI stays local.
+            </p>
+            <div id="settings-ssh-workspace-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="experimental">
@@ -854,34 +925,61 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Adds a <code>suggest_model</code> tool that recommends a capability tier
-                (fast / balanced / frontier) and a representative model for a task, so cheap/fast
-                models handle trivial work and frontier models are reserved for the hard problems.
-                Advisory only — it does not switch the model in use. While off, the tool is not
-                registered.
+                Adds a <code>suggest_model</code> tool that places a task on the shared model
+                intellect scale (low / mid / top band — the same scale the advisor pairing uses) and
+                names a representative model, so cheap/fast models handle trivial work and
+                top-of-scale models are reserved for the hard problems. Advisory only — it does not
+                switch the model in use. While off, the tool is not registered.
               </p>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="advisor-strategy-fieldset">
               <legend>Advisor strategy</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="advisorStrategyEnabled" />
                 Let the agent consult a larger advisor model mid-task
               </label>
               <p class="field-hint">
-                Adds a no-parameter <code>advisor</code> tool that forwards your full conversation
+                Adds an <code>advisor</code> tool that forwards your full conversation
                 transcript to a larger advisor model for strategic guidance, so the everyday loop can
                 run on a cheaper or on-device model while frontier intelligence is pulled in at the
-                moments that matter (planning, getting unstuck, final review). Shaped to match
-                Claude’s native advisor tool. While off, the tool is not registered.
+                moments that matter (planning, getting unstuck, final review). Runs client-side, so
+                any executor/advisor pairing works — ACP agents can sit on either side (as the
+                advisor, or as an executor consulting it through the native-tool bridge). While
+                off, the tool is not registered.
               </p>
               <label class="field-label" for="advisorModel">Advisor model</label>
               <select id="advisorModel" name="advisorModel">
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                Model used for advisor consultations. Pick a configured cloud provider; defaults to
+                Model used for advisor consultations. Any configured provider works; defaults to
                 <code>claude-opus-4-8</code>.
+              </p>
+              <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>
+            </fieldset>
+
+            <fieldset>
+              <legend>Orchestration strategy</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="orchestrationStrategyEnabled" />
+                Let the agent delegate implementation steps to a cheaper worker model
+              </label>
+              <p class="field-hint">
+                The inverse of the advisor strategy: the chat model stays the orchestrator and a
+                <code>delegate_step</code> tool hands each bounded implementation step — with the
+                context it needs — to a cheaper/faster worker model running as a subagent with
+                read/edit/shell tools. Each step returns the worker’s report plus a working-tree
+                snapshot, so the orchestrator reviews what changed before delegating the next step.
+                While off, the tool is not registered.
+              </p>
+              <label class="field-label" for="orchestrationWorkerModel">Worker model</label>
+              <select id="orchestrationWorkerModel" name="orchestrationWorkerModel">
+                <option value="">(loading…)</option>
+              </select>
+              <p class="field-hint">
+                Model that implements delegated steps. Pick something cheaper/faster than your chat
+                model; defaults to <code>claude-haiku-4-5</code>.
               </p>
             </fieldset>
 
@@ -1018,6 +1116,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const acpAgentsSection = createAcpAgentsSection(api)
   qsRequired(overlay, '#settings-acp-agents-host').append(acpAgentsSection.root)
+
+  const sshWorkspaceSection = createSshWorkspaceSection(api, {
+    // Live-persist toggles must wake listeners (e.g. projects "+ Remote" button)
+    // without requiring the dialog Save button.
+    onChanged: (): void => {
+      store.emit('settings_changed')
+    },
+  })
+  qsRequired(overlay, '#settings-ssh-workspace-host').append(sshWorkspaceSection.root)
 
   const envKeyDetectSection = createEnvKeyDetectSection(api, {
     onImported: () => {
@@ -1159,10 +1266,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
 
     // Pull in the lazily-loaded section content so matched blocks (e.g. the ACP
-    // agents list) render fully rather than as an empty shell.
+    // agents list / SSH host list) render fully rather than as an empty shell.
     if (!searchContentLoaded) {
       searchContentLoaded = true
       void acpAgentsSection.refresh()
+      void sshWorkspaceSection.refresh()
       void refreshSources()
     }
 
@@ -1209,6 +1317,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         // Defer disk scans until each tab is opened, so users who never visit them
         // don't trigger a which/ps scan (Experimental) or fs walk (Sources) on open.
         if (id === 'experimental') void acpAgentsSection.refresh()
+        if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
       }
     })
@@ -1222,7 +1331,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     title: string,
     badge: string | null,
     detail: string | null,
-    opts: { badgeClass?: string | undefined } = {},
+    opts: {
+      badgeClass?: string | undefined
+      /** Extra badges rendered after the scope badge (e.g. unsupported / error). */
+      extraBadges?: Array<{ text: string; className: string }>
+    } = {},
   ): HTMLElement {
     const row = document.createElement('div')
     row.className = 'sources-row'
@@ -1238,6 +1351,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       badgeEl.textContent = badge
       header.append(badgeEl)
     }
+    for (const extra of opts.extraBadges ?? []) {
+      const badgeEl = document.createElement('span')
+      badgeEl.className = `sources-badge ${extra.className}`
+      badgeEl.textContent = extra.text
+      header.append(badgeEl)
+    }
     row.append(header)
     if (detail) {
       const detailEl = document.createElement('div')
@@ -1245,6 +1364,171 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       detailEl.textContent = detail
       row.append(detailEl)
     }
+    return row
+  }
+
+  /** One Sources → Hooks row: event + scope/unsupported/error badges + command. */
+  function makeHookRow(h: import('@shared/types/hooks.ts').HookSummary): HTMLElement {
+    const extraBadges: Array<{ text: string; className: string }> = []
+    if (h.supported === false) {
+      extraBadges.push({ text: 'unsupported', className: 'sources-badge-unsupported' })
+    }
+    // The `sandbox: false` escape (F3, decision 7) runs the hook OUTSIDE the
+    // project sandbox — badge it so the user sees the elevated risk they granted.
+    if (h.sandbox === false) {
+      extraBadges.push({ text: 'outside sandbox', className: 'sources-badge-unsandboxed' })
+    }
+    if (h.lastError) {
+      extraBadges.push({ text: 'error', className: 'sources-badge-error' })
+    }
+    const familyLabel =
+      h.family === 'claude' ? 'Claude Code' : h.family === 'copse' ? 'Copse' : 'Cursor'
+    const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
+    const detail = `${familyLabel} · ${h.command}`
+    const row = makeSourceRow(title, h.scope, detail, {
+      badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
+      extraBadges,
+    })
+    if (h.lastError) {
+      const errorEl = document.createElement('div')
+      errorEl.className = 'sources-row-error'
+      errorEl.textContent = `Last run failed: ${h.lastError}`
+      row.append(errorEl)
+    }
+    addHookTester(row, h)
+    return row
+  }
+
+  /**
+   * Wire the G2 dry-run tester onto a hook row: a "Test" button that runs the
+   * hook once against a synthetic payload for its event and shows
+   * stdin/stdout/stderr/exit/duration + parse_ok + outcome summary. The dry run
+   * never mutates live agent state (see `src/main/services/hooks/dry-run.ts`).
+   */
+  function addHookTester(row: HTMLElement, h: import('@shared/types/hooks.ts').HookSummary): void {
+    const header = row.querySelector('.sources-row-header')
+    if (!header) return
+    const testBtn = document.createElement('button')
+    testBtn.type = 'button'
+    testBtn.className = 'sources-hook-test-btn'
+    testBtn.textContent = 'Test'
+    testBtn.title = 'Dry-run this hook against a synthetic payload for its event'
+    header.append(testBtn)
+
+    const result = document.createElement('div')
+    result.className = 'hook-test'
+    result.hidden = true
+    row.append(result)
+
+    testBtn.addEventListener('click', () => {
+      void runHookTest(h, testBtn, result)
+    })
+  }
+
+  async function runHookTest(
+    h: import('@shared/types/hooks.ts').HookSummary,
+    btn: HTMLButtonElement,
+    result: HTMLElement,
+  ): Promise<void> {
+    btn.disabled = true
+    btn.textContent = 'Testing…'
+    result.hidden = false
+    result.innerHTML = ''
+    const pending = document.createElement('div')
+    pending.className = 'hook-test-summary'
+    pending.textContent = 'Running dry-run…'
+    result.append(pending)
+    try {
+      const req: import('@shared/types/hooks.ts').HookTestRequest = {
+        family: h.family,
+        event: h.event,
+        command: h.command,
+        source: h.source,
+        scope: h.scope,
+        ...(h.sandbox !== undefined ? { sandbox: h.sandbox } : {}),
+      }
+      const res = await api.hooks.test(req)
+      renderHookTestResult(result, res)
+    } catch {
+      result.innerHTML = ''
+      const err = document.createElement('div')
+      err.className = 'hook-test-summary hook-test-error'
+      err.textContent = 'Dry-run failed to start.'
+      result.append(err)
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Test'
+    }
+  }
+
+  /** Render one `hooks:test` result: summary chips + labeled stdin/stdout/stderr streams. */
+  function renderHookTestResult(
+    container: HTMLElement,
+    res: import('@shared/types/hooks.ts').HookTestResult,
+  ): void {
+    container.innerHTML = ''
+    if (!res.ran) {
+      const notice = document.createElement('div')
+      notice.className = 'hook-test-summary hook-test-error'
+      notice.textContent = res.error ?? 'This hook could not be dry-run.'
+      container.append(notice)
+      return
+    }
+
+    const summary = document.createElement('div')
+    summary.className = 'hook-test-summary'
+    const chips: string[] = []
+    if (res.wireEvent) chips.push(`event ${res.wireEvent}`)
+    if (res.timedOut) chips.push('timed out')
+    else if (res.spawnError) chips.push('failed to start')
+    chips.push(
+      `exit ${res.exitCode === null || res.exitCode === undefined ? '—' : String(res.exitCode)}`,
+    )
+    chips.push(`${String(res.durationMs ?? 0)} ms`)
+    chips.push(res.parseOk ? 'parsed ok' : 'parse failed')
+    if (res.sandboxed) chips.push('sandboxed')
+    for (const text of chips) {
+      const chip = document.createElement('span')
+      chip.className = 'hook-test-chip'
+      chip.textContent = text
+      summary.append(chip)
+    }
+    container.append(summary)
+
+    if (res.outcomeSummary) {
+      const outcome = document.createElement('div')
+      outcome.className = 'hook-test-outcome'
+      outcome.textContent = `Outcome: ${res.outcomeSummary}`
+      container.append(outcome)
+    }
+
+    appendHookTestStream(container, 'stdin', res.stdin ?? '')
+    appendHookTestStream(container, 'stdout', res.stdout ?? '')
+    appendHookTestStream(container, 'stderr', res.stderr ?? '')
+  }
+
+  function appendHookTestStream(container: HTMLElement, label: string, text: string): void {
+    const block = document.createElement('div')
+    block.className = 'hook-test-stream'
+    const heading = document.createElement('div')
+    heading.className = 'hook-test-stream-label'
+    heading.textContent = label
+    const pre = document.createElement('pre')
+    pre.textContent = text.length > 0 ? text : '(empty)'
+    if (text.length === 0) pre.classList.add('hook-test-stream-empty')
+    block.append(heading, pre)
+    container.append(block)
+  }
+
+  /** A hooks.json authoring problem (unknown event, bad entry, malformed file). */
+  function makeHookWarningRow(
+    w: import('@shared/types/hooks.ts').HookValidationWarning,
+  ): HTMLElement {
+    const row = makeSourceRow(w.message, w.scope, w.source, {
+      badgeClass: w.scope === 'project' ? 'sources-badge-project' : undefined,
+      extraBadges: [{ text: 'warning', className: 'sources-badge-warning' }],
+    })
+    row.classList.add('sources-row-warning')
     return row
   }
 
@@ -1294,12 +1578,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       fillSourceList(
         '#sources-hooks-list',
-        hooks.map((h) =>
-          makeSourceRow(h.event, h.scope, h.command, {
-            badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
-          }),
-        ),
-        'No Cursor hooks configured.',
+        [...hooks.warnings.map(makeHookWarningRow), ...hooks.hooks.map(makeHookRow)],
+        'No Cursor or Claude Code hooks configured.',
       )
 
       fillSourceList(
@@ -1564,6 +1844,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshSources()
   })
 
+  // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
+  // (executor, advisor) pairing from the model capability annotations — cloud
+  // tiers and the local catalog — whenever either picker changes, so the user
+  // learns up front whether the advisor is actually stronger than the executor.
+  function updateAdvisorPairHint(): void {
+    const form = qsRequired<HTMLFormElement>(overlay, 'form')
+    const hint = qsRequired(overlay, '#advisorPairHint')
+    const executor = (form.elements.namedItem('model') as HTMLSelectElement).value
+    const advisor = (form.elements.namedItem('advisorModel') as HTMLSelectElement).value
+    if (!executor || !advisor) {
+      hint.hidden = true
+      return
+    }
+    const assessment = validateAdvisorPair(executor, advisor)
+    hint.textContent = assessment.reason
+    hint.setAttribute('data-level', assessment.level)
+    hint.hidden = false
+  }
+
   overlay.addEventListener('settings-open', () => {
     // A fresh open always starts on a section, never in a leftover search.
     searchContentLoaded = false
@@ -1571,8 +1870,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       searchInput.value = ''
     }
     applySearch('')
-    showSection(pendingSection ?? 'general')
+    const openedSection = pendingSection ?? 'general'
+    showSection(openedSection)
     pendingSection = null
+    // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
+    // lazy section content here too.
+    if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
+    if (openedSection === 'experimental') void acpAgentsSection.refresh()
+    if (openedSection === 'usage') void usageSection.refresh()
+    if (openedSection === 'sources') void refreshSources()
+    searchInput.focus()
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()
@@ -1599,6 +1906,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
       )
+      const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
+        string | undefined
+      await populateModelSelect(
+        form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
+        api,
+        orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
+      )
+      updateAdvisorPairHint()
       const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
@@ -1612,8 +1927,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         comparisonModelB ?? DEFAULT_COMPARISON_MODEL_B,
       )
       const comparisonJudgeModel = (await api.settings.get('comparisonJudgeModel')) as
-        | string
-        | undefined
+        string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonJudgeModel') as HTMLSelectElement,
         api,
@@ -1622,9 +1936,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await loadSimpleFields(form, api)
       wireSafetySliders(form)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-        | string[]
-        | undefined
-        | null
+        string[] | undefined | null
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
@@ -1641,6 +1953,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         store.getState().autoPortraitRightPanel
       ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
         store.getState().rightPanelPosition
+
+      const savedAccentColor = await api.settings.get('uiAccentColor')
+      ;(form.elements.namedItem('uiAccentColor') as HTMLInputElement).value =
+        typeof savedAccentColor === 'string' && HEX_COLOR.test(savedAccentColor)
+          ? savedAccentColor
+          : DEFAULT_ACCENT_COLOR
 
       const savedTintColor = await api.settings.get('uiTintColor')
       ;(form.elements.namedItem('uiTintColor') as HTMLInputElement).value =
@@ -1672,6 +1990,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const settingsForm = overlay.querySelector('form')
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
+  settingsForm.addEventListener('change', (e) => {
+    const target = e.target
+    if (
+      target instanceof HTMLSelectElement &&
+      (target.name === 'model' || target.name === 'advisorModel')
+    ) {
+      updateAdvisorPairHint()
+    }
+  })
   settingsForm.addEventListener('submit', (e) => {
     e.preventDefault()
     void (async (): Promise<void> => {
@@ -1700,6 +2027,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const appIconVariant = data.get('appIconVariant') as AppIconVariant
       const externalDeny = parseFloat(data.get('safetyExternalDenyThreshold') as string)
 
+      const accentColorRaw = data.get('uiAccentColor')
+      const uiAccentColor =
+        typeof accentColorRaw === 'string' && HEX_COLOR.test(accentColorRaw)
+          ? accentColorRaw
+          : DEFAULT_ACCENT_COLOR
       const tintColorRaw = data.get('uiTintColor')
       const uiTintColor =
         typeof tintColorRaw === 'string' && /^#[0-9a-fA-F]{6}$/.test(tintColorRaw)
@@ -1715,7 +2047,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'smallTasksModel',
         ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
-      for (const key of ['comparisonModelA', 'comparisonModelB', 'comparisonJudgeModel'] as const) {
+      for (const key of [
+        'advisorModel',
+        'orchestrationWorkerModel',
+        'comparisonModelA',
+        'comparisonModelB',
+        'comparisonJudgeModel',
+      ] as const) {
         await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
       }
       await saveSimpleFields(data, api)
@@ -1723,6 +2061,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await api.settings.set('fontSize', fontSize)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
       await api.settings.set('rightPanelPosition', rightPanelPosition)
+      await api.settings.set('uiAccentColor', uiAccentColor)
       await api.settings.set('uiTintColor', uiTintColor)
       await api.settings.set('uiTintStrength', uiTintStrength)
       if (isAppIconVariant(appIconVariant)) {
@@ -1738,6 +2077,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         safetyClassifierEnabled: data.get('safetyClassifierEnabled') === 'on',
         safetyExternalDenyThreshold: Number.isFinite(externalDeny) ? externalDeny : 1,
         autoRunSandboxCommands: data.get('autoRunSandboxCommands') === 'on',
+        cursorHooksEnabled: data.get('cursorHooksEnabled') === 'on',
         mcpAutoAllowReadOnly: data.get('mcpAutoAllowReadOnly') === 'on',
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
@@ -1758,6 +2098,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       store.emit('settings_changed')
       window.dispatchEvent(new Event('copse:skills-changed'))
       document.documentElement.dataset['theme'] = theme
+      applyUiAccent(uiAccentColor)
       applyUiTint(uiTintColor, uiTintStrength)
       closeSettingsDialog()
     })()

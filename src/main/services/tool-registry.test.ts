@@ -18,6 +18,60 @@ describe('ToolRegistry', () => {
     setPermissionGateForTests(null)
   })
 
+  // H2 (docs/plans/hooks-and-feature-packs.md): a toolGate hook's injected
+  // context is stamped onto the check by the gate; the runner appends it to the
+  // tool result so the model reads it in the current turn.
+  it('appends a hook-injected system-reminder block to a string result (H2)', async () => {
+    setPermissionGateForTests(async (check) => {
+      check.injectContext = '<system-reminder>\nremember this\n</system-reminder>'
+      return true
+    })
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'echo',
+      description: 'echo args',
+      parameters: z.object({ msg: z.string() }),
+      execute: async ({ msg }) => msg,
+    })
+    const result = await reg.execute('echo', { msg: 'output' }, new AbortController().signal)
+    assert.equal(result, 'output\n\n<system-reminder>\nremember this\n</system-reminder>')
+    setPermissionGateForTests(null)
+  })
+
+  it('appends injected context to a structured result, preserving edit stats (H2)', async () => {
+    setPermissionGateForTests(async (check) => {
+      check.injectContext = '<system-reminder>\nnote\n</system-reminder>'
+      return true
+    })
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'edit',
+      description: 'edit a file',
+      parameters: z.object({ path: z.string() }),
+      execute: async () => ({ result: 'edited', editStats: { additions: 2, deletions: 1 } }),
+    })
+    const result = await reg.execute('edit', { path: 'a.ts' }, new AbortController().signal)
+    assert.deepEqual(result, {
+      result: 'edited\n\n<system-reminder>\nnote\n</system-reminder>',
+      editStats: { additions: 2, deletions: 1 },
+    })
+    setPermissionGateForTests(null)
+  })
+
+  it('leaves the result untouched when no context is injected (H2)', async () => {
+    setPermissionGateForTests(async () => true)
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'echo',
+      description: 'echo args',
+      parameters: z.object({ msg: z.string() }),
+      execute: async ({ msg }) => msg,
+    })
+    const result = await reg.execute('echo', { msg: 'plain' }, new AbortController().signal)
+    assert.equal(result, 'plain')
+    setPermissionGateForTests(null)
+  })
+
   it('throws on unknown tool', async () => {
     setPermissionGateForTests(async () => true)
     const reg = new ToolRegistry()
