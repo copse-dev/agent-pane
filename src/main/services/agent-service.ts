@@ -79,7 +79,8 @@ import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
-import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
+import { resolveAdvisorModelId } from './advisor-runner.ts'
+import { runWithAdvisorContext } from './advisor-runner-context.ts'
 import { advisorAddsLift } from './advisor-strategy.ts'
 import {
   runWithOrchestrationContext,
@@ -427,20 +428,19 @@ export async function runAgent(
       if (chunk.type === 'text') acpAssistantText += chunk.text
       sendChunk(chunk)
     }
-    const advisorBridged = registry.has('advisor')
-    if (advisorBridged) {
-      setAdvisorContext({
-        advisorModel: resolveAdvisorModelId(),
-        executorModel: model,
-        getTranscript: () => [
-          ...priorMessages,
-          { role: 'user', content: outboundPrompt },
-          ...(acpAssistantText.trim()
-            ? [{ role: 'assistant' as const, content: acpAssistantText }]
-            : []),
-        ],
-      })
-    }
+    const advisorContext = registry.has('advisor')
+      ? {
+          advisorModel: resolveAdvisorModelId(),
+          executorModel: model,
+          getTranscript: (): LLMMessage[] => [
+            ...priorMessages,
+            { role: 'user' as const, content: outboundPrompt },
+            ...(acpAssistantText.trim()
+              ? [{ role: 'assistant' as const, content: acpAssistantText }]
+              : []),
+          ],
+        }
+      : null
     try {
       const result = await runAcpAgentFromSettings({
         threadId,
@@ -450,6 +450,7 @@ export async function runAgent(
         signal: controller.signal,
         onChunk: acpChunkSink,
         registry,
+        ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
@@ -489,7 +490,6 @@ export async function runAgent(
     } finally {
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
-      if (advisorBridged) setAdvisorContext(null)
       runAbort.clear()
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
@@ -800,16 +800,14 @@ export async function runAgent(
         // Client-side advisor: hand the tool the live transcript so it can
         // forward it to a larger advisor model (issue #566). Mirrors the
         // native tool's automatic transcript forwarding.
-        setAdvisorContext({
-          advisorModel: resolveAdvisorModelId(),
-          executorModel: model,
-          getTranscript: () => trimmed,
-        })
-        try {
-          return await registry.executeNormalized(name, args, signal)
-        } finally {
-          setAdvisorContext(null)
-        }
+        return runWithAdvisorContext(
+          {
+            advisorModel: resolveAdvisorModelId(),
+            executorModel: model,
+            getTranscript: () => trimmed,
+          },
+          () => registry.executeNormalized(name, args, signal),
+        )
       }
       if (name === 'delegate_step') {
         // Orchestration strategy: the parent stays the orchestrator while a

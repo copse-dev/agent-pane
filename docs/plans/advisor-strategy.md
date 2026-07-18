@@ -115,12 +115,13 @@ strategy in three ways:
   pooled ACP session. Loopback-tested in `acp-advisor.test.ts`. _As the executor:_ the
   `advisor` tool is offered over the native-tool MCP bridge (`acp-native-bridge.ts`),
   and agent-service scopes an advisor context to the whole ACP turn (bridged calls
-  arrive over HTTP at any point, unlike the native loop's per-call scoping). The
+  arrive over HTTP at any point, unlike the native loop's per-call scoping). Each
+  pooled bridge owns its thread's current context, and the bridge binds that snapshot
+  with async-local storage for the individual tool call, so concurrent ACP threads
+  cannot overwrite or read one another's transcripts. The
   transcript the advisor sees is Copse's view: prior thread history, the turn's user
   prompt, and the assistant text streamed so far — the external agent's internal tool
-  activity is not visible to Copse and so not forwarded. Known limitation (same as the
-  other global-slot contexts): two ACP turns running concurrently in different threads
-  would contend for the advisor context slot.
+  activity is not visible to Copse and so not forwarded.
 
 Visual eval: `tests/e2e/advisor-pair-hint.e2e.ts` (screenshots
 `advisor-pair-hint-good.png` / `advisor-pair-hint-warn.png`).

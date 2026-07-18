@@ -625,7 +625,7 @@ export function parseAheadBehind(raw: string): { ahead: number; behind: number }
 export async function getAheadBehind(
   base: string,
 ): Promise<{ ahead: number; behind: number } | null> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
   for (const ref of [`origin/${base}`, base]) {
     const { stdout, code } = await runGit(['rev-list', '--left-right', '--count', `${ref}...HEAD`])
     if (code === 0) {

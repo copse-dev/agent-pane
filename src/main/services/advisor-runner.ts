@@ -1,4 +1,4 @@
-import type { LLMMessage, ModelUsage } from '@shared/types'
+import type { ModelUsage } from '@shared/types'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
@@ -6,6 +6,7 @@ import { routedModelSetting } from './providers/role-models.ts'
 import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
 import { buildAdvisorRepoState, buildAdvisorWorkingDiff } from './advisor-context.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
+import { getAdvisorContext } from './advisor-runner-context.ts'
 import {
   ADVISOR_MODEL_SETTING,
   DEFAULT_ADVISOR_MODEL,
@@ -30,12 +31,6 @@ export function resolveAdvisorModelId(): string {
  * far — the client-side equivalent of the native server forwarding the
  * conversation automatically.
  */
-export interface AdvisorRunnerContext {
-  advisorModel: string
-  executorModel: string
-  getTranscript: () => LLMMessage[]
-}
-
 /**
  * Optional, executor-controlled shaping of a consult. Both are additive: the
  * no-arg call still forwards the full transcript + repo state and asks for
@@ -50,12 +45,6 @@ export interface AdvisorCallOptions {
 }
 
 export type AdvisorRunner = (signal: AbortSignal, options?: AdvisorCallOptions) => Promise<string>
-
-let activeContext: AdvisorRunnerContext | null = null
-
-export function setAdvisorContext(ctx: AdvisorRunnerContext | null): void {
-  activeContext = ctx
-}
 
 // The advisor runs "bare" (no tools, no context management) per the native
 // tool's contract; only the advice text reaches the executor. This system-style
@@ -72,8 +61,8 @@ const ADVISOR_PREAMBLE =
 const ADVISOR_TIMEOUT_MS = 120_000
 
 export function getAdvisorRunner(): AdvisorRunner | null {
-  if (!activeContext) return null
-  const ctx = activeContext
+  const ctx = getAdvisorContext()
+  if (!ctx) return null
   return async (signal: AbortSignal, options?: AdvisorCallOptions) => {
     const transcript = buildAdvisorTranscript(ctx.getTranscript())
     // Prepend verified repo facts (branch, ahead/behind, working-tree status) so
