@@ -259,6 +259,20 @@ export interface AfterDiffApplyPayload {
 }
 
 /**
+ * Payload for `postTurnReview` (F2, Copse-native). Async observation fired after
+ * a post-turn review cycle produces a verdict (E3's `runPostTurnReviewCycle`
+ * seam), so a Copse-native hook can react to what the reviewer found without
+ * gating the turn. Skips (empty diff / spend not approved) never fire this — no
+ * review ran, so there is nothing to observe.
+ */
+export interface PostTurnReviewPayload {
+  /** Whether the reviewer flagged issues in the working diff. */
+  issuesFound: boolean
+  /** The reviewer's summary text (may be empty). */
+  summary: string
+}
+
+/**
  * Payload each canonical event delivers to its hooks, keyed by event name. The
  * key set is the source of truth: {@link HOOK_EVENT_NAMES} and
  * {@link HOOK_EVENT_SPECS} are pinned against it, so adding an event here
@@ -280,6 +294,7 @@ export interface HookEventPayloads {
   permissionDecision: PermissionDecisionPayload
   beforeDiffApply: BeforeDiffApplyPayload
   afterDiffApply: AfterDiffApplyPayload
+  postTurnReview: PostTurnReviewPayload
 }
 
 /**
@@ -303,6 +318,7 @@ export const HOOK_EVENT_NAMES = [
   'permissionDecision',
   'beforeDiffApply',
   'afterDiffApply',
+  'postTurnReview',
 ] as const
 
 export type HookEventName = (typeof HOOK_EVENT_NAMES)[number]
@@ -355,6 +371,7 @@ export const HOOK_EVENT_SPECS: Record<HookEventName, HookEventSpec> = {
   permissionDecision: { name: 'permissionDecision', dispatch: 'async', role: 'observation' },
   beforeDiffApply: { name: 'beforeDiffApply', dispatch: 'blocking', role: 'decision' },
   afterDiffApply: { name: 'afterDiffApply', dispatch: 'async', role: 'observation' },
+  postTurnReview: { name: 'postTurnReview', dispatch: 'async', role: 'observation' },
 }
 
 /**

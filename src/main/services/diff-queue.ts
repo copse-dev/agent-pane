@@ -14,7 +14,10 @@ import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
 import { getSetting } from './storage/settings.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runAfterFileEditHooks } from './hooks/after-file-edit.ts'
+import { runBeforeDiffApplyHooks, runAfterDiffApplyHooks } from './hooks/diff-apply.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
+import { snapshotHookRunContext } from './hook-run-recorder.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -347,6 +350,13 @@ function recordDecision(decision: Omit<DiffDecision, 'at'>): void {
   // Unblock awaitStagedDiffDecision on terminal outcomes only; a conflict
   // re-stages the entry and the user decides again.
   if (decision.status !== 'conflict') settleDecisionWaiters(decision.path, decision.status)
+  // F2: `afterDiffApply` fires at this single terminal-decision choke point.
+  // A conflict is not terminal (the entry is re-staged), so it never fires; every
+  // other status does — `applied` is true only when the diff actually landed.
+  if (decision.status !== 'conflict') {
+    const applied = decision.status === 'approved' || decision.status === 'applied_directly'
+    fireAfterDiffApply(decision.path, applied)
+  }
 }
 
 export function listRecentStagedDiffDecisions(): DiffDecision[] {
@@ -385,6 +395,12 @@ export function clearStagedDiffsForTest(): void {
  */
 export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
   const op = entry.op ?? 'write'
+  // F2: the canonical `beforeDiffApply` blocking gate fires at this single
+  // apply choke point every path funnels through — direct apply, GUI approve /
+  // approve-all, and the headless resolver — before any op lands. A hook deny /
+  // halt blocks the apply; the diff stays queued for the user to retry.
+  const gate = await fireBeforeDiffApply(entry.path)
+  if (gate.blocked) return { status: 'error', error: gate.reason }
   if (op === 'mkdir') return applyMkdir(entry)
   if (op === 'delete') return applyDelete(entry)
   if (op === 'rename') return applyRename(entry)
@@ -421,6 +437,68 @@ async function fireAfterFileEdit(path: string): Promise<void> {
   } catch (err) {
     console.warn(`[hooks] afterFileEdit hook error for ${path}:`, errorMessage(err))
   }
+}
+
+/**
+ * Fire the `beforeDiffApply` hooks for a diff about to land (F2, Copse-native).
+ * Blocking — the apply path awaits this so a hook can deny/halt before the edit
+ * lands. Gated behind `cursorHooksEnabled` (default off), the same flag every
+ * other fire site uses, so disabled behavior is byte-identical. Any unexpected
+ * orchestration error fails **open** (the apply proceeds): a broken hook must
+ * never wedge the diff queue, and the per-dialect `onFailure` (decision 9) is the
+ * knob a security-conscious hook uses to fail closed instead.
+ */
+async function fireBeforeDiffApply(path: string): Promise<{ blocked: boolean; reason: string }> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return { blocked: false, reason: '' }
+  const workspaceRoot = getWorkspaceRoot()
+  try {
+    const decision = await runBeforeDiffApplyHooks(await resolveWorkspacePath(path), {
+      workspaceRoot,
+      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      agentSession: currentAgentSessionInfo(),
+    })
+    if (!decision.blocked) return { blocked: false, reason: '' }
+    const detail =
+      decision.agentMessage ?? decision.userMessage ?? 'blocked by a beforeDiffApply hook'
+    return { blocked: true, reason: `Blocked by a beforeDiffApply hook: ${detail}` }
+  } catch (err) {
+    console.warn(`[hooks] beforeDiffApply hook error for ${path}:`, errorMessage(err))
+    return { blocked: false, reason: '' }
+  }
+}
+
+/**
+ * Fire the `afterDiffApply` hooks for a diff that reached a terminal decision
+ * (F2, Copse-native). Detached (decision 3): dispatched and never awaited, so a
+ * slow observer never delays the diff-queue UI. Gated behind `cursorHooksEnabled`
+ * (default off). `applied` is true for approve / direct-apply, false for a
+ * reject or write error.
+ */
+function fireAfterDiffApply(path: string, applied: boolean): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  const agentSession = currentAgentSessionInfo()
+  const threadId = agentSession.conversationId || 'diff-apply'
+  const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  // Snapshot the recording context now, synchronously, like `fireStopHook`: the
+  // dispatch below is detached and the path resolution is async, so the live
+  // context may be gone by the time the hook's `hook_run` line records
+  // (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
+  void (async (): Promise<unknown> =>
+    runAfterDiffApplyHooks(
+      { filePath: await resolveWorkspacePath(path), applied },
+      {
+        threadId,
+        turnTreeId,
+        workspaceRoot,
+        projectTrusted: isWorkspaceTrusted(workspaceRoot),
+        agentSession,
+        recordingSnapshot,
+      },
+    ))().catch((err: unknown) => {
+    console.warn(`[hooks] afterDiffApply dispatch error for ${path}:`, errorMessage(err))
+  })
 }
 
 async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {

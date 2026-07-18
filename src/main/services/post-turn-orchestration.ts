@@ -275,6 +275,14 @@ export interface RunPostTurnReviewCycleOptions {
    * decides *whether* to run one and stops when it makes no edits.
    */
   runRemediationTurn: (nudge: string) => Promise<{ madeEdits: boolean }>
+  /**
+   * Observe a review verdict as it is produced (F2). Called once per review
+   * `done` — never on a skip (empty diff / spend not approved) or error — so the
+   * host can fire the Copse-native `postTurnReview` hook without this pure
+   * orchestration importing hook services (execution-guidance rule 4). Optional:
+   * the contract tests inject nothing and the cycle behaves as before.
+   */
+  onReviewVerdict?: (review: PostTurnReviewOutcome) => void
 }
 
 /**
@@ -321,6 +329,11 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
         summary: review.summary,
         issuesFound: review.verdict.issuesFound,
       })
+
+      // F2: let the host observe the verdict and fire the Copse-native
+      // `postTurnReview` hook (detached). Fired only for a real `done`, so a
+      // skipped / errored review never emits the event.
+      opts.onReviewVerdict?.(review)
 
       const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
       if (!review.verdict.requestFollowUp || lastCycle || opts.signal.aborted) break
