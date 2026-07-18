@@ -912,3 +912,76 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+
+/* G2 dry-run hook tester: a per-hook "Test" button in the row header and the
+   result panel it toggles (summary chips + labeled stdin/stdout/stderr). */
+.sources-hook-test-btn {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px var(--spacing-sm);
+  cursor: pointer;
+}
+.sources-hook-test-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sources-hook-test-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.hook-test {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.hook-test-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hook-test-summary.hook-test-error {
+  color: var(--error);
+}
+.hook-test-chip {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
+.hook-test-outcome {
+  font-size: 11px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+.hook-test-stream-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+}
+.hook-test-stream pre {
+  margin: 2px 0 0;
+  padding: var(--spacing-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+.hook-test-stream pre.hook-test-stream-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
