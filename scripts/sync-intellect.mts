@@ -21,6 +21,16 @@
 //
 // Run locally:  npm run sync:intellect            (validate + emit, reuse fits)
 //               npm run sync:intellect -- --refit (deliberately refit all hops)
+//
+// API refresh (the scalable data channel):
+//   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api --index-version=v4.1
+// Fetches Artificial Analysis' model list and refreshes/adds measurements for
+// models ALREADY KNOWN to the seed file (matched by id or alias — the API never
+// introduces a model id on its own, so every plotted model remains a reviewed
+// decision). --index-version is required because the API reports current-index
+// values without naming the version; the operator pins which scale the fetched
+// cohort belongs to. Attribution is required by AA's free tier and is already
+// carried in the JSON + generated output.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -220,12 +230,89 @@ ${mapRows}
 `
 }
 
+interface AaApiModel {
+  id?: string
+  slug?: string
+  name?: string
+  evaluations?: { artificial_analysis_intelligence_index?: number }
+}
+
+/**
+ * Refresh measurements from the Artificial Analysis API for models the seed
+ * file already knows (by modelId or alias). Returns the updated score list;
+ * never invents a new model id. Each refreshed entry cites the API and the
+ * operator-pinned index version.
+ */
+async function refreshFromApi(
+  data: DataFile,
+  indexVersion: string,
+  apiKey: string,
+  today: string,
+): Promise<Measurement[]> {
+  const res = await fetch('https://artificialanalysis.ai/api/v2/data/llms/models', {
+    headers: { 'x-api-key': apiKey },
+  })
+  if (!res.ok) fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}`)
+  const payload = (await res.json()) as { data?: AaApiModel[] }
+  const apiModels = payload.data ?? []
+
+  const aliasToId = new Map<string, string>()
+  for (const m of data.scores) {
+    aliasToId.set(m.modelId, m.modelId)
+    for (const alias of m.aliases ?? []) aliasToId.set(alias, m.modelId)
+  }
+
+  const next = [...data.scores]
+  let refreshed = 0
+  for (const api of apiModels) {
+    const value = api.evaluations?.artificial_analysis_intelligence_index
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue
+    const modelId = [api.id, api.slug, api.name]
+      .map((k) => (k ? aliasToId.get(k) : undefined))
+      .find((id) => id !== undefined)
+    if (!modelId) continue
+    const aliases = next.find((m) => m.modelId === modelId)?.aliases
+    const measurement: Measurement = {
+      modelId,
+      value,
+      indexVersion,
+      source: `Artificial Analysis API (index ${indexVersion} pinned by operator), model '${api.slug ?? api.name ?? api.id ?? ''}', fetched ${today}`,
+      asOf: today,
+      ...(aliases ? { aliases } : {}),
+    }
+    const existing = next.findIndex((m) => m.modelId === modelId && m.indexVersion === indexVersion)
+    if (existing >= 0) next[existing] = { ...next[existing], ...measurement }
+    else next.push(measurement)
+    refreshed += 1
+  }
+  console.log(
+    `[sync-intellect] API refresh: ${String(refreshed)} measurement(s) matched known models ` +
+      `(${String(apiModels.length)} models in the API feed; unmatched models are ignored by design).`,
+  )
+  return next
+}
+
 async function main(): Promise<void> {
   const refit = process.argv.includes('--refit')
+  const fromApi = process.argv.includes('--from-api')
+  const versionArg = process.argv.find((a) => a.startsWith('--index-version='))
   const today = new Date().toISOString().slice(0, 10)
   const raw = await readFile(DATA_PATH, 'utf8')
-  const data = JSON.parse(raw) as DataFile
+  let data = JSON.parse(raw) as DataFile
   validate(data)
+
+  if (fromApi) {
+    const apiKey = process.env['ARTIFICIAL_ANALYSIS_API_KEY']
+    if (!apiKey) fail('--from-api requires ARTIFICIAL_ANALYSIS_API_KEY')
+    const indexVersion = versionArg?.slice('--index-version='.length)
+    if (!indexVersion) {
+      fail('--from-api requires --index-version=<vX.Y> (the API does not name its index version)')
+    }
+    const scores = await refreshFromApi(data, indexVersion, apiKey, today)
+    data = { ...data, scores }
+    validate(data)
+    await writeFile(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+  }
 
   const maps = resolveEquating(data, today, refit)
 
@@ -233,7 +320,7 @@ async function main(): Promise<void> {
   const storedJson = JSON.stringify(data.equating)
   const nextJson = JSON.stringify(maps)
   if (storedJson !== nextJson) {
-    const updated: DataFile = { ...(JSON.parse(raw) as DataFile), equating: maps }
+    const updated: DataFile = { ...data, equating: maps }
     await writeFile(DATA_PATH, `${JSON.stringify(updated, null, 2)}\n`, 'utf8')
     console.log(
       `[sync-intellect] Crystallised ${String(maps.length)} equating fit(s) into ${DATA_PATH}.`,

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   compositeScoredLocalModels,
   createIntellectFrontierPanel,
+  extraProviderFrontierCandidates,
   localFrontierCandidates,
   renderCompositeStrip,
   renderFrontierSvg,
@@ -75,6 +76,39 @@ describe('local candidates and the composite strip', () => {
     assert.match(title.textContent, /own scale, not the canonical index/)
     assert.match(title.textContent, /weighted mean of 3\//)
     assert.match(title.textContent, /free \(runs on-device\)/)
+  })
+})
+
+describe('extraProviderFrontierCandidates', () => {
+  type Provider = Parameters<typeof extraProviderFrontierCandidates>[0][number]
+  const provider = (models: Array<Record<string, unknown>>): Provider =>
+    ({
+      id: 'huggingface',
+      label: 'Hugging Face',
+      prefix: 'huggingface:',
+      baseUrl: 'https://example.invalid/v1',
+      models,
+    }) as unknown as Provider
+
+  it('joins only models with both stored pricing and a resolvable measurement', () => {
+    const candidates = extraProviderFrontierCandidates([
+      provider([
+        // Priced + measured (June cohort, equated) → joins at its real price.
+        { id: 'MiniMaxAI/MiniMax-M3', inputPricePerMTok: 1, outputPricePerMTok: 4 },
+        // Measured but unpriced → hint-only, never plotted.
+        { id: 'zai-org/GLM-5.2' },
+        // Priced but unmeasured → never invented.
+        { id: 'unknown/model', inputPricePerMTok: 1, outputPricePerMTok: 2 },
+      ]),
+    ])
+    assert.equal(candidates.length, 1)
+    const [m3] = candidates
+    assert.ok(m3)
+    assert.equal(m3.id, 'huggingface:MiniMaxAI/MiniMax-M3')
+    assert.equal(m3.intellect, 50)
+    assert.equal(m3.intellectEstimated, true)
+    // 0.8·1 + 0.2·4 = $1.60/MTok blended.
+    assert.equal(m3.costPerMTok, 1.6)
   })
 })
 

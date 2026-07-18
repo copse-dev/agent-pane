@@ -107,6 +107,15 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-07-16',
     },
   ],
+  'gpt-5.6-terra': [
+    {
+      value: 46,
+      indexVersion: 'v4.1',
+      source:
+        "Artificial Analysis comparison page: 'GPT-5.6 Terra (medium) scores 46 on the Artificial Analysis Intelligence Index', https://artificialanalysis.ai/models/comparisons/gpt-5-6-terra-medium-vs-claude-sonnet-5, retrieved 2026-07-18",
+      asOf: '2026-07-18',
+    },
+  ],
   'moonshotai/kimi-k2.6': [
     {
       value: 54,
@@ -123,6 +132,15 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       source:
         "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), via Latent Space AINews Kimi K3 coverage: 'Kimi K3 scores 57 on the Artificial Analysis Intelligence Index'",
       asOf: '2026-07-16',
+    },
+  ],
+  'zai-org/GLM-5.2': [
+    {
+      value: 51.1,
+      indexVersion: 'v4.1',
+      source:
+        'BenchLM mirror of the Artificial Analysis Intelligence Index v4.1 leaderboard (July 2026, same cohort as Fable 5 = 59.9): GLM-5.2 (open weight) = 51.1, https://benchlm.ai/benchmarks/artificialAnalysis',
+      asOf: '2026-07-18',
     },
   ],
 }
@@ -142,8 +160,12 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'claude-sonnet-4-6-latest': 'claude-sonnet-4-6',
   'claude-sonnet-5-latest': 'claude-sonnet-5',
   'Fable 5': 'claude-fable-5',
+  'glm-5.2': 'zai-org/GLM-5.2',
+  'GLM-5.2': 'zai-org/GLM-5.2',
   'GPT-5.5': 'gpt-5.5',
   'GPT-5.6 Sol': 'gpt-5.6-sol',
+  'GPT-5.6 Terra': 'gpt-5.6-terra',
+  'GPT-5.6-Terra': 'gpt-5.6-terra',
   'Haiku 4.5': 'claude-haiku-4-5',
   'Kimi K2.6': 'moonshotai/kimi-k2.6',
   'Kimi K3': 'moonshotai/kimi-k3',
@@ -154,9 +176,12 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'moonshotai/kimi-k2-6': 'moonshotai/kimi-k2.6',
   'openai/gpt-5.5': 'gpt-5.5',
   'openai/gpt-5.6-sol': 'gpt-5.6-sol',
+  'openai/gpt-5.6-terra': 'gpt-5.6-terra',
   'Opus 4.8': 'claude-opus-4-8',
   'Sonnet 4.6': 'claude-sonnet-4-6',
   'Sonnet 5': 'claude-sonnet-5',
+  'z-ai/glm-5.2': 'zai-org/GLM-5.2',
+  'zai/glm-5.2': 'zai-org/GLM-5.2',
 }
 
 export const INTELLECT_EQUATING_MAPS: readonly EquatingMap[] = [

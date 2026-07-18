@@ -278,7 +278,10 @@ export function createUsageSection(
 
   // The model value map earns its place here too: usage is where spend is
   // visible, and the frontier is the "was that spend worth it" view.
-  const frontierPanel = createIntellectFrontierPanel(() => api.lmStudio.models())
+  const frontierPanel = createIntellectFrontierPanel(
+    () => api.lmStudio.models(),
+    () => api.settings.extraProviders(),
+  )
   root.append(frontierPanel.root)
 
   const planEl = qsRequired(root, '#usage-plan-section')

@@ -95,4 +95,12 @@ export const MODEL_CATALOG: Record<string, CatalogEntry> = {
     contextWindow: 1050000,
     maxOutputTokens: 128000,
   },
+  'gpt-5.6-terra': {
+    inputPricePerMTok: 2.5,
+    outputPricePerMTok: 15,
+    cacheReadPricePerMTok: 0.25,
+    cacheCreationPricePerMTok: 3.125,
+    contextWindow: 1050000,
+    maxOutputTokens: 128000,
+  },
 }

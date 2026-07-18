@@ -33,6 +33,7 @@ const TRACKED_MODELS = [
   'claude-opus-4-8',
   'claude-haiku-4-5',
   'gpt-5.6-sol',
+  'gpt-5.6-terra',
   'gpt-5.5',
   'gpt-5',
   'gpt-5-mini',

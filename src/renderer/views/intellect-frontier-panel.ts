@@ -16,11 +16,13 @@
 // second y-axis ever.
 
 import {
+  blendedRate,
   frontierForKnownModels,
   type FrontierCandidate,
   type FrontierPoint,
 } from '@copse/llm/pareto-frontier.ts'
-import { explainIntellectScore } from '@copse/llm/model-intellect.ts'
+import { getIntellectScore, explainIntellectScore } from '@copse/llm/model-intellect.ts'
+import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
 import { el } from '../dom/helpers.ts'
@@ -57,6 +59,33 @@ export function localFrontierCandidates(localModelIds: readonly string[]): Front
       costPerMTok: 0,
       local: true,
     })
+  }
+  return out
+}
+
+/**
+ * Frontier input for extra-provider models (Hugging Face router, Mistral,
+ * DeepSeek, user-added): any model with BOTH a stored per-MTok rate and a
+ * resolvable intellect measurement joins the graph at its real price. Models
+ * missing either stay off — a hint-only picker row is as far as an unpriced
+ * measurement goes.
+ */
+export function extraProviderFrontierCandidates(
+  providers: readonly ExtraProvider[],
+): FrontierCandidate[] {
+  const out: FrontierCandidate[] = []
+  for (const provider of providers) {
+    for (const m of provider.models) {
+      if (typeof m.inputPricePerMTok !== 'number') continue
+      const score = getIntellectScore(m.id)
+      if (!score) continue
+      out.push({
+        id: `${provider.id}:${m.id}`,
+        intellect: score.value,
+        intellectEstimated: score.estimated === true,
+        costPerMTok: blendedRate(m.inputPricePerMTok, m.outputPricePerMTok ?? m.inputPricePerMTok),
+      })
+    }
   }
   return out
 }
@@ -373,6 +402,7 @@ export interface IntellectFrontierPanel {
  */
 export function createIntellectFrontierPanel(
   loadLocalModels: () => Promise<string[]>,
+  loadExtraProviders?: () => Promise<readonly ExtraProvider[]>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
   const compositeHost = el('div', { class: 'frontier-composite-strip' })
@@ -396,7 +426,16 @@ export function createIntellectFrontierPanel(
     } catch {
       localIds = []
     }
-    const points = frontierForKnownModels(localFrontierCandidates(localIds))
+    let extraProviders: readonly ExtraProvider[]
+    try {
+      extraProviders = (await loadExtraProviders?.()) ?? []
+    } catch {
+      extraProviders = []
+    }
+    const points = frontierForKnownModels([
+      ...localFrontierCandidates(localIds),
+      ...extraProviderFrontierCandidates(extraProviders),
+    ])
     chartHost.replaceChildren(
       points.length > 0
         ? renderFrontierSvg(points)

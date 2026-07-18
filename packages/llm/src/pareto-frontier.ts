@@ -18,8 +18,13 @@ import { TRACKED_MODELS, getModelInfo, type ModelInfo } from './model-catalog.ts
 import { getIntellectScore } from './model-intellect.ts'
 
 /** Blended USD per million tokens at the 80/20 input:output mix. */
+export function blendedRate(inputPerMTok: number, outputPerMTok: number): number {
+  return 0.8 * inputPerMTok + 0.2 * outputPerMTok
+}
+
+/** {@link blendedRate} over a catalog entry. */
 export function blendedPricePerMTok(info: ModelInfo): number {
-  return 0.8 * info.inputPricePerMTok + 0.2 * info.outputPricePerMTok
+  return blendedRate(info.inputPricePerMTok, info.outputPricePerMTok)
 }
 
 export interface FrontierCandidate {
