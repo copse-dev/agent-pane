@@ -17,7 +17,7 @@
 // main process; this module only decides what the data means.
 
 import { CANONICAL_INTELLECT_VERSION, MODEL_INTELLECT_RAW } from './model-intellect.generated.ts'
-import { resolveIntellectModelId } from './model-intellect.ts'
+import { getIntellectScore, resolveIntellectModelId } from './model-intellect.ts'
 import { blendedRate, type FrontierCandidate } from './pareto-frontier.ts'
 
 /**
@@ -114,6 +114,13 @@ export interface LiveIntellectResult {
   candidates: FrontierCandidate[]
   /** Uncurated models with a live score but no pricing — picker-hint material. */
   hintOnly: Array<{ id: string; intellect: number }>
+  /**
+   * Curated models the feed carries PRICING for: the reviewed measurement
+   * stays the score (curated wins), the feed contributes the missing price —
+   * one plottable point instead of a gutter entry plus a live duplicate.
+   * Callers must still skip ids they already price from another source.
+   */
+  pricedCurated: FrontierCandidate[]
   verification: LiveCohortVerification
 }
 
@@ -128,13 +135,33 @@ export function liveIntellectCandidates(
   reportedVersion?: string | number,
 ): LiveIntellectResult {
   const verification = verifyLiveCohort(liveModels, reportedVersion)
-  if (!verification.verified) return { candidates: [], hintOnly: [], verification }
+  if (!verification.verified) {
+    return { candidates: [], hintOnly: [], pricedCurated: [], verification }
+  }
   const candidates: FrontierCandidate[] = []
   const hintOnly: Array<{ id: string; intellect: number }> = []
+  const pricedCurated: FrontierCandidate[] = []
+  const curatedSeen = new Set<string>()
   for (const live of liveModels) {
-    // Curated (resolvable) models are already on the graph via their reviewed
-    // measurement; the live feed only ADDS models we haven't curated.
-    if (resolveIntellectModelId(live.id) !== null) continue
+    const resolved = resolveIntellectModelId(live.id)
+    if (resolved !== null) {
+      // Curated model: the reviewed measurement is the score; the feed may
+      // still contribute the missing price coordinate.
+      if (typeof live.inputPricePerMTok !== 'number' || curatedSeen.has(resolved)) continue
+      const curated = getIntellectScore(resolved)
+      if (!curated) continue
+      curatedSeen.add(resolved)
+      pricedCurated.push({
+        id: resolved,
+        intellect: curated.value,
+        intellectEstimated: curated.estimated === true,
+        costPerMTok: blendedRate(
+          live.inputPricePerMTok,
+          live.outputPricePerMTok ?? live.inputPricePerMTok,
+        ),
+      })
+      continue
+    }
     if (typeof live.inputPricePerMTok === 'number') {
       candidates.push({
         id: live.id,
@@ -149,5 +176,5 @@ export function liveIntellectCandidates(
       hintOnly.push({ id: live.id, intellect: live.intellect })
     }
   }
-  return { candidates, hintOnly, verification }
+  return { candidates, hintOnly, pricedCurated, verification }
 }

@@ -748,6 +748,11 @@ export function createIntellectFrontierPanel(
       expandBtn,
     ),
     chartHost,
+    el(
+      'p',
+      { class: 'field-hint frontier-legend' },
+      'Filled accent = on the frontier · grey = dominated (better value exists at its level) · hollow ring / (~) = estimated value — hover any point for exactly how its number was derived.',
+    ),
     liveNotes,
     compositeHost,
   )
@@ -831,10 +836,23 @@ export function createIntellectFrontierPanel(
     } else if (liveFetch.error) {
       liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`)
     }
-    const allPoints = frontierForKnownModels([
+    // A verified feed can also PRICE curated models we couldn't plot before
+    // (curated score wins, feed contributes the cost) — but never where a
+    // catalog or provider price already covers the model.
+    const baseCandidates = [
       ...localFrontierCandidates(localIds),
       ...extraProviderFrontierCandidates(extraProviders),
+    ]
+    const coveredResolved = new Set(
+      baseCandidates.map((c) => resolveIntellectModelId(c.id) ?? c.id),
+    )
+    const livePricedCurated = live.pricedCurated.filter(
+      (c) => !coveredResolved.has(c.id) && getModelInfo(c.id) === null,
+    )
+    const allPoints = frontierForKnownModels([
+      ...baseCandidates,
       ...live.candidates,
+      ...livePricedCurated,
     ])
     // A verified feed can carry a hundred-plus priced models; the map's job is
     // the frontier, so dominated LIVE points collapse into a disclosure rather

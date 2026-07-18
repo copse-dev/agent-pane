@@ -86,6 +86,22 @@ describe('liveIntellectCandidates', () => {
     assert.equal(mimo.costPerMTok, 0.8)
   })
 
+  it('prices a curated model from the feed without displacing its reviewed score', () => {
+    const { candidates, pricedCurated } = liveIntellectCandidates([
+      ...CANONICAL_FEED,
+      // AA's bare slug for our curated moonshotai/kimi-k3 (57), with pricing.
+      { id: 'kimi-k3', intellect: 57.4, inputPricePerMTok: 3, outputPricePerMTok: 15 },
+    ])
+    // Not a live candidate (it resolves to a curated measurement)…
+    assert.ok(!candidates.some((c) => c.id.includes('kimi')))
+    // …but it becomes a plottable point: curated score, live price.
+    const kimi = pricedCurated.find((c) => c.id === 'moonshotai/kimi-k3')
+    assert.ok(kimi)
+    assert.equal(kimi.intellect, 57)
+    assert.equal(kimi.intellectEstimated, false)
+    assert.equal(kimi.costPerMTok, 5.4)
+  })
+
   it('returns nothing at all from an unverified cohort', () => {
     const { candidates, hintOnly, verification } = liveIntellectCandidates([
       { id: 'claude-opus-4-8', intellect: 61 },

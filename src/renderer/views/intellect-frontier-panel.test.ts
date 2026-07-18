@@ -237,6 +237,34 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(details.textContent, /model-19/)
   })
 
+  it('plots a feed-priced curated model exactly once — no gutter duplicate', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({
+        ok: true,
+        indexVersion: '4.1',
+        models: [
+          { id: 'claude-fable-5', intellect: 60 },
+          { id: 'claude-opus-4-8', intellect: 56 },
+          { id: 'kimi-k3', intellect: 57.4, inputPricePerMTok: 3, outputPricePerMTok: 15 },
+        ],
+      }),
+    )
+    await panel.refresh()
+    const svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    // Exactly one kimi-k3 label: the main-chart point (curated 57 + live
+    // price), not an extra "no price yet" gutter entry.
+    const labels = [...svg.querySelectorAll('text')].filter((t) =>
+      t.textContent.includes('kimi-k3'),
+    )
+    assert.equal(labels.length, 1)
+    const [label] = labels
+    assert.ok(label)
+    assert.match(label.textContent, /^kimi-k3$/)
+  })
+
   it('collapses dominated live models into a disclosure instead of flooding the map', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],
