@@ -66,7 +66,18 @@ import {
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
 const DEFAULT_NAME = 'copse-burst'
 const DEFAULT_RUNNER_GROUP = 'default'
-const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks'
+// Unified slots: every slot serves both tiers. An earlier split-tier layout
+// (one e2e lane per host) guarded against two concurrent Electron e2e suites
+// contending on a 4-vCPU host — but the checks-only slots sat idle, and the
+// app-side fixes (#988) plus harness hardening (#991/#992) likely removed the
+// slowness that made contention fatal. Running unified again to validate; if
+// timeout-clustered failures on burst hosts recur (check runner_name per failed
+// job), re-enable the split by writing COMPOSE_PROFILES=split-tiers to the
+// remote .env and scaling runner=1/runner-checks=N-1 — the compose service and
+// RUNNER_CHECKS_LABELS plumbing below are kept for exactly that. The `burst`
+// marker label stays: it is what made the failure clustering diagnosable.
+const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks,burst'
+const DEFAULT_RUNNER_CHECKS_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
 const DEFAULT_RUNNERS_PER_INSTANCE = 2
 const DEFAULT_TARGET_REF = 'main'
 const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
@@ -91,6 +102,7 @@ interface RunnerConfig {
   remoteUser: string
   runnerGroup: string
   runnerLabels: string
+  runnerChecksLabels: string
   runnersPerInstance: number
   sshHost: 'public' | 'private'
   targetRef: string
@@ -145,7 +157,8 @@ Common options:
   --key-path <path>             SSH private key path. Required for AWS, optional for Scaleway.
   --target-repo <owner/repo>    Repo baked into the runner image (default: ${DEFAULT_TARGET_REPO}).
   --target-ref <ref>            Ref baked into the runner image (default: ${DEFAULT_TARGET_REF}).
-  --runner-labels <labels>      Labels to register (default: ${DEFAULT_RUNNER_LABELS}).
+  --runner-labels <labels>      Labels for the e2e-capable slot (default: ${DEFAULT_RUNNER_LABELS}).
+  --runner-checks-labels <l>    Labels for the checks-only slots (default: ${DEFAULT_RUNNER_CHECKS_LABELS}).
   --runner-group <group>        GitHub runner group (default: ${DEFAULT_RUNNER_GROUP}).
   --ttl-minutes <n>             Auto-terminate hosts after n minutes; 0 disables (default: ${String(DEFAULT_TTL_MINUTES)}).
   --volume-size-gb <n>          Root volume size in GB for AWS EBS / Scaleway SBS (default: ${String(DEFAULT_VOLUME_SIZE_GB)}).
@@ -222,6 +235,11 @@ function buildRunnerConfig(
     remoteUser: optionWithDefault(options, 'remote-user', defaults.remoteUser),
     runnerGroup: optionWithDefault(options, 'runner-group', DEFAULT_RUNNER_GROUP),
     runnerLabels: optionWithDefault(options, 'runner-labels', DEFAULT_RUNNER_LABELS),
+    runnerChecksLabels: optionWithDefault(
+      options,
+      'runner-checks-labels',
+      DEFAULT_RUNNER_CHECKS_LABELS,
+    ),
     runnersPerInstance: positiveInt(
       optionWithDefault(options, 'runners-per-instance', String(defaults.runnersPerInstance)),
       'runners-per-instance',
@@ -301,6 +319,9 @@ function remoteEnv(config: RunnerConfig): string {
     `TARGET_REPO=${config.targetRepo}`,
     `TARGET_REF=${config.targetRef}`,
     `RUNNER_LABELS=${config.runnerLabels}`,
+    // Inert unless COMPOSE_PROFILES=split-tiers is also set (see label comment
+    // above) — kept so re-enabling the split-tier layout is a one-line change.
+    `RUNNER_CHECKS_LABELS=${config.runnerChecksLabels}`,
     `RUNNER_GROUP=${config.runnerGroup}`,
     'EPHEMERAL=true',
     '',
