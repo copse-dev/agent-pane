@@ -20,9 +20,9 @@
 // package stays Electron-free (execution-guidance rule 4): the pure loop calls
 // them, this host module owns discovery / dialects / dispatch.
 //
-// Cursor declares `subagentStart` / `subagentStop` (wired here); Claude has no
-// subagent-lifecycle hook, so no Claude hooks participate — matching the vendor
-// audit in docs/plans/hooks-and-feature-packs.md.
+// Cursor + Copse (F1) declare `subagentStart` / `subagentStop` (wired here);
+// Claude has no subagent-lifecycle hook, so no Claude hooks participate —
+// matching the vendor audit in docs/plans/hooks-and-feature-packs.md.
 import { errorMessage } from '@shared/errors.ts'
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
@@ -32,6 +32,7 @@ import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts
 import type { RunSubagentOptions, SubagentStartDecision } from '@copse/agent/run-subagent.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSubagentStartHooks, cursorSubagentStopHooks } from './cursor-adapter.ts'
+import { copseSubagentStartHooks, copseSubagentStopHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { snapshotHookRunContext, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { withRunDeadlinePaused } from './run-deadline.ts'
@@ -68,7 +69,11 @@ export async function runSubagentStartHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  const hooks = await cursorSubagentStartHooks(payload, discoverOpts)
+  const [cursorHooks, copseHooks] = await Promise.all([
+    cursorSubagentStartHooks(payload, discoverOpts),
+    copseSubagentStartHooks(payload, discoverOpts),
+  ])
+  const hooks = [...cursorHooks, ...copseHooks]
   if (hooks.length === 0) return { denied: false }
 
   const registry = new HookRegistry()
@@ -141,7 +146,11 @@ export async function runSubagentStopHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  const hooks = await cursorSubagentStopHooks(payload, discoverOpts)
+  const [cursorHooks, copseHooks] = await Promise.all([
+    cursorSubagentStopHooks(payload, discoverOpts),
+    copseSubagentStopHooks(payload, discoverOpts),
+  ])
+  const hooks = [...cursorHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()

@@ -30,6 +30,7 @@ import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorAfterToolUseHooks } from './cursor-adapter.ts'
+import { copseAfterToolUseHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
@@ -119,7 +120,11 @@ export async function runAfterToolUseHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  const hooks = await cursorAfterToolUseHooks(cappedPayload, discoverOpts)
+  const [cursorHooks, copseHooks] = await Promise.all([
+    cursorAfterToolUseHooks(cappedPayload, discoverOpts),
+    copseAfterToolUseHooks(cappedPayload, discoverOpts),
+  ])
+  const hooks = [...cursorHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()

@@ -9,14 +9,15 @@
 // `haltRun`, which we surface as a blocked submit (the turn never starts) and
 // carry the hook's `user_message` for surfacing.
 //
-// Cursor declares a `beforeSubmitPrompt` hook (wired here); Claude has no
-// compose-path equivalent, so no Claude hooks participate — matching the vendor
-// audit in docs/plans/hooks-and-feature-packs.md.
+// Cursor + Copse (F1) declare a `beforeSubmitPrompt` hook (wired here); Claude
+// has no compose-path equivalent, so no Claude hooks participate — matching the
+// vendor audit in docs/plans/hooks-and-feature-packs.md.
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import { buildInjectedContextBlock } from '@copse/agent/hooks/inject-context.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorBeforeSubmitPromptHooks } from './cursor-adapter.ts'
+import { copseBeforeSubmitPromptHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { withRunDeadlinePaused } from './run-deadline.ts'
 
@@ -56,8 +57,12 @@ export async function runBeforeSubmitPromptHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  // Cursor is the only dialect with a compose-path hook; Claude has none.
-  const hooks = await cursorBeforeSubmitPromptHooks(payload, discoverOpts)
+  // Cursor + Copse declare a compose-path hook; Claude has none.
+  const [cursorHooks, copseHooks] = await Promise.all([
+    cursorBeforeSubmitPromptHooks(payload, discoverOpts),
+    copseBeforeSubmitPromptHooks(payload, discoverOpts),
+  ])
+  const hooks = [...cursorHooks, ...copseHooks]
   if (hooks.length === 0) return { blocked: false }
 
   const registry = new HookRegistry()

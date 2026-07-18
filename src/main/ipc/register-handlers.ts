@@ -86,6 +86,7 @@ import { listSkills, initSkillsRegistry } from '../services/skills/skills-regist
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
+import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -884,11 +885,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
-    const [cursor, claude] = await Promise.all([
+    const [cursor, claude, copse] = await Promise.all([
       listCursorHooksForSources(opts),
       listClaudeHooks(opts),
+      listCopseHooksForSources(opts),
     ])
-    return { hooks: [...cursor.hooks, ...claude], warnings: cursor.warnings }
+    return {
+      hooks: [...cursor.hooks, ...claude, ...copse.hooks],
+      warnings: [...cursor.warnings, ...copse.warnings],
+    }
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
