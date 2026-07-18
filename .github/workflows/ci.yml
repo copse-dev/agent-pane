@@ -698,11 +698,6 @@ jobs:
         id: filter
         env:
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
-          # `ci-full` forces the full e2e suite, bypassing the oracle's thinning
-          # entirely — for when a change wants exhaustive coverage NOW rather
-          # than waiting for the nightly net (e.g. infra/runner changes whose
-          # blast radius the selector-vocabulary map cannot see).
-          CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
         run: |
           # The contested check compares against origin/main (merge-base, branch
           # authorship, main-side changes). fetch-depth: 0 above usually brings it
