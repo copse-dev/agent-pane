@@ -58,6 +58,26 @@ secret needed.
 
 ## Releasing via CI (recommended)
 
+### Release checklist
+
+Before creating a release tag:
+
+1. Update the review date and exact release-candidate SHA in
+   [`security-review-ga.md`](./security-review-ga.md).
+2. Reverify every open/accepted finding against current source, tests, issues,
+   and pull requests. Open-PR code does not count as remediated.
+3. Confirm every fixed finding still links to its landed change and regression
+   coverage, and add any new security findings discovered since the prior review.
+4. Resolve every `ga-blocker`, or record an explicit bounded waiver in the
+   ledger with finding/issue, approver, date, affected release, expiry/re-review
+   trigger, rationale, and compensating controls.
+5. Record the human security reviewer and release-owner GA sign-off. Do not cut
+   a GA tag while either sign-off is pending.
+6. Run the normal release validation (`npm run check`, build/e2e as required by
+   the changed surfaces, and the signed-build checks below).
+
+Then publish:
+
 1. Bump `version` in `package.json` (e.g. `0.1.0-beta.2`).
 2. Push a matching tag: `git tag v0.1.0-beta.2 && git push origin v0.1.0-beta.2`
    — or run the **Release (macOS)** workflow manually (Actions → Run workflow).
