@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   refreshSkillsRegistry,
   listSkills,
+  listModelInvocableSkills,
   readSkill,
   getSkill,
   setSkillsForTest,
@@ -17,6 +18,7 @@ import {
   resetBundledCursorSkillsRootForTest,
   setBundledCursorSkillsRootForTest,
 } from './bundled-cursor-skills.ts'
+import { resetBuiltinSkillsRootForTest, setBuiltinSkillsRootForTest } from './builtin-skills.ts'
 
 describe('skills-registry', () => {
   let tempRoot = ''
@@ -28,6 +30,9 @@ describe('skills-registry', () => {
     setSetting('skillPluginPaths', [])
     setSetting('bundledCursorSkillsEnabled', false)
     setBundledCursorSkillsRootForTest(null)
+    // First-party skills ship from dist/assets at runtime; pin off so this
+    // suite's discovery is fully controlled by the temp roots it creates.
+    setBuiltinSkillsRootForTest(null)
     tempRoot = await mkdtemp(join(tmpdir(), 'copse-panel-skills-'))
     restoreWorkspace = setWorkspaceRootForTest(tempRoot)
     await mkdir(join(tempRoot, '.cursor', 'skills', 'demo-skill'), { recursive: true })
@@ -48,6 +53,7 @@ description: Demo skill for tests
     restoreWorkspace = undefined
     setSkillsForTest([])
     resetBundledCursorSkillsRootForTest()
+    resetBuiltinSkillsRootForTest()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
@@ -105,6 +111,94 @@ description: Bundled skill for tests
     assert.equal(skill.source, 'bundled')
 
     await rm(bundledRoot, { recursive: true, force: true })
+  })
+
+  it('discovers first-party built-in skills (e.g. checkup)', async () => {
+    const builtinRoot = await mkdtemp(join(tmpdir(), 'copse-builtin-'))
+    await mkdir(join(builtinRoot, 'checkup'), { recursive: true })
+    await writeFile(
+      join(builtinRoot, 'checkup', 'SKILL.md'),
+      `---
+name: checkup
+description: Run a Copse setup health check
+---
+
+# Checkup`,
+      'utf-8',
+    )
+
+    setBuiltinSkillsRootForTest(builtinRoot)
+    await refreshSkillsRegistry()
+    const skill = listSkills().find((s) => s.name === 'checkup')
+    assert.ok(skill, 'expected the built-in checkup skill to be discovered')
+    assert.equal(skill.source, 'bundled')
+
+    await rm(builtinRoot, { recursive: true, force: true })
+  })
+
+  it('omits disable-model-invocation skills from listModelInvocableSkills but keeps them in listSkills', async () => {
+    const builtinRoot = await mkdtemp(join(tmpdir(), 'copse-builtin-noinvoke-'))
+    await mkdir(join(builtinRoot, 'checkup'), { recursive: true })
+    await writeFile(
+      join(builtinRoot, 'checkup', 'SKILL.md'),
+      `---
+name: checkup
+description: Run a Copse setup health check
+disable-model-invocation: true
+---
+
+# Checkup`,
+      'utf-8',
+    )
+
+    setBuiltinSkillsRootForTest(builtinRoot)
+    await refreshSkillsRegistry()
+    assert.ok(
+      listSkills().some((s) => s.name === 'checkup'),
+      'checkup stays user-invocable via listSkills',
+    )
+    assert.equal(
+      listModelInvocableSkills().some((s) => s.name === 'checkup'),
+      false,
+      'checkup is hidden from the model catalog',
+    )
+    // A normal project skill is still model-invocable.
+    assert.ok(listModelInvocableSkills().some((s) => s.name === 'demo-skill'))
+
+    await rm(builtinRoot, { recursive: true, force: true })
+  })
+
+  it('lets a project skill override a first-party built-in of the same name', async () => {
+    const builtinRoot = await mkdtemp(join(tmpdir(), 'copse-builtin-override-'))
+    await mkdir(join(builtinRoot, 'checkup'), { recursive: true })
+    await writeFile(
+      join(builtinRoot, 'checkup', 'SKILL.md'),
+      `---
+name: checkup
+description: Built-in checkup
+---
+
+# Built-in`,
+      'utf-8',
+    )
+    await mkdir(join(tempRoot, '.cursor', 'skills', 'checkup'), { recursive: true })
+    await writeFile(
+      join(tempRoot, '.cursor', 'skills', 'checkup', 'SKILL.md'),
+      `---
+name: checkup
+description: Project override checkup
+---
+
+# Project`,
+      'utf-8',
+    )
+
+    setBuiltinSkillsRootForTest(builtinRoot)
+    await refreshSkillsRegistry()
+    const skill = listSkills().find((s) => s.name === 'checkup')
+    assert.equal(skill?.source, 'project', 'project skill should win over the built-in')
+
+    await rm(builtinRoot, { recursive: true, force: true })
   })
 
   it('omits bundled skills when bundledCursorSkillsEnabled is false', async () => {

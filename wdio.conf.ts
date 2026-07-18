@@ -4,8 +4,18 @@ import electronBinary from 'electron'
 import { randomInt } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  forceKillWedgedE2eSession,
+  installDeleteSessionSafety,
+  isIgnorableAfterTestError,
+  shouldSkipAfterTestSessionTraffic,
+  withTimeout,
+} from './tests/e2e/helpers/after-test-safety.ts'
 import { assertNoErrorToasts } from './tests/e2e/helpers/assert-no-error-toasts.ts'
 import { E2E_GIT_BRANCH } from './tests/e2e/helpers/e2e-env.ts'
+
+/** Cap how long afterTest may talk to a possibly-dead Electron session. */
+const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
 const electronShell = join(process.cwd(), 'tests/e2e/electron-shell')
 const e2eEnvFile = join(electronShell, '.e2e-env.json')
@@ -59,11 +69,24 @@ export const config: Options.Testrunner = {
     ui: 'bdd',
     timeout: 30_000,
   },
+  before() {
+    // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
+    // attempt 3 / git-changes-image). Cap + swallow transport deaths.
+    installDeleteSessionSafety(browser)
+  },
   afterTest: async (test, _context, result) => {
+    // Mocha timeout / dead chromedriver session: skip post-test WebDriver traffic
+    // entirely and force-kill orphans so deleteSession cannot burn another full
+    // connectionRetryTimeout (main tip a73ba769 / e2e shard 8, dff94ce5 / shard 7,
+    // cdeb3abf / shard 2).
+    if (shouldSkipAfterTestSessionTraffic(result?.error)) {
+      forceKillWedgedE2eSession()
+      return
+    }
+
     // On failure, dump a screenshot + page source to e2e-failure-artifacts/ so
     // CI can upload them for debugging the constrained-runner render/OOM flakes.
-    // Best-effort: if the renderer or whole runner has crashed the session is
-    // already gone, so swallow any error here rather than masking the real one.
+    // Best-effort + hard-capped: if the session is wedged, bail quickly.
     if (!result?.passed) {
       try {
         const dir = join(process.cwd(), 'e2e-failure-artifacts')
@@ -71,13 +94,35 @@ export const config: Options.Testrunner = {
         const base = `${String(test.title ?? 'e2e-test')
           .replace(/[^a-z0-9]+/gi, '-')
           .slice(0, 80)}-${Date.now()}`
-        await browser.saveScreenshot(join(dir, `${base}.png`))
-        writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
+        await withTimeout(
+          (async () => {
+            await browser.saveScreenshot(join(dir, `${base}.png`))
+            writeFileSync(join(dir, `${base}.html`), await browser.getPageSource())
+          })(),
+          AFTER_TEST_SESSION_BUDGET_MS,
+          'afterTest failure artifacts',
+        )
       } catch {
         // session/runner likely already dead — nothing to capture
       }
     }
-    await assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test')
+
+    try {
+      await withTimeout(
+        assertNoErrorToasts(typeof test.title === 'string' ? test.title : 'e2e test'),
+        AFTER_TEST_SESSION_BUDGET_MS,
+        'afterTest toast assertion',
+      )
+    } catch (error) {
+      // Dead-session / budget timeouts must not fail a passing test — that was
+      // the residual gap in #987 (markdown-nbsp-metadata afterTest on a green
+      // spec). Real toast failures return quickly with "Unexpected error toast".
+      if (isIgnorableAfterTestError(error)) {
+        forceKillWedgedE2eSession()
+        return
+      }
+      if (result?.passed) throw error
+    }
   },
   beforeSession(_config, capabilities) {
     delete process.env.ELECTRON_RUN_AS_NODE
