@@ -84,7 +84,7 @@ const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
 /** Tag namespace for the CI burst fleet — status/down only ever see these hosts. */
 const BURST_TAGS: FleetTags = { kind: 'copse-burst', managedBy: 'copse-burst-runners' }
 
-type Command = 'up' | 'status' | 'down' | 'help'
+type Command = 'up' | 'status' | 'drain' | 'down' | 'help'
 type Provider = 'aws' | 'scaleway'
 
 interface ParsedArgs {
@@ -123,11 +123,19 @@ function usage(): string {
   npm run runners:burst:scw -- status [--name ${DEFAULT_NAME}]
   npm run runners:burst -- down --yes [--name ${DEFAULT_NAME}]
   npm run runners:burst:scw -- down --yes [--name ${DEFAULT_NAME}]
+  npm run runners:burst:scw -- drain --yes [--name ${DEFAULT_NAME}]
 
 Commands:
   up       Launch host(s), upload ci-runners/, and start ephemeral GitHub runners.
   status   List non-terminated instances tagged for this burst fleet.
   down     Terminate instances tagged for this burst fleet. Requires --yes.
+  drain    Gracefully retire a fleet: stop each host's runners from accepting new
+           jobs (flip the ephemeral containers' restart policy off, stop idle
+           runners, wait for in-flight jobs to finish), then — with --yes —
+           terminate the drained hosts. Without --yes it drains and leaves the
+           empty hosts for a later \`down\`. Scaleway only for now.
+           --drain-timeout-minutes <n> bounds the wait for busy runners
+           (default: 45); on timeout nothing is terminated.
 
 Required for AWS up:
   --key-name <name>             EC2 key pair name for the launched instance(s).
@@ -207,6 +215,7 @@ function parseCommand(value: string): Command {
   if (
     value === 'up' ||
     value === 'status' ||
+    value === 'drain' ||
     value === 'down' ||
     value === 'help' ||
     value === '--help'
@@ -518,6 +527,84 @@ function scalewayStatus(options: Options): void {
   )
 }
 
+const DEFAULT_DRAIN_TIMEOUT_MINUTES = 45
+
+/**
+ * Remote drain: the runners are EPHEMERAL (the agent exits after each job and
+ * only compose's `restart: always` re-registers it), so flipping the restart
+ * policy off turns "stop accepting new runs" into a first-class operation.
+ * Idle runners are stopped immediately (an idle ephemeral agent would still
+ * accept one more job); busy ones (Runner.Worker present = mid-job) are left
+ * to finish, after which they exit for good. Exits 0 when the box has no
+ * runner containers left, 1 on timeout.
+ */
+function drainScript(timeoutMinutes: number): string {
+  return [
+    'set -u',
+    'containers() { docker ps --format "{{.Names}}" | grep -E "^ci-runners-runner" || true; }',
+    'for c in $(containers); do docker update --restart=no "$c" >/dev/null; done',
+    `deadline=$(( $(date +%s) + ${String(timeoutMinutes * 60)} ))`,
+    'while :; do',
+    '  busy=""',
+    '  for c in $(containers); do',
+    '    if docker exec "$c" pgrep -f Runner.Worker >/dev/null 2>&1; then',
+    '      busy="$busy $c"',
+    '    else',
+    '      docker stop -t 30 "$c" >/dev/null 2>&1 || true',
+    '      echo "stopped idle runner: $c"',
+    '    fi',
+    '  done',
+    '  [ -z "$(containers)" ] && { echo "box drained"; exit 0; }',
+    '  [ "$(date +%s)" -ge "$deadline" ] && { echo "DRAIN TIMEOUT; still busy:$busy"; exit 1; }',
+    '  echo "waiting for in-flight jobs on:$busy"',
+    '  sleep 20',
+    'done',
+  ].join('\n')
+}
+
+async function scalewayDrain(options: Options): Promise<void> {
+  requireScalewayTool()
+  const hosts = listScalewayFleet(
+    { name: fleetName(options), tags: BURST_TAGS },
+    scalewayZonesForOptions(options),
+  ).filter((host) => host.state !== 'terminated')
+  if (hosts.length === 0) {
+    console.log('No Scaleway burst instances to drain.')
+    return
+  }
+  printHosts(hosts)
+  const sshConfig = {
+    keyPath: option(options, 'key-path') ?? '',
+    remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_SCW_REMOTE_USER),
+    sshHost: optionWithDefault(options, 'ssh-host', 'public') as 'public' | 'private',
+  }
+  const timeoutMinutes = positiveInt(
+    optionWithDefault(options, 'drain-timeout-minutes', String(DEFAULT_DRAIN_TIMEOUT_MINUTES)),
+    '--drain-timeout-minutes',
+  )
+  for (const host of hosts) {
+    console.log(`${hostPrefix(host)}==> Draining (${sshTarget(sshConfig, host)})`)
+    try {
+      await sshRunAsync(sshConfig, host, drainScript(timeoutMinutes))
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      die(
+        `${hostPrefix(host)}drain failed (${detail}) — nothing terminated. ` +
+          'Resolve or re-run; a busy runner past the timeout keeps its host alive.',
+      )
+    }
+  }
+  console.log('==> All hosts drained (no runners registered).')
+  if (hasFlag(options, 'yes')) {
+    scalewayDown(options)
+  } else {
+    console.log(
+      'Drain-only run (no --yes): hosts are empty but still up. Terminate with: ' +
+        `npm run runners:burst:scw -- down --yes --name ${fleetName(options)}`,
+    )
+  }
+}
+
 function scalewayDown(options: Options): void {
   requireScalewayTool()
   if (!hasFlag(options, 'yes')) die('down requires --yes')
@@ -554,6 +641,10 @@ async function main(): Promise<void> {
       await scalewayUp(options)
     } else if (provider === 'scaleway' && command === 'status') {
       scalewayStatus(options)
+    } else if (provider === 'scaleway' && command === 'drain') {
+      await scalewayDrain(options)
+    } else if (command === 'drain') {
+      die('drain is currently implemented for Scaleway only: npm run runners:burst:scw -- drain')
     } else if (provider === 'scaleway') {
       scalewayDown(options)
     } else if (command === 'up') {
