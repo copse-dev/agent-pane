@@ -485,7 +485,7 @@ function fireAfterDiffApply(path: string, applied: boolean): void {
   // context may be gone by the time the hook's `hook_run` line records
   // (decision 3/6).
   const recordingSnapshot = snapshotHookRunContext()
-  void (async () =>
+  void (async (): Promise<unknown> =>
     runAfterDiffApplyHooks(
       { filePath: await resolveWorkspacePath(path), applied },
       {

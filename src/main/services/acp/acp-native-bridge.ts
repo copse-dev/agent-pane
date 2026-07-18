@@ -7,6 +7,8 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
+import { runWithAdvisorContext } from '../advisor-runner-context.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 /**
@@ -33,7 +35,10 @@ export const BRIDGE_MCP_SERVER_NAME = 'copse'
  * context-free workspace tools so ACP and native model runs share the same
  * schemas, permission policy, sandbox escape flow, diff queue, and Git/GitHub
  * implementations. Orchestration tools that depend on native-loop context
- * (ask_user, explore/advisor subagents, todos, memories, etc.) stay private.
+ * (ask_user, explore subagents, todos, memories, etc.) stay private. The one
+ * context-dependent exception is `advisor`: agent-service scopes an advisor
+ * context to the whole ACP turn (Copse's view of the transcript), so an
+ * external executor can consult the advisor exactly like a native run.
  * Requests must carry the per-session bearer token; the server binds 127.0.0.1
  * on an ephemeral port and lives only for the pooled ACP session.
  */
@@ -84,6 +89,10 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   // Visibility into pending diff-queue approvals.
   'staged_diffs',
   'read_staged_diff',
+  // The advisor strategy (docs/plans/advisor-strategy.md). Only registered
+  // when `advisorStrategyEnabled` is on, so it is only offered then; the
+  // transcript context is turn-scoped by agent-service around the ACP run.
+  'advisor',
   // Origin-gated web + in-app browser tools.
   'web_search',
   'fetch_url',
@@ -147,6 +156,8 @@ export interface AcpNativeBridge {
   url: string
   /** Per-turn bearer token the agent must send as `Authorization: Bearer …`. */
   token: string
+  /** Set only while this bridge's owning thread is running an ACP turn. */
+  setAdvisorContext: (context: AdvisorRunnerContext | null) => void
   /** Stop the HTTP server. Idempotent; safe to call after the turn settles. */
   close: () => Promise<void>
 }
@@ -161,8 +172,12 @@ function bridgedTools(
   return registry.toMcpTools().filter((tool) => offered.has(tool.name))
 }
 
-// eslint-disable-next-line @typescript-eslint/no-deprecated -- low-level Server is the right fit: bridge tools carry pre-built JSON schemas from ToolRegistry.toLLMTools(), while the high-level McpServer wants zod shapes it converts itself
-function buildMcpServer(registry: ToolRegistry, signal: AbortSignal): McpBridgeServer {
+function buildMcpServer(
+  registry: ToolRegistry,
+  signal: AbortSignal,
+  advisorContext: AdvisorRunnerContext | null,
+  // eslint-disable-next-line @typescript-eslint/no-deprecated -- low-level Server is the right fit: bridge tools carry pre-built JSON schemas from ToolRegistry.toMcpTools(), while the high-level McpServer wants zod shapes it converts itself
+): McpBridgeServer {
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- see the note on the signature
   const server = new McpBridgeServer(
     { name: BRIDGE_MCP_SERVER_NAME, version: '1.0.0' },
@@ -178,7 +193,12 @@ function buildMcpServer(registry: ToolRegistry, signal: AbortSignal): McpBridgeS
       }
     }
     try {
-      const { result } = await registry.executeNormalized(name, request.params.arguments, signal)
+      const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
+        registry.executeNormalized(name, request.params.arguments, signal)
+      const { result } =
+        name === 'advisor' && advisorContext
+          ? await runWithAdvisorContext(advisorContext, execute)
+          : await execute()
       return { content: [{ type: 'text', text: result }] }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
@@ -221,6 +241,10 @@ export async function startAcpNativeBridge(
   if (bridgedTools(registry).length === 0) return null
 
   const token = randomBytes(32).toString('hex')
+  // The server is pooled per ACP thread, so its context is also per bridge.
+  // Capture it at request start and bind it with AsyncLocalStorage during the
+  // advisor call; simultaneous bridges can never see one another's transcript.
+  let advisorContext: AdvisorRunnerContext | null = null
 
   const handle = (req: IncomingMessage, res: ServerResponse): void => {
     void (async (): Promise<void> => {
@@ -232,7 +256,7 @@ export async function startAcpNativeBridge(
       const body = await readBody(req).catch(() => undefined)
       // No sessionIdGenerator → stateless mode: every POST is self-contained.
       const transport = new StreamableHTTPServerTransport({})
-      const server = buildMcpServer(registry, signal)
+      const server = buildMcpServer(registry, signal, advisorContext)
       res.on('close', () => {
         void transport.close()
         void server.close()
@@ -255,6 +279,9 @@ export async function startAcpNativeBridge(
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,
+    setAdvisorContext: (context): void => {
+      advisorContext = context
+    },
     close: () =>
       new Promise<void>((resolve) => {
         httpServer.close(() => {
