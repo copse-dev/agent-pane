@@ -36,6 +36,7 @@ import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
+import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import {
   acpExecuteCommandText,
@@ -96,6 +97,8 @@ export interface RunAcpAgentOptions {
    * absent the bridge is not offered.
    */
   registry?: ToolRegistry
+  /** Per-thread context bound only while this ACP turn uses the advisor bridge tool. */
+  advisorContext?: AdvisorRunnerContext
   /**
    * Model chosen in the picker (the `#<model>` half of `acp:<id>#<model>`).
    * Overrides the agent config's default `model` for this turn.
@@ -364,6 +367,7 @@ export async function runAcpAgentFromSettings(
       config: spawnConfig,
       registry: options.registry,
     })
+    entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
@@ -392,6 +396,7 @@ export async function runAcpAgentFromSettings(
       disposeAcpSession(options.threadId, { preserveForResume: isAcpConnectionDropped(err) })
       throw err
     } finally {
+      entry.bridge?.setAdvisorContext(null)
       entry.lastUsedAt = Date.now()
     }
   }
