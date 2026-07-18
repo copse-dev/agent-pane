@@ -737,6 +737,27 @@ function normalizeGitDiffText(text: string): string {
   return text.replace(/\r\n/g, '\n')
 }
 
+/**
+ * Combined HEAD → working-tree diff for a single file (staged and unstaged
+ * changes together), or null when git is unavailable, the file is an image,
+ * or the working tree matches HEAD. Powers the file viewer's "Changes" view.
+ */
+export async function getGitWorkingFileDiff(path: string): Promise<GitFileDiff | null> {
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
+  if (imageMimeType(path)) return null
+
+  const before = normalizeGitDiffText((await readGitBlob('HEAD', path)).content)
+  const after = normalizeGitDiffText(await readWorkingTree(path))
+  if (before === after) return null
+
+  return {
+    path,
+    before,
+    after,
+    language: detectLanguage(path),
+  }
+}
+
 export async function getGitStatusText(): Promise<string> {
   if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
   const { stdout, stderr, code } = await runGit(['status', '--short'])

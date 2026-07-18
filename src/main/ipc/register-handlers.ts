@@ -132,6 +132,7 @@ import {
   getGitChangeStats,
   getGitFileDiff,
   getGitStatus,
+  getGitWorkingFileDiff,
   getGithubRepoSlug,
   isInsideGitWorkTree,
 } from '../services/github/git-service.ts'
@@ -915,6 +916,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const filePath = parseIpcArgs(zPathString, [path])
     const isStaged = parseIpcArgs(z.boolean(), [staged])
     return getGitFileDiff(filePath, isStaged)
+  })
+  ipcMain.handle('git:workingFileDiff', (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const filePath = parseIpcArgs(zPathString, [path])
+    return getGitWorkingFileDiff(filePath)
   })
   ipcMain.handle('git:branchStatus', (event, forBranch: unknown) => {
     assertMainFrameSender(event, win)

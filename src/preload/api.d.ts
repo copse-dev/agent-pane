@@ -457,6 +457,8 @@ export interface ApiClient {
     /** Live +/- line totals across staged + unstaged changes, or null when clean. */
     changeStats: () => Promise<{ additions: number; deletions: number } | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
+    /** Combined HEAD → working-tree diff for one file, or null when it matches HEAD. */
+    workingFileDiff: (path: string) => Promise<GitFileDiff | null>
     branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
     checkoutBranch: (branch: string) => Promise<void>
     listBranches: () => Promise<GitBranchInfo[]>

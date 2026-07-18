@@ -583,6 +583,7 @@ contextBridge.exposeInMainWorld('api', {
     status: () => ipcRenderer.invoke('git:status'),
     changeStats: () => ipcRenderer.invoke('git:changeStats'),
     fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
+    workingFileDiff: (path: string) => ipcRenderer.invoke('git:workingFileDiff', path),
     branchStatus: (forBranch?: string) => ipcRenderer.invoke('git:branchStatus', forBranch),
     checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
     listBranches: () => ipcRenderer.invoke('git:listBranches'),
