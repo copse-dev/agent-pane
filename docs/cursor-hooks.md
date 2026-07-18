@@ -58,6 +58,60 @@ The real `conversation_id` (thread id) and `generation_id` (turn id) come from
 the active run (B4); they are empty strings only when a hook fires outside any
 agent turn.
 
+### Matchers (per-event, D3)
+
+A hook entry may carry an optional `matcher` — a **regex string** that filters
+when the hook runs. Which field the regex is tested against depends on the event
+(matching Cursor's "which field the matcher applies to depends on the hook"):
+
+| Event(s)                                       | matcher matched against       |
+| ---------------------------------------------- | ----------------------------- |
+| `beforeShellExecution` / `afterShellExecution` | the full shell command string |
+| `beforeMCPExecution` / `afterMCPExecution`     | the (MCP) tool name           |
+| `beforeReadFile`                               | the tool type (`Read`)        |
+| `afterFileEdit`                                | the tool type (`Write`)       |
+| `beforeSubmitPrompt`                           | the value `UserPromptSubmit`  |
+| `stop`                                         | the value `Stop`              |
+| `subagentStart` / `subagentStop`               | the subagent type             |
+
+```json
+{
+  "hooks": {
+    "beforeShellExecution": [{ "command": "./approve-network.sh", "matcher": "curl|wget|nc " }],
+    "beforeMCPExecution": [{ "command": "./mcp-guard.sh", "matcher": "db__query" }],
+    "subagentStart": [{ "command": "./validate-explore.sh", "matcher": "explore|shell" }]
+  }
+}
+```
+
+Semantics:
+
+- **No matcher fires for every action** — Cursor's default. (For `afterFileEdit`,
+  Copse _additionally_ supports a `glob` convenience field, matched against the
+  edited **path**; see below.)
+- **An invalid regex skips the hook** (skip-and-warn). Cursor's docs do not
+  specify invalid-matcher behavior; Copse chooses to skip rather than fail-open
+  so a broken matcher can never accidentally deny (or observe) every action. The
+  skip is logged once with the offending pattern.
+- **MCP tool names** are Copse's canonical form (`mcp__<server>__<tool>`), so an
+  MCP matcher is written against that — e.g. `db__query` matches
+  `mcp__db__query`. (Cursor's dedicated `beforeMCPExecution` / `afterMCPExecution`
+  events are not in its published "available matchers" list; Copse matches them
+  by tool name, the natural analogue of Cursor's `MCP:<tool_name>` tool-type
+  token used by the generic `preToolUse` hook.)
+- **`afterFileEdit` has two independent filters** that must _both_ pass: the
+  Copse-convenience `glob` (**path**, `string | string[]`, B2) and the Cursor
+  native `matcher` (**tool type** `Write`, D3). They are distinct fields with
+  distinct meanings — `glob` narrows by which file changed, `matcher` narrows by
+  the edit tool type. Since every Copse edit funnels through the diff-queue write
+  path, a `Write` matcher matches and a `TabWrite` matcher never does (Copse has
+  no inline-tab edits).
+
+Matcher evaluation is centralized in the Cursor adapter
+(`cursorMatcherMatches` / `cursorMatcherSubject`) and applied at discovery — the
+adapter's dispatch-side filter — so every event runs the same matcher code with
+only its subject field differing (decision 8: adapters own matchers).
+
 Permission responses may also carry `agentMessage` / `userMessage`. A denying
 hook's `agentMessage` is now **surfaced to the agent** as the tool-result reason
 (B4) — a message-bearing `deny` fails the call with that reason so the model sees

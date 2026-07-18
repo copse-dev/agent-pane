@@ -60,13 +60,27 @@ interface DiscoveredCursorHook {
    */
   glob?: string[]
   /**
-   * Cursor's native per-hook `matcher` (a regex string). D1 honours it for the
-   * subagent-lifecycle events only — the matcher runs against the **subagent
-   * type** (`explore`, `investigate_ci`, …), enough for a deniable
-   * `subagentStart`. The full per-event matcher matrix (command text / tool
-   * type) is D3; parsing it here is harmless (it is only *applied* by the
-   * subagent discovery functions), so other events keep their existing
-   * fire-for-all behavior until D3 wires their matcher semantics.
+   * Cursor's native per-hook `matcher` (a regex string). D3 honours it across
+   * **every** wired event, with the field it tests against selected per event
+   * (Cursor's "which field the matcher applies to depends on the hook"):
+   *
+   * | Event(s)                                   | matched against          |
+   * | ------------------------------------------ | ------------------------ |
+   * | `beforeShellExecution` / `afterShellExecution` | the full shell command text |
+   * | `beforeMCPExecution` / `afterMCPExecution` | the (MCP) tool name      |
+   * | `beforeReadFile`                           | the tool type (`Read`)   |
+   * | `afterFileEdit`                            | the tool type (`Write`)  |
+   * | `beforeSubmitPrompt`                       | the value `UserPromptSubmit` |
+   * | `stop`                                     | the value `Stop`         |
+   * | `subagentStart` / `subagentStop`           | the subagent type        |
+   *
+   * An absent matcher fires for every event (Cursor's default). A malformed
+   * regex skips the hook (Cursor's docs do not specify invalid-matcher
+   * behavior; Copse chooses skip-and-warn so a broken matcher can never
+   * accidentally deny/observe every action — consistent with D1's original
+   * subagent matcher). Evaluation is centralized in {@link cursorMatcherMatches}
+   * / {@link cursorMatcherSubject}; each discovery function calls it (the
+   * adapter's dispatch-side filter, decision 8: adapters own matchers).
    */
   matcher?: string
 }
@@ -322,12 +336,110 @@ function auditProjectHook(hook: DiscoveredCursorHook): void {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Per-event `matcher` semantics (D3)
+// ---------------------------------------------------------------------------
+//
+// Cursor's per-hook `matcher` is a single regex string, but *which field it
+// tests against depends on the event* (vendor docs, "Available matchers by
+// hook"). Rather than copy a one-off `new RegExp(...)` into each discovery
+// function, evaluation is centralized here: {@link cursorMatcherSubject} selects
+// the field per event and {@link cursorMatcherMatches} runs the regex. Every
+// discovery function funnels its per-event materials (command text / tool name /
+// subagent type) through the same matcher, so the whole Cursor matrix behaves
+// consistently and a new event only has to add its subject case.
+
+/**
+ * The Cursor tool-type token a file **read** maps to. Cursor's `beforeReadFile`
+ * matcher filters by tool type (`Read`, `TabRead`); Copse's `read_file` gate is
+ * the (non-tab) `Read` tool, so a `Read` matcher matches and `TabRead` does not
+ * (Copse has no inline-tab reads).
+ */
+const MATCHER_TOOL_TYPE_READ = 'Read'
+
+/**
+ * The Cursor tool-type token a file **edit** maps to. Cursor's `afterFileEdit`
+ * matcher filters by tool type (`Write`, `TabWrite`); every Copse edit funnels
+ * through the diff-queue write path, so it is the (non-tab) `Write` tool.
+ */
+const MATCHER_TOOL_TYPE_WRITE = 'Write'
+
+/** Cursor matches a `beforeSubmitPrompt` matcher against this fixed token. */
+const MATCHER_SUBJECT_SUBMIT_PROMPT = 'UserPromptSubmit'
+
+/** Cursor matches a `stop` matcher against this fixed token. */
+const MATCHER_SUBJECT_STOP = 'Stop'
+
+/**
+ * The per-event materials a matcher may test against. A discovery function fills
+ * only the fields relevant to its event(s); {@link cursorMatcherSubject} picks
+ * the right one. Empty/absent fields resolve to the empty string (a matcher
+ * against a missing subject simply fails to match).
+ */
+interface CursorMatcherContext {
+  /** Full shell command string — `beforeShellExecution` / `afterShellExecution`. */
+  command?: string
+  /** Canonical (MCP) tool name — `beforeMCPExecution` / `afterMCPExecution`. */
+  toolName?: string
+  /** Subagent type — `subagentStart` / `subagentStop`. */
+  subagentType?: string
+}
+
+/**
+ * The string a Cursor `matcher` regex is tested against for `event`. Encodes the
+ * vendor's per-event field selection (see the {@link DiscoveredCursorHook.matcher}
+ * table). Exhaustive over {@link CursorHookEvent} — a new event must add its
+ * subject here (TypeScript flags the missing case).
+ */
+function cursorMatcherSubject(event: CursorHookEvent, ctx: CursorMatcherContext): string {
+  switch (event) {
+    case 'beforeShellExecution':
+    case 'afterShellExecution':
+      return ctx.command ?? ''
+    case 'beforeMCPExecution':
+    case 'afterMCPExecution':
+      return ctx.toolName ?? ''
+    case 'beforeReadFile':
+      return MATCHER_TOOL_TYPE_READ
+    case 'afterFileEdit':
+      return MATCHER_TOOL_TYPE_WRITE
+    case 'beforeSubmitPrompt':
+      return MATCHER_SUBJECT_SUBMIT_PROMPT
+    case 'stop':
+      return MATCHER_SUBJECT_STOP
+    case 'subagentStart':
+    case 'subagentStop':
+      return ctx.subagentType ?? ''
+  }
+}
+
+/**
+ * Whether a hook's `matcher` covers the event's subject (D3). An absent matcher
+ * fires for every action (Cursor's default). A malformed regex skips the hook
+ * (skip-and-warn — Cursor's docs are silent on invalid matchers, and skipping
+ * is the safe choice: a broken matcher must never accidentally deny/observe
+ * every action). This is the single dispatch-side matcher filter every discovery
+ * function shares (decision 8: adapters own matchers).
+ */
+function cursorMatcherMatches(hook: DiscoveredCursorHook, ctx: CursorMatcherContext): boolean {
+  if (!hook.matcher) return true
+  const subject = cursorMatcherSubject(hook.event, ctx)
+  try {
+    return new RegExp(hook.matcher).test(subject)
+  } catch {
+    console.warn(`[cursor-hooks] invalid "${hook.event}" matcher /${hook.matcher}/ — hook skipped`)
+    return false
+  }
+}
+
 /**
  * Discover the Cursor command hooks that gate `payload.toolName`, as registry
  * `CommandHook`s. Only permission events (shell / MCP / read) map onto the
- * canonical `toolGate`; the matcher is the tool → event mapping above. Each
- * hook's `onFailure` is `closed` when its `failClosed` flag is set, `open`
- * otherwise (the Cursor default).
+ * canonical `toolGate`; the tool → event mapping ({@link cursorEventForTool}) is
+ * the first filter and the per-event `matcher` (D3 — shell command text /
+ * MCP tool name / read tool-type) is the second. Each hook's `onFailure` is
+ * `closed` when its `failClosed` flag is set, `open` otherwise (the Cursor
+ * default).
  */
 export async function cursorToolGateHooks(
   payload: HookEventPayloads['toolGate'],
@@ -335,9 +447,13 @@ export async function cursorToolGateHooks(
 ): Promise<CommandHook<'toolGate'>[]> {
   const event = cursorEventForTool(payload.toolName)
   if (!event) return []
+  const matcherCtx: CursorMatcherContext = {
+    command: stringField(payload.input, 'command'),
+    toolName: payload.toolName,
+  }
   const { hooks } = await discoverHooksDetailed(opts)
   return hooks
-    .filter((h) => h.event === event)
+    .filter((h) => h.event === event && cursorMatcherMatches(h, matcherCtx))
     .map((h) => {
       auditProjectHook(h)
       return {
@@ -366,7 +482,7 @@ export async function cursorBeforeSubmitPromptHooks(
 ): Promise<CommandHook<'beforeSubmitPrompt'>[]> {
   const { hooks } = await discoverHooksDetailed(opts)
   return hooks
-    .filter((h) => h.event === 'beforeSubmitPrompt')
+    .filter((h) => h.event === 'beforeSubmitPrompt' && cursorMatcherMatches(h, {}))
     .map((h) => {
       auditProjectHook(h)
       return {
@@ -422,11 +538,16 @@ export async function cursorAfterFileEditHooks(
   opts: DialectDiscoverOpts,
 ): Promise<CommandHook<'afterFileEdit'>[]> {
   const { hooks } = await discoverHooksDetailed(opts)
+  // Two independent filters that must *both* pass (B2 + D3): the Copse-convenience
+  // `glob` (matches the edited path) and Cursor's native `matcher` (matches the
+  // edit's tool type — `Write`). They are distinct fields with distinct meanings;
+  // see `afterFileEditMatches` (glob) and `cursorMatcherMatches` (matcher).
   return hooks
     .filter(
       (h) =>
         h.event === 'afterFileEdit' &&
-        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot) &&
+        cursorMatcherMatches(h, {}),
     )
     .map((h) => {
       auditProjectHook(h)
@@ -458,7 +579,7 @@ export async function cursorStopHooks(
 ): Promise<CommandHook<'stop'>[]> {
   const { hooks } = await discoverHooksDetailed(opts)
   return hooks
-    .filter((h) => h.event === 'stop')
+    .filter((h) => h.event === 'stop' && cursorMatcherMatches(h, {}))
     .map((h) => {
       auditProjectHook(h)
       return {
@@ -475,23 +596,14 @@ export async function cursorStopHooks(
 }
 
 /**
- * Whether a subagent-lifecycle hook's `matcher` (a regex string) covers the
- * subagent type (D1). A hook with no matcher fires for every subagent (Cursor's
- * default). Cursor runs the matcher against the subagent type (`explore`,
- * `shell`, `generalPurpose`, …); Copse's own types are `explore` /
- * `investigate_ci`. A malformed regex fires for nothing — a broken matcher must
- * not accidentally deny (or observe) every subagent.
+ * Whether a subagent-lifecycle hook's `matcher` covers the subagent type (D1,
+ * now via the centralized D3 matcher). Cursor runs the matcher against the
+ * subagent type (`explore`, `shell`, `generalPurpose`, …); Copse's own types are
+ * `explore` / `investigate_ci`. Thin wrapper over {@link cursorMatcherMatches}
+ * so the subagent field selection reads at the call site.
  */
 function subagentTypeMatches(hook: DiscoveredCursorHook, subagentType: string): boolean {
-  if (!hook.matcher) return true
-  try {
-    return new RegExp(hook.matcher).test(subagentType)
-  } catch {
-    console.warn(
-      `[cursor-hooks] invalid "${hook.event}" matcher /${hook.matcher}/ — hook skipped for "${subagentType}"`,
-    )
-    return false
-  }
+  return cursorMatcherMatches(hook, { subagentType })
 }
 
 /**
@@ -561,12 +673,13 @@ export async function cursorSubagentStopHooks(
  * `afterMCPExecution`; any other tool has no Cursor after-event and yields no
  * hooks (so the fire site can fire generically and only shell/MCP hooks run).
  *
- * D2 deliberately does **not** apply the per-hook `matcher` (command-text /
- * tool-type regex) — the tool-type split *is* the flavor discrimination D2
- * needs; the full per-event matcher matrix is D3. Fired **detached** (decision
- * 3) through the C1 executor by the fire site (`after-tool-use.ts`); Cursor's
- * after-events are notification-only, so a `failClosed` flag has nothing to
- * block post-hoc but still maps to `onFailure` for spine + Sources uniformity.
+ * The tool-type split selects the flavor; the per-hook `matcher` (D3) is then
+ * applied on top — the shell command text for `afterShellExecution`, the tool
+ * name for `afterMCPExecution` — so a hook can observe only matching commands /
+ * tools. Fired **detached** (decision 3) through the C1 executor by the fire
+ * site (`after-tool-use.ts`); Cursor's after-events are notification-only, so a
+ * `failClosed` flag has nothing to block post-hoc but still maps to `onFailure`
+ * for spine + Sources uniformity.
  */
 export async function cursorAfterToolUseHooks(
   payload: HookEventPayloads['afterToolUse'],
@@ -574,9 +687,13 @@ export async function cursorAfterToolUseHooks(
 ): Promise<CommandHook<'afterToolUse'>[]> {
   const event = cursorAfterEventForTool(payload.toolName)
   if (!event) return []
+  const matcherCtx: CursorMatcherContext = {
+    command: stringField(payload.input ?? {}, 'command'),
+    toolName: payload.toolName,
+  }
   const { hooks } = await discoverHooksDetailed(opts)
   return hooks
-    .filter((h) => h.event === event)
+    .filter((h) => h.event === event && cursorMatcherMatches(h, matcherCtx))
     .map((h) => {
       auditProjectHook(h)
       return {
