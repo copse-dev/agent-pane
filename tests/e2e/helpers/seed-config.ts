@@ -13,6 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import type { AcpAgentConfig } from '../../../src/shared/types/acp.ts'
 import { explodeThread } from '../../../src/shared/threads/fold.ts'
 import { serializeSpine } from '../../../src/shared/threads/spine-schema.ts'
 
@@ -232,6 +233,8 @@ export function seedEmptyProject(
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     okfMemoriesEnabled?: boolean
     roadmapPlansEnabled?: boolean
+    registeredAcpAgents?: AcpAgentConfig[]
+    windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
   },
@@ -284,6 +287,12 @@ export function seedEmptyProject(
   }
   if (options?.roadmapPlansEnabled !== undefined) {
     settings.roadmapPlansEnabled = options.roadmapPlansEnabled
+  }
+  if (options?.registeredAcpAgents !== undefined) {
+    settings.registeredAcpAgents = options.registeredAcpAgents
+  }
+  if (options?.windowBounds !== undefined) {
+    settings.windowBounds = options.windowBounds
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)

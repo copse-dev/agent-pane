@@ -5,6 +5,7 @@ import {
   getAcpAgent,
   listAcpAgents,
   listEnabledAcpAgents,
+  resolveAcpPermissionMode,
   resolveAcpSandbox,
 } from './acp-agent-registry.ts'
 
@@ -73,5 +74,30 @@ describe('resolveAcpSandbox (issue #590)', () => {
   it('leaves agents with no catalog preset unsandboxed', () => {
     assert.equal(resolveAcpSandbox({ ...base, id: 'my-custom-agent' }), undefined)
     assert.equal(resolveAcpSandbox({ ...base, id: 'cursor' }), undefined) // preset ships no sandbox
+  })
+})
+
+describe('resolveAcpPermissionMode (issue #607)', () => {
+  const base = { title: 'X', command: 'x', enabled: true }
+
+  it('prefers the user-set permissionMode regardless of sandbox state', () => {
+    const config = { ...base, id: 'claude-agent-acp', permissionMode: 'plan' }
+    assert.equal(resolveAcpPermissionMode(config, true), 'plan')
+    assert.equal(resolveAcpPermissionMode(config, false), 'plan')
+  })
+
+  it('defaults a sandboxed Claude preset to acceptEdits when none is set', () => {
+    assert.equal(resolveAcpPermissionMode({ ...base, id: 'claude-agent-acp' }, true), 'acceptEdits')
+    assert.equal(resolveAcpPermissionMode({ ...base, id: 'claude-code-acp' }, true), 'acceptEdits')
+  })
+
+  it('leaves an unsandboxed Claude preset on the agent default', () => {
+    assert.equal(resolveAcpPermissionMode({ ...base, id: 'claude-agent-acp' }, false), undefined)
+  })
+
+  it('leaves presets without a sandboxed default alone (Gemini, Cursor, custom)', () => {
+    assert.equal(resolveAcpPermissionMode({ ...base, id: 'gemini-cli' }, true), undefined)
+    assert.equal(resolveAcpPermissionMode({ ...base, id: 'cursor' }, true), undefined)
+    assert.equal(resolveAcpPermissionMode({ ...base, id: 'my-custom-agent' }, true), undefined)
   })
 })

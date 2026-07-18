@@ -223,7 +223,13 @@ reachable without a crowded titlebar:
 - Titlebar keeps **Open in editor** + **Panel** labeled; secondary mode buttons (Terminal, Changes,
   PRs, Browser, …) become icon-only.
 - A labeled `.portrait-panel-bar` sits under `.input-footer` (between status and the stacked panel),
-  matching the Settings button height band and spanning the chat column.
+  matching the Settings button height band and spanning the chat column. Mount it on `.pane-chat`,
+  not inside the floating `#input-bar`, so it can dock to the actual thread/panel seam.
+- The whole mode strip uses one open-bottom outline, sized to the floating chat composer; individual
+  mode buttons stay unboxed. Give those buttons near-band-height hit targets and `--spacing-sm`
+  horizontal padding even though their visual treatment remains light. The strip rests directly on
+  the horizontal resizer, which is the sole one-pixel divider in the stacked layout — do not add a
+  second top border to `.pane-files`.
 - When the chat column is too narrow for every labeled mode, trailing buttons collapse into a `…`
   overflow menu (Panel stays visible; same idea as the footer compact overflow) rather than wrapping
   or scrolling. Spec:

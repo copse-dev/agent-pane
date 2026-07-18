@@ -27,6 +27,8 @@ import {
   withScalewayZone,
 } from './cloud-hosts.mts'
 
+const SCW_TTL = { secretKey: 'scw-test-secret', zone: 'fr-par-1' }
+
 const TAGS: FleetTags = { kind: 'copse-burst', managedBy: 'copse-burst-runners' }
 
 describe('parseOptions', () => {
@@ -130,18 +132,34 @@ describe('AWS tagging and launch payloads', () => {
 })
 
 describe('userDataScript', () => {
-  it('schedules a TTL shutdown when ttlMinutes > 0', () => {
+  it('schedules a TTL shutdown when ttlMinutes > 0 (AWS)', () => {
     const script = userDataScript(90)
     assert.match(script, /shutdown -h \+90 "Copse burst runner TTL \(90 minutes\) reached"/)
     assert.match(script, /docker\.io/)
+    assert.doesNotMatch(script, /ttl-terminate\.sh/)
   })
 
   it('omits the shutdown when ttlMinutes is 0', () => {
     assert.doesNotMatch(userDataScript(0), /shutdown -h/)
+    assert.doesNotMatch(userDataScript(0, 'x', SCW_TTL), /ttl-terminate\.sh/)
   })
 
   it('labels the shutdown message per fleet kind', () => {
     assert.match(userDataScript(30, 'Copse remote e2e host'), /Copse remote e2e host TTL/)
+  })
+
+  it('schedules Scaleway API self-terminate instead of guest shutdown', () => {
+    const script = userDataScript(45, 'Copse burst runner', SCW_TTL)
+    assert.doesNotMatch(script, /shutdown -h/)
+    assert.match(script, /ttl-terminate\.sh/)
+    assert.match(script, /"action":"terminate"/)
+    assert.match(script, /systemd-run/)
+    assert.match(script, /--on-active=45min/)
+    assert.match(script, /fr-par-1/)
+    assert.match(script, /scw-test-secret/)
+    assert.match(script, /\/instance\/v1\/zones\/\$ZONE\/ips\/\$IP_ID/)
+    // terminate only detaches SBS; TTL must delete volumes explicitly.
+    assert.match(script, /\/block\/v1alpha1\/zones\/\$ZONE\/volumes\//)
   })
 })
 
