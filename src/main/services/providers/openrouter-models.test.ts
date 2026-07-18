@@ -1,10 +1,12 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { setSetting } from '../storage/settings.ts'
 import {
   parseOpenRouterModelsPayload,
   listFreeOpenRouterModels,
   openRouterModelContextLength,
   invalidateOpenRouterModelsCache,
+  filterToZdrModels,
 } from './openrouter-models.ts'
 
 const SAMPLE = {
@@ -44,14 +46,27 @@ const SAMPLE = {
   ],
 }
 
-function stubFetch(json: unknown): () => void {
+// ZDR endpoints payload (the /endpoints/zdr shape): display model_name rows.
+const ZDR_SAMPLE = {
+  data: [
+    { name: 'Novita | qwen3-235b', model_name: 'Qwen3 235B A22B (free)', provider_name: 'Novita' },
+  ],
+}
+
+// Stub fetch, routing the ZDR endpoint list and the models catalog separately
+// so tests control each payload (both live under the same API base).
+function stubFetch(modelsJson: unknown, zdrJson: unknown = { data: [] }): () => void {
   const original = globalThis.fetch
-  globalThis.fetch = (async () => ({
-    ok: true,
-    status: 200,
-    statusText: 'OK',
-    json: async (): Promise<unknown> => json,
-  })) as unknown as typeof fetch
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const json = url.includes('/endpoints/zdr') ? zdrJson : modelsJson
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async (): Promise<unknown> => json,
+    }
+  }) as unknown as typeof fetch
   return () => {
     globalThis.fetch = original
   }
@@ -81,15 +96,48 @@ describe('parseOpenRouterModelsPayload', () => {
 
 describe('listFreeOpenRouterModels', () => {
   let restore: (() => void) | undefined
-  afterEach(() => {
+  afterEach(async () => {
     restore?.()
     restore = undefined
     invalidateOpenRouterModelsCache()
+    await setSetting('openRouterZdrOnly', true)
   })
 
-  it('returns only free, tool-capable models', async () => {
+  it('returns only free, tool-capable models (fail-open when the ZDR list is empty)', async () => {
     invalidateOpenRouterModelsCache()
     restore = stubFetch(SAMPLE)
+    const models = await listFreeOpenRouterModels()
+    assert.deepEqual(
+      models.map((m) => m.id),
+      ['qwen/qwen3-235b-a22b:free'],
+    )
+  })
+
+  it('keeps ZDR-capable models when the ZDR list matches by display name', async () => {
+    invalidateOpenRouterModelsCache()
+    restore = stubFetch(SAMPLE, ZDR_SAMPLE)
+    const models = await listFreeOpenRouterModels()
+    assert.deepEqual(
+      models.map((m) => m.id),
+      ['qwen/qwen3-235b-a22b:free'],
+    )
+  })
+
+  it('drops models with no ZDR endpoint while ZDR-only routing is on', async () => {
+    invalidateOpenRouterModelsCache()
+    restore = stubFetch(SAMPLE, {
+      data: [{ name: 'x', model_name: 'Some Other Model', provider_name: 'p' }],
+    })
+    const models = await listFreeOpenRouterModels()
+    assert.deepEqual(models, [])
+  })
+
+  it('does not filter when ZDR-only routing is off', async () => {
+    invalidateOpenRouterModelsCache()
+    await setSetting('openRouterZdrOnly', false)
+    restore = stubFetch(SAMPLE, {
+      data: [{ name: 'x', model_name: 'Some Other Model', provider_name: 'p' }],
+    })
     const models = await listFreeOpenRouterModels()
     assert.deepEqual(
       models.map((m) => m.id),
@@ -102,5 +150,27 @@ describe('listFreeOpenRouterModels', () => {
     restore = stubFetch(SAMPLE)
     const ctx = await openRouterModelContextLength('anthropic/claude-3.5-sonnet')
     assert.equal(ctx, 200000)
+  })
+})
+
+describe('filterToZdrModels', () => {
+  const models = [
+    { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B A22B (free)' },
+    { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air (free)' },
+  ]
+
+  it('fails open on an empty identifier set', () => {
+    assert.deepEqual(filterToZdrModels(models, new Set()), models)
+  })
+
+  it('matches case-insensitively on display name or id', () => {
+    assert.deepEqual(
+      filterToZdrModels(models, new Set(['qwen3 235b a22b (free)'])).map((m) => m.id),
+      ['qwen/qwen3-235b-a22b:free'],
+    )
+    assert.deepEqual(
+      filterToZdrModels(models, new Set(['z-ai/glm-4.5-air:free'])).map((m) => m.id),
+      ['z-ai/glm-4.5-air:free'],
+    )
   })
 })
