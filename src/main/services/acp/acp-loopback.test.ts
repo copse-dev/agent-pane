@@ -74,9 +74,11 @@ describe('ACP agent <-> client loopback', () => {
     assert.deepEqual(text, { type: 'text', text: 'echo:hello' })
 
     const toolCall = chunks.find((c) => c.type === 'tool_call')
+    // The agent role tags read_file with ACP kind 'read'; the client role
+    // carries it through so the UI can group/label like the built-in tools.
     assert.deepEqual(toolCall, {
       type: 'tool_call',
-      toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
+      toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' }, kind: 'read' },
     })
 
     const toolResult = chunks.find((c) => c.type === 'tool_result')

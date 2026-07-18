@@ -51,6 +51,28 @@ services:
     # --disable-dev-shm-usage as a fallback).
     shm_size: '2gb'
 
+  # Checks-only sibling of `runner`, used by the burst CLI's split-tier layout
+  # (one e2e-capable slot + N checks-only slots per host, so two Electron e2e
+  # suites never contend on one small cloud host — that contention pushed the
+  # slowest specs over their fixed timeouts). Behind a compose profile so the
+  # plain local flow (`--scale runner=N`, all-unified slots) is unchanged
+  # unless COMPOSE_PROFILES=split-tiers is set.
+  runner-checks:
+    profiles: ['split-tiers']
+    image: copse-ci-runner:latest
+    restart: always
+    env_file: .env
+    environment:
+      EPHEMERAL: 'true'
+      # Service-level environment beats env_file, so this replaces the unified
+      # RUNNER_LABELS from .env with the checks-only set.
+      RUNNER_LABELS: ${RUNNER_CHECKS_LABELS:-self-hosted,linux,docker,copse-checks,burst}
+    init: true
+    # Check-tier jobs are lighter, but this is the same superset image; keep the
+    # same guardrails so a misrouted heavy job can't take the host down.
+    mem_limit: 6g
+    shm_size: '2gb'
+
 # The build-time clone token, sourced from the BUILD_GH_TOKEN env var in .env.
 secrets:
   gh_token:
