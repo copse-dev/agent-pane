@@ -6,7 +6,11 @@ directly to model providers, remote agents, MCP servers, websites, and update
 infrastructure when the corresponding feature is configured or used.
 
 This document describes the application behavior. A third-party service's own
-terms, retention, logging, and training policies apply after data reaches it.
+terms, retention, logging, and training policies apply after data reaches it —
+[provider-data-policies.md](provider-data-policies.md) records what each
+supported model provider retains and trains on by default, and the
+request-level protections Copse enables (ZDR-only OpenRouter routing,
+OpenAI `store: false`).
 
 ## Data-flow summary
 
@@ -34,6 +38,15 @@ Provider-key validation and model-list refreshes also contact the corresponding
 provider endpoint. Custom OpenAI-compatible providers use the base URL and key
 the user configured. LM Studio and other local endpoints are local only when the
 configured address is local.
+
+By default Copse requests the most protective handling each provider offers at
+the request level: OpenRouter traffic is restricted to zero-data-retention,
+non-training upstream endpoints (two independent toggles in Settings →
+Providers → OpenRouter — `openRouterZdrOnly` on and `openRouterAllowTraining`
+off by default; relaxing ZDR keeps training excluded), and direct OpenAI
+requests carry `store: false`. Settings → Providers badges each provider with
+its default retention/training posture; see
+[provider-data-policies.md](provider-data-policies.md).
 
 Experimental on-device PII redaction can redact the text the user typed before a
 provider, remote-agent, or ACP path receives it. It is off by default, fails open

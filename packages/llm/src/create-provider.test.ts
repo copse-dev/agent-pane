@@ -82,15 +82,21 @@ describe('createProvider routing', () => {
   })
 })
 
+interface CapturedRequestBody {
+  prompt_cache_key?: string
+  store?: boolean
+  provider?: { require_parameters?: boolean; zdr?: boolean; data_collection?: string }
+}
+
 // Capture the request body a provider sends by stubbing its private OpenAI client.
-async function captureRequest(provider: OpenAIProvider): Promise<{ prompt_cache_key?: string }> {
-  const captured: { request?: { prompt_cache_key?: string } } = {}
+async function captureRequest(provider: OpenAIProvider): Promise<CapturedRequestBody> {
+  const captured: { request?: CapturedRequestBody } = {}
   ;(
     provider as unknown as {
       client: {
         chat: {
           completions: {
-            create: (request: { prompt_cache_key?: string }) => AsyncIterable<{
+            create: (request: CapturedRequestBody) => AsyncIterable<{
               choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
             }>
           }
@@ -138,6 +144,50 @@ describe('createProvider prompt cache key', () => {
     const provider = createProvider('gpt-4o', { openAiApiKey: 'test-openai' }) as OpenAIProvider
     const request = await captureRequest(provider)
     assert.equal(request.prompt_cache_key, undefined)
+  })
+})
+
+describe('provider data-retention request defaults', () => {
+  it('sends store:false to direct OpenAI so responses are not retained as app state', async () => {
+    const provider = createProvider('gpt-4o', { openAiApiKey: 'test-openai' }) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.equal(request.store, false)
+  })
+
+  it('does not send store to OpenAI-compatible local servers', async () => {
+    const provider = createLocalOpenAIProvider(
+      'http://localhost:1234/v1',
+      'qwen-local',
+    ) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.equal(request.store, undefined)
+  })
+
+  it('requests ZDR-only, non-training OpenRouter routing by default', async () => {
+    const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test') as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.provider, {
+      require_parameters: true,
+      zdr: true,
+      data_collection: 'deny',
+    })
+  })
+
+  it('keeps the training exclusion when only zdrOnly is turned off', async () => {
+    const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
+      zdrOnly: false,
+    }) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.provider, { require_parameters: true, data_collection: 'deny' })
+  })
+
+  it('drops data_collection only with the explicit allowTraining opt-in', async () => {
+    const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
+      zdrOnly: false,
+      allowTraining: true,
+    }) as OpenAIProvider
+    const request = await captureRequest(provider)
+    assert.deepEqual(request.provider, { require_parameters: true })
   })
 })
 

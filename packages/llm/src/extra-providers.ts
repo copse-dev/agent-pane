@@ -228,7 +228,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     keyLabel: 'Hugging Face token',
     keyPlaceholder: 'hf_…',
     keyHint:
-      'For Hugging Face Inference Providers (serverless). Pick a model with Fetch models or type one like org/model:fastest. Get a token at huggingface.co/settings/tokens.',
+      'For Hugging Face Inference Providers (serverless). Pick a model with Fetch models or type one like org/model:fastest. Get a token at huggingface.co/settings/tokens. Note: HF routes requests to third-party partners (Together, Fireworks, Novita, …) that each apply their own data-retention policy.',
     keyPrefix: 'hf_',
     // Context varies per upstream model; keep the generic 128K default.
     fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
