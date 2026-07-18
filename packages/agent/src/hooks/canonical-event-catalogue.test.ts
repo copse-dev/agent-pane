@@ -21,6 +21,7 @@ const EXPECTED: Record<
 > = {
   turnStart: { dispatch: 'blocking', role: 'assembly' },
   beforeFinalize: { dispatch: 'blocking', role: 'assembly' },
+  stepBoundary: { dispatch: 'blocking', role: 'assembly' },
   beforeSubmitPrompt: { dispatch: 'blocking', role: 'decision' },
   toolGate: { dispatch: 'blocking', role: 'decision' },
   afterFileEdit: { dispatch: 'blocking', role: 'decision', asyncOptIn: true },
@@ -36,9 +37,9 @@ const EXPECTED: Record<
 }
 
 describe('canonical event catalogue (A1 v1 enumeration)', () => {
-  it('enumerates exactly the 14 canonical events from the plan', () => {
+  it('enumerates exactly the 15 canonical events from the plan', () => {
     assert.deepEqual([...HOOK_EVENT_NAMES], Object.keys(EXPECTED))
-    assert.equal(HOOK_EVENT_NAMES.length, 14)
+    assert.equal(HOOK_EVENT_NAMES.length, 15)
   })
 
   it('has no duplicate event names', () => {

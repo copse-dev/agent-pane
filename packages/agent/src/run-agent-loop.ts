@@ -19,26 +19,17 @@ import type { TodoItem } from './wire-types.ts'
 import {
   DUPLICATE_TOOL_RESULT_PREFIX,
   isDuplicateExploreCall,
-  LOOP_NUDGE_USER_MESSAGE,
   normalizeExploreArgs,
-  STUCK_FINALIZE_NUDGE,
   toolCallFingerprint,
 } from './agent-loop-guards.ts'
-import {
-  measureConversationPressure,
-  shouldForceTextAnswer,
-  shouldInjectLoopNudge,
-} from './agent-loop-escalation.ts'
+import { measureConversationPressure } from './agent-loop-escalation.ts'
 import { recoverTextToolCalls, type CoerceToolArgsFn } from './parse-text-tool-calls.ts'
 import {
   CONTEXT_OVERFLOW_USER_MESSAGE,
   isContextOverflowStopReason,
   isRefusalStopReason,
-  isTruncationStopReason,
-  REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
   REASONING_RUNAWAY_GIVEUP_MESSAGE,
   REFUSAL_USER_MESSAGE,
-  TRUNCATION_CONTINUE_NUDGE,
 } from '@copse/llm/provider-stop-reason.ts'
 import {
   AGENT_RUN_HARD_MAX_MS,
@@ -50,7 +41,14 @@ import {
 } from './agent-loop-limits.ts'
 import { hasOpenTodos, OPEN_TODOS_STILL_OPEN_MESSAGE } from './agent-loop-guards.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from './hooks/hook-registry.ts'
-import type { HookContext } from './hooks/canonical-events.ts'
+import type { HookEmitResult } from './hooks/hook-registry.ts'
+import type { HookContext, StepBoundaryPayload } from './hooks/canonical-events.ts'
+import {
+  LOOP_NUDGE_HOOK_ID,
+  REASONING_RUNAWAY_HOOK_ID,
+  STUCK_FINALIZE_NUDGE_HOOK_ID,
+  TRUNCATION_CONTINUE_HOOK_ID,
+} from './hooks/step-boundary-hooks.ts'
 import type { ContinuationGrant } from './hooks/continuation-budget.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
@@ -60,6 +58,24 @@ const MAX_REASONING_RUNAWAY_STREAK = 2
 const TRIM_CRITICAL_FILL = 0.95
 /** After this many tool rounds, always allow normal in-loop compaction. */
 const TRIM_DEFER_MAX_TOOL_STEPS = 2
+
+/**
+ * The nudge texts the `stepBoundary` hooks (E1) selected at one boundary, keyed
+ * by nudge. Each is present only when its policy fired; the loop applies each
+ * with its own mechanism (the four in-loop nudges are distinct control-flow
+ * triggers, so they are read per-hook rather than merged into one block).
+ */
+interface StepBoundaryNudges {
+  stuckFinalize: string | undefined
+  loop: string | undefined
+  truncation: string | undefined
+  reasoningRunaway: string | undefined
+}
+
+/** Pull one step-boundary hook's selected nudge text (its `injectContext`) by id. */
+function nudgeFrom(result: HookEmitResult, hookId: string): string | undefined {
+  return result.outcomes.find((o) => o.hookId === hookId)?.outcome.injectContext
+}
 
 export interface AgentLoopOptions {
   provider: LLMProvider
@@ -257,6 +273,10 @@ async function streamTextOnlyTurn(
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
   usageModel?: string,
   coerceTextToolCallArgs?: CoerceToolArgsFn,
+  // Resolves the truncation-continue nudge (E1's `truncation-continue` hook) for
+  // this text-only turn's stop reason; returns the nudge text when the stream was
+  // length-truncated, else undefined. The loop supplies it; absent = no push.
+  resolveTruncationNudge?: (stopReason: string | undefined) => Promise<string | undefined>,
 ): Promise<TextOnlyTurnResult> {
   const empty: TextOnlyTurnResult = { answerText: '', pendingToolCalls: [] }
   if (!reserveLlmCall(budget)) return empty
@@ -335,8 +355,11 @@ async function streamTextOnlyTurn(
   }
   if (trimmed) {
     messages.push({ role: 'assistant', content: assistantText })
-  } else if (isTruncationStopReason(stopReason)) {
-    messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
+  } else {
+    const truncationNudge = await resolveTruncationNudge?.(stopReason)
+    if (truncationNudge !== undefined) {
+      messages.push({ role: 'user', content: truncationNudge })
+    }
   }
   emitStepUsage(streamUsage, getLastUsage, onChunk, usageModel)
   return { answerText: trimmed, pendingToolCalls: [] }
@@ -742,6 +765,42 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
   let reasoningRunawayStreak = 0
   const recentFingerprints: string[] = []
 
+  // The in-loop nudge *policies* live in `stepBoundary` hooks (E1); this loop
+  // only fires the event at each step boundary and applies the nudge text each
+  // hook selects. In-loop nudges do not touch the continuation budget (decision
+  // 5) — this fires no `ContinuationGrant`.
+  const stepBoundaryRegistry = createHookRegistry()
+  const stepBoundaryContext: HookContext = {
+    ...(signal !== undefined ? { signal } : {}),
+    ...(recordHookRun !== undefined ? { recordHookRun } : {}),
+  }
+  const selectStepBoundaryNudges = async (
+    payload: StepBoundaryPayload,
+  ): Promise<StepBoundaryNudges> => {
+    const result = await stepBoundaryRegistry.emit('stepBoundary', payload, stepBoundaryContext)
+    return {
+      stuckFinalize: nudgeFrom(result, STUCK_FINALIZE_NUDGE_HOOK_ID),
+      loop: nudgeFrom(result, LOOP_NUDGE_HOOK_ID),
+      truncation: nudgeFrom(result, TRUNCATION_CONTINUE_HOOK_ID),
+      reasoningRunaway: nudgeFrom(result, REASONING_RUNAWAY_HOOK_ID),
+    }
+  }
+  // Post-stream truncation-continue selector for the text-only finalize / forced
+  // turns (`streamTextOnlyTurn`), so their length-truncation continuation runs
+  // through the same `truncation-continue` hook the main loop uses.
+  const resolveTruncationNudge = async (
+    stopReason: string | undefined,
+  ): Promise<string | undefined> => {
+    const nudges = await selectStepBoundaryNudges({
+      phase: 'postStream',
+      loopNudgeSent,
+      forceTextAttempted,
+      streamCappedAsRunaway: false,
+      ...(stopReason !== undefined ? { stopReason } : {}),
+    })
+    return nudges.truncation
+  }
+
   while (steps < maxSteps) {
     if (runBudgetExhausted(budget)) {
       hitRunLimit = true
@@ -762,40 +821,54 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       }
       const pressure = measureConversationPressure(escalationInput)
 
-      if (!forceTextAttempted && shouldForceTextAnswer(escalationInput, pressure)) {
-        forceTextAttempted = true
-        const forced = await streamTextOnlyTurn(
-          provider,
-          messages,
-          onChunk,
-          budget,
-          STUCK_FINALIZE_NUDGE,
-          getLastUsage,
-          usageModel,
-          coerceTextToolCallArgs,
-        )
-        if (forced.pendingToolCalls.length > 0) {
-          await executeToolBatch({
-            pendingToolCalls: forced.pendingToolCalls,
-            messages,
-            executeTool: opts.executeTool,
-            signal,
-            onChunk,
-            recentFingerprints,
-            budget,
-          })
-          toolOnlySteps++
-          continue
-        }
-        if (forced.answerText.trim()) {
-          finishedWithAnswer = true
-          break
-        }
-      }
+      // Pre-stream nudges (E1): `stuck-finalize-nudge` then `loop-nudge`. Both
+      // are once-per-run; skip firing once both have fired (byte-identical — the
+      // hooks would abstain — and it avoids emitting every remaining step).
+      if (!forceTextAttempted || !loopNudgeSent) {
+        const preNudges = await selectStepBoundaryNudges({
+          phase: 'preStream',
+          escalation: { input: escalationInput, pressure },
+          loopNudgeSent,
+          forceTextAttempted,
+          streamCappedAsRunaway: false,
+        })
 
-      if (!loopNudgeSent && shouldInjectLoopNudge(escalationInput, pressure)) {
-        messages.push({ role: 'user', content: LOOP_NUDGE_USER_MESSAGE })
-        loopNudgeSent = true
+        if (preNudges.stuckFinalize !== undefined) {
+          forceTextAttempted = true
+          const forced = await streamTextOnlyTurn(
+            provider,
+            messages,
+            onChunk,
+            budget,
+            preNudges.stuckFinalize,
+            getLastUsage,
+            usageModel,
+            coerceTextToolCallArgs,
+            resolveTruncationNudge,
+          )
+          if (forced.pendingToolCalls.length > 0) {
+            await executeToolBatch({
+              pendingToolCalls: forced.pendingToolCalls,
+              messages,
+              executeTool: opts.executeTool,
+              signal,
+              onChunk,
+              recentFingerprints,
+              budget,
+            })
+            toolOnlySteps++
+            continue
+          }
+          if (forced.answerText.trim()) {
+            finishedWithAnswer = true
+            break
+          }
+        }
+
+        if (preNudges.loop !== undefined) {
+          messages.push({ role: 'user', content: preNudges.loop })
+          loopNudgeSent = true
+        }
       }
 
       const reserve = tools.length > 0 ? toolSchemaReserveTokens : 0
@@ -895,6 +968,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       coerceTextToolCallArgs,
     )
 
+    // Post-stream nudges (E1): the `truncation-continue` and `reasoning-runaway`
+    // policies for this just-finished stream. Selected once here; the switch
+    // below applies each with its own mechanism (a truncated turn continues; a
+    // reasoning-runaway forces an answer, with the streak / give-up terminal
+    // still owned by this loop).
+    const postNudges = await selectStepBoundaryNudges({
+      phase: 'postStream',
+      loopNudgeSent,
+      forceTextAttempted,
+      streamCappedAsRunaway,
+      ...(stopReason !== undefined ? { stopReason } : {}),
+    })
+    const truncationNudge = postNudges.truncation
+    const reasoningRunawayNudge = postNudges.reasoningRunaway
+
     // Push assistant message to history
     if (pendingToolCalls.length > 0) {
       reasoningRunawayStreak = 0
@@ -902,8 +990,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         role: 'assistant',
         content: pendingToolCalls.map((tc) => ({ id: tc.id, name: tc.name, args: tc.args })),
       })
-      if (isTruncationStopReason(stopReason)) {
-        messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
+      if (truncationNudge !== undefined) {
+        messages.push({ role: 'user', content: truncationNudge })
       }
     } else if (isRefusalStopReason(stopReason)) {
       const text = assistantText.trim() || REFUSAL_USER_MESSAGE
@@ -928,23 +1016,26 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       continue
     } else if (assistantText.trim()) {
       reasoningRunawayStreak = 0
-      if (isTruncationStopReason(stopReason)) {
+      if (truncationNudge !== undefined) {
         messages.push({ role: 'assistant', content: assistantText })
-        messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
+        messages.push({ role: 'user', content: truncationNudge })
         continue
       }
       messages.push({ role: 'assistant', content: assistantText })
       finishedWithAnswer = true
       break
     } else {
-      if (isTruncationStopReason(stopReason)) {
+      if (truncationNudge !== undefined) {
         // A pure-reasoning stream that our own output cap cut off (#489) has no
         // assistant text or tool call, and reasoning never lands in history — so
-        // TRUNCATION_CONTINUE_NUDGE ("continue from where you left off") has nothing
-        // to continue and just re-primes the same loop. Push the model to commit to
-        // an answer instead; if it ignores that and runs the cap again, it is stuck
-        // looping, so end the run rather than re-prime until the wall-clock deadline.
-        if (streamCappedAsRunaway) {
+        // the truncation-continue nudge ("continue from where you left off") has
+        // nothing to continue and just re-primes the same loop. The
+        // `reasoning-runaway` hook fires instead (`reasoningRunawayNudge`),
+        // pushing the model to commit to an answer; if it ignores that and runs
+        // the cap again, it is stuck looping, so the run ends rather than
+        // re-priming until the wall-clock deadline (the streak / give-up terminal
+        // stays a bounded loop mechanism).
+        if (reasoningRunawayNudge !== undefined) {
           reasoningRunawayStreak++
           if (reasoningRunawayStreak >= MAX_REASONING_RUNAWAY_STREAK) {
             onChunk({ type: 'text', text: REASONING_RUNAWAY_GIVEUP_MESSAGE })
@@ -952,10 +1043,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             finishedWithAnswer = true
             break
           }
-          messages.push({ role: 'user', content: REASONING_RUNAWAY_FORCE_ANSWER_NUDGE })
+          messages.push({ role: 'user', content: reasoningRunawayNudge })
           continue
         }
-        messages.push({ role: 'user', content: TRUNCATION_CONTINUE_NUDGE })
+        messages.push({ role: 'user', content: truncationNudge })
         continue
       }
       if (isContextOverflowStopReason(stopReason)) {
@@ -1044,6 +1135,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         getLastUsage,
         usageModel,
         coerceTextToolCallArgs,
+        resolveTruncationNudge,
       )
       while (finalResult.pendingToolCalls.length > 0 && !runBudgetExhausted(budget)) {
         await executeToolBatch({
@@ -1064,6 +1156,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           getLastUsage,
           usageModel,
           coerceTextToolCallArgs,
+          resolveTruncationNudge,
         )
       }
       if (!finalResult.answerText.trim()) {
