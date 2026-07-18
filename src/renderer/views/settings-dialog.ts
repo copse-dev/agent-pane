@@ -513,6 +513,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Anthropic prompt-cache rates when cache tokens are reported.
             </p>
             <div id="settings-usage-host" class="settings-mount"></div>
+            <div id="settings-aa-key-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="local-models">
@@ -1153,6 +1154,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-claude-agent-key-host').append(claudeAgentKeySection.root)
 
+  // Metadata-service key (not an LLM provider): live Intelligence Index data
+  // for the model value map on the Usage page. No validation endpoint.
+  const aaKeySection = createApiKeysSection(api, {
+    legend: 'Model intelligence data',
+    providers: ['artificial-analysis'],
+    validateOnInput: false,
+  })
+  qsRequired(overlay, '#settings-aa-key-host').append(aaKeySection.root)
+
   // Provider tabs for the Remote agents section: a chip selects one provider and
   // shows just its auth panel (mirrors the Providers chip row). The common run
   // options below the panels apply to whichever remote agent is run.
@@ -1739,6 +1749,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()
+      await aaKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
       await localProvidersSection.refresh()
@@ -1856,6 +1867,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await cursorKeySection.saveKeys()
       await claudeAgentKeySection.saveKeys()
+      await aaKeySection.saveKeys()
       await customProvidersSection.saveKeys()
       await localProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()

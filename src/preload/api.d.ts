@@ -219,6 +219,20 @@ export interface ApiClient {
       bestAvailableContext: number | null
     }>
   }
+  intellect: {
+    /** Live Artificial Analysis model feed; empty models when no key stored. */
+    liveModels: () => Promise<{
+      ok: boolean
+      models: Array<{
+        id: string
+        intellect: number
+        inputPricePerMTok?: number
+        outputPricePerMTok?: number
+      }>
+      indexVersion?: string | number
+      error?: string
+    }>
+  }
   lmStudio: {
     test: (
       url: string,

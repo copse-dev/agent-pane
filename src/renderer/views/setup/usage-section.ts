@@ -281,6 +281,7 @@ export function createUsageSection(
   const frontierPanel = createIntellectFrontierPanel(
     () => api.lmStudio.models(),
     () => api.settings.extraProviders(),
+    () => api.intellect.liveModels(),
   )
   root.append(frontierPanel.root)
 

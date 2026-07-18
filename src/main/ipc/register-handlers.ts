@@ -174,6 +174,7 @@ import {
 import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
 import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
+import { fetchLiveIntellectModels } from '../services/providers/aa-live-intellect.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -603,6 +604,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
+  })
+  // Live Artificial Analysis feed for the model value map. Key-gated (empty
+  // result without a stored 'artificial-analysis' key); the renderer's anchor
+  // gate decides whether the returned cohort is on the canonical scale.
+  ipcMain.handle('intellect:live-models', (event) => {
+    assertMainFrameSender(event, win)
+    return fetchLiveIntellectModels()
   })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the

@@ -21,7 +21,12 @@ import {
   type FrontierCandidate,
   type FrontierPoint,
 } from '@copse/llm/pareto-frontier.ts'
-import { getIntellectScore, explainIntellectScore } from '@copse/llm/model-intellect.ts'
+import {
+  getIntellectScore,
+  explainIntellectScore,
+  INTELLECT_ATTRIBUTION,
+} from '@copse/llm/model-intellect.ts'
+import { liveIntellectCandidates, type LiveAaModel } from '@copse/llm/live-intellect.ts'
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
@@ -400,11 +405,21 @@ export interface IntellectFrontierPanel {
  * quiet placeholder when nothing has a sourced score yet — never an invented
  * point.
  */
+export interface LiveModelsFetch {
+  ok: boolean
+  models: LiveAaModel[]
+  /** Index version the feed declared (e.g. "4.1"); gate input when present. */
+  indexVersion?: string | number
+  error?: string
+}
+
 export function createIntellectFrontierPanel(
   loadLocalModels: () => Promise<string[]>,
   loadExtraProviders?: () => Promise<readonly ExtraProvider[]>,
+  loadLiveModels?: () => Promise<LiveModelsFetch>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
+  const liveNotes = el('p', { class: 'field-hint frontier-live-notes' })
   const compositeHost = el('div', { class: 'frontier-composite-strip' })
   const fieldset = el(
     'fieldset',
@@ -416,6 +431,7 @@ export function createIntellectFrontierPanel(
       'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived.',
     ),
     chartHost,
+    liveNotes,
     compositeHost,
   )
 
@@ -432,15 +448,48 @@ export function createIntellectFrontierPanel(
     } catch {
       extraProviders = []
     }
+    let liveFetch: LiveModelsFetch
+    try {
+      liveFetch = (await loadLiveModels?.()) ?? { ok: true, models: [] }
+    } catch {
+      liveFetch = { ok: true, models: [] }
+    }
+    // The gate: live models join ONLY when the feed's declared index version
+    // matches the canonical one (when declared) AND its values agree with our
+    // curated anchors — a renormalised feed must never share the axis.
+    const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion)
+    const liveNoteParts: string[] = []
+    if (liveFetch.models.length > 0 && live.verification.verified) {
+      liveNoteParts.push(
+        `Live points (◌) from the Artificial Analysis API, verified against ${String(live.verification.anchorsChecked)} curated anchors. ${INTELLECT_ATTRIBUTION}.`,
+      )
+      if (live.hintOnly.length > 0) {
+        liveNoteParts.push(
+          `Live-scored but unpriced (not plotted): ${live.hintOnly
+            .map((m) => `${m.id} ${String(m.intellect)}`)
+            .join(', ')}.`,
+        )
+      }
+    } else if (liveFetch.models.length > 0) {
+      liveNoteParts.push(
+        live.verification.versionMismatch
+          ? `The Artificial Analysis feed is on index ${live.verification.reportedVersion ?? '?'}, not the canonical scale — live data is not shown. Re-pin via \`npm run sync:intellect -- --from-api\` to adopt the new cohort.`
+          : 'The Artificial Analysis feed does not match the curated canonical anchors — the index version has likely changed, so live data is not shown. Re-pin via `npm run sync:intellect -- --from-api`.',
+      )
+    } else if (liveFetch.error) {
+      liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`)
+    }
     const points = frontierForKnownModels([
       ...localFrontierCandidates(localIds),
       ...extraProviderFrontierCandidates(extraProviders),
+      ...live.candidates,
     ])
     chartHost.replaceChildren(
       points.length > 0
         ? renderFrontierSvg(points)
         : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.'),
     )
+    liveNotes.replaceChildren(...liveNoteParts.map((t) => el('span', {}, `${t} `)))
     const compositeModels = compositeScoredLocalModels(localIds)
     compositeHost.replaceChildren(
       ...(compositeModels.length > 0

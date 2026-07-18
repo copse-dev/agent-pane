@@ -23,14 +23,15 @@
 //               npm run sync:intellect -- --refit (deliberately refit all hops)
 //
 // API refresh (the scalable data channel):
-//   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api --index-version=v4.1
+//   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api
 // Fetches Artificial Analysis' model list and refreshes/adds measurements for
 // models ALREADY KNOWN to the seed file (matched by id or alias — the API never
 // introduces a model id on its own, so every plotted model remains a reviewed
-// decision). --index-version is required because the API reports current-index
-// values without naming the version; the operator pins which scale the fetched
-// cohort belongs to. Attribution is required by AA's free tier and is already
-// carried in the JSON + generated output.
+// decision). The index version comes from the payload's own version field
+// (documented at artificialanalysis.ai/data-api/docs — "4.1" with the v
+// dropped); pass --index-version=<vX.Y> only to pin a payload that omits it
+// (a pin that conflicts with the declared version is an error). Attribution is
+// required by AA's free tier and is carried in the JSON + generated output.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -234,18 +235,30 @@ interface AaApiModel {
   id?: string
   slug?: string
   name?: string
-  evaluations?: { artificial_analysis_intelligence_index?: number }
+  evaluations?: {
+    artificial_analysis_intelligence_index?: number
+    artificial_analysis_intelligence_index_version?: string | number
+  }
+}
+
+/** Normalise the API's version form ("4.1", 4.1) to our labels ("v4.1"). */
+function normalizeVersion(v: string | number | undefined): string | undefined {
+  if (v === undefined) return undefined
+  const s = String(v).trim()
+  if (!s) return undefined
+  return s.startsWith('v') ? s : `v${s}`
 }
 
 /**
  * Refresh measurements from the Artificial Analysis API for models the seed
  * file already knows (by modelId or alias). Returns the updated score list;
- * never invents a new model id. Each refreshed entry cites the API and the
- * operator-pinned index version.
+ * never invents a new model id. The index version comes from the payload's own
+ * version field; a `--index-version=` pin, when passed, must agree with it
+ * (and covers a payload that omits the field).
  */
 async function refreshFromApi(
   data: DataFile,
-  indexVersion: string,
+  pinnedVersion: string | undefined,
   apiKey: string,
   today: string,
 ): Promise<Measurement[]> {
@@ -253,8 +266,24 @@ async function refreshFromApi(
     headers: { 'x-api-key': apiKey },
   })
   if (!res.ok) fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}`)
-  const payload = (await res.json()) as { data?: AaApiModel[] }
+  const payload = (await res.json()) as Record<string, unknown> & { data?: AaApiModel[] }
   const apiModels = payload.data ?? []
+  const declaredRaw =
+    payload['artificial_analysis_intelligence_index_version'] ??
+    payload['intelligence_index_version'] ??
+    apiModels.find((m) => m.evaluations?.artificial_analysis_intelligence_index_version)
+      ?.evaluations?.artificial_analysis_intelligence_index_version
+  const declared = normalizeVersion(
+    typeof declaredRaw === 'string' || typeof declaredRaw === 'number' ? declaredRaw : undefined,
+  )
+  const pinned = normalizeVersion(pinnedVersion)
+  if (declared && pinned && declared !== pinned) {
+    fail(`--index-version=${pinned} conflicts with the payload's declared index ${declared}`)
+  }
+  const indexVersion = declared ?? pinned
+  if (!indexVersion) {
+    fail('the payload declared no index version — pass --index-version=<vX.Y> to pin it')
+  }
 
   const aliasToId = new Map<string, string>()
   for (const m of data.scores) {
@@ -304,11 +333,8 @@ async function main(): Promise<void> {
   if (fromApi) {
     const apiKey = process.env['ARTIFICIAL_ANALYSIS_API_KEY']
     if (!apiKey) fail('--from-api requires ARTIFICIAL_ANALYSIS_API_KEY')
-    const indexVersion = versionArg?.slice('--index-version='.length)
-    if (!indexVersion) {
-      fail('--from-api requires --index-version=<vX.Y> (the API does not name its index version)')
-    }
-    const scores = await refreshFromApi(data, indexVersion, apiKey, today)
+    const pinned = versionArg?.slice('--index-version='.length)
+    const scores = await refreshFromApi(data, pinned, apiKey, today)
     data = { ...data, scores }
     validate(data)
     await writeFile(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8')

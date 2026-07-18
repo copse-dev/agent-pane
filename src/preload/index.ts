@@ -327,6 +327,9 @@ contextBridge.exposeInMainWorld('api', {
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
   },
+  intellect: {
+    liveModels: () => ipcRenderer.invoke('intellect:live-models'),
+  },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
     models: () => ipcRenderer.invoke('lmstudio:models'),

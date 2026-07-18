@@ -5,7 +5,13 @@ import { setInlineStatus } from '../../dom/inline-status.ts'
 // Fixed cloud providers with bespoke key validation. OpenAI-compatible presets
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
 // custom-providers section, not here.
-export type ApiKeyProvider = 'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'github'
+export type ApiKeyProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'cursor'
+  | 'openrouter'
+  | 'github'
+  | 'artificial-analysis'
 
 export interface ApiKeysSection {
   root: HTMLFieldSetElement
@@ -56,6 +62,13 @@ const API_KEY_PROVIDER_CONFIGS: Record<ApiKeyProvider, ApiKeyProviderConfig> = {
     label: 'GitHub token',
     placeholder: 'github_pat_… or ghp_…',
     hint: 'For Claude Cloud Agent: clones the repo and pushes branches / opens PRs. Use a fine-grained token with repo scope.',
+  },
+  'artificial-analysis': {
+    provider: 'artificial-analysis',
+    name: 'artificialAnalysisKey',
+    label: 'Artificial Analysis API key',
+    placeholder: 'aa-…',
+    hint: 'Optional: live Intelligence Index data for the model value map, including models beyond the curated list. Free key from artificialanalysis.ai (their terms require the attribution shown on the map).',
   },
 }
 

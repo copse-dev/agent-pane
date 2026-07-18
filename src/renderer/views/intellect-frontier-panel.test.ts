@@ -123,6 +123,42 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(panel.root.textContent, /not comparable with the intellect axis/)
   })
 
+  it('plots verified live models with attribution, and refuses a renormalised feed', async () => {
+    const verifiedFeed = {
+      ok: true,
+      models: [
+        { id: 'claude-fable-5', intellect: 60 },
+        { id: 'claude-opus-4-8', intellect: 56 },
+        { id: 'brand-new-model', intellect: 45, inputPricePerMTok: 2, outputPricePerMTok: 8 },
+      ],
+    }
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => verifiedFeed,
+    )
+    await panel.refresh()
+    assert.match(panel.root.textContent, /brand-new-model/)
+    assert.match(panel.root.textContent, /verified against 2 curated anchors/)
+    assert.match(panel.root.textContent, /Artificial Analysis/)
+
+    const renormed = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({
+        ok: true,
+        models: [
+          { id: 'claude-fable-5', intellect: 65 },
+          { id: 'claude-opus-4-8', intellect: 61 },
+          { id: 'brand-new-model', intellect: 50, inputPricePerMTok: 2 },
+        ],
+      }),
+    )
+    await renormed.refresh()
+    assert.doesNotMatch(renormed.root.textContent, /brand-new-model/)
+    assert.match(renormed.root.textContent, /index version has likely changed/)
+  })
+
   it('degrades to a quiet note when the local server is unreachable', async () => {
     const panel = createIntellectFrontierPanel(async () => {
       throw new Error('offline')
