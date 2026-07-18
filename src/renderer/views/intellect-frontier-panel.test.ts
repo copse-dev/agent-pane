@@ -204,6 +204,39 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(title?.textContent ?? '', /No sourced intellect measurement yet/)
   })
 
+  it('collapses a large unscored set into a density row plus a disclosure list', async () => {
+    const manyPriced = Array.from({ length: 20 }, (_, i) => ({
+      id: `vendor/model-${String(i)}`,
+      inputPricePerMTok: 0.1 + i * 0.05,
+      outputPricePerMTok: 0.4,
+    }))
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      async () =>
+        [
+          {
+            id: 'huggingface',
+            label: 'Hugging Face',
+            prefix: 'huggingface:',
+            baseUrl: 'x',
+            models: manyPriced,
+          },
+        ] as never,
+    )
+    await panel.refresh()
+    const svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    // One density row (24 = 20 + the 4 unscored tracked cloud models), no
+    // per-model labels, count in the caption.
+    assert.match(svg.textContent, /no score yet · 24 models/)
+    assert.ok(svg.querySelector('circle.gutter-unscored.dense'))
+    assert.equal(svg.querySelectorAll('text.gutter-unscored-label').length, 0)
+    const details = panel.root.querySelector('details.frontier-unscored-list')
+    assert.ok(details)
+    assert.match(details.textContent, /24 priced models without an intellect score/)
+    assert.match(details.textContent, /model-19/)
+  })
+
   it('expands into a larger dialog rendering of the same points and gutters', async () => {
     const panel = createIntellectFrontierPanel(async () => [])
     await panel.refresh()

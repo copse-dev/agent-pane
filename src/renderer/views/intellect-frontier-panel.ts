@@ -258,6 +258,13 @@ export interface FrontierGutters {
 
 const UNPRICED_GUTTER_W = 150
 
+/**
+ * Above this many priced-but-unscored models, per-model gutter rows are noise:
+ * the band collapses to a single density row (dots at true price, ids on
+ * hover) and the panel lists the models behind a disclosure instead.
+ */
+export const UNSCORED_ROW_LIMIT = 8
+
 export function renderFrontierSvg(
   points: readonly FrontierPoint[],
   size: { width?: number; height?: number } = {},
@@ -280,10 +287,16 @@ export function renderFrontierSvg(
     MARGIN.top + plotH - ((intellect - minIntellect) / (maxIntellect - minIntellect)) * plotH
 
   // Bottom-gutter rows assigned greedily so labels never overlap within a row.
+  // Past UNSCORED_ROW_LIMIT the band collapses to one label-less density row.
+  const dense = unscored.length > UNSCORED_ROW_LIMIT
   const unscoredRows: Array<{ id: string; costPerMTok: number; row: number; text: string }> = []
   {
     const rowEnds: number[] = []
     for (const u of [...unscored].sort((a, b) => a.costPerMTok - b.costPerMTok)) {
+      if (dense) {
+        unscoredRows.push({ id: u.id, costPerMTok: u.costPerMTok, row: 0, text: '' })
+        continue
+      }
       const text = displayModelLabel(u.id)
       const x0 = x(u.costPerMTok) - 6
       const x1 = x(u.costPerMTok) + 8 + approxLabelWidth(text)
@@ -552,26 +565,43 @@ export function renderFrontierSvg(
   // Bottom gutter: priced-but-unscored models at their TRUE x on the shared
   // price axis, in a "no score" band under the axis.
   if (unscoredRows.length > 0) {
+    // Unscored models cluster at low prices, so the dense caption sits at the
+    // emptier right end of the band.
     svg.append(
-      svgEl(
-        'text',
-        {
-          x: '4',
-          y: String(baseHeight - 2),
-          'font-size': '9',
-          fill: 'var(--text-muted)',
-        },
-        'no score yet',
-      ),
+      dense
+        ? svgEl(
+            'text',
+            {
+              x: String(MARGIN.left + plotW),
+              y: String(baseHeight - 2),
+              'text-anchor': 'end',
+              'font-size': '9',
+              fill: 'var(--text-muted)',
+              class: 'gutter-unscored-caption',
+            },
+            `no score yet · ${String(unscoredRows.length)} models`,
+          )
+        : svgEl(
+            'text',
+            {
+              x: '4',
+              y: String(baseHeight - 2),
+              'font-size': '9',
+              fill: 'var(--text-muted)',
+              class: 'gutter-unscored-caption',
+            },
+            'no score yet',
+          ),
     )
     for (const u of unscoredRows) {
       const rowY = baseHeight - 6 + u.row * 12
       const dot = svgEl('circle', {
         cx: String(x(u.costPerMTok)),
         cy: String(rowY),
-        r: '4',
+        r: dense ? '3' : '4',
         fill: 'var(--border-strong)',
-        class: 'gutter-unscored',
+        ...(dense ? { 'fill-opacity': '0.6' } : {}),
+        class: dense ? 'gutter-unscored dense' : 'gutter-unscored',
       })
       dot.append(
         svgEl(
@@ -580,20 +610,22 @@ export function renderFrontierSvg(
           `${u.id}\n$${String(u.costPerMTok)}/MTok blended (80% input / 20% output)\nNo sourced intellect measurement yet — position on price only.`,
         ),
       )
-      svg.append(
-        dot,
-        svgEl(
-          'text',
-          {
-            x: String(x(u.costPerMTok) + 7),
-            y: String(rowY + 3),
-            'font-size': '9',
-            fill: 'var(--text-secondary)',
-            class: 'gutter-unscored-label',
-          },
-          u.text,
-        ),
-      )
+      svg.append(dot)
+      if (!dense && u.text) {
+        svg.append(
+          svgEl(
+            'text',
+            {
+              x: String(x(u.costPerMTok) + 7),
+              y: String(rowY + 3),
+              'font-size': '9',
+              fill: 'var(--text-secondary)',
+              class: 'gutter-unscored-label',
+            },
+            u.text,
+          ),
+        )
+      }
     }
   }
   return svg
@@ -802,10 +834,34 @@ export function createIntellectFrontierPanel(
       unpriced: unpricedCanonicalModels(plottedIds, live.hintOnly),
       unscored: unscoredPricedModels(extraProviders),
     }
+    const unscoredList = lastGutters.unscored ?? []
     chartHost.replaceChildren(
       points.length > 0
         ? renderFrontierSvg(points, {}, lastGutters)
         : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.'),
+      ...(unscoredList.length > UNSCORED_ROW_LIMIT
+        ? [
+            el(
+              'details',
+              { class: 'field-hint frontier-unscored-list' },
+              el(
+                'summary',
+                {},
+                `${String(unscoredList.length)} priced models without an intellect score`,
+              ),
+              el(
+                'p',
+                {},
+                unscoredList
+                  .map(
+                    (u) =>
+                      `${displayModelLabel(u.id)} ($${String(Number(u.costPerMTok.toFixed(2)))})`,
+                  )
+                  .join(' · '),
+              ),
+            ),
+          ]
+        : []),
     )
     liveNotes.replaceChildren(
       ...liveNoteParts.map((t) => (typeof t === 'string' ? el('span', {}, `${t} `) : t)),
