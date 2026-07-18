@@ -1,7 +1,4 @@
-import {
-  parseComplexityWord,
-  type RoadmapComplexity,
-} from '@shared/roadmap/complexity.ts'
+import { parseComplexityWord, type RoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import {
   resolveSmallTasksProvider,
   resolveSmallTasksModelId,
@@ -42,9 +39,7 @@ const CLASSIFY_ASK =
   'default for uncertainty. If torn between two ratings, pick the lower one.\n' +
   'Reply with ONLY the word.\n\nTask:\n'
 
-export async function classifyRoadmapComplexity(
-  prompt: string,
-): Promise<RoadmapComplexity | null> {
+export async function classifyRoadmapComplexity(prompt: string): Promise<RoadmapComplexity | null> {
   const provider = await resolveSmallTasksProvider()
   if (!provider) return null
   const model = resolveSmallTasksModelId()
