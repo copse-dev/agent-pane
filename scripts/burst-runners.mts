@@ -123,7 +123,7 @@ function usage(): string {
   npm run runners:burst:scw -- status [--name ${DEFAULT_NAME}]
   npm run runners:burst -- down --yes [--name ${DEFAULT_NAME}]
   npm run runners:burst:scw -- down --yes [--name ${DEFAULT_NAME}]
-  npm run runners:burst:scw -- drain --yes [--name ${DEFAULT_NAME}]
+  npm run runners:burst:scw -- drain --yes --key-path <key> [--name ${DEFAULT_NAME}]
 
 Commands:
   up       Launch host(s), upload ci-runners/, and start ephemeral GitHub runners.
@@ -588,8 +588,12 @@ async function scalewayDrain(options: Options): Promise<void> {
       await sshRunAsync(sshConfig, host, drainScript(timeoutMinutes))
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err)
+      const keyHint =
+        !sshConfig.keyPath && detail.includes('Permission denied')
+          ? ' SSH was attempted without an identity file — pass the key the fleet was provisioned with, e.g. --key-path ~/.ssh/id_scw_instances.'
+          : ''
       die(
-        `${hostPrefix(host)}drain failed (${detail}) — nothing terminated. ` +
+        `${hostPrefix(host)}drain failed (${detail}) — nothing terminated.${keyHint} ` +
           'Resolve or re-run; a busy runner past the timeout keeps its host alive.',
       )
     }
