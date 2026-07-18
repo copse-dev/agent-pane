@@ -67,6 +67,7 @@ select,
 .message-reasoning-text,
 .tool-result,
 .tool-args pre,
+.hook-test-stream pre,
 .terminal-container,
 .monaco-editor .view-lines {
   user-select: text;

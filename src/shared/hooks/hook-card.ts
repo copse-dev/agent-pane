@@ -23,14 +23,7 @@ export type HookCardKind = 'decision' | 'halt' | 'execution'
 
 /** Normalized status the card badges + colours by. */
 export type HookCardStatus =
-  | 'allow'
-  | 'deny'
-  | 'ask'
-  | 'halted'
-  | 'halt-suppressed'
-  | 'blocked'
-  | 'error'
-  | 'ok'
+  'allow' | 'deny' | 'ask' | 'halted' | 'halt-suppressed' | 'blocked' | 'error' | 'ok'
 
 export interface HookCard {
   /** Spine `hook_run` id (stable identity across live/reload). */

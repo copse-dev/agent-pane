@@ -1395,7 +1395,129 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       errorEl.textContent = `Last run failed: ${h.lastError}`
       row.append(errorEl)
     }
+    addHookTester(row, h)
     return row
+  }
+
+  /**
+   * Wire the G2 dry-run tester onto a hook row: a "Test" button that runs the
+   * hook once against a synthetic payload for its event and shows
+   * stdin/stdout/stderr/exit/duration + parse_ok + outcome summary. The dry run
+   * never mutates live agent state (see `src/main/services/hooks/dry-run.ts`).
+   */
+  function addHookTester(row: HTMLElement, h: import('@shared/types/hooks.ts').HookSummary): void {
+    const header = row.querySelector('.sources-row-header')
+    if (!header) return
+    const testBtn = document.createElement('button')
+    testBtn.type = 'button'
+    testBtn.className = 'sources-hook-test-btn'
+    testBtn.textContent = 'Test'
+    testBtn.title = 'Dry-run this hook against a synthetic payload for its event'
+    header.append(testBtn)
+
+    const result = document.createElement('div')
+    result.className = 'hook-test'
+    result.hidden = true
+    row.append(result)
+
+    testBtn.addEventListener('click', () => {
+      void runHookTest(h, testBtn, result)
+    })
+  }
+
+  async function runHookTest(
+    h: import('@shared/types/hooks.ts').HookSummary,
+    btn: HTMLButtonElement,
+    result: HTMLElement,
+  ): Promise<void> {
+    btn.disabled = true
+    btn.textContent = 'Testing…'
+    result.hidden = false
+    result.innerHTML = ''
+    const pending = document.createElement('div')
+    pending.className = 'hook-test-summary'
+    pending.textContent = 'Running dry-run…'
+    result.append(pending)
+    try {
+      const req: import('@shared/types/hooks.ts').HookTestRequest = {
+        family: h.family,
+        event: h.event,
+        command: h.command,
+        source: h.source,
+        scope: h.scope,
+        ...(h.sandbox !== undefined ? { sandbox: h.sandbox } : {}),
+      }
+      const res = await api.hooks.test(req)
+      renderHookTestResult(result, res)
+    } catch {
+      result.innerHTML = ''
+      const err = document.createElement('div')
+      err.className = 'hook-test-summary hook-test-error'
+      err.textContent = 'Dry-run failed to start.'
+      result.append(err)
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Test'
+    }
+  }
+
+  /** Render one `hooks:test` result: summary chips + labeled stdin/stdout/stderr streams. */
+  function renderHookTestResult(
+    container: HTMLElement,
+    res: import('@shared/types/hooks.ts').HookTestResult,
+  ): void {
+    container.innerHTML = ''
+    if (!res.ran) {
+      const notice = document.createElement('div')
+      notice.className = 'hook-test-summary hook-test-error'
+      notice.textContent = res.error ?? 'This hook could not be dry-run.'
+      container.append(notice)
+      return
+    }
+
+    const summary = document.createElement('div')
+    summary.className = 'hook-test-summary'
+    const chips: string[] = []
+    if (res.wireEvent) chips.push(`event ${res.wireEvent}`)
+    if (res.timedOut) chips.push('timed out')
+    else if (res.spawnError) chips.push('failed to start')
+    chips.push(
+      `exit ${res.exitCode === null || res.exitCode === undefined ? '—' : String(res.exitCode)}`,
+    )
+    chips.push(`${String(res.durationMs ?? 0)} ms`)
+    chips.push(res.parseOk ? 'parsed ok' : 'parse failed')
+    if (res.sandboxed) chips.push('sandboxed')
+    for (const text of chips) {
+      const chip = document.createElement('span')
+      chip.className = 'hook-test-chip'
+      chip.textContent = text
+      summary.append(chip)
+    }
+    container.append(summary)
+
+    if (res.outcomeSummary) {
+      const outcome = document.createElement('div')
+      outcome.className = 'hook-test-outcome'
+      outcome.textContent = `Outcome: ${res.outcomeSummary}`
+      container.append(outcome)
+    }
+
+    appendHookTestStream(container, 'stdin', res.stdin ?? '')
+    appendHookTestStream(container, 'stdout', res.stdout ?? '')
+    appendHookTestStream(container, 'stderr', res.stderr ?? '')
+  }
+
+  function appendHookTestStream(container: HTMLElement, label: string, text: string): void {
+    const block = document.createElement('div')
+    block.className = 'hook-test-stream'
+    const heading = document.createElement('div')
+    heading.className = 'hook-test-stream-label'
+    heading.textContent = label
+    const pre = document.createElement('pre')
+    pre.textContent = text.length > 0 ? text : '(empty)'
+    if (text.length === 0) pre.classList.add('hook-test-stream-empty')
+    block.append(heading, pre)
+    container.append(block)
   }
 
   /** A hooks.json authoring problem (unknown event, bad entry, malformed file). */
