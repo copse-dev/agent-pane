@@ -66,14 +66,16 @@ import {
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
 const DEFAULT_NAME = 'copse-burst'
 const DEFAULT_RUNNER_GROUP = 'default'
-// Split-tier slot layout: ONE e2e-capable slot per host plus checks-only slots
-// for the rest. Running two Electron e2e suites concurrently on a 4-vCPU burst
-// host pushed the slowest specs over their fixed mocha timeouts (observed: all
-// recent e2e failures clustered on burst hosts under queue pressure, while the
-// same runners passed when a host ran a single e2e shard). One e2e lane per
-// host removes the contention without giving up burst e2e capacity; the extra
-// slots still serve the light check tier. The `burst` marker label makes these
-// hosts identifiable per-job in triage.
+// Unified slots: every slot serves both tiers. An earlier split-tier layout
+// (one e2e lane per host) guarded against two concurrent Electron e2e suites
+// contending on a 4-vCPU host — but the checks-only slots sat idle, and the
+// app-side fixes (#988) plus harness hardening (#991/#992) likely removed the
+// slowness that made contention fatal. Running unified again to validate; if
+// timeout-clustered failures on burst hosts recur (check runner_name per failed
+// job), re-enable the split by writing COMPOSE_PROFILES=split-tiers to the
+// remote .env and scaling runner=1/runner-checks=N-1 — the compose service and
+// RUNNER_CHECKS_LABELS plumbing below are kept for exactly that. The `burst`
+// marker label stays: it is what made the failure clustering diagnosable.
 const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks,burst'
 const DEFAULT_RUNNER_CHECKS_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
 const DEFAULT_RUNNERS_PER_INSTANCE = 2
@@ -317,9 +319,9 @@ function remoteEnv(config: RunnerConfig): string {
     `TARGET_REPO=${config.targetRepo}`,
     `TARGET_REF=${config.targetRef}`,
     `RUNNER_LABELS=${config.runnerLabels}`,
+    // Inert unless COMPOSE_PROFILES=split-tiers is also set (see label comment
+    // above) — kept so re-enabling the split-tier layout is a one-line change.
     `RUNNER_CHECKS_LABELS=${config.runnerChecksLabels}`,
-    // Activates the checks-only sibling service in ci-runners/docker-compose.yml.
-    'COMPOSE_PROFILES=split-tiers',
     `RUNNER_GROUP=${config.runnerGroup}`,
     'EPHEMERAL=true',
     '',
@@ -375,10 +377,7 @@ async function provisionHost(
           '. ./.env',
           'set +a',
           'export DOCKER_BUILDKIT=1',
-          // Split-tier layout: exactly one e2e-capable `runner` slot per host;
-          // remaining slots are checks-only so concurrent e2e shards never
-          // contend on one host (see DEFAULT_RUNNER_LABELS comment).
-          `docker compose up -d --build --pull always --scale runner=1 --scale runner-checks=${String(Math.max(0, config.runnersPerInstance - 1))}`,
+          `docker compose up -d --build --pull always --scale runner=${String(config.runnersPerInstance)}`,
           'docker compose ps',
         ].join(' && '),
       )}`,
