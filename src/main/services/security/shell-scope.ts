@@ -262,6 +262,24 @@ const TOKEN_INLINE_FLAGS = new Set(['-c', '-e', '--eval'])
 const REASON_INTERPRETER_FILE =
   'runs a local script via an interpreter (contents opaque to analysis)'
 const REASON_INTERPRETER_INLINE = 'inline script (interpreter -c/-e/--eval)'
+const REASON_BUILD_DRIVER =
+  'build driver may require host caches or system build services (xcodebuild/gradle/swift/cargo)'
+
+/**
+ * A build may look workspace-contained in its argv yet need host-owned caches
+ * (`~/Library`, `~/.gradle`, `~/.cargo`) or an XPC build service. Mark just
+ * those build operations ambiguous: macOS still tries them inside seatbelt by
+ * default, while an agent that knows the toolchain will be blocked can request
+ * the existing explicit unsandboxed approval with `expects_sandbox_block`.
+ */
+function isHostDependentBuildDriver(exe: string, args: string[]): boolean {
+  if (exe === 'xcodebuild' || exe === 'gradle') return true
+  if (exe === 'swift') return ['build', 'test', 'run', 'package'].includes(args[0] ?? '')
+  if (exe === 'cargo') {
+    return ['build', 'check', 'test', 'run', 'bench', 'doc'].includes(args[0] ?? '')
+  }
+  return false
+}
 
 /**
  * Structured, token-based detectors that complement — never replace — the regex
@@ -314,8 +332,11 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
       hasHard = true
     }
     const exe = basename(exe0).toLowerCase()
+    const args = segment.slice(1)
+    if (isHostDependentBuildDriver(exe, args)) {
+      addReason(REASON_BUILD_DRIVER)
+    }
     if (TOKEN_INTERPRETERS.has(exe)) {
-      const args = segment.slice(1)
       if (args.some((a) => TOKEN_INLINE_FLAGS.has(a))) {
         addReason(REASON_INTERPRETER_INLINE)
         hasHard = true
