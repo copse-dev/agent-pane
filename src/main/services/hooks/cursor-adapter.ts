@@ -19,6 +19,7 @@ import micromatch from 'micromatch'
 import {
   CURSOR_HOOK_EVENTS,
   isCursorWiredHookEvent,
+  type CursorAfterToolHookEvent,
   type CursorHookEvent,
   type CursorHookScope,
   type CursorHooksListResult,
@@ -285,6 +286,20 @@ export function cursorEventForTool(toolName: string): CursorPermissionHookEvent 
   return null
 }
 
+/**
+ * Map a canonical tool name to the Cursor post-tool observation event (D2), if
+ * any. The shell/MCP split mirrors {@link cursorEventForTool} — the tool name
+ * is the flavor selector for the one canonical `afterToolUse` event. Cursor has
+ * no generic post-tool hook, so tools other than shell / MCP have no
+ * `afterToolUse` Cursor equivalent and this returns null (the fire site fires
+ * for every tool, discovery filters to the shell/MCP flavors).
+ */
+export function cursorAfterEventForTool(toolName: string): CursorAfterToolHookEvent | null {
+  if (toolName === 'run_shell') return 'afterShellExecution'
+  if (toolName.startsWith('mcp__')) return 'afterMCPExecution'
+  return null
+}
+
 function stringField(input: Record<string, unknown>, key: string): string {
   const value = input[key]
   return typeof value === 'string' ? value : ''
@@ -528,6 +543,45 @@ export async function cursorSubagentStopHooks(
       return {
         id: h.command,
         event: 'subagentStop' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for the post-tool observation
+ * event that matches `payload.toolName` (D2), as canonical `afterToolUse`
+ * `CommandHook`s. The tool → event mapping ({@link cursorAfterEventForTool}) is
+ * the flavor selector: `run_shell` → `afterShellExecution`, `mcp__*` →
+ * `afterMCPExecution`; any other tool has no Cursor after-event and yields no
+ * hooks (so the fire site can fire generically and only shell/MCP hooks run).
+ *
+ * D2 deliberately does **not** apply the per-hook `matcher` (command-text /
+ * tool-type regex) — the tool-type split *is* the flavor discrimination D2
+ * needs; the full per-event matcher matrix is D3. Fired **detached** (decision
+ * 3) through the C1 executor by the fire site (`after-tool-use.ts`); Cursor's
+ * after-events are notification-only, so a `failClosed` flag has nothing to
+ * block post-hoc but still maps to `onFailure` for spine + Sources uniformity.
+ */
+export async function cursorAfterToolUseHooks(
+  payload: HookEventPayloads['afterToolUse'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'afterToolUse'>[]> {
+  const event = cursorAfterEventForTool(payload.toolName)
+  if (!event) return []
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === event)
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'afterToolUse' as const,
         executor: 'command' as const,
         dialect: 'cursor' as const,
         command: h.command,
@@ -970,6 +1024,71 @@ export const cursorAdapter: DialectAdapter = {
         spineDecision,
         failed: false,
         parseOk: true,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalAfterToolUseRequest(_hook, payload, session) {
+    // Cursor splits the canonical afterToolUse into two payload flavors by tool
+    // name (D2): afterShellExecution carries the `command` + captured `output`
+    // + `duration`; afterMCPExecution carries `tool_name` + `tool_input` (JSON
+    // string) + `result_json` + `duration`. `output` is already capped at the
+    // fire site (a tool's stdout is unbounded), so it is safe to marshal
+    // verbatim. Returns null when the tool has no Cursor after-event (the
+    // marshaller's final guard past discovery matching).
+    const event = cursorAfterEventForTool(payload.toolName)
+    if (!event) return null
+    const base = agentSessionEnvelope(event, session)
+    const duration = payload.durationMs ?? 0
+    if (event === 'afterShellExecution') {
+      return {
+        ...base,
+        command: stringField(payload.input ?? {}, 'command'),
+        output: payload.output ?? '',
+        duration,
+      }
+    }
+    // afterMCPExecution: `tool_input` is the JSON params *string*, `result_json`
+    // the JSON result *string* — both stringified per the vendor contract.
+    return {
+      ...base,
+      tool_name: payload.toolName,
+      tool_input: JSON.stringify(payload.input ?? {}),
+      result_json: payload.output ?? '',
+      duration,
+    }
+  },
+
+  interpretAfterToolUse(spawn: HookSpawnResult, payload): DialectInterpretation {
+    // Cursor's after-events are fire-and-forget (detached, decision 3): they
+    // return nothing that gates control flow, so the outcome is always null. We
+    // still surface a crash / timeout / non-zero exit as `failed` for the
+    // Sources per-hook error indicator + the spine, but the fire site
+    // (after-tool-use.ts) never acts on it — the tool has already run. The spine
+    // event is the resolved dialect flavor (afterShell/afterMCP), so the Sources
+    // error key matches discovery/list.
+    const spineEvent = cursorAfterEventForTool(payload.toolName) ?? 'afterToolUse'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
       }
     }
     return { ...base, failed: false, parseOk: true }
