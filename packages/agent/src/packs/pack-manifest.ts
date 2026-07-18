@@ -184,26 +184,37 @@ export function definePack(
  * carried through when present. Pure and Electron-free — the host disk discovery
  * that feeds this a parsed plugin.json lands in a later phase (P3/P4).
  */
-export function packManifestFromPluginJson(raw: {
-  name?: string
-  version?: string
-  description?: string
-  skills?: string
-  mcpServers?: string
-  tools?: PackToolsDecl
-  hooks?: readonly PackCommandHookDecl[]
-  prompt?: readonly PackPromptBlock[]
-  ui?: readonly PackUiContribution[]
-  settings?: PackSettingsSchema
-  storage?: PackStorageDecl
-}): PackManifest {
+export function packManifestFromPluginJson(
+  raw: {
+    name?: string
+    version?: string
+    description?: string
+    skills?: string
+    mcpServers?: string
+    tools?: PackToolsDecl
+    hooks?: readonly PackCommandHookDecl[]
+    prompt?: readonly PackPromptBlock[]
+    ui?: readonly PackUiContribution[]
+    settings?: PackSettingsSchema
+    storage?: PackStorageDecl
+  },
+  opts?: {
+    /**
+     * Distinguishing hint (e.g. the plugin directory basename) used when the
+     * file declares no name. Without it two nameless plugin.json files both map
+     * to `unnamed-pack` and the second registration throws, killing both.
+     */
+    sourceHint?: string
+  },
+): PackManifest {
   const tools: PackToolsDecl = { ...raw.tools }
   if (raw.mcpServers && tools.mcpServers === undefined) tools.mcpServers = raw.mcpServers
 
   const manifest: PackManifest = {
     // A discovered plugin.json is always a user pack (decision 15: user packs
     // share the manifest; first-party packs are defined in code, not on disk).
-    name: raw.name?.trim() || 'unnamed-pack',
+    name:
+      raw.name?.trim() || (opts?.sourceHint ? `unnamed-pack-${opts.sourceHint}` : 'unnamed-pack'),
     trust: 'user',
   }
   if (raw.version) manifest.version = raw.version
@@ -211,7 +222,13 @@ export function packManifestFromPluginJson(raw: {
   if (raw.skills) manifest.skills = raw.skills
   if (tools.native !== undefined || tools.mcpServers !== undefined) manifest.tools = tools
   if (raw.hooks) manifest.hooks = raw.hooks
-  if (raw.prompt) manifest.prompt = raw.prompt
+  // A user pack's prompt blocks are NEVER trusted, whatever the file claims:
+  // `trust: 'trusted'` means verbatim injection past the untrusted-data
+  // delimiting, which is a prompt-injection escalation a repo-supplied
+  // plugin.json must not be able to self-grant. Force every block to
+  // 'untrusted'; only first-party (code-defined) packs may declare trusted
+  // blocks (decision 15's capability tiering applied to prompt).
+  if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
   if (raw.settings) manifest.settings = raw.settings
   if (raw.storage) manifest.storage = raw.storage
