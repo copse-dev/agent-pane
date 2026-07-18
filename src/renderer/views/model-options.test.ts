@@ -203,9 +203,24 @@ describe('fetchModelOptions visibility', () => {
     const known = options.find((o) => o.value === 'lmstudio:qwen/qwen2.5-coder-32b')
     assert.ok(known)
     assert.match(known.label, /qwen\/qwen2\.5-coder-32b — coder/)
+    // Its sourced benchmark axes also earn it a composite capability hint,
+    // labelled on its own scale (never as canonical "intellect").
+    assert.match(known.label, /composite [\d.]+ \(3 axes\)/)
     const unknown = options.find((o) => o.value === 'lmstudio:some-unknown-local')
     assert.ok(unknown)
     assert.equal(unknown.label, 'some-unknown-local')
+  })
+
+  it('annotates scored cloud models with intellect, blended price, and frontier', async () => {
+    const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
+    const opus = options.find((o) => o.value === 'claude-opus-4-8')
+    assert.ok(opus)
+    assert.equal(opus.label, 'claude-opus-4-8 — intellect 56 · $9/MTok · frontier')
+    // A tracked model with pricing but no sourced measurement shows price only.
+    const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
+    assert.ok(haiku)
+    assert.match(haiku.label, /\$[\d.]+\/MTok/)
+    assert.doesNotMatch(haiku.label, /intellect/)
   })
 
   it('keeps the current selection selectable even with no key', async () => {

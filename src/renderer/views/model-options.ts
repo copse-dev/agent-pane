@@ -1,6 +1,7 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
 import { localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
+import { cloudModelIntellectHint, localModelIntellectHint } from '@copse/llm/intellect-hints.ts'
 import {
   isOpenRouterModel,
   openRouterDisplayLabel,
@@ -263,7 +264,9 @@ export async function fetchModelOptions(
   // other section (otherwise they'd be the only headingless block at the top).
   const cloudGroup = 'Cloud models'
   for (const [value, label, provider] of CLOUD_MODELS) {
-    if (isAvailable(provider)) options.push({ value, label, group: cloudGroup })
+    if (!isAvailable(provider)) continue
+    const hint = cloudModelIntellectHint(value)
+    options.push({ value, label: hint ? `${label} — ${hint}` : label, group: cloudGroup })
   }
 
   options.push(...(await openRouterOptions(api, isAvailable('openrouter'), current)))
@@ -296,7 +299,9 @@ export async function fetchModelOptions(
     models = []
   }
   for (const id of models) {
-    const hint = localModelRoleHint(id)
+    const hint = [localModelRoleHint(id), localModelIntellectHint(id)]
+      .filter((part): part is string => part !== null)
+      .join(' · ')
     options.push({ value: `lmstudio:${id}`, label: hint ? `${id} — ${hint}` : id, group: lmGroup })
   }
 

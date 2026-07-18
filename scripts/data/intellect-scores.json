@@ -1,0 +1,23 @@
+{
+  "$comment": "Curated intelligence-index measurements, the reviewed source of truth for scripts/sync-intellect.mts. RULES: (1) values are cited facts — every entry needs a real source and asOf date, never a guess; (2) canonicalVersion is the permanent display scale — it only changes as a deliberate, breaking re-baseline; (3) a model may have one entry per indexVersion (that overlap is what makes it an equating anchor); (4) fitted equating maps are crystallised here by the sync script at first fit and are then reused verbatim — pass --refit to deliberately refit after adding anchors.",
+  "canonicalVersion": "v4.1",
+  "attribution": "Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)",
+  "scores": [
+    {
+      "modelId": "claude-opus-4-8",
+      "value": 56,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), via Latent Space AINews Kimi K3 coverage: Fable 5 = 60, GPT-5.6 = 59, Kimi K3 = 57, Opus 4.8 = 56",
+      "asOf": "2026-07-16"
+    },
+    {
+      "modelId": "claude-sonnet-4-6",
+      "value": 47,
+      "indexVersion": "v4.1",
+      "source": "Derived by stated difference from @ArtificialAnlys: 'Claude Sonnet 5 achieves 53 on the Artificial Analysis Intelligence Index … with max effort it improves 6 points over Sonnet 4.6' → 53 − 6 = 47",
+      "asOf": "2026-07-02"
+    }
+  ],
+  "equatingPairs": [],
+  "equating": []
+}
