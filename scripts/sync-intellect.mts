@@ -137,6 +137,7 @@ function validate(data: DataFile): void {
       fail(`wanted model '${w.modelId}' already has a measurement — remove it from wanted`)
     }
     for (const alias of w.aliases ?? []) {
+      if (alias === w.modelId) fail(`wanted alias '${alias}' duplicates its own modelId`)
       const owner = aliasOwner.get(alias)
       if (owner !== undefined && owner !== w.modelId) {
         fail(`alias '${alias}' claimed by both '${owner}' and wanted '${w.modelId}'`)
@@ -342,8 +343,11 @@ export function mergeApiModels(
   const aliasesFor = new Map<string, string[]>()
   const learn = (modelId: string, aliases: string[] | undefined): void => {
     aliasToId.set(modelId, modelId)
-    for (const alias of aliases ?? []) aliasToId.set(alias, modelId)
-    if (aliases && aliases.length > 0) aliasesFor.set(modelId, aliases)
+    // A self-referential alias is not a valid alias (validate() rejects it);
+    // strip defensively so a carried alias set can't reintroduce one.
+    const clean = (aliases ?? []).filter((a) => a !== modelId)
+    for (const alias of clean) aliasToId.set(alias, modelId)
+    if (clean.length > 0) aliasesFor.set(modelId, clean)
   }
   for (const m of data.scores) learn(m.modelId, m.aliases)
   for (const w of data.wanted ?? []) learn(w.modelId, w.aliases)

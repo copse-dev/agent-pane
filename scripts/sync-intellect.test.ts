@@ -38,6 +38,25 @@ describe('mergeApiModels', () => {
     assert.match(added.source, /Artificial Analysis API/)
   })
 
+  it('never carries a self-referential alias into a populated measurement', () => {
+    const withSelfAlias: DataFile = {
+      ...BASE,
+      wanted: [
+        {
+          modelId: 'qwen/qwen3.6-35b-a3b',
+          aliases: ['qwen3-6-35b-a3b', 'qwen/qwen3.6-35b-a3b'],
+        },
+      ],
+    }
+    const api: AaApiModel[] = [
+      { slug: 'qwen3-6-35b-a3b', evaluations: { artificial_analysis_intelligence_index: 43 } },
+    ]
+    const { scores } = mergeApiModels(withSelfAlias, api, 'v4.1', '2026-07-18')
+    const added = scores.find((m) => m.modelId === 'qwen/qwen3.6-35b-a3b')
+    assert.ok(added)
+    assert.ok(!(added.aliases ?? []).includes('qwen/qwen3.6-35b-a3b'))
+  })
+
   it('refreshes an existing same-version measurement in place', () => {
     const api: AaApiModel[] = [
       { slug: 'Opus 4.8', evaluations: { artificial_analysis_intelligence_index: 57 } },
