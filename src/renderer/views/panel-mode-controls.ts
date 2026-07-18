@@ -8,13 +8,7 @@ import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 
 export type PanelControlId =
-  | 'explorer'
-  | 'terminal'
-  | 'changes'
-  | 'prs'
-  | 'memories'
-  | 'roadmap'
-  | 'browser'
+  'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser'
 
 interface PanelControlDef {
   id: PanelControlId
