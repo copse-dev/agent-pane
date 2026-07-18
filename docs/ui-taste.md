@@ -234,6 +234,7 @@ reachable without a crowded titlebar:
   overflow menu (Panel stays visible; same idea as the footer compact overflow) rather than wrapping
   or scrolling. Spec:
   [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
+
 ## Hook cards are a distinct card family — right-aligned, blue, not a user message
 
 Hook executions, deny/ask decisions, and halts (decision 10 of
