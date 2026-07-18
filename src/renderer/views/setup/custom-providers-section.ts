@@ -1,5 +1,12 @@
 import type { ApiClient, ExtraProvider, ExtraProviderModel } from '../../../preload/api.d.ts'
 import { providerSlugFromBaseUrl } from '@copse/llm/provider-slug.ts'
+import {
+  dataPolicyForProvider,
+  openRouterDataPolicy,
+  privacyBadge,
+  type PrivacyBadge,
+  type ProviderDataPolicy,
+} from '@copse/llm/data-policies.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon } from '../../dom/icons.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
@@ -99,6 +106,25 @@ const LOCAL_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
   { label: 'KoboldCpp', baseUrl: 'http://localhost:5001/v1', slug: 'koboldcpp' },
   { label: 'text-generation-webui', baseUrl: 'http://localhost:5000/v1', slug: 'textgen' },
 ]
+
+// ---- Privacy badge -------------------------------------------------------
+// Data-policy badge + hint shown in every provider form so it's visible where
+// prompts go by default (see packages/llm/src/data-policies.ts and
+// docs/provider-data-policies.md). The badge compresses the policy to one of
+// local / zdr / no-training / trains / unknown; the hint carries the detail
+// and the primary source.
+function privacyBadgeEl(badge: PrivacyBadge): HTMLElement {
+  return el('span', { class: `provider-privacy-badge ${badge.kind}` }, badge.label)
+}
+
+function policyHintEl(policy: ProviderDataPolicy): HTMLElement {
+  return el(
+    'span',
+    { class: 'field-hint provider-privacy-hint' },
+    `${policy.note} Source: `,
+    el('code', {}, policy.policyUrl.replace(/^https:\/\//, '')),
+  )
+}
 
 // A small structured editor for a provider's model shortlist: one row of
 // id / context-window / in & out price / label inputs each, with add and remove
@@ -274,6 +300,10 @@ export function createCustomProvidersSection(
   // so an unsaved edit survives chip switches and only persists on dialog Save.
   let openRouterModelValue = ''
   let pendingOpenRouterModel: string | null = null
+  // OpenRouter ZDR-only routing toggle (default ON). Same pending pattern: the
+  // checkbox edits `pendingOpenRouterZdr`, flushed to the setting on Save.
+  let openRouterZdrValue = true
+  let pendingOpenRouterZdr: boolean | null = null
 
   function chipKeys(): string[] {
     const extraById = new Map(providers.map((p) => [p.id, p]))
@@ -405,15 +435,50 @@ export function createCustomProvidersSection(
     )
   }
 
+  // ---- OpenRouter ZDR-only routing toggle ----------------------------------
+  // Default ON: every OpenRouter request carries provider.zdr=true and
+  // data_collection="deny", so prompts only reach zero-retention, non-training
+  // upstreams. Turning it off widens routing to every endpoint (including most
+  // ":free" models, which commonly train on inputs).
+  function openRouterZdrField(): HTMLElement {
+    const box = el('input', { type: 'checkbox' })
+    box.checked = pendingOpenRouterZdr ?? openRouterZdrValue
+    box.addEventListener('change', () => {
+      pendingOpenRouterZdr = box.checked
+      // Re-render so the privacy badge in the form title tracks the choice.
+      renderForm()
+    })
+    return el(
+      'div',
+      { class: 'provider-field-group' },
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        box,
+        ' Only route to zero-data-retention providers (ZDR)',
+      ),
+      el(
+        'span',
+        { class: 'field-hint' },
+        'Sends provider.zdr and data_collection:"deny" with every request, excluding endpoints that retain prompts or train on them. Models without a ZDR endpoint — including most free ones — will fail with a no-endpoints error while this is on.',
+      ),
+    )
+  }
+
   // ---- Fixed provider form ------------------------------------------------
   function fixedForm(fixed: FixedProvider): HTMLElement {
+    const policy =
+      fixed.id === 'openrouter'
+        ? openRouterDataPolicy(pendingOpenRouterZdr ?? openRouterZdrValue)
+        : dataPolicyForProvider({ id: fixed.id })
     const form = el(
       'div',
       { class: 'provider-form' },
-      el('h4', { class: 'provider-form-title' }, fixed.label),
+      el('h4', { class: 'provider-form-title' }, fixed.label, privacyBadgeEl(privacyBadge(policy))),
       keyField(fixed.id, `${fixed.label} API key`, fixed.placeholder, fixed.hint),
     )
-    if (fixed.id === 'openrouter') form.append(openRouterModelField())
+    if (fixed.id === 'openrouter') form.append(openRouterZdrField(), openRouterModelField())
+    if (policy) form.append(policyHintEl(policy))
     return form
   }
 
@@ -421,13 +486,16 @@ export function createCustomProvidersSection(
   function extraForm(provider: ExtraProvider): HTMLElement {
     const form = el('div', { class: 'provider-form' })
 
+    const policy = provider.local ? null : dataPolicyForProvider(provider)
     const title = el(
       'h4',
       { class: 'provider-form-title' },
       provider.label,
       el('span', { class: 'provider-form-tag' }, provider.builtin ? 'built-in' : 'custom'),
+      privacyBadgeEl(privacyBadge(policy, { local: provider.local })),
     )
     form.append(title)
+    if (policy) form.append(policyHintEl(policy))
 
     const urlInput = el('input', {
       type: 'url',
@@ -763,6 +831,13 @@ export function createCustomProvidersSection(
       } catch {
         openRouterModelValue = ''
       }
+      try {
+        const zdr = await api.settings.get('openRouterZdrOnly')
+        // Default ON: only an explicit stored `false` turns ZDR-only routing off.
+        openRouterZdrValue = zdr !== false
+      } catch {
+        openRouterZdrValue = true
+      }
     }
     // Let native providers (LM Studio) re-run their own detection.
     await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
@@ -795,6 +870,12 @@ export function createCustomProvidersSection(
       await api.settings.set('openRouterModel', trimmed)
       openRouterModelValue = trimmed
       pendingOpenRouterModel = null
+    }
+    // Persist the ZDR-only routing toggle only when it was touched.
+    if (pendingOpenRouterZdr !== null) {
+      await api.settings.set('openRouterZdrOnly', pendingOpenRouterZdr)
+      openRouterZdrValue = pendingOpenRouterZdr
+      pendingOpenRouterZdr = null
     }
   }
 

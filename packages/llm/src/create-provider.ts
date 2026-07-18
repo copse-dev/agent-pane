@@ -11,6 +11,13 @@ interface ProviderKeys {
   openAiApiKey?: string | null
 }
 
+// OpenAI stores Chat Completions/Responses output for 30 days by default on
+// new accounts ("application state"); `store: false` opts each request out.
+// Only sent to api.openai.com — OpenAI-compatible servers reached via a custom
+// baseURL don't get it (some reject unknown fields, and the parameter is
+// OpenAI-specific). See docs/provider-data-policies.md.
+const OPENAI_STORE_OPT_OUT = { extraBody: { store: false } } as const
+
 // `model` is the user's selected model (from settings). It both picks the
 // provider family (claude* → Anthropic, gpt* → OpenAI) and is passed through as
 // the model id. Falls back to whichever key is present; mock only when
@@ -34,7 +41,7 @@ export function createProvider(
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
     }
-    return new OpenAIProvider(m, { apiKey: openAiApiKey, ...cacheKeyOpt })
+    return new OpenAIProvider(m, { apiKey: openAiApiKey, ...cacheKeyOpt, ...OPENAI_STORE_OPT_OUT })
   }
   if (m.startsWith('claude')) {
     if (!anthropicApiKey) {
@@ -53,6 +60,7 @@ export function createProvider(
     return new OpenAIProvider(model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o', {
       apiKey: openAiApiKey,
       ...cacheKeyOpt,
+      ...OPENAI_STORE_OPT_OUT,
     })
   }
   throw new Error(
@@ -85,16 +93,30 @@ export const createLMStudioProvider = createLocalOpenAIProvider
 // upstream endpoints that support every parameter we send — crucially `tools`.
 // Without it a model id can be load-balanced onto an endpoint that ignores
 // function calling, so the model narrates instead of emitting tool calls.
+//
+// `zdrOnly` (default ON, `openRouterZdrOnly` setting) additionally sends
+// `zdr: true` (route only to zero-data-retention endpoints) and
+// `data_collection: 'deny'` (exclude providers that store or train on inputs).
+// See https://openrouter.ai/docs/guides/features/zdr. The trade-off: models
+// with no ZDR endpoint — most `:free` variants — return a no-endpoints error
+// until the setting is turned off in Settings → Providers → OpenRouter.
 export function createOpenRouterProvider(
   model: string,
   apiKey: string,
   promptCacheKey?: string,
+  opts: { zdrOnly?: boolean } = {},
 ): LLMProvider {
+  const zdrOnly = opts.zdrOnly ?? true
   return new OpenAIProvider(model, {
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
     includeUsage: true,
-    extraBody: { provider: { require_parameters: true } },
+    extraBody: {
+      provider: {
+        require_parameters: true,
+        ...(zdrOnly ? { zdr: true, data_collection: 'deny' } : {}),
+      },
+    },
     ...(promptCacheKey ? { promptCacheKey } : {}),
   })
 }

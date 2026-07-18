@@ -491,6 +491,33 @@ dialog.settings-overlay::backdrop {
   border-radius: var(--radius);
   padding: 1px var(--spacing-xs);
 }
+/* Data-policy badge in the provider form title: where prompts go by default.
+   Kinds mirror privacyBadge() in @copse/llm/data-policies.ts. */
+.provider-privacy-badge {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px var(--spacing-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.provider-privacy-badge.zdr,
+.provider-privacy-badge.local {
+  color: var(--success);
+  border-color: var(--success);
+}
+.provider-privacy-badge.trains {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+.provider-privacy-badge.unknown {
+  color: var(--warning);
+  border-color: var(--border);
+}
+.provider-privacy-hint code {
+  overflow-wrap: anywhere;
+}
 .provider-field-group {
   display: flex;
   flex-direction: column;

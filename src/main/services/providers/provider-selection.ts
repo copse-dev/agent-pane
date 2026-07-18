@@ -179,7 +179,11 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
       )
     }
     return redactedRemoteProvider(
-      createOpenRouterProvider(openRouterModelId(model), apiKey, promptCacheKey),
+      createOpenRouterProvider(openRouterModelId(model), apiKey, promptCacheKey, {
+        // Privacy routing (default on): only zero-data-retention, non-training
+        // upstream endpoints. Toggled in Settings → Providers → OpenRouter.
+        zdrOnly: getSetting<boolean>('openRouterZdrOnly', true),
+      }),
     )
   }
   const extra = extraProviderForModel(getResolvedExtraProviders(), model)
