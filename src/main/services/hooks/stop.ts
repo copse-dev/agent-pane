@@ -141,7 +141,7 @@ export async function runStopHooks(
     // the seam is live and epoch-tagged for the async function-hook events (and
     // C3) that produce follow-ups. A stale send-now is downgraded to held on the
     // renderer side (decision 16).
-    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 

@@ -47,6 +47,14 @@ export interface HookGateDecision {
    * reads it in the current turn.
    */
   injectContext?: string
+  /**
+   * A hook asked to halt the whole run (`continue: false`, H3 / decision 12).
+   * This is stronger than the `deny` it also produces: `deny` blocks *this* tool
+   * call, while `haltRun` stops the current turn through the run's abort path.
+   * The caller (`permission-gate`) routes it to the abort path, attributed to
+   * `hookId`. Present only when a hook returned `haltRun`.
+   */
+  haltRun?: { reason: string; hookId: string }
 }
 
 export interface ToolGateCheck {
@@ -139,6 +147,17 @@ export async function runToolGateHooks(
     : merged.decision === 'ask'
       ? 'ask'
       : 'allow'
+  // H3: a `haltRun` does more than deny this tool — it stops the current turn
+  // through the abort path. Attribute it to the first hook that halted (the
+  // merge takes the first `haltRun`, decision 12) so the abort + spine line name
+  // the responsible hook.
+  const haltRun =
+    merged.haltRun !== undefined
+      ? {
+          reason: merged.haltRun.reason,
+          hookId: outcomes.find((o) => o.outcome.haltRun !== undefined)?.hookId ?? check.toolName,
+        }
+      : undefined
   // A rewrite is surfaced only when the pipeline actually produced one; the
   // value is the final threaded `payload.input`, not just the last hook's delta,
   // so the caller re-runs policy on the complete rewritten input.
@@ -153,5 +172,6 @@ export async function runToolGateHooks(
     ...(merged.userMessage !== undefined ? { userMessage: merged.userMessage } : {}),
     ...(rewritten ? { updatedInput: payload.input } : {}),
     ...(injectContext !== undefined ? { injectContext } : {}),
+    ...(haltRun !== undefined ? { haltRun } : {}),
   }
 }

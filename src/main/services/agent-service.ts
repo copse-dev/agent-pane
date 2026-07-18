@@ -105,6 +105,7 @@ import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
 import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
+import { registerHaltTarget, clearHaltTarget } from './hooks/halt-run.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
@@ -318,6 +319,21 @@ async function runBeforeSubmitPrompt(
   } finally {
     endHookRunRecording(threadId)
   }
+}
+
+/**
+ * Stamp a hook `haltRun` reason onto the terminal `done` chunk as its
+ * `stopReason` (H3). Only fills it in when a hook actually halted the run and
+ * the loop did not already report a `stopReason` (e.g. the model's own
+ * `end_turn` / `max_tokens`), so a hook halt is attributable on the existing
+ * user-visible channel without clobbering a real completion reason.
+ */
+function withHookHaltStopReason(
+  done: Extract<StreamChunk, { type: 'done' }>,
+  reason: string | undefined,
+): Extract<StreamChunk, { type: 'done' }> {
+  if (reason === undefined || done.stopReason !== undefined) return done
+  return { ...done, stopReason: reason }
 }
 
 /**
@@ -632,6 +648,16 @@ export async function runAgent(
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
+  // H3: register this run as the abort target for hook `haltRun` (decision 12).
+  // A hook halt (blocking mid-turn, or async from the current epoch) aborts the
+  // run through this same controller and stashes the reason so the terminal
+  // `done` chunk carries it as `stopReason` (the existing user-visible channel;
+  // the dedicated card is G1). Stale async halts (decision 16) never reach here.
+  let hookHaltStopReason: string | undefined
+  registerHaltTarget(threadId, turnTreeId, (reason) => {
+    hookHaltStopReason = reason
+    controller.abort()
+  })
   // Attribute hook executions (function + command) to this run's spine records
   // (decision 6 — always-on).
   beginHookRunRecording(threadId)
@@ -1223,14 +1249,16 @@ export async function runAgent(
     // + monotonic on the renderer side (decision 16).
     sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer
-    sendChunk(deferredDone ?? { type: 'done' })
+    sendChunk(withHookHaltStopReason(deferredDone ?? { type: 'done' }, hookHaltStopReason))
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })
     // Fold back any in-run spend even on the error path — grants consumed before
     // the failure still count against the turn tree (decision 5).
     sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
-    sendChunk({ type: 'done' })
+    // H3: a hook `haltRun` aborts the run through the catch path; surface its
+    // reason as the terminal `done`'s `stopReason` so the stop is attributable.
+    sendChunk(withHookHaltStopReason({ type: 'done' }, hookHaltStopReason))
   } finally {
     // B3: agent work has stopped (turn end, error, or abort) — fire `stop`
     // detached (decision 3). Fired before `endHookRunRecording` so the dispatch
@@ -1246,6 +1274,7 @@ export async function runAgent(
     setTodoToolPostProcess(null)
     endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
+    clearHaltTarget(threadId, turnTreeId)
     abortMap.delete(threadId)
   }
 
