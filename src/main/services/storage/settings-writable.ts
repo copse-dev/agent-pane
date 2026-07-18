@@ -35,6 +35,19 @@ export const acpAgentConfigSchema = z.object({
     .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
     .max(256)
     .optional(),
+  // ACP session (permission) mode to start each session in, and the cached set
+  // of modes the agent advertised the last time it was probed (issue #607).
+  permissionMode: z.string().min(1).max(256).optional(),
+  availablePermissionModes: z
+    .array(
+      z.object({
+        value: z.string().min(1).max(256),
+        label: z.string().min(1).max(256),
+        description: z.string().max(1024).optional(),
+      }),
+    )
+    .max(64)
+    .optional(),
   // Seatbelt override (issue #590): object = custom confines, false = opt out,
   // absent = the KNOWN_ACP_AGENTS catalog preset for this id. homeDirs are
   // home-relative and may not escape upward.
