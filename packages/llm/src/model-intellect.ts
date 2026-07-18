@@ -29,6 +29,11 @@ import {
 export { CANONICAL_INTELLECT_VERSION, INTELLECT_ATTRIBUTION }
 export type { IntellectMeasurement }
 
+/** Every model id carrying at least one sourced measurement. */
+export function listIntellectScoredModelIds(): string[] {
+  return Object.keys(MODEL_INTELLECT_RAW)
+}
+
 // Artificial Analysis measures served endpoints, i.e. full-precision weights.
 // Carrying that lets `localBenchmarkScore()` adjust a local model's intellect
 // down to the quant it actually runs at.

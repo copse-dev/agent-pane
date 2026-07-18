@@ -117,8 +117,9 @@ describe('createIntellectFrontierPanel', () => {
     const panel = createIntellectFrontierPanel(async () => ['qwen/qwen2.5-coder-32b'])
     assert.equal(panel.root.querySelector('svg'), null)
     await panel.refresh()
-    // Main scatter + composite strip are two separate charts (never one axis).
-    assert.equal(panel.root.querySelectorAll('svg').length, 2)
+    // Main scatter + canonical unpriced strip + composite strip — three
+    // separate charts (scales are never mixed on one axis).
+    assert.equal(panel.root.querySelectorAll('svg').length, 3)
     assert.match(panel.root.textContent, /own composite scale/)
     assert.match(panel.root.textContent, /not comparable with the intellect axis/)
   })
@@ -155,8 +156,49 @@ describe('createIntellectFrontierPanel', () => {
       }),
     )
     await renormed.refresh()
-    assert.doesNotMatch(renormed.root.textContent, /brand-new-model/)
-    assert.match(renormed.root.textContent, /index version has likely changed/)
+    assert.ok(!renormed.root.querySelector('svg')?.textContent.includes('brand-new-model'))
+    // The refusal is a calm disclosure, not raw markdown: a <details> with the
+    // diagnosis and the maintainer command in a real <code> element.
+    const details = renormed.root.querySelector('.frontier-live-notes details')
+    assert.ok(details)
+    assert.match(details.textContent, /scale check failed/)
+    assert.match(details.textContent, /Diverging anchors/)
+    assert.ok(details.querySelector('code'))
+  })
+
+  it('gives scored-but-unpriced models the canonical strip, not a footnote', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({
+        ok: true,
+        models: [
+          { id: 'claude-fable-5', intellect: 60 },
+          { id: 'claude-opus-4-8', intellect: 56 },
+          { id: 'live-unpriced-model', intellect: 41 },
+        ],
+      }),
+    )
+    await panel.refresh()
+    const strip = panel.root.querySelector('.frontier-canonical-strip svg')
+    assert.ok(strip)
+    // Curated-but-unpriced (Kimi K3 = 57) and live-unpriced both appear.
+    assert.match(strip.textContent, /kimi-k3 · 57/)
+    assert.match(strip.textContent, /live-unpriced-model · ~41/)
+    assert.match(panel.root.textContent, /no price data yet/)
+  })
+
+  it('expands into a larger dialog rendering of the same points', async () => {
+    const panel = createIntellectFrontierPanel(async () => [])
+    await panel.refresh()
+    const btn = panel.root.querySelector<HTMLButtonElement>('button.frontier-expand')
+    assert.ok(btn)
+    btn.click()
+    const dialog = panel.root.querySelector('dialog.frontier-expand-dialog')
+    assert.ok(dialog)
+    const svg = dialog.querySelector('svg')
+    assert.ok(svg)
+    assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 920 460$/)
   })
 
   it('degrades to a quiet note when the local server is unreachable', async () => {
