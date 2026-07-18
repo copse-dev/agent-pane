@@ -190,7 +190,10 @@ import {
 import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
 import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
-import { fetchLiveIntellectModels } from '../services/providers/aa-live-intellect.ts'
+import {
+  fetchLiveIntellectModels,
+  invalidateLiveIntellectCache,
+} from '../services/providers/aa-live-intellect.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -725,6 +728,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     if (p === 'cursor') invalidateCursorCloudModelsCache()
+    // The live Intelligence Index feed caches its result (successes AND failures)
+    // for hours, so a stored 403/empty would otherwise survive the user fixing
+    // their key. Drop it here so the next value-map open re-fetches with the new
+    // key.
+    if (p === 'artificial-analysis') invalidateLiveIntellectCache()
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {

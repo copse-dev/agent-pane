@@ -14,6 +14,10 @@ import { getApiKey } from '../storage/settings.ts'
 const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
 // AA data moves slowly; refetching each panel open would just burn quota.
 const CACHE_TTL_MS = 6 * 60 * 60_000
+// Failures (bad key, network, unparseable payload) are cached only briefly, so
+// a user who fixes their key or waits out a blip recovers on the next panel
+// open instead of being stuck behind a stale error for the full success TTL.
+const FAILURE_CACHE_TTL_MS = 60_000
 const FETCH_TIMEOUT_MS = 10_000
 
 export interface LiveIntellectFetch {
@@ -72,6 +76,16 @@ export function invalidateLiveIntellectCache(): void {
   cache = null
 }
 
+/**
+ * How long a given result stays cached: a real cohort (successful fetch with
+ * models) for the full TTL, anything else — an error or an empty/unparseable
+ * payload — only briefly, so a transient or now-fixed condition recovers on
+ * the next open rather than sticking for hours.
+ */
+export function liveCacheTtlMs(result: LiveIntellectFetch): number {
+  return result.ok && result.models.length > 0 ? CACHE_TTL_MS : FAILURE_CACHE_TTL_MS
+}
+
 function reduceModel(api: AaApiModel): LiveAaModel | null {
   const intellect = api.evaluations?.artificial_analysis_intelligence_index
   if (typeof intellect !== 'number' || !Number.isFinite(intellect)) return null
@@ -92,43 +106,61 @@ function reduceModel(api: AaApiModel): LiveAaModel | null {
 }
 
 /**
- * The current AA model list, or an empty result when no key is stored (the
- * feature is simply off) or the fetch fails (the panel falls back to curated
- * data). Failures are cached too, so an unreachable API doesn't retry on
- * every panel refresh.
+ * One live fetch of the AA model list, with no key lookup and no caching — the
+ * pure HTTP+parse surface, so tests can drive it with a fake fetch.
+ *
+ * `redirect: 'follow'` deliberately matches the proven `sync:intellect
+ * --from-api` path: the earlier `redirect: 'manual'` turned any AA-side
+ * redirect (CDN, WAF, trailing-slash normalisation) into a silent failure here
+ * while the sync script sailed through, which is exactly the "sync works but
+ * the live panel doesn't" shape. The URL is a fixed trusted constant, so
+ * following its redirects is safe.
  */
-export async function fetchLiveIntellectModels(): Promise<LiveIntellectFetch> {
-  const key = getApiKey('artificial-analysis')
-  if (!key) return { ok: true, models: [] }
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.result
-
-  let result: LiveIntellectFetch
+export async function requestLiveIntellectModels(
+  key: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LiveIntellectFetch> {
   try {
-    const res = await fetch(AA_MODELS_URL, {
+    const res = await fetchImpl(AA_MODELS_URL, {
       headers: { 'x-api-key': key },
-      redirect: 'manual',
+      redirect: 'follow',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     if (!res.ok) {
-      result = {
-        ok: false,
-        models: [],
-        error: `Artificial Analysis API: HTTP ${String(res.status)}`,
-      }
-    } else {
-      const payload = (await res.json()) as Record<string, unknown> & { data?: AaApiModel[] }
-      const apiModels = payload.data ?? []
-      const models = apiModels.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
-      const indexVersion = reportedIndexVersion(payload, apiModels)
-      result = { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
+      const status = `HTTP ${String(res.status)}${res.statusText ? ` ${res.statusText}` : ''}`
+      const hint =
+        res.status === 401 || res.status === 403
+          ? ' — the key was rejected; check the Artificial Analysis key in Settings'
+          : ''
+      return { ok: false, models: [], error: `Artificial Analysis API: ${status}${hint}` }
     }
+    const payload = (await res.json()) as Record<string, unknown> & { data?: AaApiModel[] }
+    const apiModels = payload.data ?? []
+    const models = apiModels.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
+    const indexVersion = reportedIndexVersion(payload, apiModels)
+    return { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
   } catch (err) {
-    result = {
+    return {
       ok: false,
       models: [],
       error: err instanceof Error ? err.message : 'Artificial Analysis API fetch failed',
     }
   }
+}
+
+/**
+ * The current AA model list, or an empty result when no key is stored (the
+ * feature is simply off) or the fetch fails (the panel falls back to curated
+ * data). Results are cached — a real cohort for hours, a failure only briefly
+ * (see {@link liveCacheTtlMs}) — and the cache is dropped when the key changes
+ * (register-handlers `settings:setKey`).
+ */
+export async function fetchLiveIntellectModels(): Promise<LiveIntellectFetch> {
+  const key = getApiKey('artificial-analysis')
+  if (!key) return { ok: true, models: [] }
+  if (cache && Date.now() - cache.at < liveCacheTtlMs(cache.result)) return cache.result
+
+  const result = await requestLiveIntellectModels(key)
   cache = { at: Date.now(), result }
   return result
 }
