@@ -240,6 +240,21 @@ describe('copse-adapter (F1)', () => {
       assert.equal(hooks.find((h) => h.command === './default.sh')?.sandbox, true)
     })
 
+    it('surfaces the sandbox:false escape on the Sources summary (F3), omitting it for the default', async () => {
+      await writeUserHooks({
+        hooks: {
+          toolGate: [{ command: './escape.sh', sandbox: false }, { command: './default.sh' }],
+        },
+      })
+      const { hooks } = await listCopseHooksForSources({
+        workspaceRoot: null,
+        projectTrusted: false,
+      })
+      // The escape is badged (present + false); the sandboxed-by-default hook omits it.
+      assert.equal(hooks.find((h) => h.command === './escape.sh')?.sandbox, false)
+      assert.equal('sandbox' in (hooks.find((h) => h.command === './default.sh') ?? {}), false)
+    })
+
     it('honours async:true on afterFileEdit but rejects it on a decision event', async () => {
       await writeUserHooks({
         hooks: {

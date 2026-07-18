@@ -141,6 +141,15 @@ export interface SpineHookRunDecision {
    * visible in the transcript — the values themselves stay in the stdout blob.
    */
   sessionEnvKeys?: number
+  /**
+   * The hook ran inside the project sandbox and was **blocked by it** (F3,
+   * decision 7): the OS seatbelt logged policy violations (or the sandbox
+   * wrapper failed to start), so the run is resolved as a failure per the hook's
+   * `onFailure` — never a silent fail-open that hides the block. Keyed off
+   * runner-side signals only (recorded violations / wrapper spawn failure), never
+   * the hook's own stdout (issue #104), so a hook cannot forge or hide it.
+   */
+  sandboxBlocked?: boolean
 }
 
 /**
