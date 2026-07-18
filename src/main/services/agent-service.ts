@@ -5,12 +5,13 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@copse/agent/agent-loop-limits.ts'
-import type {
-  LLMMessage,
-  LLMTool,
-  StreamChunk,
-  ToolExecuteResult,
-  UserContent,
+import {
+  normalizeToolExecuteResult,
+  type LLMMessage,
+  type LLMTool,
+  type StreamChunk,
+  type ToolExecuteResult,
+  type UserContent,
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -101,6 +102,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
+import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
@@ -327,6 +329,67 @@ function fireStopHook(
     recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
+  })
+}
+
+/**
+ * Fire `afterToolUse` (D2) after a tool result — the canonical post-tool
+ * observation. Cursor's `afterShellExecution` / `afterMCPExecution` are payload
+ * flavors chosen by the tool name; discovery yields no hooks for other tools, so
+ * firing generically for every result is cheap and only shell/MCP hooks run.
+ *
+ * **Detached, never awaited (decision 3, no drain barrier):** dispatched with
+ * `void` so a slow observation hook can never delay the agent loop. Gated behind
+ * `cursorHooksEnabled` (default off) at the fire site — the same flag the
+ * tool-gate / stop paths use — because honouring a hook spawns a user/project
+ * script. Any dispatch error is swallowed: a broken observation hook can never
+ * fail the tool call that already produced its result. The output snapshot is
+ * capped by `runAfterToolUseHooks` before it reaches a hook's stdin.
+ */
+function fireAfterToolUseHook(args: {
+  threadId: string
+  turnTreeId: TurnTreeId
+  toolName: string
+  toolCallId: string
+  isError: boolean
+  input: unknown
+  output: string
+  durationMs: number
+}): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  // Capture the agent-session identity by value now — the hook dispatches
+  // detached (decision 3) and may marshal after this turn's recording context is
+  // torn down (B4).
+  const agentSession = currentAgentSessionInfo()
+  // Snapshot the recording context now, synchronously, like `fireStopHook`: a
+  // detached `afterToolUse` hook may settle after `endHookRunRecording` clears
+  // the live context, and its `hook_run` line must still attribute to the
+  // emitting turn (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
+  const input =
+    typeof args.input === 'object' && args.input !== null
+      ? (args.input as Record<string, unknown>)
+      : undefined
+  void runAfterToolUseHooks(
+    {
+      toolName: args.toolName,
+      toolCallId: args.toolCallId,
+      isError: args.isError,
+      ...(input ? { input } : {}),
+      output: args.output,
+      durationMs: args.durationMs,
+    },
+    {
+      threadId: args.threadId,
+      turnTreeId: args.turnTreeId,
+      workspaceRoot,
+      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      agentSession,
+      recordingSnapshot,
+    },
+  ).catch((err: unknown) => {
+    console.warn('[hooks] afterToolUse hook dispatch error:', errorMessage(err))
   })
 }
 
@@ -715,7 +778,7 @@ export async function runAgent(
     // The parent tool executor, shared by the main loop and any post-turn parent
     // continuation turns (pre-review todo gate, review remediation) so both route
     // subagents, advisor, comparison, and shell tagging identically.
-    const executeParentTool = async (
+    const runParentTool = async (
       name: string,
       args: unknown,
       signal: AbortSignal,
@@ -821,6 +884,48 @@ export async function runAgent(
         }
       }
       return registry.executeNormalized(name, args, signal)
+    }
+
+    // D2: fire the canonical `afterToolUse` observation after each tool result
+    // (shell / MCP flavors), detached — never blocking the loop. Wrapping the
+    // shared executor is the single tool-result choke point that covers the main
+    // loop and every post-turn continuation turn. The output snapshot is capped
+    // downstream (`runAfterToolUseHooks`) before it reaches a hook's stdin.
+    const executeParentTool = async (
+      name: string,
+      args: unknown,
+      signal: AbortSignal,
+      toolCallId: string,
+    ): Promise<ToolExecuteResult> => {
+      const startedAt = Date.now()
+      try {
+        const raw = await runParentTool(name, args, signal, toolCallId)
+        fireAfterToolUseHook({
+          threadId,
+          turnTreeId,
+          toolName: name,
+          toolCallId,
+          isError: false,
+          input: args,
+          output: normalizeToolExecuteResult(raw).result,
+          durationMs: Date.now() - startedAt,
+        })
+        return raw
+      } catch (err) {
+        // The loop turns a thrown tool into an error tool-result; mirror that so
+        // the observation sees the same `isError: true` + message the model does.
+        fireAfterToolUseHook({
+          threadId,
+          turnTreeId,
+          toolName: name,
+          toolCallId,
+          isError: true,
+          input: args,
+          output: `Error: ${errorMessage(err)}`,
+          durationMs: Date.now() - startedAt,
+        })
+        throw err
+      }
     }
 
     await runWithAgentRunReadonly(readonlyMode, async () => {

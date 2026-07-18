@@ -98,16 +98,38 @@ export interface StopPayload {
 }
 
 /**
- * Payload for `afterToolUse` (D2). The generic post-tool observation; shell/MCP
- * variants are payload flavors, not separate event names.
+ * Payload for `afterToolUse` (D2). The generic post-tool observation; the
+ * Cursor `afterShellExecution` / `afterMCPExecution` variants are payload
+ * *flavors* of this one canonical event (matching how `toolGate` unifies
+ * `beforeShell`/`beforeMCP`/`beforeReadFile`), not separate event names. Async,
+ * observation-only (decision 3): a hook here can never gate control flow.
  */
 export interface AfterToolUsePayload {
-  /** Canonical tool name that just ran. */
+  /** Canonical tool name that just ran (drives the shell/MCP flavor split). */
   toolName: string
   /** The tool call this result belongs to. */
   toolCallId: string
   /** Whether the tool reported an error. */
   isError: boolean
+  /**
+   * Tool input the model passed — the shell `command` (`input.command`) or the
+   * MCP params object. Marshalled per flavor by the dialect adapter (shell:
+   * `command`; MCP: `tool_input`). Absent when the caller has no structured input.
+   */
+  input?: Record<string, unknown>
+  /**
+   * A **capped** snapshot of the tool's output/result — the shell terminal
+   * output or the MCP result JSON. Bounded at the fire site (a tool's stdout can
+   * be arbitrarily large; a known implementation trap of D2 is dumping unbounded
+   * output into a hook's stdin), so the wire payload is always safe to marshal
+   * verbatim. Absent when the tool produced no output.
+   */
+  output?: string
+  /**
+   * Wall-clock execution time in ms (Cursor's `duration` on the after-events),
+   * measured at the fire site. Absent when the caller did not time the call.
+   */
+  durationMs?: number
 }
 
 /**
