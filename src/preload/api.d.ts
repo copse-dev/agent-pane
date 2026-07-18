@@ -305,6 +305,8 @@ export interface ApiClient {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
+      approvedProviderHosts?: string[]
+      providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>

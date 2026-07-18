@@ -92,6 +92,8 @@ export interface IpcInvokeMap {
         defaultReadonlyMode: boolean
         webAllowedOrigins: string[]
         webAllowUserApproval: boolean
+        approvedProviderHosts?: string[]
+        providerAllowUserApproval?: boolean
       },
     ]
     result: undefined

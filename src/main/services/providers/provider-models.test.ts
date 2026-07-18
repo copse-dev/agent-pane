@@ -1,6 +1,11 @@
-import { describe, it, afterEach } from 'node:test'
+import { describe, it, afterEach, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { fetchOpenAiCompatibleModels } from './provider-models.ts'
+import {
+  fetchOpenAiCompatibleModels,
+  fetchOpenAiCompatibleModelsForSettings,
+} from './provider-models.ts'
+import { setSetting } from '../storage/settings.ts'
+import { setApprovalHandler } from '../approval.ts'
 
 const realFetch = globalThis.fetch
 function stubFetch(impl: (url: string) => Partial<Response>): void {
@@ -8,8 +13,16 @@ function stubFetch(impl: (url: string) => Partial<Response>): void {
 }
 
 describe('fetchOpenAiCompatibleModels', () => {
+  beforeEach(async () => {
+    // Approve the public test host used below (issue #438 allowlist).
+    await setSetting('approvedProviderHosts', ['api.example.com'])
+    await setSetting('providerAllowUserApproval', true)
+    setApprovalHandler(null)
+  })
+
   afterEach(() => {
     globalThis.fetch = realFetch
+    setApprovalHandler(null)
   })
 
   it('rejects a blank base URL without a network call', async () => {
@@ -21,6 +34,19 @@ describe('fetchOpenAiCompatibleModels', () => {
     const res = await fetchOpenAiCompatibleModels('   ')
     assert.equal(res.ok, false)
     assert.equal(called, false)
+  })
+
+  it('rejects an unapproved public host without a network call', async () => {
+    await setSetting('approvedProviderHosts', [])
+    let called = false
+    stubFetch(() => {
+      called = true
+      return { ok: true, status: 200 }
+    })
+    const res = await fetchOpenAiCompatibleModels('https://evil.example/v1', 'secret-key')
+    assert.equal(res.ok, false)
+    assert.equal(called, false)
+    assert.match(res.error ?? '', /not approved/)
   })
 
   it('rejects an unsafe base URL without a network call (no key sent)', async () => {
@@ -113,5 +139,48 @@ describe('fetchOpenAiCompatibleModels', () => {
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1')
     assert.equal(res.ok, false)
     assert.match(res.error ?? '', /boom/)
+  })
+})
+
+describe('fetchOpenAiCompatibleModelsForSettings', () => {
+  beforeEach(async () => {
+    await setSetting('approvedProviderHosts', [])
+    await setSetting('providerAllowUserApproval', true)
+    setApprovalHandler(null)
+  })
+
+  afterEach(() => {
+    globalThis.fetch = realFetch
+    setApprovalHandler(null)
+  })
+
+  it('prompts to approve a new host before fetching models', async () => {
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: true, remember: true }
+    })
+    stubFetch(() => ({
+      ok: true,
+      status: 200,
+      json: async (): Promise<unknown> => ({ data: [{ id: 'm1' }] }),
+    }))
+    const res = await fetchOpenAiCompatibleModelsForSettings('https://api.groq.com/openai/v1')
+    assert.equal(prompted, true)
+    assert.equal(res.ok, true)
+    assert.deepEqual(res.models, [{ id: 'm1', contextLength: null }])
+  })
+
+  it('returns the denial message when the user declines approval', async () => {
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    let called = false
+    stubFetch(() => {
+      called = true
+      return { ok: true, status: 200 }
+    })
+    const res = await fetchOpenAiCompatibleModelsForSettings('https://evil.example/v1')
+    assert.equal(called, false)
+    assert.equal(res.ok, false)
+    assert.match(res.error ?? '', /not approved/)
   })
 })
