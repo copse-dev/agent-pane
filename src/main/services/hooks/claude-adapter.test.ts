@@ -169,6 +169,39 @@ describe('claude-adapter', () => {
       assert.equal(decision.agentMessage, 'blocked by policy')
     })
 
+    // H2 (docs/plans/hooks-and-feature-packs.md): Claude's PreToolUse
+    // `hookSpecificOutput.additionalContext` injects into the current turn.
+    it('maps hookSpecificOutput.additionalContext into a system-reminder block (H2)', async () => {
+      const script = await writeJsonHookScript(
+        'inject.sh',
+        '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"consult the runbook"}}',
+      )
+      await writeUserSettings({
+        hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: script }] }] },
+      })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.equal(decision.permission, 'allow')
+      assert.equal(
+        decision.injectContext,
+        '<system-reminder>\nconsult the runbook\n</system-reminder>',
+      )
+    })
+
+    it('injects context alongside an allow permissionDecision (H2)', async () => {
+      const script = await writeJsonHookScript(
+        'allow-inject.sh',
+        '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","additionalContext":"note this"}}',
+      )
+      await writeUserSettings({
+        hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: script }] }] },
+      })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.equal(decision.permission, 'allow')
+      assert.match(decision.injectContext ?? '', /note this/)
+    })
+
     it('denies on exit code 2 and surfaces stderr', async () => {
       const script = await writeExit2HookScript('exit2.sh', 'exit-2-block')
       await writeUserSettings({

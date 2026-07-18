@@ -145,6 +145,36 @@ describe('before-submit-prompt (beforeSubmitPrompt compose path — B1)', () => 
     assert.equal(decision.blocked, true)
   })
 
+  // H2 (docs/plans/hooks-and-feature-packs.md): a compose-path hook may inject
+  // current-turn context via `additionalContext`, folded into the turn's
+  // system-reminder block (the local compose path applies it to messages[0]).
+  it('maps additionalContext into a current-turn system-reminder block (H2)', async () => {
+    const script = await writeHookScript(
+      'inject.sh',
+      '{"continue":true,"additionalContext":"follow the checklist"}',
+    )
+    await writeUserHooks({ hooks: { beforeSubmitPrompt: [{ command: script }] } })
+
+    const decision = await submit('proceed')
+    assert.equal(decision.blocked, false)
+    assert.equal(
+      decision.injectContext,
+      '<system-reminder>\nfollow the checklist\n</system-reminder>',
+    )
+  })
+
+  it('drops injected context when the submit is halted (H2)', async () => {
+    const script = await writeHookScript(
+      'inject-halt.sh',
+      '{"continue":false,"user_message":"no","additionalContext":"never applied"}',
+    )
+    await writeUserHooks({ hooks: { beforeSubmitPrompt: [{ command: script }] } })
+
+    const decision = await submit('go')
+    assert.equal(decision.blocked, true)
+    assert.equal(decision.injectContext, undefined)
+  })
+
   it('a project hook is ignored unless the workspace is trusted', async () => {
     const script = await writeHookScript('proj-block.sh', '{"continue":false}')
     const projectRoot = await mkdtemp(join(tmpdir(), 'copse-before-submit-proj-'))

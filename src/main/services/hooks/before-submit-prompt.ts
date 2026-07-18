@@ -13,6 +13,7 @@
 // compose-path equivalent, so no Claude hooks participate — matching the vendor
 // audit in docs/plans/hooks-and-feature-packs.md.
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
+import { buildInjectedContextBlock } from '@copse/agent/hooks/inject-context.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorBeforeSubmitPromptHooks } from './cursor-adapter.ts'
@@ -28,6 +29,13 @@ export interface BeforeSubmitPromptDecision {
   agentMessage?: string
   /** The halt reason, when a hook halted (defaults to `userMessage`). */
   reason?: string
+  /**
+   * Context a hook injected into the current turn (H2), built into the final
+   * system-reminder block (10k-capped). Present only when the submit proceeds
+   * (`blocked: false`) and a hook returned `additionalContext`; the compose path
+   * folds it into the turn's system message alongside the `turnStart` steering.
+   */
+  injectContext?: string
 }
 
 /**
@@ -64,10 +72,14 @@ export async function runBeforeSubmitPromptHooks(
   // `continue: false` maps to `haltRun`; a `deny` decision would too, though the
   // Cursor beforeSubmitPrompt contract only speaks `continue`.
   const blocked = merged.haltRun !== undefined || merged.decision === 'deny'
+  // H2: injected context only applies when the submit proceeds — a halt drops
+  // the turn, so there is nothing to inject into.
+  const injectContext = blocked ? undefined : buildInjectedContextBlock(merged.injectContext)
   return {
     blocked,
     ...(merged.userMessage !== undefined ? { userMessage: merged.userMessage } : {}),
     ...(merged.agentMessage !== undefined ? { agentMessage: merged.agentMessage } : {}),
     ...(merged.haltRun !== undefined ? { reason: merged.haltRun.reason } : {}),
+    ...(injectContext !== undefined ? { injectContext } : {}),
   }
 }

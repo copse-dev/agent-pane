@@ -722,6 +722,15 @@ interface CursorHookResponse {
    */
   updated_input?: unknown
   updatedInput?: unknown
+  /**
+   * Context a blocking hook injects into the current turn (H2). Cursor's field
+   * is `additionalContext`; the snake_case `additional_context` is accepted for
+   * symmetry. It maps onto the canonical `injectContext`, which the fire site
+   * (the tool result for `toolGate`) places into the turn as a system-reminder
+   * block, 10k-capped with the full text preserved in this run's stdout blob.
+   */
+  additionalContext?: unknown
+  additional_context?: unknown
 }
 
 /**
@@ -746,6 +755,14 @@ interface CursorBeforeSubmitPromptResponse {
   userMessage?: string
   agent_message?: string
   agentMessage?: string
+  /**
+   * Context injected into the current turn (H2). Cursor's compose-path hook can
+   * return `additionalContext` to prepend guidance to the prompt about to run;
+   * it maps onto the canonical `injectContext`, folded into the turn's
+   * system-reminder block (10k-capped). Snake_case accepted for symmetry.
+   */
+  additionalContext?: string
+  additional_context?: string
 }
 
 function firstString(...values: unknown[]): string | undefined {
@@ -775,9 +792,15 @@ function outcomeFromResponse(parsed: unknown): {
   // Record); anything else is ignored so a stray scalar can't blank the input.
   const rewrite = asInputRecord(res.updated_input ?? res.updatedInput)
   if (rewrite) outcome.updatedInput = rewrite
+  // H2: `additionalContext` (or snake_case) injects into the current turn.
+  const injected = firstString(res.additionalContext, res.additional_context)
+  if (injected !== undefined) outcome.injectContext = injected
   const spineDecision: SpineHookRunDecision = {
     ...(outcome.decision !== undefined ? { permission: outcome.decision } : {}),
     ...(outcome.updatedInput !== undefined ? { updatedInput: true } : {}),
+    ...(outcome.injectContext !== undefined
+      ? { injectContextChars: outcome.injectContext.length }
+      : {}),
     ...(outcome.agentMessage !== undefined
       ? { agentMessageChars: outcome.agentMessage.length }
       : {}),
@@ -1283,6 +1306,7 @@ function beforeSubmitOutcomeFromResponse(parsed: unknown): {
   const res = parsed as CursorBeforeSubmitPromptResponse
   const userMessage = firstString(res.user_message, res.userMessage)
   const agentMessage = firstString(res.agent_message, res.agentMessage)
+  const injected = firstString(res.additionalContext, res.additional_context)
   const outcome: BlockingHookOutcome = {}
   if (res.continue === false) {
     outcome.haltRun = {
@@ -1291,8 +1315,14 @@ function beforeSubmitOutcomeFromResponse(parsed: unknown): {
   }
   if (userMessage !== undefined) outcome.userMessage = userMessage
   if (agentMessage !== undefined) outcome.agentMessage = agentMessage
+  // H2: injected context only matters when the submit proceeds — a halt drops
+  // the turn entirely, so there is nothing to inject into.
+  if (injected !== undefined && outcome.haltRun === undefined) outcome.injectContext = injected
   const spineDecision: SpineHookRunDecision = {
     ...(outcome.haltRun !== undefined ? { haltRun: true } : {}),
+    ...(outcome.injectContext !== undefined
+      ? { injectContextChars: outcome.injectContext.length }
+      : {}),
     ...(agentMessage !== undefined ? { agentMessageChars: agentMessage.length } : {}),
     ...(userMessage !== undefined ? { userMessageChars: userMessage.length } : {}),
   }

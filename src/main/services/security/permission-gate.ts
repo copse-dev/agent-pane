@@ -493,6 +493,12 @@ interface ToolGateHookOutcome {
   ok: boolean
   /** Final hook-rewritten tool input (H1), when the pipeline rewrote it. */
   updatedInput?: Record<string, unknown>
+  /**
+   * Current-turn system-reminder block a hook injected (H2), already 10k-capped.
+   * Carried only on a proceeding gate; {@link ensureToolPermitted} stamps it onto
+   * the check so the tool runner appends it to the result.
+   */
+  injectContext?: string
 }
 
 async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookOutcome> {
@@ -516,15 +522,18 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
   }
 
   const rewrite = decision.updatedInput !== undefined ? { updatedInput: decision.updatedInput } : {}
+  // H2: a proceeding gate may also carry current-turn injected context.
+  const inject =
+    decision.injectContext !== undefined ? { injectContext: decision.injectContext } : {}
 
   if (decision.permission === 'ask') {
     const approved = await promptHookAsk(check, decision)
-    if (approved) return { ok: true, ...rewrite }
+    if (approved) return { ok: true, ...rewrite, ...inject }
     if (decision.agentMessage) throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
     return { ok: false }
   }
 
-  return { ok: true, ...rewrite }
+  return { ok: true, ...rewrite, ...inject }
 }
 
 /**
@@ -551,6 +560,12 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   if (gate.updatedInput && typeof check.args === 'object' && check.args !== null) {
     Object.assign(check.args, gate.updatedInput)
   }
+
+  // H2: surface a hook's current-turn injected context on the check so the tool
+  // runner appends it to this call's result (the fire-point injection). Set here
+  // rather than acted on: the gate only decides *whether* to inject; the runner
+  // owns *placing* it into the turn (ToolRegistry.execute).
+  if (gate.injectContext !== undefined) check.injectContext = gate.injectContext
 
   const { toolName, args } = check
 

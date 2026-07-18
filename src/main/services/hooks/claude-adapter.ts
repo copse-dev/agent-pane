@@ -257,6 +257,9 @@ function spineDecisionFor(outcome: BlockingHookOutcome | null): SpineHookRunDeci
   if (!outcome) return {}
   return {
     ...(outcome.decision !== undefined ? { permission: outcome.decision } : {}),
+    ...(outcome.injectContext !== undefined
+      ? { injectContextChars: outcome.injectContext.length }
+      : {}),
     ...(outcome.agentMessage !== undefined
       ? { agentMessageChars: outcome.agentMessage.length }
       : {}),
@@ -295,15 +298,27 @@ function outcomeFromExitZero(stdout: string): {
   const specific = (parsed as { hookSpecificOutput?: unknown }).hookSpecificOutput
   if (typeof specific !== 'object' || specific === null) return { outcome: null, parseOk: true }
 
-  const permissionRaw = (specific as { permissionDecision?: unknown }).permissionDecision
-  if (!isPermissionDecision(permissionRaw)) return { outcome: null, parseOk: true }
+  const outcome: BlockingHookOutcome = {}
 
-  const permission = mapClaudeDecision(permissionRaw)
-  const reasonRaw = (specific as { permissionDecisionReason?: unknown }).permissionDecisionReason
-  const reason = typeof reasonRaw === 'string' && reasonRaw.trim() ? reasonRaw.trim() : ''
-  const outcome: BlockingHookOutcome = { decision: permission }
-  if (reason) outcome.agentMessage = reason
-  return { outcome, parseOk: true }
+  const permissionRaw = (specific as { permissionDecision?: unknown }).permissionDecision
+  if (isPermissionDecision(permissionRaw)) {
+    outcome.decision = mapClaudeDecision(permissionRaw)
+    const reasonRaw = (specific as { permissionDecisionReason?: unknown }).permissionDecisionReason
+    const reason = typeof reasonRaw === 'string' && reasonRaw.trim() ? reasonRaw.trim() : ''
+    if (reason) outcome.agentMessage = reason
+  }
+
+  // H2: Claude's PreToolUse `hookSpecificOutput.additionalContext` injects text
+  // into the current turn (vendor ✅). It rides alongside any permissionDecision
+  // (a hook may allow *and* add context) and maps onto the canonical
+  // `injectContext`, which the tool-gate fire site places into the turn as a
+  // system-reminder block (10k-capped).
+  const additionalRaw = (specific as { additionalContext?: unknown }).additionalContext
+  if (typeof additionalRaw === 'string' && additionalRaw.length > 0) {
+    outcome.injectContext = additionalRaw
+  }
+
+  return { outcome: Object.keys(outcome).length > 0 ? outcome : null, parseOk: true }
 }
 
 /** The concrete Claude dialect adapter the runner delegates to. */
