@@ -6,6 +6,15 @@
   margin-top: 2px;
   font-size: var(--font-size-sm);
 }
+.tool-card:not([open])[data-status='done'] {
+  padding-block: var(--spacing-xs);
+  background: color-mix(in srgb, var(--bg-elevated) 55%, transparent);
+  border-color: var(--border-subtle);
+}
+.tool-card:not([open])[data-status='done'] .tool-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
 .msg .tool-card:first-of-type {
   margin-top: var(--spacing-xs);
 }
@@ -96,6 +105,7 @@
   display: inline-flex;
   align-items: center;
   color: var(--text-muted);
+  margin-left: auto;
 }
 .tool-card[data-status='done'] .tool-status-icon {
   color: var(--success);

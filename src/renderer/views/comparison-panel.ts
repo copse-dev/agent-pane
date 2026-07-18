@@ -1,5 +1,5 @@
-import { el } from '../dom/helpers.ts'
-import { searchIcon } from '../dom/icons.ts'
+import { el, on } from '../dom/helpers.ts'
+import { closeIcon, searchIcon } from '../dom/icons.ts'
 import { createRetryButton } from './retry-button.ts'
 import type { ModelComparison } from '@shared/types'
 import { renderMarkdown } from '@copse/streaming-markdown'
@@ -33,11 +33,29 @@ function markdownBlock(
   return block
 }
 
+/**
+ * Icon-only dismiss (×) for a failed comparison card. Fires `onDismiss` once,
+ * then disables itself so a double-click can't dispatch the removal twice.
+ */
+function createDismissButton(onDismiss: () => void): HTMLButtonElement {
+  const button = el(
+    'button',
+    { type: 'button', class: 'card-dismiss-button', title: 'Dismiss', 'aria-label': 'Dismiss' },
+    closeIcon('ui-icon ui-icon-sm'),
+  )
+  on(button, 'click', () => {
+    button.disabled = true
+    onDismiss()
+  })
+  return button
+}
+
 /** Card summarising a two-model diff comparison (reviews A/B + judge synthesis). */
 export function createComparisonCardEl(
   comparison: ModelComparison,
   api: ApiClient,
   onRetry?: () => void,
+  onDismiss?: () => void,
 ): HTMLElement {
   const panel = el('div', {
     class: `comparison-panel comparison-panel-${comparison.status}`,
@@ -61,6 +79,12 @@ export function createComparisonCardEl(
   // now wants) doesn't require re-running the turn.
   if (comparison.status === 'error' && onRetry) {
     header.append(createRetryButton(onRetry))
+  }
+  // A failed comparison is also dismissible outright — not every failure is
+  // worth a re-run (a deliberately declined spend, a model that isn't coming
+  // back this session), and the error card shouldn't squat in the transcript.
+  if (comparison.status === 'error' && onDismiss) {
+    header.append(createDismissButton(onDismiss))
   }
   panel.append(header)
 

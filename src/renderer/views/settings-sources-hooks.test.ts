@@ -5,15 +5,24 @@ import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { HooksListResult, HookSummary, HookValidationWarning } from '@shared/types/hooks.ts'
+import type {
+  HooksListResult,
+  HookSummary,
+  HookTestResult,
+  HookValidationWarning,
+} from '@shared/types/hooks.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
+
+/** Records the last `hooks:test` request the stub received (for click-through assertions). */
+let lastTestRequest: unknown
 
 /**
  * Recursive never-settling stub (as in settings-dialog.test.ts) with the four
  * Sources list endpoints overridden so `refreshSources` can actually complete.
+ * `hooks.test` (G2 dry-run) resolves to `testResult` and records its request.
  */
-function stubApi(hooksResult: HooksListResult): ApiClient {
+function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): ApiClient {
   const fallback: unknown = new Proxy(() => new Promise(() => {}), {
     get: () => fallback,
     apply: () => new Promise(() => {}),
@@ -22,7 +31,13 @@ function stubApi(hooksResult: HooksListResult): ApiClient {
     instructions: { list: () => Promise.resolve([]) },
     skills: { list: () => Promise.resolve([]) },
     plugins: { list: () => Promise.resolve([]) },
-    hooks: { list: () => Promise.resolve(hooksResult) },
+    hooks: {
+      list: () => Promise.resolve(hooksResult),
+      test: (req: unknown) => {
+        lastTestRequest = req
+        return Promise.resolve(testResult ?? { ran: false, error: 'no result' })
+      },
+    },
   }
   const proxy: unknown = new Proxy(
     {},
@@ -62,15 +77,28 @@ const FAILED_HOOK: HookSummary = {
   lastError: 'printed invalid JSON — response ignored',
 }
 
+const UNSANDBOXED_HOOK: HookSummary = {
+  family: 'copse',
+  event: 'toolGate',
+  command: './escape.sh',
+  source: '/home/user/.copse/hooks.json',
+  scope: 'user',
+  supported: true,
+  sandbox: false,
+}
+
 const WARNING: HookValidationWarning = {
   source: '/home/user/.cursor/hooks.json',
   scope: 'user',
   message: 'Unknown hook event "notARealEvent" — entries skipped',
 }
 
-async function openSources(hooksResult: HooksListResult): Promise<HTMLElement> {
+async function openSources(
+  hooksResult: HooksListResult,
+  testResult?: HookTestResult,
+): Promise<HTMLElement> {
   document.body.innerHTML = ''
-  mountSettingsDialog(createStore(), stubApi(hooksResult))
+  mountSettingsDialog(createStore(), stubApi(hooksResult, testResult))
   const sourcesBtn = document.querySelector<HTMLButtonElement>(
     '.settings-nav-btn[data-section="sources"]',
   )
@@ -125,6 +153,15 @@ describe('settings sources → hooks list', () => {
     assert.equal(badge.textContent, 'unsupported')
   })
 
+  it('badges a `sandbox: false` (Copse) hook as running outside the sandbox (F3)', async () => {
+    const list = await openSources({ hooks: [UNSANDBOXED_HOOK], warnings: [] })
+    const badge = list.querySelector('.sources-badge-unsandboxed')
+    assert.ok(badge)
+    assert.equal(badge.textContent, 'outside sandbox')
+    // The Copse family label is used (not the Cursor fallback).
+    assert.equal(list.querySelector('.sources-row-detail')?.textContent, 'Copse · ./escape.sh')
+  })
+
   it('shows the per-hook runtime error badge and message', async () => {
     const list = await openSources({ hooks: [FAILED_HOOK], warnings: [] })
     assert.equal(list.querySelector('.sources-badge-error')?.textContent, 'error')
@@ -145,5 +182,79 @@ describe('settings sources → hooks list', () => {
     assert.match(warningRow.textContent, /notARealEvent/)
     assert.match(warningRow.textContent, /\.cursor\/hooks\.json/)
     assert.ok(hookRow && !hookRow.classList.contains('sources-row-warning'))
+  })
+
+  it('renders a per-hook Test (dry-run) button on each hook row (G2)', async () => {
+    const list = await openSources({ hooks: [VALID_HOOK], warnings: [] })
+    const row = list.querySelector('.sources-row')
+    assert.ok(row)
+    const btn = row.querySelector<HTMLButtonElement>('.sources-hook-test-btn')
+    assert.ok(btn)
+    assert.equal(btn.textContent, 'Test')
+  })
+
+  it('runs a dry-run and shows stdin/stdout/stderr/exit/duration + outcome (G2)', async () => {
+    const testResult: HookTestResult = {
+      ran: true,
+      canonicalEvent: 'toolGate',
+      wireEvent: 'beforeShellExecution',
+      stdin: '{\n  "command": "echo hi"\n}',
+      stdout: '{"permission":"allow"}',
+      stderr: 'debug line',
+      exitCode: 0,
+      durationMs: 42,
+      parseOk: true,
+      sandboxed: false,
+      outcomeSummary: 'allow',
+    }
+    const list = await openSources({ hooks: [VALID_HOOK], warnings: [] }, testResult)
+    const btn = list.querySelector<HTMLButtonElement>('.sources-hook-test-btn')
+    assert.ok(btn)
+    btn.click()
+    // The click handler awaits the async dry-run; let microtasks drain.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The request echoed the hook's identity to the IPC.
+    assert.deepEqual(lastTestRequest, {
+      family: 'cursor',
+      event: 'beforeShellExecution',
+      command: './audit.sh',
+      source: '/home/user/.cursor/hooks.json',
+      scope: 'user',
+    })
+
+    const result = list.querySelector('.hook-test')
+    assert.ok(result)
+    const summaryText = result.querySelector('.hook-test-summary')?.textContent ?? ''
+    assert.match(summaryText, /event beforeShellExecution/)
+    assert.match(summaryText, /exit 0/)
+    assert.match(summaryText, /42 ms/)
+    assert.match(summaryText, /parsed ok/)
+    assert.match(result.querySelector('.hook-test-outcome')?.textContent ?? '', /Outcome: allow/)
+
+    // All three streams render with their labels + captured text.
+    const labels = Array.from(result.querySelectorAll('.hook-test-stream-label')).map(
+      (el) => el.textContent,
+    )
+    assert.deepEqual(labels, ['stdin', 'stdout', 'stderr'])
+    const pres = Array.from(result.querySelectorAll('.hook-test-stream pre')).map(
+      (el) => el.textContent,
+    )
+    assert.equal(pres[1], '{"permission":"allow"}')
+    assert.equal(pres[2], 'debug line')
+  })
+
+  it('shows the not-runnable notice when a dry-run cannot synthesize a payload (G2)', async () => {
+    const list = await openSources(
+      { hooks: [UNSUPPORTED_HOOK], warnings: [] },
+      { ran: false, error: 'The "stop" event has no synthetic payload to dry-run (unsupported).' },
+    )
+    const btn = list.querySelector<HTMLButtonElement>('.sources-hook-test-btn')
+    assert.ok(btn)
+    btn.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const err = list.querySelector('.hook-test .hook-test-error')
+    assert.ok(err)
+    assert.match(err.textContent, /unsupported/)
   })
 })

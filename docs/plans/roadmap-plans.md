@@ -53,11 +53,14 @@ grinding out large amounts of work before those PRs merge.
   shown but not re-importable.
 - **Complexity on save** — saving a prompt (create, edit, or import) classifies its
   complexity one-shot as `low` / `medium` / `high` via the small-tasks model, with a 10s
-  timeout and the #557 heuristic classifier as fallback so a save never hangs on a model
+  timeout and the #557 heuristic classifier as fallback
   (`src/main/services/roadmap-complexity.ts`; vocabulary in
-  `src/shared/roadmap/complexity.ts`). Stored in the `complexity` frontmatter field and
-  shown as a badge on the list row. Status/notes-only edits keep the stored stamp —
-  no model call.
+  `src/shared/roadmap/complexity.ts`). The save itself is immediate: the note persists
+  first and the verdict is stamped in the background (`stampRoadmapComplexity`), with a
+  `roadmap:changed` push so the pane picks up the badge when it lands; a stamp whose
+  prompt was re-edited or deleted mid-flight is dropped. Stored in the `complexity`
+  frontmatter field and shown as a badge on the list row. Status/notes-only edits keep
+  the stored stamp — no model call.
 - **Check fit** — for a pinned item, an on-demand button asks the small-tasks model
   whether executing the prompt would plausibly resolve the pinned issue
   (`src/main/services/roadmap-fit-check.ts`, `getIssue` on the GitHub backend). Verdict
@@ -70,6 +73,16 @@ grinding out large amounts of work before those PRs merge.
   focused. Deliberately not auto-sent: the user reviews and hits send, which also
   leaves the item's status for the agent/user to update once work actually starts.
   Hidden in pop-out windows, which have no chat pane.
+- **Attachments** — items accept pasted, dropped, or picked files and images (`.jsonl`
+  eval sets, screenshots for prompts). Payloads are plain files under
+  `<knowledge dir>/attachments/<noteId>/` (`knowledge-attachments.ts`) with metadata
+  JSON-encoded in an `attachments` frontmatter field
+  (`src/shared/knowledge/attachments.ts`), staying inside the store's string-only
+  `fields` model. Edits are staged in the editor and persist on Save
+  (`roadmap:create`/`roadmap:update` carry adds/removals; `roadmap:attachmentData`
+  hydrates thumbnails lazily). "Start thread" carries them into the composer — images
+  as image attachments, UTF-8 files as file chips — and the `roadmap_plan` list output
+  names each item's attachments.
 
 While the flag is off the tool is not registered, the pane's titlebar button is hidden,
 and nothing reads or writes the store — the feature is fully inert.

@@ -35,6 +35,19 @@ export const acpAgentConfigSchema = z.object({
     .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
     .max(256)
     .optional(),
+  // ACP session (permission) mode to start each session in, and the cached set
+  // of modes the agent advertised the last time it was probed (issue #607).
+  permissionMode: z.string().min(1).max(256).optional(),
+  availablePermissionModes: z
+    .array(
+      z.object({
+        value: z.string().min(1).max(256),
+        label: z.string().min(1).max(256),
+        description: z.string().max(1024).optional(),
+      }),
+    )
+    .max(64)
+    .optional(),
   // Seatbelt override (issue #590): object = custom confines, false = opt out,
   // absent = the KNOWN_ACP_AGENTS catalog preset for this id. homeDirs are
   // home-relative and may not escape upward.
@@ -102,6 +115,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   fontSize: z.number().int().min(8).max(32),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
+  // Interaction colour for links, primary actions, selections, and chat
+  // emphasis. Theme CSS derives accessible link/hover shades from this hue.
+  uiAccentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   // Whole-app tint: a hue mixed into every neutral surface at a chosen
   // strength. Colour is a #rrggbb hex; strength maps to a mix percentage in
   // the renderer (off = no tint). See tokens.css --tint-hue / --tint-amount.
@@ -118,8 +134,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   subagentModel: z.string().max(256),
   // Role → model assignments (the indirection layer, see agent-roles.ts). A role
   // entry overrides the legacy per-feature setting for the renderer-writable
-  // routing roles (coder / small-tasks / research); main-only security roles
-  // (safety, review) are NOT routed here so they stay on the guarded security IPC.
+  // routing roles (coder / small-tasks / research / advisor); main-only security
+  // roles (safety, review) are NOT routed here so they stay on the guarded
+  // security IPC.
   roleModels: z.record(z.string().max(64), z.string().max(256)),
   openRouterModel: z.string().max(256),
   localSubagentsEnabled: z.boolean(),
@@ -173,6 +190,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   modelClassifierEnabled: z.boolean(),
   advisorStrategyEnabled: z.boolean(),
   advisorModel: z.string().max(256),
+  // Experimental orchestration strategy: the chat model orchestrates and a
+  // cheaper worker model implements delegated steps. See orchestration-strategy.ts.
+  orchestrationStrategyEnabled: z.boolean(),
+  orchestrationWorkerModel: z.string().max(256),
   // Experimental model comparison harness: run the working-diff review through
   // two models plus a judge that compares their verdicts. See model-comparison.ts.
   modelComparisonEnabled: z.boolean(),
@@ -192,6 +213,23 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // SSH host-key policy for git-over-SSH in runners and the shell tool. See
   // docs/plans/ssh-remote-repo.md Phase 0.
   sshStrictHostKeys: z.enum(['accept-new', 'strict']),
+  // Experimental: route shell/terminal/background spawns through the SSH workspace
+  // connection when the active project has an `sshHost`. See ssh-remote-repo.md.
+  sshWorkspaceEnabled: z.boolean(),
+  // SSH workspace hosts (Phase 1 connection manager). See ssh-remote-repo.md.
+  sshWorkspaceHosts: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+        label: z.string().min(1).max(256),
+        host: z.string().min(1).max(256),
+        port: z.number().int().min(1).max(65535).optional(),
+        user: z.string().max(256).optional(),
+        identityFile: z.string().max(4096).optional(),
+        forwardAgent: z.boolean().optional(),
+      }),
+    )
+    .max(64),
 } as const satisfies Record<string, z.ZodType>
 
 export type RendererWritableSettingKey = keyof typeof RENDERER_WRITABLE_SETTING_SCHEMAS

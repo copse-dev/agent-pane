@@ -1,5 +1,19 @@
 import { el, clear } from '../dom/helpers.ts'
-import { arrowDownIcon, checkIcon, closeIcon, moreHorizontalIcon } from '../dom/icons.ts'
+import {
+  arrowDownIcon,
+  checkIcon,
+  closeIcon,
+  moreHorizontalIcon,
+  warningIcon,
+  zapIcon,
+} from '../dom/icons.ts'
+import {
+  getHookCardStatusLabel,
+  getHookCardTitle,
+  hookEventLabel,
+  isHookCardBlocking,
+  type HookCard,
+} from '@shared/hooks/hook-card.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
@@ -32,16 +46,23 @@ import { navigateToChange } from '../controller/panels.ts'
 import { createTodoListEl } from './todo-panel.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
-import { retryComparison, retryReview } from '../controller/retry-review-comparison.ts'
+import {
+  dismissComparison,
+  retryComparison,
+  retryReview,
+} from '../controller/retry-review-comparison.ts'
 import { renderToolArgs } from './tool-args-format.ts'
 import {
   drainMessageQueue,
+  isHeldMessage,
   queuedMessageIds,
   queuedPayloadText,
+  releaseHeldMessage,
   removeQueuedMessage,
   sendQueuedMessageNow,
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
+import type { QueuedUserMessage } from '@shared/types'
 
 function statusIcon(status: ToolCall['status']): SVGSVGElement {
   if (status === 'done') return checkIcon('ui-icon ui-icon-sm')
@@ -296,10 +317,19 @@ function syncSubagentTimeline(
       const sig = JSON.stringify(innerToolCalls)
       let wrap = existing.get(key)
       if (!wrap || subagentInnerToolsSig.get(wrap) !== sig) {
+        // Rebuilding recreates every inner tool collapsed; carry over the ids
+        // the user expanded so their disclosure survives the tick.
+        const openInner = new Set<string>()
+        wrap?.querySelectorAll<HTMLElement>('.subagent-inner-tool[open]').forEach((node) => {
+          const id = node.dataset['toolId']
+          if (id) openInner.add(id)
+        })
         const fresh = el('div', { class: 'subagent-inner-tools' })
         fresh.dataset['timelineKey'] = key
         for (const inner of innerToolCalls) {
-          fresh.append(createInnerToolCard(inner))
+          const entry = createInnerToolCard(inner)
+          if (openInner.has(inner.id)) entry.setAttribute('open', '')
+          fresh.append(entry)
         }
         subagentInnerToolsSig.set(fresh, sig)
         void annotateFileReferences(fresh, api)
@@ -452,6 +482,99 @@ function createMessageImages(images: string[]): HTMLElement {
   return wrap
 }
 
+// --- Hook cards (decision 10) ------------------------------------------------
+// Hook executions / deny-ask decisions / halts render as a distinct tool-call
+// family: right-aligned, blue, but clearly *not* a user message. Built purely
+// from the derived {@link HookCard} model (folded from the spine `hook_run`
+// records, or delivered live via the `hook_run` chunk), so history renders them
+// without any live hook registration (decision 17).
+
+function hookCardStatusIcon(card: HookCard): SVGSVGElement {
+  if (card.status === 'ask') return warningIcon('ui-icon ui-icon-sm')
+  if (isHookCardBlocking(card.status)) return closeIcon('ui-icon ui-icon-sm')
+  return checkIcon('ui-icon ui-icon-sm')
+}
+
+/** Compact facts about what a hook run did — shown under the header when useful. */
+function hookCardDetailLines(card: HookCard): string[] {
+  const lines: string[] = []
+  lines.push(`Hook: ${card.hookId}`)
+  if (card.executor === 'command' && card.exitCode !== undefined && card.exitCode !== null) {
+    lines.push(`Exit code: ${String(card.exitCode)}`)
+  }
+  if (card.exitCode === null) lines.push('Process killed (timeout / output cap)')
+  if (card.durationMs > 0) lines.push(`Duration: ${String(card.durationMs)}ms`)
+  if (card.updatedInput) lines.push('Rewrote the tool input')
+  if (card.injectContextChars !== undefined && card.injectContextChars > 0) {
+    lines.push(`Injected ${String(card.injectContextChars)} chars of context`)
+  }
+  if (card.queuedMessageChars !== undefined && card.queuedMessageChars > 0) {
+    lines.push(`Queued a ${String(card.queuedMessageChars)}-char follow-up`)
+  }
+  if (card.stopReason) lines.push(`Reason: ${card.stopReason}`)
+  if (card.sandboxBlocked) lines.push('Blocked by the project sandbox')
+  if (!card.parseOk) lines.push('Output did not parse as a hook response')
+  if (card.error) lines.push(`Error: ${card.error}`)
+  return lines
+}
+
+function createHookCard(card: HookCard): HTMLElement {
+  const cardEl = el('details', {
+    class: 'hook-card',
+    'data-hook-id': card.hookId,
+    'data-hook-event': card.event,
+    'data-hook-kind': card.kind,
+    'data-status': card.status,
+  })
+  const header = el(
+    'summary',
+    { class: 'hook-card-header' },
+    zapIcon('ui-icon ui-icon-sm hook-card-icon'),
+    el('span', { class: 'hook-name' }, getHookCardTitle(card)),
+    el('span', { class: 'hook-card-status' }, getHookCardStatusLabel(card)),
+    el('span', { class: 'hook-status-icon', 'aria-label': card.status }, hookCardStatusIcon(card)),
+  )
+  const detail = el('div', { class: 'hook-card-detail' })
+  for (const line of hookCardDetailLines(card)) {
+    detail.append(el('div', { class: 'hook-card-detail-line' }, line))
+  }
+  cardEl.append(header, detail)
+  return cardEl
+}
+
+/**
+ * Attribution marker on a hook-originated turn (decision 10): the message role
+ * stays `user`, but this shows the hook + event that started the follow-up so it
+ * never reads as something the human typed. `editedByUser` notes a human touched
+ * the text before it dispatched — authorship stays honest.
+ */
+function buildHookOriginMarker(
+  origin: { hookId: string; event: string },
+  editedByUser: boolean,
+): HTMLElement {
+  const label = `Hook · ${origin.hookId} (${hookEventLabel(origin.event)})`
+  const marker = el(
+    'div',
+    { class: 'msg-hook-origin-marker' },
+    zapIcon('ui-icon ui-icon-sm hook-card-icon'),
+    el('span', { class: 'msg-hook-origin-label' }, label),
+  )
+  if (editedByUser) {
+    marker.append(el('span', { class: 'msg-hook-origin-edited' }, 'edited'))
+  }
+  return marker
+}
+
+/** Right-aligned host holding a turn's hook cards, in fire order (decision 10). */
+function createHookCardHost(messageId: string, cards: HookCard[]): HTMLElement {
+  const host = el('div', {
+    class: 'hook-card-host',
+    'data-hook-cards-for': messageId,
+  })
+  for (const card of cards) host.append(createHookCard(card))
+  return host
+}
+
 function appendMessageContent(
   body: HTMLElement,
   msg: {
@@ -581,7 +704,12 @@ const SCROLL_PIN_THRESHOLD_PX = 48
 /** Ignore auto-scroll briefly after the user scrolls up during streaming. */
 const USER_SCROLL_UP_DEBOUNCE_MS = 150
 
-export function mountConversation(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+export function mountConversation(
+  root: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+  activityHost?: HTMLElement,
+): () => void {
   const scrollArea = el('div', { class: 'conversation-scroll' })
   const todoHost = el('div', { class: 'conversation-todos-host' })
   const list = el('div', { class: 'messages-list', role: 'log', 'aria-live': 'polite' })
@@ -617,7 +745,12 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   // visible at the bottom of the screen instead of getting buried under the
   // streaming response inside the scrollable message list.
   const queuedHost = el('div', { class: 'conversation-queued', hidden: true })
-  root.append(scrollArea, queuedHost, activityBar)
+  root.append(scrollArea, queuedHost)
+  // In the full app, activity is the composer's top strip so it reads as part
+  // of the message box rather than a separate full-width status bar. Component
+  // mounts can omit the host and keep the self-contained fallback.
+  if (activityHost) activityHost.prepend(activityBar)
+  else root.append(activityBar)
 
   // Clicking a file edit's +/- counts reveals that file in the Changes panel.
   // Delegated here so the handler can reach the store; preventDefault stops the
@@ -684,6 +817,42 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       setQueuePaused(store, threadId, false)
       drainMessageQueue(store, api, threadId)
     }
+  }
+
+  function releaseQueued(messageId: string): void {
+    const threadId = store.getState().activeThreadId
+    if (threadId) releaseHeldMessage(store, api, threadId, messageId)
+  }
+
+  // A held message (decisions 5 & 16) is skipped by the drain loop — it only
+  // moves on an explicit human action. It gets a primary "Release" affordance
+  // (submit + start a fresh turn tree) plus the usual edit / delete.
+  function buildHeldActions(messageId: string): HTMLElement {
+    const releaseBtn = el(
+      'button',
+      { class: 'queued-action queued-release', type: 'button' },
+      'Release',
+    )
+    releaseBtn.addEventListener('click', () => {
+      releaseQueued(messageId)
+    })
+    const editBtn = el('button', { class: 'queued-action queued-edit', type: 'button' }, 'Edit')
+    editBtn.addEventListener('click', () => {
+      startEditing(messageId)
+    })
+    const deleteBtn = el(
+      'button',
+      { class: 'queued-action queued-delete', type: 'button' },
+      'Delete',
+    )
+    deleteBtn.addEventListener('click', () => {
+      deleteQueued(messageId)
+    })
+    return el(
+      'div',
+      { class: 'message-queued-ui' },
+      el('div', { class: 'message-queued-actions' }, releaseBtn, editBtn, deleteBtn),
+    )
   }
 
   function buildQueuedActions(messageId: string): HTMLElement {
@@ -776,19 +945,27 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     return wrap
   }
 
-  function createQueuedItem(msg: Message): HTMLElement {
+  function createQueuedItem(msg: Message, queued: QueuedUserMessage): HTMLElement {
     const editing = editingMessageId === msg.id
+    const held = isHeldMessage(queued)
+    const fromHook = queued.origin?.kind === 'hook'
+    const classes = ['msg', 'msg-user', 'msg-queued']
+    if (editing) classes.push('msg-editing')
+    if (held) classes.push('msg-held')
+    if (fromHook) classes.push('msg-hook-origin')
     const item = el('div', {
-      class: editing ? 'msg msg-user msg-queued msg-editing' : 'msg msg-user msg-queued',
+      class: classes.join(' '),
       'data-message-id': msg.id,
+      ...(fromHook ? { 'data-hook-id': queued.origin?.hookId ?? '' } : {}),
     })
     const body = el('div', { class: 'message-body' })
-    body.append(el('span', { class: 'message-queued-badge' }, editing ? 'Editing' : 'Queued'))
+    const badgeText = editing ? 'Editing' : held ? 'Held' : 'Queued'
+    body.append(el('span', { class: 'message-queued-badge' }, badgeText))
     if (editing) {
       body.append(buildQueuedEditor(msg.id))
     } else {
       appendMessageContent(body, msg, api)
-      body.append(buildQueuedActions(msg.id))
+      body.append(held ? buildHeldActions(msg.id) : buildQueuedActions(msg.id))
     }
     item.append(body)
     return item
@@ -811,7 +988,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     for (const item of pending) {
       const msg = messagesById.get(item.messageId)
       if (!msg || msg.role !== 'user') continue
-      queuedHost.append(createQueuedItem(msg))
+      queuedHost.append(createQueuedItem(msg, item))
     }
     queuedHost.hidden = queuedHost.childElementCount === 0
   }
@@ -998,6 +1175,9 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         populateSubagentCard(card, item.toolCall, item.label, api)
         toolCardSignatures.set(card, sig)
       } else {
+        // The stale node was already claimed out of `existing`, so the cleanup
+        // below won't drop it — remove it here or the rebuilt card duplicates.
+        card?.remove()
         card = createToolCard(item, api)
         toolCardKeys.set(card, key)
         toolCardSignatures.set(card, sig)
@@ -1007,6 +1187,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
         const status = aggregateToolStatus(item.toolCalls)
         ;(card as HTMLDetailsElement).open =
           status === 'running' || userExpandedGroups.has(item.key)
+        // A changed group card is rebuilt from scratch with every item collapsed;
+        // reapply the per-item expansion captured above so an item the user
+        // opened (or an expanded individual card absorbed into this group)
+        // survives the per-step rebuild.
+        card
+          .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
+          .forEach((entry) => {
+            const id = entry.dataset['toolId']
+            if (id && userExpandedTools.has(id)) entry.open = true
+          })
       } else {
         const tc = item.toolCall
         const running = tc.status === 'running' || tc.subagent?.status === 'running'
@@ -1037,8 +1227,14 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       return
     }
 
-    const msgEl = el('div', { class: `msg msg-${msg.role}`, 'data-message-id': msgId })
+    // A hook-originated turn (decision 10): the message role stays `user`, but a
+    // marker attributes it to the hook follow-up that started it.
+    const hookOrigin = msg.origin?.kind === 'hook' ? msg.origin : null
+    const msgClass = `msg msg-${msg.role}${hookOrigin ? ' msg-hook-origin' : ''}`
+    const msgEl = el('div', { class: msgClass, 'data-message-id': msgId })
+    if (hookOrigin) msgEl.setAttribute('data-hook-id', hookOrigin.hookId)
     const body = el('div', { class: 'message-body' })
+    if (hookOrigin) body.append(buildHookOriginMarker(hookOrigin, msg.editedByUser === true))
     appendMessageContent(body, msg, api)
     msgEl.append(body)
 
@@ -1060,6 +1256,8 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
+    // Render any hook cards folded onto this message's turn (decision 10).
+    renderMessageHookCards(threadId, msgId)
     // Model labels appear only once the primary chat has used more than one
     // model; syncing after each append also labels earlier turns when the
     // second model arrives.
@@ -1095,6 +1293,20 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     }
   }
 
+  // Hook cards fired within a turn render as this message's next sibling (like
+  // review cards) so the right-aligned blue family joins the transcript inline
+  // rather than nesting inside the (also-blue) user bubble. Rebuilt on every sync
+  // + live `hook_card_added`, so late cards from the same turn append in order.
+  function renderMessageHookCards(threadId: string, messageId: string): void {
+    if (threadId !== store.getState().activeThreadId) return
+    list.querySelector(`[data-hook-cards-for="${messageId}"]`)?.remove()
+    const msg = getActiveThread(store)?.messages.find((m) => m.id === messageId)
+    const msgEl = list.querySelector(`[data-message-id="${messageId}"]`)
+    const cards = msg?.hookCards ?? []
+    if (!msgEl || cards.length === 0) return
+    msgEl.after(createHookCardHost(messageId, cards))
+  }
+
   function renderMessageReview(threadId: string, messageId: string): void {
     if (threadId !== store.getState().activeThreadId) return
     // Each review is anchored to the message that concluded its turn and renders
@@ -1120,9 +1332,16 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
     const thread = getActiveThread(store)
     if (thread?.comparison) {
       const threadId = thread.id
-      const card = createComparisonCardEl(thread.comparison, api, () => {
-        retryComparison(store, api, threadId)
-      })
+      const card = createComparisonCardEl(
+        thread.comparison,
+        api,
+        () => {
+          retryComparison(store, api, threadId)
+        },
+        () => {
+          dismissComparison(store, threadId)
+        },
+      )
       card.setAttribute('data-comparison-card', '')
       list.append(card)
     }
@@ -1241,6 +1460,10 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
       renderMessageReview(tid, mid)
       scrollToBottom()
     }),
+    store.on('hook_card_added', (tid, mid) => {
+      renderMessageHookCards(tid, mid)
+      scrollToBottom()
+    }),
     store.on('comparison_changed', () => {
       syncComparisonPanel()
       scrollToBottom()
@@ -1261,6 +1484,7 @@ export function mountConversation(root: HTMLElement, store: AppStore, api: ApiCl
   rebuildForThread()
   syncFromStore()
   return () => {
+    if (activityHost) activityBar.remove()
     unbindFileLinks()
     unbindWorkspaceLinks()
     unbindBrowserLinks()

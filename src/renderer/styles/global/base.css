@@ -15,7 +15,7 @@
    readable accent highlight in both themes. */
 ::selection {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 html,
 body {
@@ -67,6 +67,7 @@ select,
 .message-reasoning-text,
 .tool-result,
 .tool-args pre,
+.hook-test-stream pre,
 .terminal-container,
 .monaco-editor .view-lines {
   user-select: text;

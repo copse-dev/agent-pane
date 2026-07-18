@@ -72,18 +72,22 @@ describe('portrait right panel layout', () => {
       const projects = document.getElementById('pane-projects')!.getBoundingClientRect()
       const files = document.getElementById('pane-files')!.getBoundingClientRect()
       const input = document.getElementById('input-bar')!.getBoundingClientRect()
+      const panelBar = document.querySelector('.portrait-panel-bar')!.getBoundingClientRect()
       return {
         projectsTop: projects.top,
         chatTop: chat.top,
         filesTop: files.top,
         chatBottom: chat.bottom,
         inputBottom: input.bottom,
+        panelBarTop: panelBar.top,
+        panelBarBottom: panelBar.bottom,
       }
     })
 
     expect(Math.abs(layout.projectsTop - layout.chatTop)).toBeLessThan(2)
     expect(layout.filesTop).toBeGreaterThan(layout.chatBottom)
-    expect(Math.abs(layout.inputBottom - layout.chatBottom)).toBeLessThan(2)
+    expect(layout.inputBottom).toBeLessThan(layout.panelBarTop)
+    expect(Math.abs(layout.panelBarBottom - layout.chatBottom)).toBeLessThan(2)
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'portrait-right-panel-auto.png'))
   })

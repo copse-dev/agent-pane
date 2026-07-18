@@ -295,6 +295,49 @@ function mockSnapshot(): PlanUsageSnapshot {
   }
 }
 
+function mockAuthErrorSnapshot(): PlanUsageSnapshot {
+  const checkedAt = new Date().toISOString()
+  return {
+    checkedAt,
+    providers: [
+      {
+        status: 'unavailable',
+        provider: 'claude',
+        reason:
+          'Claude credentials were rejected. Re-run `claude /login` so Copse can read a fresh Claude OAuth login token.',
+      },
+      {
+        status: 'ok',
+        provider: 'codex',
+        usage: {
+          provider: 'codex',
+          plan: 'prolite',
+          windows: [
+            {
+              id: 'primary',
+              label: 'Weekly',
+              usedPercent: 1,
+              resetsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+          ],
+          checkedAt,
+        },
+      },
+      {
+        status: 'error',
+        provider: 'huggingface',
+        message: 'The operation was aborted due to timeout',
+      },
+      {
+        status: 'unavailable',
+        provider: 'cursor',
+        reason:
+          'Cursor session was rejected (expired WorkosCursorSessionToken). Re-sign in to Cursor or refresh CURSOR_SESSION_TOKEN from cursor.com cookies.',
+      },
+    ],
+  }
+}
+
 /**
  * Host bridge around `@copse/plan-usage`. Always resolves — never rejects —
  * so Settings → Usage keeps showing the local ledger when plan fetch fails.
@@ -302,6 +345,7 @@ function mockSnapshot(): PlanUsageSnapshot {
 export async function loadPlanUsageSnapshot(): Promise<PlanUsageSnapshot> {
   try {
     if (process.env[MOCK_ENV] === '1') return mockSnapshot()
+    if (process.env[MOCK_ENV] === 'auth-errors') return mockAuthErrorSnapshot()
 
     const credentials = discoverPlanUsageCredentials()
     return await getPlanUsageSnapshot(credentials, {
@@ -312,12 +356,8 @@ export async function loadPlanUsageSnapshot(): Promise<PlanUsageSnapshot> {
     const checkedAt = new Date().toISOString()
     return {
       checkedAt,
-      providers: [
-        { status: 'error', provider: 'claude', message },
-        { status: 'error', provider: 'codex', message },
-        { status: 'error', provider: 'huggingface', message },
-        { status: 'error', provider: 'cursor', message },
-      ],
+      providers: [],
+      error: `Plan usage refresh failed before provider checks: ${message}`,
     }
   }
 }

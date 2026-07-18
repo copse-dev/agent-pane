@@ -54,6 +54,23 @@ export interface AgentRunPayload {
   workingBrief?: string
   /** Per-thread model override; absent means "use the global default setting". */
   model?: string
+  /**
+   * Turn-tree epoch this run belongs to (decision 16 / C3). Minted by the
+   * renderer for a human submission / release and carried on every dispatch of
+   * the turn tree (the initial run and each queue-drained continuation), so the
+   * main-process continuation ledger keys the same per-turn-tree counter the
+   * renderer's drain-time budget check uses. Absent → the run falls back to the
+   * thread id as its turn-tree key.
+   */
+  turnTreeId?: string
+  /**
+   * Machine turns already spent in this turn tree before this run (decision 5).
+   * The renderer counts queue-drain continuations (hook send-now, stop / subagent
+   * follow-ups); the run seeds the shared ledger with it so its in-run
+   * tighteners (closeout / pre-review / remediation) share one counter per turn
+   * tree rather than restarting the budget each run.
+   */
+  continuationBudgetUsed?: number
 }
 
 /** Per-file line add/delete counts for write_file / str_replace tool cards. */
@@ -63,11 +80,25 @@ export interface ToolEditStats {
 }
 
 /** What a tool's `execute` hands back to the loop. */
-export type ToolExecuteResult = string | { result: string; editStats?: ToolEditStats }
+export type ToolExecuteResult =
+  | string
+  | {
+      result: string
+      editStats?: ToolEditStats
+      /**
+       * Tags the result as agent-authored Markdown so the renderer runs it
+       * through the Markdown pipeline instead of a raw `<pre>` (see the
+       * matching field on {@link ToolCall}). Most built-in tools return
+       * structured plain text and omit this; tools whose result is prose
+       * (e.g. `advisor`) set it so headings, lists and code render.
+       */
+      resultFormat?: 'markdown'
+    }
 
 export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   result: string
   editStats?: ToolEditStats
+  resultFormat?: 'markdown'
 } {
   if (typeof value === 'string') return { result: value }
   return value
@@ -108,7 +139,7 @@ export interface SubagentMessage {
 
 export interface SubagentSession {
   id: string
-  kind: 'explore' | 'investigate_ci'
+  kind: 'explore' | 'investigate_ci' | 'delegate'
   status: 'running' | 'done' | 'error'
   prompt: string
   summary: string | null

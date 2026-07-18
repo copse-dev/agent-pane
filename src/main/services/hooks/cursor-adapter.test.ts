@@ -95,10 +95,12 @@ describe('cursor-adapter', () => {
       assert.equal(warning.scope, 'user')
     })
 
-    it('marks declared-but-unwired events as unsupported', async () => {
+    it('marks every declared Cursor event supported (stop is wired in B3)', async () => {
       await writeUserHooks({
         hooks: {
           beforeShellExecution: [{ command: './gate.sh' }],
+          beforeSubmitPrompt: [{ command: './submit.sh' }],
+          afterFileEdit: [{ command: './fmt.sh' }],
           stop: [{ command: './notify.sh' }],
         },
       })
@@ -108,8 +110,12 @@ describe('cursor-adapter', () => {
         projectTrusted: false,
       })
       assert.equal(warnings.length, 0)
-      assert.equal(hooks.find((h) => h.event === 'stop')?.supported, false)
+      // Every Cursor lifecycle event now has a fire site (permission gates + B1
+      // beforeSubmitPrompt + B2 afterFileEdit + B3 stop), so none are "unsupported".
+      assert.equal(hooks.find((h) => h.event === 'stop')?.supported, true)
       assert.equal(hooks.find((h) => h.event === 'beforeShellExecution')?.supported, true)
+      assert.equal(hooks.find((h) => h.event === 'beforeSubmitPrompt')?.supported, true)
+      assert.equal(hooks.find((h) => h.event === 'afterFileEdit')?.supported, true)
     })
 
     it('warns on malformed entries without dropping valid ones', async () => {
@@ -219,6 +225,126 @@ describe('cursor-adapter', () => {
       // A read-file hook must not gate a shell command.
       assert.equal((await gate('run_shell', { command: 'ls' })).permission, 'allow')
       assert.equal((await gate('read_file', { path: 'x' })).permission, 'deny')
+    })
+  })
+
+  // H1 (docs/plans/hooks-and-feature-packs.md): a tool-gate hook may rewrite the
+  // tool input via Cursor's `updated_input`, sequentially across hooks; the final
+  // rewrite is surfaced on the gate decision (permission-gate then re-runs the
+  // policy matrix on it — see permission-gate-hooks.test.ts).
+  describe('updatedInput rewrite (H1)', () => {
+    it('interprets Cursor `updated_input` into the canonical updatedInput', async () => {
+      const script = await writeHookScript(
+        'rewrite.sh',
+        '{"permission":"allow","updated_input":{"command":"echo safe"}}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'echo danger' })
+      assert.equal(decision.permission, 'allow')
+      assert.deepEqual(decision.updatedInput, { command: 'echo safe' })
+    })
+
+    it('ignores a non-object updated_input (a scalar cannot blank the input)', async () => {
+      const script = await writeHookScript(
+        'bad-rewrite.sh',
+        '{"permission":"allow","updated_input":"not-an-object"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'echo hi' })
+      assert.equal(decision.permission, 'allow')
+      assert.equal(decision.updatedInput, undefined)
+    })
+
+    it('threads each rewrite into the next hook`s stdin (sequential pipeline)', async () => {
+      // Hook 1 rewrites the command; hook 2 dumps the stdin it received so we can
+      // prove it saw hook 1`s rewrite, not the model`s original command.
+      const first = await writeHookScript(
+        'seq-first.sh',
+        '{"permission":"allow","updated_input":{"command":"REWRITTEN_BY_FIRST"}}',
+      )
+      const dumpPath = join(tempHome, 'second-stdin.json')
+      const second = join(tempHome, 'seq-second.sh')
+      await writeFile(
+        second,
+        `#!/bin/sh\ncat > '${dumpPath}'\nprintf '%s' '{"permission":"allow"}'\n`,
+      )
+      await chmod(second, 0o755)
+      await writeUserHooks({
+        hooks: { beforeShellExecution: [{ command: first }, { command: second }] },
+      })
+
+      const decision = await gate('run_shell', { command: 'ORIGINAL' })
+      assert.equal(decision.permission, 'allow')
+      // The final threaded input carries the first hook`s rewrite.
+      assert.deepEqual(decision.updatedInput, { command: 'REWRITTEN_BY_FIRST' })
+      // The second hook`s stdin proves it saw the rewrite, not the original.
+      const secondStdin = JSON.parse(await readFile(dumpPath, 'utf-8')) as { command?: string }
+      assert.equal(secondStdin.command, 'REWRITTEN_BY_FIRST')
+    })
+  })
+
+  // H2 (docs/plans/hooks-and-feature-packs.md): a blocking tool-gate hook may
+  // inject context into the current turn via Cursor's `additionalContext`. It
+  // maps onto the canonical `injectContext`, which `runToolGateHooks` builds into
+  // a 10k-capped system-reminder block surfaced on the gate decision.
+  describe('injectContext from additionalContext (H2)', () => {
+    it('maps `additionalContext` into a current-turn system-reminder block', async () => {
+      const script = await writeHookScript(
+        'inject.sh',
+        '{"permission":"allow","additionalContext":"prefer the repo style guide"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.equal(decision.permission, 'allow')
+      assert.equal(
+        decision.injectContext,
+        '<system-reminder>\nprefer the repo style guide\n</system-reminder>',
+      )
+    })
+
+    it('accepts the snake_case `additional_context` spelling', async () => {
+      const script = await writeHookScript(
+        'inject-snake.sh',
+        '{"permission":"allow","additional_context":"snake works too"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.match(decision.injectContext ?? '', /snake works too/)
+    })
+
+    it('caps injected context at 10k with a truncation note (blob spillover)', async () => {
+      // The hook prints a >10k additionalContext; the model-facing block is
+      // capped and notes the true full length (the full text lives in the
+      // hook`s stdout blob — decision 6 / A3).
+      const big = 'X'.repeat(10_500)
+      const script = await writeHookScript(
+        'inject-big.sh',
+        `{"permission":"allow","additionalContext":"${big}"}`,
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      const block = decision.injectContext ?? ''
+      assert.ok(block.includes('X'.repeat(10_000)))
+      assert.ok(!block.includes('X'.repeat(10_001)))
+      assert.match(block, /the first 10000 of 10500 characters/)
+      assert.match(block, /preserved in the thread spine/)
+    })
+
+    it('drops injected context on a deny (no result to inject into)', async () => {
+      const script = await writeHookScript(
+        'inject-deny.sh',
+        '{"permission":"deny","additionalContext":"never applied"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.equal(decision.permission, 'deny')
+      assert.equal(decision.injectContext, undefined)
     })
   })
 
@@ -355,6 +481,46 @@ describe('cursor-adapter', () => {
       assert.ok(run.stdout && run.stderr)
       assert.equal(await readFile(join(dir, run.stdout.ref), 'utf-8'), '{"permission":"ask"}')
       assert.equal(await readFile(join(dir, run.stderr.ref), 'utf-8'), 'debug noise\n')
+    })
+
+    it('flags a rewrite in the hook_run spine decision (H1)', async () => {
+      const script = join(tempHome, 'spine-rewrite.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s' '{"permission":"allow","updated_input":{"command":"echo safe"}}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'echo danger' })
+      assert.deepEqual(decision.updatedInput, { command: 'echo safe' })
+
+      const runs = await readRecordedRuns()
+      const [run] = runs
+      assert.ok(run)
+      assert.equal(run.decision.updatedInput, true)
+      assert.equal(run.decision.permission, 'allow')
+    })
+
+    it('records injectContextChars (full length) in the hook_run decision (H2)', async () => {
+      const script = join(tempHome, 'spine-inject.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s' '{"permission":"allow","additionalContext":"twelve chars"}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.match(decision.injectContext ?? '', /twelve chars/)
+
+      const runs = await readRecordedRuns()
+      const [run] = runs
+      assert.ok(run)
+      assert.equal(run.decision.injectContextChars, 'twelve chars'.length)
+      assert.equal(run.decision.permission, 'allow')
     })
 
     it('records parse_ok false with the corrupt bytes when stdout is not JSON', async () => {

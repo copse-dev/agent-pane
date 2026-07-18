@@ -10,8 +10,14 @@
 // This module lives in `packages/agent` and imports nothing from the host app
 // (execution-guidance rule 4).
 import { errorMessage } from '../internal-utils.ts'
-import type { BlockingHookOutcome, HookDecision, HookHaltRun } from './hook-outcome.ts'
 import type {
+  AsyncHookOutcome,
+  BlockingHookOutcome,
+  HookDecision,
+  HookHaltRun,
+} from './hook-outcome.ts'
+import type {
+  AsyncHook,
   BlockingHook,
   FunctionHookContext,
   HookContext,
@@ -20,6 +26,8 @@ import type {
   HookRunRecord,
 } from './canonical-events.ts'
 import type { CommandHook, CommandHookResult } from './command-executor.ts'
+import type { AsyncDispatcher, AsyncDispatchDisposition } from './async-dispatcher.ts'
+import type { TurnTreeId } from './turn-tree.ts'
 
 /**
  * Feed one execution to the host's spine-recording sink (decision 6).
@@ -36,6 +44,32 @@ function recordRun(context: HookContext, record: HookRunRecord): void {
 }
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
+import { STEP_BOUNDARY_HOOKS } from './step-boundary-hooks.ts'
+
+/**
+ * Thread a tool-gate rewrite into the payload so the **next** hook in the
+ * pipeline sees it (H1 sequential `updatedInput`). Hooks fire in registration
+ * order — function hooks then command hooks — and each may return
+ * `updatedInput`; applying it to `payload.input` between hooks is what makes the
+ * pipeline sequential rather than a parallel batch (the "Response-semantics
+ * parity" row for `updated_input` in docs/plans/hooks-and-feature-packs.md).
+ *
+ * Only `toolGate` carries an `input` field a rewrite edits; every other event's
+ * payload has no `input`, and only a `toolGate` outcome ever sets `updatedInput`
+ * (decisions 4 & 11 keep it off async outcomes at the type level), so this is a
+ * no-op for all other events. Merge (not replace) so a partial rewrite keeps the
+ * untouched fields, matching {@link mergeBlockingOutcomes}. The re-analysis of
+ * the *final* rewritten input against the policy matrix happens host-side
+ * (permission-gate re-runs `analyzeShellCommand` / `decideShellPermission`) —
+ * `packages/agent` stays Electron-free (execution-guidance rule 4).
+ */
+function threadUpdatedInput(payload: unknown, updatedInput: Record<string, unknown>): void {
+  if (typeof payload !== 'object' || payload === null || !('input' in payload)) return
+  const p = payload as { input?: unknown }
+  const current =
+    typeof p.input === 'object' && p.input !== null ? (p.input as Record<string, unknown>) : {}
+  p.input = { ...current, ...updatedInput }
+}
 
 /** One hook's contribution to a fired event, tagged with its author. */
 export interface HookOutcomeRecord {
@@ -51,6 +85,60 @@ export interface HookEmitResult {
    * all abstain — yields an empty list and the harness applies nothing.
    */
   outcomes: readonly HookOutcomeRecord[]
+}
+
+/**
+ * One async hook's outcome, tagged with its author and the emitting epoch
+ * (decision 16). The detached executor is fire-and-forget, so an async outcome
+ * cannot influence the current action; it is reported to a host callback for the
+ * pending-message-queue channel (C2). C1 carries the `turnTreeId` on the record
+ * so C2 can check staleness — C1 wires no queue itself.
+ */
+export interface AsyncOutcomeRecord {
+  event: HookEventName
+  hookId: string
+  /** Emitting turn-tree epoch this outcome belongs to (decision 16). */
+  turnTreeId: TurnTreeId
+  outcome: AsyncHookOutcome
+}
+
+/**
+ * Cross-cutting context for firing a *detached async* event ({@link
+ * HookRegistry.emitAsync}). Extends the function-hook context with the three
+ * things the detached executor needs: the shared {@link AsyncDispatcher} that
+ * owns the per-thread concurrency cap + FIFO (decision 13), the owning thread,
+ * and the emitting {@link TurnTreeId} carried on every dispatch (decision 16).
+ * An optional `onAsyncOutcome` sink collects outcomes for the C2 queue channel.
+ *
+ * The `signal` inherited from {@link HookContext} is **not** forwarded to the
+ * dispatched hooks: decision 3 says an already-dispatched hook runs to its own
+ * completion even after abort, so the detached run context strips it — abort
+ * halts *emission* here, never in-flight work.
+ */
+export interface AsyncEmitContext extends FunctionHookContext {
+  /** Shared detached executor (per-thread cap + FIFO). */
+  dispatcher: AsyncDispatcher
+  /** Thread the concurrency cap + FIFO are scoped to. */
+  threadId: string
+  /** Emitting turn-tree epoch, carried on every dispatch (decision 16). */
+  turnTreeId: TurnTreeId
+  /** Collects async outcomes for the C2 pending-message-queue channel (stub in C1). */
+  onAsyncOutcome?: (record: AsyncOutcomeRecord) => void
+}
+
+/**
+ * The synchronous accounting {@link HookRegistry.emitAsync} returns: how many
+ * hooks were dispatched now, deferred into the FIFO, or dropped over the pending
+ * cap. Returned synchronously *by design* — the caller learns the dispatch
+ * disposition without ever awaiting a hook's completion (decision 3).
+ */
+export interface AsyncEmitResult {
+  /** Dispatched immediately (under the concurrency cap). */
+  running: number
+  /** Deferred into the pending-dispatch FIFO (over cap, still detached). */
+  pending: number
+  /** Dropped because the pending FIFO was full (recorded via the drop sink). */
+  dropped: number
 }
 
 /**
@@ -77,12 +165,28 @@ export class HookRegistry {
   // Command (spawned-process) hooks share the registry (decision 1) but run via
   // the host-injected runner, not in-process, so they live in their own map.
   private readonly commandHooks = new Map<HookEventName, CommandHook[]>()
+  // First-party *async* (detached) function hooks — dispatched through the
+  // detached executor (C1), never awaited (decision 3). Separate map because
+  // their outcome type is separate (decisions 4 & 11).
+  private readonly asyncHooks = new Map<HookEventName, AsyncHook[]>()
 
   /** Register a first-party blocking function hook. Later registrations run later. */
   register<E extends HookEventName>(hook: BlockingHook<E>): void {
     const list = this.blockingHooks.get(hook.event)
     if (list) list.push(hook)
     else this.blockingHooks.set(hook.event, [hook])
+  }
+
+  /**
+   * Register a first-party *async* (detached) function hook (C1). Dispatched via
+   * {@link emitAsync} through the shared executor, never awaited. Later
+   * registrations dispatch later (order within an event is not a promise — the
+   * FIFO has "no ordering promises", decision 13).
+   */
+  registerAsync<E extends HookEventName>(hook: AsyncHook<E>): void {
+    const list = this.asyncHooks.get(hook.event)
+    if (list) list.push(hook)
+    else this.asyncHooks.set(hook.event, [hook])
   }
 
   /**
@@ -104,6 +208,11 @@ export class HookRegistry {
   /** Command hooks registered for `event`, in registration order (empty when none). */
   commandHooksFor(event: HookEventName): readonly CommandHook[] {
     return this.commandHooks.get(event) ?? []
+  }
+
+  /** Async function hooks registered for `event`, in registration order (empty when none). */
+  asyncHooksFor(event: HookEventName): readonly AsyncHook[] {
+    return this.asyncHooks.get(event) ?? []
   }
 
   /**
@@ -170,7 +279,11 @@ export class HookRegistry {
         durationMs: Date.now() - startedAt,
         outcome: outcome ?? null,
       })
-      if (outcome) outcomes.push({ hookId: hook.id, outcome })
+      if (outcome) {
+        outcomes.push({ hookId: hook.id, outcome })
+        // Sequential pipeline (H1): a rewrite is visible to the next hook.
+        if (outcome.updatedInput) threadUpdatedInput(payload, outcome.updatedInput)
+      }
     }
   }
 
@@ -200,9 +313,134 @@ export class HookRegistry {
       } catch (cause) {
         result = commandRunnerCrashResult(hook, cause)
       }
-      if (result.outcome) outcomes.push({ hookId: hook.id, outcome: result.outcome })
+      if (result.outcome) {
+        outcomes.push({ hookId: hook.id, outcome: result.outcome })
+        // Sequential pipeline (H1): the rewrite this command hook returned is
+        // marshalled into the *next* command hook's stdin — command hooks run
+        // after function hooks, so the pipeline threads across both kinds.
+        if (result.outcome.updatedInput) threadUpdatedInput(payload, result.outcome.updatedInput)
+      }
     }
   }
+
+  /**
+   * Fire a *detached async* canonical event (C1; decisions 3, 13, 16). Every
+   * registered async function hook and every registered command hook for the
+   * event is handed to the shared {@link AsyncDispatcher}, which spawns it under
+   * the per-thread concurrency cap or defers it into the pending FIFO — **and
+   * this method never awaits any of them.** It returns synchronously with the
+   * dispatch accounting, so the caller (`void registry.emitAsync(...)`) learns
+   * how work was scheduled without blocking on a single hook (decision 3, "no
+   * drain barrier").
+   *
+   * Every dispatch carries the emitting {@link TurnTreeId} (decision 16) so a
+   * late output can be checked for staleness in C2/C3. Abort stops *emission* —
+   * the harness stops calling this — but a hook already dispatched runs to its
+   * own completion: the run context strips the abort signal (see
+   * {@link detachedHookContext}) so an in-flight process is never killed.
+   *
+   * Async outcomes (from function hooks) are reported to `onAsyncOutcome` for the
+   * C2 queue channel; C1 wires no queue. Command hooks for async observation
+   * events (`stop`) are notification-only, so their blocking outcome is ignored
+   * here (they record their own spine line via the runner).
+   */
+  emitAsync<E extends HookEventName>(
+    event: E,
+    payload: HookEventPayloads[E],
+    context: AsyncEmitContext,
+  ): AsyncEmitResult {
+    const { dispatcher, threadId, turnTreeId, onAsyncOutcome } = context
+    const hookContext = detachedHookContext(context)
+    const summary: AsyncEmitResult = { running: 0, pending: 0, dropped: 0 }
+
+    const tally = (disposition: AsyncDispatchDisposition): void => {
+      if (disposition === 'running') summary.running += 1
+      else if (disposition === 'pending') summary.pending += 1
+      else summary.dropped += 1
+    }
+
+    for (const hook of this.asyncHooks.get(event) ?? []) {
+      tally(
+        dispatcher.dispatch({
+          event,
+          hookId: hook.id,
+          executor: 'function',
+          threadId,
+          turnTreeId,
+          run: async () => {
+            const outcome = await hook.run(payload, hookContext)
+            if (outcome && onAsyncOutcome) {
+              onAsyncOutcome({ event, hookId: hook.id, turnTreeId, outcome })
+            }
+          },
+        }),
+      )
+    }
+
+    const runner = hookContext.runCommandHook
+    if (runner) {
+      for (const hook of this.commandHooks.get(event) ?? []) {
+        tally(
+          dispatcher.dispatch({
+            event,
+            hookId: hook.id,
+            executor: 'command',
+            threadId,
+            turnTreeId,
+            run: async () => {
+              // The runner records its own spine line and resolves dialect
+              // failure. An async command hook's only actionable output off the
+              // critical path is a queued follow-up (`queueMessage`, decision 4 —
+              // D1's `subagentStop` `followup_message`); it routes through the
+              // same `onAsyncOutcome` → C2 queue channel the function-hook path
+              // uses, never a bespoke protocol. A notification-only completion
+              // (Cursor `stop`) carries none, so its result is dropped.
+              const result = await runner.run(hook, payload, hookContext)
+              // An async command hook's actionable outputs off the critical path:
+              // a queued follow-up (D1 `subagentStop`) and/or session env (H4
+              // `sessionStart`'s `env`). Either routes through the same
+              // `onAsyncOutcome` → host sink; a notification-only completion
+              // carries neither, so nothing is reported.
+              if ((result.queueMessage || result.sessionEnv) && onAsyncOutcome) {
+                onAsyncOutcome({
+                  event,
+                  hookId: hook.id,
+                  turnTreeId,
+                  outcome: {
+                    ...(result.queueMessage ? { queueMessage: result.queueMessage } : {}),
+                    ...(result.sessionEnv ? { sessionEnv: result.sessionEnv } : {}),
+                  },
+                })
+              }
+            },
+          }),
+        )
+      }
+    }
+
+    return summary
+  }
+}
+
+/**
+ * Build the context a *detached* hook runs with: the base function-hook context
+ * minus the emit-only fields (dispatcher / thread / epoch / outcome sink) and —
+ * critically — minus the abort `signal`. Decision 3: an already-dispatched hook
+ * runs to its own completion even after abort, so forwarding the signal (which a
+ * command runner would wire into its process spawn) would let abort *kill*
+ * in-flight work — exactly the drain/kill barrier the detached executor must not
+ * have. Fields are copied only when present to stay clean under
+ * `exactOptionalPropertyTypes`.
+ */
+function detachedHookContext(context: AsyncEmitContext): FunctionHookContext {
+  const detached: FunctionHookContext = {}
+  if (context.resolveGithubRepoSlug) detached.resolveGithubRepoSlug = context.resolveGithubRepoSlug
+  if (context.recordHookRun) detached.recordHookRun = context.recordHookRun
+  if (context.runCommandHook) detached.runCommandHook = context.runCommandHook
+  if (context.agentSession) detached.agentSession = context.agentSession
+  if (context.emitChunk) detached.emitChunk = context.emitChunk
+  if (context.loopState) detached.loopState = context.loopState
+  return detached
 }
 
 /**
@@ -274,13 +512,15 @@ export function mergeBlockingOutcomes(records: readonly HookOutcomeRecord[]): Bl
 
 /**
  * First-party hooks registered on every fresh registry. M0.2 fills in the
- * turn-start steering / pin hooks; M0.3 adds the finalize closeout nudge hook.
- * Registration order within each event is load-bearing (assembly / attempt
- * mapping); cross-event order is not.
+ * turn-start steering / pin hooks; M0.3 adds the finalize closeout nudge hook;
+ * E1 adds the four in-loop step-boundary nudge hooks. Registration order within
+ * each event is load-bearing (assembly / attempt mapping); cross-event order is
+ * not.
  */
 export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [
   ...TURN_START_HOOKS,
   ...BEFORE_FINALIZE_HOOKS,
+  ...STEP_BOUNDARY_HOOKS,
 ]
 
 /** Build a registry pre-loaded with the static first-party hook list. */

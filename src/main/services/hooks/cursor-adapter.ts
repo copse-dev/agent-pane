@@ -14,10 +14,12 @@
 // `failed` + the hook's `onFailure`; the shared runner turns that into deny/allow.
 import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import micromatch from 'micromatch'
 import {
   CURSOR_HOOK_EVENTS,
-  isCursorPermissionHookEvent,
+  isCursorWiredHookEvent,
+  type CursorAfterToolHookEvent,
   type CursorHookEvent,
   type CursorHookScope,
   type CursorHooksListResult,
@@ -26,7 +28,7 @@ import {
 } from '@shared/types/cursor-hooks.ts'
 import type { HooksListResult } from '@shared/types/hooks.ts'
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
-import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
+import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
@@ -35,7 +37,17 @@ import type {
   DialectDiscoverOpts,
   DialectInterpretation,
 } from './dialect-adapter.ts'
-import { DEFAULT_HOOK_TIMEOUT_MS, type HookSpawnResult } from './hook-spawn.ts'
+import { type HookSpawnResult } from './hook-spawn.ts'
+
+/**
+ * Cursor's per-hook timeout default (decision 13; H4). Cursor's own docs give a
+ * **30s** platform default for hooks (overridable per hook via the `timeout`
+ * field, in seconds — https://cursor.com/docs/hooks). Copse historically pinned
+ * a fixed 5s, which decision 13 flags as too short to survive real hooks; H4
+ * adopts the vendor default. Kept as a module variable so tests can shorten it
+ * to exercise the timeout failure mode without a 30s wall-clock wait.
+ */
+export const CURSOR_DEFAULT_HOOK_TIMEOUT_MS = 30_000
 
 /** A parsed hook command together with the config that declared it. */
 interface DiscoveredCursorHook {
@@ -47,6 +59,47 @@ interface DiscoveredCursorHook {
   scope: CursorHookScope
   /** Cursor `failClosed: true` — crash / timeout / invalid JSON blocks instead of allowing. */
   failClosed: boolean
+  /**
+   * Per-hook `timeout` override in **milliseconds** (decision 13; H4). Parsed
+   * from the entry's `timeout` field (a number of **seconds**, the Cursor wire
+   * unit). Absent = the dialect default {@link CURSOR_DEFAULT_HOOK_TIMEOUT_MS}
+   * (or the test override); present = this hook's own timeout takes precedence.
+   */
+  timeoutMs?: number
+  /**
+   * Optional path/glob matcher for `afterFileEdit` (B2). Cursor's native
+   * `afterFileEdit` has no declared per-hook path matcher — the vendor pattern
+   * is for the script to filter on `file_path` itself — so this is a Copse
+   * convenience the Cursor adapter honours: when present, the hook fires only
+   * for edited paths matching one of the globs; when absent, it fires for every
+   * edit (Cursor's "runs after every file edit" default). Populated from a
+   * string or string[] `glob` field on the entry.
+   */
+  glob?: string[]
+  /**
+   * Cursor's native per-hook `matcher` (a regex string). D3 honours it across
+   * **every** wired event, with the field it tests against selected per event
+   * (Cursor's "which field the matcher applies to depends on the hook"):
+   *
+   * | Event(s)                                   | matched against          |
+   * | ------------------------------------------ | ------------------------ |
+   * | `beforeShellExecution` / `afterShellExecution` | the full shell command text |
+   * | `beforeMCPExecution` / `afterMCPExecution` | the (MCP) tool name      |
+   * | `beforeReadFile`                           | the tool type (`Read`)   |
+   * | `afterFileEdit`                            | the tool type (`Write`)  |
+   * | `beforeSubmitPrompt`                       | the value `UserPromptSubmit` |
+   * | `stop`                                     | the value `Stop`         |
+   * | `subagentStart` / `subagentStop`           | the subagent type        |
+   *
+   * An absent matcher fires for every event (Cursor's default). A malformed
+   * regex skips the hook (Cursor's docs do not specify invalid-matcher
+   * behavior; Copse chooses skip-and-warn so a broken matcher can never
+   * accidentally deny/observe every action — consistent with D1's original
+   * subagent matcher). Evaluation is centralized in {@link cursorMatcherMatches}
+   * / {@link cursorMatcherSubject}; each discovery function calls it (the
+   * adapter's dispatch-side filter, decision 8: adapters own matchers).
+   */
+  matcher?: string
 }
 
 /** `~/.cursor/hooks.json` — always trusted (the user installed it). */
@@ -61,6 +114,28 @@ export function projectHooksConfigPath(workspaceRoot: string): string {
 
 function isHookEvent(value: string): value is CursorHookEvent {
   return (CURSOR_HOOK_EVENTS as readonly string[]).includes(value)
+}
+
+/**
+ * Normalize an entry's `glob` matcher field (B2) to a clean string[] or
+ * undefined. Accepts a single string or an array of strings; anything else (or
+ * an empty result) yields undefined so the hook fires for every edit.
+ */
+function normalizeGlobField(value: unknown): string[] | undefined {
+  const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
+  const globs = raw.filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+  return globs.length > 0 ? globs : undefined
+}
+
+/**
+ * Normalize a hook entry's `timeout` field (decision 13; H4) to milliseconds.
+ * Cursor's wire unit is **seconds** (a number), so a valid positive, finite
+ * value is multiplied by 1000. Anything else (missing, non-number, ≤ 0, NaN)
+ * yields undefined so the hook falls back to the dialect default.
+ */
+function normalizeTimeoutField(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.round(value * 1000)
 }
 
 /** One parsed config: usable hooks plus per-entry authoring warnings. */
@@ -129,7 +204,24 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
         return
       }
       const failClosed = (entry as { failClosed?: unknown }).failClosed === true
-      out.push({ event, command: command.trim(), cwd, source: path, scope, failClosed })
+      const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
+      const matcherRaw = (entry as { matcher?: unknown }).matcher
+      const matcher =
+        typeof matcherRaw === 'string' && matcherRaw.trim().length > 0
+          ? matcherRaw.trim()
+          : undefined
+      const timeoutMs = normalizeTimeoutField((entry as { timeout?: unknown }).timeout)
+      out.push({
+        event,
+        command: command.trim(),
+        cwd,
+        source: path,
+        scope,
+        failClosed,
+        ...(glob ? { glob } : {}),
+        ...(matcher ? { matcher } : {}),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      })
     })
   }
   return { hooks: out, warnings }
@@ -177,11 +269,11 @@ export function resetCursorHookSessionErrorsForTest(): void {
  * this configurable per hook). Kept as a module variable so tests can shorten it
  * to exercise the timeout failure mode without a 5s wall-clock wait.
  */
-let cursorHookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS
+let cursorHookTimeoutMs = CURSOR_DEFAULT_HOOK_TIMEOUT_MS
 
 /** Test-only: override the Cursor per-hook timeout, or reset to the default when omitted. */
 export function setCursorHookTimeoutForTest(ms?: number): void {
-  cursorHookTimeoutMs = ms ?? DEFAULT_HOOK_TIMEOUT_MS
+  cursorHookTimeoutMs = ms ?? CURSOR_DEFAULT_HOOK_TIMEOUT_MS
 }
 
 /** Diagnostics / Settings → Sources — discovered Cursor hooks, regardless of enablement. */
@@ -195,7 +287,7 @@ export async function listCursorHooks(opts: DialectDiscoverOpts): Promise<Cursor
         command,
         source,
         scope,
-        supported: isCursorPermissionHookEvent(event),
+        supported: isCursorWiredHookEvent(event),
         ...(lastError !== undefined ? { lastError } : {}),
       }
     }),
@@ -238,6 +330,20 @@ export function cursorEventForTool(toolName: string): CursorPermissionHookEvent 
   return null
 }
 
+/**
+ * Map a canonical tool name to the Cursor post-tool observation event (D2), if
+ * any. The shell/MCP split mirrors {@link cursorEventForTool} — the tool name
+ * is the flavor selector for the one canonical `afterToolUse` event. Cursor has
+ * no generic post-tool hook, so tools other than shell / MCP have no
+ * `afterToolUse` Cursor equivalent and this returns null (the fire site fires
+ * for every tool, discovery filters to the shell/MCP flavors).
+ */
+export function cursorAfterEventForTool(toolName: string): CursorAfterToolHookEvent | null {
+  if (toolName === 'run_shell') return 'afterShellExecution'
+  if (toolName.startsWith('mcp__')) return 'afterMCPExecution'
+  return null
+}
+
 function stringField(input: Record<string, unknown>, key: string): string {
   const value = input[key]
   return typeof value === 'string' ? value : ''
@@ -260,12 +366,115 @@ function auditProjectHook(hook: DiscoveredCursorHook): void {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Per-event `matcher` semantics (D3)
+// ---------------------------------------------------------------------------
+//
+// Cursor's per-hook `matcher` is a single regex string, but *which field it
+// tests against depends on the event* (vendor docs, "Available matchers by
+// hook"). Rather than copy a one-off `new RegExp(...)` into each discovery
+// function, evaluation is centralized here: {@link cursorMatcherSubject} selects
+// the field per event and {@link cursorMatcherMatches} runs the regex. Every
+// discovery function funnels its per-event materials (command text / tool name /
+// subagent type) through the same matcher, so the whole Cursor matrix behaves
+// consistently and a new event only has to add its subject case.
+
+/**
+ * The Cursor tool-type token a file **read** maps to. Cursor's `beforeReadFile`
+ * matcher filters by tool type (`Read`, `TabRead`); Copse's `read_file` gate is
+ * the (non-tab) `Read` tool, so a `Read` matcher matches and `TabRead` does not
+ * (Copse has no inline-tab reads).
+ */
+const MATCHER_TOOL_TYPE_READ = 'Read'
+
+/**
+ * The Cursor tool-type token a file **edit** maps to. Cursor's `afterFileEdit`
+ * matcher filters by tool type (`Write`, `TabWrite`); every Copse edit funnels
+ * through the diff-queue write path, so it is the (non-tab) `Write` tool.
+ */
+const MATCHER_TOOL_TYPE_WRITE = 'Write'
+
+/** Cursor matches a `beforeSubmitPrompt` matcher against this fixed token. */
+const MATCHER_SUBJECT_SUBMIT_PROMPT = 'UserPromptSubmit'
+
+/** Cursor matches a `stop` matcher against this fixed token. */
+const MATCHER_SUBJECT_STOP = 'Stop'
+
+/**
+ * The per-event materials a matcher may test against. A discovery function fills
+ * only the fields relevant to its event(s); {@link cursorMatcherSubject} picks
+ * the right one. Empty/absent fields resolve to the empty string (a matcher
+ * against a missing subject simply fails to match).
+ */
+interface CursorMatcherContext {
+  /** Full shell command string — `beforeShellExecution` / `afterShellExecution`. */
+  command?: string
+  /** Canonical (MCP) tool name — `beforeMCPExecution` / `afterMCPExecution`. */
+  toolName?: string
+  /** Subagent type — `subagentStart` / `subagentStop`. */
+  subagentType?: string
+}
+
+/**
+ * The string a Cursor `matcher` regex is tested against for `event`. Encodes the
+ * vendor's per-event field selection (see the {@link DiscoveredCursorHook.matcher}
+ * table). Exhaustive over {@link CursorHookEvent} — a new event must add its
+ * subject here (TypeScript flags the missing case).
+ */
+function cursorMatcherSubject(event: CursorHookEvent, ctx: CursorMatcherContext): string {
+  switch (event) {
+    case 'beforeShellExecution':
+    case 'afterShellExecution':
+      return ctx.command ?? ''
+    case 'beforeMCPExecution':
+    case 'afterMCPExecution':
+      return ctx.toolName ?? ''
+    case 'beforeReadFile':
+      return MATCHER_TOOL_TYPE_READ
+    case 'afterFileEdit':
+      return MATCHER_TOOL_TYPE_WRITE
+    case 'beforeSubmitPrompt':
+      return MATCHER_SUBJECT_SUBMIT_PROMPT
+    case 'stop':
+      return MATCHER_SUBJECT_STOP
+    case 'subagentStart':
+    case 'subagentStop':
+      return ctx.subagentType ?? ''
+    case 'sessionStart':
+      // sessionStart carries no tool/command/type subject; Cursor's schema
+      // notes a `matcher` here prevents the hook from firing, so an absent
+      // matcher fires and any matcher fails against the empty subject.
+      return ''
+  }
+}
+
+/**
+ * Whether a hook's `matcher` covers the event's subject (D3). An absent matcher
+ * fires for every action (Cursor's default). A malformed regex skips the hook
+ * (skip-and-warn — Cursor's docs are silent on invalid matchers, and skipping
+ * is the safe choice: a broken matcher must never accidentally deny/observe
+ * every action). This is the single dispatch-side matcher filter every discovery
+ * function shares (decision 8: adapters own matchers).
+ */
+function cursorMatcherMatches(hook: DiscoveredCursorHook, ctx: CursorMatcherContext): boolean {
+  if (!hook.matcher) return true
+  const subject = cursorMatcherSubject(hook.event, ctx)
+  try {
+    return new RegExp(hook.matcher).test(subject)
+  } catch {
+    console.warn(`[cursor-hooks] invalid "${hook.event}" matcher /${hook.matcher}/ — hook skipped`)
+    return false
+  }
+}
+
 /**
  * Discover the Cursor command hooks that gate `payload.toolName`, as registry
  * `CommandHook`s. Only permission events (shell / MCP / read) map onto the
- * canonical `toolGate`; the matcher is the tool → event mapping above. Each
- * hook's `onFailure` is `closed` when its `failClosed` flag is set, `open`
- * otherwise (the Cursor default).
+ * canonical `toolGate`; the tool → event mapping ({@link cursorEventForTool}) is
+ * the first filter and the per-event `matcher` (D3 — shell command text /
+ * MCP tool name / read tool-type) is the second. Each hook's `onFailure` is
+ * `closed` when its `failClosed` flag is set, `open` otherwise (the Cursor
+ * default).
  */
 export async function cursorToolGateHooks(
   payload: HookEventPayloads['toolGate'],
@@ -273,9 +482,13 @@ export async function cursorToolGateHooks(
 ): Promise<CommandHook<'toolGate'>[]> {
   const event = cursorEventForTool(payload.toolName)
   if (!event) return []
+  const matcherCtx: CursorMatcherContext = {
+    command: stringField(payload.input, 'command'),
+    toolName: payload.toolName,
+  }
   const { hooks } = await discoverHooksDetailed(opts)
   return hooks
-    .filter((h) => h.event === event)
+    .filter((h) => h.event === event && cursorMatcherMatches(h, matcherCtx))
     .map((h) => {
       auditProjectHook(h)
       return {
@@ -286,7 +499,280 @@ export async function cursorToolGateHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `beforeSubmitPrompt` (B1), as
+ * registry `CommandHook`s. Same discovery + trust + `failClosed` → `onFailure`
+ * mapping as {@link cursorToolGateHooks}; the compose-path fire site
+ * (`before-submit-prompt.ts`) registers and fires them through the shared
+ * registry → runner → adapter seam.
+ */
+export async function cursorBeforeSubmitPromptHooks(
+  _payload: HookEventPayloads['beforeSubmitPrompt'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'beforeSubmitPrompt'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'beforeSubmitPrompt' && cursorMatcherMatches(h, {}))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'beforeSubmitPrompt' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Whether an `afterFileEdit` hook's glob matcher covers the edited path (B2).
+ * A hook with no glob fires for every edit (Cursor's default). Otherwise the
+ * absolute path is matched, plus — when it is under the workspace — its
+ * workspace-relative form (so `**` / `src/**` globs match the natural way), and
+ * a basename pass so a bare `*.ts` still matches a nested file.
+ */
+function afterFileEditMatches(
+  hook: DiscoveredCursorHook,
+  filePath: string,
+  workspaceRoot: string | null,
+): boolean {
+  if (!hook.glob || hook.glob.length === 0) return true
+  const candidates = [filePath.replace(/\\/g, '/')]
+  if (workspaceRoot) {
+    const rel = relative(workspaceRoot, filePath).replace(/\\/g, '/')
+    if (rel && !rel.startsWith('..')) candidates.push(rel)
+  }
+  return candidates.some(
+    (c) =>
+      micromatch.isMatch(c, hook.glob as string[], { dot: true }) ||
+      micromatch.isMatch(c, hook.glob as string[], { dot: true, basename: true }),
+  )
+}
+
+/**
+ * Discover the Cursor command hooks registered for `afterFileEdit` (B2) whose
+ * path matcher covers `payload.filePath`, as registry `CommandHook`s. Same
+ * discovery + trust + `failClosed` → `onFailure` mapping as
+ * {@link cursorToolGateHooks}; the matcher (per-hook `glob`) is applied here at
+ * discovery — the adapter's dispatch-side filter, mirroring how the tool → event
+ * matcher gates `toolGate`. The diff-queue / write-tool fire site
+ * (`after-file-edit.ts`) registers and fires the survivors through the shared
+ * registry → runner → adapter seam.
+ */
+export async function cursorAfterFileEditHooks(
+  payload: HookEventPayloads['afterFileEdit'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'afterFileEdit'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  // Two independent filters that must *both* pass (B2 + D3): the Copse-convenience
+  // `glob` (matches the edited path) and Cursor's native `matcher` (matches the
+  // edit's tool type — `Write`). They are distinct fields with distinct meanings;
+  // see `afterFileEditMatches` (glob) and `cursorMatcherMatches` (matcher).
+  return hooks
+    .filter(
+      (h) =>
+        h.event === 'afterFileEdit' &&
+        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot) &&
+        cursorMatcherMatches(h, {}),
+    )
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'afterFileEdit' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `stop` (B3), as registry
+ * `CommandHook`s. Same discovery + trust + `failClosed` → `onFailure` mapping as
+ * {@link cursorToolGateHooks}; the turn-end / abort fire site (`stop.ts`)
+ * registers and fires them **detached** (decision 3, never awaited) through the
+ * shared registry → runner → adapter seam. Cursor's `stop` is notification-only,
+ * so `failClosed` has nothing to block post-hoc — but the flag still maps to
+ * `onFailure` for the spine + Sources error indicator uniformity.
+ */
+export async function cursorStopHooks(
+  _payload: HookEventPayloads['stop'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'stop'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'stop' && cursorMatcherMatches(h, {}))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'stop' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Whether a subagent-lifecycle hook's `matcher` covers the subagent type (D1,
+ * now via the centralized D3 matcher). Cursor runs the matcher against the
+ * subagent type (`explore`, `shell`, `generalPurpose`, …); Copse's own types are
+ * `explore` / `investigate_ci`. Thin wrapper over {@link cursorMatcherMatches}
+ * so the subagent field selection reads at the call site.
+ */
+function subagentTypeMatches(hook: DiscoveredCursorHook, subagentType: string): boolean {
+  return cursorMatcherMatches(hook, { subagentType })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `subagentStart` (D1) whose
+ * `matcher` covers the subagent type, as registry `CommandHook`s. Same discovery
+ * + trust + `failClosed` → `onFailure` mapping as {@link cursorToolGateHooks};
+ * the matcher-on-type filter is applied here at discovery (the adapter's
+ * dispatch-side filter). `subagentStart` is **blocking**: the subagent fire site
+ * (`subagent.ts`) registers and fires them, and a `deny` prevents the spawn.
+ */
+export async function cursorSubagentStartHooks(
+  payload: HookEventPayloads['subagentStart'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'subagentStart'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'subagentStart' && subagentTypeMatches(h, payload.subagentType))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'subagentStart' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `subagentStop` (D1) whose
+ * `matcher` covers the subagent type, as registry `CommandHook`s. Fired
+ * **detached** (decision 3) through the C1 executor by the subagent fire site
+ * (`subagent.ts`); a `followup_message` (on `completed`) routes through the
+ * pending-message queue (C2/C3), never a bespoke protocol.
+ */
+export async function cursorSubagentStopHooks(
+  payload: HookEventPayloads['subagentStop'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'subagentStop'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'subagentStop' && subagentTypeMatches(h, payload.subagentType))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'subagentStop' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for the post-tool observation
+ * event that matches `payload.toolName` (D2), as canonical `afterToolUse`
+ * `CommandHook`s. The tool → event mapping ({@link cursorAfterEventForTool}) is
+ * the flavor selector: `run_shell` → `afterShellExecution`, `mcp__*` →
+ * `afterMCPExecution`; any other tool has no Cursor after-event and yields no
+ * hooks (so the fire site can fire generically and only shell/MCP hooks run).
+ *
+ * The tool-type split selects the flavor; the per-hook `matcher` (D3) is then
+ * applied on top — the shell command text for `afterShellExecution`, the tool
+ * name for `afterMCPExecution` — so a hook can observe only matching commands /
+ * tools. Fired **detached** (decision 3) through the C1 executor by the fire
+ * site (`after-tool-use.ts`); Cursor's after-events are notification-only, so a
+ * `failClosed` flag has nothing to block post-hoc but still maps to `onFailure`
+ * for spine + Sources uniformity.
+ */
+export async function cursorAfterToolUseHooks(
+  payload: HookEventPayloads['afterToolUse'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'afterToolUse'>[]> {
+  const event = cursorAfterEventForTool(payload.toolName)
+  if (!event) return []
+  const matcherCtx: CursorMatcherContext = {
+    command: stringField(payload.input ?? {}, 'command'),
+    toolName: payload.toolName,
+  }
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === event && cursorMatcherMatches(h, matcherCtx))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'afterToolUse' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `sessionStart` (H4), as
+ * registry `CommandHook`s. `sessionStart` carries no tool/command subject, so
+ * the only filter is the (rare) per-hook `matcher` — Cursor's docs note a
+ * matcher on `sessionStart` prevents the hook from firing, which
+ * {@link cursorMatcherMatches} against the empty subject reproduces. Fired
+ * **detached** (fire-and-forget) by the fire site (`session-start.ts`); the
+ * `env` output propagates to later hook spawns via the session env store.
+ * `failClosed` maps to `onFailure` only for spine + Sources uniformity — a
+ * fire-and-forget session start has nothing to block.
+ */
+export async function cursorSessionStartHooks(
+  _payload: HookEventPayloads['sessionStart'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'sessionStart'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'sessionStart' && cursorMatcherMatches(h, {}))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'sessionStart' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -295,6 +781,63 @@ interface CursorHookResponse {
   permission?: HookDecision
   agentMessage?: string
   userMessage?: string
+  /**
+   * Cursor's tool-input rewrite (H1). The vendor field is snake_case
+   * `updated_input`; we also accept camelCase `updatedInput` for symmetry with
+   * the other Cursor response fields. It is the (partial or full) replacement
+   * for the gated tool's input — for `run_shell` the `{ command }` object — and
+   * maps onto the canonical `updatedInput`, which re-runs the policy matrix.
+   */
+  updated_input?: unknown
+  updatedInput?: unknown
+  /**
+   * Context a blocking hook injects into the current turn (H2). Cursor's field
+   * is `additionalContext`; the snake_case `additional_context` is accepted for
+   * symmetry. It maps onto the canonical `injectContext`, which the fire site
+   * (the tool result for `toolGate`) places into the turn as a system-reminder
+   * block, 10k-capped with the full text preserved in this run's stdout blob.
+   */
+  additionalContext?: unknown
+  additional_context?: unknown
+}
+
+/**
+ * Cursor `subagentStop` stdout: an optional `followup_message` that auto-
+ * continues the parent (consumed only on `status: completed`). Snake and camel
+ * spellings accepted, mirroring the other Cursor response parsers.
+ */
+interface CursorSubagentStopResponse {
+  followup_message?: string
+  followupMessage?: string
+}
+
+/**
+ * Cursor `beforeSubmitPrompt` stdout: `{ continue: boolean }` plus an optional
+ * user-facing message. The vendor documents `user_message` (snake_case); the
+ * permission-hook response uses camelCase `userMessage`/`agentMessage`, so we
+ * accept either spelling and normalize.
+ */
+interface CursorBeforeSubmitPromptResponse {
+  continue?: boolean
+  user_message?: string
+  userMessage?: string
+  agent_message?: string
+  agentMessage?: string
+  /**
+   * Context injected into the current turn (H2). Cursor's compose-path hook can
+   * return `additionalContext` to prepend guidance to the prompt about to run;
+   * it maps onto the canonical `injectContext`, folded into the turn's
+   * system-reminder block (10k-capped). Snake_case accepted for symmetry.
+   */
+  additionalContext?: string
+  additional_context?: string
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.length > 0) return value
+  }
+  return undefined
 }
 
 function isHookDecision(value: unknown): value is HookDecision {
@@ -312,8 +855,20 @@ function outcomeFromResponse(parsed: unknown): {
   if (typeof res.agentMessage === 'string' && res.agentMessage)
     outcome.agentMessage = res.agentMessage
   if (typeof res.userMessage === 'string' && res.userMessage) outcome.userMessage = res.userMessage
+  // H1: `updated_input` (or camelCase) rewrites the gated tool's input. Only a
+  // non-null object is a valid rewrite (the canonical `updatedInput` is a
+  // Record); anything else is ignored so a stray scalar can't blank the input.
+  const rewrite = asInputRecord(res.updated_input ?? res.updatedInput)
+  if (rewrite) outcome.updatedInput = rewrite
+  // H2: `additionalContext` (or snake_case) injects into the current turn.
+  const injected = firstString(res.additionalContext, res.additional_context)
+  if (injected !== undefined) outcome.injectContext = injected
   const spineDecision: SpineHookRunDecision = {
     ...(outcome.decision !== undefined ? { permission: outcome.decision } : {}),
+    ...(outcome.updatedInput !== undefined ? { updatedInput: true } : {}),
+    ...(outcome.injectContext !== undefined
+      ? { injectContextChars: outcome.injectContext.length }
+      : {}),
     ...(outcome.agentMessage !== undefined
       ? { agentMessageChars: outcome.agentMessage.length }
       : {}),
@@ -322,19 +877,49 @@ function outcomeFromResponse(parsed: unknown): {
   return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
 }
 
+/** A tool-input rewrite is only valid as a plain object (arrays/scalars ignored). */
+function asInputRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+/**
+ * The base agent-session envelope every Cursor hook payload carries (B4). The
+ * real `conversation_id` (thread id) and `generation_id` (turn id) come from the
+ * host-captured {@link AgentSessionInfo}; when there is no active run the ids are
+ * empty strings (the pre-B4 behavior). The running model is stamped as Cursor's
+ * `model` / `model_id` / `model_params` (vendor contract; `model_params` is the
+ * `{ id, value }[]` array shape, not an object) on **every** agent-session
+ * event — Cursor sends model identity on all of them.
+ */
+function agentSessionEnvelope(
+  event: CursorHookEvent,
+  session: AgentSessionInfo | undefined,
+): Record<string, unknown> {
+  const root = getWorkspaceRoot()
+  const base: Record<string, unknown> = {
+    conversation_id: session?.conversationId ?? '',
+    generation_id: session?.generationId ?? '',
+    hook_event_name: event,
+    workspace_roots: root ? [root] : [],
+  }
+  if (session?.model) {
+    base['model'] = session.model.model
+    base['model_id'] = session.model.modelId
+    base['model_params'] = session.model.modelParams
+  }
+  return base
+}
+
 /** The concrete Cursor dialect adapter the runner delegates to. */
 export const cursorAdapter: DialectAdapter = {
   dialect: 'cursor',
 
-  marshalToolGateRequest(_hook, payload) {
+  marshalToolGateRequest(_hook, payload, session) {
     const event = cursorEventForTool(payload.toolName)
     if (!event) return null
-    const base = {
-      conversation_id: '',
-      generation_id: '',
-      hook_event_name: event,
-      workspace_roots: getWorkspaceRoot() ? [getWorkspaceRoot()] : [],
-    }
+    const base = agentSessionEnvelope(event, session)
     if (event === 'beforeShellExecution') {
       return {
         ...base,
@@ -345,8 +930,15 @@ export const cursorAdapter: DialectAdapter = {
     if (event === 'beforeMCPExecution') {
       return { ...base, tool_name: payload.toolName, tool_input: payload.input }
     }
-    // beforeReadFile: content is passed after the gate today (B4 wires content).
-    return { ...base, file_path: stringField(payload.input, 'path'), content: '' }
+    // beforeReadFile: the host reads the file eagerly for read_file gates and
+    // fills `payload.fileContent` (B4), so a redaction/secret-detection hook can
+    // inspect the bytes and deny. Cursor's beforeReadFile response is allow/deny
+    // only (no content-rewrite in the vendor contract), so "redact" == deny.
+    return {
+      ...base,
+      file_path: stringField(payload.input, 'path'),
+      content: payload.fileContent ?? '',
+    }
   },
 
   interpretToolGate(spawn: HookSpawnResult, payload): DialectInterpretation {
@@ -394,9 +986,494 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
+  marshalBeforeSubmitPromptRequest(_hook, payload, session) {
+    // Cursor's beforeSubmitPrompt stdin: the composed prompt plus attachments
+    // (empty until an attachments payload channel exists) and the standard
+    // agent-session envelope (real conversation/generation ids + model — B4).
+    return {
+      ...agentSessionEnvelope('beforeSubmitPrompt', session),
+      prompt: payload.prompt,
+      attachments: [],
+    }
+  },
+
+  interpretBeforeSubmitPrompt(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    const spineEvent = 'beforeSubmitPrompt'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) {
+      // No stdout on a clean exit is an intentional "allow / no opinion"; a
+      // crash with no output is a failure the runner resolves per `onFailure`.
+      if (spawn.exitCode === 0) return { ...base, failed: false, parseOk: true }
+      const detail =
+        spawn.exitCode === null ? 'was killed' : `exited with code ${String(spawn.exitCode)}`
+      return { ...base, failed: true, parseOk: true, runtimeError: detail }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: 'printed invalid JSON — response ignored',
+      }
+    }
+    const { outcome, spineDecision } = beforeSubmitOutcomeFromResponse(parsed)
+    return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
+  },
+
+  marshalAfterFileEditRequest(_hook, payload, session) {
+    // Cursor's afterFileEdit stdin: the edited file's absolute path, the edits
+    // (old_string/new_string pairs) and the standard agent-session envelope
+    // (real conversation/generation ids + model — B4). The canonical payload
+    // carries only the path in v1, so `edits` is empty — enough for the common
+    // formatter/accounting hook, which keys off file_path.
+    return {
+      ...agentSessionEnvelope('afterFileEdit', session),
+      file_path: payload.filePath,
+      edits: [],
+    }
+  },
+
+  interpretAfterFileEdit(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's afterFileEdit is a notification: it "cannot block the agent or
+    // return data to it" (vendor docs). So stdout never yields a control-flow
+    // decision — the outcome is always null. We still surface a crash / timeout
+    // / non-zero exit as `failed` for the Sources per-hook error indicator and
+    // the spine, but the fire site (after-file-edit.ts) never acts on it — the
+    // edit has already landed. `failClosed` therefore has nothing to block here.
+    const spineEvent = 'afterFileEdit'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalStopRequest(_hook, payload, session) {
+    // Cursor's stop stdin: the terminal `status` plus the standard agent-session
+    // envelope (real conversation/generation ids + model — B4). The fire site
+    // captures the session by value before dispatching detached, so a slow stop
+    // hook still marshals the finished turn's identity (decision 3).
+    return {
+      ...agentSessionEnvelope('stop', session),
+      status: payload.status,
+    }
+  },
+
+  interpretStop(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's stop is a notification: it carries only `status` and returns
+    // nothing (vendor docs). So stdout never yields a control-flow decision —
+    // the outcome is always null. We still surface a crash / timeout / non-zero
+    // exit as `failed` for the Sources per-hook error indicator and the spine,
+    // but the fire site (stop.ts) fires detached and never acts on it (decision
+    // 3, no drain barrier), so `failClosed` has nothing to block. Any
+    // `followup_message` a dialect might return is *not* parsed into an action
+    // here — follow-ups route through the pending-message queue (C2), never a
+    // bespoke stop protocol (decision 4).
+    const spineEvent = 'stop'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalSubagentStartRequest(_hook, payload, session) {
+    // Cursor's subagentStart stdin: the subagent type (the matcher target) and
+    // the resolved `subagent_model` (B4 — the model the subagent will run,
+    // including a local→cloud fallback), plus the standard agent-session
+    // envelope. The host sets `session.model` to the subagent's resolved model,
+    // so the envelope `model` and `subagent_model` both report it.
+    const base = agentSessionEnvelope('subagentStart', session)
+    return {
+      ...base,
+      subagent_type: payload.subagentType,
+      ...(session?.model ? { subagent_model: session.model.model } : {}),
+    }
+  },
+
+  interpretSubagentStart(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // Cursor's subagentStart is a blocking allow/deny gate (`ask` is treated as
+    // deny — vendor contract). A crash / timeout / invalid JSON is a `failed`
+    // run the runner resolves per `onFailure` (failClosed blocks the spawn).
+    const spineEvent = 'subagentStart'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) {
+      if (spawn.exitCode === 0) return { ...base, failed: false, parseOk: true }
+      const detail =
+        spawn.exitCode === null ? 'was killed' : `exited with code ${String(spawn.exitCode)}`
+      return { ...base, failed: true, parseOk: true, runtimeError: detail }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: 'printed invalid JSON — response ignored',
+      }
+    }
+    const { outcome, spineDecision } = subagentStartOutcomeFromResponse(parsed)
+    return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
+  },
+
+  marshalSubagentStopRequest(_hook, payload, session) {
+    // Cursor's subagentStop stdin: the subagent type + terminal status, plus the
+    // standard agent-session envelope. The fire site captures the session by
+    // value before dispatching detached (decision 3).
+    return {
+      ...agentSessionEnvelope('subagentStop', session),
+      subagent_type: payload.subagentType,
+      status: payload.status,
+    }
+  },
+
+  interpretSubagentStop(spawn: HookSpawnResult, payload): DialectInterpretation {
+    // Cursor's subagentStop is detached (decision 3): it returns nothing that
+    // gates control flow. Its one actionable output is `followup_message`
+    // (consumed only on `status: completed`), which routes through the pending-
+    // message queue (C2/C3), never a bespoke protocol — so we surface it as a
+    // `queueMessage` the runner forwards to `onAsyncOutcome`. A crash / timeout /
+    // non-zero exit is recorded `failed` for the spine + Sources only.
+    const spineEvent = 'subagentStop'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) return { ...base, failed: false, parseOk: true }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // A notification hook that prints noise is not a failure to block on
+      // (nothing to block post-hoc); record parseOk:false for the spine only.
+      return { ...base, failed: false, parseOk: false }
+    }
+    const followup = firstString(
+      (parsed as CursorSubagentStopResponse).followup_message,
+      (parsed as CursorSubagentStopResponse).followupMessage,
+    )
+    // The vendor consumes `followup_message` only on a completed subagent.
+    if (followup !== undefined && payload.status === 'completed') {
+      const spineDecision: SpineHookRunDecision = { queuedMessageChars: followup.length }
+      return {
+        ...base,
+        queueMessage: { text: followup, sendNow: false },
+        spineDecision,
+        failed: false,
+        parseOk: true,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalAfterToolUseRequest(_hook, payload, session) {
+    // Cursor splits the canonical afterToolUse into two payload flavors by tool
+    // name (D2): afterShellExecution carries the `command` + captured `output`
+    // + `duration`; afterMCPExecution carries `tool_name` + `tool_input` (JSON
+    // string) + `result_json` + `duration`. `output` is already capped at the
+    // fire site (a tool's stdout is unbounded), so it is safe to marshal
+    // verbatim. Returns null when the tool has no Cursor after-event (the
+    // marshaller's final guard past discovery matching).
+    const event = cursorAfterEventForTool(payload.toolName)
+    if (!event) return null
+    const base = agentSessionEnvelope(event, session)
+    const duration = payload.durationMs ?? 0
+    if (event === 'afterShellExecution') {
+      return {
+        ...base,
+        command: stringField(payload.input ?? {}, 'command'),
+        output: payload.output ?? '',
+        duration,
+      }
+    }
+    // afterMCPExecution: `tool_input` is the JSON params *string*, `result_json`
+    // the JSON result *string* — both stringified per the vendor contract.
+    return {
+      ...base,
+      tool_name: payload.toolName,
+      tool_input: JSON.stringify(payload.input ?? {}),
+      result_json: payload.output ?? '',
+      duration,
+    }
+  },
+
+  interpretAfterToolUse(spawn: HookSpawnResult, payload): DialectInterpretation {
+    // Cursor's after-events are fire-and-forget (detached, decision 3): they
+    // return nothing that gates control flow, so the outcome is always null. We
+    // still surface a crash / timeout / non-zero exit as `failed` for the
+    // Sources per-hook error indicator + the spine, but the fire site
+    // (after-tool-use.ts) never acts on it — the tool has already run. The spine
+    // event is the resolved dialect flavor (afterShell/afterMCP), so the Sources
+    // error key matches discovery/list.
+    const spineEvent = cursorAfterEventForTool(payload.toolName) ?? 'afterToolUse'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
+  marshalSessionStartRequest(_hook, _payload, session) {
+    // Cursor's sessionStart stdin (vendor docs): `session_id` (== conversation
+    // id), `is_background_agent`, `composer_mode`, plus the standard
+    // agent-session envelope. Copse has one composer mode (agent) and is not a
+    // background agent here; the canonical payload's `firstTurn` maps to the
+    // vendor's implicit new-conversation trigger, so it needs no wire field.
+    return {
+      ...agentSessionEnvelope('sessionStart', session),
+      session_id: session?.conversationId ?? '',
+      is_background_agent: false,
+      composer_mode: 'agent',
+    }
+  },
+
+  interpretSessionStart(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // sessionStart is fire-and-forget (decision 3): it returns no control-flow
+    // decision, so the outcome is always null. Its actionable output is the
+    // `env` object — session-scoped variables propagated to later hook spawns
+    // (vendor: "available to all subsequent hook executions within that
+    // session"). `additional_context` is async injected context (decision 11:
+    // async → not injected in v1), so it is not consumed here. A crash / timeout
+    // / non-zero exit is recorded `failed` for the spine + Sources only.
+    const spineEvent = 'sessionStart'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) return { ...base, failed: false, parseOk: true }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // A session-start hook that prints noise is not a failure to block on;
+      // record parseOk:false for the spine only.
+      return { ...base, failed: false, parseOk: false }
+    }
+    const env = sessionEnvFromResponse(parsed)
+    if (env) {
+      const spineDecision: SpineHookRunDecision = { sessionEnvKeys: Object.keys(env).length }
+      return { ...base, sessionEnv: env, spineDecision, failed: false, parseOk: true }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
   recordRuntimeFailure(event, command, message) {
     const key = hookErrorKey(event, command)
     if (sessionHookErrors.has(key)) return
     sessionHookErrors.set(key, message)
   },
+}
+
+/**
+ * Extract a `sessionStart` hook's `env` output (H4) as a clean string→string
+ * map, or null when absent/empty. Only string values are kept (the env overlay
+ * must be `Record<string, string>`); non-string values are dropped rather than
+ * coerced, so a malformed `env` never injects `undefined`/`[object Object]`.
+ */
+function sessionEnvFromResponse(parsed: unknown): Record<string, string> | null {
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const raw = (parsed as { env?: unknown }).env
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string') out[key] = value
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
+/**
+ * Normalize a Cursor `subagentStart` response (D1). `permission: deny` blocks
+ * the spawn; `ask` is **treated as deny** (Cursor: "`ask` is not supported for
+ * `subagentStart`"). `allow` (or an absent permission) proceeds. `user_message`
+ * rides along for surfacing on a deny.
+ */
+function subagentStartOutcomeFromResponse(parsed: unknown): {
+  outcome: BlockingHookOutcome | null
+  spineDecision: SpineHookRunDecision
+} {
+  if (typeof parsed !== 'object' || parsed === null) return { outcome: null, spineDecision: {} }
+  const res = parsed as CursorHookResponse & { user_message?: string; agent_message?: string }
+  const userMessage = firstString(res.userMessage, res.user_message)
+  const agentMessage = firstString(res.agentMessage, res.agent_message)
+  const outcome: BlockingHookOutcome = {}
+  // `ask` → `deny` (vendor contract for subagentStart); `allow` stays allow.
+  if (res.permission === 'deny' || res.permission === 'ask') outcome.decision = 'deny'
+  else if (res.permission === 'allow') outcome.decision = 'allow'
+  if (agentMessage !== undefined) outcome.agentMessage = agentMessage
+  if (userMessage !== undefined) outcome.userMessage = userMessage
+  const spineDecision: SpineHookRunDecision = {
+    ...(outcome.decision !== undefined ? { permission: outcome.decision } : {}),
+    ...(agentMessage !== undefined ? { agentMessageChars: agentMessage.length } : {}),
+    ...(userMessage !== undefined ? { userMessageChars: userMessage.length } : {}),
+  }
+  return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
+}
+
+/**
+ * Normalize a Cursor `beforeSubmitPrompt` response. `continue: false` halts the
+ * submit (decision 12's `haltRun`); the user-facing message becomes the halt
+ * reason and rides along as `userMessage` for surfacing (B1 acceptance: carry
+ * `user_message` on halt). `agentMessage` is carried when present. Any other
+ * `continue` value (true / absent) is an allow — no opinion.
+ */
+function beforeSubmitOutcomeFromResponse(parsed: unknown): {
+  outcome: BlockingHookOutcome | null
+  spineDecision: SpineHookRunDecision
+} {
+  if (typeof parsed !== 'object' || parsed === null) return { outcome: null, spineDecision: {} }
+  const res = parsed as CursorBeforeSubmitPromptResponse
+  const userMessage = firstString(res.user_message, res.userMessage)
+  const agentMessage = firstString(res.agent_message, res.agentMessage)
+  const injected = firstString(res.additionalContext, res.additional_context)
+  const outcome: BlockingHookOutcome = {}
+  if (res.continue === false) {
+    outcome.haltRun = {
+      reason: userMessage ?? 'Prompt submission was blocked by a beforeSubmitPrompt hook.',
+    }
+  }
+  if (userMessage !== undefined) outcome.userMessage = userMessage
+  if (agentMessage !== undefined) outcome.agentMessage = agentMessage
+  // H2: injected context only matters when the submit proceeds — a halt drops
+  // the turn entirely, so there is nothing to inject into.
+  if (injected !== undefined && outcome.haltRun === undefined) outcome.injectContext = injected
+  const spineDecision: SpineHookRunDecision = {
+    ...(outcome.haltRun !== undefined ? { haltRun: true } : {}),
+    ...(outcome.injectContext !== undefined
+      ? { injectContextChars: outcome.injectContext.length }
+      : {}),
+    ...(agentMessage !== undefined ? { agentMessageChars: agentMessage.length } : {}),
+    ...(userMessage !== undefined ? { userMessageChars: userMessage.length } : {}),
+  }
+  return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
 }

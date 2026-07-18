@@ -13,6 +13,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import type { Message, Thread, ThreadCatalogEntry, ThreadCatalogHit } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import {
+  attachHookCards,
   explodeMessage,
   explodeThread,
   foldThread,
@@ -188,14 +189,20 @@ function readThread(projectId: string, threadId: string): Thread | null {
   const meta = readMeta(dir)
   if (meta === null) return null
 
-  const spine = parseSpine(safeRead(join(dir, EVENTS_FILE)) ?? '')
+  const raw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+  const entries = parseSpineEntries(raw)
+  const spine = parseSpine(raw)
   const resolve: RefResolver = (ref) => {
     const contents = safeRead(join(dir, ref))
     if (contents === null) throw new Error(`Missing thread file: ${ref}`)
     return contents
   }
   try {
-    return foldThread(meta, spine, resolve, { hash: sha256 })
+    const thread = foldThread(meta, spine, resolve, { hash: sha256 })
+    // Surface the always-on `hook_run` records (decision 6) as display-only hook
+    // cards on the messages they fired within (decisions 10 & 17). Derived from
+    // the spine — never from live hook registration — so history stays honest.
+    return { ...thread, messages: attachHookCards(thread.messages, entries) }
   } catch (err) {
     console.warn(`[thread-store] Skipping unreadable thread ${threadId}:`, err)
     return null

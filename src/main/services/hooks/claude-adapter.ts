@@ -26,18 +26,59 @@ import type {
   DialectDiscoverOpts,
   DialectInterpretation,
 } from './dialect-adapter.ts'
-import { DEFAULT_HOOK_TIMEOUT_MS, type HookSpawnResult } from './hook-spawn.ts'
+import { type HookSpawnResult } from './hook-spawn.ts'
+
+/**
+ * Claude's per-hook timeout default (decision 13; H4). Claude Code documents a
+ * **600s** (10-minute) default for `command` / `http` / `mcp_tool` hooks,
+ * overridable per hook via the `timeout` field, in seconds
+ * (https://code.claude.com/docs/en/hooks). Copse's historical fixed 5s would
+ * kill real Claude hooks, so H4 adopts the vendor default; per-hook `timeout`
+ * still wins.
+ */
+export const CLAUDE_DEFAULT_HOOK_TIMEOUT_MS = 600_000
+
+/**
+ * Claude hook events Copse discovers from settings. `PreToolUse` (tool gate,
+ * A2/B4) and `SessionStart` (H4 — fire-and-forget session lifecycle, the only
+ * Claude agent-session event that carries an optional `model`, per the vendor
+ * contract).
+ */
+type DiscoveredClaudeEvent = 'PreToolUse' | 'SessionStart'
+
+const CLAUDE_DISCOVERED_EVENTS: readonly DiscoveredClaudeEvent[] = ['PreToolUse', 'SessionStart']
 
 /** A parsed Claude command hook ready to spawn. */
 interface DiscoveredClaudeHook {
-  event: 'PreToolUse'
-  /** Tool-name matcher (`Bash`, `Edit|Write`, `mcp__.*`, `*`, or omitted = all). */
+  event: DiscoveredClaudeEvent
+  /**
+   * Tool-name matcher for `PreToolUse` (`Bash`, `Edit|Write`, `mcp__.*`, `*`, or
+   * omitted = all). For `SessionStart` the matcher is the session source
+   * (`startup` / `resume` / `clear` / `compact`); Copse fires on new
+   * conversations, so a matcher-less SessionStart hook always applies.
+   */
   matcher?: string
   command: string
   /** Directory of the declaring settings file; relative commands resolve against it. */
   cwd: string
   source: string
   scope: HookScope
+  /**
+   * Per-hook `timeout` override in **milliseconds** (decision 13; H4), parsed
+   * from the handler's `timeout` field (a number of **seconds**, Claude's wire
+   * unit). Absent = the dialect default {@link CLAUDE_DEFAULT_HOOK_TIMEOUT_MS}.
+   */
+  timeoutMs?: number
+}
+
+/**
+ * Normalize a Claude handler's `timeout` field (seconds) to milliseconds. A
+ * valid positive, finite number is multiplied by 1000; anything else yields
+ * undefined so the hook falls back to {@link CLAUDE_DEFAULT_HOOK_TIMEOUT_MS}.
+ */
+function normalizeClaudeTimeout(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.round(value * 1000)
 }
 
 /** `~/.claude/settings.json` — always trusted (the user installed it). */
@@ -112,34 +153,37 @@ async function parseClaudeSettings(
   const hooksRoot = (parsed as { hooks?: unknown })?.hooks
   if (typeof hooksRoot !== 'object' || hooksRoot === null) return []
 
-  const preToolUse = (hooksRoot as Record<string, unknown>)['PreToolUse']
-  if (!Array.isArray(preToolUse)) return []
-
   const cwd = dirname(path)
   const out: DiscoveredClaudeHook[] = []
-  for (const group of preToolUse) {
-    if (typeof group !== 'object' || group === null) continue
-    const matcherRaw = (group as { matcher?: unknown }).matcher
-    const matcher =
-      typeof matcherRaw === 'string' && matcherRaw.trim() ? matcherRaw.trim() : undefined
-    const handlers = (group as { hooks?: unknown }).hooks
-    if (!Array.isArray(handlers)) continue
-    for (const handler of handlers) {
-      if (typeof handler !== 'object' || handler === null) continue
-      const type = (handler as { type?: unknown }).type
-      // Default type in Claude docs is command; accept omitted type as command.
-      if (type !== undefined && type !== 'command') continue
-      const command = (handler as { command?: unknown }).command
-      if (typeof command !== 'string' || !command.trim()) continue
-      const entry: DiscoveredClaudeHook = {
-        event: 'PreToolUse',
-        command: command.trim(),
-        cwd,
-        source: path,
-        scope,
+  for (const event of CLAUDE_DISCOVERED_EVENTS) {
+    const groups = (hooksRoot as Record<string, unknown>)[event]
+    if (!Array.isArray(groups)) continue
+    for (const group of groups) {
+      if (typeof group !== 'object' || group === null) continue
+      const matcherRaw = (group as { matcher?: unknown }).matcher
+      const matcher =
+        typeof matcherRaw === 'string' && matcherRaw.trim() ? matcherRaw.trim() : undefined
+      const handlers = (group as { hooks?: unknown }).hooks
+      if (!Array.isArray(handlers)) continue
+      for (const handler of handlers) {
+        if (typeof handler !== 'object' || handler === null) continue
+        const type = (handler as { type?: unknown }).type
+        // Default type in Claude docs is command; accept omitted type as command.
+        if (type !== undefined && type !== 'command') continue
+        const command = (handler as { command?: unknown }).command
+        if (typeof command !== 'string' || !command.trim()) continue
+        const timeoutMs = normalizeClaudeTimeout((handler as { timeout?: unknown }).timeout)
+        const entry: DiscoveredClaudeHook = {
+          event,
+          command: command.trim(),
+          cwd,
+          source: path,
+          scope,
+        }
+        if (matcher !== undefined) entry.matcher = matcher
+        if (timeoutMs !== undefined) entry.timeoutMs = timeoutMs
+        out.push(entry)
       }
-      if (matcher !== undefined) entry.matcher = matcher
-      out.push(entry)
     }
   }
   return out
@@ -167,8 +211,9 @@ export async function listClaudeHooks(opts: DialectDiscoverOpts): Promise<HookSu
       command: h.command,
       source: h.source,
       scope: h.scope,
-      // Only PreToolUse is wired today, and that is all `discoverClaudeHooks`
-      // returns — so every discovered Claude hook is currently supported.
+      // `discoverClaudeHooks` returns only wired events (`PreToolUse` tool gate +
+      // `SessionStart` fire-and-forget, H4), so every discovered Claude hook is
+      // currently supported.
       supported: true,
     }
     if (h.matcher !== undefined) summary.matcher = h.matcher
@@ -241,7 +286,38 @@ export async function claudeToolGateHooks(
         command: h.command,
         onFailure: 'open' as const,
         cwd: h.cwd,
-        timeoutMs: DEFAULT_HOOK_TIMEOUT_MS,
+        timeoutMs: h.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
+      }
+    })
+}
+
+/**
+ * Discover the Claude `SessionStart` command hooks (H4), as registry
+ * `CommandHook`s. `SessionStart` carries no tool subject; its matcher is the
+ * session *source* (`startup` / `resume` / `clear` / `compact`). Copse fires on
+ * a new conversation, which maps to Claude's `startup` source, so a hook whose
+ * matcher does not include `startup` (and is not the match-all `*` / omitted)
+ * is skipped. Fired **detached** (fire-and-forget) by `session-start.ts`;
+ * Claude has no `failClosed`, so `onFailure` is always `open`.
+ */
+export async function claudeSessionStartHooks(
+  _payload: HookEventPayloads['sessionStart'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'sessionStart'>[]> {
+  const hooks = await discoverClaudeHooks(opts)
+  return hooks
+    .filter((h) => h.event === 'SessionStart' && claudeMatcherMatches(h.matcher, 'startup'))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'sessionStart' as const,
+        executor: 'command' as const,
+        dialect: 'claude' as const,
+        command: h.command,
+        onFailure: 'open' as const,
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
       }
     })
 }
@@ -257,6 +333,9 @@ function spineDecisionFor(outcome: BlockingHookOutcome | null): SpineHookRunDeci
   if (!outcome) return {}
   return {
     ...(outcome.decision !== undefined ? { permission: outcome.decision } : {}),
+    ...(outcome.injectContext !== undefined
+      ? { injectContextChars: outcome.injectContext.length }
+      : {}),
     ...(outcome.agentMessage !== undefined
       ? { agentMessageChars: outcome.agentMessage.length }
       : {}),
@@ -295,22 +374,38 @@ function outcomeFromExitZero(stdout: string): {
   const specific = (parsed as { hookSpecificOutput?: unknown }).hookSpecificOutput
   if (typeof specific !== 'object' || specific === null) return { outcome: null, parseOk: true }
 
-  const permissionRaw = (specific as { permissionDecision?: unknown }).permissionDecision
-  if (!isPermissionDecision(permissionRaw)) return { outcome: null, parseOk: true }
+  const outcome: BlockingHookOutcome = {}
 
-  const permission = mapClaudeDecision(permissionRaw)
-  const reasonRaw = (specific as { permissionDecisionReason?: unknown }).permissionDecisionReason
-  const reason = typeof reasonRaw === 'string' && reasonRaw.trim() ? reasonRaw.trim() : ''
-  const outcome: BlockingHookOutcome = { decision: permission }
-  if (reason) outcome.agentMessage = reason
-  return { outcome, parseOk: true }
+  const permissionRaw = (specific as { permissionDecision?: unknown }).permissionDecision
+  if (isPermissionDecision(permissionRaw)) {
+    outcome.decision = mapClaudeDecision(permissionRaw)
+    const reasonRaw = (specific as { permissionDecisionReason?: unknown }).permissionDecisionReason
+    const reason = typeof reasonRaw === 'string' && reasonRaw.trim() ? reasonRaw.trim() : ''
+    if (reason) outcome.agentMessage = reason
+  }
+
+  // H2: Claude's PreToolUse `hookSpecificOutput.additionalContext` injects text
+  // into the current turn (vendor ✅). It rides alongside any permissionDecision
+  // (a hook may allow *and* add context) and maps onto the canonical
+  // `injectContext`, which the tool-gate fire site places into the turn as a
+  // system-reminder block (10k-capped).
+  const additionalRaw = (specific as { additionalContext?: unknown }).additionalContext
+  if (typeof additionalRaw === 'string' && additionalRaw.length > 0) {
+    outcome.injectContext = additionalRaw
+  }
+
+  return { outcome: Object.keys(outcome).length > 0 ? outcome : null, parseOk: true }
 }
 
 /** The concrete Claude dialect adapter the runner delegates to. */
 export const claudeAdapter: DialectAdapter = {
   dialect: 'claude',
 
-  marshalToolGateRequest(_hook, payload) {
+  // `_session` (B4 agent-session identity) is accepted for interface parity but
+  // unused: Claude's PreToolUse contract has no conversation/generation/model
+  // fields — Claude carries an optional `model` on `sessionStart` only (H4 fire
+  // site), matching the vendor audit in docs/plans/hooks-and-feature-packs.md.
+  marshalToolGateRequest(_hook, payload, _session) {
     const mapped = claudeToolForTool(payload.toolName, payload.input)
     if (!mapped) return null
     return {
@@ -349,6 +444,44 @@ export const claudeAdapter: DialectAdapter = {
 
     const { outcome, parseOk } = outcomeFromExitZero(spawn.stdout)
     return { outcome, failed: false, parseOk, spineEvent, spineDecision: spineDecisionFor(outcome) }
+  },
+
+  marshalSessionStartRequest(_hook, _payload, session) {
+    // Claude's SessionStart stdin (vendor docs): `session_id`, `transcript_path`,
+    // `cwd`, `hook_event_name`, and `source`. Copse fires on a new conversation,
+    // which maps to the `startup` source. B4 readiness: SessionStart is the one
+    // Claude agent-session event that carries an **optional `model`** (the
+    // running model slug), added here only when the host resolved one — every
+    // other Claude event omits it, matching the vendor contract.
+    const req: Record<string, unknown> = {
+      session_id: session?.conversationId ?? '',
+      transcript_path: '',
+      cwd: getWorkspaceRoot() ?? '',
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+    }
+    const model = session?.model?.model
+    if (model) req['model'] = model
+    return req
+  },
+
+  interpretSessionStart(spawn: HookSpawnResult): DialectInterpretation {
+    // SessionStart is fire-and-forget (decision 3): no control-flow decision, so
+    // the outcome is always null. Claude propagates session env by having the
+    // hook append to the file named in `$CLAUDE_ENV_FILE` (not a JSON stdout
+    // field), so no `sessionEnv` is parsed from stdout here — that file-based
+    // path is deferred (see the H4 row in docs/plans/hooks-and-feature-packs.md).
+    // A crash / timeout / non-zero exit is recorded `failed` for the spine only;
+    // exit 2 is Claude's block signal but there is nothing to block once the
+    // session has started, so it too is a recorded no-op. `additionalContext`
+    // (async injected context) is not consumed in v1 (decision 11).
+    const spineEvent = 'SessionStart'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+    if (spawn.spawnError || spawn.timedOut) {
+      return { ...base, failed: true, parseOk: false }
+    }
+    return { ...base, failed: false, parseOk: true }
   },
 
   // Claude hook error state is not surfaced in Sources today (parity with the

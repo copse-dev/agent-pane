@@ -195,6 +195,15 @@ decisions) and `permission-gate.test.ts` (gate wiring + MCP decisions).
 - `npm test` runs Node's test runner over `src/**/*.test.ts` (esbuild-bundled into `dist-test/`).
 - `npm run test:e2e` is WebdriverIO + `@wdio/electron-service` and needs a display. It passes under
   `npm run test:e2e` on this headless VM (WDIO auto-starts Xvfb on Linux).
+- **Prefer remote e2e while iterating (don't block the machine).** When Scaleway (or AWS) creds
+  are available, or `.tmp/remote-e2e/host.json` already exists, agents should drive visual /
+  Electron e2e via `npm run e2e:remote -- run --detach` (oracle subset of the current diff) and
+  `e2e:remote -- wait <run-id>` — keep editing in between. Results land in
+  `.tmp/remote-e2e/runs/<run-id>/`. Use local `test:e2e` only for macOS-specific behaviour, when
+  no cloud creds/registry are configured, or when a skill explicitly requires an on-machine
+  display. With `COPSE_CI_REGISTRY` set, `e2e:remote up` pulls a pre-baked image (no on-host
+  bake / no `BUILD_GH_TOKEN` on the host). See
+  [`ci-runners/README.md`](ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
 
 For _which tier a test belongs in_ — favour unit/component tests, reserve e2e for broad validation
 and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) — read
