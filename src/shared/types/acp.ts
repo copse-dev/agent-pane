@@ -52,6 +52,25 @@ export interface AcpAgentConfig {
    */
   availableModels?: AcpModelChoice[]
   /**
+   * Optional ACP **session mode** to select for each session, as a
+   * `SessionModeId` advertised in the agent's `session/new` `modes`
+   * (issue #607). ACP surfaces agent permission behavior as session modes —
+   * e.g. Claude Code's `default` / `acceptEdits` / `bypassPermissions` / `plan`
+   * — so this is how Copse relaxes (or tightens) the agent's own prompting.
+   * When set, Copse sends `session/set_mode` right after `session/new`, before
+   * the first prompt; when unset the agent keeps its default mode (with one
+   * exception: sandboxed Claude presets default to `acceptEdits`, since the
+   * seatbelt already contains writes — see `resolveAcpPermissionMode`).
+   */
+  permissionMode?: string
+  /**
+   * Session modes the agent advertised the last time it was probed (Settings →
+   * "Detect models"), cached so the settings mode picker can list them without
+   * re-spawning the agent. Empty/absent when never detected or the agent
+   * exposes no session modes.
+   */
+  availablePermissionModes?: AcpModeChoice[]
+  /**
    * Per-agent override of the seatbelt confines (issue #590). Absent = use the
    * `KNOWN_ACP_AGENTS` catalog preset for this id (custom agents spawn
    * unsandboxed); an object = custom confines; `false` = explicitly opt out.
@@ -80,6 +99,40 @@ export interface AcpModelSelector {
   currentValue: string
   /** Flattened choices (option groups expanded). */
   choices: AcpModelChoice[]
+}
+
+/** A selectable session-mode id + label, from an ACP `SessionMode` (issue #607). */
+export interface AcpModeChoice {
+  /** The `SessionModeId` to persist as {@link AcpAgentConfig.permissionMode}. */
+  value: string
+  /** Human-readable name for the picker. */
+  label: string
+  /** Optional agent-provided description of what the mode does. */
+  description?: string
+}
+
+/**
+ * An external ACP agent's session-mode selector, discovered from a `session/new`
+ * response (its `modes` state). Surfaced to the settings picker so the user can
+ * choose a permission mode to persist on the agent config (issue #607).
+ */
+export interface AcpModeSelector {
+  /** The mode the agent starts a session in when none is selected. */
+  currentValue: string
+  /** The modes the agent can operate in. */
+  choices: AcpModeChoice[]
+}
+
+/**
+ * Combined result of probing an ACP agent (Settings → "Detect models"): the
+ * model selector and the session-mode selector, discovered from one throwaway
+ * `session/new` so the agent process is spawned only once (issue #607).
+ */
+export interface AcpAgentProbe {
+  /** The agent's model selector, or `null` when it exposes no selectable models. */
+  models: AcpModelSelector | null
+  /** The agent's session-mode selector, or `null` when it exposes no modes. */
+  modes: AcpModeSelector | null
 }
 
 /** Outcome of the one-shot ACP preset auto-setup (install/register/detect). */
