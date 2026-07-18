@@ -1,5 +1,5 @@
 {
-  "$comment": "Curated intelligence-index measurements, the reviewed source of truth for scripts/sync-intellect.mts. RULES: (1) values are cited facts — every entry needs a real source and asOf date, never a guess; (2) canonicalVersion is the permanent display scale — it only changes as a deliberate, breaking re-baseline; (3) a model may have one entry per indexVersion (that overlap is what makes it an equating anchor); (4) fitted equating maps are crystallised here by the sync script at first fit and are then reused verbatim — pass --refit to deliberately refit after adding anchors; (5) aliases are alternate id/label forms the same weights appear under across providers (OpenRouter ids, ACP picker labels) — lookup keys only, they never create a second measurement. VERSION NOTE: v4.0 is the pre-renormalisation scale of June 2026 (the cohort where Opus 4.8 = 61, GPT-5.5 = 60); v4.1 is the July 2026 renormalisation (AA article 'Artificial Analysis Intelligence Index v4.1: a shift toward agentic workloads') where the same Opus 4.8 checkpoint reads 56. Never compare raw values across the two.",
+  "$comment": "Curated intelligence-index measurements, the reviewed source of truth for scripts/sync-intellect.mts. RULES: (1) values are cited facts — every entry needs a real source and asOf date, never a guess; (2) canonicalVersion is the permanent display scale — it only changes as a deliberate, breaking re-baseline; (3) a model may have one entry per indexVersion (that overlap is what makes it an equating anchor); (4) fitted equating maps are crystallised here by the sync script at first fit and are then reused verbatim — pass --refit to deliberately refit after adding anchors; (5) aliases are alternate id/label forms the same weights appear under across providers (OpenRouter ids, ACP picker labels) — lookup keys only, they never create a second measurement; (6) record only DIRECT measurements of the configuration the index reports — never derive a value by arithmetic from statements about other configurations (a derived Sonnet 4.6 = 53−6 = 47 mixed reasoning efforts and broke the live-feed anchor gate until corrected to the measured 35.9). VERSION NOTE: v4.0 is the pre-renormalisation scale of June 2026 (the cohort where Opus 4.8 = 61, GPT-5.5 = 60); v4.1 is the July 2026 renormalisation (AA article 'Artificial Analysis Intelligence Index v4.1: a shift toward agentic workloads') where the same Opus 4.8 checkpoint reads 56. Never compare raw values across the two.",
   "canonicalVersion": "v4.1",
   "attribution": "Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)",
   "scores": [
@@ -80,10 +80,10 @@
     },
     {
       "modelId": "claude-sonnet-4-6",
-      "value": 47,
+      "value": 35.9,
       "indexVersion": "v4.1",
-      "source": "Derived by stated difference from @ArtificialAnlys: 'Claude Sonnet 5 achieves 53 on the Artificial Analysis Intelligence Index … with max effort it improves 6 points over Sonnet 4.6' → 53 − 6 = 47",
-      "asOf": "2026-07-02",
+      "source": "Artificial Analysis API v4.1 feed, claude-sonnet-4-6 default configuration, observed 2026-07-18. CORRECTION: replaces an earlier derived-by-difference 47 ('Sonnet 5 max effort improves 6 points over Sonnet 4.6' → 53 − 6), which mixed reasoning configurations — the +6 compared high-effort variants, not the default-config score the index reports. Lesson: derive nothing; only direct measurements anchor.",
+      "asOf": "2026-07-18",
       "aliases": ["Sonnet 4.6", "anthropic/claude-sonnet-4-6", "claude-sonnet-4-6-latest"]
     },
     {

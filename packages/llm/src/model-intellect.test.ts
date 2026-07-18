@@ -77,7 +77,7 @@ describe('explainIntellectScore', () => {
   it('derives a canonical measurement in one cited step', () => {
     const explanation = explainIntellectScore('claude-sonnet-4-6')
     assert.ok(explanation)
-    assert.equal(explanation.value, 47)
+    assert.equal(explanation.value, 35.9)
     assert.equal(explanation.estimated, false)
     assert.match(explanation.scale, new RegExp(CANONICAL_INTELLECT_VERSION.replace('.', '\\.')))
     assert.equal(explanation.steps.length, 1)

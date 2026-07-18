@@ -66,11 +66,11 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
   ],
   'claude-sonnet-4-6': [
     {
-      value: 47,
+      value: 35.9,
       indexVersion: 'v4.1',
       source:
-        "Derived by stated difference from @ArtificialAnlys: 'Claude Sonnet 5 achieves 53 on the Artificial Analysis Intelligence Index … with max effort it improves 6 points over Sonnet 4.6' → 53 − 6 = 47",
-      asOf: '2026-07-02',
+        "Artificial Analysis API v4.1 feed, claude-sonnet-4-6 default configuration, observed 2026-07-18. CORRECTION: replaces an earlier derived-by-difference 47 ('Sonnet 5 max effort improves 6 points over Sonnet 4.6' → 53 − 6), which mixed reasoning configurations — the +6 compared high-effort variants, not the default-config score the index reports. Lesson: derive nothing; only direct measurements anchor.",
+      asOf: '2026-07-18',
     },
   ],
   'claude-sonnet-5': [
