@@ -228,6 +228,63 @@ describe('cursor-adapter', () => {
     })
   })
 
+  // H1 (docs/plans/hooks-and-feature-packs.md): a tool-gate hook may rewrite the
+  // tool input via Cursor's `updated_input`, sequentially across hooks; the final
+  // rewrite is surfaced on the gate decision (permission-gate then re-runs the
+  // policy matrix on it — see permission-gate-hooks.test.ts).
+  describe('updatedInput rewrite (H1)', () => {
+    it('interprets Cursor `updated_input` into the canonical updatedInput', async () => {
+      const script = await writeHookScript(
+        'rewrite.sh',
+        '{"permission":"allow","updated_input":{"command":"echo safe"}}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'echo danger' })
+      assert.equal(decision.permission, 'allow')
+      assert.deepEqual(decision.updatedInput, { command: 'echo safe' })
+    })
+
+    it('ignores a non-object updated_input (a scalar cannot blank the input)', async () => {
+      const script = await writeHookScript(
+        'bad-rewrite.sh',
+        '{"permission":"allow","updated_input":"not-an-object"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'echo hi' })
+      assert.equal(decision.permission, 'allow')
+      assert.equal(decision.updatedInput, undefined)
+    })
+
+    it('threads each rewrite into the next hook`s stdin (sequential pipeline)', async () => {
+      // Hook 1 rewrites the command; hook 2 dumps the stdin it received so we can
+      // prove it saw hook 1`s rewrite, not the model`s original command.
+      const first = await writeHookScript(
+        'seq-first.sh',
+        '{"permission":"allow","updated_input":{"command":"REWRITTEN_BY_FIRST"}}',
+      )
+      const dumpPath = join(tempHome, 'second-stdin.json')
+      const second = join(tempHome, 'seq-second.sh')
+      await writeFile(
+        second,
+        `#!/bin/sh\ncat > '${dumpPath}'\nprintf '%s' '{"permission":"allow"}'\n`,
+      )
+      await chmod(second, 0o755)
+      await writeUserHooks({
+        hooks: { beforeShellExecution: [{ command: first }, { command: second }] },
+      })
+
+      const decision = await gate('run_shell', { command: 'ORIGINAL' })
+      assert.equal(decision.permission, 'allow')
+      // The final threaded input carries the first hook`s rewrite.
+      assert.deepEqual(decision.updatedInput, { command: 'REWRITTEN_BY_FIRST' })
+      // The second hook`s stdin proves it saw the rewrite, not the original.
+      const secondStdin = JSON.parse(await readFile(dumpPath, 'utf-8')) as { command?: string }
+      assert.equal(secondStdin.command, 'REWRITTEN_BY_FIRST')
+    })
+  })
+
   describe('per-hook runtime error state (session-deduped)', () => {
     function listUserHooks(): ReturnType<typeof listCursorHooks> {
       return listCursorHooks({ workspaceRoot: null, projectTrusted: false })
@@ -361,6 +418,26 @@ describe('cursor-adapter', () => {
       assert.ok(run.stdout && run.stderr)
       assert.equal(await readFile(join(dir, run.stdout.ref), 'utf-8'), '{"permission":"ask"}')
       assert.equal(await readFile(join(dir, run.stderr.ref), 'utf-8'), 'debug noise\n')
+    })
+
+    it('flags a rewrite in the hook_run spine decision (H1)', async () => {
+      const script = join(tempHome, 'spine-rewrite.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s' '{"permission":"allow","updated_input":{"command":"echo safe"}}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'echo danger' })
+      assert.deepEqual(decision.updatedInput, { command: 'echo safe' })
+
+      const runs = await readRecordedRuns()
+      const [run] = runs
+      assert.ok(run)
+      assert.equal(run.decision.updatedInput, true)
+      assert.equal(run.decision.permission, 'allow')
     })
 
     it('records parse_ok false with the corrupt bytes when stdout is not JSON', async () => {

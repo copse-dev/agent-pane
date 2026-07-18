@@ -713,6 +713,15 @@ interface CursorHookResponse {
   permission?: HookDecision
   agentMessage?: string
   userMessage?: string
+  /**
+   * Cursor's tool-input rewrite (H1). The vendor field is snake_case
+   * `updated_input`; we also accept camelCase `updatedInput` for symmetry with
+   * the other Cursor response fields. It is the (partial or full) replacement
+   * for the gated tool's input — for `run_shell` the `{ command }` object — and
+   * maps onto the canonical `updatedInput`, which re-runs the policy matrix.
+   */
+  updated_input?: unknown
+  updatedInput?: unknown
 }
 
 /**
@@ -761,14 +770,27 @@ function outcomeFromResponse(parsed: unknown): {
   if (typeof res.agentMessage === 'string' && res.agentMessage)
     outcome.agentMessage = res.agentMessage
   if (typeof res.userMessage === 'string' && res.userMessage) outcome.userMessage = res.userMessage
+  // H1: `updated_input` (or camelCase) rewrites the gated tool's input. Only a
+  // non-null object is a valid rewrite (the canonical `updatedInput` is a
+  // Record); anything else is ignored so a stray scalar can't blank the input.
+  const rewrite = asInputRecord(res.updated_input ?? res.updatedInput)
+  if (rewrite) outcome.updatedInput = rewrite
   const spineDecision: SpineHookRunDecision = {
     ...(outcome.decision !== undefined ? { permission: outcome.decision } : {}),
+    ...(outcome.updatedInput !== undefined ? { updatedInput: true } : {}),
     ...(outcome.agentMessage !== undefined
       ? { agentMessageChars: outcome.agentMessage.length }
       : {}),
     ...(outcome.userMessage !== undefined ? { userMessageChars: outcome.userMessage.length } : {}),
   }
   return { outcome: Object.keys(outcome).length > 0 ? outcome : null, spineDecision }
+}
+
+/** A tool-input rewrite is only valid as a plain object (arrays/scalars ignored). */
+function asInputRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }
 
 /**

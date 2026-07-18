@@ -28,6 +28,15 @@ export interface HookGateDecision {
   agentMessage?: string
   /** Message a denying/asking hook wants shown to the user, if any. */
   userMessage?: string
+  /**
+   * The tool input after the sequential `updatedInput` pipeline rewrote it (H1),
+   * present only when at least one hook returned `updatedInput`. It is the
+   * **final** threaded input (each hook saw the prior rewrite), so the caller
+   * (`permission-gate`) applies it and **re-runs the policy matrix**
+   * (`analyzeShellCommand` / `decideShellPermission`) on it before allowing the
+   * tool — a rewrite is never applied without re-analysis (security-critical).
+   */
+  updatedInput?: Record<string, unknown>
 }
 
 export interface ToolGateCheck {
@@ -102,6 +111,10 @@ export async function runToolGateHooks(
   const registry = new HookRegistry()
   for (const hook of hooks) registry.registerCommand(hook)
 
+  // `registry.emit` runs the hooks in registration order and threads each
+  // hook's `updatedInput` into `payload.input` for the next hook (the H1
+  // sequential pipeline lives in the registry so both function and command
+  // hooks participate), so `payload.input` here is the *final* rewritten input.
   const { outcomes } = await registry.emit('toolGate', payload, {
     runCommandHook: createCommandHookRunner(),
     ...(opts.signal ? { signal: opts.signal } : {}),
@@ -116,9 +129,14 @@ export async function runToolGateHooks(
     : merged.decision === 'ask'
       ? 'ask'
       : 'allow'
+  // A rewrite is surfaced only when the pipeline actually produced one; the
+  // value is the final threaded `payload.input`, not just the last hook's delta,
+  // so the caller re-runs policy on the complete rewritten input.
+  const rewritten = merged.updatedInput !== undefined
   return {
     permission,
     ...(merged.agentMessage !== undefined ? { agentMessage: merged.agentMessage } : {}),
     ...(merged.userMessage !== undefined ? { userMessage: merged.userMessage } : {}),
+    ...(rewritten ? { updatedInput: payload.input } : {}),
   }
 }
