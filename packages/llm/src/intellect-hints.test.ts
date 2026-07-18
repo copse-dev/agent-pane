@@ -8,16 +8,17 @@ import {
 
 describe('cloudModelIntellectHint', () => {
   it('shows intellect, blended price, and frontier for a scored tracked model', () => {
-    // Opus 4.8: measured 56 on canonical, $5/$25 → $9/MTok blended, and the
-    // highest-intellect tracked model, so on the frontier.
-    assert.equal(cloudModelIntellectHint('claude-opus-4-8'), 'intellect 56 · $9/MTok · frontier')
+    // Opus 4.8: measured 55.7 on canonical, $5/$25 → $9/MTok blended, and on the
+    // cost/intellect frontier.
+    assert.equal(cloudModelIntellectHint('claude-opus-4-8'), 'intellect 55.7 · $9/MTok · frontier')
   })
 
-  it('shows price without a score for an unscored tracked model', () => {
+  it('shows intellect and price but no frontier tag for a dominated tracked model', () => {
+    // gpt-4o is scored (11.2) but neither cheapest nor smartest, so it's off the
+    // frontier — the hint carries intellect and price without the frontier tag.
     const hint = cloudModelIntellectHint('gpt-4o')
     assert.ok(hint)
-    assert.match(hint, /^\$[\d.]+\/MTok$/)
-    assert.doesNotMatch(hint, /intellect/)
+    assert.match(hint, /^intellect 11\.2 · \$[\d.]+\/MTok$/)
     assert.doesNotMatch(hint, /frontier/)
   })
 
@@ -28,26 +29,26 @@ describe('cloudModelIntellectHint', () => {
 
 describe('modelIntellectHint', () => {
   it('gives an intellect-only hint for alias and vendor id forms', () => {
-    assert.equal(modelIntellectHint('Opus 4.8'), 'intellect 56')
-    assert.equal(modelIntellectHint('claude-fable-5[1m]'), 'intellect 60')
-    // June-cohort measurement equated onto canonical — shown as an estimate.
-    assert.equal(modelIntellectHint('moonshotai/kimi-k2.6'), 'intellect ~49')
-    assert.equal(modelIntellectHint('MiniMaxAI/MiniMax-M3:novita'), 'intellect ~50')
+    assert.equal(modelIntellectHint('Opus 4.8'), 'intellect 55.7')
+    assert.equal(modelIntellectHint('claude-fable-5[1m]'), 'intellect 59.9')
+    // Both carry a direct v4.1 reading now, so the hint is a fact, not an estimate.
+    assert.equal(modelIntellectHint('moonshotai/kimi-k2.6'), 'intellect 44.2')
+    assert.equal(modelIntellectHint('MiniMaxAI/MiniMax-M3:novita'), 'intellect 44.4')
     assert.equal(modelIntellectHint('totally-unknown'), null)
   })
 })
 
 describe('localModelIntellectHint', () => {
-  it('labels a composite on its own scale, never as canonical intellect', () => {
-    // qwen2.5-coder-32b has 3 sourced axes and no canonical measurement.
+  it('shows a quant-adjusted measurement for a local model with an AA score', () => {
+    // qwen2.5-coder-32b now carries a sourced AA measurement; the local hint
+    // shows it quant-adjusted (~) for the running quant, not raw fp16.
     const hint = localModelIntellectHint('qwen/qwen2.5-coder-32b')
     assert.ok(hint)
-    assert.match(hint, /^composite [\d.]+ \(3 axes\)$/)
-    assert.doesNotMatch(hint, /intellect/)
+    assert.match(hint, /^intellect ~[\d.]+$/)
   })
 
   it('returns null for models with neither a measurement nor enough axes', () => {
-    assert.equal(localModelIntellectHint('microsoft/phi-4'), null)
+    assert.equal(localModelIntellectHint('qwen/qwen3-4b-2507'), null)
     assert.equal(localModelIntellectHint('unknown/model'), null)
   })
 })

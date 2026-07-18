@@ -1,4 +1,5 @@
 import type { ModelComparison } from './thread.ts'
+import type { HookCard } from '../hooks/hook-card.ts'
 import type { TodoItem } from './todo.ts'
 // The provider-emitted chunks are owned by the LLM module; the loop-emitted
 // chunks (provider contract + text rewrites, context pressure, subagents) are
@@ -55,3 +56,11 @@ export type StreamChunk =
    * epoch has moved on (a human action reset the budget, decision 16).
    */
   | { type: 'continuation_budget'; used: number; turnTreeId: string }
+  /**
+   * A hook execution / decision / halt fired during the run (decision 10). The
+   * card is derived from the same always-on spine `hook_run` record (decision 6)
+   * that history renders from, so the live transcript and a reloaded thread show
+   * an identical hook-card family. The renderer anchors it to the current turn's
+   * message, mirroring how tool calls attach to the live assistant message.
+   */
+  | { type: 'hook_run'; card: HookCard }

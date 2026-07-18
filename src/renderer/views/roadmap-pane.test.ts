@@ -3,6 +3,7 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
 
 // Minimal KnowledgeNote (Roadmap) factory; only the fields the pane reads matter.
@@ -43,16 +44,33 @@ function makeItem(
   }
 }
 
+interface MockAttachmentAdd {
+  name: string
+  mimeType: string
+  dataUrl: string
+}
+
 interface RoadmapCalls {
   list: number
-  create: { prompt: string; notes: string | undefined; issue: string | undefined }[]
+  // `attachments` / `addAttachments` / `removeAttachmentIds` are recorded only
+  // when the pane passed them, so the deepEqual assertions of attachment-free
+  // saves stay byte-identical.
+  create: {
+    prompt: string
+    notes: string | undefined
+    issue: string | undefined
+    attachments?: MockAttachmentAdd[]
+  }[]
   update: {
     id: string
     prompt: string
     notes: string | undefined
     status: string
     issue: string | undefined
+    addAttachments?: MockAttachmentAdd[]
+    removeAttachmentIds?: string[]
   }[]
+  attachmentData: string[]
   delete: string[]
   issueUrl: string[]
   openExternal: string[]
@@ -99,6 +117,7 @@ function makeApi(
     list: 0,
     create: [],
     update: [],
+    attachmentData: [],
     delete: [],
     issueUrl: [],
     openExternal: [],
@@ -118,9 +137,24 @@ function makeApi(
         calls.list++
         return items.map((i) => ({ ...i }))
       },
-      create: async (prompt: string, notes?: string, issue?: string) => {
-        calls.create.push({ prompt, notes, issue })
+      create: async (
+        prompt: string,
+        notes?: string,
+        issue?: string,
+        attachments?: MockAttachmentAdd[],
+      ) => {
+        calls.create.push({ prompt, notes, issue, ...(attachments ? { attachments } : {}) })
         const item = makeItem(`new-${String(items.length)}`, prompt, 'ready', notes, issue)
+        if (attachments) {
+          item.fields['attachments'] = JSON.stringify(
+            attachments.map((a, i) => ({
+              id: `att-new-${String(i)}`,
+              name: a.name,
+              mimeType: a.mimeType,
+              size: 1,
+            })),
+          )
+        }
         items.push(item)
         return item
       },
@@ -130,8 +164,18 @@ function makeApi(
         notes: string | undefined,
         status: string,
         issue?: string,
+        addAttachments?: MockAttachmentAdd[],
+        removeAttachmentIds?: string[],
       ) => {
-        calls.update.push({ id, prompt, notes, status, issue })
+        calls.update.push({
+          id,
+          prompt,
+          notes,
+          status,
+          issue,
+          ...(addAttachments ? { addAttachments } : {}),
+          ...(removeAttachmentIds ? { removeAttachmentIds } : {}),
+        })
         const item = items.find((i) => i.id === id)
         if (!item) return null
         item.title = prompt.slice(0, 80)
@@ -139,6 +183,10 @@ function makeApi(
         item.status = status
         item.fields = { ...(notes ? { notes } : {}), ...(issue ? { issue } : {}) }
         return { ...item }
+      },
+      attachmentData: async (id: string, attachmentId: string) => {
+        calls.attachmentData.push(`${id}/${attachmentId}`)
+        return 'data:image/png;base64,QUJD'
       },
       delete: async (id: string) => {
         calls.delete.push(id)
@@ -203,6 +251,31 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 8; i++) await Promise.resolve()
 }
 
+/** Poll until `cond` holds — attachment encoding hops through real timers
+ * (File.arrayBuffer), which plain microtask flushing does not cover. */
+async function waitFor(cond: () => boolean, what: string): Promise<void> {
+  for (let i = 0; i < 100 && !cond(); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 2))
+  }
+  assert.ok(cond(), what)
+}
+
+/** Dispatch a paste of OS files, the way Chromium delivers a pasted image/file. */
+function pasteFiles(target: Element, files: File[]): void {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.assign(event, { clipboardData: { files } })
+  target.dispatchEvent(event)
+}
+
+/** Dispatch a paste whose payload appears only under `clipboardData.items` —
+ * how Chromium can deliver a pasted screenshot (`files` empty). */
+function pasteFilesViaItems(target: Element, files: File[]): void {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  const items = files.map((file) => ({ kind: 'file', getAsFile: (): File => file }))
+  Object.assign(event, { clipboardData: { items, files: [] } })
+  target.dispatchEvent(event)
+}
+
 function mountHosts(): { list: HTMLElement; viewer: HTMLElement } {
   const list = document.createElement('div')
   const viewer = document.createElement('div')
@@ -244,6 +317,33 @@ describe('roadmap pane', () => {
     try {
       await flush()
       assert.equal(calls.list, 0)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('roadmap_reveal selects the item and opens its editor (quick-open palette)', async () => {
+    // The palette opens the pane (mode + pane state) before emitting the reveal,
+    // so mount inactive and flip both — mirroring navigateToRoadmapItem's order.
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const { api } = makeApi([
+      makeItem('a', 'Refactor the settings dialog', 'ready'),
+      makeItem('b', 'Port e2e specs', 'blocked', 'waiting on PR #400'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      store.setState({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+      store.emit('files_pane_changed')
+      store.emit('right_panel_mode_changed')
+      store.emit('roadmap_reveal', 'b')
+      await flush()
+      const selected = list.querySelector('.roadmap-row.is-selected .roadmap-row-title')
+      assert.equal(selected?.textContent, 'Port e2e specs')
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.equal(prompt?.value, 'Port e2e specs')
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-form')?.hidden, false)
     } finally {
       unmount()
     }
@@ -664,6 +764,210 @@ describe('roadmap pane', () => {
         /Select at least one issue/,
       )
     } finally {
+      unmount()
+    }
+  })
+
+  it('attaches pasted files as chips and sends them on create', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.ok(prompt)
+      // Paste lands on the focused textarea and bubbles to the form handler.
+      pasteFiles(prompt, [
+        new File(['{"q":1}\n'], 'evals.jsonl', { type: 'application/x-jsonlines' }),
+        new File(['png-bytes'], 'shot.png', { type: 'image/png' }),
+      ])
+      await waitFor(
+        () => viewer.querySelectorAll('.roadmap-attachment-chip').length === 2,
+        'expected both pasted files to render as chips',
+      )
+      const names = [...viewer.querySelectorAll('.roadmap-attachment-name')].map(
+        (e) => e.textContent,
+      )
+      assert.deepEqual(names, ['evals.jsonl', 'shot.png'])
+      // The image chip previews from the in-memory payload before any save.
+      const thumb = viewer.querySelector<HTMLImageElement>('.roadmap-attachment-thumb')
+      assert.ok(thumb)
+      assert.equal(thumb.src, `data:image/png;base64,${btoa('png-bytes')}`)
+
+      prompt.value = 'Run the paste evals'
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.create, [
+        {
+          prompt: 'Run the paste evals',
+          notes: undefined,
+          issue: undefined,
+          attachments: [
+            {
+              name: 'evals.jsonl',
+              mimeType: 'application/x-jsonlines',
+              dataUrl: `data:application/x-jsonlines;base64,${btoa('{"q":1}\n')}`,
+            },
+            {
+              name: 'shot.png',
+              mimeType: 'image/png',
+              dataUrl: `data:image/png;base64,${btoa('png-bytes')}`,
+            },
+          ],
+        },
+      ])
+      // The saved item's chips render from the store, and the list shows a count.
+      await waitFor(
+        () => list.querySelector('.roadmap-attachment-badge') !== null,
+        'expected an attachment-count badge on the list row',
+      )
+      const badge = list.querySelector('.roadmap-attachment-badge')
+      assert.ok(badge)
+      assert.equal(badge.textContent, '2')
+      // Iconography is the shared paperclip SVG, not an emoji glyph.
+      assert.equal(badge.querySelector('svg')?.getAttribute('data-icon'), 'file')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('claims a pasted image surfaced only via clipboardData.items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const form = viewer.querySelector('.roadmap-form')
+      assert.ok(form)
+      // Chromium sometimes exposes a pasted screenshot only under `items` —
+      // the handler must still claim it (else the chat composer's document-
+      // level listener grabs it for the wrong surface).
+      pasteFilesViaItems(form, [new File(['png-bytes'], 'shot.png', { type: 'image/png' })])
+      await waitFor(
+        () => viewer.querySelectorAll('.roadmap-attachment-chip').length === 1,
+        'expected the items-only paste to render as a chip',
+      )
+      assert.equal(viewer.querySelector('.roadmap-attachment-name')?.textContent, 'shot.png')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('removing a chip before saving drops the pending attachment', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const form = viewer.querySelector('.roadmap-form')
+      assert.ok(form)
+      pasteFiles(form, [new File(['x'], 'oops.txt', { type: 'text/plain' })])
+      await waitFor(
+        () => viewer.querySelectorAll('.roadmap-attachment-chip').length === 1,
+        'expected the pasted file to render as a chip',
+      )
+      viewer.querySelector<HTMLButtonElement>('.roadmap-attachment-remove')?.click()
+      assert.equal(viewer.querySelectorAll('.roadmap-attachment-chip').length, 0)
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.ok(prompt)
+      prompt.value = 'No attachments after all'
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.create, [
+        { prompt: 'No attachments after all', notes: undefined, issue: undefined },
+      ])
+    } finally {
+      unmount()
+    }
+  })
+
+  it('removing a stored attachment sends removeAttachmentIds on save', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const seeded = makeItem('a', 'Prompt with files')
+    seeded.fields['attachments'] = JSON.stringify([
+      { id: 'att-1', name: 'shot.png', mimeType: 'image/png', size: 3 },
+      { id: 'att-2', name: 'evals.jsonl', mimeType: 'application/x-jsonlines', size: 8 },
+    ])
+    const { api, calls } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const chips = viewer.querySelectorAll('.roadmap-attachment-chip')
+      assert.equal(chips.length, 2, 'stored attachments render as chips')
+      // The image thumbnail hydrates lazily over IPC.
+      await waitFor(
+        () => calls.attachmentData.includes('a/att-1'),
+        'expected the image thumbnail to fetch its payload',
+      )
+      viewer.querySelector<HTMLButtonElement>('[aria-label="Remove attachment shot.png"]')?.click()
+      assert.equal(viewer.querySelectorAll('.roadmap-attachment-chip').length, 1)
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.deepEqual(calls.update, [
+        {
+          id: 'a',
+          prompt: 'Prompt with files',
+          notes: undefined,
+          status: 'ready',
+          issue: undefined,
+          removeAttachmentIds: ['att-1'],
+        },
+      ])
+    } finally {
+      unmount()
+    }
+  })
+
+  it('carries attachments into the composer when starting a thread', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const seeded = makeItem('a', 'Run the evals', 'ready')
+    seeded.fields['attachments'] = JSON.stringify([
+      { id: 'att-img', name: 'shot.png', mimeType: 'image/png', size: 3 },
+    ])
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const attachedImages: { dataUrl: string; mimeType: string }[] = []
+    const attachedFiles: { path: string; content: string }[] = []
+    const unregister = registerPromptAttachments({
+      attachFile: (f) => attachedFiles.push(f),
+      attachTextBlock: () => {},
+      attachImage: (dataUrl, mimeType) => attachedImages.push({ dataUrl, mimeType }),
+    })
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      // Add an unsaved .jsonl on top of the stored image; both must travel.
+      const form = viewer.querySelector('.roadmap-form')
+      assert.ok(form)
+      pasteFiles(form, [
+        new File(['{"q":1}\n'], 'evals.jsonl', { type: 'application/x-jsonlines' }),
+      ])
+      await waitFor(
+        () => viewer.querySelectorAll('.roadmap-attachment-chip').length === 2,
+        'expected the pasted file chip beside the stored one',
+      )
+      viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.click()
+      await waitFor(
+        () => attachedImages.length === 1 && attachedFiles.length === 1,
+        'expected both attachments to reach the composer',
+      )
+      assert.deepEqual(attachedImages, [
+        { dataUrl: 'data:image/png;base64,QUJD', mimeType: 'image/png' },
+      ])
+      assert.deepEqual(attachedFiles, [{ path: 'evals.jsonl', content: '{"q":1}\n' }])
+      const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
+      assert.equal(thread?.draftPrompt, 'Run the evals')
+    } finally {
+      unregister()
       unmount()
     }
   })

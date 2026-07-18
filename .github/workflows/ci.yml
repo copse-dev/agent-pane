@@ -2,9 +2,9 @@ name: CI
 on:
   push:
     branches: [main]
-  # `labeled` is included so adding the `update-screenshots` label kicks a fresh
-  # run on the PR head — plan-e2e then forces mode=full and commit-screenshots
-  # refreshes the reference shots. Without it the label only takes effect on the
+  # `labeled` is included so adding the `update-screenshots` or `ci-full` label
+  # kicks a fresh run on the PR head — plan-e2e then forces mode=full
+  # (update-screenshots additionally refreshes the reference shots). Without it the label only takes effect on the
   # next push/sync, so a label-only request would never regenerate. (For
   # pull_request events GitHub reads these triggers from the BASE branch's
   # workflow, so this is only active once merged to main.)
@@ -19,7 +19,11 @@ on:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Nightly schedule must not cancel an in-flight tip push/PR: cron can fire
+  # hours late, and schedule+push share `ci-refs/heads/main`. They also use
+  # different e2e runners (hosted vs self-hosted), so running in parallel is
+  # fine. A new push/PR sync still cancels older runs in the group.
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   # Check-tier runner routing: every `runs-on` below (except e2e, which routes
@@ -117,6 +121,9 @@ jobs:
           done
       - run: npm run format:check
       - run: npm run check:dead-code
+      # Fail closed on high/critical dependency advisories. This runs after the
+      # lockfile-exact setup, so it audits precisely the tree CI will execute.
+      - run: npm audit --audit-level=high
       # Guard the e2e oracle that gates the `e2e` job: every spec must stay
       # selectable (liveness) and the mapping invariants must hold, so the gate
       # can't silently start skipping specs it should run.
@@ -145,6 +152,11 @@ jobs:
           # re-rendered and the commit-screenshots job can refresh it, even when
           # the oracle would otherwise thin (subset) or skip the suite.
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
+          # `ci-full` forces the full e2e suite, bypassing the oracle's thinning
+          # entirely — for when a change wants exhaustive coverage NOW rather
+          # than waiting for the nightly net (e.g. infra/runner changes whose
+          # blast radius the selector-vocabulary map cannot see).
+          CI_FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci-full') }}
         run: |
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
@@ -174,6 +186,11 @@ jobs:
           fi
           if [ "$UPDATE_SCREENSHOTS_LABEL" = "true" ]; then
             echo "update-screenshots label -> full e2e suite (force screenshot refresh)"
+            { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$CI_FULL_LABEL" = "true" ]; then
+            echo "ci-full label -> full e2e suite (oracle bypassed on request)"
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -1002,10 +1019,12 @@ jobs:
   # Concurrency supersession: top-level `cancel-in-progress` cancels in-flight
   # jobs when a newer push/sync arrives on the same ref. Those cancelled jobs
   # must not paint the superseded SHA's `CI Passed` red — tip CI is the gate
-  # that matters. We detect supersession by comparing this run's head SHA to
-  # the live tip; genuine cancels of the tip (manual cancel, runner death with
-  # no tip move) still fail. Sibling-matrix cancels after a real shard failure
-  # still fail because `ANY_FAILURE` is true first.
+  # that matters. We detect supersession by (1) comparing this run's head SHA
+  # to the live tip, and (2) looking for a newer CI workflow run on the same
+  # head SHA (same-SHA supersession — e.g. a delayed nightly schedule sharing
+  # `ci-refs/heads/main` with a tip push). Genuine cancels of the tip with no
+  # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
+  # after a real shard failure still fail because `ANY_FAILURE` is true first.
   ci-passed:
     name: CI Passed
     if: always()
@@ -1016,6 +1035,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      actions: read
     steps:
       - name: Check upstream job results
         env:
@@ -1025,6 +1045,7 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
           RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
         run: |
           FORK_PR=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           if $FORK_PR; then
@@ -1076,6 +1097,20 @@ jobs:
             fi
             if [ -n "$TIP_SHA" ] && [ "$TIP_SHA" != "$RUN_HEAD_SHA" ]; then
               echo "Run superseded by newer tip ${TIP_SHA} (this SHA=${RUN_HEAD_SHA}); cancelled jobs are concurrency noise."
+              echo '${{ toJSON(needs) }}'
+              exit 0
+            fi
+            # Same tip, but a newer CI run on this SHA may have taken the
+            # concurrency slot (delayed schedule, re-run, workflow_dispatch).
+            NEWER_RUN_ID=$(gh api \
+              "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RUN_HEAD_SHA}&per_page=20" \
+              --jq "[.workflow_runs[] | select(.id > ${CURRENT_RUN_ID}) | .id][0] // empty") || {
+              echo "Could not resolve newer workflow runs; treating cancel as failure."
+              echo '${{ toJSON(needs) }}'
+              exit 1
+            }
+            if [ -n "$NEWER_RUN_ID" ]; then
+              echo "Run superseded by newer CI run ${NEWER_RUN_ID} on tip ${RUN_HEAD_SHA}; cancelled jobs are concurrency noise."
               echo '${{ toJSON(needs) }}'
               exit 0
             fi

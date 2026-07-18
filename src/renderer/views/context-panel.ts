@@ -1,6 +1,7 @@
 import type * as Monaco from 'monaco-editor'
 import type { AppStore } from '@shared/store/store.ts'
 import type { OpenFile } from '@shared/types'
+import type { GitFileDiff } from '@shared/types/git.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { attachCodeBlockCopyButtons } from '../markdown/code-block-copy.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
@@ -11,9 +12,10 @@ import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
+import { createGitChangesDiffEditor, setGitFileDiffModel } from '../monaco/git-diff-viewer.ts'
 import { showErrorToast } from './toast.ts'
 
-type MarkdownViewMode = 'preview' | 'source'
+type FileViewMode = 'preview' | 'source' | 'changes'
 
 function isMarkdownFile(openFile: OpenFile): boolean {
   if (openFile.language === 'markdown') return true
@@ -32,11 +34,18 @@ export function mountContextPanel(
   fileToolbar.hidden = true
   const previewBtn = document.createElement('button')
   previewBtn.type = 'button'
+  previewBtn.className = 'file-viewer-preview-btn'
   previewBtn.textContent = 'Preview'
   const sourceBtn = document.createElement('button')
   sourceBtn.type = 'button'
+  sourceBtn.className = 'file-viewer-source-btn'
   sourceBtn.textContent = 'Edit source'
-  fileToolbar.append(previewBtn, sourceBtn)
+  const changesBtn = document.createElement('button')
+  changesBtn.type = 'button'
+  changesBtn.className = 'file-viewer-changes-btn'
+  changesBtn.textContent = 'Changes'
+  changesBtn.hidden = true
+  fileToolbar.append(previewBtn, sourceBtn, changesBtn)
 
   const previewContainer = document.createElement('div')
   previewContainer.className = 'markdown-file-preview message-text streaming-markdown'
@@ -45,19 +54,32 @@ export function mountContextPanel(
   const fileContainer = document.createElement('div')
   fileContainer.className = 'monaco-container'
 
+  const diffContainer = document.createElement('div')
+  diffContainer.className = 'git-diff-editor-wrap file-viewer-diff'
+  diffContainer.hidden = true
+
   const emptyContainer = document.createElement('div')
   emptyContainer.className = 'panel-empty'
   emptyContainer.textContent = 'Open a file or run a task to see content here'
 
-  root.append(fileToolbar, previewContainer, fileContainer, emptyContainer)
+  root.append(fileToolbar, previewContainer, fileContainer, diffContainer, emptyContainer)
 
-  let markdownViewMode: MarkdownViewMode = 'preview'
-  let lastMarkdownPath: string | null = null
+  let viewMode: FileViewMode = 'source'
+  let lastPath: string | null = null
   let revealedFor: OpenFile | null = null
 
-  function syncToolbarActive(): void {
-    previewBtn.classList.toggle('is-active', markdownViewMode === 'preview')
-    sourceBtn.classList.toggle('is-active', markdownViewMode === 'source')
+  // Uncommitted (HEAD → working tree) changes for the open file, fetched
+  // asynchronously; null while the file is clean or outside a git repo.
+  let workingDiff: GitFileDiff | null = null
+  let workingDiffRequestId = 0
+  let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
+  // The diff attached to (or queued for) the diff editor, for render dedupe.
+  let renderedDiff: GitFileDiff | null = null
+  let queuedDiff: GitFileDiff | null = null
+  let diffRenderChain: Promise<void> = Promise.resolve()
+
+  function fallbackMode(md: boolean): FileViewMode {
+    return md ? 'preview' : 'source'
   }
 
   function renderMarkdownPreview(content: string): void {
@@ -67,23 +89,110 @@ export function mountContextPanel(
     void renderMermaidIn(previewContainer)
   }
 
+  function queueDiffRender(diff: GitFileDiff): void {
+    if (queuedDiff === diff || renderedDiff === diff) return
+    queuedDiff = diff
+    diffRenderChain = diffRenderChain
+      .catch(() => undefined)
+      .then(async () => {
+        if (queuedDiff !== diff) return
+        if (viewMode !== 'changes' || store.getState().openFile?.path !== diff.path) {
+          // Conditions changed while queued; allow a later re-queue.
+          queuedDiff = null
+          return
+        }
+        if (!diffEditor) {
+          diffEditor = createGitChangesDiffEditor(
+            diffContainer,
+            monaco,
+            store.getState().fontSize,
+            store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
+          )
+          registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () => {
+            const { openFile } = store.getState()
+            return openFile ? { path: openFile.path, detail: 'before' } : null
+          })
+          registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monaco, () => {
+            const { openFile } = store.getState()
+            return openFile ? { path: openFile.path, detail: 'after' } : null
+          })
+        }
+        await setGitFileDiffModel(diffEditor, monaco, diff, diffContainer)
+        renderedDiff = diff
+      })
+  }
+
+  function syncView(md: boolean): void {
+    const hasChanges = workingDiff != null
+    fileToolbar.hidden = !md && !hasChanges
+    previewBtn.hidden = !md
+    changesBtn.hidden = !hasChanges
+    sourceBtn.textContent = md ? 'Edit source' : 'Source'
+    previewBtn.classList.toggle('is-active', viewMode === 'preview')
+    sourceBtn.classList.toggle('is-active', viewMode === 'source')
+    changesBtn.classList.toggle('is-active', viewMode === 'changes')
+
+    previewContainer.hidden = viewMode !== 'preview'
+    fileContainer.hidden = viewMode !== 'source'
+    diffContainer.hidden = viewMode !== 'changes'
+    if (viewMode === 'source') fileEditor.layout()
+    if (viewMode === 'changes' && workingDiff) queueDiffRender(workingDiff)
+  }
+
+  /**
+   * Re-check whether the open file differs from HEAD and sync the Changes
+   * button / view. Runs on every open and on filesystem changes; a request id
+   * guards against out-of-order responses when files are switched quickly.
+   */
+  async function refreshWorkingDiff(): Promise<void> {
+    const { openFile } = store.getState()
+    if (!openFile) return
+    const requestId = ++workingDiffRequestId
+    const diff = await api.git.workingFileDiff(openFile.path).catch(() => null)
+    if (requestId !== workingDiffRequestId) return
+    const current = store.getState().openFile
+    if (!current || current.path !== openFile.path) return
+
+    // Identical content means nothing to re-render; keep the attached models
+    // (and the user's diff scroll position) instead of churning them.
+    if (
+      workingDiff &&
+      diff &&
+      workingDiff.before === diff.before &&
+      workingDiff.after === diff.after
+    )
+      return
+
+    workingDiff = diff
+    const md = isMarkdownFile(current)
+    if (viewMode === 'changes' && !diff) {
+      viewMode = fallbackMode(md)
+      if (viewMode === 'preview') renderMarkdownPreview(current.content)
+    }
+    syncView(md)
+  }
+
   previewBtn.addEventListener('click', () => {
-    markdownViewMode = 'preview'
+    viewMode = 'preview'
     const model = fileEditor.getModel()
     if (model && !model.isDisposed()) {
       renderMarkdownPreview(model.getValue())
     }
-    syncToolbarActive()
-    previewContainer.hidden = false
-    fileContainer.hidden = true
+    syncView(true)
   })
 
   sourceBtn.addEventListener('click', () => {
-    markdownViewMode = 'source'
-    syncToolbarActive()
-    previewContainer.hidden = true
-    fileContainer.hidden = false
-    fileEditor.layout()
+    const { openFile } = store.getState()
+    if (!openFile) return
+    viewMode = 'source'
+    syncView(isMarkdownFile(openFile))
+  })
+
+  changesBtn.addEventListener('click', () => {
+    const { openFile } = store.getState()
+    if (!openFile || !workingDiff) return
+    viewMode = 'changes'
+    syncView(isMarkdownFile(openFile))
   })
 
   const fileEditor = monaco.editor.create(fileContainer, {
@@ -128,26 +237,24 @@ export function mountContextPanel(
       revealedFor = openFile
 
       const md = isMarkdownFile(openFile)
-      fileToolbar.hidden = !md
-      if (md && openFile.path !== lastMarkdownPath) {
-        markdownViewMode = 'preview'
-        lastMarkdownPath = openFile.path
+      if (openFile.path !== lastPath) {
+        lastPath = openFile.path
+        viewMode = fallbackMode(md)
+        // The previous file's diff must not leak onto this one; the async
+        // refresh re-detects changes for the new path.
+        workingDiff = null
       }
-      if (!md) lastMarkdownPath = null
+      if (viewMode === 'changes' && !workingDiff) viewMode = fallbackMode(md)
 
-      if (md && markdownViewMode === 'preview') {
-        renderMarkdownPreview(openFile.content)
-        previewContainer.hidden = false
-        fileContainer.hidden = true
-      } else {
-        previewContainer.hidden = true
-        fileContainer.hidden = false
-      }
-      syncToolbarActive()
+      if (viewMode === 'preview') renderMarkdownPreview(openFile.content)
+      syncView(md)
     } else {
+      lastPath = null
+      workingDiff = null
       fileToolbar.hidden = true
       previewContainer.hidden = true
       fileContainer.hidden = true
+      diffContainer.hidden = true
       emptyContainer.hidden = false
     }
   }
@@ -157,6 +264,7 @@ export function mountContextPanel(
   const unsubs = [
     store.on('panel_changed', () => {
       updatePanel()
+      void refreshWorkingDiff()
       const { openFile } = store.getState()
       if (watchedPath && watchedPath !== openFile?.path) {
         void api.fs.unwatch(watchedPath)
@@ -186,13 +294,15 @@ export function mountContextPanel(
       if (model && !model.isDisposed() && !fileEditor.hasTextFocus()) {
         model.setValue(content)
       }
-      if (markdownViewMode === 'preview' && !previewContainer.hidden) {
+      if (viewMode === 'preview' && !previewContainer.hidden) {
         renderMarkdownPreview(content)
       }
+      await refreshWorkingDiff()
     })()
   })
 
   updatePanel()
+  void refreshWorkingDiff()
 
   const unbindDrop = bindFileDropTarget(
     root,
@@ -214,5 +324,7 @@ export function mountContextPanel(
     unbindWorkspaceLinks()
     unbindBrowserLinks()
     fileEditor.dispose()
+    diffEditor?.dispose()
+    diffEditor = null
   }
 }

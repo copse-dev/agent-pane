@@ -13,9 +13,12 @@ export const CURSOR_HOOK_EVENTS = [
   'beforeReadFile',
   'beforeSubmitPrompt',
   'afterFileEdit',
+  'afterShellExecution',
+  'afterMCPExecution',
   'stop',
   'subagentStart',
   'subagentStop',
+  'sessionStart',
 ] as const
 
 export type CursorHookEvent = (typeof CURSOR_HOOK_EVENTS)[number]
@@ -37,11 +40,26 @@ export function isCursorPermissionHookEvent(
 }
 
 /**
+ * The Cursor post-tool observation events (D2). `afterShellExecution` /
+ * `afterMCPExecution` are payload *flavors* of the canonical `afterToolUse`
+ * event — the shell/MCP split is chosen by the tool name, the same way the
+ * permission gates map onto `toolGate`. Both are fire-and-forget: they carry the
+ * command/output (shell) or tool params/result (MCP) on stdin and return nothing.
+ */
+export const CURSOR_AFTER_TOOL_HOOK_EVENTS = ['afterShellExecution', 'afterMCPExecution'] as const
+
+export type CursorAfterToolHookEvent = (typeof CURSOR_AFTER_TOOL_HOOK_EVENTS)[number]
+
+/**
  * Events Copse actually fires (vs parsed for discovery only). The permission
  * gates plus `beforeSubmitPrompt` (B1 — compose path), `afterFileEdit`
  * (B2 — the diff-queue / write-tool site), `stop` (B3 — fired the moment agent
- * work stops, at turn end or abort), and `subagentStart` / `subagentStop`
- * (D1 — the subagent spawn gate + detached completion, matcher on subagent type).
+ * work stops, at turn end or abort), `subagentStart` / `subagentStop`
+ * (D1 — the subagent spawn gate + detached completion, matcher on subagent type),
+ * and `afterShellExecution` / `afterMCPExecution` (D2 — post-tool observations,
+ * flavors of the canonical `afterToolUse`, dispatched detached with a capped
+ * output snapshot), and `sessionStart` (H4 — fire-and-forget on a new
+ * conversation's first turn; its `env` output propagates to later hook spawns).
  */
 export const CURSOR_WIRED_HOOK_EVENTS = [
   ...CURSOR_PERMISSION_HOOK_EVENTS,
@@ -50,6 +68,8 @@ export const CURSOR_WIRED_HOOK_EVENTS = [
   'stop',
   'subagentStart',
   'subagentStop',
+  'sessionStart',
+  ...CURSOR_AFTER_TOOL_HOOK_EVENTS,
 ] as const
 
 /** Whether Copse actually fires this event (drives the Sources "supported" badge). */

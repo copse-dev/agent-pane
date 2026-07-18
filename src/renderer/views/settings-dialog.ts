@@ -15,7 +15,7 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
-import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
@@ -46,14 +46,7 @@ import {
 } from '@shared/command-routing.ts'
 
 export type SettingsSection =
-  | 'general'
-  | 'usage'
-  | 'local-models'
-  | 'mcp'
-  | 'sources'
-  | 'appearance'
-  | 'ssh'
-  | 'experimental'
+  'general' | 'usage' | 'local-models' | 'mcp' | 'sources' | 'appearance' | 'ssh' | 'experimental'
 
 /**
  * Whole-app tint (Appearance ▸ Interface tint). The hue is mixed into every
@@ -933,35 +926,38 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Adds a <code>suggest_model</code> tool that recommends a capability tier
-                (fast / balanced / frontier) and a representative model for a task, so cheap/fast
-                models handle trivial work and frontier models are reserved for the hard problems.
-                Advisory only — it does not switch the model in use. While off, the tool is not
-                registered.
+                Adds a <code>suggest_model</code> tool that places a task on the shared model
+                intellect scale (low / mid / top band — the same scale the advisor pairing uses) and
+                names a representative model, so cheap/fast models handle trivial work and
+                top-of-scale models are reserved for the hard problems. Advisory only — it does not
+                switch the model in use. While off, the tool is not registered.
               </p>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="advisor-strategy-fieldset">
               <legend>Advisor strategy</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="advisorStrategyEnabled" />
                 Let the agent consult a larger advisor model mid-task
               </label>
               <p class="field-hint">
-                Adds a no-parameter <code>advisor</code> tool that forwards your full conversation
+                Adds an <code>advisor</code> tool that forwards your full conversation
                 transcript to a larger advisor model for strategic guidance, so the everyday loop can
                 run on a cheaper or on-device model while frontier intelligence is pulled in at the
-                moments that matter (planning, getting unstuck, final review). Shaped to match
-                Claude’s native advisor tool. While off, the tool is not registered.
+                moments that matter (planning, getting unstuck, final review). Runs client-side, so
+                any executor/advisor pairing works — ACP agents can sit on either side (as the
+                advisor, or as an executor consulting it through the native-tool bridge). While
+                off, the tool is not registered.
               </p>
               <label class="field-label" for="advisorModel">Advisor model</label>
               <select id="advisorModel" name="advisorModel">
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                Model used for advisor consultations. Pick a configured cloud provider; defaults to
+                Model used for advisor consultations. Any configured provider works; defaults to
                 <code>claude-opus-4-8</code>.
               </p>
+              <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>
             </fieldset>
 
             <fieldset>
@@ -1387,11 +1383,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     if (h.supported === false) {
       extraBadges.push({ text: 'unsupported', className: 'sources-badge-unsupported' })
     }
+    // The `sandbox: false` escape (F3, decision 7) runs the hook OUTSIDE the
+    // project sandbox — badge it so the user sees the elevated risk they granted.
+    if (h.sandbox === false) {
+      extraBadges.push({ text: 'outside sandbox', className: 'sources-badge-unsandboxed' })
+    }
     if (h.lastError) {
       extraBadges.push({ text: 'error', className: 'sources-badge-error' })
     }
+    const familyLabel =
+      h.family === 'claude' ? 'Claude Code' : h.family === 'copse' ? 'Copse' : 'Cursor'
     const title = h.family === 'claude' && h.matcher ? `${h.event} · ${h.matcher}` : h.event
-    const detail = `${h.family === 'claude' ? 'Claude Code' : 'Cursor'} · ${h.command}`
+    const detail = `${familyLabel} · ${h.command}`
     const row = makeSourceRow(title, h.scope, detail, {
       badgeClass: h.scope === 'project' ? 'sources-badge-project' : undefined,
       extraBadges,
@@ -1402,7 +1405,129 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       errorEl.textContent = `Last run failed: ${h.lastError}`
       row.append(errorEl)
     }
+    addHookTester(row, h)
     return row
+  }
+
+  /**
+   * Wire the G2 dry-run tester onto a hook row: a "Test" button that runs the
+   * hook once against a synthetic payload for its event and shows
+   * stdin/stdout/stderr/exit/duration + parse_ok + outcome summary. The dry run
+   * never mutates live agent state (see `src/main/services/hooks/dry-run.ts`).
+   */
+  function addHookTester(row: HTMLElement, h: import('@shared/types/hooks.ts').HookSummary): void {
+    const header = row.querySelector('.sources-row-header')
+    if (!header) return
+    const testBtn = document.createElement('button')
+    testBtn.type = 'button'
+    testBtn.className = 'sources-hook-test-btn'
+    testBtn.textContent = 'Test'
+    testBtn.title = 'Dry-run this hook against a synthetic payload for its event'
+    header.append(testBtn)
+
+    const result = document.createElement('div')
+    result.className = 'hook-test'
+    result.hidden = true
+    row.append(result)
+
+    testBtn.addEventListener('click', () => {
+      void runHookTest(h, testBtn, result)
+    })
+  }
+
+  async function runHookTest(
+    h: import('@shared/types/hooks.ts').HookSummary,
+    btn: HTMLButtonElement,
+    result: HTMLElement,
+  ): Promise<void> {
+    btn.disabled = true
+    btn.textContent = 'Testing…'
+    result.hidden = false
+    result.innerHTML = ''
+    const pending = document.createElement('div')
+    pending.className = 'hook-test-summary'
+    pending.textContent = 'Running dry-run…'
+    result.append(pending)
+    try {
+      const req: import('@shared/types/hooks.ts').HookTestRequest = {
+        family: h.family,
+        event: h.event,
+        command: h.command,
+        source: h.source,
+        scope: h.scope,
+        ...(h.sandbox !== undefined ? { sandbox: h.sandbox } : {}),
+      }
+      const res = await api.hooks.test(req)
+      renderHookTestResult(result, res)
+    } catch {
+      result.innerHTML = ''
+      const err = document.createElement('div')
+      err.className = 'hook-test-summary hook-test-error'
+      err.textContent = 'Dry-run failed to start.'
+      result.append(err)
+    } finally {
+      btn.disabled = false
+      btn.textContent = 'Test'
+    }
+  }
+
+  /** Render one `hooks:test` result: summary chips + labeled stdin/stdout/stderr streams. */
+  function renderHookTestResult(
+    container: HTMLElement,
+    res: import('@shared/types/hooks.ts').HookTestResult,
+  ): void {
+    container.innerHTML = ''
+    if (!res.ran) {
+      const notice = document.createElement('div')
+      notice.className = 'hook-test-summary hook-test-error'
+      notice.textContent = res.error ?? 'This hook could not be dry-run.'
+      container.append(notice)
+      return
+    }
+
+    const summary = document.createElement('div')
+    summary.className = 'hook-test-summary'
+    const chips: string[] = []
+    if (res.wireEvent) chips.push(`event ${res.wireEvent}`)
+    if (res.timedOut) chips.push('timed out')
+    else if (res.spawnError) chips.push('failed to start')
+    chips.push(
+      `exit ${res.exitCode === null || res.exitCode === undefined ? '—' : String(res.exitCode)}`,
+    )
+    chips.push(`${String(res.durationMs ?? 0)} ms`)
+    chips.push(res.parseOk ? 'parsed ok' : 'parse failed')
+    if (res.sandboxed) chips.push('sandboxed')
+    for (const text of chips) {
+      const chip = document.createElement('span')
+      chip.className = 'hook-test-chip'
+      chip.textContent = text
+      summary.append(chip)
+    }
+    container.append(summary)
+
+    if (res.outcomeSummary) {
+      const outcome = document.createElement('div')
+      outcome.className = 'hook-test-outcome'
+      outcome.textContent = `Outcome: ${res.outcomeSummary}`
+      container.append(outcome)
+    }
+
+    appendHookTestStream(container, 'stdin', res.stdin ?? '')
+    appendHookTestStream(container, 'stdout', res.stdout ?? '')
+    appendHookTestStream(container, 'stderr', res.stderr ?? '')
+  }
+
+  function appendHookTestStream(container: HTMLElement, label: string, text: string): void {
+    const block = document.createElement('div')
+    block.className = 'hook-test-stream'
+    const heading = document.createElement('div')
+    heading.className = 'hook-test-stream-label'
+    heading.textContent = label
+    const pre = document.createElement('pre')
+    pre.textContent = text.length > 0 ? text : '(empty)'
+    if (text.length === 0) pre.classList.add('hook-test-stream-empty')
+    block.append(heading, pre)
+    container.append(block)
   }
 
   /** A hooks.json authoring problem (unknown event, bad entry, malformed file). */
@@ -1729,6 +1854,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshSources()
   })
 
+  // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
+  // (executor, advisor) pairing from the model capability annotations — cloud
+  // tiers and the local catalog — whenever either picker changes, so the user
+  // learns up front whether the advisor is actually stronger than the executor.
+  function updateAdvisorPairHint(): void {
+    const form = qsRequired<HTMLFormElement>(overlay, 'form')
+    const hint = qsRequired(overlay, '#advisorPairHint')
+    const executor = (form.elements.namedItem('model') as HTMLSelectElement).value
+    const advisor = (form.elements.namedItem('advisorModel') as HTMLSelectElement).value
+    if (!executor || !advisor) {
+      hint.hidden = true
+      return
+    }
+    const assessment = validateAdvisorPair(executor, advisor)
+    hint.textContent = assessment.reason
+    hint.setAttribute('data-level', assessment.level)
+    hint.hidden = false
+  }
+
   overlay.addEventListener('settings-open', () => {
     // A fresh open always starts on a section, never in a leftover search.
     searchContentLoaded = false
@@ -1774,13 +1918,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
       )
       const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
-        | string
-        | undefined
+        string | undefined
       await populateModelSelect(
         form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
         api,
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
+      updateAdvisorPairHint()
       const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
@@ -1794,8 +1938,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         comparisonModelB ?? DEFAULT_COMPARISON_MODEL_B,
       )
       const comparisonJudgeModel = (await api.settings.get('comparisonJudgeModel')) as
-        | string
-        | undefined
+        string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonJudgeModel') as HTMLSelectElement,
         api,
@@ -1804,9 +1947,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await loadSimpleFields(form, api)
       wireSafetySliders(form)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-        | string[]
-        | undefined
-        | null
+        string[] | undefined | null
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
@@ -1860,6 +2001,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const settingsForm = overlay.querySelector('form')
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
+  settingsForm.addEventListener('change', (e) => {
+    const target = e.target
+    if (
+      target instanceof HTMLSelectElement &&
+      (target.name === 'model' || target.name === 'advisorModel')
+    ) {
+      updateAdvisorPairHint()
+    }
+  })
   settingsForm.addEventListener('submit', (e) => {
     e.preventDefault()
     void (async (): Promise<void> => {

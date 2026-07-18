@@ -214,12 +214,37 @@ no registration, no runner PAT; the only secret is `BUILD_GH_TOKEN` at image
 build time, exactly like a burst host.
 
 ```bash
-BUILD_GH_TOKEN=ghp_... npm run e2e:remote -- up      # Scaleway PLAY2-MICRO by default
+# Preferred: publish the baked image once to Scaleway Container Registry, then
+# provision hosts that only pull (no on-host bake, no BUILD_GH_TOKEN on the host).
+BUILD_GH_TOKEN=ghp_... SCW_SECRET_KEY=... \
+  COPSE_CI_REGISTRY=rg.fr-par.scw.cloud/<namespace> \
+  npm run e2e:remote -- publish
+
+SCW_SECRET_KEY=... COPSE_CI_REGISTRY=rg.fr-par.scw.cloud/<namespace> \
+  npm run e2e:remote -- up                           # pull + ready in minutes
+# Registry pull defaults to a 40 GB root (no on-host bake scratch). On-host bake
+# / --rebuild still defaults to 80 GB. Override with --volume-size-gb (SBS cannot
+# shrink after create).
+
 npm run e2e:remote -- run                            # oracle subset of your diff
 npm run e2e:remote -- run --all --shard 2 --detach   # full CI suite, 2 containers
 npm run e2e:remote -- wait <run-id>
 npm run e2e:remote -- down --yes
 ```
+
+Without `COPSE_CI_REGISTRY`, `up` still works but bakes on the host
+(`BUILD_GH_TOKEN` required; slow). Create a private namespace in the Scaleway
+console (Storage → Container Registry), then
+[`docker login`](https://www.scaleway.com/en/docs/container-registry/how-to/connect-docker-cli/)
+uses `SCW_SECRET_KEY` with user `nologin`. Image tags are
+`copse-ci-runner:<sha256(package-lock.json)>` and `:latest`.
+
+**Secrets never land in Scaleway images.** `BUILD_GH_TOKEN` is a BuildKit
+secret at bake/publish time only. Registry auth on `up` is an ephemeral host
+`docker login` (password on stdin → pull → logout + wipe `~/.docker/config.json`);
+it is not written into Docker layers or instance snapshots. For the stricter
+path (host never sees registry credentials), pass `--transfer-image` (local
+pull + `docker save|load` over SSH).
 
 Each run pushes a snapshot commit (staged + unstaged + untracked) to a bare
 repo on the host and starts a fresh one-shot container from this image with
@@ -232,9 +257,11 @@ Dev hosts carry their own tag namespace (`copse-remote-e2e` /
 `copse-remote-e2e-hosts`), so `e2e:remote down` can never terminate burst CI
 capacity and `runners:burst down` can never take a dev host. The same
 TTL backstop applies (`--ttl-minutes`, default 240; Scaleway self-terminates
-via API, AWS uses terminate-on-shutdown) — `down --yes` remains the real cleanup. After a `package-lock.json` change, runs warn and
-fall back to `npm ci`; run `npm run e2e:remote -- rebake` to refresh the baked
-layer. A spare machine with Docker + passwordless sudo works too:
+via API, AWS uses terminate-on-shutdown) — `down --yes` remains the real
+cleanup. After a `package-lock.json` change, runs warn and fall back to
+`npm ci`; refresh with `npm run e2e:remote -- rebake --push` (publish + pull
+onto the saved host) or `rebake --rebuild` (on-host bake).
+A spare machine with Docker + passwordless sudo works too:
 `npm run e2e:remote -- adopt --host user@box`.
 
 ## Do we need new PAT tokens?

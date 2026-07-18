@@ -13,11 +13,14 @@
 import { readFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
+import { buildInjectedContextBlock } from '@copse/agent/hooks/inject-context.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorToolGateHooks } from './cursor-adapter.ts'
 import { claudeToolGateHooks } from './claude-adapter.ts'
+import { copseToolGateHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import { withRunDeadlinePaused } from './run-deadline.ts'
 
 /** A permission-style verdict reduced from the tool-gate hooks. */
 export type HookGatePermission = 'allow' | 'deny' | 'ask'
@@ -28,6 +31,32 @@ export interface HookGateDecision {
   agentMessage?: string
   /** Message a denying/asking hook wants shown to the user, if any. */
   userMessage?: string
+  /**
+   * The tool input after the sequential `updatedInput` pipeline rewrote it (H1),
+   * present only when at least one hook returned `updatedInput`. It is the
+   * **final** threaded input (each hook saw the prior rewrite), so the caller
+   * (`permission-gate`) applies it and **re-runs the policy matrix**
+   * (`analyzeShellCommand` / `decideShellPermission`) on it before allowing the
+   * tool — a rewrite is never applied without re-analysis (security-critical).
+   */
+  updatedInput?: Record<string, unknown>
+  /**
+   * Context a blocking hook injected into the current turn (H2), already built
+   * into the final system-reminder block (10k-capped, with a truncation note on
+   * overflow). Present only when the gate allows (or an `ask` is approved) and a
+   * hook returned `injectContext` — a deny drops the tool, so there is nothing
+   * to inject into. The caller appends this to the tool's result so the model
+   * reads it in the current turn.
+   */
+  injectContext?: string
+  /**
+   * A hook asked to halt the whole run (`continue: false`, H3 / decision 12).
+   * This is stronger than the `deny` it also produces: `deny` blocks *this* tool
+   * call, while `haltRun` stops the current turn through the run's abort path.
+   * The caller (`permission-gate`) routes it to the abort path, attributed to
+   * `hookId`. Present only when a hook returned `haltRun`.
+   */
+  haltRun?: { reason: string; hookId: string }
 }
 
 export interface ToolGateCheck {
@@ -85,11 +114,12 @@ export async function runToolGateHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  const [cursorHooks, claudeHooks] = await Promise.all([
+  const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
     cursorToolGateHooks(payload, discoverOpts),
     claudeToolGateHooks(payload, discoverOpts),
+    copseToolGateHooks(payload, discoverOpts),
   ])
-  const hooks = [...cursorHooks, ...claudeHooks]
+  const hooks = [...cursorHooks, ...claudeHooks, ...copseHooks]
   if (hooks.length === 0) return { permission: 'allow' }
 
   // Only now that a hook actually gates this read do we pay for the file read
@@ -102,11 +132,20 @@ export async function runToolGateHooks(
   const registry = new HookRegistry()
   for (const hook of hooks) registry.registerCommand(hook)
 
-  const { outcomes } = await registry.emit('toolGate', payload, {
-    runCommandHook: createCommandHookRunner(),
-    ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
-  })
+  // `registry.emit` runs the hooks in registration order and threads each
+  // hook's `updatedInput` into `payload.input` for the next hook (the H1
+  // sequential pipeline lives in the registry so both function and command
+  // hooks participate), so `payload.input` here is the *final* rewritten input.
+  // H4 (decision 13): pause the run's idle deadline while the blocking hooks are
+  // awaited, the same way tool execution does — a slow gate hook (up to its
+  // per-dialect timeout) must not advance the idle clock.
+  const { outcomes } = await withRunDeadlinePaused(opts.agentSession?.conversationId, () =>
+    registry.emit('toolGate', payload, {
+      runCommandHook: createCommandHookRunner(),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
+    }),
+  )
   const merged = mergeBlockingOutcomes(outcomes)
 
   // A hook `haltRun` (`continue: false`) blocks the action for the gate.
@@ -116,9 +155,31 @@ export async function runToolGateHooks(
     : merged.decision === 'ask'
       ? 'ask'
       : 'allow'
+  // H3: a `haltRun` does more than deny this tool — it stops the current turn
+  // through the abort path. Attribute it to the first hook that halted (the
+  // merge takes the first `haltRun`, decision 12) so the abort + spine line name
+  // the responsible hook.
+  const haltRun =
+    merged.haltRun !== undefined
+      ? {
+          reason: merged.haltRun.reason,
+          hookId: outcomes.find((o) => o.outcome.haltRun !== undefined)?.hookId ?? check.toolName,
+        }
+      : undefined
+  // A rewrite is surfaced only when the pipeline actually produced one; the
+  // value is the final threaded `payload.input`, not just the last hook's delta,
+  // so the caller re-runs policy on the complete rewritten input.
+  const rewritten = merged.updatedInput !== undefined
+  // H2: a hook's `injectContext` becomes the current-turn system-reminder block
+  // (10k-capped). Only meaningful when the tool proceeds — a `deny` drops the
+  // tool and its result, so we never build a block for a denied gate.
+  const injectContext = denied ? undefined : buildInjectedContextBlock(merged.injectContext)
   return {
     permission,
     ...(merged.agentMessage !== undefined ? { agentMessage: merged.agentMessage } : {}),
     ...(merged.userMessage !== undefined ? { userMessage: merged.userMessage } : {}),
+    ...(rewritten ? { updatedInput: payload.input } : {}),
+    ...(injectContext !== undefined ? { injectContext } : {}),
+    ...(haltRun !== undefined ? { haltRun } : {}),
   }
 }

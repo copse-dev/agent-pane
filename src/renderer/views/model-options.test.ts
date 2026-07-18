@@ -150,7 +150,7 @@ describe('fetchModelOptions visibility', () => {
         { value: 'acp:cursor#auto', label: 'Auto' },
         // The agent's "Opus 4.8" label aliases to the sourced measurement, so
         // the row earns an intellect-only hint (ACP has no token pricing).
-        { value: 'acp:cursor#opus[]', label: 'Opus 4.8 — intellect 56' },
+        { value: 'acp:cursor#opus[]', label: 'Opus 4.8 — intellect 55.7' },
       ],
     )
     // The bare "acp:cursor" (agent default) entry is intentionally omitted.
@@ -205,9 +205,9 @@ describe('fetchModelOptions visibility', () => {
     const known = options.find((o) => o.value === 'lmstudio:qwen/qwen2.5-coder-32b')
     assert.ok(known)
     assert.match(known.label, /qwen\/qwen2\.5-coder-32b — coder/)
-    // Its sourced benchmark axes also earn it a composite capability hint,
-    // labelled on its own scale (never as canonical "intellect").
-    assert.match(known.label, /composite [\d.]+ \(3 axes\)/)
+    // It now carries a sourced AA measurement, shown quant-adjusted (~) for the
+    // running quant rather than the composite fallback.
+    assert.match(known.label, /intellect ~[\d.]+/)
     const unknown = options.find((o) => o.value === 'lmstudio:some-unknown-local')
     assert.ok(unknown)
     assert.equal(unknown.label, 'some-unknown-local')
@@ -220,15 +220,18 @@ describe('fetchModelOptions visibility', () => {
     )
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
-    assert.equal(opus.label, 'claude-opus-4-8 — intellect 56 · $9/MTok · frontier')
+    assert.equal(opus.label, 'claude-opus-4-8 — intellect 55.7 · $9/MTok · frontier')
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
-    assert.equal(haiku.label, 'claude-haiku-4-5 — intellect 24 · $1.80/MTok · frontier')
-    // A tracked model with pricing but no sourced measurement shows price only.
+    // Haiku is dominated on the re-baselined frontier (a cheaper model reaches
+    // its intellect), so it shows intellect and price without the frontier tag.
+    assert.equal(haiku.label, 'claude-haiku-4-5 — intellect 24 · $1.80/MTok')
+    // gpt-4o is scored (11.2) but dominated, so it shows intellect and price
+    // without the frontier tag.
     const gpt4o = options.find((o) => o.value === 'gpt-4o')
     assert.ok(gpt4o)
-    assert.match(gpt4o.label, /\$[\d.]+\/MTok/)
-    assert.doesNotMatch(gpt4o.label, /intellect/)
+    assert.match(gpt4o.label, /intellect 11\.2 · \$[\d.]+\/MTok/)
+    assert.doesNotMatch(gpt4o.label, /frontier/)
   })
 
   it('keeps the current selection selectable even with no key', async () => {

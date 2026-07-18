@@ -130,9 +130,10 @@ export function createRegistry(): ToolRegistry {
     registry.register(suggestModelTool)
   }
   // Experimental client-side advisor strategy (off by default, issue #566). Adds
-  // a no-parameter `advisor` tool that forwards the full transcript to a larger
-  // advisor model for strategic guidance, so the executor can run on a cheaper /
-  // on-device model. Shaped to match Claude's native advisor tool contract.
+  // an `advisor` tool that forwards the full transcript + verified repo state to
+  // a larger advisor model for strategic guidance, so the executor can run on a
+  // cheaper / on-device model. The no-arg call matches Claude's native advisor
+  // tool contract; optional question / include_diff params only add context.
   if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
     registry.register(advisorTool)
   }

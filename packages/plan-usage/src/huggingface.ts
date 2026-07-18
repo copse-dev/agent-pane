@@ -1,6 +1,7 @@
 import {
   clampPercent,
   errorMessage,
+  isAuthRejectionError,
   isRecord,
   readJsonBody,
   toIsoTimestamp,
@@ -121,7 +122,7 @@ export async function fetchHuggingFacePlanUsage(
     return { status: 'ok', provider: 'huggingface', usage }
   } catch (err) {
     const message = errorMessage(err)
-    if (/HTTP 401|HTTP 403/.test(message)) {
+    if (isAuthRejectionError(message)) {
       return {
         status: 'unavailable',
         provider: 'huggingface',

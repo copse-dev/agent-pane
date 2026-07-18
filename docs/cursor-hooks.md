@@ -43,18 +43,74 @@ running the turn: `model` (slug), `model_id`, and `model_params` (Cursor's
 `{ id, value }[]` array — e.g. `context_window` / `max_output_tokens`), matching
 the vendor contract (B4).
 
-| Event                  | stdin (event fields)      | stdout                                   | Copse         |
-| ---------------------- | ------------------------- | ---------------------------------------- | ------------- |
-| `beforeShellExecution` | `command`, `cwd`          | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
-| `beforeMCPExecution`   | `tool_name`, `tool_input` | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
-| `beforeReadFile`       | `file_path`, `content`    | `{ permission: "allow"\|"deny" }`        | ✅ honoured   |
-| `beforeSubmitPrompt`   | `prompt`, `attachments`   | `{ continue: boolean }`                  | ✅ wired (B1) |
-| `afterFileEdit`        | `file_path`, `edits`      | none (notification)                      | ✅ wired (B2) |
-| `stop`                 | `status`                  | none (notification)                      | ✅ wired (B3) |
+| Event                  | stdin (event fields)                                 | stdout                                   | Copse         |
+| ---------------------- | ---------------------------------------------------- | ---------------------------------------- | ------------- |
+| `beforeShellExecution` | `command`, `cwd`                                     | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeMCPExecution`   | `tool_name`, `tool_input`                            | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
+| `beforeReadFile`       | `file_path`, `content`                               | `{ permission: "allow"\|"deny" }`        | ✅ honoured   |
+| `beforeSubmitPrompt`   | `prompt`, `attachments`                              | `{ continue: boolean }`                  | ✅ wired (B1) |
+| `afterFileEdit`        | `file_path`, `edits`                                 | none (notification)                      | ✅ wired (B2) |
+| `stop`                 | `status`                                             | none (notification)                      | ✅ wired (B3) |
+| `afterShellExecution`  | `command`, `output`, `duration`                      | none (notification)                      | ✅ wired (D2) |
+| `afterMCPExecution`    | `tool_name`, `tool_input`, `result_json`, `duration` | none (notification)                      | ✅ wired (D2) |
 
 The real `conversation_id` (thread id) and `generation_id` (turn id) come from
 the active run (B4); they are empty strings only when a hook fires outside any
 agent turn.
+
+### Matchers (per-event, D3)
+
+A hook entry may carry an optional `matcher` — a **regex string** that filters
+when the hook runs. Which field the regex is tested against depends on the event
+(matching Cursor's "which field the matcher applies to depends on the hook"):
+
+| Event(s)                                       | matcher matched against       |
+| ---------------------------------------------- | ----------------------------- |
+| `beforeShellExecution` / `afterShellExecution` | the full shell command string |
+| `beforeMCPExecution` / `afterMCPExecution`     | the (MCP) tool name           |
+| `beforeReadFile`                               | the tool type (`Read`)        |
+| `afterFileEdit`                                | the tool type (`Write`)       |
+| `beforeSubmitPrompt`                           | the value `UserPromptSubmit`  |
+| `stop`                                         | the value `Stop`              |
+| `subagentStart` / `subagentStop`               | the subagent type             |
+
+```json
+{
+  "hooks": {
+    "beforeShellExecution": [{ "command": "./approve-network.sh", "matcher": "curl|wget|nc " }],
+    "beforeMCPExecution": [{ "command": "./mcp-guard.sh", "matcher": "db__query" }],
+    "subagentStart": [{ "command": "./validate-explore.sh", "matcher": "explore|shell" }]
+  }
+}
+```
+
+Semantics:
+
+- **No matcher fires for every action** — Cursor's default. (For `afterFileEdit`,
+  Copse _additionally_ supports a `glob` convenience field, matched against the
+  edited **path**; see below.)
+- **An invalid regex skips the hook** (skip-and-warn). Cursor's docs do not
+  specify invalid-matcher behavior; Copse chooses to skip rather than fail-open
+  so a broken matcher can never accidentally deny (or observe) every action. The
+  skip is logged once with the offending pattern.
+- **MCP tool names** are Copse's canonical form (`mcp__<server>__<tool>`), so an
+  MCP matcher is written against that — e.g. `db__query` matches
+  `mcp__db__query`. (Cursor's dedicated `beforeMCPExecution` / `afterMCPExecution`
+  events are not in its published "available matchers" list; Copse matches them
+  by tool name, the natural analogue of Cursor's `MCP:<tool_name>` tool-type
+  token used by the generic `preToolUse` hook.)
+- **`afterFileEdit` has two independent filters** that must _both_ pass: the
+  Copse-convenience `glob` (**path**, `string | string[]`, B2) and the Cursor
+  native `matcher` (**tool type** `Write`, D3). They are distinct fields with
+  distinct meanings — `glob` narrows by which file changed, `matcher` narrows by
+  the edit tool type. Since every Copse edit funnels through the diff-queue write
+  path, a `Write` matcher matches and a `TabWrite` matcher never does (Copse has
+  no inline-tab edits).
+
+Matcher evaluation is centralized in the Cursor adapter
+(`cursorMatcherMatches` / `cursorMatcherSubject`) and applied at discovery — the
+adapter's dispatch-side filter — so every event runs the same matcher code with
+only its subject field differing (decision 8: adapters own matchers).
 
 Permission responses may also carry `agentMessage` / `userMessage`. A denying
 hook's `agentMessage` is now **surfaced to the agent** as the tool-result reason
@@ -72,19 +128,20 @@ returning modified content.
 
 ## What Copse supports
 
-| Capability                    | Status        | Notes                                                                                                                                                              |
-| ----------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Permission hooks**          | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                          |
-| **User hooks**                | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                            |
-| **Project hooks**             | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                             |
-| **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                         |
-| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt` (B1), `afterFileEdit` (B2), `stop` (B3) are wired; every declared Cursor event now fires                                                      |
-| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin (B4) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)            |
-| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event (B4), sourced from the model actually running                                                   |
-| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                |
-| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                          |
-| **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                         |
-| **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session) |
+| Capability                    | Status        | Notes                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Permission hooks**          | Supported     | `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` run in the permission gate                                                                                                                                                                                                                                              |
+| **User hooks**                | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                                                                                                                                                                                                |
+| **Project hooks**             | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                                                                                                                                                                                                 |
+| **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                                                                                                                                                                                             |
+| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt` (B1), `afterFileEdit` (B2), `stop` (B3), `afterShellExecution` / `afterMCPExecution` (D2) are wired; every declared Cursor event now fires                                                                                                                                                                        |
+| **Post-tool observation**     | Supported     | `afterShellExecution` / `afterMCPExecution` (D2) fire **detached** after each shell / MCP tool result — payload flavors of the one canonical `afterToolUse` event (the tool name picks the flavor, like the permission gates map onto `toolGate`). Notification-only; the output snapshot is capped before it reaches the hook's stdin |
+| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin (B4) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)                                                                                                                                                                                |
+| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event (B4), sourced from the model actually running                                                                                                                                                                                                                       |
+| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                                                                                                                                                                                    |
+| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                                                                                                                                                                                              |
+| **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                                                                                                                                                                                             |
+| **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                     |
 
 ### Enablement
 
@@ -147,10 +204,9 @@ Enabling Cursor hooks hands real, local execution authority to whoever authored 
 
 **Enabling `cursorHooksEnabled` and trusting a workspace grants that repo's
 `.cursor/hooks.json` arbitrary local code execution on every gated tool call.** Each
-matching hook `command` is spawned through a shell (`shell: true`) on the agent's hot
-path, with the directory of the `hooks.json` as its working directory. A trusted repo's
-hooks run with the same authority as any other process you launch — they are **not**
-confined to the agent's project sandbox.
+matching hook `command` is spawned through a shell on the agent's hot path, with the
+directory of the `hooks.json` as its working directory. A trusted repo's hooks run with
+whatever authority the sandbox leaves them (see below).
 
 Concretely, "trusting a workspace" with hooks enabled also means:
 
@@ -158,9 +214,14 @@ Concretely, "trusting a workspace" with hooks enabled also means:
   (`beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`) spawns the repo's
   hook command first. A cloned or third-party repo can ship a `hooks.json` that runs
   whatever it likes, repeatedly, for the lifetime of the session.
-- **Runs outside the sandbox.** Hook commands are ordinary child processes; they are not
-  subject to the project sandbox that constrains agent shell/file tools. They can read
-  and write anywhere your user account can.
+- **Sandboxed by default (F3, macOS-only).** As of F3 (decision 7 of the
+  [hooks platform plan](./plans/hooks-and-feature-packs.md)), hook processes run **inside
+  the project sandbox by default** — the same workspace-scoped seatbelt that constrains the
+  agent's shell/file tools. Cursor / Claude hooks cannot opt out (only the Copse dialect's
+  `sandbox: false` can). **Enforcement is macOS-only**: on Linux / Windows there is no OS
+  sandbox, so a hook still runs with full user authority — treat "sandboxed" as a _default,
+  not a guarantee_. A hook the sandbox blocks is recorded on the spine and surfaced in
+  Sources; it is never a silent fail-open.
 - **Tool tokens are in the environment.** Hook processes inherit the scrubbed
   `envForRendererChildProcess()` environment. That strips _LLM provider_ keys, but
   **non-LLM tool tokens used by the agent (e.g. `GITHUB_TOKEN`) remain in `env`** and are

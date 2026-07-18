@@ -28,7 +28,7 @@ describe('renderFrontierSvg', () => {
     // The measured Opus point explains itself from its citation.
     const opus = titleTexts.find((t) => /claude-opus-4-8/.test(t))
     assert.ok(opus)
-    assert.match(opus, /measured: 56 on index v4\.1/)
+    assert.match(opus, /measured: 55\.7 on index v4\.1/)
     // One frontier polyline, no dual axes: exactly one rotated y-axis label.
     assert.equal(svg.querySelectorAll('polyline.frontier-line').length, 1)
     assert.equal(svg.querySelectorAll('text[transform^="rotate"]').length, 1)
@@ -54,22 +54,33 @@ describe('renderFrontierSvg', () => {
 })
 
 describe('local candidates and the composite strip', () => {
-  it('only canonical-scale local scores become plot candidates', () => {
-    // qwen has 3 sourced benchmark axes but no canonical intellect measurement,
-    // so it must NOT be plotted on the main scatter (different scale)…
-    assert.deepEqual(localFrontierCandidates(['qwen/qwen2.5-coder-32b', 'unknown/x']), [])
-    // …and becomes a composite-strip entry instead.
-    const models = compositeScoredLocalModels(['qwen/qwen2.5-coder-32b', 'microsoft/phi-4'])
-    const [entry] = models
-    assert.ok(entry)
-    assert.equal(models.length, 1)
-    assert.equal(entry.id, 'qwen/qwen2.5-coder-32b')
-    assert.equal(entry.composite.version, 'copse-intellect-v1')
+  it('plots local models with a canonical measurement, leaving the composite strip empty', () => {
+    // Every catalogued local model now carries a sourced AA measurement, so it
+    // plots on the main scatter and none fall back to the composite strip.
+    const cands = localFrontierCandidates(['qwen/qwen2.5-coder-32b', 'unknown/x'])
+    assert.deepEqual(
+      cands.map((c) => c.id),
+      ['qwen/qwen2.5-coder-32b'],
+    )
+    assert.deepEqual(compositeScoredLocalModels(['qwen/qwen2.5-coder-32b', 'microsoft/phi-4']), [])
   })
 
   it('renders composite models as a separate own-scale strip with derivations', () => {
-    const models = compositeScoredLocalModels(['qwen/qwen2.5-coder-32b'])
-    const svg = renderCompositeStrip(models)
+    // The composite strip has no live data while AA measures every local model
+    // we ship, so drive the renderer with an explicit composite entry to keep
+    // its own-scale, derivation, and on-device-cost rendering covered.
+    const svg = renderCompositeStrip([
+      {
+        id: 'qwen/qwen2.5-coder-32b',
+        composite: {
+          value: 41.2,
+          version: 'copse-intellect-v1',
+          axes: [],
+          estimated: true,
+          basis: 'weighted mean of 3/4 sourced axes: humaneval 40×2, mbpp 42×2, arena 41×1',
+        },
+      },
+    ])
     assert.equal(svg.querySelectorAll('circle.composite-point').length, 1)
     const title = svg.querySelector('circle.composite-point > title')
     assert.ok(title)
@@ -93,7 +104,7 @@ describe('extraProviderFrontierCandidates', () => {
   it('joins only models with both stored pricing and a resolvable measurement', () => {
     const candidates = extraProviderFrontierCandidates([
       provider([
-        // Priced + measured (June cohort, equated) → joins at its real price.
+        // Priced + measured (direct v4.1 reading) → joins at its real price.
         { id: 'MiniMaxAI/MiniMax-M3', inputPricePerMTok: 1, outputPricePerMTok: 4 },
         // Measured but unpriced → hint-only, never plotted.
         { id: 'zai-org/GLM-5.2' },
@@ -105,23 +116,22 @@ describe('extraProviderFrontierCandidates', () => {
     const [m3] = candidates
     assert.ok(m3)
     assert.equal(m3.id, 'huggingface:MiniMaxAI/MiniMax-M3')
-    assert.equal(m3.intellect, 50)
-    assert.equal(m3.intellectEstimated, true)
+    assert.equal(m3.intellect, 44.4)
+    assert.equal(m3.intellectEstimated, false)
     // 0.8·1 + 0.2·4 = $1.60/MTok blended.
     assert.equal(m3.costPerMTok, 1.6)
   })
 })
 
 describe('createIntellectFrontierPanel', () => {
-  it('renders the chart after refresh and the composite strip for local models', async () => {
+  it('renders the main chart after refresh, plotting scored local models', async () => {
     const panel = createIntellectFrontierPanel(async () => ['qwen/qwen2.5-coder-32b'])
     assert.equal(panel.root.querySelector('svg'), null)
     await panel.refresh()
-    // Main scatter (with its gutters) + composite strip — two separate charts
-    // (the composite scale is never mixed onto the main axes).
-    assert.equal(panel.root.querySelectorAll('svg').length, 2)
-    assert.match(panel.root.textContent, /own composite scale/)
-    assert.match(panel.root.textContent, /not comparable with the intellect axis/)
+    // qwen now carries a canonical measurement, so it plots on the main scatter;
+    // the composite strip stays absent while no local model needs the fallback.
+    assert.equal(panel.root.querySelectorAll('svg').length, 1)
+    assert.doesNotMatch(panel.root.textContent, /own composite scale/)
   })
 
   it('plots verified live models with attribution, and refuses a renormalised feed', async () => {
@@ -194,13 +204,27 @@ describe('createIntellectFrontierPanel', () => {
   })
 
   it('puts priced-but-unscored models in the bottom gutter at their true price', async () => {
-    const panel = createIntellectFrontierPanel(async () => [])
+    // Every tracked model is scored now, so inject a priced-but-unmeasured
+    // provider model to exercise the unscored gutter.
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      async () =>
+        [
+          {
+            id: 'huggingface',
+            label: 'Hugging Face',
+            prefix: 'huggingface:',
+            baseUrl: 'x',
+            models: [{ id: 'vendor/unscored-priced', inputPricePerMTok: 1, outputPricePerMTok: 4 }],
+          },
+        ] as never,
+    )
     await panel.refresh()
     const svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    // gpt-4o has synced pricing but no sourced measurement.
+    // The injected model has pricing but no sourced measurement.
     assert.match(svg.textContent, /no score yet/)
-    assert.match(svg.textContent, /gpt-4o/)
+    assert.match(svg.textContent, /unscored-priced/)
     const dot = svg.querySelector('circle.gutter-unscored')
     assert.ok(dot)
     // Hovering populates the formatted HTML tooltip layer (native titles are
@@ -235,14 +259,14 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     const svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    // One density row (24 = 20 + the 4 unscored tracked cloud models), no
-    // per-model labels, count in the caption.
-    assert.match(svg.textContent, /no score yet · 24 models/)
+    // One density row (20 injected models; no tracked cloud models are unscored
+    // now), no per-model labels, count in the caption.
+    assert.match(svg.textContent, /no score yet · 20 models/)
     assert.ok(svg.querySelector('circle.gutter-unscored.dense'))
     assert.equal(svg.querySelectorAll('text.gutter-unscored-label').length, 0)
     const details = panel.root.querySelector('details.frontier-unscored-list')
     assert.ok(details)
-    assert.match(details.textContent, /24 priced models without an intellect score/)
+    assert.match(details.textContent, /20 priced models without an intellect score/)
     assert.match(details.textContent, /model-19/)
   })
 

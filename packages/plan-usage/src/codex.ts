@@ -1,6 +1,7 @@
 import {
   clampPercent,
   errorMessage,
+  isAuthRejectionError,
   isRecord,
   readJsonBody,
   toIsoTimestamp,
@@ -14,6 +15,8 @@ import type {
 } from './types.ts'
 
 const DEFAULT_CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
+const CODEX_AUTH_REJECTED_HINT =
+  'Codex credentials were rejected. Run `codex login` again so Copse can read a fresh ChatGPT/Codex token.'
 
 function labelForDurationMins(mins: number | null): string {
   if (mins === null) return 'Limit'
@@ -190,6 +193,10 @@ export async function fetchCodexPlanUsage(
     const body = await readJsonBody(response, 'Codex plan usage')
     return { status: 'ok', provider: 'codex', usage: parseCodexUsage(body, now()) }
   } catch (err) {
-    return { status: 'error', provider: 'codex', message: errorMessage(err) }
+    const message = errorMessage(err)
+    if (isAuthRejectionError(message)) {
+      return { status: 'unavailable', provider: 'codex', reason: CODEX_AUTH_REJECTED_HINT }
+    }
+    return { status: 'error', provider: 'codex', message }
   }
 }

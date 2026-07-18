@@ -7,6 +7,7 @@ import {
   type FrontierCandidate,
 } from './pareto-frontier.ts'
 import { getModelInfo } from './model-catalog.ts'
+import { getIntellectScore } from './model-intellect.ts'
 
 describe('blendedPricePerMTok', () => {
   it('reproduces the published 80/20 blended price for Opus 4.8', () => {
@@ -87,13 +88,10 @@ describe('frontierForKnownModels', () => {
     for (const p of points) {
       assert.ok(Number.isFinite(p.intellect))
       assert.ok(p.costPerMTok > 0)
+      // Every plotted intellect is a sourced measurement, never invented: it must
+      // match what getIntellectScore reports for the same id.
+      assert.equal(p.intellect, getIntellectScore(p.id)?.value, p.id)
     }
-    // gpt-4o has pricing but no sourced intellect measurement — it must be
-    // skipped, never given an invented score.
-    assert.equal(
-      points.some((p) => p.id === 'gpt-4o'),
-      false,
-    )
   })
 
   it('merges caller-supplied local candidates', () => {

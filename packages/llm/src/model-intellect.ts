@@ -1,19 +1,25 @@
-// The single composite "intellect" axis of the capability catalog: Artificial
-// Analysis Intelligence Index measurements for cloud AND local model ids,
-// expressed on one permanent canonical scale so numbers, once shown, never
-// silently change. Sibling to the per-benchmark axes in `local-model-catalog.ts`
-// (which stay authoritative for role-specific ranking); this scalar exists for
-// cross-model cost/intellect analysis (`pareto-frontier.ts`).
+// Two complementary "intellect" surfaces live in this module:
 //
-// Why a canonical scale: the index renormalises across versions (v4 swapped in
-// harder evals than v3 — every model's number changed), so raw values are only
-// comparable within one version. `CANONICAL_INTELLECT_VERSION` is the fixed
-// ruler; measurements from other versions are translated onto it via the
-// crystallised equating maps in `intellect-equating.ts`, always flagged as
-// estimates with the full derivation in `basis`. Data is synced from the
-// reviewed file `scripts/data/intellect-scores.json` (`npm run sync:intellect`)
-// — measurements are cited facts, never guesses; an absent model means "not
-// yet sourced", not zero.
+// 1. The measured composite axis — Artificial Analysis Intelligence Index
+//    measurements for cloud AND local model ids, expressed on one permanent
+//    canonical scale so numbers, once shown, never silently change. Sibling to
+//    the per-benchmark axes in `local-model-catalog.ts` (which stay
+//    authoritative for role-specific ranking); this scalar exists for
+//    cross-model cost/intellect analysis (`pareto-frontier.ts`).
+//
+//    Why a canonical scale: the index renormalises across versions (v4 swapped
+//    in harder evals than v3 — every model's number changed), so raw values are
+//    only comparable within one version. `CANONICAL_INTELLECT_VERSION` is the
+//    fixed ruler; measurements from other versions are translated onto it via
+//    the crystallised equating maps in `intellect-equating.ts`, always flagged
+//    as estimates with the full derivation in `basis`. Data is synced from the
+//    reviewed file `scripts/data/intellect-scores.json` (`npm run
+//    sync:intellect`) — measurements are cited facts, never guesses; an absent
+//    model means "not yet sourced", not zero.
+//
+// 2. The editorial ordinal scale (`MODEL_INTELLECT` and friends, below) — an
+//    open-ended annotation for the tracked cloud models, consumed by the
+//    advisor strategy and the model classifier's band representatives.
 
 import type { BenchmarkScore } from './local-model-catalog.ts'
 import { describeEquating, equateAcrossVersions } from './intellect-equating.ts'
@@ -25,6 +31,7 @@ import {
   MODEL_INTELLECT_RAW,
   type IntellectMeasurement,
 } from './model-intellect.generated.ts'
+import { type TrackedModel } from './model-catalog.ts'
 
 export { CANONICAL_INTELLECT_VERSION, INTELLECT_ATTRIBUTION }
 export type { IntellectMeasurement }
@@ -195,4 +202,101 @@ export function explainIntellectScore(modelId: string): IntellectExplanation | n
     estimated,
     steps,
   }
+}
+
+// ---------------------------------------------------------------------------
+// The editorial ordinal scale — an open-ended "intellect" annotation for the
+// cloud models the app ships (see docs/plans/model-roles-and-defaults.md).
+//
+// Why a scalar and not named tiers: "frontier" is a moving target — today's
+// frontier is next year's mid-tier — so static tier labels rot, and anything
+// bound to them drifts. An open-ended ordinal scale avoids the rotation: a new
+// frontier model simply *extends the top* (a hypothetical next-generation model
+// lands at 10, its successor at 11) and existing entries are never re-numbered.
+// Relative comparisons between two annotated models therefore stay correct
+// forever, while the bands derived from the distribution (`intellectBand`)
+// shift automatically as the scale grows — yesterday's top model demotes itself
+// the moment a stronger one is annotated.
+//
+// Cost is deliberately a SEPARATE axis: pricing lives in `model-catalog.ts`
+// (synced from LiteLLM) and must never feed into these numbers. Capability and
+// price correlate, but conflating them would break both uses.
+//
+// The numbers are editorial — a product judgement of "how smart", ordinal not
+// linear — so unlike the measured axis above they carry no `source`/`asOf`
+// provenance. Consumer: the advisor strategy (is the advisor actually stronger
+// than the executor?).
+
+/**
+ * Intellect annotation for every tracked cloud model. `model-intellect.test.ts`
+ * asserts the map covers `TRACKED_MODELS` exactly, so adding a model to the
+ * catalog forces an annotation here. Extend the top for new frontier models;
+ * never re-number existing entries.
+ */
+export const MODEL_INTELLECT: Readonly<Record<TrackedModel, number>> = {
+  'gpt-4o-mini': 3,
+  'claude-haiku-4-5': 4,
+  'gpt-5-mini': 5,
+  'gpt-4o': 6,
+  'claude-sonnet-4-6': 6,
+  'gpt-5': 8,
+  'claude-opus-4-8': 9,
+  'gpt-5.6-terra': 9,
+  'claude-sonnet-5': 10,
+  'gpt-5.5': 10,
+  'gpt-5.6-sol': 11,
+  'claude-fable-5': 12,
+}
+
+const INTELLECT_BY_MODEL: ReadonlyMap<string, number> = new Map(Object.entries(MODEL_INTELLECT))
+
+/** Intellect for a cloud model id, or null when the model isn't annotated (e.g. local ids). */
+export function modelIntellect(model: string): number | null {
+  return INTELLECT_BY_MODEL.get(model) ?? null
+}
+
+/** The currently-annotated distribution, for band derivation. */
+export const INTELLECT_SCALE: readonly number[] = Object.values(MODEL_INTELLECT)
+
+/** The top of the annotated scale (rises as new frontier models are added). */
+export function topAnnotatedIntellect(scale: readonly number[] = INTELLECT_SCALE): number {
+  return Math.max(...scale)
+}
+
+export type IntellectBand = 'top' | 'mid' | 'low'
+
+/**
+ * Band a value relative to the annotated distribution — never against fixed
+ * thresholds, so bands re-derive automatically when the scale extends: `top`
+ * is within one point of the current maximum, `low` is below the median, `mid`
+ * is the rest. Annotating a stronger model demotes yesterday's top band
+ * without touching any stored data.
+ */
+export function intellectBand(
+  value: number,
+  scale: readonly number[] = INTELLECT_SCALE,
+): IntellectBand {
+  if (value >= topAnnotatedIntellect(scale) - 1) return 'top'
+  const sorted = [...scale].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)] ?? 0
+  return value < median ? 'low' : 'mid'
+}
+
+/**
+ * Representative annotated model per band, for features that need *a* model of
+ * a given capability rather than the user's pick (e.g. the model classifier's
+ * recommendation). Deliberately the app's default (Anthropic) family; mapping
+ * to the user's actually-configured providers is a follow-up on issue #557.
+ *
+ * The picks are static but scale-validated: `model-intellect.test.ts` asserts
+ * each entry's intellect still falls in its band, so extending the scale with
+ * a stronger model (which demotes yesterday's top band) forces these picks to
+ * be revisited rather than silently going stale. Tracking the current-generation
+ * flagships (Fable 5 top, Sonnet 5 mid) is exactly that revision: Opus 4.8 and
+ * Sonnet 4.6 dropped a band once the newer models extended the scale.
+ */
+export const BAND_REPRESENTATIVE_MODEL: Record<IntellectBand, TrackedModel> = {
+  low: 'claude-haiku-4-5',
+  mid: 'claude-sonnet-5',
+  top: 'claude-fable-5',
 }

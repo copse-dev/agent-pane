@@ -27,6 +27,10 @@ const PROVIDER_LABELS: Record<string, string> = {
   cursor: 'Cursor',
 }
 
+function isAbortTimeoutMessage(message: string): boolean {
+  return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message)
+}
+
 function formatReset(resetsAt: string | null): string {
   if (!resetsAt) return 'reset unknown'
   const ms = Date.parse(resetsAt)
@@ -62,7 +66,10 @@ function renderPlanProvider(host: HTMLElement, result: ProviderPlanResult): void
   if (result.status === 'error') {
     const hint = document.createElement('p')
     hint.className = 'usage-plan-status usage-plan-status-error field-hint'
-    hint.textContent = `Couldn’t load plan usage: ${result.message}`
+    const label = PROVIDER_LABELS[result.provider] ?? result.provider
+    hint.textContent = isAbortTimeoutMessage(result.message)
+      ? `Timed out while checking ${label} plan usage.`
+      : `Couldn’t load ${label} plan usage: ${result.message}`
     card.append(hint)
     host.append(card)
     return
@@ -131,6 +138,14 @@ function renderPlanSection(
     loading.className = 'field-hint'
     loading.textContent = 'Loading plan usage…'
     host.append(loading)
+    return
+  }
+
+  if (snapshot.error) {
+    const err = document.createElement('p')
+    err.className = 'usage-plan-status usage-plan-status-error field-hint'
+    err.textContent = `Couldn’t load subscription plan usage: ${snapshot.error}`
+    host.append(err)
     return
   }
 

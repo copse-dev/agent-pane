@@ -223,8 +223,16 @@ function renderFile(data: DataFile, maps: readonly EquatingMap[], today: string)
         `  { from: '${m.from}', to: '${m.to}', a: ${String(m.a)}, b: ${String(m.b)}, anchorCount: ${String(m.anchorCount)}, anchorMin: ${String(m.anchorMin)}, anchorMax: ${String(m.anchorMax)}, fittedAsOf: '${m.fittedAsOf}' },`,
     )
     .join('\n')
-  const aliasRows = data.scores
-    .flatMap((m) => (m.aliases ?? []).map((alias) => [alias, m.modelId] as const))
+  // A model with several measurements (e.g. a v4.0 and a v4.1 reading) repeats
+  // its aliases on every score row; collapse to one entry per alias so the
+  // emitted object literal has no duplicate keys.
+  const aliasById = new Map<string, string>()
+  for (const m of data.scores) {
+    for (const alias of m.aliases ?? []) {
+      if (!aliasById.has(alias)) aliasById.set(alias, m.modelId)
+    }
+  }
+  const aliasRows = [...aliasById.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([alias, id]) => `  '${alias.replace(/'/g, "\\'")}': '${id}',`)
     .join('\n')

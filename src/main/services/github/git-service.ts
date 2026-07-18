@@ -102,7 +102,7 @@ export function parsePorcelainV1(raw: string): GitStatusResult {
   if (!raw) return { staged, unstaged }
 
   const entries = raw.split('\0').filter(Boolean)
-  for (let i = 0; i < entries.length; ) {
+  for (let i = 0; i < entries.length;) {
     const entry = entries[i]
     if (entry === undefined || entry.length < 3) {
       i++
@@ -601,6 +601,41 @@ export async function getBranches(): Promise<GitBranchInfo[]> {
   return branches
 }
 
+/**
+ * Parse `git rev-list --left-right --count <base>...HEAD` output ("<behind>\t<ahead>"):
+ * the left side counts commits on `base` not in HEAD (how far behind), the right
+ * side commits on HEAD not in base (how far ahead). Pure, so it's unit-tested
+ * without a repo. Returns null on a malformed line.
+ */
+export function parseAheadBehind(raw: string): { ahead: number; behind: number } | null {
+  const parts = raw.trim().split(/\s+/)
+  if (parts.length !== 2) return null
+  const behind = Number.parseInt(parts[0] ?? '', 10)
+  const ahead = Number.parseInt(parts[1] ?? '', 10)
+  if (Number.isNaN(behind) || Number.isNaN(ahead)) return null
+  return { ahead, behind }
+}
+
+/**
+ * How far the current HEAD is ahead of / behind a base branch, preferring the
+ * remote-tracking `origin/<base>` (the true "behind main" the user cares about)
+ * and falling back to a local `<base>` ref. Null when neither ref resolves or
+ * the counts can't be read.
+ */
+export async function getAheadBehind(
+  base: string,
+): Promise<{ ahead: number; behind: number } | null> {
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
+  for (const ref of [`origin/${base}`, base]) {
+    const { stdout, code } = await runGit(['rev-list', '--left-right', '--count', `${ref}...HEAD`])
+    if (code === 0) {
+      const parsed = parseAheadBehind(stdout)
+      if (parsed) return parsed
+    }
+  }
+  return null
+}
+
 /** Current checked-out branch, or null when detached / outside a repo. */
 export async function getCurrentBranchName(): Promise<string | null> {
   if (!getWorkspaceRoot()) return null
@@ -700,6 +735,27 @@ export async function getGitFileDiff(path: string, staged: boolean): Promise<Git
 
 function normalizeGitDiffText(text: string): string {
   return text.replace(/\r\n/g, '\n')
+}
+
+/**
+ * Combined HEAD → working-tree diff for a single file (staged and unstaged
+ * changes together), or null when git is unavailable, the file is an image,
+ * or the working tree matches HEAD. Powers the file viewer's "Changes" view.
+ */
+export async function getGitWorkingFileDiff(path: string): Promise<GitFileDiff | null> {
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
+  if (imageMimeType(path)) return null
+
+  const before = normalizeGitDiffText((await readGitBlob('HEAD', path)).content)
+  const after = normalizeGitDiffText(await readWorkingTree(path))
+  if (before === after) return null
+
+  return {
+    path,
+    before,
+    after,
+    language: detectLanguage(path),
+  }
 }
 
 export async function getGitStatusText(): Promise<string> {

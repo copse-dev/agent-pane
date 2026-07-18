@@ -1,18 +1,24 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  BAND_REPRESENTATIVE_MODEL,
   CANONICAL_INTELLECT_VERSION,
+  MODEL_INTELLECT,
   explainIntellectScore,
   getIntellectScore,
+  intellectBand,
+  modelIntellect,
+  topAnnotatedIntellect,
 } from './model-intellect.ts'
 import { MODEL_INTELLECT_RAW } from './model-intellect.generated.ts'
 import { LOCAL_MODEL_CATALOG } from './local-model-catalog.ts'
+import { TRACKED_MODELS } from './model-catalog.ts'
 
 describe('getIntellectScore', () => {
   it('returns the canonical measurement as a fact, not an estimate', () => {
     const score = getIntellectScore('claude-opus-4-8')
     assert.ok(score)
-    assert.equal(score.value, 56)
+    assert.equal(score.value, 55.7)
     assert.equal(score.estimated, undefined)
     assert.equal(score.measuredBitsPerWeight, 16)
     assert.ok(score.source.length > 10)
@@ -20,14 +26,14 @@ describe('getIntellectScore', () => {
   })
 
   it('returns null for a model with no sourced measurement — absent, never zero', () => {
-    assert.equal(getIntellectScore('gpt-4o'), null)
+    assert.equal(getIntellectScore('some-unsourced-model'), null)
     assert.equal(getIntellectScore('made-up-model'), null)
   })
 
   it('resolves alias and structurally-wrapped forms to the same measurement', () => {
     const direct = getIntellectScore('claude-fable-5')
     assert.ok(direct)
-    assert.equal(direct.value, 60)
+    assert.equal(direct.value, 59.9)
     // ACP picker label, OpenRouter id, provider prefix, option suffix, agent
     // segment, and serving-route tag all resolve to the one measurement.
     assert.deepEqual(getIntellectScore('Fable 5'), direct)
@@ -44,21 +50,19 @@ describe('getIntellectScore', () => {
     assert.equal(getIntellectScore('acp:cursor#default[]'), null)
   })
 
-  it('equates a June-cohort (v4.0) measurement onto the canonical scale as a flagged estimate', () => {
-    // MiniMax-M3 was measured at 55 when Opus 4.8 read 61; on the canonical
-    // v4.1 scale (Opus = 56) the fitted map translates it to 50 — estimated,
-    // and marked extrapolated because 55 sits below the anchor range.
+  it('prefers a direct canonical measurement over equating a June-cohort reading', () => {
+    // MiniMax-M3 carries both a v4.0 reading (55) and a direct v4.1 reading
+    // (44.4). The canonical scale is v4.1, so the direct measurement wins as a
+    // fact — no equating hop, not flagged estimated.
     const m3 = getIntellectScore('MiniMaxAI/MiniMax-M3')
     assert.ok(m3)
-    assert.equal(m3.value, 50)
-    assert.equal(m3.estimated, true)
-    assert.match(m3.basis ?? '', /equated v4\.0→v4\.1/)
-    assert.match(m3.basis ?? '', /extrapolated beyond anchor range/)
-    // The raw v4.0 fact is untouched — only the canonical projection is derived.
+    assert.equal(m3.value, 44.4)
+    assert.equal(m3.estimated, undefined)
     const explanation = explainIntellectScore('MiniMaxAI/MiniMax-M3')
     assert.ok(explanation)
-    assert.equal(explanation.steps[0]?.value, 55)
-    assert.equal(explanation.steps[1]?.step, 'equated')
+    assert.equal(explanation.steps.length, 1)
+    assert.equal(explanation.steps[0]?.step, 'measured')
+    assert.equal(explanation.steps[0]?.value, 44.4)
   })
 
   it('every synced measurement carries a citation and version', () => {
@@ -114,5 +118,57 @@ describe('catalog merge', () => {
         assert.equal(merged, undefined, model.id)
       }
     }
+  })
+})
+
+describe('model intellect scale', () => {
+  it('annotates every tracked model, and nothing else', () => {
+    assert.deepEqual(Object.keys(MODEL_INTELLECT).sort(), [...TRACKED_MODELS].sort())
+  })
+
+  it('resolves a value for tracked ids and null for unknown/local ids', () => {
+    assert.equal(modelIntellect('claude-opus-4-8'), 9)
+    assert.equal(modelIntellect('claude-haiku-4-5'), 4)
+    assert.equal(modelIntellect('lmstudio:qwen/qwen2.5-coder-32b'), null)
+    assert.equal(modelIntellect(''), null)
+  })
+
+  it('keeps the scale ordinal: a strictly stronger model has a strictly higher number', () => {
+    const haiku = modelIntellect('claude-haiku-4-5') ?? NaN
+    const sonnet = modelIntellect('claude-sonnet-4-6') ?? NaN
+    const opus = modelIntellect('claude-opus-4-8') ?? NaN
+    assert.ok(haiku < sonnet && sonnet < opus)
+  })
+
+  it('bands values relative to the annotated distribution', () => {
+    const scale = [3, 4, 5, 6, 6, 8, 9]
+    assert.equal(intellectBand(9, scale), 'top')
+    assert.equal(intellectBand(8, scale), 'top')
+    assert.equal(intellectBand(6, scale), 'mid')
+    assert.equal(intellectBand(4, scale), 'low')
+  })
+
+  it('keeps each band representative inside its band as the scale evolves', () => {
+    // Static picks, dynamically validated: when a stronger model extends the
+    // scale and demotes yesterday's top band, this test fails and forces the
+    // representatives to be revisited instead of silently going stale.
+    for (const [band, model] of Object.entries(BAND_REPRESENTATIVE_MODEL)) {
+      const value = modelIntellect(model)
+      assert.ok(value !== null, `${model} must be annotated`)
+      assert.equal(intellectBand(value), band, `${model} must sit in the '${band}' band`)
+    }
+  })
+
+  it('re-bands automatically when a new frontier model extends the scale', () => {
+    // The rot-resistance property: annotating a hypothetical next-generation
+    // model at 11 demotes yesterday's 9 out of the top band — no stored data
+    // is re-numbered, the bands simply re-derive from the distribution.
+    const today = [3, 4, 5, 6, 6, 8, 9]
+    assert.equal(intellectBand(9, today), 'top')
+
+    const afterNextFrontier = [...today, 11]
+    assert.equal(intellectBand(11, afterNextFrontier), 'top')
+    assert.equal(intellectBand(9, afterNextFrontier), 'mid')
+    assert.equal(topAnnotatedIntellect(afterNextFrontier), 11)
   })
 })

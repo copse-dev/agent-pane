@@ -35,6 +35,8 @@ export type ProviderPlanResult =
 export interface PlanUsageSnapshot {
   providers: ProviderPlanResult[]
   checkedAt: string
+  /** Fatal snapshot-level failure before provider-specific checks could finish. */
+  error?: string
 }
 
 export type FetchLike = (
