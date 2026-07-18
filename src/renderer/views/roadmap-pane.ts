@@ -1,4 +1,4 @@
-import { el, clear, qsRequired } from '../dom/helpers.ts'
+import { el, clear } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
@@ -76,48 +76,62 @@ export function mountRoadmapPane(
   // renderEditor must not overwrite it from the store.
   let fitCheckInFlight = false
   let loadToken = 0
+  // Search/filter query entered in the list header.
+  let searchQuery = ''
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
+  const searchInput = el('input', {
+    type: 'search',
+    class: 'roadmap-search-input',
+    placeholder: 'Filter roadmap items…',
+    'aria-label': 'Filter roadmap items',
+  })
+  const actionButtons = el('div', { class: 'roadmap-action-buttons' })
+  const newBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn memories-new-btn roadmap-new-btn',
+      'aria-label': 'New roadmap item',
+      title: 'New roadmap item',
+    },
+    '+',
+  )
+  const importBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-import-btn',
+      'aria-label': 'Import from GitHub issues',
+      title: 'Import from GitHub issues',
+    },
+    '⇩',
+  )
+  const refreshBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-refresh-btn',
+      'aria-label': 'Refresh roadmap',
+      title: 'Refresh',
+    },
+    '↻',
+  )
+  actionButtons.append(newBtn, importBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn memories-new-btn roadmap-new-btn',
-        'aria-label': 'New roadmap item',
-        title: 'New roadmap item',
-      },
-      '+',
-    ),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn roadmap-import-btn',
-        'aria-label': 'Import from GitHub issues',
-        title: 'Import from GitHub issues',
-      },
-      '⇩',
-    ),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn roadmap-refresh-btn',
-        'aria-label': 'Refresh roadmap',
-        title: 'Refresh',
-      },
-      '↻',
-    ),
+    searchInput,
+    actionButtons,
   )
-  const newBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-new-btn')
-  const importBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-import-btn')
-  const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-refresh-btn')
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
   listRoot.append(listHeader, listBody)
+
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value.trim()
+    renderList()
+  })
 
   // --- editor column --------------------------------------------------------
   const emptyState = el(
@@ -317,19 +331,29 @@ export function mountRoadmapPane(
     }
   }
 
+  function matchesSearch(item: RoadmapItem): boolean {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      (item.title || '').toLowerCase().includes(q) ||
+      item.body.toLowerCase().includes(q) ||
+      itemNotes(item).toLowerCase().includes(q) ||
+      itemIssue(item).toLowerCase().includes(q) ||
+      (item.status ?? '').toLowerCase().includes(q)
+    )
+  }
+
   function renderList(): void {
     clear(listBody)
-    if (items.length === 0) {
-      listBody.append(
-        el(
-          'div',
-          { class: 'git-changes-empty roadmap-list-empty' },
-          'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.',
-        ),
-      )
+    const visible = items.filter(matchesSearch)
+    if (visible.length === 0) {
+      const hint = searchQuery
+        ? 'No roadmap items match your filter.'
+        : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
+      listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
       return
     }
-    for (const item of items) {
+    for (const item of visible) {
       const isSelected = item.id === selectedId
       const status = itemStatus(item)
       const row = el('button', {
@@ -342,8 +366,9 @@ export function mountRoadmapPane(
         { class: 'roadmap-row-meta' },
         el('span', { class: `roadmap-status-badge is-${status}` }, status),
       )
-      // Complexity is stamped on save (roadmap-complexity.ts); older items
-      // that predate stamping simply have no badge.
+      // Complexity is stamped in the background shortly after a save
+      // (roadmap-complexity.ts); freshly saved items and older items that
+      // predate stamping simply have no badge yet.
       const complexity = item.fields['complexity']
       if (isRoadmapComplexity(complexity)) {
         meta.append(
@@ -351,7 +376,7 @@ export function mountRoadmapPane(
             'span',
             {
               class: `roadmap-complexity-badge is-${complexity}`,
-              title: 'Estimated prompt complexity (classified on save)',
+              title: 'Estimated prompt complexity (classified after save)',
             },
             complexity,
           ),
@@ -649,6 +674,11 @@ export function mountRoadmapPane(
       if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
     }),
     store.on('files_pane_changed', () => {
+      if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
+    }),
+    // Saves return before their complexity stamp lands (roadmap-complexity.ts);
+    // pick the badge up when main says the stamp arrived.
+    api.roadmap.onChanged(() => {
       if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
     }),
     store.on('workspace_changed', () => {

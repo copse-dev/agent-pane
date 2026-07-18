@@ -49,6 +49,10 @@ export interface SpineToolCall {
   /** null when the tool produced no result; a ref (possibly to empty contents) otherwise. */
   result: ContentRef | null
   editStats?: { additions: number; deletions: number }
+  /** ACP tool-call kind (`'execute'`, `'read'`, …) from an external ACP agent. */
+  kind?: string
+  /** Render `result` as Markdown (external ACP agents author Markdown output). */
+  resultFormat?: 'markdown'
   subagent?: SpineSubagentRef
 }
 
@@ -106,6 +110,11 @@ export interface SpineHookRunDecision {
   injectContextChars?: number
   agentMessageChars?: number
   userMessageChars?: number
+  /**
+   * Character count of an async queued follow-up the hook emitted (D1:
+   * `subagentStop`'s `followup_message`, routed to the pending-message queue).
+   */
+  queuedMessageChars?: number
 }
 
 /**

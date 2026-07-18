@@ -1,6 +1,7 @@
 import * as fsp from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type {
+  ContentBlock,
   ReadTextFileRequest,
   ReadTextFileResponse,
   RequestPermissionRequest,
@@ -15,21 +16,22 @@ import type {
 import type { LLMMessage, StreamChunk, UserContent } from '@shared/types'
 import { errorMessage } from '@shared/errors.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
-import { acpModelValue } from '@shared/acp.ts'
+import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
   streamRetryDelayMs,
 } from '@copse/llm/stream-retry.ts'
 import {
-  listAcpAgentModels,
+  probeAcpAgent,
   runAcpSessionPrompt,
   willSandboxAcpAgent,
+  type AcpAgentProbe,
   type AcpAgentSpawnConfig,
   type AcpClientHandlers,
-  type AcpModelSelector,
 } from './acp-client.ts'
-import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
+import { getAcpAgent, resolveAcpPermissionMode, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acquireAcpSession, disposeAcpSession } from './acp-session-pool.ts'
 import { buildInvokedSkillsBlock } from '../skills/skill-prompt.ts'
 import { listForwardableMcpServers } from '../mcp/mcp-registry.ts'
@@ -76,10 +78,10 @@ import {
  * Sessions are persistent per thread (issue #605): the agent process and ACP
  * session live in `acp-session-pool.ts` across turns, so the agent keeps its
  * own memory (no transcript replay on reuse) and background helpers it spawned
- * survive between turns. After a transport drop, an agent that advertises
- * `session/resume` keeps that memory on the next connection; history is replayed
- * only into a genuinely fresh session — first turn, config change, failed
- * resume, or idle reap.
+ * survive between turns. After a transport drop **or an idle reap**, an agent
+ * that advertises `session/resume` keeps that memory on the next connection
+ * (issue #830); history is replayed only into a genuinely fresh session —
+ * first turn, config change, or a failed/unavailable resume.
  */
 
 export interface RunAcpAgentOptions {
@@ -261,6 +263,10 @@ export async function runWithAcpRetry<T>(
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
+  if (isActiveSshWorkspace()) {
+    throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
+  }
+
   const agent = getAcpAgent(options.agentId)
   if (!agent) {
     throw new Error(
@@ -275,11 +281,19 @@ export async function runAcpAgentFromSettings(
 
   const sandbox = resolveAcpSandbox(agent)
   const sandboxed = willSandboxAcpAgent(sandbox)
-  if (!promptPayloadFromUserContent(options.userPrompt).text.trim()) {
+  const outboundPayload = promptPayloadFromUserContent(options.userPrompt)
+  const hasText = Boolean(outboundPayload.text.trim())
+  const hasImages = (outboundPayload.images?.length ?? 0) > 0
+  if (!hasText && !hasImages) {
     throw new Error('ACP agent prompt cannot be empty.')
   }
 
   const model = options.model ?? agent.model
+  // The ACP session mode to start each session in (issue #607): the user's
+  // choice, or `acceptEdits` for a Claude preset that will actually spawn
+  // sandboxed. Part of the spawn config so a change respawns the pooled session
+  // (the mode is applied once, at `session/new`, not switched live like model).
+  const permissionMode = resolveAcpPermissionMode(agent, willSandboxAcpAgent(sandbox))
   // Hand the agent the user's MCP servers so its session mounts them itself
   // (issue #602, tier 1). Best-effort: a config-read failure downgrades the turn
   // to "no forwarded servers" instead of failing it.
@@ -294,6 +308,7 @@ export async function runAcpAgentFromSettings(
     ...(agent.env ? { env: agent.env } : {}),
     ...(mcpServers.length > 0 ? { mcpServers } : {}),
     ...(sandbox ? { sandbox } : {}),
+    ...(permissionMode ? { permissionMode } : {}),
   }
 
   // Accumulate streamed assistant text so the turn contributes to thread history
@@ -350,14 +365,29 @@ export async function runAcpAgentFromSettings(
       registry: options.registry,
     })
     entry.open.handlers.current = handlers
-    const prompt = buildAcpPrompt(options.userPrompt, fresh ? options.priorMessages : [], {
-      sandboxed,
-      includeNotes: fresh,
-      ...(skillsBlock ? { skills: skillsBlock } : {}),
-    })
-    lastPrompt = prompt
+    // Issue #831: only attach image content blocks when the agent advertised
+    // `promptCapabilities.image`. Agents without it keep the prior text-only
+    // behaviour (images dropped). Images-only prompts fail clearly rather than
+    // sending an empty text block.
+    const includeImages = entry.open.promptImage && hasImages
+    if (!hasText && !includeImages) {
+      throw new Error(
+        'This ACP agent does not support image prompts. Add text, or use an agent that advertises prompt.image.',
+      )
+    }
+    const promptBlocks = buildAcpPromptContent(
+      options.userPrompt,
+      fresh ? options.priorMessages : [],
+      {
+        sandboxed,
+        includeNotes: fresh,
+        includeImages,
+        ...(skillsBlock ? { skills: skillsBlock } : {}),
+      },
+    )
+    lastPrompt = promptBlocks.map((block) => (block.type === 'text' ? block.text : '')).join('')
     try {
-      return await runAcpSessionPrompt(entry.open, prompt, model, options.signal)
+      return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
     } catch (err) {
       disposeAcpSession(options.threadId, { preserveForResume: isAcpConnectionDropped(err) })
       throw err
@@ -429,19 +459,24 @@ export async function runAcpAgentFromSettings(
 }
 
 /**
- * Discover the models a configured ACP agent offers (for the settings picker).
- * Resolves the agent + workspace, then probes it via {@link listAcpAgentModels}.
- * Returns `null` when the agent is unknown/disabled or exposes no model selector.
+ * Probe a configured ACP agent for the models and session modes it offers (for
+ * the settings picker, issue #607). Resolves the agent + workspace, then probes
+ * it via {@link probeAcpAgent}. Returns `{ models: null, modes: null }` when the
+ * agent is unknown/disabled; otherwise each selector is `null` when the agent
+ * exposes none of that kind.
  */
-export async function listAcpModelsForAgent(agentId: string): Promise<AcpModelSelector | null> {
+export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
+  if (isActiveSshWorkspace()) {
+    throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
+  }
   const agent = getAcpAgent(agentId)
-  if (!agent) return null
+  if (!agent) return { models: null, modes: null }
   const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
   if (!cwd) {
     throw new Error('Open a folder before detecting an ACP agent’s models.')
   }
   const sandbox = resolveAcpSandbox(agent)
-  return listAcpAgentModels({
+  return probeAcpAgent({
     command: agent.command,
     cwd,
     ...(agent.args ? { args: agent.args } : {}),
@@ -579,7 +614,7 @@ function pickPermissionOption(
 
 /** Back `fs/read_text_file` with a workspace-scoped read (path sandbox enforced). */
 async function readTextFile(req: ReadTextFileRequest): Promise<ReadTextFileResponse> {
-  const absPath = resolveWorkspacePath(req.path)
+  const absPath = await resolveWorkspacePath(req.path)
   const content = await fsp.readFile(absPath, 'utf-8')
   return { content: sliceLines(content, req.line, req.limit) }
 }
@@ -691,8 +726,8 @@ async function writeViaDiffQueue(
   signal: AbortSignal,
   queueWrites: Set<string>,
 ): Promise<WriteTextFileResponse> {
-  const absPath = resolveWorkspacePath(req.path)
-  const relPath = toRelativePath(absPath)
+  const absPath = await resolveWorkspacePath(req.path)
+  const relPath = await toRelativePath(absPath)
   let before = ''
   try {
     before = await fsp.readFile(absPath, 'utf-8')
@@ -807,6 +842,39 @@ export function buildAcpPrompt(
     'for context, then respond to the new message.\n\n' +
     `${transcript}\n\n--- New message ---\n${current}`
   )
+}
+
+/**
+ * Build the ACP `session/prompt` content blocks for a turn (issue #831).
+ *
+ * Always includes one text block from {@link buildAcpPrompt}. When
+ * `includeImages` is true (agent advertised `promptCapabilities.image`), also
+ * appends image content blocks from the current user message so vision-capable
+ * agents receive the attachments instead of having them dropped.
+ */
+export function buildAcpPromptContent(
+  userPrompt: UserContent,
+  priorMessages: LLMMessage[],
+  opts?: {
+    sandboxed?: boolean
+    includeNotes?: boolean
+    skills?: string
+    includeImages?: boolean
+  },
+): ContentBlock[] {
+  const text = buildAcpPrompt(userPrompt, priorMessages, {
+    ...(opts?.sandboxed !== undefined ? { sandboxed: opts.sandboxed } : {}),
+    ...(opts?.includeNotes !== undefined ? { includeNotes: opts.includeNotes } : {}),
+    ...(opts?.skills !== undefined ? { skills: opts.skills } : {}),
+  })
+  const blocks: ContentBlock[] = [{ type: 'text', text }]
+  if (opts?.includeImages) {
+    const { images } = promptPayloadFromUserContent(userPrompt)
+    for (const image of images ?? []) {
+      blocks.push({ type: 'image', mimeType: image.mimeType, data: image.data })
+    }
+  }
+  return blocks
 }
 
 function messageLine(message: LLMMessage): string {

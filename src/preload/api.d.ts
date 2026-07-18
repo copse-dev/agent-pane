@@ -27,7 +27,7 @@ import type {
   StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpModelSelector, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 
 export type { DetectedAcpAgent }
@@ -62,7 +62,7 @@ export interface ApiClient {
   workspace: {
     open: () => Promise<string | null>
     get: () => Promise<string | null>
-    set: (root: string) => Promise<string>
+    set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     onOpened: (handler: (root: string) => void) => () => void
@@ -150,6 +150,28 @@ export interface ApiClient {
     respond: (id: string, value: string) => Promise<void>
     onRequest: (
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+    ) => () => void
+  }
+  sshWorkspace: {
+    listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    getStates: () => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    connect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    disconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    reconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    listDirectory: (
+      hostId: string,
+      dirPath: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshRemoteDirEntry[]>
+    registerRoot: (hostId: string, dirPath: string) => Promise<string>
+    onConnectionChanged: (
+      handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
     ) => () => void
   }
   mcp: {
@@ -250,10 +272,11 @@ export interface ApiClient {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
     detectAgents: () => Promise<DetectedAcpAgent[]>
     /**
-     * Probe a configured agent for the models it offers (spawns it, opens a
-     * throwaway session). `null` when the agent exposes no model selector.
+     * Probe a configured agent for the models and session (permission) modes it
+     * offers (spawns it, opens a throwaway session). Each selector is `null`
+     * when the agent exposes none of that kind (issue #607).
      */
-    listModels: (agentId: string) => Promise<AcpModelSelector | null>
+    probeAgent: (agentId: string) => Promise<AcpAgentProbe>
     /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
      * clients, Socket-Firewall-install missing npm adapters, register + detect
@@ -406,6 +429,9 @@ export interface ApiClient {
     checkFit: (
       id: string,
     ) => Promise<import('../main/services/roadmap-fit-check.ts').RoadmapFitResult>
+    /** Subscribe to background roadmap changes (e.g. a complexity stamp landing
+     * after a save returned). Returns an unsubscribe function. */
+    onChanged: (handler: () => void) => () => void
   }
   skills: {
     list: () => Promise<SkillSummary[]>

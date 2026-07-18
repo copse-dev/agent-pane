@@ -3,6 +3,13 @@ import { chevronDownIcon } from '../dom/icons.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { fetchModelOptions, modelDisplayLabel } from './model-options.ts'
 
+export interface FooterModelPickerOptions {
+  /** When true, ACP agents are omitted (SSH workspaces). */
+  isSshWorkspace?: () => boolean
+  /** Called after the menu closes (e.g. return focus to the composer). */
+  onClose?: () => void
+}
+
 // Compact footer model picker: the trigger stays narrow (truncated label) while
 // the open menu grows to fit long LM Studio model ids.
 export function mountFooterModelPicker(
@@ -10,7 +17,7 @@ export function mountFooterModelPicker(
   api: ApiClient,
   getCurrent: () => string,
   onSelect: (model: string) => void,
-  onClose?: () => void,
+  pickerOpts: FooterModelPickerOptions = {},
 ): { refresh: () => void; destroy: () => void } {
   const wrap = el('div', { class: 'model-picker' })
   const trigger = el('button', {
@@ -55,7 +62,7 @@ export function mountFooterModelPicker(
       menu.setAttribute('hidden', '')
       filter.value = ''
       renderMenu(cachedOptions)
-      onClose?.()
+      pickerOpts.onClose?.()
     }
   }
 
@@ -145,7 +152,9 @@ export function mountFooterModelPicker(
   }
 
   async function refresh(): Promise<void> {
-    cachedOptions = await fetchModelOptions(api, getCurrent())
+    cachedOptions = await fetchModelOptions(api, getCurrent(), {
+      sshWorkspace: pickerOpts.isSshWorkspace?.() === true,
+    })
     renderMenu(cachedOptions)
     updateTrigger(cachedOptions)
   }

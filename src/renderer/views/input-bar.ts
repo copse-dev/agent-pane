@@ -56,7 +56,21 @@ import { showErrorToast, showToast } from './toast.ts'
 import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 
-export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
+interface MountInputBarOptions {
+  /**
+   * Dock the portrait panel tabs to the chat/panel seam instead of making them
+   * part of the floating composer card. Tests that mount the input in isolation
+   * can omit this and keep all generated UI under their fixture root.
+   */
+  portraitPanelHost?: HTMLElement
+}
+
+export function mountInputBar(
+  root: HTMLElement,
+  store: AppStore,
+  api: ApiClient,
+  opts: MountInputBarOptions = {},
+): () => void {
   const chips = el('div', { class: 'attachment-chips' })
   const composer = mountComposerEditor()
   composer.setPlaceholder('Message…')
@@ -155,9 +169,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
   const footerCompact = bindFooterCompactLayout(footer, () => {
     updateFooter()
   })
-  // Portrait / bottom-pinned chrome: a labeled panel-mode row under the status
-  // footer (between status and the stacked right panel) so users can flip modes
-  // without climbing to the titlebar. Hidden via CSS unless `.is-portrait-chrome`.
+  // Portrait / bottom-pinned chrome: a labeled panel-mode row docked to the
+  // thread/panel seam so users can flip modes without climbing to the titlebar.
+  // Hidden via CSS unless `.is-portrait-chrome`.
   const portraitPanelControls = mountPanelModeControls(store, api, {
     // Own class only — do not share `.titlebar-panel-controls` or titlebar e2e
     // / click selectors (`.titlebar-panel-controls [aria-label=…]`) collide.
@@ -187,13 +201,24 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
       // against the newly selected model rather than waiting for the next keystroke.
       void runContextEstimate()
     },
-    () => {
-      composer.focus()
+    {
+      isSshWorkspace: (): boolean => {
+        const { activeProjectId, projects } = store.getState()
+        if (!activeProjectId) return false
+        return Boolean(projects.find((p) => p.id === activeProjectId)?.sshHost)
+      },
+      onClose: (): void => {
+        composer.focus()
+      },
     },
   )
   // Re-sync the picker whenever the active thread changes (new thread,
-  // thread switch, or thread deletion that shifts the active pointer).
+  // thread switch, or thread deletion that shifts the active pointer), and when
+  // the project changes so ACP options hide/show with SSH workspaces.
   store.on('threads_changed', () => {
+    modelPicker.refresh()
+  })
+  store.on('projects_changed', () => {
     modelPicker.refresh()
   })
   const branchControl = mountFooterBranchStatus(branchHost, store, api)
@@ -212,7 +237,9 @@ export function mountInputBar(root: HTMLElement, store: AppStore, api: ApiClient
     updateFooter()
   })
 
-  root.append(chips, branchWarning, inputRow, footer, portraitPanelControls.element)
+  root.append(chips, branchWarning, inputRow, footer)
+  const portraitPanelHost = opts.portraitPanelHost ?? root
+  portraitPanelHost.append(portraitPanelControls.element)
 
   const followUps = mountFollowUpSuggestions(store, api, (prompt) => {
     composer.value = prompt

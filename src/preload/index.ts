@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   workspace: {
     open: () => ipcRenderer.invoke('workspace:open'),
     get: () => ipcRenderer.invoke('workspace:get'),
-    set: (root: string) => ipcRenderer.invoke('workspace:set', root),
+    set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
     onOpened: (handler: (root: string) => void) => {
@@ -246,6 +246,32 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  sshWorkspace: {
+    listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
+    listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
+    getStates: () => ipcRenderer.invoke('ssh-workspace:getStates'),
+    connect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:connect', hostId),
+    disconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:disconnect', hostId),
+    reconnect: (hostId: string) => ipcRenderer.invoke('ssh-workspace:reconnect', hostId),
+    listDirectory: (hostId: string, dirPath: string) =>
+      ipcRenderer.invoke('ssh-workspace:listDirectory', hostId, dirPath),
+    registerRoot: (hostId: string, dirPath: string) =>
+      ipcRenderer.invoke('ssh-workspace:registerRoot', hostId, dirPath),
+    onConnectionChanged: (
+      handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        states: import('@shared/types/ssh-workspace.ts').SshConnectionState[],
+      ): void => {
+        handler(states)
+      }
+      ipcRenderer.on('ssh:connection_changed', listener)
+      return (): void => {
+        ipcRenderer.off('ssh:connection_changed', listener)
+      }
+    },
+  },
   mcp: {
     list: () => ipcRenderer.invoke('mcp:list'),
     reload: () => ipcRenderer.invoke('mcp:reload'),
@@ -399,7 +425,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
-    listModels: (agentId: string) => ipcRenderer.invoke('acp:listModels', agentId),
+    probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probeAgent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:autoSetup'),
   },
   settings: {
@@ -485,6 +511,16 @@ contextBridge.exposeInMainWorld('api', {
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
     checkFit: (id: string) => ipcRenderer.invoke('roadmap:checkFit', id),
+    // Fired when a background complexity stamp lands on a saved item.
+    onChanged: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('roadmap:changed', listener)
+      return (): void => {
+        ipcRenderer.off('roadmap:changed', listener)
+      }
+    },
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -586,6 +622,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
+    },
+    requestAcpPackageInstallApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
   })
 }

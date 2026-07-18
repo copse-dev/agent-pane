@@ -13,6 +13,7 @@ import { e2eGitBranch } from './e2e-env.ts'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { Message } from '../../../src/shared/types/index.ts'
+import type { AcpAgentConfig } from '../../../src/shared/types/acp.ts'
 import { explodeThread } from '../../../src/shared/threads/fold.ts'
 import { serializeSpine } from '../../../src/shared/threads/spine-schema.ts'
 
@@ -191,6 +192,21 @@ export function seedE2eThreePaneLayout(): void {
   })
 }
 
+/** SSH workspace settings for remote-folder / SSH settings UI e2e specs. */
+export function seedSshWorkspaceSettings(options?: {
+  /** `false` = none; omit/`true` = default fixture host; or pass an explicit host list. */
+  hosts?: boolean | Array<{ id: string; label: string; host: string; user?: string }>
+  enabled?: boolean
+}): void {
+  const defaultHost = { id: 'dev', label: 'Dev Server', host: 'dev.example', user: 'ubuntu' }
+  const hosts =
+    options?.hosts === false ? [] : Array.isArray(options?.hosts) ? options.hosts : [defaultHost]
+  writeSettings({
+    sshWorkspaceEnabled: options?.enabled !== false,
+    sshWorkspaceHosts: hosts,
+  })
+}
+
 export function seedEmptyProject(
   workspaceRoot: string,
   projectId: string,
@@ -207,11 +223,21 @@ export function seedEmptyProject(
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     okfMemoriesEnabled?: boolean
     roadmapPlansEnabled?: boolean
+    registeredAcpAgents?: AcpAgentConfig[]
+    windowBounds?: { width: number; height: number }
+    /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
+    sshHost?: string
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
+  const project: Record<string, unknown> = {
+    id: projectId,
+    path: workspaceRoot,
+    name: 'workspace',
+  }
+  if (options?.sshHost) project.sshHost = options.sshHost
   writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    projects: [project],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   })
@@ -251,6 +277,12 @@ export function seedEmptyProject(
   }
   if (options?.roadmapPlansEnabled !== undefined) {
     settings.roadmapPlansEnabled = options.roadmapPlansEnabled
+  }
+  if (options?.registeredAcpAgents !== undefined) {
+    settings.registeredAcpAgents = options.registeredAcpAgents
+  }
+  if (options?.windowBounds !== undefined) {
+    settings.windowBounds = options.windowBounds
   }
   if (Object.keys(settings).length > 0) {
     writeSettings(settings)

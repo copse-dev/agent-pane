@@ -126,6 +126,41 @@ test('round-trips tool calls with inline args and a spilled result', () => {
   deepStrictEqual(roundTrip(messages).messages, messages)
 })
 
+test('round-trips ACP tool-call display metadata (kind + resultFormat)', () => {
+  // External ACP agents tag calls with a kind ('read', 'execute', …) and
+  // Markdown-formatted results; both must survive persistence or reloaded
+  // threads lose their grouping, shell labels, and Markdown rendering.
+  const messages: Message[] = [
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        {
+          id: 'tc1',
+          name: 'Read src/x.ts (1 - 40)',
+          args: { file_path: 'src/x.ts' },
+          status: 'done',
+          result: '1\tcontents',
+          kind: 'read',
+          resultFormat: 'markdown',
+        },
+        {
+          id: 'tc2',
+          name: 'git status',
+          args: { command: 'git status' },
+          status: 'done',
+          result: '```console\nclean\n```',
+          kind: 'execute',
+          resultFormat: 'markdown',
+        },
+      ],
+      createdAt: 5,
+    },
+  ]
+  deepStrictEqual(roundTrip(messages).messages, messages)
+})
+
 test('distinguishes a null result from an empty-string result', () => {
   const messages: Message[] = [
     {
