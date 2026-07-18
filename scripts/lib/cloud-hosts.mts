@@ -344,15 +344,159 @@ function optionalString(record: Record<string, unknown>, key: string): string {
 // Host bootstrap (cloud-init) + TTL cost guardrail
 // ---------------------------------------------------------------------------
 
-export function userDataScript(ttlMinutes: number, ttlLabel = 'Copse burst runner'): string {
-  const ttlSnippet =
-    ttlMinutes > 0
-      ? `
-# Cost guardrail: the instance is launched with shutdown behavior=terminate, so
-# this scheduled shutdown tears down forgotten burst capacity.
+/**
+ * Scaleway has no AWS-style terminate-on-shutdown: a guest `shutdown -h` only
+ * enters billed standby (compute + SBS + flexible IP keep charging). When this
+ * is set, cloud-init schedules an Instance API self-terminate instead.
+ */
+export interface ScalewayTtlTerminate {
+  secretKey: string
+  zone: string
+}
+
+export function resolveScalewaySecretKey(): string | undefined {
+  const fromEnv = process.env['SCW_SECRET_KEY']?.trim()
+  if (fromEnv) return fromEnv
+  try {
+    const raw = capture('scw', ['config', 'dump', '-o', 'json']).trim()
+    const parsed: unknown = JSON.parse(raw)
+    if (isRecord(parsed) && typeof parsed['secret_key'] === 'string') {
+      const key = parsed['secret_key'].trim()
+      if (key) return key
+    }
+  } catch {
+    // Fall through — caller decides whether a missing key is fatal.
+  }
+  return undefined
+}
+
+function awsTtlSnippet(ttlMinutes: number, ttlLabel: string): string {
+  return `
+# Cost guardrail: AWS launch sets instance-initiated-shutdown-behavior=terminate,
+# so this scheduled shutdown tears down forgotten burst capacity.
 shutdown -h +${String(ttlMinutes)} "${ttlLabel} TTL (${String(ttlMinutes)} minutes) reached"
 `
-      : ''
+}
+
+function scalewayTtlSnippet(
+  ttlMinutes: number,
+  ttlLabel: string,
+  ttl: ScalewayTtlTerminate,
+): string {
+  // Zone is baked in at create time (metadata zone_id is the legacy short form).
+  // Secret stays root-only on disk; metadata supplies server/IP ids at fire time.
+  return `
+# Cost guardrail: Scaleway guest shutdown only enters billed standby, so
+# self-terminate via the Instance API (server + block volumes + flexible IP).
+install -d -m 700 /opt/copse-burst
+umask 077
+printf '%s\\n' ${shellQuote(ttl.secretKey)} > /opt/copse-burst/scw-secret
+printf '%s\\n' ${shellQuote(ttl.zone)} > /opt/copse-burst/scw-zone
+cat > /opt/copse-burst/ttl-terminate.sh <<'TERMINATE_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+SECRET_KEY=$(cat /opt/copse-burst/scw-secret)
+ZONE=$(cat /opt/copse-burst/scw-zone)
+META=$(curl -fsS --max-time 15 http://169.254.42.42/conf?format=json)
+SERVER_ID=$(printf '%s' "$META" | jq -r '.id // empty')
+IP_ID=$(printf '%s' "$META" | jq -r '.public_ip.id // .public_ips[0].id // empty')
+# API terminate deletes l_ssd but only detaches SBS — capture ids before the server vanishes.
+mapfile -t VOLUME_IDS < <(printf '%s' "$META" | jq -r '
+  (.volumes // {}) | to_entries[] | .value | select(type == "object") | .id // empty
+')
+if [[ -z "$SERVER_ID" ]]; then
+  echo "copse TTL: could not read server id from Scaleway metadata" >&2
+  exit 1
+fi
+api() {
+  local method=$1
+  local path=$2
+  local body=\${3:-}
+  local args=(-sS --max-time 60 -X "$method"
+    -H "X-Auth-Token: $SECRET_KEY"
+    -H "Content-Type: application/json"
+    -o /tmp/copse-ttl-api.body
+    -w "%{http_code}"
+    "https://api.scaleway.com$path")
+  if [[ -n "$body" ]]; then
+    args+=(-d "$body")
+  fi
+  curl "\${args[@]}"
+}
+echo "copse TTL: terminating $SERVER_ID in $ZONE"
+code=000
+for attempt in 1 2 3 4 5 6 7 8; do
+  code=$(api POST "/instance/v1/zones/$ZONE/servers/$SERVER_ID/action" '{"action":"terminate"}' || true)
+  if [[ "$code" =~ ^2 ]]; then
+    echo "copse TTL: terminate accepted (HTTP $code)"
+    break
+  fi
+  # 404 = already gone; treat as success so IP/volume cleanup still runs.
+  if [[ "$code" == "404" ]]; then
+    echo "copse TTL: server already gone (HTTP 404)"
+    break
+  fi
+  echo "copse TTL: terminate HTTP $code (attempt $attempt); body follows" >&2
+  cat /tmp/copse-ttl-api.body >&2 || true
+  sleep $((attempt * 2))
+done
+if [[ ! "$code" =~ ^2 ]] && [[ "$code" != "404" ]]; then
+  echo "copse TTL: failed to terminate $SERVER_ID after retries (last HTTP $code)" >&2
+  exit 1
+fi
+for volume_id in "\${VOLUME_IDS[@]}"; do
+  [[ -z "$volume_id" ]] && continue
+  echo "copse TTL: deleting SBS volume $volume_id"
+  vol_code=000
+  for attempt in 1 2 3 4 5 6 7 8; do
+    vol_code=$(api DELETE "/block/v1alpha1/zones/$ZONE/volumes/$volume_id" || true)
+    if [[ "$vol_code" =~ ^2 ]] || [[ "$vol_code" == "404" ]]; then
+      echo "copse TTL: volume delete done (HTTP $vol_code)"
+      break
+    fi
+    echo "copse TTL: volume delete HTTP $vol_code (attempt $attempt); body follows" >&2
+    cat /tmp/copse-ttl-api.body >&2 || true
+    sleep $((attempt * 2))
+  done
+  if [[ ! "$vol_code" =~ ^2 ]] && [[ "$vol_code" != "404" ]]; then
+    echo "copse TTL: failed to delete volume $volume_id (last HTTP $vol_code)" >&2
+    exit 1
+  fi
+done
+if [[ -n "$IP_ID" ]]; then
+  echo "copse TTL: deleting flexible IP $IP_ID"
+  ip_code=$(api DELETE "/instance/v1/zones/$ZONE/ips/$IP_ID" || true)
+  if [[ "$ip_code" =~ ^2 ]] || [[ "$ip_code" == "404" ]]; then
+    echo "copse TTL: IP delete done (HTTP $ip_code)"
+  else
+    echo "copse TTL: IP delete HTTP $ip_code; body follows" >&2
+    cat /tmp/copse-ttl-api.body >&2 || true
+    exit 1
+  fi
+fi
+TERMINATE_EOF
+chmod 700 /opt/copse-burst/ttl-terminate.sh
+systemd-run \\
+  --on-active=${String(ttlMinutes)}min \\
+  --unit=copse-ttl-terminate \\
+  --description=${shellQuote(`${ttlLabel} TTL (${String(ttlMinutes)} minutes) terminate`)} \\
+  --property=Type=oneshot \\
+  /opt/copse-burst/ttl-terminate.sh
+`
+}
+
+export function userDataScript(
+  ttlMinutes: number,
+  ttlLabel = 'Copse burst runner',
+  scalewayTtl?: ScalewayTtlTerminate,
+): string {
+  let ttlSnippet = ''
+  if (ttlMinutes > 0) {
+    ttlSnippet =
+      scalewayTtl === undefined
+        ? awsTtlSnippet(ttlMinutes, ttlLabel)
+        : scalewayTtlSnippet(ttlMinutes, ttlLabel, scalewayTtl)
+  }
   return `#!/usr/bin/env bash
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -642,9 +786,19 @@ export function launchScalewayServers(
   count: number,
   ttlLabel?: string,
 ): ScalewayLaunchResult {
+  let scalewayTtl: ScalewayTtlTerminate | undefined
+  if (config.ttlMinutes > 0) {
+    const secretKey = resolveScalewaySecretKey()
+    if (secretKey === undefined) {
+      die(
+        'Scaleway TTL > 0 requires SCW_SECRET_KEY (or `scw` config secret-key) so hosts can self-terminate instead of entering billed standby',
+      )
+    }
+    scalewayTtl = { secretKey, zone: config.zone }
+  }
   const tmp = mkdtempSync(join(tmpdir(), 'copse-burst-scw-'))
   const cloudInitPath = join(tmp, 'cloud-init.sh')
-  writeFileSync(cloudInitPath, userDataScript(config.ttlMinutes, ttlLabel), 'utf8')
+  writeFileSync(cloudInitPath, userDataScript(config.ttlMinutes, ttlLabel, scalewayTtl), 'utf8')
   const ids: string[] = []
   try {
     for (let index = 0; index < count; index += 1) {

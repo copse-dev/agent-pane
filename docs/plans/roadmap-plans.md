@@ -53,11 +53,14 @@ grinding out large amounts of work before those PRs merge.
   shown but not re-importable.
 - **Complexity on save** — saving a prompt (create, edit, or import) classifies its
   complexity one-shot as `low` / `medium` / `high` via the small-tasks model, with a 10s
-  timeout and the #557 heuristic classifier as fallback so a save never hangs on a model
+  timeout and the #557 heuristic classifier as fallback
   (`src/main/services/roadmap-complexity.ts`; vocabulary in
-  `src/shared/roadmap/complexity.ts`). Stored in the `complexity` frontmatter field and
-  shown as a badge on the list row. Status/notes-only edits keep the stored stamp —
-  no model call.
+  `src/shared/roadmap/complexity.ts`). The save itself is immediate: the note persists
+  first and the verdict is stamped in the background (`stampRoadmapComplexity`), with a
+  `roadmap:changed` push so the pane picks up the badge when it lands; a stamp whose
+  prompt was re-edited or deleted mid-flight is dropped. Stored in the `complexity`
+  frontmatter field and shown as a badge on the list row. Status/notes-only edits keep
+  the stored stamp — no model call.
 - **Check fit** — for a pinned item, an on-demand button asks the small-tasks model
   whether executing the prompt would plausibly resolve the pinned issue
   (`src/main/services/roadmap-fit-check.ts`, `getIssue` on the GitHub backend). Verdict
