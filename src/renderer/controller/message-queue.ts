@@ -83,7 +83,7 @@ export function startHumanTurnTree(store: AppStore, threadId: string): string {
 
 /**
  * Fold a finished run's in-process machine-turn spend back onto the thread's
- * per-turn-tree counter (C3 run→drain direction, decision 5). The run seeds
+ * per-turn-tree counter (C3 run→drain direction, decision 5 / E3). The run seeds
  * the main-process ledger from `Thread.continuationUsed` (drain→run) and spends
  * against it as its in-run tighteners (todo closeout / pre-review gate /
  * remediation) run; this closes the loop so the renderer's *next* queue drain
