@@ -61,6 +61,23 @@ describe('buildSkillsCatalogBlock', () => {
     assert.match(block, /Demo skill for tests/)
   })
 
+  it('excludes disable-model-invocation skills from the catalog but keeps model-invocable ones', () => {
+    setSkillsForTest([
+      { ...demoSkill, name: 'checkup', source: 'bundled', disableModelInvocation: true },
+      { ...demoSkill, name: 'demo-skill', source: 'project', disableModelInvocation: false },
+    ])
+    const block = buildSkillsCatalogBlock()
+    assert.doesNotMatch(block, /checkup/)
+    assert.match(block, /demo-skill/)
+  })
+
+  it('returns empty when every skill disables model invocation', () => {
+    setSkillsForTest([{ ...demoSkill, name: 'checkup', disableModelInvocation: true }])
+    assert.equal(buildSkillsCatalogBlock(), '')
+    // read_skill still advertised so a user-invoked skill can load its files.
+    assert.match(buildSkillsToolsPromptLine(), /read_skill/)
+  })
+
   it('marks project/plugin skills as untrusted and user/bundled skills as trusted', () => {
     setSkillsForTest([
       { ...demoSkill, name: 'project-skill', source: 'project' },

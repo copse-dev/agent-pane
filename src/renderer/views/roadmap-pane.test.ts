@@ -87,8 +87,14 @@ function makeOpenIssue(number: number, title: string, body = ''): MockOpenIssue 
 function makeApi(
   seed: ReturnType<typeof makeItem>[],
   issues: MockOpenIssue[] = [],
-): { api: ApiClient; calls: RoadmapCalls } {
+): {
+  api: ApiClient
+  calls: RoadmapCalls
+  items: ReturnType<typeof makeItem>[]
+  fireChanged: () => void
+} {
   const items = seed.map((i) => ({ ...i }))
+  let changedHandler: (() => void) | null = null
   const calls: RoadmapCalls = {
     list: 0,
     create: [],
@@ -174,9 +180,22 @@ function makeApi(
         items.push(...created)
         return created
       },
+      onChanged: (handler: () => void) => {
+        changedHandler = handler
+        return (): void => {
+          changedHandler = null
+        }
+      },
     },
   } as unknown as ApiClient
-  return { api, calls }
+  return {
+    api,
+    calls,
+    items,
+    fireChanged: (): void => {
+      changedHandler?.()
+    },
+  }
 }
 
 /** Flush enough microtasks for the pane's chained async refresh to settle. */
@@ -364,6 +383,27 @@ describe('roadmap pane', () => {
       assert.ok(badge)
       assert.equal(badge.textContent, 'high')
       assert.ok(badge.classList.contains('is-high'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('picks up a background complexity stamp when onChanged fires', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, items, fireChanged } = makeApi([makeItem('a', 'Ship the thing')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      // Saved without a stamp: no badge yet.
+      assert.equal(list.querySelectorAll('.roadmap-complexity-badge').length, 0)
+      // The background classifier stamps the note, then main pushes the event.
+      const item = items[0]
+      assert.ok(item)
+      item.fields['complexity'] = 'low'
+      fireChanged()
+      await flush()
+      assert.equal(list.querySelector('.roadmap-complexity-badge')?.textContent, 'low')
     } finally {
       unmount()
     }
