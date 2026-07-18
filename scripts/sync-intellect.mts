@@ -25,9 +25,12 @@
 // API refresh (the scalable data channel):
 //   ARTIFICIAL_ANALYSIS_API_KEY=... npm run sync:intellect -- --from-api
 // Fetches Artificial Analysis' model list and refreshes/adds measurements for
-// models ALREADY KNOWN to the seed file (matched by id or alias — the API never
-// introduces a model id on its own, so every plotted model remains a reviewed
-// decision). The index version comes from the payload's own version field
+// models we support: those already in `scores`, PLUS the `wanted` allowlist of
+// catalog models we don't have a value for yet (local models, extra tracked
+// cloud models). Matched by id or alias — the API never introduces a model id
+// that isn't scored or wanted, so every plotted model remains a reviewed
+// decision, and nobody hand-enters a mis-configured number. The index version
+// comes from the payload's own version field
 // (documented at artificialanalysis.ai/data-api/docs — "4.1" with the v
 // dropped); pass --index-version=<vX.Y> only to pin a payload that omits it
 // (a pin that conflicts with the declared version is an error). Attribution is
@@ -46,7 +49,7 @@ import {
 const DATA_PATH = resolve('scripts/data/intellect-scores.json')
 const GENERATED_PATH = resolve('packages/llm/src/model-intellect.generated.ts')
 
-interface Measurement {
+export interface Measurement {
   modelId: string
   value: number
   indexVersion: string
@@ -60,10 +63,23 @@ interface Measurement {
   aliases?: string[]
 }
 
-interface DataFile {
+/**
+ * A model we support (in a catalog) and want AA data for, but don't have a
+ * value for yet. `--from-api` matches these by id/alias against the feed and
+ * ADDS a measurement — so "get data for the models we support" is one keyed
+ * sync, with no hand-entered (and easily mis-configured) numbers.
+ */
+export interface WantedModel {
+  modelId: string
+  aliases?: string[]
+}
+
+export interface DataFile {
   canonicalVersion: string
   attribution: string
   scores: Measurement[]
+  /** Catalog models to populate from the API when it carries them. */
+  wanted?: WantedModel[]
   /** Version hops we intend to fit, e.g. { "from": "v4.2", "to": "v4.1" }. */
   equatingPairs: Array<{ from: string; to: string }>
   /** Crystallised fits — written back by this script, reused on later runs. */
@@ -110,6 +126,22 @@ function validate(data: DataFile): void {
   for (const map of data.equating) {
     if (!data.equatingPairs.some((p) => p.from === map.from && p.to === map.to)) {
       fail(`stored fit ${map.from}→${map.to} has no matching equatingPairs entry`)
+    }
+  }
+  // A wanted model must not already have a measurement (it belongs in scores
+  // then), and its aliases must not collide with another model's.
+  const scoredIds = new Set(data.scores.map((m) => m.modelId))
+  for (const w of data.wanted ?? []) {
+    if (!w.modelId) fail('wanted entry missing modelId')
+    if (scoredIds.has(w.modelId)) {
+      fail(`wanted model '${w.modelId}' already has a measurement — remove it from wanted`)
+    }
+    for (const alias of w.aliases ?? []) {
+      const owner = aliasOwner.get(alias)
+      if (owner !== undefined && owner !== w.modelId) {
+        fail(`alias '${alias}' claimed by both '${owner}' and wanted '${w.modelId}'`)
+      }
+      aliasOwner.set(alias, w.modelId)
     }
   }
 }
@@ -231,7 +263,7 @@ ${mapRows}
 `
 }
 
-interface AaApiModel {
+export interface AaApiModel {
   id?: string
   slug?: string
   name?: string
@@ -285,14 +317,39 @@ async function refreshFromApi(
     fail('the payload declared no index version — pass --index-version=<vX.Y> to pin it')
   }
 
+  const merged = mergeApiModels(data, apiModels, indexVersion, today)
+  console.log(
+    `[sync-intellect] API refresh: ${String(merged.matched)} measurement(s) matched supported ` +
+      `models (${String(apiModels.length)} in the feed; unmatched models are ignored by design).`,
+  )
+  return merged.scores
+}
+
+/**
+ * Pure merge of an API model list into the seed's measurements. A feed model is
+ * matched (by id/slug/name) against known measurements AND the `wanted`
+ * allowlist of catalog models; a match refreshes an existing same-version entry
+ * or adds a new one. Never introduces a model id that isn't already known or
+ * wanted. Deterministic — no I/O, no clock (today is passed in).
+ */
+export function mergeApiModels(
+  data: DataFile,
+  apiModels: readonly AaApiModel[],
+  indexVersion: string,
+  today: string,
+): { scores: Measurement[]; matched: number } {
   const aliasToId = new Map<string, string>()
-  for (const m of data.scores) {
-    aliasToId.set(m.modelId, m.modelId)
-    for (const alias of m.aliases ?? []) aliasToId.set(alias, m.modelId)
+  const aliasesFor = new Map<string, string[]>()
+  const learn = (modelId: string, aliases: string[] | undefined): void => {
+    aliasToId.set(modelId, modelId)
+    for (const alias of aliases ?? []) aliasToId.set(alias, modelId)
+    if (aliases && aliases.length > 0) aliasesFor.set(modelId, aliases)
   }
+  for (const m of data.scores) learn(m.modelId, m.aliases)
+  for (const w of data.wanted ?? []) learn(w.modelId, w.aliases)
 
   const next = [...data.scores]
-  let refreshed = 0
+  let matched = 0
   for (const api of apiModels) {
     const value = api.evaluations?.artificial_analysis_intelligence_index
     if (typeof value !== 'number' || !Number.isFinite(value)) continue
@@ -300,25 +357,21 @@ async function refreshFromApi(
       .map((k) => (k ? aliasToId.get(k) : undefined))
       .find((id) => id !== undefined)
     if (!modelId) continue
-    const aliases = next.find((m) => m.modelId === modelId)?.aliases
+    const aliases = aliasesFor.get(modelId)
     const measurement: Measurement = {
       modelId,
       value,
       indexVersion,
-      source: `Artificial Analysis API (index ${indexVersion} pinned by operator), model '${api.slug ?? api.name ?? api.id ?? ''}', fetched ${today}`,
+      source: `Artificial Analysis API (index ${indexVersion}), model '${api.slug ?? api.name ?? api.id ?? ''}', fetched ${today}`,
       asOf: today,
       ...(aliases ? { aliases } : {}),
     }
     const existing = next.findIndex((m) => m.modelId === modelId && m.indexVersion === indexVersion)
     if (existing >= 0) next[existing] = { ...next[existing], ...measurement }
     else next.push(measurement)
-    refreshed += 1
+    matched += 1
   }
-  console.log(
-    `[sync-intellect] API refresh: ${String(refreshed)} measurement(s) matched known models ` +
-      `(${String(apiModels.length)} models in the API feed; unmatched models are ignored by design).`,
-  )
-  return next
+  return { scores: next, matched }
 }
 
 async function main(): Promise<void> {
