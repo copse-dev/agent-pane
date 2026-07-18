@@ -2237,8 +2237,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         advisorModel ?? DEFAULT_ADVISOR_MODEL,
       )
       const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
-        | string
-        | undefined
+        string | undefined
       await populateModelSelect(
         form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
         api,
@@ -2258,8 +2257,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         comparisonModelB ?? DEFAULT_COMPARISON_MODEL_B,
       )
       const comparisonJudgeModel = (await api.settings.get('comparisonJudgeModel')) as
-        | string
-        | undefined
+        string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonJudgeModel') as HTMLSelectElement,
         api,
@@ -2268,9 +2266,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await loadSimpleFields(form, api)
       wireSafetySliders(form)
       const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-        | string[]
-        | undefined
-        | null
+        string[] | undefined | null
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
