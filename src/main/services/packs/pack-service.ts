@@ -108,6 +108,14 @@ export function createPackService(registry: PackRegistry): PackService {
       return readPackSettings(packId)[key]
     },
     async setSetting(packId: string, key: string, value: unknown): Promise<void> {
+      // Only keys the pack's manifest declares are persistable (P3 review): the
+      // IPC caps value size, but without this any renderer bug (or compromise)
+      // could grow arbitrary keys in any pack's bag forever.
+      const pack = registry.has(packId) ? registry.get(packId) : undefined
+      const declared = pack?.manifest.settings
+      if (!declared || !(key in declared)) {
+        throw new Error(`pack "${packId}" declares no setting "${key}"`)
+      }
       await storageUpdate(packSettingsKey(packId), (raw) => {
         const current: Record<string, unknown> =
           raw && typeof raw === 'object' && !Array.isArray(raw)

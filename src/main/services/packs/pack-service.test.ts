@@ -120,6 +120,20 @@ describe('PackService', () => {
     assert.deepEqual(byId, { budget: 7, label: 'from-user' })
   })
 
+  it('rejects a setting key the pack does not declare (P3 review)', async () => {
+    const registry = makeRegistry()
+    const service = createPackService(registry)
+
+    // The IPC caps the value size but not key legitimacy; without schema
+    // validation any renderer bug could grow arbitrary keys in the bag forever.
+    await assert.rejects(
+      () => service.setSetting('demo.pack', 'not-declared', 'x'),
+      /declares no setting "not-declared"/,
+    )
+    await assert.rejects(() => service.setSetting('no-such-pack', 'budget', 1))
+    assert.deepEqual(storageGet(packSettingsKey('demo.pack')) ?? {}, {}, 'nothing persisted')
+  })
+
   it('ignores setEnabled for an unregistered pack id (no throw, no persist)', async () => {
     const service = createPackService(makeRegistry())
     await service.setEnabled('never-registered', false)
