@@ -11,7 +11,7 @@
 // exit-code tables — lives in `src/main/services/hooks/` (execution-guidance
 // rule 4); `packages/agent` stays Electron-free. A2's dialect adapters populate
 // the fields left abstract here (matchers, wire marshalling, the exit-code table).
-import type { BlockingHookOutcome } from './hook-outcome.ts'
+import type { BlockingHookOutcome, HookQueueMessage } from './hook-outcome.ts'
 import type { HookContext, HookEventName, HookEventPayloads } from './canonical-events.ts'
 
 /**
@@ -66,6 +66,32 @@ export interface CommandHook<E extends HookEventName = HookEventName> {
    * Absent = the runner's default.
    */
   timeoutMs?: number
+  /**
+   * Whether the hook runs inside the project sandbox (decision 7). Hooks are
+   * **sandboxed by default** (`true`); the Copse dialect's per-hook
+   * `sandbox: false` is the escape. **F1 only parses / carries this field** —
+   * the sandbox-by-default spawn reversal + enforcement is F3, and the OS sandbox
+   * is macOS-only (a default, not a guarantee). Absent on dialects that do not
+   * express it (Cursor / Claude), which today spawn outside the sandbox until F3.
+   */
+  sandbox?: boolean
+  /**
+   * Whether the hook opted into **detached async** dispatch (decision 2). Only
+   * meaningful for canonical events whose default is blocking but that allow an
+   * async opt-in (`asyncOptIn`, e.g. `afterFileEdit`); the fire site partitions
+   * hooks by this flag, dispatching `async` ones through the detached executor
+   * (C1). Set by the Copse dialect's `async: true`; absent (blocking) otherwise.
+   */
+  async?: boolean
+  /**
+   * Per-script auto-continuation `loop_limit` (decision 5), tighten-only. Bounds
+   * *this hook's* machine-turn contributions to `min(loop_limit, global
+   * remaining)`; `null` (unlimited) is clamped to the global budget with a
+   * warning — human-in-the-loop is the floor (`clampLoopLimit`). **F1 parses /
+   * carries this field**; the drain-time budget enforcement lives on the C3
+   * ledger surface. Absent on dialects that do not express it.
+   */
+  loopLimit?: number | null
 }
 
 /**
@@ -81,6 +107,23 @@ export interface CommandHookResult {
   failed: boolean
   /** How the dialect resolved a failure (decision 9); undefined unless `failed`. */
   failureMode?: CommandHookFailureMode
+  /**
+   * An async command hook's queued follow-up (D1: `subagentStop`'s
+   * `followup_message`, Cursor's `stop`-style loop). The **only** async output
+   * channel is the pending-message queue (decision 4), so a detached command
+   * hook that wants to auto-continue reports the message here; `emitAsync`
+   * forwards it to `onAsyncOutcome` for the C2 queue channel (never a bespoke
+   * protocol). Absent on blocking-event runs and notification-only completions.
+   */
+  queueMessage?: HookQueueMessage
+  /**
+   * Session-scoped environment variables a `sessionStart` command hook returned
+   * (H4). The async fire site (`emitAsync`) forwards this to `onAsyncOutcome` as
+   * the outcome's {@link AsyncHookOutcome.sessionEnv}, so the host collects it
+   * into the session env store for propagation to later hook spawns. Absent on
+   * every non-`sessionStart` run.
+   */
+  sessionEnv?: Record<string, string>
 }
 
 /**

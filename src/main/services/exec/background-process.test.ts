@@ -1,6 +1,10 @@
-import { describe, it, after } from 'node:test'
+import { describe, it, after, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { setSetting } from '../storage/settings.ts'
+import { storageSet } from '../storage/storage.ts'
+import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
+  classifyDetectedServerUrl,
   detectServerUrl,
   startBackgroundProcess,
   listBackgroundProcesses,
@@ -52,6 +56,7 @@ describe('background process manager', () => {
     })
     assert.equal(info.running, true)
     assert.equal(info.url, 'http://localhost:4321')
+    assert.equal(info.urlRemote, false)
 
     assert.ok(listBackgroundProcesses().some((p) => p.id === info.id))
     assert.match(getBackgroundProcessLogs(info.id) ?? '', /http:\/\/localhost:4321/)
@@ -91,5 +96,40 @@ describe('background process manager', () => {
       () => startBackgroundProcess({ command: '   ', cwd: process.cwd() }),
       /command is required/,
     )
+  })
+})
+
+describe('classifyDetectedServerUrl', () => {
+  beforeEach(async () => {
+    await setSetting('sshWorkspaceEnabled', true)
+    await setSetting('sshWorkspaceHosts', [
+      { id: 'dev', label: 'Dev', host: 'dev.example.com', user: 'alice' },
+    ])
+    storageSet('activeProjectId', 'p1')
+    storageSet('projects', [{ id: 'p1', path: '/remote/project', sshHost: 'dev' }])
+    setWorkspaceRootForTest('/remote/project')
+  })
+
+  afterEach(() => {
+    setWorkspaceRootForTest(null)
+    storageSet('activeProjectId', null)
+    storageSet('projects', [])
+    void setSetting('sshWorkspaceEnabled', false)
+    void setSetting('sshWorkspaceHosts', [])
+  })
+
+  it('marks detected loopback URLs as remote when SSH execution is active', () => {
+    assert.deepEqual(classifyDetectedServerUrl('Local:   http://localhost:4321/'), {
+      url: 'http://localhost:4321',
+      urlRemote: true,
+    })
+  })
+
+  it('keeps URLs local when SSH execution is disabled', async () => {
+    await setSetting('sshWorkspaceEnabled', false)
+    assert.deepEqual(classifyDetectedServerUrl('Local:   http://localhost:4321/'), {
+      url: 'http://localhost:4321',
+      urlRemote: false,
+    })
   })
 })

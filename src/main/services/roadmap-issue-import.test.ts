@@ -48,15 +48,21 @@ describe('importIssuesAsRoadmapItems', () => {
 
   const stubClassify = (): Promise<'medium'> => Promise.resolve('medium')
 
-  it('creates one ready item per issue, pinned, drafted, and stamped', async () => {
+  /** Let the detached complexity stamps settle. */
+  const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve))
+
+  it('creates one ready item per issue, pinned and drafted, without waiting on the classifier', async () => {
     const drafted: number[] = []
+    // Classification resolves only when the test says so, proving the items
+    // persist before (and regardless of) the classifier round-trip.
+    const pending: ((c: 'medium') => void)[] = []
     const created = await importIssuesAsRoadmapItems(
       [ISSUE, { number: 52, title: 'Add terminal shortcut', body: '' }],
       (issue) => {
         drafted.push(issue.number)
         return Promise.resolve(`Do the work for issue ${String(issue.number)}`)
       },
-      stubClassify,
+      () => new Promise((resolve) => pending.push(resolve)),
     )
     assert.deepEqual(drafted, [41, 52])
     assert.equal(created.length, 2)
@@ -66,8 +72,28 @@ describe('importIssuesAsRoadmapItems', () => {
     assert.ok(first, 'item pinned to #41 exists')
     assert.equal(first.body, 'Do the work for issue 41')
     assert.equal(first.status, 'ready')
-    assert.equal(first.fields['complexity'], 'medium')
+    assert.equal(first.fields['complexity'], undefined, 'saved before classification finished')
     assert.match(first.fields['notes'] ?? '', /Imported from issue #41/)
+    // Once the classifier answers, the stamp lands in the background.
+    for (const resolve of pending) resolve('medium')
+    await settle()
+    const stamped = loadKnowledgeNotes('Roadmap')
+    assert.deepEqual(
+      stamped.map((n) => n.fields['complexity']),
+      ['medium', 'medium'],
+    )
+  })
+
+  it('reports each background stamp via onStamped', async () => {
+    let stamps = 0
+    await importIssuesAsRoadmapItems(
+      [ISSUE],
+      () => Promise.resolve('Do the work'),
+      stubClassify,
+      () => stamps++,
+    )
+    await settle()
+    assert.equal(stamps, 1)
   })
 
   it('falls back to the template when the draft fn fails', async () => {

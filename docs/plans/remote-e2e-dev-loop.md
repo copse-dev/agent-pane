@@ -1,8 +1,43 @@
 # Remote e2e for the local dev loop
 
-**Status:** plan / decision record. Nothing here is implemented. This is stage
-one of a two-stage direction; stage two (Copse provisioning cloud containers
-for any workspace) is [`copse-cloud-workspaces.md`](copse-cloud-workspaces.md).
+**Status:** implemented (M0–M4). M0 landed as the `scripts/lib/cloud-hosts.mts`
+extraction; the CLI (`scripts/remote-e2e.mts`, `npm run e2e:remote`) and the
+one-shot container runner (`ci-runners/exec-run.sh`) landed together — usage in
+[`ci-runners/README.md`](../../ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).
+This is stage one of a two-stage direction; stage two (Copse provisioning
+cloud containers for any workspace) is
+[`copse-cloud-workspaces.md`](copse-cloud-workspaces.md).
+
+> **Decision amendments from implementation** (supersede the matching items
+> below):
+>
+> - **One-shot containers instead of idle exec-mode containers.** Decision 1
+>   originally added a `RUNNER_MODE=exec` idle mode to the entrypoint. The
+>   implementation instead starts a **fresh container per run**
+>   (`docker run --rm --init --entrypoint bash … exec-run.sh`), which needs no
+>   entrypoint change at all, gives every run a pristine container (the same
+>   isolation ephemeral CI runners get per job), and makes shard parallelism
+>   trivial. Everything else in Decision 1 stands: no GitHub registration, no
+>   runner PAT, `BUILD_GH_TOKEN` only at image-bake time.
+> - **`adopt` and `rebake` subcommands.** BYO hosts (M1's "spare machine on
+>   the LAN") are `e2e:remote adopt --host user@box`; lockfile drift is fixed
+>   with `e2e:remote rebake` (rebuilds the image on the saved host).
+> - **Defaults:** Scaleway `PLAY2-MICRO` is the default provider/shape (AWS
+>   via `up aws`, default `c7i.xlarge` for the single-host dev case). Runs
+>   always use `wdio.ci.conf.ts` for CI parity; `--all` means "no oracle
+>   filtering", not the local `wdio.conf.ts` spec set.
+> - **Scaleway Container Registry for host images (follow-up).** When
+>   `COPSE_CI_REGISTRY=rg.fr-par.scw.cloud/<namespace>` (or `--registry`) is
+>   set, `up`/`adopt`/`rebake` **pull** a pre-baked `copse-ci-runner:<lockhash>`
+>   instead of `docker compose build` on the host. `publish` (or
+>   `rebake --push`) bakes once locally with `BUILD_GH_TOKEN` as a BuildKit
+>   secret and pushes; subsequent `up` needs **no GitHub token**. Registry
+>   auth uses `SCW_SECRET_KEY` for an ephemeral host `docker login` (stdin →
+>   pull → logout + config wipe) — credentials are never stored in Docker
+>   layers or Scaleway instance snapshots. `--transfer-image` is the stricter
+>   path (pull locally, `docker save|load` over SSH; host never sees registry
+>   creds). On-host bake remains the fallback when no registry is configured
+>   or `--rebuild` is passed.
 
 ## Problem
 

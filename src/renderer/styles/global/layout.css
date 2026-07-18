@@ -115,6 +115,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .project-row:hover {
   background: var(--bg-hover);
 }
@@ -227,6 +232,7 @@
   min-height: 0;
   border-top: 1px solid var(--border-subtle);
   --chat-composer-height: 148px;
+  --chat-composer-width: min(calc(100% - 2 * var(--spacing-xl)), var(--chat-content-max));
   background:
     radial-gradient(
       ellipse 85% 50% at 50% -5%,
@@ -239,6 +245,9 @@
       var(--chat-gradient-mid) 52%,
       var(--chat-gradient-bottom) 100%
     );
+}
+.pane-chat.composer-centered {
+  --chat-composer-width: min(720px, calc(100% - 2 * var(--spacing-lg)));
 }
 .conversation,
 .conversation-scroll,
@@ -253,7 +262,6 @@
   bottom: auto;
   left: 50%;
   right: auto;
-  width: min(720px, calc(100% - 2 * var(--spacing-lg)));
   transform: translate(-50%, -50%);
   border-top: none;
   border-radius: var(--radius-lg);
@@ -312,6 +320,9 @@
   width: auto;
   height: var(--pane-divider-width);
   cursor: row-resize;
+  /* Keep the transparent 2px hit extension above the seam clickable where it
+     crosses the higher-z portrait controls bar. */
+  z-index: 32;
 }
 .three-pane.is-right-panel-horizontal #resizer-files::after {
   inset-block: -2px;
@@ -324,7 +335,9 @@
   width: auto;
   min-width: 0;
   min-height: 0;
-  border-top: 1px solid var(--border);
+  /* The resizer is the seam. A second pane border made this divider read as a
+     heavy two-pixel rule instead of the shared single-width line. */
+  border-top: 0;
 }
 .pane-files-body {
   flex: 1;
@@ -451,6 +464,7 @@
   padding: var(--spacing-sm);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .git-changes-bulk-actions {
   display: flex;

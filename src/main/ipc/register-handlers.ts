@@ -1,15 +1,18 @@
-import { dialog, ipcMain, shell } from 'electron'
-import type { BrowserWindow } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectSshHost,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
+  resolveSshHostForWorkspaceRoot,
   resolveWorkspacePath,
+  scheduleAllowedWorkspaceRootsBootstrap,
   seedAllowedWorkspaceRoots,
   setWorkspaceRoot,
+  type WorkspaceProjectRef,
 } from '../services/workspace.ts'
 import {
   assertFsWriteContent,
@@ -21,6 +24,7 @@ import {
   setKeyOptionsSchema,
   parseIpcArgs,
   zMcpServerName,
+  zHookTestRequest,
   zNonEmptyString,
   zPathString,
   zProjectId,
@@ -68,18 +72,24 @@ import {
   loadProjectCatalog,
 } from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
+import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
   listExternalEditors,
   openWorkspaceInExternalEditor,
 } from '../services/editors/editor-launcher.ts'
-import { listAcpModelsForAgent } from '../services/acp/acp-agent-service.ts'
-import { runAcpAutoSetup } from '../services/acp/acp-auto-setup.ts'
+import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
+import {
+  requestAcpPackageInstallApproval,
+  runAcpAutoSetup,
+} from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
 import type { ToolRegistry } from '../services/tool-registry.ts'
 import { listSkills, initSkillsRegistry } from '../services/skills/skills-registry.ts'
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
+import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
+import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -107,23 +117,36 @@ import {
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
 import {
+  deleteAllKnowledgeAttachments,
+  deleteKnowledgeAttachmentFiles,
+  readKnowledgeAttachmentDataUrl,
+  saveKnowledgeAttachments,
+} from '../services/storage/knowledge-attachments.ts'
+import {
+  ATTACHMENTS_FIELD,
+  MAX_NOTE_ATTACHMENTS,
+  parseKnowledgeAttachments,
+  serializeKnowledgeAttachments,
+} from '@shared/knowledge/attachments.ts'
+import {
   checkoutGitBranch,
   getBranches,
   getDefaultBranch,
   getGitChangeStats,
   getGitFileDiff,
   getGitStatus,
+  getGitWorkingFileDiff,
   getGithubRepoSlug,
   isInsideGitWorkTree,
 } from '../services/github/git-service.ts'
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
-import { classifyRoadmapComplexity } from '../services/roadmap-complexity.ts'
+import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
-import { isGitAvailable } from '../services/tool-availability.ts'
+import { isGitAvailableForTarget } from '../services/tool-availability.ts'
 import {
   getGhCliStatus,
   getGhPrChecksState,
@@ -194,21 +217,24 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Issue #438: persist grandfathered custom-provider hosts once so Settings
   // and runtime gates share the same allowlist after upgrade.
   void migrateApprovedProviderHosts()
-  const storedProjects = (storageGet('projects') as { path: string }[] | null) ?? []
-  seedAllowedWorkspaceRoots(storedProjects.map((p) => p.path))
-  const persistedRoot = getWorkspaceRoot()
-  if (persistedRoot) {
-    try {
-      registerAllowedWorkspaceRoot(persistedRoot)
-    } catch {
-      // Stale workspaceRoot in config — ignore until user picks a folder.
+  const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+  scheduleAllowedWorkspaceRootsBootstrap(async () => {
+    await seedAllowedWorkspaceRoots(storedProjects)
+    const persistedRoot = getWorkspaceRoot()
+    if (persistedRoot) {
+      const sshHost = getActiveProjectSshHost()
+      try {
+        await registerAllowedWorkspaceRoot(persistedRoot, sshHost)
+      } catch {
+        // Stale workspaceRoot in config — ignore until user picks a folder.
+      }
     }
-  }
+  })
 
   ipcMain.handle('workspace:open', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
     if (result.canceled || !result.filePaths[0]) return null
-    const root = registerAllowedWorkspaceRoot(result.filePaths[0])
+    const root = await registerAllowedWorkspaceRoot(result.filePaths[0])
     setWorkspaceRoot(root)
     // Scheduled, not awaited — index builds must not block the renderer's
     // swap to the full layout; the footer indicator reports progress.
@@ -220,23 +246,36 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('workspace:get', () => getWorkspaceRoot())
 
-  ipcMain.handle('workspace:set', async (event, root: unknown) => {
+  ipcMain.handle('workspace:set', async (event, root: unknown, sshHostArg?: unknown) => {
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
-    const projects = (storageGet('projects') as { path: string }[] | null) ?? []
-    seedAllowedWorkspaceRoots(projects.map((p) => p.path))
-    const canonical = assertAllowedWorkspaceRoot(parsedRoot)
+    const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
+    const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+    await seedAllowedWorkspaceRoots(projects)
+    const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
+    const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)
-    await initSkillsRegistry()
-    registerSkillTools(registry)
+    // Do NOT block the IPC response (and therefore the renderer's boot / first
+    // paint) on the skills scan. It re-scans user + bundled + workspace skill
+    // roots and, when the workspace index build is churning the event loop, can
+    // take many seconds — which left the UI stuck on "loading" because
+    // `api.workspace.set` never returned. Populate skills in the background and
+    // register their tools when ready; the window renders immediately.
+    void initSkillsRegistry()
+      .then(() => {
+        registerSkillTools(registry)
+      })
+      .catch((err: unknown) => {
+        console.warn('[skills] background init failed:', err)
+      })
     return canonical
   })
 
   ipcMain.handle('fs:readFile', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     return gatewayReadFile(abs)
   })
 
@@ -245,7 +284,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const relPath = parseIpcArgs(zPathString, [path])
     if (typeof content !== 'string') throw new IpcValidationError('File content must be a string')
     assertFsWriteContent(content)
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     await gatewayWriteFile(abs, content)
     scheduleIndexRebuild()
   })
@@ -253,14 +292,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('fs:readdir', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString, [path])
-    const abs = resolveWorkspacePath(relPath)
+    const abs = await resolveWorkspacePath(relPath)
     return gatewayReaddir(abs)
   })
 
   ipcMain.handle('fs:listDir', async (event, path: unknown) => {
     assertMainFrameSender(event, win)
     const relPath = parseIpcArgs(zPathString.optional(), [path])
-    const abs = resolveWorkspacePath(relPath || '.')
+    const abs = await resolveWorkspacePath(relPath || '.')
     const dirents = await gatewayListDir(abs)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -293,7 +332,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const candidates = parseIpcArgs(z.array(z.string().min(1).max(4096)).max(200), [rawCandidates])
     await whenFileIndexReady()
-    return resolveFileReferences(candidates)
+    return await resolveFileReferences(candidates)
   })
 
   // OKF memories management. The renderer's Memories pane (issue #645, Phase 3)
@@ -351,19 +390,39 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
+  // Attachments arrive as base64 data URLs (what the pane's paste/drop/picker
+  // produce); ~14 MB of base64 ≈ 10 MB decoded per attachment.
+  const zRoadmapAttachmentAdds = z
+    .array(
+      z.object({
+        name: zNonEmptyString.max(255),
+        mimeType: z.string().max(128),
+        dataUrl: z.string().max(14_000_000),
+      }),
+    )
+    .max(MAX_NOTE_ATTACHMENTS)
+  const zRoadmapAttachmentIds = z.array(zNonEmptyString.max(128)).max(MAX_NOTE_ATTACHMENTS)
 
   function roadmapFields(
     existing: Record<string, string>,
     notes: string,
     issue: string,
-    complexity?: string,
   ): Record<string, string> {
     const { notes: _n, issue: _i, ...rest } = existing
     return {
       ...rest,
       ...(notes ? { notes } : {}),
       ...(issue ? { issue } : {}),
-      ...(complexity ? { complexity } : {}),
+    }
+  }
+
+  // Complexity stamps land after the save returns (stampRoadmapComplexity), so
+  // tell the panes when one arrives rather than making them poll. Broadcast to
+  // every window: the roadmap pane may live in a detached pop-out with its own
+  // renderer, not just the main window.
+  const notifyRoadmapChanged = (): void => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('roadmap:changed')
     }
   }
 
@@ -388,33 +447,53 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle(
     'roadmap:create',
-    async (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown) => {
+    (event, rawPrompt: unknown, rawNotes: unknown, rawIssue: unknown, rawAttachments: unknown) => {
       assertMainFrameSender(event, win)
       const prompt = parseIpcArgs(zRoadmapPrompt, [rawPrompt]).trim()
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
       const issue = parseRoadmapIssue(rawIssue)
+      const attachments = parseIpcArgs(zRoadmapAttachmentAdds.optional(), [rawAttachments]) ?? []
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
-      // One-shot on save: timeout + heuristic fallback inside keep this bounded.
-      const complexity = await classifyRoadmapComplexity(prompt)
-      return addKnowledgeNote({
+      const note = addKnowledgeNote({
         type: ROADMAP_TYPE,
         title: roadmapTitleFromPrompt(prompt),
         body: prompt,
         status: 'ready',
-        fields: roadmapFields({}, notes, issue, complexity),
+        fields: roadmapFields({}, notes, issue),
       })
+      // Saving is immediate; the complexity classification (a model round-trip)
+      // stamps the note in the background and the pane refreshes on the event.
+      void stampRoadmapComplexity(note.id, prompt, notifyRoadmapChanged)
+      if (attachments.length === 0) return note
+      // Attachment files are keyed by the note id, so they land in a second
+      // step once addKnowledgeNote has minted it. If that metadata write fails
+      // (or the note vanished under a concurrent delete), remove the payloads
+      // again — nothing references them, and a "saved" item must never look
+      // attachment-free while files linger on disk.
+      const saved = saveKnowledgeAttachments(note.id, attachments)
+      let updated: ReturnType<typeof updateKnowledgeNote> = null
+      try {
+        updated = updateKnowledgeNote(note.id, {
+          fields: { ...note.fields, [ATTACHMENTS_FIELD]: serializeKnowledgeAttachments(saved) },
+        })
+      } finally {
+        if (!updated) deleteAllKnowledgeAttachments(note.id)
+      }
+      return updated ?? note
     },
   )
 
   ipcMain.handle(
     'roadmap:update',
-    async (
+    (
       event,
       rawId: unknown,
       rawPrompt: unknown,
       rawNotes: unknown,
       rawStatus: unknown,
       rawIssue: unknown,
+      rawAddAttachments: unknown,
+      rawRemoveAttachmentIds: unknown,
     ) => {
       assertMainFrameSender(event, win)
       const id = parseIpcArgs(zRoadmapId, [rawId])
@@ -422,28 +501,80 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const notes = parseIpcArgs(zRoadmapNotes.optional(), [rawNotes])?.trim() ?? ''
       const status = parseIpcArgs(zRoadmapStatus, [rawStatus])
       const issue = parseRoadmapIssue(rawIssue)
+      const addAttachments =
+        parseIpcArgs(zRoadmapAttachmentAdds.optional(), [rawAddAttachments]) ?? []
+      const removeAttachmentIds =
+        parseIpcArgs(zRoadmapAttachmentIds.optional(), [rawRemoveAttachmentIds]) ?? []
       if (!prompt) throw new IpcValidationError('Roadmap prompt must not be empty')
       const existing = getKnowledgeNote(id)
       if (!existing || existing.type !== ROADMAP_TYPE) return null
+      const promptChanged = prompt !== existing.body
+      const fields = roadmapFields(existing.fields, notes, issue)
       // Re-classify only when the prompt itself changed — a status or notes
-      // edit keeps the stored complexity without a model round-trip.
-      const complexity =
-        prompt === existing.body ? undefined : await classifyRoadmapComplexity(prompt)
-      const fields = roadmapFields(existing.fields, notes, issue, complexity)
+      // edit keeps the stored complexity without a model round-trip. The stale
+      // stamp is dropped now (it graded the old prompt) and the fresh one lands
+      // in the background so the save itself is immediate.
+      if (promptChanged) delete fields['complexity']
       // A stored fit verdict judges a specific prompt/issue pair; either side
       // changing invalidates it (and its reasoning).
-      if (prompt !== existing.body || issue !== (existing.fields['issue'] ?? '')) {
+      if (promptChanged || issue !== (existing.fields['issue'] ?? '')) {
         delete fields['fit']
         delete fields['fitDetail']
       }
-      return updateKnowledgeNote(id, {
-        title: roadmapTitleFromPrompt(prompt),
-        body: prompt,
-        status,
-        fields,
-      })
+      const current = parseKnowledgeAttachments(existing.fields[ATTACHMENTS_FIELD])
+      const removeSet = new Set(removeAttachmentIds)
+      const removed = current.filter((att) => removeSet.has(att.id))
+      let saved: ReturnType<typeof saveKnowledgeAttachments> = []
+      if (addAttachments.length > 0 || removeAttachmentIds.length > 0) {
+        const kept = current.filter((att) => !removeSet.has(att.id))
+        if (kept.length + addAttachments.length > MAX_NOTE_ATTACHMENTS) {
+          throw new IpcValidationError(
+            `A roadmap item can hold at most ${String(MAX_NOTE_ATTACHMENTS)} attachments`,
+          )
+        }
+        saved = saveKnowledgeAttachments(id, addAttachments)
+        const next = [...kept, ...saved]
+        if (next.length > 0) fields[ATTACHMENTS_FIELD] = serializeKnowledgeAttachments(next)
+        // Literal key (= ATTACHMENTS_FIELD): no-dynamic-delete bars computed deletes.
+        else delete fields['attachments']
+      }
+      // Persist the metadata before touching existing payload files: if the
+      // note write fails, the old files stay on disk and stay referenced —
+      // the freshly saved ones are merely orphaned, and are removed below.
+      // Only after the note durably stops referencing the removed attachments
+      // may their files go.
+      let updated: ReturnType<typeof updateKnowledgeNote> = null
+      try {
+        updated = updateKnowledgeNote(id, {
+          title: roadmapTitleFromPrompt(prompt),
+          body: prompt,
+          status,
+          fields,
+        })
+      } finally {
+        if (!updated) deleteKnowledgeAttachmentFiles(id, saved)
+      }
+      if (updated) deleteKnowledgeAttachmentFiles(id, removed)
+      if (updated && promptChanged) {
+        void stampRoadmapComplexity(id, prompt, notifyRoadmapChanged)
+      }
+      return updated
     },
   )
+
+  // An attachment's payload as a data URL, fetched lazily for thumbnails and
+  // for carrying attachments into a new thread's composer.
+  ipcMain.handle('roadmap:attachmentData', (event, rawId: unknown, rawAttachmentId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const attachmentId = parseIpcArgs(zNonEmptyString.max(128), [rawAttachmentId])
+    const note = getKnowledgeNote(id)
+    if (!note || note.type !== ROADMAP_TYPE) return null
+    const att = parseKnowledgeAttachments(note.fields[ATTACHMENTS_FIELD]).find(
+      (a) => a.id === attachmentId,
+    )
+    return att ? readKnowledgeAttachmentDataUrl(id, att) : null
+  })
 
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
   // always follow the workspace's *current* origin remote.
@@ -493,7 +624,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('roadmap:importIssues', (event, rawIssues: unknown) => {
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
-    return importIssuesAsRoadmapItems(issues)
+    return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
   })
 
   // Advisory fit check of an item's prompt against its pinned issue,
@@ -509,7 +640,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zRoadmapId, [rawId])
     const existing = getKnowledgeNote(id)
     if (!existing || existing.type !== ROADMAP_TYPE) return false
-    return deleteKnowledgeNote(id)
+    const deleted = deleteKnowledgeNote(id)
+    if (deleted) deleteAllKnowledgeAttachments(id)
+    return deleted
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {
@@ -763,11 +896,34 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('hooks:list', async () => {
     const root = getWorkspaceRoot()
     const opts = { workspaceRoot: root, projectTrusted: isWorkspaceTrusted(root) }
-    const [cursor, claude] = await Promise.all([
+    const [cursor, claude, copse] = await Promise.all([
       listCursorHooksForSources(opts),
       listClaudeHooks(opts),
+      listCopseHooksForSources(opts),
     ])
-    return { hooks: [...cursor.hooks, ...claude], warnings: cursor.warnings }
+    return {
+      hooks: [...cursor.hooks, ...claude, ...copse.hooks],
+      warnings: [...cursor.warnings, ...copse.warnings],
+    }
+  })
+  ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
+    assertMainFrameSender(event, win)
+    // G2 dry-run tester: run one discovered hook once against a synthetic
+    // payload and report stdin/stdout/stderr/exit/duration. `dryRunHook` is a
+    // side-effect-free probe — it never records the spine, propagates session
+    // env, or applies the outcome (see dry-run.ts). Validate the request shape
+    // so a compromised renderer cannot pass an arbitrary command through here.
+    const parsed = parseIpcArgs(zHookTestRequest, [rawReq])
+    // Rebuild explicitly so an omitted `sandbox` stays omitted (not `undefined`)
+    // under exactOptionalPropertyTypes.
+    return dryRunHook({
+      family: parsed.family,
+      event: parsed.event,
+      command: parsed.command,
+      source: parsed.source,
+      scope: parsed.scope,
+      ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
+    })
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({
@@ -778,7 +934,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     })),
   )
 
-  ipcMain.handle('git:isAvailable', async () => isGitAvailable() && (await isInsideGitWorkTree()))
+  ipcMain.handle(
+    'git:isAvailable',
+    async () => (await isGitAvailableForTarget()) && (await isInsideGitWorkTree()),
+  )
   ipcMain.handle('git:status', () => getGitStatus())
   ipcMain.handle('git:changeStats', () => getGitChangeStats())
   ipcMain.handle('git:fileDiff', (event, path: unknown, staged: unknown) => {
@@ -786,6 +945,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const filePath = parseIpcArgs(zPathString, [path])
     const isStaged = parseIpcArgs(z.boolean(), [staged])
     return getGitFileDiff(filePath, isStaged)
+  })
+  ipcMain.handle('git:workingFileDiff', (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const filePath = parseIpcArgs(zPathString, [path])
+    return getGitWorkingFileDiff(filePath)
   })
   ipcMain.handle('git:branchStatus', (event, forBranch: unknown) => {
     assertMainFrameSender(event, win)
@@ -905,10 +1069,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     return detectAcpAgents()
   })
-  ipcMain.handle('acp:listModels', (event, agentId: unknown) => {
+  ipcMain.handle('acp:probeAgent', (event, agentId: unknown) => {
     assertMainFrameSender(event, win)
-    if (typeof agentId !== 'string') throw new Error('acp:listModels requires an agent id')
-    return listAcpModelsForAgent(agentId)
+    if (typeof agentId !== 'string') throw new Error('acp:probeAgent requires an agent id')
+    return probeAcpAgentForSettings(agentId)
   })
   ipcMain.handle('acp:autoSetup', (event) => {
     assertMainFrameSender(event, win)
@@ -1030,6 +1194,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         [prompt, kind],
       )
       return requestSshPrompt({ prompt: parsedPrompt, kind: parsedKind })
+    })
+    ipcMain.handle('test:requestAcpPackageInstallApproval', (event) => {
+      assertMainFrameSender(event, win)
+      const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
+      if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
+      return requestAcpPackageInstallApproval([codex])
     })
   }
 }

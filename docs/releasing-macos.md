@@ -1,7 +1,11 @@
-# Releasing Copse for macOS (pre-release)
+# Releasing Copse for macOS
 
 How to cut a signed, notarized macOS build of Copse and ship it to pre-release
 testers, with automatic updates via `electron-updater`.
+
+The supported GA target is macOS 26 or newer on Apple Silicon (`arm64`) and Intel
+(`x64`). Run the [general release checklist](release-checklist.md) for every
+published release; this file covers the macOS packaging mechanics.
 
 Because Copse runs arbitrary shell commands and spawns `node-pty`, it is **not
 distributed through the Mac App Store / TestFlight** (the App Sandbox those
@@ -53,6 +57,26 @@ Set these on the repo (Settings → Secrets and variables → Actions). They fee
 secret needed.
 
 ## Releasing via CI (recommended)
+
+### Release checklist
+
+Before creating a release tag:
+
+1. Update the review date and exact release-candidate SHA in
+   [`security-review-ga.md`](./security-review-ga.md).
+2. Reverify every open/accepted finding against current source, tests, issues,
+   and pull requests. Open-PR code does not count as remediated.
+3. Confirm every fixed finding still links to its landed change and regression
+   coverage, and add any new security findings discovered since the prior review.
+4. Resolve every `ga-blocker`, or record an explicit bounded waiver in the
+   ledger with finding/issue, approver, date, affected release, expiry/re-review
+   trigger, rationale, and compensating controls.
+5. Record the human security reviewer and release-owner GA sign-off. Do not cut
+   a GA tag while either sign-off is pending.
+6. Run the normal release validation (`npm run check`, build/e2e as required by
+   the changed surfaces, and the signed-build checks below).
+
+Then publish:
 
 1. Bump `version` in `package.json` (e.g. `0.1.0-beta.2`).
 2. Push a matching tag: `git tag v0.1.0-beta.2 && git push origin v0.1.0-beta.2`
@@ -137,5 +161,8 @@ it is active only in the packaged macOS build.
   availability release is therefore explicitly macOS-only; Linux and Windows are
   not distributed GA targets until they have an equivalent command-execution
   containment boundary.
+- **Forward recovery only.** Downgrades are not supported. Follow
+  [recovery.md](recovery.md) for backup, migration, and corrective-release
+  guidance.
 - **CI cost.** The release runs on a GitHub-hosted `macos-14` runner; a
   self-hosted Mac is also available (the e2e runners) if minutes become a concern.

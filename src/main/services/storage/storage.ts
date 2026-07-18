@@ -1,18 +1,40 @@
 import ElectronStore from 'electron-store'
+import { createCachedStore } from './cached-store.ts'
 import { runSerialized } from './write-queue.ts'
 
 const store = new ElectronStore<Record<string, unknown>>()
-export const storageGet = (key: string): unknown => store.get(key)
+
+// Cache reads in memory (see cached-store.ts for why: electron-store re-parses
+// the whole multi-MB config.json on every `.get`, which turned hot-loop reads
+// into a startup-hang). Every main-process read/write goes through this module,
+// so caching here is sound.
+//
+// Known limitation (pre-existing): a separate `copse --acp` process shares the
+// same config.json with its own ElectronStore; cross-process writes were
+// already last-writer-wins on the whole file, and the cache does not change
+// that — it only means this process won't observe another process's write to a
+// key it has already read. The write-queue serializes only in-process writers.
+const cached = createCachedStore({
+  get: (key) => store.get(key),
+  set: (key, value) => {
+    store.set(key, value)
+  },
+  delete: (key) => {
+    store.delete(key)
+  },
+})
+
+export const storageGet = (key: string): unknown => cached.get(key)
 
 // Fire-and-forget synchronous set (kept for callers that don't read-modify-write
 // and don't need ordering guarantees). Prefer `storageUpdate` for any
 // read-modify-write so concurrent callers can't drop each other's changes.
 export const storageSet = (key: string, value: unknown): void => {
-  store.set(key, value)
+  cached.set(key, value)
 }
 
 export const storageDelete = (key: string): void => {
-  store.delete(key)
+  cached.delete(key)
 }
 
 /**
@@ -23,7 +45,6 @@ export const storageDelete = (key: string): void => {
  */
 export function storageUpdate(key: string, update: (current: unknown) => unknown): Promise<void> {
   return runSerialized(key, () => {
-    const next = update(store.get(key))
-    store.set(key, next)
+    cached.set(key, update(cached.get(key)))
   })
 }

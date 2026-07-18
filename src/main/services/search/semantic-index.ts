@@ -1,4 +1,5 @@
-import { access, mkdir, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join, resolve } from 'node:path'
 import { app } from 'electron'
@@ -7,6 +8,7 @@ import { GORTEX_EXCLUDE_PATTERNS } from './index-ignore.ts'
 import { computeGitIgnoreExcludes } from './git-derived-excludes.ts'
 import { runCommand, type RunCommandOptions } from '../exec/command-runner.ts'
 import { COMMAND_RUNNER_LONG_TIMEOUT_MS } from '../exec/subprocess-output-cap.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { toRelativePath } from '../workspace.ts'
 import {
   indexBuildStarted,
@@ -73,6 +75,19 @@ export function semanticThreadCap(): number {
  */
 export function gortexCpuLimitEnv(): NodeJS.ProcessEnv {
   return { GOMAXPROCS: String(semanticThreadCap()) }
+}
+
+/**
+ * Soft memory ceiling for the gortex daemon (Go's `GOMEMLIMIT`). A backstop only:
+ * repo scoping (see {@link scopeGortexToActiveRepo}) keeps the tracked set to the
+ * active workspace, but if that ever regresses this bounds the Go heap so the
+ * daemon can't grow without limit and OOM-kill the app. Overridable for large
+ * checkouts via `COPSE_GORTEX_MEM_LIMIT` (e.g. `6GiB`).
+ */
+const GORTEX_MEM_LIMIT = process.env['COPSE_GORTEX_MEM_LIMIT'] ?? '4GiB'
+
+export function gortexMemLimitEnv(): NodeJS.ProcessEnv {
+  return { GOMEMLIMIT: GORTEX_MEM_LIMIT }
 }
 
 export type SemanticBackend = 'gortex' | 'vera'
@@ -144,6 +159,7 @@ export function getSemanticBackend(): SemanticBackend | null {
 }
 
 export function isSemanticSearchAvailable(): boolean {
+  if (isActiveSshWorkspace()) return false
   return activeBackend !== null
 }
 
@@ -238,8 +254,10 @@ function gortexRunOpts(
     lowPriority: true,
     // HOME scopes ~/.gortex (daemon socket hash, sqlite store, config) to our
     // userData dir; GOMAXPROCS bounds the Go scheduler so a background index
-    // can't pin every core (#517).
-    env: { HOME: gortexHomeDir(), ...gortexCpuLimitEnv() },
+    // can't pin every core (#517); GOMEMLIMIT caps the daemon's heap so a
+    // runaway index can't OOM the machine. The daemon inherits this env from the
+    // `daemon start` invocation, so the ceiling applies for its whole lifetime.
+    env: { HOME: gortexHomeDir(), ...gortexCpuLimitEnv(), ...gortexMemLimitEnv() },
     ...extra,
   }
 }
@@ -310,6 +328,7 @@ async function probeWithOpts(
 
 /** Register and build the semantic index when a workspace opens. */
 export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> {
+  if (isActiveSshWorkspace()) return
   const backend = activeBackend
   if (!backend) return
 
@@ -358,6 +377,7 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
  * per-process thread cap and lagging the UI.
  */
 export async function updateSemanticIndex(workspaceRoot: string): Promise<void> {
+  if (isActiveSshWorkspace()) return
   const backend = activeBackend
   if (!backend) return
 
@@ -440,6 +460,31 @@ export async function searchSemanticContent(
  * which our {@link gortexHomeDir} HOME override scopes to Copse userData, so we
  * never drop a `.gortex.yaml` into the user's repo.
  */
+/**
+ * Excludes already written to gortex's global `config.yaml`, parsed directly
+ * (no daemon, no subprocess) so {@link ensureGortexExcludes} can skip re-adding
+ * patterns and avoid a spawn-per-pattern storm on every workspace open.
+ */
+async function readGortexExcludes(): Promise<Set<string>> {
+  const out = new Set<string>()
+  let raw: string
+  try {
+    raw = await readFile(join(gortexHomeDir(), '.gortex', 'config.yaml'), 'utf8')
+  } catch {
+    return out
+  }
+  let inExclude = false
+  for (const line of raw.split('\n')) {
+    // Top-level `exclude:` key opens the block; any other non-indented key ends it.
+    if (/^\S/.test(line)) inExclude = /^exclude:\s*$/.test(line)
+    else if (inExclude) {
+      const match = line.match(/^\s*-\s*(.+?)\s*$/)
+      if (match?.[1]) out.add(match[1].trim())
+    }
+  }
+  return out
+}
+
 async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
   const existing = gortexExcludesReady
   if (existing) return existing
@@ -450,16 +495,29 @@ async function ensureGortexExcludes(workspaceRoot: string): Promise<void> {
     // for repos that aren't git-tracked and for Copse's own dist-* variants.
     const gitPatterns = await computeGitIgnoreExcludes(workspaceRoot).catch(() => [])
     const patterns = [...new Set<string>([...GORTEX_EXCLUDE_PATTERNS, ...gitPatterns])]
-    for (const pattern of patterns) {
-      // Best-effort + idempotent: re-adding a pattern is a no-op, and a single
-      // failed exclude must not block the index build.
+    // Only spawn `exclude add` for patterns NOT already in gortex's config.
+    // `exclude add` is one subprocess per call; a dev checkout that has run e2e
+    // many times accumulates hundreds of uniquely-named `.wdio-*` dirs, so
+    // blindly re-adding every pattern meant hundreds of gortex spawns (plus a
+    // re-index) on every workspace open — a startup CPU spin. Reading the
+    // current set is a plain file read (no daemon, no spawn); when nothing is
+    // new (the common case after the first open) we spawn zero processes and
+    // gortex doesn't re-index.
+    const present = await readGortexExcludes()
+    const missing = patterns.filter((p) => !present.has(p))
+    for (const pattern of missing) {
+      // Best-effort: a single failed exclude must not block the index build.
       await runCommand(
         gortexCmd(),
         ['config', 'exclude', 'add', pattern, '--global', '--no-progress'],
         gortexRunOpts(workspaceRoot),
       ).catch(() => undefined)
     }
-    await resetPreExcludeIndex(workspaceRoot)
+    // Only shed the pre-exclude index when we actually changed the exclude set;
+    // otherwise the daemon needn't re-index at all.
+    if (missing.length > 0) {
+      await resetPreExcludeIndex(workspaceRoot)
+    }
   })()
 
   gortexExcludesReady = ready
@@ -502,7 +560,179 @@ async function resetPreExcludeIndex(workspaceRoot: string): Promise<void> {
   }
 }
 
+/**
+ * Extract the tracked repo paths from gortex's global `config.yaml` (the file
+ * `track`/`untrack` edit). Minimal parse of the `repos:` block — we only need the
+ * `- path:` entries, not a full YAML dependency, and must not pick up entries
+ * from sibling blocks (`exclude:`).
+ */
+export function parseTrackedRepos(configYaml: string): string[] {
+  const paths: string[] = []
+  let inRepos = false
+  for (const line of configYaml.split('\n')) {
+    // A non-indented line starts a new top-level key; we're in `repos:` only
+    // while indented list items follow it.
+    if (/^\S/.test(line)) inRepos = /^repos:\s*$/.test(line)
+    else if (inRepos) {
+      const match = line.match(/^\s*-\s*path:\s*(.+?)\s*$/)
+      if (match?.[1]) paths.push(match[1])
+    }
+  }
+  return paths
+}
+
+/** Which tracked repos to untrack so the daemon is scoped to just `activeRoot`. */
+export function reposToUntrackForActive(tracked: string[], activeRoot: string): string[] {
+  const active = resolve(activeRoot)
+  return tracked.filter((p) => resolve(p) !== active)
+}
+
+async function listTrackedGortexRepos(): Promise<string[]> {
+  const configPath = join(gortexHomeDir(), '.gortex', 'config.yaml')
+  try {
+    return parseTrackedRepos(await readFile(configPath, 'utf8'))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Scope the shared daemon to the active workspace: untrack every other repo so a
+ * large, non-active checkout (a 100k-file monorepo you opened once) can't keep
+ * its graph warm and bloat the daemon across sessions. gortex has no per-repo
+ * priority knob, so untrack + reload is the lever; the active repo is re-tracked
+ * by the caller, and switching workspaces re-indexes the newly-active one.
+ */
+async function scopeGortexToActiveRepo(activeRoot: string): Promise<void> {
+  const others = reposToUntrackForActive(await listTrackedGortexRepos(), activeRoot)
+  if (others.length === 0) return
+  for (const path of others) {
+    await runCommand(
+      gortexCmd(),
+      ['untrack', path, '--no-progress'],
+      gortexRunOpts(activeRoot),
+    ).catch(() => undefined)
+  }
+  // Reload so the daemon drops the untracked graphs and frees their memory now,
+  // rather than carrying them until the next restart.
+  await runCommand(
+    gortexCmd(),
+    ['daemon', 'reload', '--no-progress'],
+    gortexRunOpts(activeRoot),
+  ).catch(() => undefined)
+}
+
+/**
+ * RSS above which a daemon found at boot is treated as an oversized zombie and
+ * reaped. Set to the {@link GORTEX_MEM_LIMIT} ceiling (4 GiB): a daemon this big
+ * predates the cap or escaped it (legacy accumulated bloat), so freeing it early
+ * — before we allocate our window — avoids a multi-GB resident pushing the
+ * machine over its ceiling mid-boot. A scoped, GOMEMLIMIT-capped daemon stays
+ * well under this and is reused as-is (no needless re-index); moderate daemons
+ * are instead shrunk gracefully by scopeGortexToActiveRepo's untrack + reload.
+ */
+const GORTEX_ORPHAN_REAP_RSS_MB = 4096
+
+/** Whether a boot-time process (by RSS + command) is an oversized gortex daemon worth reaping. */
+export function isOversizedGortexDaemon(rssMb: number, command: string): boolean {
+  return /gortex/i.test(command) && rssMb >= GORTEX_ORPHAN_REAP_RSS_MB
+}
+
+function pidIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // ESRCH → gone; EPERM → exists but not signal-able by us (still "alive").
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+function pidRssAndCommand(pid: number): Promise<{ rssMb: number; command: string } | null> {
+  return new Promise((resolve_) => {
+    execFile('ps', ['-p', String(pid), '-o', 'rss=,command='], (err, stdout) => {
+      const match = err ? null : stdout.trim().match(/^(\d+)\s+(.*)$/)
+      resolve_(match ? { rssMb: Number(match[1]) / 1024, command: match[2] ?? '' } : null)
+    })
+  })
+}
+
+/**
+ * Reap an oversized gortex daemon left over from a previous session, read from
+ * its pidfile. Run at the very start of boot — before Copse loads its window and
+ * renderer — so a multi-GB zombie's memory is freed while our own footprint is
+ * still minimal, instead of the two together exceeding RAM and the OS OOM-killing
+ * us mid-boot (the failure this fix targets).
+ *
+ * Kills the pid directly rather than via `gortex daemon stop`, which performs a
+ * slow graceful snapshot while holding all that memory; needs no reachable daemon
+ * or configured backend. A healthy, appropriately-sized daemon is left running so
+ * its warm index is reused. Best-effort — any failure just leaves the daemon.
+ */
+export async function reapOversizedGortexDaemon(): Promise<void> {
+  // Whole body is best-effort: this runs on the boot path, so any failure
+  // (missing pidfile, app not ready, ps unavailable) must leave the daemon and
+  // never throw into `whenReady`.
+  try {
+    const pidFile = join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid')
+    let pid: number
+    try {
+      pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10)
+    } catch {
+      return // no pidfile → nothing running from a prior session
+    }
+    if (!Number.isInteger(pid) || pid <= 1 || !pidIsAlive(pid)) return
+    const info = await pidRssAndCommand(pid)
+    // The `gortex` command check also guards against pid reuse (the pidfile can
+    // outlive the process it named).
+    if (!info || !isOversizedGortexDaemon(info.rssMb, info.command)) return
+    process.kill(pid, 'SIGTERM')
+    // A wedged/oversized daemon may not honor SIGTERM promptly; escalate to
+    // SIGKILL so we never leave the memory resident and lose the OOM-killer race.
+    for (let i = 0; i < 20; i++) {
+      await delay(100)
+      if (!pidIsAlive(pid)) return
+    }
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    // Best-effort — a leftover daemon is preferable to a failed boot.
+  }
+}
+
+/**
+ * Stop the detached gortex daemon. It is spawned `--detach` (ppid 1) and, without
+ * this, outlives Copse — each session it re-tracks/indexes and the orphaned
+ * daemons accumulate multi-GB graphs until the machine OOM-kills the app on the
+ * next launch. Best-effort and idempotent; called from the app before-quit path.
+ */
+export async function stopGortexDaemon(): Promise<void> {
+  if (activeBackend !== 'gortex' || !gortexCommand) return
+  // Signal the daemon directly from its pidfile rather than shelling out to
+  // `gortex daemon stop`: the CLI stop waits for a final snapshot, and its
+  // subprocess spawn + graceful wait can hold app quit for many seconds —
+  // observed as wdio session-DELETE timeouts cascading through an e2e shard
+  // (the lingering app also blocks the next launch via the single-instance
+  // lock). SIGTERM is immediate; the daemon flushes what it can on its way
+  // down, and the index is derived data — rebuilt on next open if needed.
+  try {
+    const pidFile = join(gortexHomeDir(), '.gortex', 'cache', 'daemon.pid')
+    const pid = Number.parseInt((await readFile(pidFile, 'utf8')).trim(), 10)
+    if (Number.isInteger(pid) && pid > 1) process.kill(pid, 'SIGTERM')
+  } catch {
+    // No pidfile / daemon already gone / not signal-able — nothing to reap.
+  }
+  gortexDaemonReady = null
+}
+
 async function ensureGortexIndex(workspaceRoot: string): Promise<void> {
+  // Scope BEFORE starting the daemon. `untrack` is a plain config edit that works
+  // with no daemon running, so this leaves gortex's config listing only the
+  // active repo. Ordering matters: a freshly-started daemon reads the *full*
+  // config and immediately begins cold-indexing every repo in it — a large
+  // previously-opened checkout (e.g. 100k files) balloons to multiple GB and
+  // OOM-kills us before a later untrack could drop it. Slimmed first, the daemon
+  // (fresh or reused) only ever indexes the active workspace.
+  await scopeGortexToActiveRepo(workspaceRoot)
   if (!(await ensureGortexDaemon(workspaceRoot))) {
     throw new Error('gortex daemon failed to start')
   }
@@ -561,7 +791,7 @@ async function searchWithGortex(
   )
 
   return {
-    hits: parseGortexJson(stdout, opts.maxResults, opts.filterPath),
+    hits: await parseGortexJson(stdout, opts.maxResults, opts.filterPath),
     backend: 'gortex',
   }
 }
@@ -584,17 +814,19 @@ async function searchWithVera(
     ...(opts.signal ? { signal: opts.signal } : {}),
   })
 
-  return { hits: parseVeraJson(stdout, opts.maxResults), backend: 'vera' }
+  return { hits: await parseVeraJson(stdout, opts.maxResults), backend: 'vera' }
 }
 
-export function parseGortexJson(
+export async function parseGortexJson(
   stdout: string,
   maxResults: number,
   filterPath?: string,
-): SemanticSearchHit[] {
+): Promise<SemanticSearchHit[]> {
   const parsed = parseJsonPayload(stdout)
   const items = extractResultItems(parsed)
-  const hits = items.map(normalizeGortexHit).filter((hit): hit is SemanticSearchHit => hit !== null)
+  const hits = (await Promise.all(items.map(normalizeGortexHit))).filter(
+    (hit): hit is SemanticSearchHit => hit !== null,
+  )
   const scoped =
     filterPath && filterPath !== '.'
       ? hits.filter((hit) => hit.path === filterPath || hit.path.startsWith(`${filterPath}/`))
@@ -602,11 +834,13 @@ export function parseGortexJson(
   return scoped.slice(0, maxResults)
 }
 
-export function parseVeraJson(stdout: string, maxResults: number): SemanticSearchHit[] {
+export async function parseVeraJson(
+  stdout: string,
+  maxResults: number,
+): Promise<SemanticSearchHit[]> {
   const parsed = parseJsonPayload(stdout)
   const items = extractResultItems(parsed)
-  return items
-    .map(normalizeVeraHit)
+  return (await Promise.all(items.map(normalizeVeraHit)))
     .filter((hit): hit is SemanticSearchHit => hit !== null)
     .slice(0, maxResults)
 }
@@ -647,7 +881,7 @@ function extractResultItems(parsed: unknown): unknown[] {
  * toRelativePath would resolve it against the process cwd instead. Hits are
  * symbols (no end_line/snippet); `doc` is the symbol's docstring when indexed.
  */
-function normalizeGortexHit(item: unknown): SemanticSearchHit | null {
+async function normalizeGortexHit(item: unknown): Promise<SemanticSearchHit | null> {
   if (typeof item !== 'object' || item === null) return null
   const record = item as Record<string, unknown>
   const path = readString(record, ['absolute_file_path', 'file_path', 'path', 'file'])
@@ -663,7 +897,7 @@ function normalizeGortexHit(item: unknown): SemanticSearchHit | null {
   const score = readNumber(record, ['score', 'rrf_score', 'relevance'])
 
   return {
-    path: toRelativePath(path),
+    path: await toRelativePath(path),
     startLine,
     ...(endLine !== undefined ? { endLine } : {}),
     text: text.trim(),
@@ -671,7 +905,7 @@ function normalizeGortexHit(item: unknown): SemanticSearchHit | null {
   }
 }
 
-function normalizeVeraHit(item: unknown): SemanticSearchHit | null {
+async function normalizeVeraHit(item: unknown): Promise<SemanticSearchHit | null> {
   if (typeof item !== 'object' || item === null) return null
   const record = item as Record<string, unknown>
   const path = readString(record, ['path', 'file', 'filename'])
@@ -683,7 +917,7 @@ function normalizeVeraHit(item: unknown): SemanticSearchHit | null {
   const score = readNumber(record, ['score', 'rerank_score', 'relevance'])
 
   return {
-    path: toRelativePath(path),
+    path: await toRelativePath(path),
     startLine,
     ...(endLine !== undefined ? { endLine } : {}),
     text: text.trim(),

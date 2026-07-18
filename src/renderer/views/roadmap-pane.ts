@@ -1,10 +1,18 @@
-import { el, clear, qsRequired } from '../dom/helpers.ts'
+import { el, clear } from '../dom/helpers.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
+import {
+  ATTACHMENTS_FIELD,
+  MAX_NOTE_ATTACHMENTS,
+  isImageAttachment,
+  parseKnowledgeAttachments,
+  type KnowledgeAttachment,
+} from '@shared/knowledge/attachments.ts'
 import { knowledgeDate } from './knowledge-date.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
+import { attachmentIcon } from '../dom/attachment-icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -35,6 +43,51 @@ function itemNotes(item: RoadmapItem): string {
 
 function itemIssue(item: RoadmapItem): string {
   return item.fields['issue'] ?? ''
+}
+
+function itemAttachments(item: RoadmapItem | null | undefined): KnowledgeAttachment[] {
+  return item ? parseKnowledgeAttachments(item.fields[ATTACHMENTS_FIELD]) : []
+}
+
+/** A file/image the user attached in the editor but has not saved yet. */
+interface PendingAttachment {
+  name: string
+  mimeType: string
+  dataUrl: string
+}
+
+// Base64-encode via arrayBuffer() rather than FileReader so the same path runs
+// in Chromium and in the happy-dom component tests.
+async function fileToDataUrl(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return `data:${file.type || 'application/octet-stream'};base64,${btoa(binary)}`
+}
+
+/** Decode a data URL to text, or null when the payload is not valid UTF-8
+ * (a binary non-image file has no sensible composer representation). */
+function dataUrlToText(dataUrl: string): string | null {
+  const comma = dataUrl.indexOf(',')
+  if (comma < 0) return null
+  try {
+    const binary = atob(dataUrl.slice(comma + 1))
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return null
+  }
+}
+
+// Clipboard-pasted images often arrive named just "image.png"; keep that, but
+// synthesize a name when the browser gives none at all.
+function attachmentName(file: File): string {
+  if (file.name) return file.name
+  const ext = file.type.split('/')[1]
+  return `pasted.${ext || 'bin'}`
 }
 
 // Electron prefixes errors thrown by ipcMain.handle with
@@ -76,48 +129,62 @@ export function mountRoadmapPane(
   // renderEditor must not overwrite it from the store.
   let fitCheckInFlight = false
   let loadToken = 0
+  // Search/filter query entered in the list header.
+  let searchQuery = ''
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
+  const searchInput = el('input', {
+    type: 'search',
+    class: 'roadmap-search-input',
+    placeholder: 'Filter roadmap items…',
+    'aria-label': 'Filter roadmap items',
+  })
+  const actionButtons = el('div', { class: 'roadmap-action-buttons' })
+  const newBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn memories-new-btn roadmap-new-btn',
+      'aria-label': 'New roadmap item',
+      title: 'New roadmap item',
+    },
+    '+',
+  )
+  const importBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-import-btn',
+      'aria-label': 'Import from GitHub issues',
+      title: 'Import from GitHub issues',
+    },
+    '⇩',
+  )
+  const refreshBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-refresh-btn',
+      'aria-label': 'Refresh roadmap',
+      title: 'Refresh',
+    },
+    '↻',
+  )
+  actionButtons.append(newBtn, importBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn memories-new-btn roadmap-new-btn',
-        'aria-label': 'New roadmap item',
-        title: 'New roadmap item',
-      },
-      '+',
-    ),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn roadmap-import-btn',
-        'aria-label': 'Import from GitHub issues',
-        title: 'Import from GitHub issues',
-      },
-      '⇩',
-    ),
-    el(
-      'button',
-      {
-        type: 'button',
-        class: 'git-changes-refresh-btn roadmap-refresh-btn',
-        'aria-label': 'Refresh roadmap',
-        title: 'Refresh',
-      },
-      '↻',
-    ),
+    searchInput,
+    actionButtons,
   )
-  const newBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-new-btn')
-  const importBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-import-btn')
-  const refreshBtn = qsRequired<HTMLButtonElement>(listHeader, '.roadmap-refresh-btn')
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
   listRoot.append(listHeader, listBody)
+
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value.trim()
+    renderList()
+  })
 
   // --- editor column --------------------------------------------------------
   const emptyState = el(
@@ -151,6 +218,34 @@ export function mountRoadmapPane(
   for (const status of STATUS_OPTIONS) {
     statusSelect.append(el('option', { value: status }, status))
   }
+  // Attachments (issue #556): pasted/dropped/picked files and images ride with
+  // the item — .jsonl eval sets, screenshots for prompts — and flow into the
+  // composer on "Start thread". Edits are staged (pending adds + removed ids)
+  // and only persist on Save, like every other field in this form.
+  let pendingAttachments: PendingAttachment[] = []
+  const removedAttachmentIds = new Set<string>()
+  // Thumbnails fetch lazily over IPC; cache per item/attachment so background
+  // refreshes don't re-pull payloads.
+  const attachmentDataCache = new Map<string, Promise<string | null>>()
+  const attachmentsLabel = el('label', { class: 'memories-label' }, 'Attachments')
+  const attachmentList = el('div', { class: 'roadmap-attachments' })
+  const attachFileInput = el('input', {
+    type: 'file',
+    class: 'roadmap-attach-input',
+    multiple: true,
+    hidden: true,
+    'aria-hidden': 'true',
+    tabindex: '-1',
+  })
+  const attachBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'roadmap-attach-btn',
+      title: 'Attach files or images — or paste/drop them into the form',
+    },
+    '+ Attach',
+  )
   // New items always start `ready`; the status control only applies to items
   // that already exist (matching the roadmap_plan tool's add/set_status split).
   const statusLabel = el('label', { class: 'memories-label' }, 'Status')
@@ -213,6 +308,9 @@ export function mountRoadmapPane(
     notesInput,
     el('label', { class: 'memories-label' }, 'Issue'),
     issueInput,
+    attachmentsLabel,
+    attachmentList,
+    attachFileInput,
     statusLabel,
     statusSelect,
     metaLine,
@@ -255,8 +353,108 @@ export function mountRoadmapPane(
       promptInput.value !== (item?.body ?? '') ||
       notesInput.value !== (item ? itemNotes(item) : '') ||
       issueInput.value !== (item ? itemIssue(item) : '') ||
-      (item != null && statusSelect.value !== itemStatus(item))
+      (item != null && statusSelect.value !== itemStatus(item)) ||
+      pendingAttachments.length > 0 ||
+      removedAttachmentIds.size > 0
     )
+  }
+
+  function currentItem(): RoadmapItem | null {
+    return (selectedId && items.find((m) => m.id === selectedId)) || null
+  }
+
+  function resetAttachmentEdits(): void {
+    pendingAttachments = []
+    removedAttachmentIds.clear()
+  }
+
+  function attachmentDataUrl(itemId: string, attachmentId: string): Promise<string | null> {
+    const key = `${itemId}/${attachmentId}`
+    let cached = attachmentDataCache.get(key)
+    if (!cached) {
+      cached = api.roadmap.attachmentData(itemId, attachmentId).catch(() => null)
+      attachmentDataCache.set(key, cached)
+    }
+    return cached
+  }
+
+  function attachmentChip(
+    att: { name: string; mimeType: string },
+    thumbSrc: string | null,
+    onRemove: () => void,
+  ): HTMLElement {
+    const chip = el('span', { class: 'roadmap-attachment-chip', title: att.name })
+    if (isImageAttachment(att)) {
+      const thumb = el('img', { class: 'roadmap-attachment-thumb', alt: att.name })
+      if (thumbSrc) thumb.src = thumbSrc
+      chip.append(thumb)
+    }
+    const remove = el(
+      'button',
+      {
+        type: 'button',
+        class: 'roadmap-attachment-remove',
+        'aria-label': `Remove attachment ${att.name}`,
+        title: 'Remove attachment',
+      },
+      '✕',
+    )
+    remove.addEventListener('click', onRemove)
+    chip.append(el('span', { class: 'roadmap-attachment-name' }, att.name), remove)
+    return chip
+  }
+
+  function renderAttachments(): void {
+    clear(attachmentList)
+    const item = currentItem()
+    for (const att of itemAttachments(item).filter((a) => !removedAttachmentIds.has(a.id))) {
+      const chip = attachmentChip(att, null, () => {
+        // Staged: the file is only deleted when Save sends removeAttachmentIds.
+        removedAttachmentIds.add(att.id)
+        renderAttachments()
+      })
+      if (item && isImageAttachment(att)) {
+        const thumb = chip.querySelector('img')
+        void attachmentDataUrl(item.id, att.id).then((url) => {
+          if (url && thumb) thumb.src = url
+        })
+      }
+      attachmentList.append(chip)
+    }
+    for (const pending of pendingAttachments) {
+      attachmentList.append(
+        attachmentChip(pending, pending.dataUrl, () => {
+          pendingAttachments = pendingAttachments.filter((p) => p !== pending)
+          renderAttachments()
+        }),
+      )
+    }
+    attachmentList.append(attachBtn)
+  }
+
+  async function addAttachmentFiles(files: File[]): Promise<void> {
+    let count =
+      itemAttachments(currentItem()).filter((a) => !removedAttachmentIds.has(a.id)).length +
+      pendingAttachments.length
+    for (const file of files) {
+      if (count >= MAX_NOTE_ATTACHMENTS) {
+        showError(`A roadmap item can hold at most ${String(MAX_NOTE_ATTACHMENTS)} attachments.`)
+        break
+      }
+      let dataUrl: string
+      try {
+        dataUrl = await fileToDataUrl(file)
+      } catch {
+        continue
+      }
+      pendingAttachments.push({
+        name: attachmentName(file),
+        mimeType: file.type || 'application/octet-stream',
+        dataUrl,
+      })
+      count++
+    }
+    renderAttachments()
   }
 
   // `preserveDirty` is set by background refreshes (store events) so an in-progress
@@ -288,7 +486,9 @@ export function mountRoadmapPane(
       notesInput.value = item ? itemNotes(item) : ''
       issueInput.value = item ? itemIssue(item) : ''
       statusSelect.value = item ? itemStatus(item) : 'ready'
+      resetAttachmentEdits()
     }
+    renderAttachments()
     statusLabel.hidden = !item
     statusSelect.hidden = !item
     startBtn.hidden = !item
@@ -317,19 +517,29 @@ export function mountRoadmapPane(
     }
   }
 
+  function matchesSearch(item: RoadmapItem): boolean {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      (item.title || '').toLowerCase().includes(q) ||
+      item.body.toLowerCase().includes(q) ||
+      itemNotes(item).toLowerCase().includes(q) ||
+      itemIssue(item).toLowerCase().includes(q) ||
+      (item.status ?? '').toLowerCase().includes(q)
+    )
+  }
+
   function renderList(): void {
     clear(listBody)
-    if (items.length === 0) {
-      listBody.append(
-        el(
-          'div',
-          { class: 'git-changes-empty roadmap-list-empty' },
-          'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.',
-        ),
-      )
+    const visible = items.filter(matchesSearch)
+    if (visible.length === 0) {
+      const hint = searchQuery
+        ? 'No roadmap items match your filter.'
+        : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
+      listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
       return
     }
-    for (const item of items) {
+    for (const item of visible) {
       const isSelected = item.id === selectedId
       const status = itemStatus(item)
       const row = el('button', {
@@ -342,8 +552,9 @@ export function mountRoadmapPane(
         { class: 'roadmap-row-meta' },
         el('span', { class: `roadmap-status-badge is-${status}` }, status),
       )
-      // Complexity is stamped on save (roadmap-complexity.ts); older items
-      // that predate stamping simply have no badge.
+      // Complexity is stamped in the background shortly after a save
+      // (roadmap-complexity.ts); freshly saved items and older items that
+      // predate stamping simply have no badge yet.
       const complexity = item.fields['complexity']
       if (isRoadmapComplexity(complexity)) {
         meta.append(
@@ -351,7 +562,7 @@ export function mountRoadmapPane(
             'span',
             {
               class: `roadmap-complexity-badge is-${complexity}`,
-              title: 'Estimated prompt complexity (classified on save)',
+              title: 'Estimated prompt complexity (classified after save)',
             },
             complexity,
           ),
@@ -391,6 +602,22 @@ export function mountRoadmapPane(
           })
         })
         meta.append(chip)
+      }
+      const attachmentCount = itemAttachments(item).length
+      if (attachmentCount > 0) {
+        meta.append(
+          el(
+            'span',
+            {
+              class: 'roadmap-attachment-badge',
+              title: `${String(attachmentCount)} attachment${attachmentCount === 1 ? '' : 's'}`,
+            },
+            // The shared paperclip SVG (attachment-icons.ts) — theme-aware
+            // `currentColor` stroke, never an emoji glyph.
+            attachmentIcon('file', 'ui-icon roadmap-attachment-badge-icon'),
+            String(attachmentCount),
+          ),
+        )
       }
       main.append(
         el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
@@ -447,10 +674,21 @@ export function mountRoadmapPane(
       return
     }
     const issue = issueInput.value.trim()
+    const addAttachments = pendingAttachments.map(({ name, mimeType, dataUrl }) => ({
+      name,
+      mimeType,
+      dataUrl,
+    }))
+    const removeIds = [...removedAttachmentIds]
     saveBtn.disabled = true
     try {
       if (creating || !selectedId) {
-        const created = await api.roadmap.create(prompt, notes || undefined, issue || undefined)
+        const created = await api.roadmap.create(
+          prompt,
+          notes || undefined,
+          issue || undefined,
+          addAttachments.length > 0 ? addAttachments : undefined,
+        )
         selectedId = created.id
         creating = false
       } else {
@@ -460,6 +698,8 @@ export function mountRoadmapPane(
           notes || undefined,
           statusSelect.value as RoadmapStatus,
           issue || undefined,
+          addAttachments.length > 0 ? addAttachments : undefined,
+          removeIds.length > 0 ? removeIds : undefined,
         )
         if (!updated) {
           showError('This roadmap item no longer exists.')
@@ -522,7 +762,9 @@ export function mountRoadmapPane(
   // Open a fresh thread pre-filled with the item's prompt (plus its notes as a
   // trailing context line). Uses the editor's *current* text so an unsaved
   // tweak goes to the thread the user is looking at, not a stale stored copy.
-  function startThread(): void {
+  // The item's attachments ride along into the composer: images as image
+  // attachments, text files (.jsonl eval sets and the like) as file chips.
+  async function startThread(): Promise<void> {
     const prompt = promptInput.value.trim()
     if (!prompt) {
       showError('Add a prompt before starting a thread.')
@@ -530,10 +772,32 @@ export function mountRoadmapPane(
     }
     const notes = notesInput.value.trim()
     const draft = notes ? `${prompt}\n\nNotes: ${notes}` : prompt
+    // Fetch stored payloads before switching threads; pending (unsaved) ones
+    // are already in memory and go along too, matching the visible chip row.
+    const item = currentItem()
+    const payloads: PendingAttachment[] = []
+    if (item) {
+      for (const att of itemAttachments(item).filter((a) => !removedAttachmentIds.has(a.id))) {
+        const dataUrl = await attachmentDataUrl(item.id, att.id)
+        if (dataUrl) payloads.push({ name: att.name, mimeType: att.mimeType, dataUrl })
+      }
+    }
+    payloads.push(...pendingAttachments)
     // Persist whatever is in the chat composer to its thread before switching.
     store.emit('composer_draft_flush')
     createThread(store, draft)
-    getPromptAttachmentHandlers()?.focusComposer?.()
+    const handlers = getPromptAttachmentHandlers()
+    if (handlers) {
+      for (const payload of payloads) {
+        if (payload.mimeType.startsWith('image/')) {
+          handlers.attachImage(payload.dataUrl, payload.mimeType)
+        } else {
+          const text = dataUrlToText(payload.dataUrl)
+          if (text !== null) handlers.attachFile({ path: payload.name, content: text })
+        }
+      }
+    }
+    handlers?.focusComposer?.()
   }
 
   // --- import-from-issues flow -----------------------------------------------
@@ -639,7 +903,56 @@ export function mountRoadmapPane(
     e.preventDefault()
     void save()
   })
-  startBtn.addEventListener('click', startThread)
+  startBtn.addEventListener('click', () => void startThread())
+
+  // Pasted files/images anywhere in the form become attachments. Stop
+  // propagation for handled pastes: the chat input bar owns a document-level
+  // paste listener (input-bar.ts) that would otherwise claim any pasted image
+  // for the composer even while the roadmap editor has focus. Plain text
+  // pastes fall through to the focused field untouched.
+  form.addEventListener('paste', (e) => {
+    // Read `items` first — the same source the composer's handler uses — so a
+    // pasted image that Chromium surfaces only there is still claimed here;
+    // `files` is the fallback (and what synthetic test events provide).
+    const files = Array.from(e.clipboardData?.items ?? [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null)
+    if (files.length === 0) files.push(...Array.from(e.clipboardData?.files ?? []))
+    if (files.length === 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    void addAttachmentFiles(files)
+  })
+  // Files dropped on the form attach to the item rather than falling through
+  // to the window (or the chat composer's drop target).
+  form.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer?.types.includes('Files')) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+    form.classList.add('is-drop-target')
+  })
+  form.addEventListener('dragleave', (e) => {
+    if (!form.contains(e.relatedTarget as Node)) form.classList.remove('is-drop-target')
+  })
+  form.addEventListener('drop', (e) => {
+    form.classList.remove('is-drop-target')
+    const files = Array.from(e.dataTransfer?.files ?? [])
+    if (files.length === 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    void addAttachmentFiles(files)
+  })
+  attachBtn.addEventListener('click', () => {
+    attachFileInput.click()
+  })
+  attachFileInput.addEventListener('change', () => {
+    const files = Array.from(attachFileInput.files ?? [])
+    // Reset so re-picking the same file fires `change` again.
+    attachFileInput.value = ''
+    if (files.length > 0) void addAttachmentFiles(files)
+  })
   fitBtn.addEventListener('click', () => void checkFit())
   deleteBtn.addEventListener('click', () => void remove())
   cancelBtn.addEventListener('click', cancel)
@@ -651,12 +964,27 @@ export function mountRoadmapPane(
     store.on('files_pane_changed', () => {
       if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
     }),
+    // Saves return before their complexity stamp lands (roadmap-complexity.ts);
+    // pick the badge up when main says the stamp arrived.
+    api.roadmap.onChanged(() => {
+      if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
+    }),
+    // The quick-open palette (Cmd/Ctrl+P) lands here after opening the pane:
+    // select the chosen item and load fresh so its editor shows immediately.
+    store.on('roadmap_reveal', (itemId) => {
+      selectedId = itemId
+      creating = false
+      importing = false
+      void refresh()
+    }),
     store.on('workspace_changed', () => {
       // The roadmap is per-project; drop the previous workspace's selection.
       selectedId = null
       creating = false
       importing = false
       items = []
+      resetAttachmentEdits()
+      attachmentDataCache.clear()
       if (roadmapModeActive(store)) void refresh()
       else {
         renderList()

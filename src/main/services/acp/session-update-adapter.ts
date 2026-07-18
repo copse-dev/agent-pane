@@ -1,4 +1,4 @@
-import type { PlanEntry, SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk'
+import type { PlanEntry, SessionUpdate, ToolCallContent, ToolKind } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 
@@ -17,6 +17,61 @@ import type { TodoItem } from '@shared/types/todo.ts'
  * Chunks/updates without a clean counterpart (usage accounting, context
  * pressure, internal subagent events) map to `null` and are dropped.
  */
+
+/**
+ * ACP `ToolKind` for each built-in Copse tool (agent role). Without this an
+ * ACP client sees every Copse tool call as `kind: 'other'` — its read/shell
+ * rendering (file-read affordances, terminal/command treatment) never engages.
+ * Tools not listed (todos, ask_user, mutating gh_* actions, …) stay `'other'`.
+ */
+const NATIVE_TOOL_ACP_KIND: Record<string, ToolKind> = {
+  // Workspace reads (including read-only git queries — local, no mutation).
+  read_file: 'read',
+  read_skill: 'read',
+  list_dir: 'read',
+  staged_diffs: 'read',
+  read_staged_diff: 'read',
+  git_status: 'read',
+  git_diff: 'read',
+  git_log: 'read',
+  git_show: 'read',
+  // Search.
+  search_code: 'search',
+  search_codebase: 'search',
+  semantic_search: 'search',
+  find_files: 'search',
+  // Shell.
+  run_shell: 'execute',
+  run_background: 'execute',
+  // File mutations.
+  write_file: 'edit',
+  str_replace: 'edit',
+  make_directory: 'edit',
+  delete_file: 'delete',
+  rename_file: 'move',
+  // Network reads (web + read-only GitHub/CI).
+  web_search: 'fetch',
+  fetch_url: 'fetch',
+  gh_pr_list: 'fetch',
+  gh_pr_view: 'fetch',
+  gh_pr_files: 'fetch',
+  gh_run_list: 'fetch',
+  gh_run_view: 'fetch',
+  get_ci_status: 'fetch',
+  wait_for_ci_checks: 'fetch',
+  get_ci_failure_logs: 'fetch',
+  // Subagent-backed investigations.
+  explore: 'think',
+  investigate_ci: 'think',
+}
+
+/** The command string of a shell tool call's args, if present. */
+function shellCommandFromToolArgs(args: unknown): string | null {
+  if (!args || typeof args !== 'object') return null
+  const command = (args as { command?: unknown }).command
+  return typeof command === 'string' && command.trim() ? command.trim() : null
+}
+
 export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | null {
   switch (chunk.type) {
     case 'text':
@@ -40,23 +95,27 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
             (todo): todo is TodoItem & { status: PlanEntry['status'] } =>
               todo.status !== 'cancelled',
           )
-          .map(
-            (todo): PlanEntry => ({
-              content: todo.content,
-              priority: 'medium',
-              status: todo.status,
-            }),
-          ),
+          .map((todo): PlanEntry => ({
+            content: todo.content,
+            priority: 'medium',
+            status: todo.status,
+          })),
       }
-    case 'tool_call':
+    case 'tool_call': {
+      const kind = NATIVE_TOOL_ACP_KIND[chunk.toolCall.name] ?? 'other'
+      // Shell calls title the actual command — the convention external ACP
+      // agents follow (and what clients render as the terminal header). Other
+      // tools keep the tool name.
+      const command = kind === 'execute' ? shellCommandFromToolArgs(chunk.toolCall.args) : null
       return {
         sessionUpdate: 'tool_call',
         toolCallId: chunk.toolCall.id,
-        title: chunk.toolCall.name,
-        kind: 'other',
+        title: command ?? chunk.toolCall.name,
+        kind,
         status: 'pending',
         rawInput: chunk.toolCall.args,
       }
+    }
     case 'tool_result':
       return {
         sessionUpdate: 'tool_call_update',
@@ -85,13 +144,11 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
     case 'plan':
       return {
         type: 'todo_update',
-        todos: update.entries.map(
-          (entry, index): TodoItem => ({
-            id: `acp-plan-${String(index + 1)}`,
-            content: entry.content,
-            status: entry.status,
-          }),
-        ),
+        todos: update.entries.map((entry, index): TodoItem => ({
+          id: `acp-plan-${String(index + 1)}`,
+          content: entry.content,
+          status: entry.status,
+        })),
       }
     case 'tool_call':
       return {
@@ -123,6 +180,13 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
         resultFormat: 'markdown',
       }
     }
+    // The agent's permission (session) mode changed — either from our own
+    // `session/set_mode` (issue #607) or an autonomous switch by the agent. We
+    // set the mode once at session open and don't re-drive it, and Copse has no
+    // in-chat mode indicator, so there's no chunk to emit; drop it explicitly
+    // rather than through the fall-through so the intent is on the record.
+    case 'current_mode_update':
+      return null
     default:
       return null
   }

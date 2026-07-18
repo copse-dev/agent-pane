@@ -10,6 +10,7 @@ import {
   type SpineHookRunDecision,
   type SpineHookRunLine,
 } from '@shared/threads/spine-schema.ts'
+import { hookCardFromSpineLine, type HookCard } from '@shared/hooks/hook-card.ts'
 import { fingerprintToolset, type ToolsetFingerprint } from '@shared/threads/toolset-fingerprint.ts'
 import { appendHookRun } from './thread-store.ts'
 import { storageGet } from './storage/storage.ts'
@@ -47,6 +48,35 @@ interface HookRunRecordingContext {
 }
 
 let current: HookRunRecordingContext | null = null
+
+/**
+ * Live hook-card sink (decision 10). Set per-run by the agent service so a
+ * `hook_run` spine append also emits a `hook_run` stream chunk, letting the
+ * renderer show the hook-card family *as it runs* — the same card it would fold
+ * from the spine on reload. Optional and best-effort: recording never depends on
+ * a sink being present (observability, not behavior), and a throwing sink is
+ * swallowed so a UI hiccup can't break a hook run.
+ */
+let liveSink: ((card: HookCard) => void) | null = null
+
+/** Register the live hook-card sink for a run (cleared in the run's finally). */
+export function setHookRunLiveSink(sink: (card: HookCard) => void): void {
+  liveSink = sink
+}
+
+/** Clear the live hook-card sink (idempotent; only clears the given sink). */
+export function clearHookRunLiveSink(sink: (card: HookCard) => void): void {
+  if (liveSink === sink) liveSink = null
+}
+
+function emitLiveHookCard(line: SpineHookRunLine): void {
+  if (!liveSink) return
+  try {
+    liveSink(hookCardFromSpineLine(line))
+  } catch (err) {
+    console.warn('[hook-run-recorder] live hook-card sink threw:', err)
+  }
+}
 
 /**
  * Start attributing hook executions to an agent run. Resolves the project from
@@ -129,6 +159,9 @@ function toolsetBlobs(ctx: HookRunRecordingContext): FileToWrite[] {
 }
 
 function persist(ctx: HookRunRecordingContext, line: SpineHookRunLine, blobs: FileToWrite[]): void {
+  // Emit the live card first so the renderer shows the run promptly; the spine
+  // append is the durable record history folds from (both derive one card).
+  emitLiveHookCard(line)
   appendHookRun(ctx.projectId, ctx.threadId, line, blobs).catch((err: unknown) => {
     console.warn(`[hook-run-recorder] failed to append hook_run for "${line.hookId}":`, err)
   })
@@ -209,6 +242,61 @@ export function recordDroppedAsyncDispatch(input: {
     parseOk: true,
     decision: {},
     error: 'async dispatch dropped: pending-dispatch FIFO full (decision 13)',
+  }
+  persist(ctx, line, toolsetBlobs(ctx))
+}
+
+/** Keep the halt reason on the spine bounded — the full text lives in the hook's blob. */
+const MAX_STOP_REASON_CHARS = 500
+
+/**
+ * Record a `haltRun` **effect** as its own `hook_run` line (H3, decisions 12 &
+ * 16). Distinct from the hook's own execution line (which carries `haltRun:
+ * true` = "asked to halt"): this marks whether that halt was *applied* (routed
+ * through the abort path, aborting the active turn tree) or *suppressed* as a
+ * stale no-op (its emitting epoch was no longer current). Zero-duration marker —
+ * the abort itself is instantaneous — so an applied or suppressed halt is always
+ * visible in the transcript, never silent. No-op outside an active recording
+ * window (e.g. a stale halt arriving with no run active).
+ */
+export function recordHaltRun(
+  input: {
+    event: string
+    hookId: string
+    executor: 'function' | 'command'
+    /** true = the halt aborted the run; false = suppressed as stale (decision 16). */
+    applied: boolean
+    reason: string
+  },
+  /**
+   * Recording context snapshotted at the emitting fire site (decision 3/6). A
+   * *stale* halt (decision 16) typically arrives after `endHookRunRecording`
+   * closed the live window — or while a *newer* turn's window is open — so
+   * recording against the live context would drop the suppressed line or
+   * attribute it to the wrong turn. Defaults to the live context for blocking
+   * halts, which are current by construction.
+   */
+  snapshot: HookRunRecordingSnapshot | null = current,
+): void {
+  const ctx = snapshot
+  if (!ctx) return
+  const decision: SpineHookRunDecision = {
+    haltRun: true,
+    ...(input.applied ? { haltApplied: true } : { haltSuppressedStale: true }),
+    ...(input.reason ? { stopReason: input.reason.slice(0, MAX_STOP_REASON_CHARS) } : {}),
+  }
+  const line: SpineHookRunLine = {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'hook_run',
+    id: randomUUID(),
+    event: input.event,
+    hookId: input.hookId,
+    executor: input.executor,
+    ...attributionFields(ctx),
+    startedAt: Date.now(),
+    durationMs: 0,
+    parseOk: true,
+    decision,
   }
   persist(ctx, line, toolsetBlobs(ctx))
 }

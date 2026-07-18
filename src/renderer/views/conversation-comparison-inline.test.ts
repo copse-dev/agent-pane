@@ -96,6 +96,36 @@ describe('model comparison renders inline in the transcript (component)', () => 
     assert.equal(cards.length, 1, 'only one comparison card should exist after an update')
   })
 
+  it('dismissing a failed comparison clears it from the store and removes the card', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'assistant', 'Done with the change.')
+
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    setThreadComparison(store, threadId, {
+      status: 'error',
+      models: comparison.models,
+      reviewA: '',
+      reviewB: '',
+      synthesis: '',
+      error: 'Comparison declined.',
+    })
+
+    const dismiss = document.querySelector<HTMLButtonElement>(
+      '[data-comparison-card] .card-dismiss-button',
+    )
+    assert.ok(dismiss, 'expected a dismiss button on the failed comparison card')
+    dismiss.click()
+
+    assert.equal(document.querySelector('[data-comparison-card]'), null)
+    const thread = store.getState().threads.find((t) => t.id === threadId)
+    assert.ok(thread)
+    assert.equal(thread.comparison, undefined, 'dismissal must clear the persisted comparison')
+  })
+
   it('keeps the review card above the comparison card when the comparison lands first', () => {
     const store = createStore()
     const threadId = createThread(store)

@@ -1,0 +1,131 @@
+/* Hook card family (decision 10 of docs/plans/hooks-and-feature-packs.md).
+   Hook executions, deny/ask decisions, and halts render as a distinct
+   tool-call-style card family: right-aligned, same blue as the user's own
+   messages (--accent), but clearly NOT a user message — they carry the hook
+   glyph, a status badge, and the hook id, and are visually grouped to the right
+   edge so the human reads them as machine-side provenance. */
+
+/* Right-aligned host: cards line up against the conversation's right edge and
+   never grow full-width, so the blue reads as "hook", distinct from the
+   left-flowing assistant/tool content. Sits in the messages-list flex column as
+   a message's next sibling (like review cards). */
+.hook-card-host {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-xs);
+  /* Pull up against the anchor message so the hook cards read as part of that
+     turn, matching the tool-card top spacing. */
+  margin-top: calc(-1 * var(--spacing-sm));
+}
+
+.hook-card {
+  align-self: flex-end;
+  max-width: min(80%, 460px);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.hook-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  list-style: none;
+}
+.hook-card-header::-webkit-details-marker {
+  display: none;
+}
+
+/* The hook glyph carries the family's blue even when a status tints the row. */
+.hook-card-icon {
+  color: var(--accent);
+  flex: none;
+}
+
+.hook-name {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hook-card-status {
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.hook-status-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  flex: none;
+}
+
+/* Status tints: a blocking verdict (deny / sandbox-block / error / halt) reads
+   as error; an ask reads as warning; allow/ran stay success-green. The card
+   keeps its blue family fill — only the status glyph + a hairline shift. */
+.hook-card[data-status='allow'] .hook-status-icon,
+.hook-card[data-status='ok'] .hook-status-icon {
+  color: var(--success);
+}
+.hook-card[data-status='ask'] .hook-status-icon,
+.hook-card[data-status='halt-suppressed'] .hook-status-icon {
+  color: var(--warning);
+}
+.hook-card[data-status='deny'] .hook-status-icon,
+.hook-card[data-status='blocked'] .hook-status-icon,
+.hook-card[data-status='error'] .hook-status-icon,
+.hook-card[data-status='halted'] .hook-status-icon {
+  color: var(--error);
+}
+.hook-card[data-status='deny'],
+.hook-card[data-status='blocked'],
+.hook-card[data-status='error'],
+.hook-card[data-status='halted'] {
+  border-color: color-mix(in srgb, var(--error) 45%, var(--border));
+}
+
+.hook-card-detail {
+  margin-top: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+/* Collapsed by default: the header carries the verdict; details are on demand. */
+.hook-card:not([open]) .hook-card-detail {
+  display: none;
+}
+
+/* Origin marker on a hook-originated user turn: a small accent label above the
+   message body so the turn never reads as human-typed (decision 10). */
+.msg-hook-origin-marker {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--accent);
+}
+.msg-hook-origin-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.msg-hook-origin-edited {
+  color: var(--text-muted);
+  font-style: italic;
+}

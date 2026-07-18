@@ -44,6 +44,7 @@ import {
   shouldShowOnboarding,
 } from './views/onboarding-dialog.ts'
 import { mountContextWarningBanner } from './views/context-warning-banner.ts'
+import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
@@ -179,6 +180,7 @@ async function boot(): Promise<void> {
   mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
   const contextWarningBanner = mountContextWarningBanner(api)
+  mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
   const savedModel = (await api.settings.get('model')) as string | null
@@ -358,7 +360,9 @@ function mountFullLayout(): void {
   const monacoReady = loadMonaco()
   mountProjectsPane(requireElement('pane-projects'), store, api)
   const inputRoot = requireElement('input-bar')
-  mountInputBar(inputRoot, store, api)
+  mountInputBar(inputRoot, store, api, {
+    portraitPanelHost: requireElement('pane-chat'),
+  })
   const conversationRoot = requireElement('conversation')
   mountConversation(conversationRoot, store, api, inputRoot)
   mountConversationSearch(conversationRoot)

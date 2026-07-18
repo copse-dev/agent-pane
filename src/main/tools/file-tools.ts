@@ -1,4 +1,3 @@
-import * as fs from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
@@ -8,18 +7,19 @@ import {
   getWorkspaceRoot,
   isInsideChatStore,
 } from '../services/workspace.ts'
+import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { runCommand } from '../services/exec/command-runner.ts'
 import { getIndex } from '../services/search/file-index.ts'
 import micromatch from 'micromatch'
 import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
-import { readTextLineRange } from '../services/read-text-file.ts'
+import { readTextLineRangeFromUtf8Content } from '../services/read-text-file.ts'
 import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/read-file-page.ts'
 import { getStagedDiffEntry } from '../services/diff-queue.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
-function isPathUnderWorkspace(absPath: string): boolean {
-  const rel = toRelativePath(absPath)
+async function isPathUnderWorkspace(absPath: string): Promise<boolean> {
+  const rel = await toRelativePath(absPath)
   return rel !== '..' && !rel.startsWith('..')
 }
 
@@ -59,11 +59,13 @@ export const readFileTool = defineTool({
     }
     const { maxLines: READ_FILE_MAX_LINES, maxChars: READ_FILE_MAX_CHARS } =
       getAgentRunReadFileLimits()
-    const absPath = resolveReadablePath(path)
+    const absPath = await resolveReadablePath(path)
 
     let result
     try {
-      result = await readTextLineRange(absPath, {
+      const fs = getActiveWorkspaceFs()
+      const content = await fs.readFile(absPath, 'utf-8')
+      result = readTextLineRangeFromUtf8Content(content, {
         startLine: start_line ?? 1,
         endLine: end_line,
         maxLines: READ_FILE_MAX_LINES,
@@ -103,7 +105,7 @@ export const listDirTool = defineTool({
     recursive: z.boolean().optional().default(false),
   }),
   async execute({ path, recursive }) {
-    const absPath = resolveReadablePath(path || '.')
+    const absPath = await resolveReadablePath(path || '.')
     const workspaceRoot = getWorkspaceRoot()
     const absRoot = workspaceRoot ? resolve(workspaceRoot) : absPath
 
@@ -111,7 +113,7 @@ export const listDirTool = defineTool({
       // The chat store (#644) is neither in the workspace file-index nor
       // workspace-relative, so list it directly with rg, rooted at and relative
       // to the listed directory. `--no-follow` keeps a symlink from escaping.
-      if (isInsideChatStore(absPath)) {
+      if (await isInsideChatStore(absPath)) {
         const { stdout } = await runCommand('rg', [
           '--files',
           '--sort',
@@ -133,7 +135,14 @@ export const listDirTool = defineTool({
       let paths: string[]
       if (idx) {
         const glob = path && path !== '.' ? `${path.replace(/\/$/, '')}/**` : '**'
-        paths = micromatch(idx.paths, glob).filter((p) => isPathUnderWorkspace(resolve(absRoot, p)))
+        const matched = micromatch(idx.paths, glob)
+        paths = (
+          await Promise.all(
+            matched.map(async (p) =>
+              (await isPathUnderWorkspace(resolve(absRoot, p))) ? p : null,
+            ),
+          )
+        ).filter((p): p is string => p !== null)
       } else {
         const { stdout } = await runCommand('rg', [
           '--files',
@@ -142,11 +151,17 @@ export const listDirTool = defineTool({
           '--no-follow',
           absPath,
         ])
-        paths = stdout
-          .split('\n')
-          .filter(Boolean)
-          .map((p) => toRelativePath(p))
-          .filter((p) => isPathUnderWorkspace(resolve(absRoot, p)))
+        paths = (
+          await Promise.all(
+            stdout
+              .split('\n')
+              .filter(Boolean)
+              .map(async (p) => {
+                const rel = await toRelativePath(p)
+                return (await isPathUnderWorkspace(resolve(absRoot, p))) ? rel : null
+              }),
+          )
+        ).filter((p): p is string => p !== null)
       }
       return (
         paths.slice(0, LIST_DIR_MAX_ENTRIES).join('\n') +
@@ -155,14 +170,14 @@ export const listDirTool = defineTool({
     }
     let entries
     try {
-      entries = await fs.readdir(absPath, { withFileTypes: true })
+      entries = await getActiveWorkspaceFs().readdirWithTypes(absPath)
     } catch (err) {
       return friendlyFsError(err, path || '.', 'list')
     }
     const lines: string[] = []
     for (const e of entries) {
       if (lines.length >= LIST_DIR_MAX_ENTRIES) break
-      lines.push(`${e.isDirectory() ? 'd' : 'f'} ${e.name}`)
+      lines.push(`${e.isDir ? 'd' : 'f'} ${e.name}`)
     }
     return (
       lines.join('\n') +

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
@@ -71,6 +79,33 @@ describe('knowledge-store', () => {
     assert.deepEqual(ids, [first.id, second.id, third.id])
   })
 
+  it('does not reuse an index cache entry from another project', () => {
+    restoreWorkspace()
+    const restoreA = setWorkspaceRootForTest('/home/dev/project-a')
+    const noteA = addKnowledgeNote({ type: 'Memory', title: 'Same', body: 'a' })
+    const indexA = join(knowledgeDir(), 'index.jsonl')
+    restoreA()
+
+    const restoreB = setWorkspaceRootForTest('/home/dev/project-b')
+    const noteB = addKnowledgeNote({ type: 'Memory', title: 'Same', body: 'b' })
+    const indexB = join(knowledgeDir(), 'index.jsonl')
+    restoreB()
+
+    // UUIDs and timestamps have fixed-width serialization, so these records are
+    // equal-sized. Pin their mtimes too, reproducing the old cache collision.
+    assert.equal(statSync(indexA).size, statSync(indexB).size)
+    const fixedTime = new Date('2026-01-01T00:00:00.000Z')
+    utimesSync(indexA, fixedTime, fixedTime)
+    utimesSync(indexB, fixedTime, fixedTime)
+
+    const restoreAForRead = setWorkspaceRootForTest('/home/dev/project-a')
+    assert.equal(getKnowledgeNote(noteA.id)?.id, noteA.id)
+    restoreAForRead()
+
+    restoreWorkspace = setWorkspaceRootForTest('/home/dev/project-b')
+    assert.equal(getKnowledgeNote(noteB.id)?.id, noteB.id)
+  })
+
   it('updates status by id without disturbing order, and reports unknown ids', () => {
     const a = addKnowledgeNote({ type: 'Roadmap', title: 'A', body: 'a', status: 'ready' })
     addKnowledgeNote({ type: 'Roadmap', title: 'B', body: 'b', status: 'ready' })
@@ -137,6 +172,26 @@ describe('knowledge-store', () => {
     assert.deepEqual(ids.sort(), [existing.id, 'orphan'].sort())
     // Healed into the index, so a second load is stable.
     assert.equal(loadKnowledgeNotes().length, 2)
+  })
+
+  it('heals a hand-added note when loading with a type filter (slugified dir)', () => {
+    // The on-disk dir is the *slugified* type (`Roadmap` → `roadmap/`), so the
+    // typed orphan scan must compare against the slug, not the raw type name.
+    // Regression: scanNoteFiles('Roadmap') skipped `roadmap/` entirely, making
+    // hand-added roadmap notes invisible to roadmap.list (caught by the
+    // quick-open-palette e2e, which seeds bare OKF files with no index).
+    const dir = join(knowledgeDir(), 'roadmap')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'orphan-typed.md'),
+      '---\ntype: Roadmap\nid: orphan-typed\ntitle: "Orphan"\ntags: []\nstatus: ready\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n---\n\nhand added\n',
+      'utf8',
+    )
+    const notes = loadKnowledgeNotes('Roadmap')
+    assert.deepEqual(
+      notes.map((n) => n.id),
+      ['orphan-typed'],
+    )
   })
 
   it('survives a corrupt index by rebuilding from the note files', () => {

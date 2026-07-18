@@ -56,6 +56,15 @@ export const GITHUB_WRITE_TOOLS = new Set([
 export interface PermissionCheck {
   toolName: string
   args: unknown
+  /**
+   * **Output** field, populated by the gate (never by the caller): the
+   * current-turn system-reminder block a `toolGate` hook injected (H2). The tool
+   * runner reads it back off the same check object after the gate and appends it
+   * to the tool's result, so the injected context reaches the model in the
+   * current turn. Absent unless a hook returned `injectContext` on an allowed
+   * (or approved-`ask`) gate.
+   */
+  injectContext?: string
 }
 
 export type ShellPermissionDecision =
@@ -476,8 +485,7 @@ export function isStructurallyReadOnlyMcpToolName(toolName: string | undefined):
 }
 
 export type McpPermissionDecision =
-  | { action: 'allow'; reasons: string[] }
-  | { action: 'prompt'; reasons: string[] }
+  { action: 'allow'; reasons: string[] } | { action: 'prompt'; reasons: string[] }
 
 export interface McpPermissionInput {
   /** Full tool name (`mcp__<server>__<tool>`), used for the structural read-only name check. */

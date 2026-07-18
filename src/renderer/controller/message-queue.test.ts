@@ -12,10 +12,12 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
+  continuationBudgetHeldNote,
   dispatchAgentRun,
   drainMessageQueue,
   enqueueHookMessage,
   enqueueUserMessage,
+  foldBackContinuationUsed,
   isHeldMessage,
   isStaleEpoch,
   movePendingUserMessagesToEnd,
@@ -28,6 +30,7 @@ import {
   startHumanTurnTree,
   updateQueuedMessageText,
 } from './message-queue.ts'
+import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
@@ -707,4 +710,243 @@ test('startHumanTurnTree: records a fresh current epoch on the thread (decision 
 
   assert.equal(getThread(store, threadId).currentEpoch, epoch)
   assert.equal(typeof epoch, 'string')
+})
+
+// --- C3 contract tests (unified auto-continuation budget) --------------------
+// Decision 5: budget-ledger increments; a machine follow-up over budget flips to
+// held; a human action resets the budget. See docs/plans/hooks-and-feature-packs.md.
+
+/** Set the thread's spent machine-turn count (decision 5 reference point). */
+function setContinuationUsed(
+  store: ReturnType<typeof createStore>,
+  threadId: string,
+  used: number,
+): void {
+  store.setState({
+    threads: store
+      .getState()
+      .threads.map((t) => (t.id !== threadId ? t : { ...t, continuationUsed: used })),
+  })
+}
+
+test('budget-ledger increments (decision 5): a machine-originated drain consumes one budget unit', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  const messageId = addMessage(store, threadId, 'user', 'hook follow-up')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'hook follow-up' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'e1',
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 1, 'a hook follow-up under budget auto-drains')
+  assert.equal(getThread(store, threadId).continuationUsed, 1, 'the machine turn is counted')
+})
+
+test('budget-ledger increments (decision 5): drain seeds the run payload with the spent count', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, 2)
+  setCurrentEpoch(store, threadId, 'tree-1')
+  const messageId = addMessage(store, threadId, 'user', 'hook follow-up')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'hook follow-up' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'tree-1',
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  const payload = JSON.parse(firstRun(api)[1]) as {
+    turnTreeId?: string
+    continuationBudgetUsed?: number
+  }
+  assert.equal(payload.turnTreeId, 'tree-1', 'the turn-tree epoch is threaded to main')
+  assert.equal(payload.continuationBudgetUsed, 3, 'seed reflects this drain (2 prior + 1)')
+})
+
+test('held-on-exhaustion (decision 5): a machine follow-up over budget flips to held + a visible note', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET) // budget exhausted
+  const messageId = addMessage(store, threadId, 'user', 'over-budget follow-up')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'over-budget follow-up' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'e1',
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 0, 'an over-budget machine follow-up must not auto-submit')
+  const thread = getThread(store, threadId)
+  const item = at(thread.pendingMessages ?? [], 0)
+  assert.equal(isHeldMessage(item), true, 'the over-budget follow-up is held')
+  assert.equal(
+    thread.messages.some((m) => m.role === 'error' && m.content === continuationBudgetHeldNote()),
+    true,
+    'a visible thread note explains the hold',
+  )
+})
+
+test('held-on-exhaustion (decision 5): a human item behind an over-budget machine item still drains', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
+  const hookId = addMessage(store, threadId, 'user', 'machine follow-up')
+  const humanId = addMessage(store, threadId, 'user', 'human prompt')
+  enqueueUserMessage(store, threadId, {
+    messageId: hookId,
+    payload: { content: 'machine follow-up' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'e1',
+  })
+  enqueueUserMessage(store, threadId, {
+    messageId: humanId,
+    payload: { content: 'human prompt' },
+    createdAt: 2,
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 1, 'the human prompt drains past the over-budget machine item')
+  assert.match(firstRun(api)[1], /human prompt/)
+  const thread = getThread(store, threadId)
+  assert.deepEqual(
+    thread.pendingMessages?.map((p) => p.messageId),
+    [hookId],
+    'the over-budget machine item stays queued, now held',
+  )
+  assert.equal(isHeldMessage(at(thread.pendingMessages ?? [], 0)), true)
+})
+
+test('budget (decision 5): a human-authored queued message never consumes budget', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, 3)
+  const messageId = addMessage(store, threadId, 'user', 'human follow-up')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'human follow-up' },
+    createdAt: 1,
+  })
+
+  drainMessageQueue(store, api, threadId)
+
+  assert.equal(api.runs.length, 1)
+  assert.equal(
+    getThread(store, threadId).continuationUsed,
+    3,
+    'a human message does not spend the machine-turn budget',
+  )
+})
+
+test('budget reset (decision 5): startHumanTurnTree resets continuationUsed to 0', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
+
+  startHumanTurnTree(store, threadId)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 0)
+})
+
+test('budget reset (decision 5): releaseHeldMessage resets the budget for the fresh turn tree', () => {
+  const store = createStore()
+  const api = fakeApi()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
+  setCurrentEpoch(store, threadId, 'epoch-stale')
+  const messageId = addMessage(store, threadId, 'user', 'held work')
+  enqueueUserMessage(store, threadId, {
+    messageId,
+    payload: { content: 'held work' },
+    createdAt: 1,
+    origin: HOOK_ORIGIN,
+    epoch: 'epoch-stale',
+    autoDispatch: false,
+  })
+
+  releaseHeldMessage(store, api, threadId, messageId)
+
+  assert.equal(api.runs.length, 1, 'release dispatches the held item')
+  // The budget reset to 0 for the fresh turn tree, then the released item drained
+  // as that tree's first machine turn (1 of a fresh 5) — down from the exhausted
+  // cap, so further follow-ups are allowed again instead of being held.
+  assert.equal(getThread(store, threadId).continuationUsed, 1)
+})
+
+test('run→drain fold-back (decision 5 / E3): folds the run in-run spend onto the same turn tree', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  setCurrentEpoch(store, threadId, 'tree-1')
+  setContinuationUsed(store, threadId, 1) // the renderer seeded 1 drain-time continuation
+
+  // The run spent 3 machine turns total (seed 1 + 2 in-run tighteners); fold back.
+  foldBackContinuationUsed(store, threadId, 'tree-1', 3)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 3)
+})
+
+test('run→drain fold-back is monotonic within a turn tree (never lowers the counter)', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  setCurrentEpoch(store, threadId, 'tree-1')
+  setContinuationUsed(store, threadId, 4)
+
+  foldBackContinuationUsed(store, threadId, 'tree-1', 2)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 4, 'a lower report never wins')
+})
+
+test('run→drain fold-back is dropped for a stale turn tree (decision 16)', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  // A human action since the run started minted a new epoch + reset the budget.
+  setCurrentEpoch(store, threadId, 'tree-2')
+  setContinuationUsed(store, threadId, 0)
+
+  foldBackContinuationUsed(store, threadId, 'tree-1', 3)
+
+  assert.equal(
+    getThread(store, threadId).continuationUsed,
+    0,
+    'a fold-back from the old turn tree must not clobber the reset',
+  )
+})
+
+test('run→drain fold-back applies via the thread-id fallback when no epoch was minted', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  // No currentEpoch: the run keyed its ledger by the thread id (main-process
+  // fallback), so a fold-back carrying that key is this thread's own spend.
+  setContinuationUsed(store, threadId, 0)
+
+  foldBackContinuationUsed(store, threadId, threadId, 2)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 2)
+})
+
+test('run→drain fold-back with a foreign key is dropped when no epoch was minted', () => {
+  const store = createStore()
+  const threadId = createThread(store)
+  setContinuationUsed(store, threadId, 0)
+
+  foldBackContinuationUsed(store, threadId, 'tree-other', 3)
+
+  assert.equal(getThread(store, threadId).continuationUsed, 0)
 })

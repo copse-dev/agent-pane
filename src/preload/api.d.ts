@@ -2,7 +2,7 @@ import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
-import type { HooksListResult } from '@shared/types/hooks.ts'
+import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -27,20 +27,14 @@ import type {
   StoredExtraProvider,
 } from '@copse/llm/extra-providers.ts'
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpModelSelector, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 
 export type { DetectedAcpAgent }
 
 /** Fixed cloud providers with a user-supplied API key (presets/customs use slugs). */
 export type ApiKeyProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'cursor'
-  | 'openrouter'
-  | 'mistral'
-  | 'gemini'
-  | 'deepseek'
+  'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'mistral' | 'gemini' | 'deepseek'
 
 export type { ExtraProvider, ExtraProviderModel, StoredExtraProvider }
 
@@ -62,7 +56,7 @@ export interface ApiClient {
   workspace: {
     open: () => Promise<string | null>
     get: () => Promise<string | null>
-    set: (root: string) => Promise<string>
+    set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
     onOpened: (handler: (root: string) => void) => () => void
@@ -150,6 +144,28 @@ export interface ApiClient {
     respond: (id: string, value: string) => Promise<void>
     onRequest: (
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
+    ) => () => void
+  }
+  sshWorkspace: {
+    listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
+    getStates: () => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    connect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    disconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    reconnect: (
+      hostId: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshConnectionState[]>
+    listDirectory: (
+      hostId: string,
+      dirPath: string,
+    ) => Promise<import('@shared/types/ssh-workspace.ts').SshRemoteDirEntry[]>
+    registerRoot: (hostId: string, dirPath: string) => Promise<string>
+    onConnectionChanged: (
+      handler: (states: import('@shared/types/ssh-workspace.ts').SshConnectionState[]) => void,
     ) => () => void
   }
   mcp: {
@@ -250,10 +266,11 @@ export interface ApiClient {
     /** Detect known ACP agents installed/running on this device (for the Settings panel). */
     detectAgents: () => Promise<DetectedAcpAgent[]>
     /**
-     * Probe a configured agent for the models it offers (spawns it, opens a
-     * throwaway session). `null` when the agent exposes no model selector.
+     * Probe a configured agent for the models and session (permission) modes it
+     * offers (spawns it, opens a throwaway session). Each selector is `null`
+     * when the agent exposes none of that kind (issue #607).
      */
-    listModels: (agentId: string) => Promise<AcpModelSelector | null>
+    probeAgent: (agentId: string) => Promise<AcpAgentProbe>
     /**
      * "Just works" setup for the curated presets (Claude, Cursor): detect
      * clients, Socket-Firewall-install missing npm adapters, register + detect
@@ -388,6 +405,7 @@ export interface ApiClient {
       prompt: string,
       notes?: string,
       issue?: string,
+      attachments?: { name: string; mimeType: string; dataUrl: string }[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote>
     update: (
       id: string,
@@ -395,7 +413,10 @@ export interface ApiClient {
       notes: string | undefined,
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
       issue?: string,
+      addAttachments?: { name: string; mimeType: string; dataUrl: string }[],
+      removeAttachmentIds?: string[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
+    attachmentData: (id: string, attachmentId: string) => Promise<string | null>
     delete: (id: string) => Promise<boolean>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{
@@ -408,6 +429,9 @@ export interface ApiClient {
     checkFit: (
       id: string,
     ) => Promise<import('../main/services/roadmap-fit-check.ts').RoadmapFitResult>
+    /** Subscribe to background roadmap changes (e.g. a complexity stamp landing
+     * after a save returned). Returns an unsubscribe function. */
+    onChanged: (handler: () => void) => () => void
   }
   skills: {
     list: () => Promise<SkillSummary[]>
@@ -417,6 +441,8 @@ export interface ApiClient {
   }
   hooks: {
     list: () => Promise<HooksListResult>
+    /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
+    test: (req: HookTestRequest) => Promise<HookTestResult>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
@@ -435,6 +461,8 @@ export interface ApiClient {
     /** Live +/- line totals across staged + unstaged changes, or null when clean. */
     changeStats: () => Promise<{ additions: number; deletions: number } | null>
     fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
+    /** Combined HEAD → working-tree diff for one file, or null when it matches HEAD. */
+    workingFileDiff: (path: string) => Promise<GitFileDiff | null>
     branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
     checkoutBranch: (branch: string) => Promise<void>
     listBranches: () => Promise<GitBranchInfo[]>

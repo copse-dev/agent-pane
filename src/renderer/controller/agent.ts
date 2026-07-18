@@ -17,6 +17,7 @@ import {
   setThreadTodos,
   setMessageReview,
   setThreadComparison,
+  addHookCard,
   getThreadById,
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
@@ -31,7 +32,7 @@ import {
 } from '@shared/store/subagent-helpers.ts'
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
-import { drainMessageQueue, enqueueHookMessage } from './message-queue.ts'
+import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 
@@ -324,6 +325,24 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (chunk.comparison.status === 'running') {
           store.emit('agent_activity', threadId, 'Comparing models…')
         }
+        break
+      }
+      case 'hook_run': {
+        // Anchor the hook card to the turn's live message so the hook-card
+        // family renders inline (decision 10). Prefer the current assistant
+        // message; fall back to the thread's last message (a hook can fire
+        // before the first assistant token, e.g. `beforeSubmitPrompt`). If the
+        // thread has no message yet, the card will fold from the spine on reload.
+        const anchorId = st.msgId ?? getThreadById(store, threadId)?.messages.at(-1)?.id ?? null
+        if (anchorId) addHookCard(store, anchorId, chunk.card)
+        activity(threadId)
+        break
+      }
+      case 'continuation_budget': {
+        // C3 run→drain fold-back (decision 5 / E3): record the machine turns this
+        // run spent in-process so the next queue drain respects the shared cap.
+        // Arrives just before `done`, which triggers the drain.
+        foldBackContinuationUsed(store, threadId, chunk.turnTreeId, chunk.used)
         break
       }
       case 'done': {

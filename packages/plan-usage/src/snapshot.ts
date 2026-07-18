@@ -3,7 +3,7 @@ import { fetchCodexPlanUsage, type CodexPlanUsageAuth } from './codex.ts'
 import { fetchCursorPlanUsage } from './cursor.ts'
 import { fetchHuggingFacePlanUsage } from './huggingface.ts'
 import { errorMessage } from './internal-utils.ts'
-import type { PlanUsageFetchOptions, PlanUsageSnapshot, ProviderPlanResult } from './types.ts'
+import type { PlanUsageFetchOptions, PlanUsageSnapshot } from './types.ts'
 
 export interface PlanUsageCredentials {
   /** Single token (also accepted via `claudeOAuthTokens`). */
@@ -48,12 +48,6 @@ export async function getPlanUsageSnapshot(
     // Defensive: individual fetchers already catch; this only fires if
     // Promise.all / credential plumbing itself blows up.
     const message = errorMessage(err)
-    const fallback: ProviderPlanResult[] = [
-      { status: 'error', provider: 'claude', message },
-      { status: 'error', provider: 'codex', message },
-      { status: 'error', provider: 'huggingface', message },
-      { status: 'error', provider: 'cursor', message },
-    ]
-    return { providers: fallback, checkedAt }
+    return { providers: [], checkedAt, error: message }
   }
 }

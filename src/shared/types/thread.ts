@@ -1,6 +1,8 @@
 import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
+import type { HookCard } from '../hooks/hook-card.ts'
+export type { HookCard } from '../hooks/hook-card.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
 // `@shared/types` consumers are unchanged.
@@ -158,6 +160,17 @@ export interface Thread {
    * so the staleness check (decision 16) has a reference point.
    */
   currentEpoch?: string
+  /**
+   * Machine-initiated new turns already spent in the current turn tree (decision
+   * 5, C3). Counts queue-drain continuations (hook send-now, stop / subagent
+   * follow-ups) as they auto-dispatch; when it reaches the cap
+   * (`DEFAULT_CONTINUATION_BUDGET`), `drainMessageQueue` flips a further
+   * machine-originated message to **held** instead of auto-submitting. Reset to 0
+   * when a human action (typed prompt / release) starts a fresh turn tree. The
+   * run seeds the main-process ledger with this so its in-run tighteners
+   * (closeout / pre-review / remediation) share one counter per turn tree.
+   */
+  continuationUsed?: number
   /** True while a queued message is being edited; suspends FIFO draining. */
   queuePaused?: boolean
   /** Unsubmitted composer text; keeps blank threads visible across switches. */
@@ -231,6 +244,26 @@ export interface Message {
    * (in position, one per reviewed turn) rather than as a single trailing card.
    */
   review?: ThreadReview
+  /**
+   * Provenance when this turn was started by a hook follow-up (decision 10). The
+   * message role stays `user` for the LLM; `origin` lives purely in the data
+   * model so the transcript can mark a hook-originated turn (a hook send-now /
+   * `stop`-follow-up that dispatched). Carried through the spine so the marker
+   * survives a reload (history stays honest about authorship). `editedByUser`
+   * flips `true` once a human edits a hook-queued message before it dispatches.
+   */
+  origin?: QueuedMessageOrigin
+  editedByUser?: boolean
+  /**
+   * Hook cards (executions / deny-ask decisions / halts) that fired during this
+   * message's turn (decision 10). **Display-only and derived** — populated at
+   * fold time from the thread's always-on spine `hook_run` records (decision 6)
+   * and appended live from the `hook_run` stream chunk. Never persisted via the
+   * message explode path: the spine's `hook_run` lines are the single source of
+   * truth, so this resolves purely from spine data (decision 17), never from live
+   * hook registration.
+   */
+  hookCards?: HookCard[]
   createdAt: number
 }
 

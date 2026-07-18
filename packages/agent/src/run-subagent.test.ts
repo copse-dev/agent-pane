@@ -235,6 +235,109 @@ describe('runSubagent', () => {
     assert.equal(start.session.kind, 'investigate_ci')
   })
 
+  // --- D1: subagentStart gate + subagentStop notification ---
+
+  it('subagentStart deny prevents the spawn — the loop never runs', async () => {
+    let streamCalled = false
+    const provider: LLMProvider = {
+      // eslint-disable-next-line require-yield
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalled = true
+        throw new Error('provider must not be called when the spawn is denied')
+      },
+    }
+    const chunks: AgentStreamChunk[] = []
+    const { summary, session } = await runSubagent({
+      provider,
+      prompt: 'Find auth code',
+      parentGoal: 'Explain auth',
+      tools: [],
+      parentToolCallId: 'parent-deny',
+      onSubagentChunk: (c) => chunks.push(c),
+      executeTool: async () => '',
+      kind: 'explore',
+      onSubagentStart: () => ({ denied: true, agentMessage: 'blocked by policy' }),
+    })
+
+    assert.equal(streamCalled, false)
+    assert.equal(session.status, 'error')
+    assert.equal(summary, 'blocked by policy')
+    // The subagent is surfaced as started-then-failed so the parent gets a result.
+    assert.ok(chunks.some((c) => c.type === 'subagent_error'))
+    assert.ok(chunks.some((c) => c.type === 'subagent_done'))
+  })
+
+  it('subagentStart allow proceeds to the normal run', async () => {
+    const { summary, session } = await runSubagent({
+      provider: mockProvider([[{ type: 'text', text: 'Allowed summary' }, { type: 'done' }]]),
+      prompt: 'q',
+      parentGoal: 'g',
+      tools: [],
+      parentToolCallId: 'parent-allow',
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+      onSubagentStart: () => ({ denied: false }),
+    })
+    assert.equal(session.status, 'done')
+    assert.equal(summary, 'Allowed summary')
+  })
+
+  it('fires subagentStop on completion with the subagent type + status', async () => {
+    const stops: Array<{ type: string; status: string }> = []
+    await runSubagent({
+      provider: mockProvider([[{ type: 'text', text: 'done' }, { type: 'done' }]]),
+      prompt: 'q',
+      parentGoal: 'g',
+      tools: [],
+      parentToolCallId: 'parent-stop',
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+      kind: 'investigate_ci',
+      onSubagentStop: (type, status) => stops.push({ type, status }),
+    })
+    assert.deepEqual(stops, [{ type: 'investigate_ci', status: 'completed' }])
+  })
+
+  it('fires subagentStop with status "error" when the run errors', async () => {
+    const stops: Array<{ type: string; status: string }> = []
+    const provider: LLMProvider = {
+      // eslint-disable-next-line require-yield
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        throw new Error('boom')
+      },
+    }
+    const { session } = await runSubagent({
+      provider,
+      prompt: 'q',
+      parentGoal: 'g',
+      tools: [],
+      parentToolCallId: 'parent-stop-err',
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+      onSubagentStop: (type, status) => stops.push({ type, status }),
+    })
+    assert.equal(session.status, 'error')
+    assert.deepEqual(stops, [{ type: 'explore', status: 'error' }])
+  })
+
+  it('does not fire subagentStop when the spawn was denied (no spawn ⇒ no stop)', async () => {
+    let stopFired = false
+    await runSubagent({
+      provider: mockProvider([[{ type: 'text', text: 'x' }, { type: 'done' }]]),
+      prompt: 'q',
+      parentGoal: 'g',
+      tools: [],
+      parentToolCallId: 'parent-deny-nostop',
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+      onSubagentStart: () => ({ denied: true }),
+      onSubagentStop: () => {
+        stopFired = true
+      },
+    })
+    assert.equal(stopFired, false)
+  })
+
   it('respects AbortSignal', async () => {
     const controller = new AbortController()
     controller.abort()
@@ -249,5 +352,22 @@ describe('runSubagent', () => {
       executeTool: async () => '',
     })
     assert.match(summary, /no summary|Exploration completed/)
+  })
+
+  it('words the empty-summary fallback for the session kind', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const { summary } = await runSubagent({
+      provider: mockProvider([[{ type: 'text', text: 'hi' }, { type: 'done' }]]),
+      prompt: 'Add the flag',
+      parentGoal: 'test',
+      tools: [],
+      parentToolCallId: 'parent-4',
+      signal: controller.signal,
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+      kind: 'delegate',
+    })
+    assert.equal(summary, 'Worker finished with no report.')
   })
 })
