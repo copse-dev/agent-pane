@@ -8,10 +8,11 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   AcpTurnFailure,
   buildAcpPrompt,
+  buildAcpPromptContent,
   isAcpConnectionDropped,
   isRetryableAcpError,
   isTransientProviderError,
-  listAcpModelsForAgent,
+  probeAcpAgentForSettings,
   permissionResponseFor,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
@@ -368,6 +369,54 @@ describe('buildAcpPrompt', () => {
   })
 })
 
+describe('buildAcpPromptContent', () => {
+  it('returns a single text block when images are not requested', () => {
+    const blocks = buildAcpPromptContent(
+      [
+        { type: 'text', text: 'describe this' },
+        { type: 'image', dataUrl: 'data:image/png;base64,abc123' },
+      ],
+      [],
+      { includeNotes: false },
+    )
+    assert.equal(blocks.length, 1)
+    const first = blocks[0]
+    assert.ok(first)
+    assert.equal(first.type, 'text')
+    assert.match(first.text, /describe this$/)
+  })
+
+  it('appends ACP image content blocks when includeImages is true (issue #831)', () => {
+    const blocks = buildAcpPromptContent(
+      [
+        { type: 'text', text: 'what is in this screenshot?' },
+        { type: 'image', dataUrl: 'data:image/png;base64,abc123' },
+        { type: 'image', dataUrl: 'data:image/jpeg;base64,def456' },
+      ],
+      [],
+      { includeNotes: false, includeImages: true },
+    )
+    assert.equal(blocks.length, 3)
+    assert.equal(blocks[0]?.type, 'text')
+    assert.deepEqual(blocks[1], { type: 'image', mimeType: 'image/png', data: 'abc123' })
+    assert.deepEqual(blocks[2], { type: 'image', mimeType: 'image/jpeg', data: 'def456' })
+  })
+
+  it('still produces a text block for image-only prompts when images are included', () => {
+    const blocks = buildAcpPromptContent(
+      [{ type: 'image', dataUrl: 'data:image/png;base64,onlyimg' }],
+      [],
+      { includeNotes: false, includeImages: true },
+    )
+    assert.equal(blocks.length, 2)
+    const first = blocks[0]
+    assert.ok(first)
+    assert.equal(first.type, 'text')
+    assert.equal(first.text, '')
+    assert.deepEqual(blocks[1], { type: 'image', mimeType: 'image/png', data: 'onlyimg' })
+  })
+})
+
 describe('ACP on SSH workspaces', () => {
   beforeEach(async () => {
     await setSetting('sshWorkspaceEnabled', true)
@@ -401,7 +450,7 @@ describe('ACP on SSH workspaces', () => {
       (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
     await assert.rejects(
-      () => listAcpModelsForAgent('cursor'),
+      () => probeAcpAgentForSettings('cursor'),
       (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
   })

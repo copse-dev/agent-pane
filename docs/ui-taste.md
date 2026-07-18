@@ -223,11 +223,49 @@ reachable without a crowded titlebar:
 - Titlebar keeps **Open in editor** + **Panel** labeled; secondary mode buttons (Terminal, Changes,
   PRs, Browser, …) become icon-only.
 - A labeled `.portrait-panel-bar` sits under `.input-footer` (between status and the stacked panel),
-  matching the Settings button height band and spanning the chat column.
+  matching the Settings button height band and spanning the chat column. Mount it on `.pane-chat`,
+  not inside the floating `#input-bar`, so it can dock to the actual thread/panel seam.
+- The whole mode strip uses one open-bottom outline, sized to the floating chat composer; individual
+  mode buttons stay unboxed. Give those buttons near-band-height hit targets and `--spacing-sm`
+  horizontal padding even though their visual treatment remains light. The strip rests directly on
+  the horizontal resizer, which is the sole one-pixel divider in the stacked layout — do not add a
+  second top border to `.pane-files`.
 - When the chat column is too narrow for every labeled mode, trailing buttons collapse into a `…`
   overflow menu (Panel stays visible; same idea as the footer compact overflow) rather than wrapping
   or scrolling. Spec:
   [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
+
+## Hook cards are a distinct card family — right-aligned, blue, not a user message
+
+Hook executions, deny/ask decisions, and halts (decision 10 of
+[`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md)) render as a tool-call-style
+card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css). Hard-won conventions:
+
+- **"Same blue" is the user-message accent, not a new hue.** Hook cards fill with `--accent-soft`
+  (the exact fill `.msg-user` uses) and a `color-mix(--accent …)` hairline. Reach for the existing
+  accent token — do **not** introduce a hook-specific colour. The zap glyph (`.hook-card-icon`) stays
+  `--accent` even when a status tints the row, so the family reads as one thing.
+- **Right-aligned means the host aligns, the card constrains its width.** `.hook-card-host` is a flex
+  column with `align-items: flex-end`; each `.hook-card` sets `max-width: min(80%, 460px)`. A
+  full-width card would not read as "right-aligned" no matter the `align-self`. This is what visually
+  separates hook cards (machine-side, right) from the left-flowing assistant/tool content.
+- **Render hook cards as the anchor message's next sibling, never nested in the bubble.** Hook runs
+  anchor to the message they fired within (the user turn that started them, since the assistant
+  message finalizes later — see `attachHookCards` in `fold.ts`). Nesting a blue card inside the
+  (also-blue) `.msg-user` bubble muddies both; the sibling `.hook-card-host` after the message keeps
+  the family distinct. This mirrors how inline review cards sit as `msgEl.after(card)`.
+- **Status tints the glyph + hairline, not the fill.** A blocking verdict (`deny` / `blocked` /
+  `error` / `halted`) turns the status icon + border `--error`; `ask` / `halt-suppressed` use
+  `--warning`; `allow` / `ok` use `--success`. The card keeps its blue family fill throughout — the
+  status is a signal, not a re-skin. A sandbox block or a function-hook throw always wins over a
+  printed verdict (a hook can't paint itself "allowed", F3 / decision 9).
+- **A hook-originated turn is marked, never disguised.** The message role stays `user` for the LLM,
+  but `.msg-hook-origin-marker` (a small `--accent` label: `Hook · <id> (<Event>)`) sits above the
+  body so it never reads as human-typed. A human edit surfaces an italic `edited` note — authorship
+  stays honest (decision 10). Cards + marker resolve purely from spine data (`Message.hookCards` /
+  `Message.origin`), never from live hook registration (decision 17), so history renders identically
+  to the live run. Spec: [`tests/e2e/hook-cards.e2e.ts`](../tests/e2e/hook-cards.e2e.ts); DOM in
+  [`src/renderer/views/hook-cards.test.ts`](../src/renderer/views/hook-cards.test.ts).
 
 ## Prove visual changes with a focused e2e eval
 

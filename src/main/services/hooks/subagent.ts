@@ -20,9 +20,9 @@
 // package stays Electron-free (execution-guidance rule 4): the pure loop calls
 // them, this host module owns discovery / dialects / dispatch.
 //
-// Cursor declares `subagentStart` / `subagentStop` (wired here); Claude has no
-// subagent-lifecycle hook, so no Claude hooks participate — matching the vendor
-// audit in docs/plans/hooks-and-feature-packs.md.
+// Cursor + Copse (F1) declare `subagentStart` / `subagentStop` (wired here);
+// Claude has no subagent-lifecycle hook, so no Claude hooks participate —
+// matching the vendor audit in docs/plans/hooks-and-feature-packs.md.
 import { errorMessage } from '@shared/errors.ts'
 import { HookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
@@ -32,8 +32,10 @@ import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts
 import type { RunSubagentOptions, SubagentStartDecision } from '@copse/agent/run-subagent.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSubagentStartHooks, cursorSubagentStopHooks } from './cursor-adapter.ts'
+import { copseSubagentStartHooks, copseSubagentStopHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { snapshotHookRunContext, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
+import { withRunDeadlinePaused } from './run-deadline.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
 import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -67,17 +69,26 @@ export async function runSubagentStartHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  const hooks = await cursorSubagentStartHooks(payload, discoverOpts)
+  const [cursorHooks, copseHooks] = await Promise.all([
+    cursorSubagentStartHooks(payload, discoverOpts),
+    copseSubagentStartHooks(payload, discoverOpts),
+  ])
+  const hooks = [...cursorHooks, ...copseHooks]
   if (hooks.length === 0) return { denied: false }
 
   const registry = new HookRegistry()
   for (const hook of hooks) registry.registerCommand(hook)
 
-  const { outcomes } = await registry.emit('subagentStart', payload, {
-    runCommandHook: createCommandHookRunner(),
-    ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
-  })
+  // H4 (decision 13): pause the run's idle deadline while the blocking spawn
+  // gate hooks are awaited. `subagentStart` fires inside the parent's tool
+  // execution (already paused); the reference-counted deadline composes safely.
+  const { outcomes } = await withRunDeadlinePaused(opts.agentSession?.conversationId, () =>
+    registry.emit('subagentStart', payload, {
+      runCommandHook: createCommandHookRunner(),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
+    }),
+  )
   const merged = mergeBlockingOutcomes(outcomes)
 
   // A `deny` decision (Cursor `permission: deny`/`ask`) or a `haltRun` blocks the
@@ -135,7 +146,11 @@ export async function runSubagentStopHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  const hooks = await cursorSubagentStopHooks(payload, discoverOpts)
+  const [cursorHooks, copseHooks] = await Promise.all([
+    cursorSubagentStopHooks(payload, discoverOpts),
+    copseSubagentStopHooks(payload, discoverOpts),
+  ])
+  const hooks = [...cursorHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()
@@ -153,7 +168,7 @@ export async function runSubagentStopHooks(
     // A `followup_message` outcome lands in the renderer's pending queue via this
     // sink (decision 4). The C3 budget consumes it at drain time; a stale-epoch
     // send-now is downgraded to held on the renderer side (decision 16).
-    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 

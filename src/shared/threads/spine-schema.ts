@@ -1,5 +1,6 @@
 import type {
   ModelUsage,
+  QueuedMessageOrigin,
   SubagentSession,
   Thread,
   ThreadReview,
@@ -49,6 +50,10 @@ export interface SpineToolCall {
   /** null when the tool produced no result; a ref (possibly to empty contents) otherwise. */
   result: ContentRef | null
   editStats?: { additions: number; deletions: number }
+  /** ACP tool-call kind (`'execute'`, `'read'`, …) from an external ACP agent. */
+  kind?: string
+  /** Render `result` as Markdown (external ACP agents author Markdown output). */
+  resultFormat?: 'markdown'
   subagent?: SpineSubagentRef
 }
 
@@ -87,6 +92,14 @@ export interface SpineMessageLine {
   model?: string
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
+  /**
+   * Hook provenance when this turn was started by a hook follow-up (decision
+   * 10). Persisted so the transcript can mark a hook-originated turn after a
+   * reload; `editedByUser` records that a human edited the hook's text before it
+   * dispatched (authorship stays honest). Absent = human-authored.
+   */
+  origin?: QueuedMessageOrigin
+  editedByUser?: boolean
   toolCalls: SpineToolCall[]
 }
 
@@ -100,6 +113,26 @@ export interface SpineHookRunDecision {
   permission?: 'allow' | 'deny' | 'ask'
   /** The hook asked to halt the whole run (`continue: false`). */
   haltRun?: boolean
+  /**
+   * A `haltRun` was routed through the run's abort path (H3, decision 12): the
+   * active turn tree was aborted, attributed to this hook. Set on the halt
+   * *effect* line the abort path records — distinct from `haltRun`, which only
+   * marks that a hook *asked* to halt.
+   */
+  haltApplied?: boolean
+  /**
+   * A `haltRun` was a **suppressed no-op** because it arrived stale — its
+   * emitting turn tree was no longer current (H3, decision 16). Recorded so a
+   * late async hook's suppressed stop is visible in the transcript rather than
+   * silent, and never mistaken for an applied halt.
+   */
+  haltSuppressedStale?: boolean
+  /**
+   * The halt reason the hook supplied (`continue: false` + `stopReason`), bounded
+   * for the spine. Carried on the halt effect line so a future hook card (G1) can
+   * render *why* the run stopped without re-reading the stdout blob.
+   */
+  stopReason?: string
   /** The hook rewrote the gated tool's input. */
   updatedInput?: boolean
   /** Character counts of text channels (full text: stdout blob / applied context). */
@@ -111,6 +144,21 @@ export interface SpineHookRunDecision {
    * `subagentStop`'s `followup_message`, routed to the pending-message queue).
    */
   queuedMessageChars?: number
+  /**
+   * Number of session-scoped env keys a `sessionStart` hook exported (H4;
+   * Cursor's `env` output). Recorded so an env-propagating session start is
+   * visible in the transcript — the values themselves stay in the stdout blob.
+   */
+  sessionEnvKeys?: number
+  /**
+   * The hook ran inside the project sandbox and was **blocked by it** (F3,
+   * decision 7): the OS seatbelt logged policy violations (or the sandbox
+   * wrapper failed to start), so the run is resolved as a failure per the hook's
+   * `onFailure` — never a silent fail-open that hides the block. Keyed off
+   * runner-side signals only (recorded violations / wrapper spawn failure), never
+   * the hook's own stdout (issue #104), so a hook cannot forge or hide it.
+   */
+  sandboxBlocked?: boolean
 }
 
 /**

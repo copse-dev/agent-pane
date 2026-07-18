@@ -42,6 +42,7 @@ import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorStopHooks } from './cursor-adapter.ts'
+import { copseStopHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import type { HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
@@ -108,10 +109,14 @@ export async function runStopHooks(
     workspaceRoot: opts.workspaceRoot,
     projectTrusted: opts.projectTrusted,
   }
-  // Cursor is the only dialect with a run-end hook wired; Claude's Stop is Phase
-  // D. Discovery is not gated on any abort signal — decision 3 says a `stop`
+  // Cursor + Copse (F1) declare a run-end hook; Claude's Stop is Phase D.
+  // Discovery is not gated on any abort signal — decision 3 says a `stop`
   // dispatched at turn end / abort runs to its own completion.
-  const hooks = await cursorStopHooks(payload, discoverOpts)
+  const [cursorHooks, copseHooks] = await Promise.all([
+    cursorStopHooks(payload, discoverOpts),
+    copseStopHooks(payload, discoverOpts),
+  ])
+  const hooks = [...cursorHooks, ...copseHooks]
   if (hooks.length === 0) return { ran: 0, settled: Promise.resolve() }
 
   const registry = new HookRegistry()
@@ -141,7 +146,7 @@ export async function runStopHooks(
     // the seam is live and epoch-tagged for the async function-hook events (and
     // C3) that produce follow-ups. A stale send-now is downgraded to held on the
     // renderer side (decision 16).
-    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 

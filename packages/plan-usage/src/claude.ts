@@ -2,6 +2,7 @@ import {
   clampPercent,
   CLAUDE_PROFILE_SCOPE_HINT,
   errorMessage,
+  isAuthRejectionError,
   isClaudeProfileScopeError,
   isRecord,
   readJsonBody,
@@ -19,6 +20,8 @@ const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 const CLAUDE_BETA = 'oauth-2025-04-20'
 /** Anthropic rate-limits bare User-Agents harder; mirror Claude Code's UA family. */
 const CLAUDE_USER_AGENT = 'claude-code/2.1.72'
+const CLAUDE_AUTH_REJECTED_HINT =
+  'Claude credentials were rejected. Re-run `claude /login` so Copse can read a fresh Claude OAuth login token.'
 
 /** Legacy flat keys — still present on older payloads, but often null now. */
 const LEGACY_WINDOW_SPECS = [
@@ -280,6 +283,9 @@ export async function fetchClaudePlanUsage(
     const message = errorMessage(err)
     if (isClaudeProfileScopeError(message)) {
       return { status: 'unavailable', provider: 'claude', reason: CLAUDE_PROFILE_SCOPE_HINT }
+    }
+    if (isAuthRejectionError(message)) {
+      return { status: 'unavailable', provider: 'claude', reason: CLAUDE_AUTH_REJECTED_HINT }
     }
     return { status: 'error', provider: 'claude', message }
   }

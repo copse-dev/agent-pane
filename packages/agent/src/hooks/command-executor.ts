@@ -66,6 +66,32 @@ export interface CommandHook<E extends HookEventName = HookEventName> {
    * Absent = the runner's default.
    */
   timeoutMs?: number
+  /**
+   * Whether the hook runs inside the project sandbox (decision 7). Hooks are
+   * **sandboxed by default** (`true`); the Copse dialect's per-hook
+   * `sandbox: false` is the escape. **F1 only parses / carries this field** —
+   * the sandbox-by-default spawn reversal + enforcement is F3, and the OS sandbox
+   * is macOS-only (a default, not a guarantee). Absent on dialects that do not
+   * express it (Cursor / Claude), which today spawn outside the sandbox until F3.
+   */
+  sandbox?: boolean
+  /**
+   * Whether the hook opted into **detached async** dispatch (decision 2). Only
+   * meaningful for canonical events whose default is blocking but that allow an
+   * async opt-in (`asyncOptIn`, e.g. `afterFileEdit`); the fire site partitions
+   * hooks by this flag, dispatching `async` ones through the detached executor
+   * (C1). Set by the Copse dialect's `async: true`; absent (blocking) otherwise.
+   */
+  async?: boolean
+  /**
+   * Per-script auto-continuation `loop_limit` (decision 5), tighten-only. Bounds
+   * *this hook's* machine-turn contributions to `min(loop_limit, global
+   * remaining)`; `null` (unlimited) is clamped to the global budget with a
+   * warning — human-in-the-loop is the floor (`clampLoopLimit`). **F1 parses /
+   * carries this field**; the drain-time budget enforcement lives on the C3
+   * ledger surface. Absent on dialects that do not express it.
+   */
+  loopLimit?: number | null
 }
 
 /**
@@ -90,6 +116,14 @@ export interface CommandHookResult {
    * protocol). Absent on blocking-event runs and notification-only completions.
    */
   queueMessage?: HookQueueMessage
+  /**
+   * Session-scoped environment variables a `sessionStart` command hook returned
+   * (H4). The async fire site (`emitAsync`) forwards this to `onAsyncOutcome` as
+   * the outcome's {@link AsyncHookOutcome.sessionEnv}, so the host collects it
+   * into the session env store for propagation to later hook spawns. Absent on
+   * every non-`sessionStart` run.
+   */
+  sessionEnv?: Record<string, string>
 }
 
 /**

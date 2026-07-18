@@ -345,21 +345,16 @@ export function createLmStudioSection(
     const lmUrl = urlInput.value.trim()
     const currentSafety = (await api.settings.get('safetyModel')) as string | undefined
     const currentExternalDeny = (await api.settings.get('safetyExternalDenyThreshold')) as
-      | number
-      | undefined
+      number | undefined
     const currentSafetyEnabled = (await api.settings.get('safetyClassifierEnabled')) as
-      | boolean
-      | undefined
+      boolean | undefined
     const currentAutoRun = (await api.settings.get('autoRunSandboxCommands')) as boolean | undefined
     const currentMcpAuto = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
     const currentReadonly = (await api.settings.get('defaultReadonlyMode')) as boolean | undefined
     const currentWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-      | string[]
-      | undefined
-      | null
+      string[] | undefined | null
     const currentWebApproval = (await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING)) as
-      | boolean
-      | undefined
+      boolean | undefined
     await api.settings.setSecurity({
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,

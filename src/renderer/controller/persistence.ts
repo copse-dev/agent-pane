@@ -264,6 +264,12 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
     store.on('context_updated', () => {
       schedule()
     }),
+    // A dismissed (or landed) comparison changes thread metadata with no other
+    // event in flight — e.g. dismissing a failed card on an idle thread — so it
+    // needs its own autosave trigger or the card resurrects on reload.
+    store.on('comparison_changed', () => {
+      schedule()
+    }),
     store.on('projects_changed', () => {
       projectsDirty = true
       schedule()

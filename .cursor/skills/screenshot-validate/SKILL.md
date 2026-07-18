@@ -20,12 +20,21 @@ visual change.
    - Sets mock LLM env in `beforeEach`: `COPSE_PANEL_MOCK_LLM=1`, empty API keys
    - Asserts DOM structure (counts, text, attributes) — not just screenshots.
    - Saves PNGs via `tests/e2e/helpers/screenshot.ts` (`saveAppScreenshot` / `saveElementScreenshot`) so committed reference shots share a fixed 1280×800 `#app` frame; use `browser.saveScreenshot` only when the whole OS window matters.
-5. **Run**:
+5. **Run** — Prefer remote e2e when a host is available or can be provisioned
+   (`.tmp/remote-e2e/host.json`, or `COPSE_CI_REGISTRY` + Scaleway creds; see AGENTS.md):
    ```bash
    npm run build
+   npm run e2e:remote -- run --spec tests/e2e/<your-spec>.e2e.ts --detach
+   npm run e2e:remote -- wait <run-id>
+   # optional: --apply-screenshots to copy pulled reference PNGs into tests/e2e/screenshots/
+   ```
+   Fall back to local only when remote is unavailable or you need macOS-specific behaviour:
+   ```bash
    npm run test:e2e -- --spec tests/e2e/<your-spec>.e2e.ts
    ```
-6. **Read the screenshots** — Open the PNG paths from the test and visually inspect layout, labels, and that injected-looking strings stayed plain text.
+6. **Read the screenshots** — Open the PNG paths from the test (or
+   `.tmp/remote-e2e/runs/<run-id>/`) and visually inspect layout, labels, and that
+   injected-looking strings stayed plain text.
 7. **Evaluate and report** — In your reply, state:
    - **Pass/fail** against the assertions
    - **Visual check** — what you see in each screenshot (structure intact, no stray elements, readable args)
@@ -39,7 +48,8 @@ and identify the lower-risk command that still exercised the changed rendering p
 - Mock LLM: `COPSE_PANEL_MOCK_LLM=1` with empty API keys.
 - User data: `~/.config/copse-panel/config.json` (Linux); use `resetUserData()` in tests.
 - Existing examples: `tests/e2e/tool-display.e2e.ts`, `tests/e2e/innerhtml-tool-args.e2e.ts`.
-- Full CI gate after renderer changes: `npm run check && npm run build && npm run test:e2e`.
+- Full CI gate after renderer changes: `npm run check && npm run build`, then remote
+  `e2e:remote -- run` (or local `test:e2e` if remote is unavailable).
 
 ## Example evaluation (innerHTML tool args)
 

@@ -8,6 +8,7 @@
 @import './global/conversation.css';
 @import './global/markdown.css';
 @import './global/tool-cards.css';
+@import './global/hook-cards.css';
 @import './global/input-bar.css';
 @import './global/welcome.css';
 @import './global/diff.css';

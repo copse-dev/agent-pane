@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { parseIssueRef } from '@shared/git/issue-ref.ts'
+import { ATTACHMENTS_FIELD, parseKnowledgeAttachments } from '@shared/knowledge/attachments.ts'
 import {
   addKnowledgeNote,
   getKnowledgeNote,
@@ -46,7 +47,12 @@ export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number]
 function formatItem(note: KnowledgeNote): string {
   const issue = note.fields['issue'] ? ` [${note.fields['issue']}]` : ''
   const notes = note.fields['notes'] ? `\n  notes: ${note.fields['notes']}` : ''
-  return `- [${note.id}] (${note.status ?? 'ready'})${issue} ${note.body}${notes}`
+  // Files/images attached via the Roadmap pane; payloads live next to the note
+  // (knowledge-attachments.ts) and flow into the composer on "Start thread".
+  const attached = parseKnowledgeAttachments(note.fields[ATTACHMENTS_FIELD])
+  const attachments =
+    attached.length > 0 ? `\n  attachments: ${attached.map((a) => a.name).join(', ')}` : ''
+  return `- [${note.id}] (${note.status ?? 'ready'})${issue} ${note.body}${notes}${attachments}`
 }
 
 export const roadmapPlanTool = defineTool({

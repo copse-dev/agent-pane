@@ -425,7 +425,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
-    listModels: (agentId: string) => ipcRenderer.invoke('acp:listModels', agentId),
+    probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probeAgent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:autoSetup'),
   },
   settings: {
@@ -496,21 +496,49 @@ contextBridge.exposeInMainWorld('api', {
   },
   roadmap: {
     list: () => ipcRenderer.invoke('roadmap:list'),
-    create: (prompt: string, notes?: string, issue?: string) =>
-      ipcRenderer.invoke('roadmap:create', prompt, notes, issue),
+    create: (
+      prompt: string,
+      notes?: string,
+      issue?: string,
+      attachments?: { name: string; mimeType: string; dataUrl: string }[],
+    ) => ipcRenderer.invoke('roadmap:create', prompt, notes, issue, attachments),
     update: (
       id: string,
       prompt: string,
       notes: string | undefined,
       status: string,
       issue?: string,
-    ) => ipcRenderer.invoke('roadmap:update', id, prompt, notes, status, issue),
+      addAttachments?: { name: string; mimeType: string; dataUrl: string }[],
+      removeAttachmentIds?: string[],
+    ) =>
+      ipcRenderer.invoke(
+        'roadmap:update',
+        id,
+        prompt,
+        notes,
+        status,
+        issue,
+        addAttachments,
+        removeAttachmentIds,
+      ),
+    attachmentData: (id: string, attachmentId: string) =>
+      ipcRenderer.invoke('roadmap:attachmentData', id, attachmentId),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
     openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
     checkFit: (id: string) => ipcRenderer.invoke('roadmap:checkFit', id),
+    // Fired when a background complexity stamp lands on a saved item.
+    onChanged: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('roadmap:changed', listener)
+      return (): void => {
+        ipcRenderer.off('roadmap:changed', listener)
+      }
+    },
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -520,6 +548,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
+    test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
   },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
@@ -555,6 +584,7 @@ contextBridge.exposeInMainWorld('api', {
     status: () => ipcRenderer.invoke('git:status'),
     changeStats: () => ipcRenderer.invoke('git:changeStats'),
     fileDiff: (path: string, staged: boolean) => ipcRenderer.invoke('git:fileDiff', path, staged),
+    workingFileDiff: (path: string) => ipcRenderer.invoke('git:workingFileDiff', path),
     branchStatus: (forBranch?: string) => ipcRenderer.invoke('git:branchStatus', forBranch),
     checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
     listBranches: () => ipcRenderer.invoke('git:listBranches'),
@@ -612,6 +642,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
+    },
+    requestAcpPackageInstallApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
   })
 }
