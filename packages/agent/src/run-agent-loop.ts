@@ -509,8 +509,7 @@ type ToolBatchContext = {
 const EXPLORE_PARALLELISM = 4
 
 type SettledToolExecution =
-  | { ok: true; value: string | ToolExecuteResult }
-  | { ok: false; error: unknown }
+  { ok: true; value: string | ToolExecuteResult } | { ok: false; error: unknown }
 
 /**
  * Pre-start the batch's leading run of consecutive `explore` calls so those
