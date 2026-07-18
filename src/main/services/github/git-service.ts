@@ -743,7 +743,7 @@ function normalizeGitDiffText(text: string): string {
  * or the working tree matches HEAD. Powers the file viewer's "Changes" view.
  */
 export async function getGitWorkingFileDiff(path: string): Promise<GitFileDiff | null> {
-  if (!isGitAvailable() || !(await isInsideGitWorkTree())) return null
+  if (!(await isGitAvailableForTarget()) || !(await isInsideGitWorkTree())) return null
   if (imageMimeType(path)) return null
 
   const before = normalizeGitDiffText((await readGitBlob('HEAD', path)).content)
