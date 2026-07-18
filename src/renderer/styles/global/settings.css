@@ -652,6 +652,40 @@ dialog.settings-overlay::backdrop {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Model value map (usage page) */
+.frontier-expand {
+  padding: 2px 10px;
+  margin-left: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.frontier-expand:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.frontier-expand-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  padding: 16px;
+  width: min(960px, 92vw);
+}
+.frontier-expand-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.frontier-expand-dialog button {
+  margin-top: 8px;
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
 .usage-period-btn {
   padding: 6px 12px;
   border-radius: var(--radius);

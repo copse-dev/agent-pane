@@ -368,7 +368,12 @@ export function renderFrontierSvg(
   // Deterministic: processed in y order.
   const labelText = new Map<string, string>()
   const labelY = new Map<string, number>()
-  const placed: Array<{ x0: number; x1: number; py: number }> = []
+  // Dots are obstacles too — a label must not sit under another point's mark.
+  const placed: Array<{ x0: number; x1: number; py: number }> = points.map((p) => ({
+    x0: x(p.costPerMTok) - 7,
+    x1: x(p.costPerMTok) + 7,
+    py: y(p.intellect) + 3,
+  }))
   for (const p of [...points].sort((a, b) => y(a.intellect) - y(b.intellect))) {
     const text = `${displayModelLabel(p.id)}${p.intellectEstimated ? ' (~)' : ''}${p.local ? ' · free' : ''}`
     labelText.set(p.id, text)
