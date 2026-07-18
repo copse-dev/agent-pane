@@ -322,6 +322,33 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('roadmap_reveal selects the item and opens its editor (quick-open palette)', async () => {
+    // The palette opens the pane (mode + pane state) before emitting the reveal,
+    // so mount inactive and flip both — mirroring navigateToRoadmapItem's order.
+    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
+    const { api } = makeApi([
+      makeItem('a', 'Refactor the settings dialog', 'ready'),
+      makeItem('b', 'Port e2e specs', 'blocked', 'waiting on PR #400'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      store.setState({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+      store.emit('files_pane_changed')
+      store.emit('right_panel_mode_changed')
+      store.emit('roadmap_reveal', 'b')
+      await flush()
+      const selected = list.querySelector('.roadmap-row.is-selected .roadmap-row-title')
+      assert.equal(selected?.textContent, 'Port e2e specs')
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.equal(prompt?.value, 'Port e2e specs')
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-form')?.hidden, false)
+    } finally {
+      unmount()
+    }
+  })
+
   it('opens an item in the editor, including notes and status', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api } = makeApi([makeItem('a', 'Do the thing', 'blocked', 'after #99 merges')])

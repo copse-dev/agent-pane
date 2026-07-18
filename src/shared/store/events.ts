@@ -28,6 +28,8 @@ export interface StoreEvents {
   right_panel_mode_changed: []
   // Request the Changes panel to reveal a specific workspace-relative file diff.
   git_change_navigate: [path: string]
+  // Request the Roadmap pane to select a specific item (quick-open palette hit).
+  roadmap_reveal: [itemId: string]
   browser_url_requested: [url: string]
   pr_open_requested: [owner: string, repo: string, number: number]
   // An MCP-UI artefact should be rendered in the canvas (Browser pane).

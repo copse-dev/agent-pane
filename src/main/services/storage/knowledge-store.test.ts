@@ -174,6 +174,26 @@ describe('knowledge-store', () => {
     assert.equal(loadKnowledgeNotes().length, 2)
   })
 
+  it('heals a hand-added note when loading with a type filter (slugified dir)', () => {
+    // The on-disk dir is the *slugified* type (`Roadmap` → `roadmap/`), so the
+    // typed orphan scan must compare against the slug, not the raw type name.
+    // Regression: scanNoteFiles('Roadmap') skipped `roadmap/` entirely, making
+    // hand-added roadmap notes invisible to roadmap.list (caught by the
+    // quick-open-palette e2e, which seeds bare OKF files with no index).
+    const dir = join(knowledgeDir(), 'roadmap')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(
+      join(dir, 'orphan-typed.md'),
+      '---\ntype: Roadmap\nid: orphan-typed\ntitle: "Orphan"\ntags: []\nstatus: ready\ncreatedAt: 2026-01-01T00:00:00.000Z\nupdatedAt: 2026-01-01T00:00:00.000Z\n---\n\nhand added\n',
+      'utf8',
+    )
+    const notes = loadKnowledgeNotes('Roadmap')
+    assert.deepEqual(
+      notes.map((n) => n.id),
+      ['orphan-typed'],
+    )
+  })
+
   it('survives a corrupt index by rebuilding from the note files', () => {
     const note = addKnowledgeNote({ type: 'Roadmap', title: 'Kept', body: 'a' })
     writeFileSync(join(knowledgeDir(), 'index.jsonl'), 'not json\n{bad\n', 'utf8')
