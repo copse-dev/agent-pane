@@ -4,12 +4,14 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ThreadCatalogHit } from '@shared/types'
-import { initMentionPicker, type AttachedThreadRef } from './mention-picker.ts'
+import {
+  initMentionPicker,
+  type AttachedShellRef,
+  type AttachedThreadRef,
+} from './mention-picker.ts'
 import type { ComposerTextInput } from './composer-editor.ts'
+import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 
-// The picker depends only on the textarea-shaped ComposerTextInput slice, so a
-// plain textarea behind that interface keeps this test focused on picker logic
-// (the real composer editor has its own unit + e2e coverage).
 function asTextInput(textarea: HTMLTextAreaElement): ComposerTextInput {
   return {
     el: textarea,
@@ -43,11 +45,19 @@ function hit(id: string, title: string, updatedAt = Date.now()): ThreadCatalogHi
   }
 }
 
-function fakeApi(threads: ThreadCatalogHit[], files: string[]): ApiClient {
+function fakeApi(
+  threads: ThreadCatalogHit[],
+  files: string[],
+  readTerminalEnabled = true,
+): ApiClient {
   return {
     threads: { catalog: async (): Promise<ThreadCatalogHit[]> => threads },
     index: { query: async (): Promise<string[]> => files },
     fs: { readFile: async (): Promise<string> => 'file body' },
+    settings: {
+      get: async (key: string): Promise<unknown> =>
+        key === 'readTerminalEnabled' ? readTerminalEnabled : null,
+    },
   } as unknown as ApiClient
 }
 
@@ -63,13 +73,16 @@ async function typeMention(textarea: HTMLTextAreaElement, text: string): Promise
   await flush()
 }
 
-describe('mention picker (files + threads, #644)', () => {
+describe('mention picker (files + threads + shells)', () => {
   let dispose: (() => void) | undefined
+  let unregisterCatalog: (() => void) | undefined
   let inputBar: HTMLElement = document.createElement('div')
 
   afterEach(() => {
     dispose?.()
     dispose = undefined
+    unregisterCatalog?.()
+    unregisterCatalog = undefined
     inputBar.remove()
   })
 
@@ -77,6 +90,8 @@ describe('mention picker (files + threads, #644)', () => {
     threads: ThreadCatalogHit[],
     files: string[],
     onAttachThread: (t: AttachedThreadRef) => void = () => {},
+    onAttachShell: (s: AttachedShellRef) => void = () => {},
+    readTerminalEnabled = true,
   ): HTMLTextAreaElement {
     const store = createStore({
       activeProjectId: 'p1',
@@ -92,9 +107,10 @@ describe('mention picker (files + threads, #644)', () => {
       input: asTextInput(textarea),
       inputBar,
       store,
-      api: fakeApi(threads, files),
+      api: fakeApi(threads, files, readTerminalEnabled),
       onAttach: () => {},
       onAttachThread,
+      onAttachShell,
     })
     return textarea
   }
@@ -114,7 +130,6 @@ describe('mention picker (files + threads, #644)', () => {
     assert.ok(threadRow.classList.contains('mention-item-thread'))
     assert.match(threadRow.textContent, /Auth refactor/)
     assert.equal(fileRow.textContent, 'src/a.ts')
-    // The active thread is never offered as a reference.
     assert.doesNotMatch(picker.textContent, /Current/)
   })
 
@@ -134,7 +149,69 @@ describe('mention picker (files + threads, #644)', () => {
     assert.equal(ref.threadId, 't1')
     assert.equal(ref.title, 'Auth refactor')
     assert.equal(ref.spinePath, '/chat/proj/t1/events.jsonl')
-    // The mention text (`@ref`) is stripped from the composer after selection.
     assert.doesNotMatch(textarea.value, /@ref/)
+  })
+
+  it('lists open shells and attaches a scrollback snapshot', async () => {
+    unregisterCatalog = registerShellCatalog(
+      () => [
+        {
+          tabId: 'tab-1',
+          sessionId: 'sess-1',
+          label: 'npm test',
+          scopeId: 'active',
+          active: true,
+        },
+      ],
+      () => 'PASS\n2 tests',
+    )
+    const attached: AttachedShellRef[] = []
+    const textarea = mount(
+      [],
+      ['src/a.ts'],
+      () => {},
+      (s) => attached.push(s),
+    )
+    await typeMention(textarea, '@shell')
+
+    const picker = inputBar.querySelector('.mention-picker')
+    assert.ok(picker)
+    const shellRow = picker.querySelector('.mention-item-shell')
+    assert.ok(shellRow)
+    assert.match(shellRow.textContent, /npm test/)
+
+    shellRow.dispatchEvent(new Event('mousedown'))
+    await flush()
+    assert.equal(attached.length, 1)
+    const shell = attached[0]
+    assert.ok(shell)
+    assert.equal(shell.label, 'npm test')
+    assert.equal(shell.content, 'PASS\n2 tests')
+  })
+
+  it('hides shells when readTerminalEnabled is off', async () => {
+    unregisterCatalog = registerShellCatalog(
+      () => [
+        {
+          tabId: 'tab-1',
+          sessionId: 'sess-1',
+          label: 'npm test',
+          scopeId: 'active',
+          active: true,
+        },
+      ],
+      () => 'out',
+    )
+    const textarea = mount(
+      [],
+      ['src/a.ts'],
+      () => {},
+      () => {},
+      false,
+    )
+    await typeMention(textarea, '@shell')
+    const picker = inputBar.querySelector('.mention-picker')
+    assert.ok(picker)
+    assert.equal(picker.querySelector('.mention-item-shell'), null)
   })
 })
