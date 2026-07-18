@@ -15,7 +15,7 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
-import { DEFAULT_ADVISOR_MODEL } from '../../main/services/advisor-strategy.ts'
+import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
   DEFAULT_COMPARISON_MODEL_B,
@@ -932,35 +932,38 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Let the agent get a best-fit model recommendation for a task
               </label>
               <p class="field-hint">
-                Adds a <code>suggest_model</code> tool that recommends a capability tier
-                (fast / balanced / frontier) and a representative model for a task, so cheap/fast
-                models handle trivial work and frontier models are reserved for the hard problems.
-                Advisory only — it does not switch the model in use. While off, the tool is not
-                registered.
+                Adds a <code>suggest_model</code> tool that places a task on the shared model
+                intellect scale (low / mid / top band — the same scale the advisor pairing uses) and
+                names a representative model, so cheap/fast models handle trivial work and
+                top-of-scale models are reserved for the hard problems. Advisory only — it does not
+                switch the model in use. While off, the tool is not registered.
               </p>
             </fieldset>
 
-            <fieldset>
+            <fieldset id="advisor-strategy-fieldset">
               <legend>Advisor strategy</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="advisorStrategyEnabled" />
                 Let the agent consult a larger advisor model mid-task
               </label>
               <p class="field-hint">
-                Adds a no-parameter <code>advisor</code> tool that forwards your full conversation
+                Adds an <code>advisor</code> tool that forwards your full conversation
                 transcript to a larger advisor model for strategic guidance, so the everyday loop can
                 run on a cheaper or on-device model while frontier intelligence is pulled in at the
-                moments that matter (planning, getting unstuck, final review). Shaped to match
-                Claude’s native advisor tool. While off, the tool is not registered.
+                moments that matter (planning, getting unstuck, final review). Runs client-side, so
+                any executor/advisor pairing works — ACP agents can sit on either side (as the
+                advisor, or as an executor consulting it through the native-tool bridge). While
+                off, the tool is not registered.
               </p>
               <label class="field-label" for="advisorModel">Advisor model</label>
               <select id="advisorModel" name="advisorModel">
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                Model used for advisor consultations. Pick a configured cloud provider; defaults to
+                Model used for advisor consultations. Any configured provider works; defaults to
                 <code>claude-opus-4-8</code>.
               </p>
+              <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>
             </fieldset>
 
             <fieldset>
@@ -1719,6 +1722,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshSources()
   })
 
+  // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
+  // (executor, advisor) pairing from the model capability annotations — cloud
+  // tiers and the local catalog — whenever either picker changes, so the user
+  // learns up front whether the advisor is actually stronger than the executor.
+  function updateAdvisorPairHint(): void {
+    const form = qsRequired<HTMLFormElement>(overlay, 'form')
+    const hint = qsRequired(overlay, '#advisorPairHint')
+    const executor = (form.elements.namedItem('model') as HTMLSelectElement).value
+    const advisor = (form.elements.namedItem('advisorModel') as HTMLSelectElement).value
+    if (!executor || !advisor) {
+      hint.hidden = true
+      return
+    }
+    const assessment = validateAdvisorPair(executor, advisor)
+    hint.textContent = assessment.reason
+    hint.setAttribute('data-level', assessment.level)
+    hint.hidden = false
+  }
+
   overlay.addEventListener('settings-open', () => {
     // A fresh open always starts on a section, never in a leftover search.
     searchContentLoaded = false
@@ -1770,6 +1792,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
+      updateAdvisorPairHint()
       const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
       await populateModelSelect(
         form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
@@ -1849,6 +1872,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   const settingsForm = overlay.querySelector('form')
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
+  settingsForm.addEventListener('change', (e) => {
+    const target = e.target
+    if (
+      target instanceof HTMLSelectElement &&
+      (target.name === 'model' || target.name === 'advisorModel')
+    ) {
+      updateAdvisorPairHint()
+    }
+  })
   settingsForm.addEventListener('submit', (e) => {
     e.preventDefault()
     void (async (): Promise<void> => {
