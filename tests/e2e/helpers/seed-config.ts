@@ -1309,6 +1309,52 @@ export function seedComparisonInlineFixture(workspaceRoot: string): void {
   })
 }
 
+export function seedComparisonErrorFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-comparison-error-project'
+  const threadId = 'e2e-comparison-error-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Failed comparison test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-comparison-error',
+            role: 'user',
+            content: 'Add a null check to the JSON parser.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-assistant-comparison-error',
+            role: 'assistant',
+            content: 'Added the null guard and a regression test for empty input.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+        ],
+        comparison: {
+          status: 'error',
+          models: { a: 'gpt-5', b: 'claude-opus-4-8', judge: 'claude-opus-4-8' },
+          reviewA: '',
+          reviewB: '',
+          synthesis: '',
+          error: 'Model comparison failed: spend approval declined.',
+        },
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now + 1,
+      },
+    ],
+  })
+}
+
 export function seedSubagentFixture(workspaceRoot: string): void {
   const projectId = 'e2e-subagent-project'
   const threadId = 'e2e-subagent-thread'

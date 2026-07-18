@@ -158,6 +158,30 @@
   opacity: 0.5;
   cursor: default;
 }
+/* Icon-only dismiss (×) on a failed comparison card. Claims the right edge when
+   it stands alone; sits flush after the retry button when both are present. */
+.card-dismiss-button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.card-retry-button + .card-dismiss-button {
+  margin-left: 0;
+}
+.card-dismiss-button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(127, 127, 127, 0.12));
+}
+.card-dismiss-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .review-panel-icon {
   display: inline-flex;
   align-items: center;
