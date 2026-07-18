@@ -139,9 +139,12 @@ describe('createIntellectFrontierPanel', () => {
       async () => verifiedFeed,
     )
     await panel.refresh()
-    assert.match(panel.root.textContent, /brand-new-model/)
+    // Verified attribution shows immediately; the uncurated model is discovery,
+    // revealed by the toggle.
     assert.match(panel.root.textContent, /verified against 2 curated anchors/)
     assert.match(panel.root.textContent, /Artificial Analysis/)
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')?.click()
+    assert.match(panel.root.textContent, /brand-new-model/)
 
     const renormed = createIntellectFrontierPanel(
       async () => [],
@@ -292,6 +295,9 @@ describe('createIntellectFrontierPanel', () => {
       }),
     )
     await panel.refresh()
+    // Discovery is opt-in: reveal the 60 uncurated models, then confirm the
+    // flood collapses to the frontier + a banded disclosure.
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')?.click()
     const svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
     // Far fewer plotted points than the feed carried: curated set + the live
@@ -300,9 +306,76 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(plotted < 30, `plotted ${String(plotted)}`)
     const details = panel.root.querySelector('details.frontier-dominated-live')
     assert.ok(details)
-    assert.match(details.textContent, /live-scored models are dominated/)
+    assert.match(details.textContent, /dominated/)
     // Verified-feed attribution still present.
     assert.match(panel.root.textContent, /verified against 2 curated anchors/)
+  })
+
+  it('hides discoverable models until the Discover toggle is pressed', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({
+        ok: true,
+        indexVersion: '4.1',
+        models: [
+          { id: 'claude-fable-5', intellect: 60 },
+          { id: 'claude-opus-4-8', intellect: 56 },
+          // Uncurated + cheaper-than-frontier: would extend the frontier if set up.
+          { id: 'cheap-smart-oss', intellect: 55, inputPricePerMTok: 0.2, outputPricePerMTok: 0.8 },
+        ],
+      }),
+    )
+    await panel.refresh()
+    const btn = panel.root.querySelector<HTMLButtonElement>('button.frontier-discover')
+    assert.ok(btn)
+    assert.equal(btn.hidden, false)
+    // Default: discovery model not plotted; a prompt says how many are available.
+    let svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.doesNotMatch(svg.textContent, /cheap-smart-oss/)
+    assert.match(panel.root.textContent, /1 more models are available via Artificial Analysis/)
+    // Toggle on: it plots (ghosted) and its tooltip frames it as a setup opportunity.
+    btn.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.match(svg.textContent, /cheap-smart-oss/)
+    const ghost = svg.querySelector('circle.frontier-point.discovery')
+    assert.ok(ghost)
+  })
+
+  it('shows plan badge and AA cost-per-task in the tooltip', async () => {
+    const svg = renderFrontierSvg(
+      [
+        {
+          id: 'plan-model',
+          intellect: 55,
+          costPerMTok: 0,
+          plan: 'Claude Max',
+          costPerTask: 1.8,
+          onFrontier: true,
+        },
+      ],
+      {},
+      {},
+      {
+        show(content) {
+          document.body.append(content)
+        },
+        hide() {},
+      },
+    )
+    // Plan badge ring is drawn.
+    assert.ok(svg.querySelector('circle.frontier-plan-badge'))
+    const hit = svg.querySelector('circle.frontier-hit')
+    assert.ok(hit)
+    hit.dispatchEvent(new window.MouseEvent('mouseenter'))
+    const card = document.body.querySelector('.frontier-tooltip-content')
+    assert.ok(card)
+    assert.match(card.textContent, /included in your plan/)
+    assert.match(card.textContent, /Claude Max/)
+    assert.match(card.textContent, /cost per Intelligence Index task: \$1\.8/)
+    card.remove()
   })
 
   it('expands into a larger dialog rendering of the same points and gutters', async () => {

@@ -275,15 +275,30 @@ export function pointTooltipContent(p: FrontierPoint): HTMLElement {
   }
 
   root.append(ttRow('tt-section', p.prices?.length ? 'Prices' : 'Price'))
-  root.append(
-    ttRow(
-      'tt-line',
-      p.local
-        ? 'free (runs on-device)'
-        : `${formatPrice(p.costPerMTok)} blended (80% in / 20% out)`,
-      ...(p.prices?.length ? [' — best offer, plotted'] : []),
-    ),
-  )
+  const priceLine = p.plan
+    ? el(
+        'span',
+        {},
+        el('strong', {}, 'included in your plan'),
+        ` (${p.plan}) — ~$0 marginal token cost`,
+      )
+    : p.local
+      ? el('span', {}, 'free (runs on-device)')
+      : el(
+          'span',
+          {},
+          `${formatPrice(p.costPerMTok)} blended (80% in / 20% out)`,
+          ...(p.prices?.length ? [' — best offer, plotted'] : []),
+        )
+  root.append(ttRow('tt-line', priceLine))
+  if (typeof p.costPerTask === 'number') {
+    root.append(
+      ttRow(
+        'tt-muted',
+        `Artificial Analysis cost per Intelligence Index task: $${String(Number(p.costPerTask.toFixed(2)))} (reflects verbosity, not just token price).`,
+      ),
+    )
+  }
   for (const offer of p.prices ?? []) {
     root.append(
       ttRow('tt-muted', `${displayModelLabel(offer.id)}: ${formatPrice(offer.costPerMTok)}`),
@@ -293,9 +308,13 @@ export function pointTooltipContent(p: FrontierPoint): HTMLElement {
   root.append(
     ttRow(
       'tt-status',
-      p.onFrontier
-        ? 'On the value frontier'
-        : `Dominated by ${displayModelLabel(p.dominatedBy ?? '?')}`,
+      p.discovery
+        ? p.onFrontier
+          ? 'Not configured — setting up a provider would put this ON your value frontier.'
+          : 'Not configured — available via Artificial Analysis if you set up a provider.'
+        : p.onFrontier
+          ? 'On the value frontier'
+          : `Dominated by ${displayModelLabel(p.dominatedBy ?? '?')}`,
     ),
   )
   return root
@@ -577,7 +596,8 @@ export function renderFrontierSvg(
     py: y(p.intellect) + 3,
   }))
   for (const p of labelledPoints.sort((a, b) => y(a.intellect) - y(b.intellect))) {
-    const text = `${displayModelLabel(p.id)}${p.quant ? ` @${p.quant}` : ''}${p.intellectEstimated ? ' (~)' : ''}${p.local ? ' · free' : ''}`
+    const suffix = p.plan ? ' · plan' : p.local ? ' · free' : ''
+    const text = `${displayModelLabel(p.id)}${p.quant ? ` @${p.quant}` : ''}${p.intellectEstimated ? ' (~)' : ''}${suffix}`
     labelText.set(p.id, text)
     const x0 = x(p.costPerMTok) + 8
     const x1 = x0 + approxLabelWidth(text)
@@ -596,12 +616,22 @@ export function renderFrontierSvg(
     labelY.set(p.id, py)
   }
 
-  // Points, with a larger transparent hit target and a native tooltip carrying
-  // the full derivation.
+  // Points, with a larger transparent hit target and a rich hover card.
   for (const p of points) {
     const cx = String(x(p.costPerMTok))
     const cy = String(y(p.intellect))
     const emphasis = p.onFrontier ? 'var(--accent)' : 'var(--border-strong)'
+    // Discovery points (not configured) are ghosted so they read as "could
+    // set up" rather than "have"; hollow marks estimated, plan points get a
+    // ring badge (drawn below).
+    const cls = [
+      'frontier-point',
+      p.intellectEstimated ? 'estimated' : '',
+      p.discovery ? 'discovery' : '',
+      p.plan ? 'plan' : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
     const dot = p.intellectEstimated
       ? svgEl('circle', {
           cx,
@@ -610,15 +640,31 @@ export function renderFrontierSvg(
           fill: 'var(--bg-base)',
           stroke: emphasis,
           'stroke-width': '2',
-          class: 'frontier-point estimated',
+          ...(p.discovery ? { 'stroke-dasharray': '2 2', opacity: '0.7' } : {}),
+          class: cls,
         })
       : svgEl('circle', {
           cx,
           cy,
           r: '5',
           fill: emphasis,
-          class: 'frontier-point',
+          ...(p.discovery ? { opacity: '0.55' } : {}),
+          class: cls,
         })
+    if (p.plan) {
+      svg.append(
+        svgEl('circle', {
+          cx,
+          cy,
+          r: '8',
+          fill: 'none',
+          stroke: 'var(--accent)',
+          'stroke-width': '1',
+          'stroke-dasharray': '1 2',
+          class: 'frontier-plan-badge',
+        }),
+      )
+    }
     const hit = svgEl('circle', { cx, cy, r: '11', fill: 'transparent', class: 'frontier-hit' })
     if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p))
     else hit.append(svgEl('title', {}, tooltipFor(p)))
@@ -978,7 +1024,25 @@ export function createIntellectFrontierPanel(
   const compositeHost = el('div', { class: 'frontier-composite-strip' })
   let lastPoints: FrontierPoint[] = []
   let lastGutters: FrontierGutters = {}
-  const expandBtn = el('button', { type: 'button', class: 'frontier-expand' }, 'Expand')
+  // Fetched inputs, cached so the Discover toggle re-renders without refetching.
+  let state: {
+    localIds: string[]
+    extraProviders: readonly ExtraProvider[]
+    live: ReturnType<typeof liveIntellectCandidates>
+    liveFetch: LiveModelsFetch
+  } | null = null
+  let discover = false
+
+  const discoverBtn = el('button', { type: 'button', class: 'frontier-btn frontier-discover' })
+  discoverBtn.addEventListener('click', () => {
+    discover = !discover
+    render()
+  })
+  const expandBtn = el(
+    'button',
+    { type: 'button', class: 'frontier-btn frontier-expand' },
+    'Expand',
+  )
   expandBtn.addEventListener('click', () => {
     if (lastPoints.length === 0) return
     const dialog = el('dialog', { class: 'frontier-expand-dialog' })
@@ -1004,13 +1068,15 @@ export function createIntellectFrontierPanel(
       'p',
       { class: 'settings-fieldset-desc' },
       'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived. ',
+      discoverBtn,
+      ' ',
       expandBtn,
     ),
     chartHost,
     el(
       'p',
       { class: 'field-hint frontier-legend' },
-      'Filled accent = on the frontier · grey = dominated (better value exists at its level) · hollow ring / (~) = estimated value — hover any point for exactly how its number was derived.',
+      'Filled accent = on the frontier · grey = dominated (better value exists at its level) · hollow ring / (~) = estimated value · faded = discoverable (set up a provider to use) · dashed ring = included in your plan — hover any point for exactly how its number was derived.',
     ),
     liveNotes,
     compositeHost,
@@ -1040,6 +1106,16 @@ export function createIntellectFrontierPanel(
     // matches the canonical one (when declared) AND its values agree with our
     // curated anchors — a renormalised feed must never share the axis.
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion)
+    state = { localIds, extraProviders, live, liveFetch }
+    render()
+  }
+
+  function render(): void {
+    if (!state) return
+    const { localIds, extraProviders, live, liveFetch } = state
+    discoverBtn.hidden = live.candidates.length === 0
+    discoverBtn.textContent = discover ? 'Hide discoverable' : 'Discover models'
+    discoverBtn.classList.toggle('active', discover)
     const liveNoteParts: Array<string | HTMLElement> = []
     if (liveFetch.models.length > 0 && live.verification.verified) {
       liveNoteParts.push(
@@ -1109,17 +1185,21 @@ export function createIntellectFrontierPanel(
     const livePricedCurated = live.pricedCurated.filter(
       (c) => !coveredResolved.has(c.id) && getModelInfo(c.id) === null,
     )
+    // Discovery models (uncurated live) join the frontier computation only when
+    // the Discover toggle is on — so by default the map shows what the user can
+    // actually route to, and the toggle overlays what they could set up.
+    const discoveryCandidates = discover ? live.candidates : []
     const allPoints = frontierForKnownModels([
       ...baseCandidates,
-      ...live.candidates,
       ...livePricedCurated,
+      ...discoveryCandidates,
     ])
     // A verified feed can carry a hundred-plus priced models; the map's job is
     // the frontier, so dominated LIVE points collapse into a disclosure rather
     // than each claiming a labelled dot. Curated/local/provider points always
     // plot — the user chose to hold those. Dropping dominated points cannot
     // change the frontier.
-    const liveIds = new Set(live.candidates.map((c) => c.id))
+    const liveIds = new Set(discoveryCandidates.map((c) => c.id))
     const dominatedLive = allPoints.filter((p) => liveIds.has(p.id) && !p.onFrontier)
     const points = allPoints.filter((p) => !liveIds.has(p.id) || p.onFrontier)
     const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
@@ -1128,7 +1208,17 @@ export function createIntellectFrontierPanel(
       unpriced: unpricedCanonicalModels(plottedIds, live.hintOnly),
       unscored: unscoredPricedModels(extraProviders),
     }
-    if (dominatedLive.length > 0) {
+    // When discovery is OFF, tell the user how many models the toggle reveals.
+    if (!discover && live.candidates.length > 0) {
+      liveNoteParts.push(
+        el(
+          'span',
+          {},
+          `${String(live.candidates.length)} more models are available via Artificial Analysis — press “Discover models” to overlay where they'd sit on your frontier. `,
+        ),
+      )
+    }
+    if (discover && dominatedLive.length > 0) {
       liveNoteParts.push(
         el(
           'details',
@@ -1136,7 +1226,7 @@ export function createIntellectFrontierPanel(
           el(
             'summary',
             {},
-            `${String(dominatedLive.length)} live-scored models are dominated (better value exists at their level)`,
+            `${String(dominatedLive.length)} discoverable models are dominated (not worth setting up — better value already on your frontier)`,
           ),
           renderBandedModelList(
             dominatedLive.map((p) => ({

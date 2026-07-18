@@ -45,6 +45,16 @@ export interface FrontierCandidate {
    * price; these surface in the tooltip.
    */
   prices?: ReadonlyArray<{ id: string; costPerMTok: number }>
+  /**
+   * A model the user can't route to today — available via Artificial Analysis
+   * but needing a provider set up. Plotted only when discovery is toggled on,
+   * and styled distinctly.
+   */
+  discovery?: boolean
+  /** Covered by a subscription (e.g. "Claude Max"): ~$0 marginal, fixed fee. */
+  plan?: string
+  /** AA's own cost-per-Intelligence-Index-task in USD, when the feed carries it. */
+  costPerTask?: number
 }
 
 export interface FrontierPoint extends FrontierCandidate {

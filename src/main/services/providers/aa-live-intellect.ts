@@ -34,7 +34,13 @@ interface AaApiModel {
     artificial_analysis_intelligence_index?: number
     artificial_analysis_intelligence_index_version?: string | number
   }
-  pricing?: { price_1m_input_tokens?: number; price_1m_output_tokens?: number }
+  pricing?: {
+    price_1m_input_tokens?: number
+    price_1m_output_tokens?: number
+    /** AA's cost to run the Intelligence Index once, in USD. */
+    price_per_intelligence_index_task?: number
+    cost_per_task?: number
+  }
 }
 
 /**
@@ -77,6 +83,10 @@ function reduceModel(api: AaApiModel): LiveAaModel | null {
   if (typeof input === 'number' && Number.isFinite(input)) {
     model.inputPricePerMTok = input
     if (typeof output === 'number' && Number.isFinite(output)) model.outputPricePerMTok = output
+  }
+  const perTask = api.pricing?.price_per_intelligence_index_task ?? api.pricing?.cost_per_task
+  if (typeof perTask === 'number' && Number.isFinite(perTask) && perTask > 0) {
+    model.costPerTask = perTask
   }
   return model
 }

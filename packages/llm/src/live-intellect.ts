@@ -38,6 +38,8 @@ export interface LiveAaModel {
   /** AA-reported USD per MTok, when present — the cost axis for uncurated models. */
   inputPricePerMTok?: number
   outputPricePerMTok?: number
+  /** AA's own cost per Intelligence Index task in USD, when the feed carries it. */
+  costPerTask?: number
 }
 
 export interface LiveCohortVerification {
@@ -171,6 +173,7 @@ export function liveIntellectCandidates(
         intellect: curated.value,
         intellectEstimated: curated.estimated === true,
         costPerMTok: price,
+        ...(typeof live.costPerTask === 'number' ? { costPerTask: live.costPerTask } : {}),
       })
       continue
     }
@@ -180,6 +183,9 @@ export function liveIntellectCandidates(
         intellect: live.intellect,
         intellectEstimated: true,
         costPerMTok: price,
+        // Uncurated = the user can't route to it without setting up a provider.
+        discovery: true,
+        ...(typeof live.costPerTask === 'number' ? { costPerTask: live.costPerTask } : {}),
       })
     } else {
       hintOnly.push({ id: live.id, intellect: live.intellect })
