@@ -56,7 +56,16 @@ export function repoRootsFromGitDirs(findOutput: string): string[] {
   return [...roots]
 }
 
-const GIT_CMD_OPTS = { unsandboxed: true, timeout_ms: 60_000, lowPriority: true } as const
+// Cap stdout: `git status --ignored` / the repo-scan `find` can list the entire
+// ignored tree (all of node_modules, dist*, build output) — tens of MB — but we
+// only collapse it to a handful of directory-name patterns, so an 8 MB sample is
+// plenty. Without a cap the full list is buffered and re-scanned per chunk.
+const GIT_CMD_OPTS = {
+  unsandboxed: true,
+  timeout_ms: 60_000,
+  lowPriority: true,
+  stdoutMaxBytes: 8 * 1024 * 1024,
+} as const
 
 /** Discover every git repo under the workspace (the root, plus embedded repos). */
 async function findGitRepos(workspaceRoot: string): Promise<string[]> {
