@@ -969,6 +969,14 @@ export function mountRoadmapPane(
     api.roadmap.onChanged(() => {
       if (roadmapModeActive(store)) void refresh({ preserveDirty: true })
     }),
+    // The quick-open palette (Cmd/Ctrl+P) lands here after opening the pane:
+    // select the chosen item and load fresh so its editor shows immediately.
+    store.on('roadmap_reveal', (itemId) => {
+      selectedId = itemId
+      creating = false
+      importing = false
+      void refresh()
+    }),
     store.on('workspace_changed', () => {
       // The roadmap is per-project; drop the previous workspace's selection.
       selectedId = null

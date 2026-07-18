@@ -76,3 +76,33 @@
   color: var(--text-muted);
   font-size: var(--font-size-sm);
 }
+
+/* Section header splitting the file matches from the roadmap matches. */
+.file-search-section {
+  padding: var(--spacing-sm) var(--spacing-sm) 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.file-search-roadmap-icon {
+  color: var(--text-muted);
+}
+.file-search-roadmap-svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Roadmap rows: title fills the row, status badge hugs the right edge. */
+.file-search-roadmap-item .file-search-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-search-roadmap-item .roadmap-status-badge {
+  align-self: center;
+  flex-shrink: 0;
+}
