@@ -34,6 +34,7 @@ import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSubagentStartHooks, cursorSubagentStopHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { snapshotHookRunContext, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
+import { withRunDeadlinePaused } from './run-deadline.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
 import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -73,11 +74,16 @@ export async function runSubagentStartHooks(
   const registry = new HookRegistry()
   for (const hook of hooks) registry.registerCommand(hook)
 
-  const { outcomes } = await registry.emit('subagentStart', payload, {
-    runCommandHook: createCommandHookRunner(),
-    ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
-  })
+  // H4 (decision 13): pause the run's idle deadline while the blocking spawn
+  // gate hooks are awaited. `subagentStart` fires inside the parent's tool
+  // execution (already paused); the reference-counted deadline composes safely.
+  const { outcomes } = await withRunDeadlinePaused(opts.agentSession?.conversationId, () =>
+    registry.emit('subagentStart', payload, {
+      runCommandHook: createCommandHookRunner(),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
+    }),
+  )
   const merged = mergeBlockingOutcomes(outcomes)
 
   // A `deny` decision (Cursor `permission: deny`/`ask`) or a `haltRun` blocks the

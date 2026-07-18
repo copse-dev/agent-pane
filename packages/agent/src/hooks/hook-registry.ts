@@ -395,12 +395,20 @@ export class HookRegistry {
               // uses, never a bespoke protocol. A notification-only completion
               // (Cursor `stop`) carries none, so its result is dropped.
               const result = await runner.run(hook, payload, hookContext)
-              if (result.queueMessage && onAsyncOutcome) {
+              // An async command hook's actionable outputs off the critical path:
+              // a queued follow-up (D1 `subagentStop`) and/or session env (H4
+              // `sessionStart`'s `env`). Either routes through the same
+              // `onAsyncOutcome` → host sink; a notification-only completion
+              // carries neither, so nothing is reported.
+              if ((result.queueMessage || result.sessionEnv) && onAsyncOutcome) {
                 onAsyncOutcome({
                   event,
                   hookId: hook.id,
                   turnTreeId,
-                  outcome: { queueMessage: result.queueMessage },
+                  outcome: {
+                    ...(result.queueMessage ? { queueMessage: result.queueMessage } : {}),
+                    ...(result.sessionEnv ? { sessionEnv: result.sessionEnv } : {}),
+                  },
                 })
               }
             },

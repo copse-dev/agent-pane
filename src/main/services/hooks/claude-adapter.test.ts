@@ -4,12 +4,16 @@ import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  claudeAdapter,
   claudeMatcherMatches,
+  claudeSessionStartHooks,
   listClaudeHooks,
   userClaudeSettingsPath,
   projectClaudeSettingsPath,
   projectClaudeLocalSettingsPath,
+  CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
 } from './claude-adapter.ts'
+import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
 import { runToolGateHooks } from './tool-gate.ts'
 import { resetCursorHookSessionErrorsForTest } from './cursor-adapter.ts'
 
@@ -241,6 +245,75 @@ describe('claude-adapter', () => {
       })
 
       assert.equal((await gate('read_file', { path: 'a.ts' })).permission, 'allow')
+    })
+  })
+
+  // H4 (B4 readiness): SessionStart is the one Claude agent-session event that
+  // carries an **optional `model`**. It is discovered + marshalled fire-and-forget.
+  describe('sessionStart (H4)', () => {
+    const SESSION_HOOK: CommandHook<'sessionStart'> = {
+      id: 'ss',
+      event: 'sessionStart',
+      executor: 'command',
+      dialect: 'claude',
+      command: './ss.sh',
+      onFailure: 'open',
+    }
+
+    it('discovers a SessionStart hook (matching the `startup` source)', async () => {
+      await writeUserSettings({
+        hooks: { SessionStart: [{ hooks: [{ type: 'command', command: './ss.sh' }] }] },
+      })
+      const hooks = await claudeSessionStartHooks(
+        { firstTurn: true },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+      assert.equal(hooks.length, 1)
+      const [hook] = hooks
+      assert.ok(hook)
+      assert.equal(hook.event, 'sessionStart')
+      assert.equal(hook.timeoutMs, CLAUDE_DEFAULT_HOOK_TIMEOUT_MS)
+    })
+
+    it('skips a SessionStart hook whose matcher source excludes `startup`', async () => {
+      await writeUserSettings({
+        hooks: {
+          SessionStart: [{ matcher: 'resume', hooks: [{ type: 'command', command: './ss.sh' }] }],
+        },
+      })
+      const hooks = await claudeSessionStartHooks(
+        { firstTurn: true },
+        { workspaceRoot: null, projectTrusted: false },
+      )
+      assert.equal(hooks.length, 0)
+    })
+
+    it('marshals the optional `model` only when the session resolved one', () => {
+      const marshal = claudeAdapter.marshalSessionStartRequest?.bind(claudeAdapter)
+      assert.ok(marshal)
+      const withModel = marshal(
+        SESSION_HOOK,
+        { firstTurn: true },
+        {
+          conversationId: 'c1',
+          generationId: 'g1',
+          model: { model: 'claude-sonnet-4', modelId: 'claude-sonnet-4', modelParams: [] },
+        },
+      ) as Record<string, unknown>
+      assert.equal(withModel['hook_event_name'], 'SessionStart')
+      assert.equal(withModel['source'], 'startup')
+      assert.equal(withModel['session_id'], 'c1')
+      assert.equal(withModel['model'], 'claude-sonnet-4')
+
+      const withoutModel = marshal(
+        SESSION_HOOK,
+        { firstTurn: true },
+        {
+          conversationId: 'c1',
+          generationId: 'g1',
+        },
+      ) as Record<string, unknown>
+      assert.equal('model' in withoutModel, false)
     })
   })
 })

@@ -37,7 +37,17 @@ import type {
   DialectDiscoverOpts,
   DialectInterpretation,
 } from './dialect-adapter.ts'
-import { DEFAULT_HOOK_TIMEOUT_MS, type HookSpawnResult } from './hook-spawn.ts'
+import { type HookSpawnResult } from './hook-spawn.ts'
+
+/**
+ * Cursor's per-hook timeout default (decision 13; H4). Cursor's own docs give a
+ * **30s** platform default for hooks (overridable per hook via the `timeout`
+ * field, in seconds — https://cursor.com/docs/hooks). Copse historically pinned
+ * a fixed 5s, which decision 13 flags as too short to survive real hooks; H4
+ * adopts the vendor default. Kept as a module variable so tests can shorten it
+ * to exercise the timeout failure mode without a 30s wall-clock wait.
+ */
+export const CURSOR_DEFAULT_HOOK_TIMEOUT_MS = 30_000
 
 /** A parsed hook command together with the config that declared it. */
 interface DiscoveredCursorHook {
@@ -49,6 +59,13 @@ interface DiscoveredCursorHook {
   scope: CursorHookScope
   /** Cursor `failClosed: true` — crash / timeout / invalid JSON blocks instead of allowing. */
   failClosed: boolean
+  /**
+   * Per-hook `timeout` override in **milliseconds** (decision 13; H4). Parsed
+   * from the entry's `timeout` field (a number of **seconds**, the Cursor wire
+   * unit). Absent = the dialect default {@link CURSOR_DEFAULT_HOOK_TIMEOUT_MS}
+   * (or the test override); present = this hook's own timeout takes precedence.
+   */
+  timeoutMs?: number
   /**
    * Optional path/glob matcher for `afterFileEdit` (B2). Cursor's native
    * `afterFileEdit` has no declared per-hook path matcher — the vendor pattern
@@ -108,6 +125,17 @@ function normalizeGlobField(value: unknown): string[] | undefined {
   const raw = typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
   const globs = raw.filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
   return globs.length > 0 ? globs : undefined
+}
+
+/**
+ * Normalize a hook entry's `timeout` field (decision 13; H4) to milliseconds.
+ * Cursor's wire unit is **seconds** (a number), so a valid positive, finite
+ * value is multiplied by 1000. Anything else (missing, non-number, ≤ 0, NaN)
+ * yields undefined so the hook falls back to the dialect default.
+ */
+function normalizeTimeoutField(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+  return Math.round(value * 1000)
 }
 
 /** One parsed config: usable hooks plus per-entry authoring warnings. */
@@ -182,6 +210,7 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
         typeof matcherRaw === 'string' && matcherRaw.trim().length > 0
           ? matcherRaw.trim()
           : undefined
+      const timeoutMs = normalizeTimeoutField((entry as { timeout?: unknown }).timeout)
       out.push({
         event,
         command: command.trim(),
@@ -191,6 +220,7 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
         failClosed,
         ...(glob ? { glob } : {}),
         ...(matcher ? { matcher } : {}),
+        ...(timeoutMs !== undefined ? { timeoutMs } : {}),
       })
     })
   }
@@ -239,11 +269,11 @@ export function resetCursorHookSessionErrorsForTest(): void {
  * this configurable per hook). Kept as a module variable so tests can shorten it
  * to exercise the timeout failure mode without a 5s wall-clock wait.
  */
-let cursorHookTimeoutMs = DEFAULT_HOOK_TIMEOUT_MS
+let cursorHookTimeoutMs = CURSOR_DEFAULT_HOOK_TIMEOUT_MS
 
 /** Test-only: override the Cursor per-hook timeout, or reset to the default when omitted. */
 export function setCursorHookTimeoutForTest(ms?: number): void {
-  cursorHookTimeoutMs = ms ?? DEFAULT_HOOK_TIMEOUT_MS
+  cursorHookTimeoutMs = ms ?? CURSOR_DEFAULT_HOOK_TIMEOUT_MS
 }
 
 /** Diagnostics / Settings → Sources — discovered Cursor hooks, regardless of enablement. */
@@ -410,6 +440,11 @@ function cursorMatcherSubject(event: CursorHookEvent, ctx: CursorMatcherContext)
     case 'subagentStart':
     case 'subagentStop':
       return ctx.subagentType ?? ''
+    case 'sessionStart':
+      // sessionStart carries no tool/command/type subject; Cursor's schema
+      // notes a `matcher` here prevents the hook from firing, so an absent
+      // matcher fires and any matcher fails against the empty subject.
+      return ''
   }
 }
 
@@ -464,7 +499,7 @@ export async function cursorToolGateHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -493,7 +528,7 @@ export async function cursorBeforeSubmitPromptHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -559,7 +594,7 @@ export async function cursorAfterFileEditHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -590,7 +625,7 @@ export async function cursorStopHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -631,7 +666,7 @@ export async function cursorSubagentStartHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -660,7 +695,7 @@ export async function cursorSubagentStopHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -704,7 +739,40 @@ export async function cursorAfterToolUseHooks(
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.cwd,
-        timeoutMs: cursorHookTimeoutMs,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
+      }
+    })
+}
+
+/**
+ * Discover the Cursor command hooks registered for `sessionStart` (H4), as
+ * registry `CommandHook`s. `sessionStart` carries no tool/command subject, so
+ * the only filter is the (rare) per-hook `matcher` — Cursor's docs note a
+ * matcher on `sessionStart` prevents the hook from firing, which
+ * {@link cursorMatcherMatches} against the empty subject reproduces. Fired
+ * **detached** (fire-and-forget) by the fire site (`session-start.ts`); the
+ * `env` output propagates to later hook spawns via the session env store.
+ * `failClosed` maps to `onFailure` only for spine + Sources uniformity — a
+ * fire-and-forget session start has nothing to block.
+ */
+export async function cursorSessionStartHooks(
+  _payload: HookEventPayloads['sessionStart'],
+  opts: DialectDiscoverOpts,
+): Promise<CommandHook<'sessionStart'>[]> {
+  const { hooks } = await discoverHooksDetailed(opts)
+  return hooks
+    .filter((h) => h.event === 'sessionStart' && cursorMatcherMatches(h, {}))
+    .map((h) => {
+      auditProjectHook(h)
+      return {
+        id: h.command,
+        event: 'sessionStart' as const,
+        executor: 'command' as const,
+        dialect: 'cursor' as const,
+        command: h.command,
+        onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
+        cwd: h.cwd,
+        timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
 }
@@ -1256,11 +1324,92 @@ export const cursorAdapter: DialectAdapter = {
     return { ...base, failed: false, parseOk: true }
   },
 
+  marshalSessionStartRequest(_hook, _payload, session) {
+    // Cursor's sessionStart stdin (vendor docs): `session_id` (== conversation
+    // id), `is_background_agent`, `composer_mode`, plus the standard
+    // agent-session envelope. Copse has one composer mode (agent) and is not a
+    // background agent here; the canonical payload's `firstTurn` maps to the
+    // vendor's implicit new-conversation trigger, so it needs no wire field.
+    return {
+      ...agentSessionEnvelope('sessionStart', session),
+      session_id: session?.conversationId ?? '',
+      is_background_agent: false,
+      composer_mode: 'agent',
+    }
+  },
+
+  interpretSessionStart(spawn: HookSpawnResult, _payload): DialectInterpretation {
+    // sessionStart is fire-and-forget (decision 3): it returns no control-flow
+    // decision, so the outcome is always null. Its actionable output is the
+    // `env` object — session-scoped variables propagated to later hook spawns
+    // (vendor: "available to all subsequent hook executions within that
+    // session"). `additional_context` is async injected context (decision 11:
+    // async → not injected in v1), so it is not consumed here. A crash / timeout
+    // / non-zero exit is recorded `failed` for the spine + Sources only.
+    const spineEvent = 'sessionStart'
+    const emptyDecision: SpineHookRunDecision = {}
+    const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
+
+    if (spawn.spawnError) {
+      return { ...base, failed: true, parseOk: false, runtimeError: 'failed to start' }
+    }
+    if (spawn.timedOut) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: `timed out after ${String(cursorHookTimeoutMs / 1000)}s`,
+      }
+    }
+    if (spawn.exitCode !== null && spawn.exitCode !== 0) {
+      return {
+        ...base,
+        failed: true,
+        parseOk: true,
+        runtimeError: `exited with code ${String(spawn.exitCode)}`,
+      }
+    }
+
+    const text = spawn.stdout.trim()
+    if (!text) return { ...base, failed: false, parseOk: true }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // A session-start hook that prints noise is not a failure to block on;
+      // record parseOk:false for the spine only.
+      return { ...base, failed: false, parseOk: false }
+    }
+    const env = sessionEnvFromResponse(parsed)
+    if (env) {
+      const spineDecision: SpineHookRunDecision = { sessionEnvKeys: Object.keys(env).length }
+      return { ...base, sessionEnv: env, spineDecision, failed: false, parseOk: true }
+    }
+    return { ...base, failed: false, parseOk: true }
+  },
+
   recordRuntimeFailure(event, command, message) {
     const key = hookErrorKey(event, command)
     if (sessionHookErrors.has(key)) return
     sessionHookErrors.set(key, message)
   },
+}
+
+/**
+ * Extract a `sessionStart` hook's `env` output (H4) as a clean string→string
+ * map, or null when absent/empty. Only string values are kept (the env overlay
+ * must be `Record<string, string>`); non-string values are dropped rather than
+ * coerced, so a malformed `env` never injects `undefined`/`[object Object]`.
+ */
+function sessionEnvFromResponse(parsed: unknown): Record<string, string> | null {
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const raw = (parsed as { env?: unknown }).env
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'string') out[key] = value
+  }
+  return Object.keys(out).length > 0 ? out : null
 }
 
 /**
