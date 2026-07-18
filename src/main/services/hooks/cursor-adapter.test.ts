@@ -285,6 +285,69 @@ describe('cursor-adapter', () => {
     })
   })
 
+  // H2 (docs/plans/hooks-and-feature-packs.md): a blocking tool-gate hook may
+  // inject context into the current turn via Cursor's `additionalContext`. It
+  // maps onto the canonical `injectContext`, which `runToolGateHooks` builds into
+  // a 10k-capped system-reminder block surfaced on the gate decision.
+  describe('injectContext from additionalContext (H2)', () => {
+    it('maps `additionalContext` into a current-turn system-reminder block', async () => {
+      const script = await writeHookScript(
+        'inject.sh',
+        '{"permission":"allow","additionalContext":"prefer the repo style guide"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.equal(decision.permission, 'allow')
+      assert.equal(
+        decision.injectContext,
+        '<system-reminder>\nprefer the repo style guide\n</system-reminder>',
+      )
+    })
+
+    it('accepts the snake_case `additional_context` spelling', async () => {
+      const script = await writeHookScript(
+        'inject-snake.sh',
+        '{"permission":"allow","additional_context":"snake works too"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.match(decision.injectContext ?? '', /snake works too/)
+    })
+
+    it('caps injected context at 10k with a truncation note (blob spillover)', async () => {
+      // The hook prints a >10k additionalContext; the model-facing block is
+      // capped and notes the true full length (the full text lives in the
+      // hook`s stdout blob — decision 6 / A3).
+      const big = 'X'.repeat(10_500)
+      const script = await writeHookScript(
+        'inject-big.sh',
+        `{"permission":"allow","additionalContext":"${big}"}`,
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      const block = decision.injectContext ?? ''
+      assert.ok(block.includes('X'.repeat(10_000)))
+      assert.ok(!block.includes('X'.repeat(10_001)))
+      assert.match(block, /the first 10000 of 10500 characters/)
+      assert.match(block, /preserved in the thread spine/)
+    })
+
+    it('drops injected context on a deny (no result to inject into)', async () => {
+      const script = await writeHookScript(
+        'inject-deny.sh',
+        '{"permission":"deny","additionalContext":"never applied"}',
+      )
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.equal(decision.permission, 'deny')
+      assert.equal(decision.injectContext, undefined)
+    })
+  })
+
   describe('per-hook runtime error state (session-deduped)', () => {
     function listUserHooks(): ReturnType<typeof listCursorHooks> {
       return listCursorHooks({ workspaceRoot: null, projectTrusted: false })
@@ -437,6 +500,26 @@ describe('cursor-adapter', () => {
       const [run] = runs
       assert.ok(run)
       assert.equal(run.decision.updatedInput, true)
+      assert.equal(run.decision.permission, 'allow')
+    })
+
+    it('records injectContextChars (full length) in the hook_run decision (H2)', async () => {
+      const script = join(tempHome, 'spine-inject.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > /dev/null\nprintf '%s' '{"permission":"allow","additionalContext":"twelve chars"}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeUserHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate('run_shell', { command: 'ls' })
+      assert.match(decision.injectContext ?? '', /twelve chars/)
+
+      const runs = await readRecordedRuns()
+      const [run] = runs
+      assert.ok(run)
+      assert.equal(run.decision.injectContextChars, 'twelve chars'.length)
       assert.equal(run.decision.permission, 'allow')
     })
 

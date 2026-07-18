@@ -143,4 +143,35 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
       assert.equal(args.command, 'echo hi')
     })
   })
+
+  // H2 (docs/plans/hooks-and-feature-packs.md): a blocking tool-gate hook that
+  // allows AND injects context has its `additionalContext` stamped back onto the
+  // check as a current-turn system-reminder block (the fire-point injection —
+  // the tool runner then appends it to the call's result).
+  describe('injectContext at the tool-gate fire point (H2)', () => {
+    it('stamps the injected system-reminder block onto the check on allow', async () => {
+      await writeShellHook('{"permission":"allow","additionalContext":"mind the linter"}')
+      setApprovalHandler(async () => ({ approved: true, remember: false }))
+      const check = { toolName: 'run_shell', args: { command: 'echo hi' } } as {
+        toolName: string
+        args: { command: string }
+        injectContext?: string
+      }
+      const allowed = await ensureToolPermitted(check)
+      assert.equal(allowed, true)
+      assert.equal(check.injectContext, '<system-reminder>\nmind the linter\n</system-reminder>')
+    })
+
+    it('does not stamp injected context when no hook injects', async () => {
+      await writeShellHook('{"permission":"allow"}')
+      setApprovalHandler(async () => ({ approved: true, remember: false }))
+      const check = { toolName: 'run_shell', args: { command: 'echo hi' } } as {
+        toolName: string
+        args: { command: string }
+        injectContext?: string
+      }
+      await ensureToolPermitted(check)
+      assert.equal(check.injectContext, undefined)
+    })
+  })
 })
