@@ -42,8 +42,7 @@ import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts
  */
 
 export type CommandRouting =
-  | { outcome: 'allow'; reasons: string[] }
-  | { outcome: 'defer'; reasons: string[] }
+  { outcome: 'allow'; reasons: string[] } | { outcome: 'defer'; reasons: string[] }
 
 /**
  * Commands trivially safe to run unsandboxed: they make directories, print, or

@@ -40,6 +40,12 @@ export function navigateToChange(store: AppStore, path: string): void {
   openRightPanel(store, 'changes')
 }
 
+/** Open the Roadmap pane with a specific item selected (quick-open palette hit). */
+export function navigateToRoadmapItem(store: AppStore, itemId: string): void {
+  openRightPanel(store, 'roadmap')
+  store.emit('roadmap_reveal', itemId)
+}
+
 export function openBrowserUrl(store: AppStore, url: string): void {
   openRightPanel(store, 'browser')
   store.emit('browser_url_requested', url)

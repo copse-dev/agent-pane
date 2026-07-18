@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { getCopseUserDataDir } from './helpers.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
 describe('settings usage panel', () => {
   before(async () => {
@@ -16,7 +17,7 @@ describe('settings usage panel', () => {
     resetUserData()
   })
 
-  it('shows ledger usage in the day window for cloud and local models', async () => {
+  it('shows plan limits and ledger usage without blocking on plan fetch', async () => {
     await browser.execute(async () => {
       await window.api.usage.record({
         model: 'claude-sonnet-4-6',
@@ -49,6 +50,12 @@ describe('settings usage panel', () => {
     assert.ok(summary.day.cloudModels.some((m) => m.model === 'claude-sonnet-4-6'))
     assert.ok(summary.day.localModels.some((m) => m.model.startsWith('lmstudio:')))
 
+    const plan = (await browser.execute(() => window.api.usage.getPlanUsage())) as {
+      providers: Array<{ status: string; provider: string }>
+    }
+    assert.equal(plan.providers.length, 4)
+    assert.ok(plan.providers.every((p) => p.status === 'ok'))
+
     const config = JSON.parse(readFileSync(join(getCopseUserDataDir(), 'config.json'), 'utf8')) as {
       usageEvents?: unknown[]
     }
@@ -56,8 +63,33 @@ describe('settings usage panel', () => {
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
+    await expect($('.usage-plan-section .usage-plan-heading')).toBeDisplayed()
+    await expect(
+      $('.usage-plan-provider[data-provider="claude"][data-status="ok"]'),
+    ).toBeDisplayed()
+    await expect($('.usage-plan-provider[data-provider="codex"][data-status="ok"]')).toBeDisplayed()
+    await expect(
+      $('.usage-plan-provider[data-provider="huggingface"][data-status="ok"]'),
+    ).toBeDisplayed()
+    await expect(
+      $('.usage-plan-provider[data-provider="cursor"][data-status="ok"]'),
+    ).toBeDisplayed()
+    await expect($('.usage-plan-bar')).toBeDisplayed()
+    await expect(
+      $(
+        '.usage-plan-provider[data-provider="claude"] .usage-plan-window[data-severity="critical"]',
+      ),
+    ).toBeDisplayed()
+    await expect(
+      $(
+        '.usage-plan-provider[data-provider="claude"] .usage-plan-bar-fill[data-severity="warning"]',
+      ),
+    ).toBeDisplayed()
     await expect($('.usage-period-body .usage-headline')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(1) tbody tr')).toBeDisplayed()
     await expect($('.usage-model-group:nth-of-type(2) tbody tr')).toBeDisplayed()
+
+    await prepareE2eScreenshot()
+    await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-limits.png')
   })
 })

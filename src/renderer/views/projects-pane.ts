@@ -5,15 +5,19 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { openNewThread, deleteThread } from '@shared/store/thread-helpers.ts'
 import {
   addProject,
+  addRemoteProject,
   getSidebarThreads,
   isProjectSwitchInFlight,
   paginateSidebarThreads,
+  projectDisplayName,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
   switchProjectThread,
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
+import { showErrorToast } from './toast.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
+import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 
 const ICON_SIZE = '16'
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -68,7 +72,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     { class: 'projects-open-btn', 'aria-label': 'Open project' },
     '+ Open',
   )
-  const header = el('div', { class: 'pane-projects-header' }, title, openBtn)
+  const openRemoteBtn = el(
+    'button',
+    { class: 'projects-open-remote-btn', 'aria-label': 'Open remote project', hidden: true },
+    '+ Remote',
+  )
+  const header = el('div', { class: 'pane-projects-header' }, title, openBtn, openRemoteBtn)
   const list = el('div', { class: 'projects-list' })
   const settingsBtn = el(
     'button',
@@ -84,6 +93,20 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   openBtn.addEventListener('click', () => {
     void addProject(store, api)
   })
+
+  openRemoteBtn.addEventListener('click', () => {
+    void addRemoteProject(store, api).catch((err: unknown) => {
+      showErrorToast('Could not open remote folder', err)
+    })
+  })
+
+  const syncRemoteOpenVisibility = (): void => {
+    void isSshWorkspaceEnabled(api).then((enabled) => {
+      openRemoteBtn.hidden = !enabled
+    })
+  }
+  syncRemoteOpenVisibility()
+  store.on('settings_changed', syncRemoteOpenVisibility)
 
   const visibleThreadCounts = new Map<string, number>()
 
@@ -107,7 +130,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           { class: `project-twisty${isExpanded ? ' expanded' : ''}` },
           chevronRightIcon('ui-icon ui-icon-sm'),
         ),
-        el('span', { class: 'project-name' }, project.name),
+        el('span', { class: 'project-name' }, projectDisplayName(project)),
       )
       // A collapsed project hides its thread rows, so surface any thread of its
       // own that is waiting on the user right on the project row (expanded

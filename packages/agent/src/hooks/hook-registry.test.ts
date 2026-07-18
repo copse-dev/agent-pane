@@ -8,18 +8,27 @@ import {
   FIRST_PARTY_HOOKS,
   type HookOutcomeRecord,
 } from './hook-registry.ts'
-import { HOOK_EVENT_NAMES, HOOK_EVENT_SPECS, type BlockingHook } from './canonical-events.ts'
-import type { AsyncHookOutcome } from './hook-outcome.ts'
+import {
+  HOOK_EVENT_NAMES,
+  HOOK_EVENT_SPECS,
+  type BlockingHook,
+  type HookRunRecord,
+} from './canonical-events.ts'
 
 const emptyContext = {}
 
 const turnStartPayload = { userText: 'do the thing', priorTodos: [] as const }
 const finalizePayload = { openTodos: [] as const, attempt: 0 }
 
-describe('canonical event catalogue', () => {
-  it('wires exactly the two blocking assembly events for M0', () => {
-    assert.deepEqual([...HOOK_EVENT_NAMES], ['turnStart', 'beforeFinalize'])
-    for (const name of HOOK_EVENT_NAMES) {
+describe('canonical event catalogue — M0 events unchanged', () => {
+  // A1 widened the catalogue to the full v1 enumeration (pinned exhaustively in
+  // canonical-event-catalogue.test.ts). This test only guards that the two M0
+  // events keep their original blocking-assembly kind — the behavior existing
+  // turnStart/beforeFinalize hooks depend on.
+  it('keeps turnStart and beforeFinalize as blocking assembly events', () => {
+    assert.ok(HOOK_EVENT_NAMES.includes('turnStart'))
+    assert.ok(HOOK_EVENT_NAMES.includes('beforeFinalize'))
+    for (const name of ['turnStart', 'beforeFinalize'] as const) {
       assert.equal(HOOK_EVENT_SPECS[name].dispatch, 'blocking')
       assert.equal(HOOK_EVENT_SPECS[name].role, 'assembly')
     }
@@ -42,7 +51,7 @@ describe('HookRegistry.emit — zero registered hooks changes nothing', () => {
   })
 })
 
-describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize lists', () => {
+describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize + E1 step-boundary lists', () => {
   it('registers turn-start and beforeFinalize hooks in their assembly orders', () => {
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
@@ -51,6 +60,13 @@ describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize lists', () => {
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').map((h) => h.id),
       ['todo-finalize-closeout'],
+    )
+  })
+
+  it('registers the four E1 step-boundary nudge hooks', () => {
+    assert.deepEqual(
+      FIRST_PARTY_HOOKS.filter((h) => h.event === 'stepBoundary').map((h) => h.id),
+      ['stuck-finalize-nudge', 'loop-nudge', 'truncation-continue', 'reasoning-runaway'],
     )
   })
 })
@@ -145,6 +161,62 @@ describe('HookRegistry.emit — function executor', () => {
   })
 })
 
+describe('HookRegistry.emit — sequential updatedInput pipeline (H1)', () => {
+  it('threads each hook rewrite into the next hook (registration order)', async () => {
+    const registry = new HookRegistry()
+    const seen: string[] = []
+    registry.register({
+      id: 'first',
+      event: 'toolGate',
+      run: (payload) => {
+        seen.push(String(payload.input['command']))
+        return { updatedInput: { command: 'from-first' } }
+      },
+    })
+    registry.register({
+      id: 'second',
+      event: 'toolGate',
+      run: (payload) => {
+        // The second hook must observe the first hook's rewrite, not the original.
+        seen.push(String(payload.input['command']))
+        return { updatedInput: { command: `${String(payload.input['command'])}+second` } }
+      },
+    })
+
+    const payload = { toolName: 'run_shell', input: { command: 'original' } }
+    const result = await registry.emit('toolGate', payload, emptyContext)
+
+    // Each hook saw the prior rewrite; the payload holds the *final* threaded input.
+    assert.deepEqual(seen, ['original', 'from-first'])
+    assert.deepEqual(payload.input, { command: 'from-first+second' })
+    assert.deepEqual(
+      result.outcomes.map((o) => o.outcome.updatedInput),
+      [{ command: 'from-first' }, { command: 'from-first+second' }],
+    )
+  })
+
+  it('merges a partial rewrite, preserving untouched input fields', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'rewrites-command-only',
+      event: 'toolGate',
+      run: () => ({ updatedInput: { command: 'safe' } }),
+    })
+    const payload = { toolName: 'run_shell', input: { command: 'danger', timeout: 30 } }
+    await registry.emit('toolGate', payload, emptyContext)
+    // The rewrite touched `command`; `timeout` is preserved (merge, not replace).
+    assert.deepEqual(payload.input, { command: 'safe', timeout: 30 })
+  })
+
+  it('leaves the payload untouched when no hook rewrites the input', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'no-rewrite', event: 'toolGate', run: () => ({ decision: 'allow' }) })
+    const payload = { toolName: 'run_shell', input: { command: 'ls' } }
+    await registry.emit('toolGate', payload, emptyContext)
+    assert.deepEqual(payload.input, { command: 'ls' })
+  })
+})
+
 describe('HookRegistry.emit — fail-hard (decision 9)', () => {
   it('propagates a throwing hook as HookExecutionError, never swallowing it', async () => {
     const registry = new HookRegistry()
@@ -167,6 +239,70 @@ describe('HookRegistry.emit — fail-hard (decision 9)', () => {
         return true
       },
     )
+  })
+})
+
+describe('HookRegistry.emit — spine-recording sink (decision 6)', () => {
+  it('reports every execution to the sink with its outcome and timing', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'opinion', event: 'turnStart', run: () => ({ injectContext: 'A' }) })
+    registry.register({ id: 'abstains', event: 'turnStart', run: () => undefined })
+
+    const records: HookRunRecord[] = []
+    await registry.emit('turnStart', turnStartPayload, {
+      recordHookRun: (record) => records.push(record),
+    })
+
+    assert.deepEqual(
+      records.map((r) => [r.event, r.hookId, r.outcome]),
+      [
+        ['turnStart', 'opinion', { injectContext: 'A' }],
+        ['turnStart', 'abstains', null],
+      ],
+    )
+    for (const record of records) {
+      assert.equal(typeof record.startedAt, 'number')
+      assert.ok(record.durationMs >= 0)
+      assert.equal(record.error, undefined)
+    }
+  })
+
+  it('records a throwing hook before failing hard (execution is never unrecorded)', async () => {
+    const registry = new HookRegistry()
+    registry.register({
+      id: 'thrower',
+      event: 'turnStart',
+      run: () => {
+        throw new Error('kaboom')
+      },
+    })
+
+    const records: HookRunRecord[] = []
+    await assert.rejects(
+      () =>
+        registry.emit('turnStart', turnStartPayload, {
+          recordHookRun: (record) => records.push(record),
+        }),
+      HookExecutionError,
+    )
+    assert.equal(records.length, 1)
+    const [record] = records
+    assert.ok(record)
+    assert.equal(record.hookId, 'thrower')
+    assert.equal(record.outcome, null)
+    assert.equal(record.error, 'kaboom')
+  })
+
+  it('swallows sink errors — recording can never change loop behavior', async () => {
+    const registry = new HookRegistry()
+    registry.register({ id: 'fine', event: 'turnStart', run: () => ({ injectContext: 'A' }) })
+
+    const result = await registry.emit('turnStart', turnStartPayload, {
+      recordHookRun: () => {
+        throw new Error('sink exploded')
+      },
+    })
+    assert.deepEqual(result.outcomes, [{ hookId: 'fine', outcome: { injectContext: 'A' } }])
   })
 })
 
@@ -245,26 +381,3 @@ describe('mergeBlockingOutcomes', () => {
     assert.deepEqual(merged, { updatedInput: { command: 'ls', flag: 2 } })
   })
 })
-
-// Decision 11 as a compile-time guard (execution-guidance rule 3): an async
-// hook's outcome type must NOT carry `decision`, `updatedInput`, or
-// `injectContext`. Each `@ts-expect-error` below fails the typecheck if that
-// property ever becomes assignable — the type-level contract test the plan calls
-// for. One object per property because excess-property checking only reports the
-// first offender in a single literal. `void` keeps each value used under
-// `noUnusedLocals`.
-const asyncCannotDecide: AsyncHookOutcome = {
-  // @ts-expect-error `decision` is blocking-only (decisions 4 & 11)
-  decision: 'allow',
-}
-const asyncCannotRewriteInput: AsyncHookOutcome = {
-  // @ts-expect-error `updatedInput` is blocking-only (decisions 4 & 11)
-  updatedInput: {},
-}
-const asyncCannotInjectContext: AsyncHookOutcome = {
-  // @ts-expect-error `injectContext` is blocking-only (decision 11)
-  injectContext: 'nope',
-}
-void asyncCannotDecide
-void asyncCannotRewriteInput
-void asyncCannotInjectContext

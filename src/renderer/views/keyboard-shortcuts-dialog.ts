@@ -49,6 +49,7 @@ const SECTIONS: ShortcutSection[] = [
       { label: 'New thread', keys: ['Mod', 'N'] },
       { label: 'Open folder…', keys: ['Mod', 'O'] },
       { label: 'Settings', keys: ['Mod', ','] },
+      { label: 'Model picker', keys: ['Mod', 'Shift', 'M'] },
       { label: 'Keyboard shortcuts', keys: ['Mod', '/'] },
       { label: 'Stop agent / close overlay', keys: ['Esc'] },
     ],
@@ -56,7 +57,7 @@ const SECTIONS: ShortcutSection[] = [
   {
     title: 'Navigation',
     shortcuts: [
-      { label: 'Quick open file', keys: ['Mod', 'P'] },
+      { label: 'Quick open (files, roadmap)', keys: ['Mod', 'P'] },
       { label: 'Find in conversation', keys: ['Mod', 'F'] },
       { label: 'Previous thread', keys: ['Alt', '←'] },
       { label: 'Next thread', keys: ['Alt', '→'] },

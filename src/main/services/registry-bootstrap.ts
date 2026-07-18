@@ -52,6 +52,8 @@ import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.t
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
 import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
+import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
+import { delegateStepTool } from '../tools/delegate-step-tool.ts'
 import { MODEL_COMPARISON_ENABLED_SETTING } from './model-comparison.ts'
 import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
@@ -62,6 +64,7 @@ import {
   READ_TERMINAL_ENABLED_SETTING,
 } from '@shared/terminal/read-terminal.ts'
 import { readTerminalTool } from '../tools/read-terminal-tool.ts'
+import { runCheckupTool } from '../tools/checkup-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -132,11 +135,19 @@ export function createRegistry(): ToolRegistry {
     registry.register(suggestModelTool)
   }
   // Experimental client-side advisor strategy (off by default, issue #566). Adds
-  // a no-parameter `advisor` tool that forwards the full transcript to a larger
-  // advisor model for strategic guidance, so the executor can run on a cheaper /
-  // on-device model. Shaped to match Claude's native advisor tool contract.
+  // an `advisor` tool that forwards the full transcript + verified repo state to
+  // a larger advisor model for strategic guidance, so the executor can run on a
+  // cheaper / on-device model. The no-arg call matches Claude's native advisor
+  // tool contract; optional question / include_diff params only add context.
   if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
     registry.register(advisorTool)
+  }
+  // Experimental orchestration strategy (off by default) — the advisor's
+  // inverse: the chat model stays the orchestrator and a `delegate_step` tool
+  // hands each bounded implementation step to a cheaper/faster worker model
+  // running as a subagent, with the parent observing between steps.
+  if (getSetting<boolean>(ORCHESTRATION_STRATEGY_ENABLED_SETTING, false)) {
+    registry.register(delegateStepTool)
   }
   // Experimental model comparison harness (off by default). Adds a no-parameter
   // `compare_models` tool that runs the working-diff review through two models
@@ -169,6 +180,9 @@ export function createRegistry(): ToolRegistry {
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
   registry.register(askUserTool)
+  // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
+  // returns a report; the agent proposes any fixes for the user to approve.
+  registry.register(runCheckupTool)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     for (const tool of browserTools) registry.register(tool)
   }

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process'
+import { homedir } from 'node:os'
 import { basename, dirname } from 'node:path'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import * as pty from 'node-pty'
@@ -14,6 +15,26 @@ import {
 } from './config.ts'
 import { acquireSandboxNetworkScope } from './network-scope.ts'
 import { isProjectSandboxActive, setProjectSandboxActive } from './state.ts'
+import {
+  isSshExecutionTarget,
+  resolveExecutionTarget,
+  resolveSshExecutionTargetForCwd,
+  type ExecutionTarget,
+} from '../services/ssh-workspace/execution-target.ts'
+import {
+  spawnRemoteShellCommand,
+  buildRemotePtyLaunch,
+} from '../services/ssh-workspace/ssh-spawn.ts'
+
+export type { ExecutionTarget }
+
+/** Remote cd target: callers pass `opts.cwd`; fall back to the project remote root. */
+function sshRemoteWorkingDirectory(
+  target: Extract<ExecutionTarget, { kind: 'ssh' }>,
+  cwd: string,
+): string {
+  return cwd || target.remoteRoot
+}
 
 export function isProjectSandboxEnabled(): boolean {
   return isProjectSandboxActive() && SandboxManager.isSandboxingEnabled()
@@ -75,10 +96,40 @@ function ensurePathIncludes(dirs: string[]): void {
   }
 }
 
+/**
+ * ASRT returns a bare shell name (`bash`) as argv[0]. GUI Electron apps often
+ * have a PATH that omits `/bin`, so spawn('bash') → ENOENT. Keep the bare name
+ * for ASRT, but rewrite to an absolute path at spawn time.
+ */
+export function resolveSandboxShellExecutable(file: string): string {
+  if (process.platform === 'win32' || file.includes('/')) return file
+  if (file === 'bash') return '/bin/bash'
+  if (file === 'sh') return '/bin/sh'
+  return file
+}
+
+/** Ensure the child env can resolve `/bin` shells even when opts.env was snapshotted earlier. */
+export function withSandboxShellPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (process.platform === 'win32') return env
+  const required = ['/usr/bin', '/bin']
+  const parts = (env['PATH'] ?? '').split(':').filter(Boolean)
+  const missing = required.filter((dir) => !parts.includes(dir))
+  if (missing.length === 0) return env
+  return { ...env, PATH: [...missing, ...parts].join(':') }
+}
+
 export function shellForSandboxWrap(shellPath: string = DEFAULT_SANDBOX_SHELL): string {
   if (process.platform === 'win32' || !shellPath.includes('/')) return shellPath
   ensurePathIncludes([dirname(shellPath), '/usr/bin', '/bin'])
   return basename(shellPath)
+}
+
+function resolveSpawnTarget(explicit: ExecutionTarget | undefined, cwd: string): ExecutionTarget {
+  const target = resolveExecutionTarget(explicit)
+  if (isSshExecutionTarget(target)) return target
+  // Activation races can leave activeProjectId without sshHost while cwd is already
+  // a remote project path — recover instead of applying a local seatbelt to /etc/….
+  return resolveSshExecutionTargetForCwd(cwd) ?? target
 }
 
 export async function spawnInProjectSandbox(
@@ -90,8 +141,21 @@ export async function spawnInProjectSandbox(
     signal?: AbortSignal
     unsandboxed?: boolean
     sandboxConfig?: Partial<SandboxRuntimeConfig>
+    executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
+  if (isSshExecutionTarget(target)) {
+    const command = shellCommand(executable, args)
+    return spawnRemoteShellCommand(command, {
+      hostId: target.hostId,
+      remoteRoot: sshRemoteWorkingDirectory(target, opts.cwd),
+      stdio: opts.stdio,
+      ...(opts.env ? { env: opts.env } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    })
+  }
+
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     return spawn(executable, args, {
       cwd: opts.cwd,
@@ -114,9 +178,9 @@ export async function spawnInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return spawn(file, argv.slice(1), {
+  return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
+    env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -130,8 +194,20 @@ export async function spawnShellInProjectSandbox(
     env?: NodeJS.ProcessEnv
     signal?: AbortSignal
     unsandboxed?: boolean
+    executionTarget?: ExecutionTarget
   } & Pick<SpawnOptionsWithoutStdio, 'stdio'>,
 ): Promise<ChildProcess> {
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
+  if (isSshExecutionTarget(target)) {
+    return spawnRemoteShellCommand(shellCommandLine, {
+      hostId: target.hostId,
+      remoteRoot: sshRemoteWorkingDirectory(target, opts.cwd),
+      stdio: opts.stdio,
+      ...(opts.env ? { env: opts.env } : {}),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    })
+  }
+
   if (!isProjectSandboxEnabled() || opts.unsandboxed) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
     const shellArgs =
@@ -155,9 +231,9 @@ export async function spawnShellInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return spawn(file, argv.slice(1), {
+  return spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     cwd: opts.cwd,
-    env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
+    env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
     stdio: opts.stdio,
     signal: opts.signal,
     detached: detachForGroupKill,
@@ -180,8 +256,23 @@ export async function spawnShellInProjectSandbox(
  */
 export async function spawnBackgroundProcess(
   shellCommandLine: string,
-  opts: { cwd: string; env?: NodeJS.ProcessEnv; allowPortBinding?: boolean },
+  opts: {
+    cwd: string
+    env?: NodeJS.ProcessEnv
+    allowPortBinding?: boolean
+    executionTarget?: ExecutionTarget
+  },
 ): Promise<ChildProcess> {
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
+  if (isSshExecutionTarget(target)) {
+    return spawnRemoteShellCommand(shellCommandLine, {
+      hostId: target.hostId,
+      remoteRoot: sshRemoteWorkingDirectory(target, opts.cwd),
+      stdio: 'pipe',
+      ...(opts.env ? { env: opts.env } : {}),
+    })
+  }
+
   if (!isProjectSandboxEnabled()) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
     const shellArgs =
@@ -213,9 +304,9 @@ export async function spawnBackgroundProcess(
     )
     const file = argv[0]
     if (!file) throw new Error('sandbox wrap produced empty argv')
-    const child = spawn(file, argv.slice(1), {
+    const child = spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
       cwd: opts.cwd,
-      env: mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env),
+      env: withSandboxShellPath(mergeSpawnEnv(withWorkspaceTmpEnv(strippedBaseEnv(env)), opts.env)),
       stdio: 'pipe',
       detached: detachForGroupKill,
     })
@@ -259,6 +350,7 @@ export interface SpawnPtyOptions {
   env?: NodeJS.ProcessEnv
   /** Integrated terminals are user-controlled; default is outside the project sandbox. */
   unsandboxed?: boolean
+  executionTarget?: ExecutionTarget
 }
 
 /** Spawn an interactive shell PTY; optionally routed through ASRT when the project sandbox is active. */
@@ -266,6 +358,33 @@ export async function spawnPtyInProjectSandbox(
   shell: string,
   opts: SpawnPtyOptions,
 ): Promise<IPty> {
+  const target = resolveSpawnTarget(opts.executionTarget, opts.cwd)
+  if (isSshExecutionTarget(target)) {
+    const launch = await buildRemotePtyLaunch(
+      target.hostId,
+      sshRemoteWorkingDirectory(target, opts.cwd),
+      opts.env,
+    )
+    const termEnv: NodeJS.ProcessEnv = {
+      ...launch.env,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+    }
+    // Local cwd for the ssh client process — must exist on this machine. The
+    // remote working directory is already embedded in the ssh remote command.
+    const ptyProcess = pty.spawn(launch.file, launch.args, {
+      name: 'xterm-256color',
+      cols: opts.cols,
+      rows: opts.rows,
+      cwd: homedir(),
+      env: termEnv,
+    })
+    ptyProcess.onExit(() => {
+      launch.release()
+    })
+    return ptyProcess
+  }
+
   const termEnv: NodeJS.ProcessEnv = {
     ...strippedBaseEnv(),
     ...opts.env,
@@ -296,11 +415,11 @@ export async function spawnPtyInProjectSandbox(
 
   const file = argv[0]
   if (!file) throw new Error('sandbox wrap produced empty argv')
-  return pty.spawn(file, argv.slice(1), {
+  return pty.spawn(resolveSandboxShellExecutable(file), argv.slice(1), {
     ...ptyOpts,
     // Workspace tmp wins over the host TMPDIR carried in termEnv: this branch is
     // sandbox-wrapped, so the system temp dir is denied (issue #481). The wrap env is
     // process.env verbatim on POSIX, so scrub it too (#579) — termEnv is already scrubbed.
-    env: withWorkspaceTmpEnv({ ...strippedBaseEnv(env), ...termEnv }),
+    env: withSandboxShellPath(withWorkspaceTmpEnv({ ...strippedBaseEnv(env), ...termEnv })),
   })
 }

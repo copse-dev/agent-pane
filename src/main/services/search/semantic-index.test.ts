@@ -6,19 +6,25 @@ import {
   gortexCpuLimitEnv,
   gortexIndexKillTimeoutMs,
   gortexIndexWaitArg,
+  gortexMemLimitEnv,
+  isOversizedGortexDaemon,
   isSemanticIndexReady,
   parseGortexJson,
+  parseTrackedRepos,
   parseVeraJson,
+  reapOversizedGortexDaemon,
+  reposToUntrackForActive,
   semanticThreadCap,
   setSemanticBackendForTest,
   setSemanticIndexReadyForTest,
   setSemanticIndexUpdateRunnerForTest,
+  stopGortexDaemon,
   updateSemanticIndex,
 } from './semantic-index.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 describe('semantic-index parsing', () => {
-  it('parses vera JSON results', () => {
+  it('parses vera JSON results', async () => {
     const stdout = JSON.stringify([
       {
         path: 'src/main/index.ts',
@@ -28,7 +34,7 @@ describe('semantic-index parsing', () => {
       },
     ])
 
-    assert.deepEqual(parseVeraJson(stdout, 10), [
+    assert.deepEqual(await parseVeraJson(stdout, 10), [
       {
         path: 'src/main/index.ts',
         startLine: 4,
@@ -38,7 +44,7 @@ describe('semantic-index parsing', () => {
     ])
   })
 
-  it('parses gortex search_symbols JSON results', () => {
+  it('parses gortex search_symbols JSON results', async () => {
     // Shape captured from `gortex call search_symbols --format json` (v0.58.3).
     const stdout = JSON.stringify({
       next_cursor: 'eyJvZmZzZXQiOjV9',
@@ -74,7 +80,7 @@ describe('semantic-index parsing', () => {
 
     const restore = setWorkspaceRootForTest('/tmp/repo')
     try {
-      assert.deepEqual(parseGortexJson(stdout, 10), [
+      assert.deepEqual(await parseGortexJson(stdout, 10), [
         {
           path: 'src/main/services/semantic-index.ts',
           startLine: 247,
@@ -91,7 +97,7 @@ describe('semantic-index parsing', () => {
     }
   })
 
-  it('scopes gortex hits to a filter path client-side', () => {
+  it('scopes gortex hits to a filter path client-side', async () => {
     const stdout = JSON.stringify({
       results: [
         { absolute_file_path: '/tmp/repo/src/main/a.ts', start_line: 1, name: 'a' },
@@ -101,7 +107,7 @@ describe('semantic-index parsing', () => {
 
     const restore = setWorkspaceRootForTest('/tmp/repo')
     try {
-      const hits = parseGortexJson(stdout, 10, 'src/main')
+      const hits = await parseGortexJson(stdout, 10, 'src/main')
       assert.deepEqual(
         hits.map((h) => h.path),
         ['src/main/a.ts'],
@@ -111,9 +117,9 @@ describe('semantic-index parsing', () => {
     }
   })
 
-  it('treats a gortex empty result set (results: null) as no hits', () => {
+  it('treats a gortex empty result set (results: null) as no hits', async () => {
     const stdout = JSON.stringify({ query_class: 'concept', results: null, total: 0 })
-    assert.deepEqual(parseGortexJson(stdout, 10), [])
+    assert.deepEqual(await parseGortexJson(stdout, 10), [])
   })
 
   it('caps semantic-index threads to keep CPU bounded (#517)', () => {
@@ -216,5 +222,74 @@ describe('semantic-index parsing', () => {
     )
     assert.match(text, /src\/auth\.ts:10-12/)
     assert.match(text, /native gortex backend/)
+  })
+})
+
+describe('gortex daemon scoping + reaping', () => {
+  const CONFIG = [
+    'repos:',
+    '    - path: /Users/me/debugging/jotter',
+    '    - path: /Users/me/debugging/agent-pane',
+    '    - path: /Users/me/debugging/ddg-workflow',
+    'exclude:',
+    '    - node_modules/',
+    '    - path: /not/a/repo/should/not/parse',
+    '', // trailing newline
+  ].join('\n')
+
+  it('parses only the repos block from config.yaml, not sibling keys', () => {
+    assert.deepEqual(parseTrackedRepos(CONFIG), [
+      '/Users/me/debugging/jotter',
+      '/Users/me/debugging/agent-pane',
+      '/Users/me/debugging/ddg-workflow',
+    ])
+  })
+
+  it('returns [] for a config with no repos block', () => {
+    assert.deepEqual(parseTrackedRepos('exclude:\n    - node_modules/\n'), [])
+  })
+
+  it('untracks every repo except the active one (deprioritizes non-active)', () => {
+    const tracked = parseTrackedRepos(CONFIG)
+    assert.deepEqual(reposToUntrackForActive(tracked, '/Users/me/debugging/agent-pane'), [
+      '/Users/me/debugging/jotter',
+      '/Users/me/debugging/ddg-workflow',
+    ])
+  })
+
+  it('normalizes the active path so a trailing slash still matches', () => {
+    const tracked = ['/Users/me/debugging/agent-pane']
+    assert.deepEqual(reposToUntrackForActive(tracked, '/Users/me/debugging/agent-pane/'), [])
+  })
+
+  it('untracks nothing when the active repo is the only tracked one', () => {
+    assert.deepEqual(reposToUntrackForActive(['/Users/me/agent-pane'], '/Users/me/agent-pane'), [])
+  })
+
+  it('sets a GOMEMLIMIT ceiling on the daemon env', () => {
+    assert.match(gortexMemLimitEnv()['GOMEMLIMIT'] ?? '', /^\d+(GiB|MiB|B)$/)
+  })
+
+  it('stopGortexDaemon is a safe no-op when gortex is not the active backend', async () => {
+    setSemanticBackendForTest(null)
+    // Must resolve without spawning / throwing — the before-quit path awaits this.
+    await assert.doesNotReject(stopGortexDaemon())
+  })
+
+  it('reaps an oversized gortex process but leaves healthy/unrelated ones', () => {
+    const gortexCmd = '/app/dist/resources/gortex/gortex daemon start'
+    // Oversized zombie → reap.
+    assert.equal(isOversizedGortexDaemon(6000, gortexCmd), true)
+    // Healthy scoped daemon under the threshold → keep (reuse its warm index).
+    assert.equal(isOversizedGortexDaemon(400, gortexCmd), false)
+    // A big process that isn't gortex → never touch it (pid-reuse guard).
+    assert.equal(isOversizedGortexDaemon(9000, '/Applications/Foo.app/Foo'), false)
+  })
+
+  it('reapOversizedGortexDaemon is best-effort and never throws on the boot path', async () => {
+    // Whatever the environment (no pidfile, app not ready, ps missing) it must
+    // resolve without throwing — the boot path awaits it before creating the
+    // window, so a throw here would crash startup.
+    await assert.doesNotReject(reapOversizedGortexDaemon())
   })
 })

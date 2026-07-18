@@ -149,6 +149,7 @@ describe('tool-display', () => {
     assert.equal(getToolDisplayName('list_dir'), 'List directory')
     assert.equal(getToolDisplayName('run_shell'), 'Run command')
     assert.equal(getToolDisplayName('read_terminal'), 'Read shell')
+    assert.equal(getToolDisplayName('run_checkup'), 'Run checkup')
   })
 
   it('formats unknown tools from snake_case', () => {
@@ -249,6 +250,11 @@ describe('tool-display', () => {
 
   it('maps investigate_ci to a human-readable name', () => {
     assert.equal(getToolDisplayName('investigate_ci'), 'Investigate CI')
+  })
+
+  it('maps delegate_step to a human-readable name and keeps it ungrouped', () => {
+    assert.equal(getToolDisplayName('delegate_step'), 'Delegate step')
+    assert.equal(getToolGroupKey('delegate_step'), null)
   })
 
   it('groups gh CI run tools under Git', () => {

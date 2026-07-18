@@ -53,6 +53,217 @@ docker compose ps
 docker compose down      # tear down
 ```
 
+## Scaleway burst hosts
+
+Scaleway is the cheapest/easiest burst path when AWS billing or capacity is in
+the way. It uses the same runner image and labels as the local/AWS flows.
+
+Prerequisites:
+
+- Scaleway CLI installed and configured (`scw init`) with permission to create,
+  list, wait for, and terminate Instances in your project.
+- Your Scaleway project has an SSH public key installed for the default `root`
+  user (Scaleway propagates console SSH keys to new Linux Instances). Pass
+  `--key-path` if SSH should use a specific private key — the wait loop fails
+  fast on `Permission denied`.
+- The default (or selected) security group must allow inbound TCP/22 from the
+  machine running the CLI. A long `Waiting for SSH` with connection timeouts
+  almost always means port 22 is dropped. Outbound traffic must also reach
+  GitHub and apt repositories.
+- `GITHUB_RUNNER_PAT` with GitHub self-hosted runner registration permission for
+  `GITHUB_URL` (org or repo), and `BUILD_GH_TOKEN` with read access to
+  `agent-pane` plus the private `@copse/streaming-markdown` dependency.
+
+Cost-first general e2e burst:
+
+```bash
+GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
+  npm run runners:burst:scw -- up \
+    --instances 6 \
+    --scw-type PLAY2-MICRO \
+    --runners-per-instance 1 \
+    --ttl-minutes 240
+```
+
+More memory headroom (omit `--zone` to auto-pick an AZ with quota):
+
+```bash
+GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
+  npm run runners:burst:scw -- up \
+    --instances 3 \
+    --scw-type BASIC3-X4C-16G \
+    --runners-per-instance 2 \
+    --ttl-minutes 240
+```
+
+Useful follow-ups (`status`/`down` scan all AZs unless `--zone` is set):
+
+```bash
+npm run runners:burst:scw -- status
+npm run runners:burst:scw -- down --yes --wait
+```
+
+Scaleway sizing guidance:
+
+- Omit `--zone` on `up` to fill `--instances` across Paris → Amsterdam →
+  Warsaw → Milan AZs (Scaleway quotas are per-AZ). Partial creates are kept
+  when an AZ hits quota; the remainder is requested in the next AZ. Pass
+  `--zone` to pin. `status`/`down` without `--zone` scan all.
+- `PLAY2-MICRO` (4 vCPU / 8 GiB) with one runner is the cheapest general
+  e2e/check shape and is roughly one third the hourly cost of AWS `c7i.xlarge`.
+- `BASIC3-X4C-16G` / `PRO2-XS` (4 vCPU / 16 GiB) can run two denser runners.
+  Prefer BASIC3 when PRO2-XS AZ quotas are exhausted.
+- `DEV1-L` is slightly cheaper than PLAY2-MICRO with the same nominal CPU/RAM,
+  but PLAY2 is the newer x86 line and the safer default for burst CI.
+- For check-only bursts, smaller 2 vCPU / 4 GiB types can be cost-effective, but
+  remove the e2e label: `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
+- `--ttl-minutes` defaults to 240. On Scaleway the host **self-terminates** via
+  the Instance API after that TTL (server + SBS volume + flexible IP), matching
+  AWS terminate-on-shutdown — a guest `shutdown` alone would only enter billed
+  standby. Requires `SCW_SECRET_KEY` or a configured `scw` secret-key at `up`
+  time. Prefer `down --yes` when the queue drains; the TTL is a backstop, not
+  the primary cleanup path.
+- `--volume-size-gb` defaults to 80 (Scaleway SBS root). The default PLAY2 image
+  disk is too small for `docker compose build` + dep bake; omit the flag to get
+  80 GB, or raise it if builds still hit `no space left on device`.
+- With `--instances N` (N>1), hosts are provisioned **in parallel** after create
+  (SSH wait + Docker build). Pass `--serial` for one-at-a-time logs.
+
+## AWS burst hosts
+
+For short queue-draining bursts, run the same Docker runner fleet on temporary
+x64 EC2 hosts:
+
+Prerequisites:
+
+- AWS CLI installed and authenticated with permission to call EC2 `RunInstances`,
+  `DescribeInstances`, `TerminateInstances`, `CreateTags`/tag-on-create, and SSM
+  `GetParameter` for the Ubuntu AMI lookup.
+- An EC2 key pair and local private key (`--key-name`, `--key-path`).
+- A subnet that can reach GitHub and apt repositories. If you use `--ssh-host
+public` (the default), instances must receive public IPv4 addresses; otherwise
+  run from a host with private VPC access and pass `--ssh-host private`.
+- A security group allowing SSH from the machine running the CLI.
+- `GITHUB_RUNNER_PAT` with GitHub self-hosted runner registration permission
+  for `GITHUB_URL` (org or repo), and `BUILD_GH_TOKEN` with read access to
+  `agent-pane` plus the private `@copse/streaming-markdown` dependency.
+
+```bash
+GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
+  npm run runners:burst -- up \
+    --region us-east-1 \
+    --instances 3 \
+    --instance-type c7i.2xlarge \
+    --runners-per-instance 2 \
+    --ttl-minutes 240 \
+    --key-name copse-ci \
+    --key-path ~/.ssh/copse-ci.pem \
+    --subnet-id subnet-123 \
+    --security-group-id sg-123
+```
+
+The CLI launches Ubuntu 24.04 amd64 hosts, waits for EC2 status checks, SSHes in,
+uploads this `ci-runners/` directory, writes the remote `.env`, and runs
+`docker compose up -d --build --scale runner=N`. It deliberately requires an
+existing subnet, security group, and key pair instead of creating networking; the
+security group must allow SSH from the machine running the command.
+
+Cost/packing guidance:
+
+- EC2 c7i pricing is close to linear by size, so savings come mostly from high
+  utilization and avoiding idle capacity, not from a large-instance discount.
+- Each runner should be budgeted at roughly 2 vCPU and 4-6 GiB RAM. A
+  `c7i.xlarge` (4 vCPU / 8 GiB) with one runner is the smallest safe general
+  e2e/check shape; `c7i.2xlarge` with 2 runners is the balanced default because
+  it halves duplicated Docker builds and setup while keeping the same per-runner
+  CPU/RAM budget. `c7i.4xlarge` with 4 runners is a denser option.
+- 2 vCPU / 4 GiB "medium" shapes can be cheaper for **check-only** bursts, but
+  do not give them the `copse-e2e` label; the current e2e failures look exactly
+  like memory pressure. For check-only, pass something like
+  `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
+- Many `c7i.xlarge` hosts cost about the same per vCPU as fewer larger c7i
+  hosts, but duplicate Docker builds, EBS volumes, and setup. One very large
+  host has coarser scale-down and larger single-host blast radius. Prefer a few
+  medium hosts that each pack whole runners safely.
+- With `--instances N` (N>1), hosts are provisioned **in parallel** after create.
+  Pass `--serial` for one-at-a-time logs.
+- `--ttl-minutes` defaults to 240. Instances launch with
+  `instance-initiated-shutdown-behavior=terminate`, so the scheduled shutdown
+  auto-terminates forgotten burst capacity. Pass `--ttl-minutes 0` only when you
+  have another cleanup mechanism.
+
+Useful follow-ups:
+
+```bash
+npm run runners:burst -- status --region us-east-1
+npm run runners:burst -- down --region us-east-1 --yes --wait
+```
+
+Secrets are read from environment variables (`GITHUB_RUNNER_PAT` and
+`BUILD_GH_TOKEN` by default) rather than command-line flags so they do not appear
+in shell history. `down` terminates instances tagged with the burst fleet name
+(default `copse-burst`).
+
+## Remote e2e dev hosts (`npm run e2e:remote`)
+
+The same image doubles as the **remote e2e dev loop** (see
+[`docs/plans/remote-e2e-dev-loop.md`](../docs/plans/remote-e2e-dev-loop.md)):
+run the e2e suite from your **working tree** on an on-demand cloud host, so
+your machine stays free while it runs. These hosts are _not_ GitHub runners —
+no registration, no runner PAT; the only secret is `BUILD_GH_TOKEN` at image
+build time, exactly like a burst host.
+
+```bash
+# Preferred: publish the baked image once to Scaleway Container Registry, then
+# provision hosts that only pull (no on-host bake, no BUILD_GH_TOKEN on the host).
+BUILD_GH_TOKEN=ghp_... SCW_SECRET_KEY=... \
+  COPSE_CI_REGISTRY=rg.fr-par.scw.cloud/<namespace> \
+  npm run e2e:remote -- publish
+
+SCW_SECRET_KEY=... COPSE_CI_REGISTRY=rg.fr-par.scw.cloud/<namespace> \
+  npm run e2e:remote -- up                           # pull + ready in minutes
+# Registry pull defaults to a 40 GB root (no on-host bake scratch). On-host bake
+# / --rebuild still defaults to 80 GB. Override with --volume-size-gb (SBS cannot
+# shrink after create).
+
+npm run e2e:remote -- run                            # oracle subset of your diff
+npm run e2e:remote -- run --all --shard 2 --detach   # full CI suite, 2 containers
+npm run e2e:remote -- wait <run-id>
+npm run e2e:remote -- down --yes
+```
+
+Without `COPSE_CI_REGISTRY`, `up` still works but bakes on the host
+(`BUILD_GH_TOKEN` required; slow). Create a private namespace in the Scaleway
+console (Storage → Container Registry), then
+[`docker login`](https://www.scaleway.com/en/docs/container-registry/how-to/connect-docker-cli/)
+uses `SCW_SECRET_KEY` with user `nologin`. Image tags are
+`copse-ci-runner:<sha256(package-lock.json)>` and `:latest`.
+
+**Secrets never land in Scaleway images.** `BUILD_GH_TOKEN` is a BuildKit
+secret at bake/publish time only. Registry auth on `up` is an ephemeral host
+`docker login` (password on stdin → pull → logout + wipe `~/.docker/config.json`);
+it is not written into Docker layers or instance snapshots. For the stricter
+path (host never sees registry credentials), pass `--transfer-image` (local
+pull + `docker save|load` over SSH).
+
+Each run pushes a snapshot commit (staged + unstaged + untracked) to a bare
+repo on the host and starts a fresh one-shot container from this image with
+[`exec-run.sh`](exec-run.sh) as the entrypoint override: checkout → seed the
+baked deps (same `.lockhash` contract as the setup action) → build → wdio
+under Xvfb → collect logs + changed reference screenshots. Results land in
+`.tmp/remote-e2e/runs/<run-id>/` locally; the exit code mirrors wdio's.
+
+Dev hosts carry their own tag namespace (`copse-remote-e2e` /
+`copse-remote-e2e-hosts`), so `e2e:remote down` can never terminate burst CI
+capacity and `runners:burst down` can never take a dev host. The same
+TTL backstop applies (`--ttl-minutes`, default 240; Scaleway self-terminates
+via API, AWS uses terminate-on-shutdown) — `down --yes` remains the real
+cleanup. After a `package-lock.json` change, runs warn and fall back to
+`npm ci`; refresh with `npm run e2e:remote -- rebake --push` (publish + pull
+onto the saved host) or `rebake --rebuild` (on-host bake).
+A spare machine with Docker + passwordless sudo works too:
+`npm run e2e:remote -- adopt --host user@box`.
+
 ## Do we need new PAT tokens?
 
 There are **three distinct token roles**. You do **not** need three separate

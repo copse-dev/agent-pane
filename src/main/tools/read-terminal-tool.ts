@@ -9,6 +9,7 @@ import {
   listTerminalSessions,
   readTerminalSessionOutput,
 } from '../services/exec/terminal-service.ts'
+import { ensureTerminalReadPermitted } from '../services/security/terminal-read-guard.ts'
 
 function formatListLine(info: { id: string; label: string; active: boolean }): string {
   const mark = info.active ? ' (active)' : ''
@@ -42,7 +43,7 @@ export const readTerminalTool = defineTool({
       .default(READ_TERMINAL_DEFAULT_LINES)
       .describe(`How many trailing lines to return (1–${String(READ_TERMINAL_MAX_LINES)}).`),
   }),
-  execute({ action, id, max_lines }) {
+  async execute({ action, id, max_lines }) {
     const threadId = getActiveRunThread()
     if (action === 'list') {
       const shells = listTerminalSessions(threadId)
@@ -56,6 +57,12 @@ export const readTerminalTool = defineTool({
     if (!snap) {
       if (id) return `No open shell with id "${id}" for this chat.`
       return 'No open Shells tabs for this chat. The user can open one from the Shells panel.'
+    }
+    // The scrollback is user-owned content: screen it (local safety model) and
+    // fall back to explicit user approval before it reaches the agent.
+    const gate = await ensureTerminalReadPermitted(threadId, snap.label, snap.text)
+    if (!gate.allowed) {
+      return gate.deniedMessage ?? 'The user declined to share this shell output.'
     }
     const body = snap.text.trim() ? snap.text : '(no output yet)'
     return `Shell "${snap.label}" [${snap.id}]\n\n${body}`

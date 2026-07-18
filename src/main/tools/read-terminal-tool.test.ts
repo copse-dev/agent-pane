@@ -10,6 +10,7 @@ import {
 } from '../services/exec/terminal-service.ts'
 import { readTerminalTool } from './read-terminal-tool.ts'
 import { setActiveRunThread, clearActiveRunThread } from '../services/thread-models.ts'
+import { setTerminalReadGateForTest } from '../services/security/terminal-read-guard.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 
 const signal = new AbortController().signal
@@ -22,10 +23,12 @@ async function run(args: unknown): Promise<string> {
 describe('read_terminal tool', () => {
   beforeEach(() => {
     destroyAllTerminalSessions()
+    setTerminalReadGateForTest(() => Promise.resolve({ allowed: true }))
   })
   afterEach(() => {
     destroyAllTerminalSessions()
     clearActiveRunThread('thread-a')
+    setTerminalReadGateForTest(null)
   })
 
   it('list/read report no shells when empty', async () => {
@@ -57,6 +60,26 @@ describe('read_terminal tool', () => {
     assert.doesNotMatch(read, /line1/)
 
     assert.equal(listTerminalSessions('other').length, 0)
+  })
+
+  it('returns the gate refusal instead of scrollback when the user declines', async () => {
+    setTerminalReadGateForTest(() =>
+      Promise.resolve({
+        allowed: false,
+        deniedMessage: 'The user declined to share this shell output.',
+      }),
+    )
+    setActiveRunThread('thread-a')
+    const id = __testInjectTerminalSession({
+      ownerId: 1,
+      label: 'Build',
+      threadId: 'thread-a',
+      outputText: 'hunter2\n',
+    })
+    setActiveTerminalSession(id, 1)
+    const result = await run({ action: 'read', max_lines: 200 })
+    assert.match(result, /declined to share/)
+    assert.doesNotMatch(result, /hunter2/)
   })
 
   it('read by id fails for the wrong thread', async () => {

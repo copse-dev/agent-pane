@@ -1,9 +1,9 @@
 import { errorMessage } from '@shared/errors.ts'
-import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
 import { assertWorkspaceWriteTarget, resolveWorkspacePath } from './workspace.ts'
+import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './search/file-index.ts'
 import { getGitStatus } from './github/git-service.ts'
@@ -11,6 +11,13 @@ import { assertMainFrameSender } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
 import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
+import { getSetting } from './storage/settings.ts'
+import { isWorkspaceTrusted } from './security/workspace-trust.ts'
+import { runAfterFileEditHooks } from './hooks/after-file-edit.ts'
+import { runBeforeDiffApplyHooks, runAfterDiffApplyHooks } from './hooks/diff-apply.ts'
+import { currentAgentSessionInfo } from './hooks/agent-session.ts'
+import { snapshotHookRunContext } from './hook-run-recorder.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -188,7 +195,8 @@ export function getPendingAfterContent(path: string): string | null {
 
 async function readCurrentContent(path: string): Promise<string> {
   try {
-    return await fsp.readFile(resolveWorkspacePath(path), 'utf-8')
+    const fs = getActiveWorkspaceFs()
+    return await fs.readFile(await resolveWorkspacePath(path), 'utf-8')
   } catch {
     return ''
   }
@@ -342,6 +350,13 @@ function recordDecision(decision: Omit<DiffDecision, 'at'>): void {
   // Unblock awaitStagedDiffDecision on terminal outcomes only; a conflict
   // re-stages the entry and the user decides again.
   if (decision.status !== 'conflict') settleDecisionWaiters(decision.path, decision.status)
+  // F2: `afterDiffApply` fires at this single terminal-decision choke point.
+  // A conflict is not terminal (the entry is re-staged), so it never fires; every
+  // other status does — `applied` is true only when the diff actually landed.
+  if (decision.status !== 'conflict') {
+    const applied = decision.status === 'approved' || decision.status === 'applied_directly'
+    fireAfterDiffApply(decision.path, applied)
+  }
 }
 
 export function listRecentStagedDiffDecisions(): DiffDecision[] {
@@ -380,17 +395,118 @@ export function clearStagedDiffsForTest(): void {
  */
 export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
   const op = entry.op ?? 'write'
+  // F2: the canonical `beforeDiffApply` blocking gate fires at this single
+  // apply choke point every path funnels through — direct apply, GUI approve /
+  // approve-all, and the headless resolver — before any op lands. A hook deny /
+  // halt blocks the apply; the diff stays queued for the user to retry.
+  const gate = await fireBeforeDiffApply(entry.path)
+  if (gate.blocked) return { status: 'error', error: gate.reason }
   if (op === 'mkdir') return applyMkdir(entry)
   if (op === 'delete') return applyDelete(entry)
   if (op === 'rename') return applyRename(entry)
-  return applyWrite(entry)
+  const result = await applyWrite(entry)
+  // Fire the canonical `afterFileEdit` hook once the content edit has landed on
+  // disk (B2). This is the single choke point every write path funnels through
+  // — direct apply, GUI approve / approve-all, and the headless resolver — so
+  // the event fires exactly once per successful write regardless of mode. Only
+  // content writes qualify: delete / rename / mkdir are not file *edits* in
+  // Cursor's afterFileEdit sense.
+  if (result.status === 'written') await fireAfterFileEdit(entry.path)
+  return result
+}
+
+/**
+ * Fire the `afterFileEdit` hooks for a just-written path (B2). Blocking by
+ * default — the write path awaits this so a formatter hook finishes before the
+ * agent proceeds (decision 2). Gated behind `cursorHooksEnabled` (default off),
+ * the same flag the tool-gate path uses, because honouring hooks spawns
+ * user/project scripts. A hook failure can never fail the edit that already
+ * landed: the runner resolves per-dialect failure semantics internally, and a
+ * defensive catch here swallows any unexpected throw.
+ */
+async function fireAfterFileEdit(path: string): Promise<void> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  try {
+    await runAfterFileEditHooks(await resolveWorkspacePath(path), {
+      workspaceRoot,
+      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      // Real conversation/generation ids + running model on the wire payload (B4).
+      agentSession: currentAgentSessionInfo(),
+    })
+  } catch (err) {
+    console.warn(`[hooks] afterFileEdit hook error for ${path}:`, errorMessage(err))
+  }
+}
+
+/**
+ * Fire the `beforeDiffApply` hooks for a diff about to land (F2, Copse-native).
+ * Blocking — the apply path awaits this so a hook can deny/halt before the edit
+ * lands. Gated behind `cursorHooksEnabled` (default off), the same flag every
+ * other fire site uses, so disabled behavior is byte-identical. Any unexpected
+ * orchestration error fails **open** (the apply proceeds): a broken hook must
+ * never wedge the diff queue, and the per-dialect `onFailure` (decision 9) is the
+ * knob a security-conscious hook uses to fail closed instead.
+ */
+async function fireBeforeDiffApply(path: string): Promise<{ blocked: boolean; reason: string }> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return { blocked: false, reason: '' }
+  const workspaceRoot = getWorkspaceRoot()
+  try {
+    const decision = await runBeforeDiffApplyHooks(await resolveWorkspacePath(path), {
+      workspaceRoot,
+      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      agentSession: currentAgentSessionInfo(),
+    })
+    if (!decision.blocked) return { blocked: false, reason: '' }
+    const detail =
+      decision.agentMessage ?? decision.userMessage ?? 'blocked by a beforeDiffApply hook'
+    return { blocked: true, reason: `Blocked by a beforeDiffApply hook: ${detail}` }
+  } catch (err) {
+    console.warn(`[hooks] beforeDiffApply hook error for ${path}:`, errorMessage(err))
+    return { blocked: false, reason: '' }
+  }
+}
+
+/**
+ * Fire the `afterDiffApply` hooks for a diff that reached a terminal decision
+ * (F2, Copse-native). Detached (decision 3): dispatched and never awaited, so a
+ * slow observer never delays the diff-queue UI. Gated behind `cursorHooksEnabled`
+ * (default off). `applied` is true for approve / direct-apply, false for a
+ * reject or write error.
+ */
+function fireAfterDiffApply(path: string, applied: boolean): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  const agentSession = currentAgentSessionInfo()
+  const threadId = agentSession.conversationId || 'diff-apply'
+  const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  // Snapshot the recording context now, synchronously, like `fireStopHook`: the
+  // dispatch below is detached and the path resolution is async, so the live
+  // context may be gone by the time the hook's `hook_run` line records
+  // (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
+  void (async (): Promise<unknown> =>
+    runAfterDiffApplyHooks(
+      { filePath: await resolveWorkspacePath(path), applied },
+      {
+        threadId,
+        turnTreeId,
+        workspaceRoot,
+        projectTrusted: isWorkspaceTrusted(workspaceRoot),
+        agentSession,
+        recordingSnapshot,
+      },
+    ))().catch((err: unknown) => {
+    console.warn(`[hooks] afterDiffApply dispatch error for ${path}:`, errorMessage(err))
+  })
 }
 
 async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
+  const fs = getActiveWorkspaceFs()
   let current = ''
   try {
-    current = await fsp.readFile(absPath, 'utf-8')
+    current = await fs.readFile(absPath, 'utf-8')
   } catch {
     /* file absent on disk — treated as empty, matching staging snapshot for new files */
   }
@@ -398,9 +514,9 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
-    assertWorkspaceWriteTarget(absPath)
-    await fsp.mkdir(dirname(absPath), { recursive: true })
-    await fsp.writeFile(absPath, entry.after, 'utf-8')
+    await assertWorkspaceWriteTarget(absPath)
+    await fs.mkdir(dirname(absPath), { recursive: true })
+    await fs.writeFile(absPath, entry.after, 'utf-8')
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
@@ -408,10 +524,11 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
 }
 
 async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
+  const fs = getActiveWorkspaceFs()
   let current: string
   try {
-    current = await fsp.readFile(absPath, 'utf-8')
+    current = await fs.readFile(absPath, 'utf-8')
   } catch {
     // Deletion is idempotent: if the file is already gone the desired end state
     // is met, so report success instead of failing the (whole) approval. This is
@@ -424,7 +541,7 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
-    await fsp.rm(absPath)
+    await fs.rm(absPath)
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
@@ -433,11 +550,12 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
 
 async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
   if (!entry.renameTo) return { status: 'error', error: 'rename target missing' }
-  const fromAbs = resolveWorkspacePath(entry.path)
-  const toAbs = resolveWorkspacePath(entry.renameTo)
+  const fromAbs = await resolveWorkspacePath(entry.path)
+  const toAbs = await resolveWorkspacePath(entry.renameTo)
+  const fs = getActiveWorkspaceFs()
   let current: string
   try {
-    current = await fsp.readFile(fromAbs, 'utf-8')
+    current = await fs.readFile(fromAbs, 'utf-8')
   } catch {
     return { status: 'error', error: `File not found: ${entry.path}` }
   }
@@ -446,15 +564,15 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
   }
   // Don't clobber an existing destination.
   try {
-    await fsp.access(toAbs)
+    await fs.access(toAbs)
     return { status: 'error', error: `Destination already exists: ${entry.renameTo}` }
   } catch {
     /* destination is free */
   }
   try {
-    assertWorkspaceWriteTarget(toAbs)
-    await fsp.mkdir(dirname(toAbs), { recursive: true })
-    await fsp.rename(fromAbs, toAbs)
+    await assertWorkspaceWriteTarget(toAbs)
+    await fs.mkdir(dirname(toAbs), { recursive: true })
+    await fs.rename(fromAbs, toAbs)
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }
@@ -462,10 +580,10 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
 }
 
 async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = resolveWorkspacePath(entry.path)
+  const absPath = await resolveWorkspacePath(entry.path)
   try {
-    assertWorkspaceWriteTarget(absPath)
-    await fsp.mkdir(absPath, { recursive: true })
+    await assertWorkspaceWriteTarget(absPath)
+    await getActiveWorkspaceFs().mkdir(absPath, { recursive: true })
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
   }

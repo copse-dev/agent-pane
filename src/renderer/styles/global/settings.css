@@ -83,7 +83,7 @@ dialog.settings-overlay::backdrop {
 .settings-nav-btn {
   text-align: left;
   padding: 10px var(--spacing-md);
-  border-radius: var(--radius);
+  border-radius: 0;
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
 }
@@ -92,11 +92,10 @@ dialog.settings-overlay::backdrop {
   color: var(--text-primary);
 }
 .settings-nav-btn.active {
-  background: var(--bg-hover);
+  background: var(--bg-selected);
   color: var(--text-primary);
   font-weight: 600;
-  /* Distinguish "selected" from mere hover, which shares the same fill. */
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
 /* Cross-section search box, pinned above the section list in the sidebar. */
 .settings-search {
@@ -175,6 +174,14 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   line-height: 1.4;
 }
+/* Live advisor-pair assessment under the advisor model picker: colour tracks
+   how much lift the model annotations expect from the pairing. */
+.advisor-pair-hint[data-level='good'] {
+  color: var(--success);
+}
+.advisor-pair-hint[data-level='warn'] {
+  color: var(--warning, #d29922);
+}
 /* Inline preview of the external-link glyph shown in the links hint copy. */
 .external-link-hint-icon {
   display: inline-block;
@@ -220,7 +227,7 @@ dialog.settings-overlay::backdrop {
 }
 .settings-buttons button[type='submit'] {
   background: var(--accent);
-  color: white;
+  color: var(--text-on-accent);
   border-radius: var(--radius);
   padding: var(--spacing-md) var(--spacing-xl);
 }
@@ -573,7 +580,80 @@ dialog.settings-overlay::backdrop {
 .usage-section-root {
   display: flex;
   flex-direction: column;
+  /* Separate plan limits from local ledger as distinct sections. */
+  gap: calc(var(--spacing-xl) + var(--spacing-md));
+}
+.usage-plan-section,
+.usage-ledger-section {
+  display: flex;
+  flex-direction: column;
   gap: var(--spacing-md);
+}
+.usage-plan-heading,
+.usage-ledger-heading {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.usage-plan-providers {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-xl) + var(--spacing-md));
+}
+.usage-plan-provider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.usage-plan-provider-title {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.usage-plan-name {
+  margin: 0;
+}
+.usage-plan-status-error {
+  color: var(--danger, #c44);
+}
+.usage-plan-window {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.usage-plan-window-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+}
+.usage-plan-window-label {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.usage-plan-window-stats {
+  color: var(--text-muted);
+}
+.usage-plan-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.usage-plan-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+}
+.usage-plan-bar-fill[data-severity='warning'] {
+  background: var(--warning);
+}
+.usage-plan-bar-fill[data-severity='critical'] {
+  background: var(--danger);
 }
 .usage-period-tabs {
   display: flex;
@@ -795,6 +875,33 @@ dialog.settings-overlay::backdrop {
   color: var(--warning, #d29922);
   border-color: var(--warning, #d29922);
 }
+/* Hooks list states: authoring warnings, unwired events, runtime failures. */
+.sources-badge-warning {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
+.sources-row-warning {
+  border-color: var(--warning, #d29922);
+}
+.sources-badge-unsupported {
+  color: var(--text-muted);
+  border-style: dashed;
+}
+.sources-badge-error {
+  color: var(--error);
+  border-color: var(--error);
+}
+/* `sandbox: false` escape (F3): hook runs outside the project sandbox. */
+.sources-badge-unsandboxed {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
+.sources-row-error {
+  font-size: 11px;
+  color: var(--error);
+  word-break: break-word;
+  margin-top: 2px;
+}
 .sources-row-detail {
   font-size: 11px;
   color: var(--text-muted);
@@ -804,4 +911,77 @@ dialog.settings-overlay::backdrop {
 .sources-empty {
   color: var(--text-muted);
   font-size: var(--font-size-sm);
+}
+
+/* G2 dry-run hook tester: a per-hook "Test" button in the row header and the
+   result panel it toggles (summary chips + labeled stdin/stdout/stderr). */
+.sources-hook-test-btn {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px var(--spacing-sm);
+  cursor: pointer;
+}
+.sources-hook-test-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sources-hook-test-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.hook-test {
+  margin-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.hook-test-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hook-test-summary.hook-test-error {
+  color: var(--error);
+}
+.hook-test-chip {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
+.hook-test-outcome {
+  font-size: 11px;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+.hook-test-stream-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-top: var(--spacing-xs);
+}
+.hook-test-stream pre {
+  margin: 2px 0 0;
+  padding: var(--spacing-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+.hook-test-stream pre.hook-test-stream-empty {
+  color: var(--text-muted);
+  font-style: italic;
 }

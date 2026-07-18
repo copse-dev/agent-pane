@@ -1,7 +1,9 @@
-import { existsSync, lstatSync, readlinkSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
+import { getActivePathBackend } from './workspace-fs/get-path-backend.ts'
+import type { PathBackend } from './workspace-fs/path-backend.ts'
 
 const WORKSPACE_KEY = 'workspaceRoot'
 const PROJECTS_KEY = 'projects'
@@ -12,29 +14,74 @@ let workspaceRoot: string | null = (storageGet(WORKSPACE_KEY) as string | null |
 /** Roots the renderer may activate via `workspace:set` (dialog-opened or persisted projects). */
 const allowedWorkspaceRoots = new Set<string>()
 
+/** Resolves once persisted project roots are seeded at main-process startup. */
+let allowedWorkspaceRootsReady: Promise<void> = Promise.resolve()
+
+/**
+ * Kick off async seeding of persisted project roots during handler registration.
+ * `assertAllowedWorkspaceRoot` awaits this so an early `workspace:set` cannot
+ * race the fire-and-forget bootstrap.
+ */
+export function scheduleAllowedWorkspaceRootsBootstrap(bootstrap: () => Promise<void>): void {
+  allowedWorkspaceRootsReady = bootstrap()
+}
+
+async function awaitAllowedWorkspaceRootsReady(): Promise<void> {
+  await allowedWorkspaceRootsReady
+}
+
+export interface WorkspaceProjectRef {
+  path: string
+  sshHost?: string
+}
+
+/** Normalize a remote POSIX workspace path for allowlist keys and storage. */
+export function normalizeRemoteWorkspacePath(path: string): string {
+  let p = path.trim()
+  if (!p) return '/'
+  if (!p.startsWith('/')) p = `/${p}`
+  const trimmed = p.replace(/\/+$/, '')
+  return trimmed || '/'
+}
+
+/** Allowlist key for `(sshHost ?? '', path)` dedup and guard checks. */
+export function workspaceRootKey(path: string, sshHost?: string): string {
+  const normalized = sshHost ? normalizeRemoteWorkspacePath(path) : path
+  return `${sshHost ?? ''}\0${normalized}`
+}
+
 /**
  * macOS seatbelt (ASRT) confines spawned shell/git tools to the workspace, but
  * `fs:*` IPC handlers read/write via node:fs in the unsandboxed main process.
  * Containment: path checks in this module plus, on macOS when ASRT is active,
  * `sandbox-fs-client` routes `fs:*` IPC through a seatbelt-wrapped worker subprocess.
  */
-export function canonicalWorkspaceRoot(root: string): string {
+export async function canonicalWorkspaceRoot(
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string> {
   const abs = resolve(root)
-  if (!existsSync(abs)) {
+  if (!(await backend.exists(abs))) {
     throw new Error(`Workspace root does not exist: ${root}`)
   }
-  const real = realpathSync.native(abs)
-  const stat = statSync(real)
+  const real = await backend.realpath(abs)
+  const stat = await backend.stat(real)
   if (!stat.isDirectory()) {
     throw new Error(`Workspace root must be a directory: ${root}`)
   }
   return real
 }
 
-export function seedAllowedWorkspaceRoots(paths: Iterable<string>): void {
-  for (const p of paths) {
+export async function seedAllowedWorkspaceRoots(
+  projects: Iterable<WorkspaceProjectRef>,
+): Promise<void> {
+  for (const project of projects) {
     try {
-      allowedWorkspaceRoots.add(canonicalWorkspaceRoot(p))
+      if (project.sshHost) {
+        allowedWorkspaceRoots.add(workspaceRootKey(project.path, project.sshHost))
+      } else {
+        allowedWorkspaceRoots.add(workspaceRootKey(await canonicalWorkspaceRoot(project.path)))
+      }
     } catch {
       // Ignore stale or missing persisted project paths.
     }
@@ -42,15 +89,31 @@ export function seedAllowedWorkspaceRoots(paths: Iterable<string>): void {
 }
 
 /** Register a folder the user opened or saved as a project (canonical path). */
-export function registerAllowedWorkspaceRoot(root: string): string {
-  const canonical = canonicalWorkspaceRoot(root)
-  allowedWorkspaceRoots.add(canonical)
+export async function registerAllowedWorkspaceRoot(
+  root: string,
+  sshHost?: string,
+): Promise<string> {
+  if (sshHost) {
+    const normalized = normalizeRemoteWorkspacePath(root)
+    allowedWorkspaceRoots.add(workspaceRootKey(normalized, sshHost))
+    return normalized
+  }
+  const canonical = await canonicalWorkspaceRoot(root)
+  allowedWorkspaceRoots.add(workspaceRootKey(canonical))
   return canonical
 }
 
-export function assertAllowedWorkspaceRoot(root: string): string {
-  const canonical = canonicalWorkspaceRoot(root)
-  if (!allowedWorkspaceRoots.has(canonical)) {
+export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string): Promise<string> {
+  await awaitAllowedWorkspaceRootsReady()
+  if (sshHost) {
+    const normalized = normalizeRemoteWorkspacePath(root)
+    if (!allowedWorkspaceRoots.has(workspaceRootKey(normalized, sshHost))) {
+      throw new Error('Workspace root is not an allowed project folder')
+    }
+    return normalized
+  }
+  const canonical = await canonicalWorkspaceRoot(root)
+  if (!allowedWorkspaceRoots.has(workspaceRootKey(canonical))) {
     throw new Error('Workspace root is not an allowed project folder')
   }
   return canonical
@@ -59,6 +122,7 @@ export function assertAllowedWorkspaceRoot(root: string): string {
 /** @internal test helper */
 export function clearAllowedWorkspaceRootsForTest(): void {
   allowedWorkspaceRoots.clear()
+  allowedWorkspaceRootsReady = Promise.resolve()
 }
 
 export function getWorkspaceRoot(): string | null {
@@ -92,6 +156,50 @@ export function getActiveProjectRoot(): string | null {
   return activeProject?.path ?? workspaceRoot
 }
 
+/** SSH host id (`sshWorkspaceHosts[].id`) for the active project, if any. */
+export function getActiveProjectSshHost(): string | undefined {
+  const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)
+  if (typeof activeProjectId !== 'string') return undefined
+
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return undefined
+
+  for (const project of projects) {
+    if (!project || typeof project !== 'object') continue
+    const candidate = project as { id?: unknown; sshHost?: unknown }
+    if (candidate.id === activeProjectId && typeof candidate.sshHost === 'string') {
+      return candidate.sshHost
+    }
+  }
+  return undefined
+}
+
+/**
+ * Resolve which SSH host owns a workspace root about to be activated.
+ * Prefer an explicit host from the renderer, then the active project, then any
+ * persisted project whose path matches (so `workspace:set` never falls through
+ * to a local `exists` check for remote roots like `/etc/ddg`).
+ */
+export function resolveSshHostForWorkspaceRoot(
+  root: string,
+  explicitSshHost?: string,
+): string | undefined {
+  if (explicitSshHost) return explicitSshHost
+  const active = getActiveProjectSshHost()
+  if (active) return active
+
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return undefined
+  const normalized = normalizeRemoteWorkspacePath(root)
+  for (const project of projects) {
+    if (!project || typeof project !== 'object') continue
+    const candidate = project as { path?: unknown; sshHost?: unknown }
+    if (typeof candidate.path !== 'string' || typeof candidate.sshHost !== 'string') continue
+    if (normalizeRemoteWorkspacePath(candidate.path) === normalized) return candidate.sshHost
+  }
+  return undefined
+}
+
 export function setWorkspaceRoot(root: string | null): void {
   workspaceRoot = root
   storageSet(WORKSPACE_KEY, root)
@@ -111,11 +219,14 @@ function isPathInsideRoot(resolved: string, absRoot: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !rel.split(sep).includes('..'))
 }
 
-function resolveThroughExistingPrefix(absPath: string): string {
+async function resolveThroughExistingPrefix(
+  absPath: string,
+  backend: PathBackend,
+): Promise<string> {
   let probe = absPath
   for (;;) {
-    if (existsSync(probe)) {
-      const realProbe = realpathSync.native(probe)
+    if (await backend.exists(probe)) {
+      const realProbe = await backend.realpath(probe)
       const suffix = relative(probe, absPath)
       return suffix ? resolve(realProbe, suffix) : realProbe
     }
@@ -125,12 +236,15 @@ function resolveThroughExistingPrefix(absPath: string): string {
   }
 }
 
-export function resolveWorkspacePath(path: string): string {
+export async function resolveWorkspacePath(
+  path: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string> {
   if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  const absRoot = realpathSync.native(resolve(workspaceRoot))
+  const absRoot = await backend.realpath(resolve(workspaceRoot))
   let relPath = path
   if (isAbsolute(path)) {
-    const absInput = resolveThroughExistingPrefix(resolve(path))
+    const absInput = await resolveThroughExistingPrefix(resolve(path), backend)
     const fromRoot = relative(absRoot, absInput)
     if (!isPathInsideRoot(absInput, absRoot)) {
       throw new Error(
@@ -147,7 +261,7 @@ export function resolveWorkspacePath(path: string): string {
     )
   }
 
-  const resolved = resolveThroughExistingPrefix(absTarget)
+  const resolved = await resolveThroughExistingPrefix(absTarget, backend)
   if (!isPathInsideRoot(resolved, absRoot)) {
     throw new Error(
       `Path outside workspace: ${path}. File tools require paths relative to the workspace root.`,
@@ -168,12 +282,25 @@ function chatStoreDir(): string {
   return override && override.length > 0 ? override : join(homedir(), '.copse', 'workspace')
 }
 
-/** Canonical (realpath'd) chat-store root, or null when it does not exist yet. */
-export function getChatStoreRoot(): string | null {
+/** Sync chat-store root for seatbelt overlay assembly (overlay builder stays sync). */
+export function getChatStoreRootSync(): string | null {
   const dir = chatStoreDir()
   if (!existsSync(dir)) return null
   try {
     return realpathSync.native(resolve(dir))
+  } catch {
+    return null
+  }
+}
+
+/** Canonical (realpath'd) chat-store root, or null when it does not exist yet. */
+export async function getChatStoreRoot(
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string | null> {
+  const dir = chatStoreDir()
+  if (!(await backend.exists(dir))) return null
+  try {
+    return await backend.realpath(resolve(dir))
   } catch {
     return null
   }
@@ -184,10 +311,13 @@ export function getChatStoreRoot(): string | null {
  * read tools to route chat-store targets down their non-workspace-indexed path
  * (the workspace file-index/`toRelativePath` are workspace-only).
  */
-export function isInsideChatStore(absPath: string): boolean {
-  const root = getChatStoreRoot()
+export async function isInsideChatStore(
+  absPath: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<boolean> {
+  const root = await getChatStoreRoot(backend)
   if (!root) return false
-  return isPathInsideRoot(resolveThroughExistingPrefix(resolve(absPath)), root)
+  return isPathInsideRoot(await resolveThroughExistingPrefix(resolve(absPath), backend), root)
 }
 
 /**
@@ -200,14 +330,17 @@ export function isInsideChatStore(absPath: string): boolean {
  * `assertWorkspaceWriteTarget` stay workspace-only, so every write tool rejects
  * the chat store by construction.
  */
-export function resolveReadablePath(path: string): string {
+export async function resolveReadablePath(
+  path: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string> {
   try {
-    return resolveWorkspacePath(path)
+    return await resolveWorkspacePath(path, backend)
   } catch (workspaceErr) {
     if (isAbsolute(path)) {
-      const chatRoot = getChatStoreRoot()
+      const chatRoot = await getChatStoreRoot(backend)
       if (chatRoot) {
-        const absInput = resolveThroughExistingPrefix(resolve(path))
+        const absInput = await resolveThroughExistingPrefix(resolve(path), backend)
         if (isPathInsideRoot(absInput, chatRoot)) return absInput
       }
     }
@@ -225,7 +358,7 @@ export function resolveReadablePath(path: string): string {
  * Guard a write/create target against symlink escape before any `fs.writeFile`/
  * `mkdir` follows it. `resolveWorkspacePath` realpaths only the *existing* prefix of
  * a path, so a symlink whose target does not yet exist (a dangling symlink) is
- * skipped by the `existsSync` walk and treated as a plain new file — a subsequent
+ * skipped by the exists walk and treated as a plain new file — a subsequent
  * write would then follow it outside the workspace root. A repo can ship such a
  * symlink (e.g. `deploy.conf -> ../../../.ssh/authorized_keys`) and the agent
  * editing that path would clobber a file outside the workspace.
@@ -237,9 +370,12 @@ export function resolveReadablePath(path: string): string {
  * read just fails with ENOENT, and an existing symlink to outside is already caught
  * by `resolveWorkspacePath`'s realpath check).
  */
-export function assertWorkspaceWriteTarget(absPath: string): void {
+export async function assertWorkspaceWriteTarget(
+  absPath: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<void> {
   if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  const absRoot = realpathSync.native(resolve(workspaceRoot))
+  const absRoot = await backend.realpath(resolve(workspaceRoot))
   const rel = relative(absRoot, absPath)
   if (rel === '' || rel.startsWith('..') || rel.split(sep).includes('..')) {
     throw new Error(`Path outside workspace: ${absPath}.`)
@@ -249,15 +385,15 @@ export function assertWorkspaceWriteTarget(absPath: string): void {
     current = resolve(current, segment)
     let info
     try {
-      info = lstatSync(current)
+      info = await backend.lstat(current)
     } catch {
       // Segment does not exist yet (the new file/dir being created), and anything
       // deeper can't exist under it — nothing left to follow.
       break
     }
     if (info.isSymbolicLink()) {
-      const target = resolve(dirname(current), readlinkSync(current))
-      if (!isPathInsideRoot(resolveThroughExistingPrefix(target), absRoot)) {
+      const target = resolve(dirname(current), await backend.readlink(current))
+      if (!isPathInsideRoot(await resolveThroughExistingPrefix(target, backend), absRoot)) {
         throw new Error(`Refusing to write through a symlink that escapes the workspace: ${rel}`)
       }
     }
@@ -272,18 +408,24 @@ export function assertWorkspaceWriteTarget(absPath: string): void {
  * component swapped to a symlink pointing outside the workspace is rejected.
  * Returns false (rather than throwing) so callers can silently skip the event.
  */
-export function isResolvedPathInsideWorkspace(absPath: string): boolean {
+export async function isResolvedPathInsideWorkspace(
+  absPath: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<boolean> {
   if (!workspaceRoot) return false
   try {
-    const absRoot = realpathSync.native(resolve(workspaceRoot))
-    const resolved = resolveThroughExistingPrefix(resolve(absPath))
+    const absRoot = await backend.realpath(resolve(workspaceRoot))
+    const resolved = await resolveThroughExistingPrefix(resolve(absPath), backend)
     return isPathInsideRoot(resolved, absRoot)
   } catch {
     return false
   }
 }
 
-export function toRelativePath(absPath: string): string {
+export async function toRelativePath(
+  absPath: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string> {
   if (!workspaceRoot) return absPath
   const base = resolve(workspaceRoot)
   const target = resolve(absPath)
@@ -295,13 +437,13 @@ export function toRelativePath(absPath: string): string {
   // the canonical forms; the common in-workspace case keeps the cheap result.
   if (rel.startsWith('..')) {
     try {
-      const realTarget = resolveThroughExistingPrefix(target)
-      const realRel = relative(realpathSync.native(base), realTarget)
+      const realTarget = await resolveThroughExistingPrefix(target, backend)
+      const realRel = relative(await backend.realpath(base), realTarget)
       if (!realRel.startsWith('..')) rel = realRel
       // A chat-store file (#644): a `../…` workspace-relative path is unusable —
       // the read tools only accept absolute paths for the chat store — so hand
       // back the absolute canonical path (search_code / list_dir output).
-      else if (isInsideChatStore(realTarget)) return realTarget
+      else if (await isInsideChatStore(realTarget, backend)) return realTarget
     } catch {
       // Workspace root missing on disk (e.g. mock tests); keep the raw result.
     }

@@ -80,6 +80,21 @@ export const followUpContextSchema = z.object({
   toolNames: z.array(z.string()),
 })
 
+/**
+ * `hooks:test` request (G2 dry-run tester). The renderer echoes back a
+ * discovered hook's identity from Sources; validate it so a compromised
+ * renderer cannot smuggle an arbitrary command through the dry-run spawn — the
+ * command is still one that hook discovery surfaced, but the shape is pinned.
+ */
+export const zHookTestRequest = z.object({
+  family: z.enum(['cursor', 'claude', 'copse']),
+  event: z.string().min(1).max(256),
+  command: z.string().min(1).max(8192),
+  source: z.string().max(4096),
+  scope: z.enum(['user', 'project']),
+  sandbox: z.boolean().optional(),
+})
+
 export const INDEX_QUERY_PATTERN = /^[\w.\-/+$@ ]{0,128}$/
 
 export function isIndexQueryPattern(pattern: string): boolean {
@@ -105,7 +120,18 @@ export function assertStorageKey(key: string): void {
   }
 }
 
-export const approvalRespondSchema = z.tuple([z.uuid(), z.boolean(), z.boolean().optional()])
+export const comparisonModelSelectionSchema = z.object({
+  a: z.string().min(1).max(500),
+  b: z.string().min(1).max(500),
+  judge: z.string().min(1).max(500),
+})
+
+export const approvalRespondSchema = z.tuple([
+  z.uuid(),
+  z.boolean(),
+  z.boolean().optional(),
+  comparisonModelSelectionSchema.optional(),
+])
 
 // Answer payload for a pending ask_user question: the request id plus one answer
 // string per question, in order. Answers are bounded so a runaway/hostile
@@ -113,6 +139,8 @@ export const approvalRespondSchema = z.tuple([z.uuid(), z.boolean(), z.boolean()
 export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192)).max(10)])
 
 export const sshPromptRespondSchema = z.tuple([z.uuid(), z.string().max(8192)])
+
+export const zSshHostId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 
 export const providerSchema = z.enum([
   'anthropic',

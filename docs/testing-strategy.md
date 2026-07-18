@@ -65,6 +65,13 @@ new tests should keep that trend:
 - The **cheap static gate** (`lint`/typecheck/format/dead-code) short-circuits
   the pipeline before any build or e2e shard burns minutes. Put fast, broad
   checks here.
+- **Remote e2e for the local loop** (`npm run e2e:remote`) runs the same
+  oracle-selected / CI-shaped suite on a cloud container from the working tree
+  so agents and humans can keep iterating. Prefer it over local `test:e2e`
+  while iterating when a host or `COPSE_CI_REGISTRY` is available (see
+  [`ci-runners/README.md`](../ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote)).
+  Local `test:e2e` stays for macOS-specific behaviour and machines without cloud
+  access.
 - Don't reintroduce per-spec rebuilds or hosted-runner e2e for ordinary
   changes; the shared `dist` artifact + self-hosted PR/push runners exist to
   avoid that cost.

@@ -6,7 +6,7 @@ import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { recordUsageEvent } from './storage/usage-ledger.ts'
 import { addKnowledgeNote, type KnowledgeNote } from './storage/knowledge-store.ts'
 import { ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
-import { classifyRoadmapComplexity } from './roadmap-complexity.ts'
+import { classifyRoadmapComplexity, stampRoadmapComplexity } from './roadmap-complexity.ts'
 import type { RoadmapComplexity } from '@shared/roadmap/complexity.ts'
 
 /**
@@ -67,33 +67,35 @@ export async function draftRoadmapPrompt(issue: RoadmapImportIssue): Promise<str
 }
 
 /**
- * Create one roadmap item per issue, pinned via `fields.issue` and stamped
- * with a saved-prompt complexity like any other save. Sequential on purpose:
- * local small-tasks models handle one completion at a time well, and import is
- * an explicit, occasional action. `draft`/`classify` are injectable for tests.
+ * Create one roadmap item per issue, pinned via `fields.issue`. Each item is
+ * saved the moment its prompt is drafted; the complexity stamp lands in the
+ * background like any other save (stampRoadmapComplexity), so import never
+ * waits on the classifier. Drafting stays sequential on purpose: local
+ * small-tasks models handle one completion at a time well, and import is an
+ * explicit, occasional action. `draft`/`classify` are injectable for tests;
+ * `onStamped` fires per background stamp (e.g. to refresh the pane).
  */
 export async function importIssuesAsRoadmapItems(
   issues: RoadmapImportIssue[],
   draft: (issue: RoadmapImportIssue) => Promise<string> = draftRoadmapPrompt,
   classify: (prompt: string) => Promise<RoadmapComplexity> = classifyRoadmapComplexity,
+  onStamped?: () => void,
 ): Promise<KnowledgeNote[]> {
   const created: KnowledgeNote[] = []
   for (const issue of issues) {
     const prompt = await draft(issue)
-    const complexity = await classify(prompt)
-    created.push(
-      addKnowledgeNote({
-        type: ROADMAP_TYPE,
-        title: roadmapTitleFromPrompt(prompt),
-        body: prompt,
-        status: 'ready',
-        fields: {
-          issue: `#${String(issue.number)}`,
-          notes: `Imported from issue #${String(issue.number)}: ${issue.title}`,
-          complexity,
-        },
-      }),
-    )
+    const note = addKnowledgeNote({
+      type: ROADMAP_TYPE,
+      title: roadmapTitleFromPrompt(prompt),
+      body: prompt,
+      status: 'ready',
+      fields: {
+        issue: `#${String(issue.number)}`,
+        notes: `Imported from issue #${String(issue.number)}: ${issue.title}`,
+      },
+    })
+    created.push(note)
+    void stampRoadmapComplexity(note.id, prompt, onStamped, classify)
   }
   return created
 }

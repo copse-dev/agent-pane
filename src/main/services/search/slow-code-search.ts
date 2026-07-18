@@ -170,7 +170,7 @@ async function walkSearch(ctx: WalkSearchCtx): Promise<void> {
 
     const full = join(ctx.dir, e.name)
     const rel = pathRelativeToSearchRoot(ctx.searchRoot, full)
-    const displayPath = toRelativePath(full)
+    const displayPath = await toRelativePath(full)
 
     if (e.isDirectory()) {
       if (!ctx.gitignore.isIgnored(rel, true)) {

@@ -16,8 +16,8 @@ issues #128 and #174).
 | MCP stdio/http servers             | `src/main/services/mcp-registry.ts`, `mcp.json`                                                         | Project-local config is **attacker-controllable** (a cloned repo can ship `.mcp.json`); user-global config is trusted     | Per-server trust gate (tracked in #100), env-interpolation allowlist                                                       |
 | Auto-discovered skills             | `src/main/services/skills-registry.ts`, `parse-skill-frontmatter.ts`, `skill-prompt.ts`                 | `user` source = trusted; `project`/`plugin`/`plugin-path` = **untrusted**                                                 | Frontmatter is parsed defensively; untrusted skill text is delimited as data in the prompt                                 |
 | Cursor plugin MCP                  | `src/main/services/cursor-plugins.ts`, `mcp-registry.ts`                                                | User-installed via Cursor marketplace (trusted for env interpolation; same tier as `~/.cursor/mcp.json`)                  | Merged before project configs; see `docs/cursor-plugins.md`                                                                |
-| Cursor hooks                       | `src/main/services/skills/cursor-hooks.ts`, `permission-gate.ts`, `hooks.json`                          | `~/.cursor/hooks.json` = trusted; project `<root>/.cursor/hooks.json` = **attacker-controllable** (cloned repo)           | Off by default (`cursorHooksEnabled`); project hooks need workspace trust (#100); scrubbed env; see `docs/cursor-hooks.md` |
-| Claude Code hooks                  | `src/main/services/skills/claude-hooks.ts`, `permission-gate.ts`, `.claude/settings.json`               | `~/.claude/settings.json` = trusted; project `.claude/settings.json` / `.settings.local.json` = **attacker-controllable** | Same `cursorHooksEnabled` gate; trust + scrubbed env; see `docs/claude-hooks.md` (#639)                                    |
+| Cursor hooks                       | `src/main/services/hooks/cursor-adapter.ts`, `permission-gate.ts`, `hooks.json`                         | `~/.cursor/hooks.json` = trusted; project `<root>/.cursor/hooks.json` = **attacker-controllable** (cloned repo)           | Off by default (`cursorHooksEnabled`); project hooks need workspace trust (#100); scrubbed env; see `docs/cursor-hooks.md` |
+| Claude Code hooks                  | `src/main/services/hooks/claude-adapter.ts`, `permission-gate.ts`, `.claude/settings.json`              | `~/.claude/settings.json` = trusted; project `.claude/settings.json` / `.settings.local.json` = **attacker-controllable** | Same `cursorHooksEnabled` gate; trust + scrubbed env; see `docs/claude-hooks.md` (#639)                                    |
 | App's own build/install chain      | `package.json` scripts, `scripts/postinstall-native.mts`, `scripts/fetch-gortex.mts`                    | Build-time                                                                                                                | Lockfile + pinning (phase 3)                                                                                               |
 
 ### Policy axis per surface
@@ -125,8 +125,14 @@ Two defaults harden every invoked skill, trusted or not (both toggleable in
   release's Sigstore-signed `checksums.txt`.
 - Replace `npx electron-rebuild` in postinstall with a pinned devDependency
   invocation; audit all lifecycle scripts.
-- Add a CI gate: `npm audit --audit-level=high` (or `osv-scanner`/`socket`),
-  Dependabot/Renovate, and consider `--ignore-scripts` for CI installs.
+- CI runs `npm audit --audit-level=high` against the lockfile-exact dependency
+  tree. CodeQL analyzes JavaScript/TypeScript and the checksum-pinned, open-source
+  gitleaks CLI scans repository history on GitHub-hosted runners, including fork
+  pull requests without secrets. The CLI path avoids gitleaks-action's separate
+  organization-repository license requirement. This full-history CI scan is the
+  project's required secret-scanning gate; GitHub's built-in secret scanning and
+  push protection remain optional repository settings.
+  Add Dependabot/Renovate and consider `--ignore-scripts` for CI installs.
 - Evaluate npm provenance / `npm audit signatures`.
 
 ### Phase 4 — Defense in depth & observability
