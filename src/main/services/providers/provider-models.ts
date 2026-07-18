@@ -8,11 +8,35 @@
 
 import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import {
+  assertApprovedProviderHost,
+  ensureProviderHostApproved,
+} from './approved-provider-hosts.ts'
 import { parseContextFromModelRecord, stripTrailingSlash } from './lm-studio-models.ts'
 
 export interface FetchedProviderModel {
   id: string
   contextLength: number | null
+}
+
+/**
+ * Settings "Fetch models" entry point. Prompts to approve a never-seen custom
+ * host (issue #438) before listing models so users can fetch before Save.
+ */
+export async function fetchOpenAiCompatibleModelsForSettings(
+  baseUrl: string,
+  apiKey?: string,
+): Promise<{ ok: boolean; models: FetchedProviderModel[]; error?: string }> {
+  try {
+    await ensureProviderHostApproved(baseUrl)
+  } catch (err) {
+    return {
+      ok: false,
+      models: [],
+      error: err instanceof Error ? err.message : 'Provider host is not approved',
+    }
+  }
+  return fetchOpenAiCompatibleModels(baseUrl, apiKey)
 }
 
 export async function fetchOpenAiCompatibleModels(
@@ -34,6 +58,16 @@ export async function fetchOpenAiCompatibleModels(
       ok: false,
       models: [],
       error: err instanceof Error ? err.message : 'Invalid base URL',
+    }
+  }
+  // Host allowlist (issue #438) — never send the key to an unapproved host.
+  try {
+    assertApprovedProviderHost(base)
+  } catch (err) {
+    return {
+      ok: false,
+      models: [],
+      error: err instanceof Error ? err.message : 'Provider host is not approved',
     }
   }
   const key = apiKey?.trim()

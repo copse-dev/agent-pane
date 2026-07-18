@@ -6,6 +6,7 @@ import {
 } from '@copse/llm/create-provider.ts'
 import { isOpenRouterModel, openRouterModelId } from '@copse/llm/openrouter.ts'
 import { extraProviderForModel, extraProviderModelId } from '@copse/llm/extra-providers.ts'
+import { getApprovedProviderHosts } from './approved-provider-hosts.ts'
 import { getResolvedExtraProviders } from './extra-providers-store.ts'
 import type { LLMProvider } from '@shared/types'
 import {
@@ -192,7 +193,12 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
         `${extra.label} is not configured. Add a ${extra.label} API key in Settings or choose another model.`,
       )
     }
-    const provider = createExtraCloudProvider(extra, extraProviderModelId(model), apiKey ?? '')
+    const provider = createExtraCloudProvider(
+      extra,
+      extraProviderModelId(model),
+      apiKey ?? '',
+      getApprovedProviderHosts(),
+    )
     return extra.local ? provider : redactedRemoteProvider(provider)
   }
   if (model.startsWith('claude')) {
