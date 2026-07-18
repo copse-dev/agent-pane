@@ -425,7 +425,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
-    listModels: (agentId: string) => ipcRenderer.invoke('acp:listModels', agentId),
+    probeAgent: (agentId: string) => ipcRenderer.invoke('acp:probeAgent', agentId),
     autoSetup: () => ipcRenderer.invoke('acp:autoSetup'),
   },
   settings: {
@@ -511,6 +511,16 @@ contextBridge.exposeInMainWorld('api', {
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
     checkFit: (id: string) => ipcRenderer.invoke('roadmap:checkFit', id),
+    // Fired when a background complexity stamp lands on a saved item.
+    onChanged: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('roadmap:changed', listener)
+      return (): void => {
+        ipcRenderer.off('roadmap:changed', listener)
+      }
+    },
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -612,6 +622,9 @@ if (process.env['COPSE_E2E'] === '1') {
     },
     requestSshPrompt(prompt: string, kind: 'confirm' | 'secret') {
       return ipcRenderer.invoke('test:requestSshPrompt', prompt, kind)
+    },
+    requestAcpPackageInstallApproval() {
+      return ipcRenderer.invoke('test:requestAcpPackageInstallApproval')
     },
   })
 }

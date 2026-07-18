@@ -483,7 +483,11 @@ jobs:
             /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/boost || true
           sudo docker image prune --all --force >/dev/null 2>&1 || true
           df -h /
-      - uses: actions/download-artifact@v8
+      # Outer retry: actions/download-artifact marks intermittent CDN 403s
+      # ("Error from intermediary") as non-retryable, and with fail-fast:true a
+      # single shard's download flake cancels the whole e2e matrix (see
+      # actions/download-artifact#464 and main run 29591165512).
+      - uses: ./.github/actions/download-artifact-retry
         with:
           name: dist-tar
       - run: tar -xf dist.tar
@@ -649,18 +653,38 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # The PR can merge while this trailing job is still queued (auto-merge fires
+      # the moment the e2e gate goes green), and GitHub then deletes the head
+      # branch — so checking out by branch name fails with "branch not found" and
+      # paints a red X on an already-merged PR (#1001). There is nothing to commit
+      # screenshots to once the branch is gone; detect that first and no-op green.
+      - name: Check head branch still exists
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          if gh api "repos/${{ github.repository }}/branches/$BRANCH" --silent 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Head branch '$BRANCH' no longer exists (PR merged and branch deleted) — skipping screenshot commit."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7.0.0
+        if: steps.head.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - name: Download regenerated screenshots
+        if: steps.head.outputs.exists == 'true'
         uses: actions/download-artifact@v8
         with:
           pattern: screenshots-shard-*
           merge-multiple: true
           path: artifacts
       - name: Apply regenerated screenshots
+        if: steps.head.outputs.exists == 'true'
         run: |
           if compgen -G "artifacts/tests/e2e/screenshots/*" > /dev/null; then
             cp -f artifacts/tests/e2e/screenshots/* tests/e2e/screenshots/
@@ -678,9 +702,11 @@ jobs:
       # just those two into node_modules (an isolated, scripts-off install, ~0.3s)
       # rather than a full `npm ci`; this job otherwise needs no dependency tree.
       - uses: actions/setup-node@v6
+        if: steps.head.outputs.exists == 'true'
         with:
           node-version: '22'
       - name: Filter sub-threshold screenshot noise
+        if: steps.head.outputs.exists == 'true'
         id: filter
         env:
           UPDATE_SCREENSHOTS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'update-screenshots') }}
@@ -702,6 +728,7 @@ jobs:
           cp -r /tmp/ssfilter/node_modules/. node_modules/
           node scripts/filter-screenshots.mts
       - name: Detect screenshot changes
+        if: steps.head.outputs.exists == 'true'
         id: diff
         run: |
           mapfile -t files < <(git diff --name-only -- tests/e2e/screenshots/)
@@ -716,7 +743,7 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
       - name: Commit screenshot updates
-        if: steps.diff.outputs.changed == 'true'
+        if: steps.head.outputs.exists == 'true' && steps.diff.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -747,6 +774,7 @@ jobs:
       # can exist even when this run re-rendered nothing new (the noise filter may
       # have reverted the wobble), so gating on `changed` would miss it.
       - name: Reconcile reference screenshots with main
+        if: steps.head.outputs.exists == 'true'
         id: reconcile
         run: |
           git config user.name "github-actions[bot]"
@@ -801,6 +829,7 @@ jobs:
           fi
           git commit --no-edit
       - name: Push
+        if: steps.head.outputs.exists == 'true'
         id: push
         run: |
           # No-op ("Everything up-to-date") when nothing was committed or merged, so
@@ -813,7 +842,7 @@ jobs:
         # ignored list is offered for manual acceptance), shots were held as
         # flapping or contested, OR main couldn't be merged automatically because
         # source conflicts need a human.
-        if: steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true' || steps.reconcile.outputs.workflow == 'true'
+        if: steps.head.outputs.exists == 'true' && (steps.diff.outputs.changed == 'true' || steps.filter.outputs.ignored-count != '0' || steps.filter.outputs.flapping-count != '0' || steps.filter.outputs.contested-count != '0' || steps.reconcile.outputs.manual == 'true' || steps.reconcile.outputs.workflow == 'true')
         uses: actions/github-script@v9
         env:
           CHANGED_FILES: ${{ steps.diff.outputs.files }}

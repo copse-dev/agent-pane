@@ -82,6 +82,11 @@ function explodeToolCall(
     status: tc.status === 'error' ? 'error' : 'done',
     result,
     ...(tc.editStats !== undefined ? { editStats: tc.editStats } : {}),
+    // ACP display metadata (issue #264): `kind` drives the same grouping/labels
+    // as built-in tools; `resultFormat` keeps agent-authored Markdown rendering
+    // through the Markdown pipeline after a reload instead of a raw <pre>.
+    ...(tc.kind !== undefined ? { kind: tc.kind } : {}),
+    ...(tc.resultFormat !== undefined ? { resultFormat: tc.resultFormat } : {}),
   }
 
   if (tc.subagent) {
@@ -224,6 +229,8 @@ function foldToolCall(
     status: spine.status,
     result,
     ...(spine.editStats !== undefined ? { editStats: spine.editStats } : {}),
+    ...(spine.kind !== undefined ? { kind: spine.kind } : {}),
+    ...(spine.resultFormat !== undefined ? { resultFormat: spine.resultFormat } : {}),
   }
 
   if (spine.subagent) {
