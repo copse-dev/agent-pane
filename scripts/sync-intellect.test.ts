@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mergeApiModels, type AaApiModel, type DataFile } from './sync-intellect.mts'
+import {
+  detectPayloadVersion,
+  mergeApiModels,
+  type AaApiModel,
+  type DataFile,
+} from './sync-intellect.mts'
 
 const BASE: DataFile = {
   canonicalVersion: 'v4.1',
@@ -80,5 +85,22 @@ describe('mergeApiModels', () => {
     const api: AaApiModel[] = [{ slug: 'qwen3-6-35b-a3b', evaluations: {} }]
     const { matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
     assert.equal(matched, 0)
+  })
+})
+
+describe('detectPayloadVersion', () => {
+  it('finds and normalises a declared version at payload, metadata, or model level', () => {
+    assert.equal(detectPayloadVersion({ version: 4.2 }, []), 'v4.2')
+    assert.equal(detectPayloadVersion({ metadata: { index_version: 'v4.3' } }, []), 'v4.3')
+    assert.equal(
+      detectPayloadVersion({}, [
+        { evaluations: { artificial_analysis_intelligence_index_version: '4.1' } },
+      ]),
+      'v4.1',
+    )
+  })
+
+  it('returns undefined when no version field is present (caller defaults to canonical)', () => {
+    assert.equal(detectPayloadVersion({}, [{ slug: 'x', evaluations: {} }]), undefined)
   })
 })

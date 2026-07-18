@@ -30,11 +30,11 @@
 // cloud models). Matched by id or alias — the API never introduces a model id
 // that isn't scored or wanted, so every plotted model remains a reviewed
 // decision, and nobody hand-enters a mis-configured number. The index version
-// comes from the payload's own version field
-// (documented at artificialanalysis.ai/data-api/docs — "4.1" with the v
-// dropped); pass --index-version=<vX.Y> only to pin a payload that omits it
-// (a pin that conflicts with the declared version is an error). Attribution is
-// required by AA's free tier and is carried in the JSON + generated output.
+// is read from the payload's declared version field when present, else defaults
+// to the data file's canonicalVersion (the AA API always reports the current
+// index, so "the latest" is canonical) with a warning; pass --index-version=
+// <vX.Y> to override, e.g. after AA renormalises. Attribution is required by
+// AA's free tier and is carried in the JSON + generated output.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -283,6 +283,38 @@ function normalizeVersion(v: string | number | undefined): string | undefined {
 }
 
 /**
+ * The index version the payload declares, checked against the field spellings
+ * AA might use at the payload, metadata, or per-model level. Undefined when
+ * none match (the caller then defaults to the canonical version).
+ */
+export function detectPayloadVersion(
+  payload: Record<string, unknown>,
+  apiModels: readonly AaApiModel[],
+): string | undefined {
+  const meta = payload['metadata'] as Record<string, unknown> | undefined
+  const candidates: Array<unknown> = [
+    payload['artificial_analysis_intelligence_index_version'],
+    payload['intelligence_index_version'],
+    payload['intelligence_index_version_number'],
+    payload['index_version'],
+    payload['version'],
+    meta?.['artificial_analysis_intelligence_index_version'],
+    meta?.['intelligence_index_version'],
+    meta?.['index_version'],
+    meta?.['version'],
+    apiModels.find((m) => m.evaluations?.artificial_analysis_intelligence_index_version)
+      ?.evaluations?.artificial_analysis_intelligence_index_version,
+  ]
+  for (const c of candidates) {
+    if (typeof c === 'string' || typeof c === 'number') {
+      const v = normalizeVersion(c)
+      if (v) return v
+    }
+  }
+  return undefined
+}
+
+/**
  * Refresh measurements from the Artificial Analysis API for models the seed
  * file already knows (by modelId or alias). Returns the updated score list;
  * never invents a new model id. The index version comes from the payload's own
@@ -301,21 +333,25 @@ async function refreshFromApi(
   if (!res.ok) fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}`)
   const payload = (await res.json()) as Record<string, unknown> & { data?: AaApiModel[] }
   const apiModels = payload.data ?? []
-  const declaredRaw =
-    payload['artificial_analysis_intelligence_index_version'] ??
-    payload['intelligence_index_version'] ??
-    apiModels.find((m) => m.evaluations?.artificial_analysis_intelligence_index_version)
-      ?.evaluations?.artificial_analysis_intelligence_index_version
-  const declared = normalizeVersion(
-    typeof declaredRaw === 'string' || typeof declaredRaw === 'number' ? declaredRaw : undefined,
-  )
+  const declared = detectPayloadVersion(payload, apiModels)
   const pinned = normalizeVersion(pinnedVersion)
   if (declared && pinned && declared !== pinned) {
     fail(`--index-version=${pinned} conflicts with the payload's declared index ${declared}`)
   }
-  const indexVersion = declared ?? pinned
-  if (!indexVersion) {
-    fail('the payload declared no index version — pass --index-version=<vX.Y> to pin it')
+  // Default to the data file's canonical version: the AA API always reports the
+  // CURRENT index, and canonicalVersion is our tracking of it — so with no
+  // declared field and no pin, "the latest" is canonical. Loud about the
+  // assumption; --index-version overrides, and the live panel's anchor gate is
+  // the display-time safety net if AA has since renormalised.
+  const canonical = normalizeVersion(data.canonicalVersion)
+  const indexVersion = declared ?? pinned ?? canonical
+  if (!indexVersion) fail('no index version declared, pinned, or set as canonicalVersion')
+  if (!declared && !pinned) {
+    console.warn(
+      `[sync-intellect] WARNING: the feed declared no index version; assuming the canonical ` +
+        `${String(indexVersion)}. If Artificial Analysis has renormalised its index, pass ` +
+        `--index-version=<vX.Y> instead.`,
+    )
   }
 
   const merged = mergeApiModels(data, apiModels, indexVersion, today)
