@@ -104,6 +104,16 @@ export class PackRegistry {
           'level 2 (declarative panel) requires a `panel` decl (kind: list | tree)',
         )
       }
+      // The inverse is equally mechanical: a `panel` decl on a level-1 card or a
+      // level-3 real view is meaningless — reject it so a typo'd level never
+      // ships a panel the host will silently ignore.
+      if (contribution.level !== 2 && contribution.panel) {
+        throw new InvalidPanelContributionError(
+          pack.id,
+          contribution.id,
+          `level ${String(contribution.level)} must not declare a \`panel\` — panels are the level-2 contract`,
+        )
+      }
     }
     this.packs.set(pack.id, pack)
   }

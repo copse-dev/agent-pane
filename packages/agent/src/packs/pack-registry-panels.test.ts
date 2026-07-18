@@ -58,6 +58,22 @@ describe('level-2 panel contributions', () => {
     assert.equal(registry.has('broken'), false)
   })
 
+  it('rejects a panel decl on a non-level-2 contribution at register time', () => {
+    const registry = new PackRegistry()
+    const bad = definePack(
+      { name: 'mislevelled', trust: 'first-party' },
+      {
+        uiContributions: [{ id: 'card-with-panel', level: 1, panel: { kind: 'list' } }],
+      },
+    )
+    // A typo'd level must fail loudly, not ship a panel the host silently
+    // ignores — panels are the level-2 contract.
+    assert.throws(() => {
+      registry.register(bad)
+    }, InvalidPanelContributionError)
+    assert.equal(registry.has('mislevelled'), false)
+  })
+
   it('allows level-1 (cards) and level-3 (real views) without a panel decl', () => {
     const registry = new PackRegistry()
     const ok = definePack(
