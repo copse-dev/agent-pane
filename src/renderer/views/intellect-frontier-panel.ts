@@ -86,6 +86,7 @@ export function localFrontierCandidates(localModelIds: readonly string[]): Front
       intellectEstimated: score.estimated === true,
       costPerMTok: 0,
       local: true,
+      quant: cap.quant,
     })
   }
   return out
@@ -220,6 +221,147 @@ export function renderCompositeStrip(models: readonly CompositeScoredModel[]): S
   return svg
 }
 
+/** Hover layer contract: renderers hand over content, the panel positions it. */
+export interface FrontierTooltip {
+  show: (content: HTMLElement, evt: MouseEvent) => void
+  hide: () => void
+}
+
+function ttRow(cls: string, ...children: (Node | string)[]): HTMLElement {
+  return el('div', { class: cls }, ...children)
+}
+
+const formatPrice = (v: number): string => `$${String(Number(v.toFixed(2)))}/MTok`
+
+/**
+ * Rich hover card for a plotted point: bold identity, the score's full
+ * derivation, every known price for the same weights, and frontier status.
+ */
+export function pointTooltipContent(p: FrontierPoint): HTMLElement {
+  const root = el('div', { class: 'frontier-tooltip-content' })
+  const label = displayModelLabel(p.id)
+  root.append(ttRow('tt-title', el('strong', {}, label)))
+  if (label !== p.id) root.append(ttRow('tt-muted', p.id))
+
+  root.append(ttRow('tt-section', 'Score'))
+  const explanation = explainIntellectScore(p.id)
+  if (explanation) {
+    root.append(
+      ttRow(
+        'tt-line',
+        el('strong', {}, `${p.intellectEstimated ? '~' : ''}${String(p.intellect)}`),
+        ` — ${explanation.scale}`,
+      ),
+    )
+    for (const step of explanation.steps) {
+      root.append(ttRow('tt-muted', `${step.step}: ${step.detail}`))
+    }
+  } else {
+    root.append(
+      ttRow(
+        'tt-line',
+        el('strong', {}, `~${String(p.intellect)}`),
+        ' — live Artificial Analysis value (not yet curated)',
+      ),
+    )
+  }
+  if (p.quant && p.intellectEstimated) {
+    root.append(
+      ttRow(
+        'tt-muted',
+        `Adjusted down for ${p.quant} quantisation — an estimate, not a measurement.`,
+      ),
+    )
+  }
+
+  root.append(ttRow('tt-section', p.prices?.length ? 'Prices' : 'Price'))
+  root.append(
+    ttRow(
+      'tt-line',
+      p.local
+        ? 'free (runs on-device)'
+        : `${formatPrice(p.costPerMTok)} blended (80% in / 20% out)`,
+      ...(p.prices?.length ? [' — best offer, plotted'] : []),
+    ),
+  )
+  for (const offer of p.prices ?? []) {
+    root.append(
+      ttRow('tt-muted', `${displayModelLabel(offer.id)}: ${formatPrice(offer.costPerMTok)}`),
+    )
+  }
+
+  root.append(
+    ttRow(
+      'tt-status',
+      p.onFrontier
+        ? 'On the value frontier'
+        : `Dominated by ${displayModelLabel(p.dominatedBy ?? '?')}`,
+    ),
+  )
+  return root
+}
+
+/** Hover card for a right-gutter (scored, unpriced) model. */
+export function unpricedTooltipContent(u: CanonicalScoredModel): HTMLElement {
+  const root = el('div', { class: 'frontier-tooltip-content' })
+  root.append(ttRow('tt-title', el('strong', {}, displayModelLabel(u.id))))
+  if (displayModelLabel(u.id) !== u.id) root.append(ttRow('tt-muted', u.id))
+  root.append(ttRow('tt-section', 'Score'))
+  const explanation = explainIntellectScore(u.id)
+  root.append(ttRow('tt-line', el('strong', {}, `${u.estimated ? '~' : ''}${String(u.intellect)}`)))
+  for (const step of explanation?.steps ?? []) {
+    root.append(ttRow('tt-muted', `${step.step}: ${step.detail}`))
+  }
+  root.append(ttRow('tt-status', 'No price data yet — position on intellect only.'))
+  return root
+}
+
+/** Hover card for a bottom-gutter (priced, unscored) model. */
+export function unscoredTooltipContent(u: { id: string; costPerMTok: number }): HTMLElement {
+  const root = el('div', { class: 'frontier-tooltip-content' })
+  root.append(ttRow('tt-title', el('strong', {}, displayModelLabel(u.id))))
+  if (displayModelLabel(u.id) !== u.id) root.append(ttRow('tt-muted', u.id))
+  root.append(ttRow('tt-section', 'Price'))
+  root.append(ttRow('tt-line', `${formatPrice(u.costPerMTok)} blended (80% in / 20% out)`))
+  root.append(ttRow('tt-status', 'No sourced intellect measurement yet — position on price only.'))
+  return root
+}
+
+/** A positioned hover layer inside `container` (which must be a positioning context). */
+export function createTooltipLayer(container: HTMLElement): FrontierTooltip {
+  const tip = el('div', { class: 'frontier-tooltip', hidden: true })
+  container.append(tip)
+  return {
+    show(content, evt): void {
+      tip.replaceChildren(content)
+      tip.hidden = false
+      const rect = container.getBoundingClientRect()
+      tip.style.left = `${String(Math.max(0, evt.clientX - rect.left + 12))}px`
+      tip.style.top = `${String(Math.max(0, evt.clientY - rect.top + 12))}px`
+    },
+    hide(): void {
+      tip.hidden = true
+    },
+  }
+}
+
+function wireTooltip(
+  target: SVGElement,
+  tooltip: FrontierTooltip | undefined,
+  build: () => HTMLElement,
+): void {
+  if (!tooltip) return
+  target.addEventListener('mouseenter', (evt) => {
+    tooltip.show(build(), evt)
+  })
+  target.addEventListener('mousemove', (evt) => {
+    tooltip.show(build(), evt)
+  })
+  target.addEventListener('mouseleave', () => {
+    tooltip.hide()
+  })
+}
+
 function tooltipFor(point: FrontierPoint): string {
   const lines: string[] = [point.id]
   const explanation = explainIntellectScore(point.id)
@@ -269,6 +411,7 @@ export function renderFrontierSvg(
   points: readonly FrontierPoint[],
   size: { width?: number; height?: number } = {},
   gutters: FrontierGutters = {},
+  tooltip?: FrontierTooltip,
 ): SVGSVGElement {
   const unpriced = gutters.unpriced ?? []
   const unscored = gutters.unscored ?? []
@@ -431,7 +574,7 @@ export function renderFrontierSvg(
     py: y(p.intellect) + 3,
   }))
   for (const p of labelledPoints.sort((a, b) => y(a.intellect) - y(b.intellect))) {
-    const text = `${displayModelLabel(p.id)}${p.intellectEstimated ? ' (~)' : ''}${p.local ? ' · free' : ''}`
+    const text = `${displayModelLabel(p.id)}${p.quant ? ` @${p.quant}` : ''}${p.intellectEstimated ? ' (~)' : ''}${p.local ? ' · free' : ''}`
     labelText.set(p.id, text)
     const x0 = x(p.costPerMTok) + 8
     const x1 = x0 + approxLabelWidth(text)
@@ -474,7 +617,8 @@ export function renderFrontierSvg(
           class: 'frontier-point',
         })
     const hit = svgEl('circle', { cx, cy, r: '11', fill: 'transparent', class: 'frontier-hit' })
-    hit.append(svgEl('title', {}, tooltipFor(p)))
+    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p))
+    else hit.append(svgEl('title', {}, tooltipFor(p)))
     const text = labelText.get(p.id)
     if (text !== undefined) {
       svg.append(
@@ -543,16 +687,20 @@ export function renderFrontierSvg(
             fill: 'var(--accent)',
             class: 'gutter-unpriced',
           })
-      const explanation = explainIntellectScore(u.id)
-      dot.append(
-        svgEl(
-          'title',
-          {},
-          explanation
-            ? `${u.id}\n${explanation.steps.map((s) => `${s.step}: ${s.detail}`).join('\n')}\nNo price data yet — position on intellect only.`
-            : `${u.id}\nintellect ${u.estimated ? '~' : ''}${String(u.intellect)} (live Artificial Analysis)\nNo price data yet — position on intellect only.`,
-        ),
-      )
+      if (tooltip) {
+        wireTooltip(dot, tooltip, () => unpricedTooltipContent(u))
+      } else {
+        const explanation = explainIntellectScore(u.id)
+        dot.append(
+          svgEl(
+            'title',
+            {},
+            explanation
+              ? `${u.id}\n${explanation.steps.map((s) => `${s.step}: ${s.detail}`).join('\n')}\nNo price data yet — position on intellect only.`
+              : `${u.id}\nintellect ${u.estimated ? '~' : ''}${String(u.intellect)} (live Artificial Analysis)\nNo price data yet — position on intellect only.`,
+          ),
+        )
+      }
       svg.append(
         dot,
         svgEl(
@@ -611,13 +759,17 @@ export function renderFrontierSvg(
         ...(dense ? { 'fill-opacity': '0.6' } : {}),
         class: dense ? 'gutter-unscored dense' : 'gutter-unscored',
       })
-      dot.append(
-        svgEl(
-          'title',
-          {},
-          `${u.id}\n$${String(u.costPerMTok)}/MTok blended (80% input / 20% output)\nNo sourced intellect measurement yet — position on price only.`,
-        ),
-      )
+      if (tooltip) {
+        wireTooltip(dot, tooltip, () => unscoredTooltipContent(u))
+      } else {
+        dot.append(
+          svgEl(
+            'title',
+            {},
+            `${u.id}\n$${String(u.costPerMTok)}/MTok blended (80% input / 20% output)\nNo sourced intellect measurement yet — position on price only.`,
+          ),
+        )
+      }
       svg.append(dot)
       if (!dense && u.text) {
         svg.append(
@@ -731,7 +883,11 @@ export function createIntellectFrontierPanel(
     close.addEventListener('click', () => {
       dialog.remove()
     })
-    dialog.append(renderFrontierSvg(lastPoints, { width: 920, height: 460 }, lastGutters), close)
+    const dialogTooltip = createTooltipLayer(dialog)
+    dialog.append(
+      renderFrontierSvg(lastPoints, { width: 920, height: 460 }, lastGutters, dialogTooltip),
+      close,
+    )
     fieldset.append(dialog)
     // jsdom (tests) lacks showModal; the open attribute is the fallback.
     if (typeof dialog.showModal === 'function') dialog.showModal()
@@ -739,7 +895,7 @@ export function createIntellectFrontierPanel(
   })
   const fieldset = el(
     'fieldset',
-    {},
+    { class: 'frontier-fieldset' },
     el('legend', {}, 'Model value map'),
     el(
       'p',
@@ -756,6 +912,7 @@ export function createIntellectFrontierPanel(
     liveNotes,
     compositeHost,
   )
+  const panelTooltip = createTooltipLayer(fieldset)
 
   async function refresh(): Promise<void> {
     let localIds: string[]
@@ -896,7 +1053,7 @@ export function createIntellectFrontierPanel(
     try {
       chart =
         points.length > 0
-          ? renderFrontierSvg(points, {}, lastGutters)
+          ? renderFrontierSvg(points, {}, lastGutters, panelTooltip)
           : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
     } catch (err) {
       // The map must never take the settings dialog down with it.

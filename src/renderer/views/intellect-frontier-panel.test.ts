@@ -200,8 +200,14 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(svg.textContent, /gpt-4o/)
     const dot = svg.querySelector('circle.gutter-unscored')
     assert.ok(dot)
-    const title = dot.querySelector('title')
-    assert.match(title?.textContent ?? '', /No sourced intellect measurement yet/)
+    // Hovering populates the formatted HTML tooltip layer (native titles are
+    // replaced by it in the panel).
+    dot.dispatchEvent(new window.MouseEvent('mouseenter'))
+    const tip = panel.root.querySelector('.frontier-tooltip')
+    assert.ok(tip)
+    assert.equal(tip.hasAttribute('hidden'), false)
+    assert.ok(tip.querySelector('strong'))
+    assert.match(tip.textContent, /No sourced intellect measurement yet/)
   })
 
   it('collapses a large unscored set into a density row plus a disclosure list', async () => {

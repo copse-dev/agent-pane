@@ -15,7 +15,7 @@
 // them "free (local)" instead of implying a cloud price of $0.
 
 import { TRACKED_MODELS, getModelInfo, type ModelInfo } from './model-catalog.ts'
-import { getIntellectScore } from './model-intellect.ts'
+import { getIntellectScore, resolveIntellectModelId } from './model-intellect.ts'
 
 /** Blended USD per million tokens at the 80/20 input:output mix. */
 export function blendedRate(inputPerMTok: number, outputPerMTok: number): number {
@@ -37,6 +37,14 @@ export interface FrontierCandidate {
   costPerMTok: number
   /** Runs on-device at zero marginal token cost. */
   local?: boolean
+  /** Quantisation the model runs at locally, when known (e.g. "Q4_K_M"). */
+  quant?: string
+  /**
+   * Other offerings of the SAME weights at worse prices, folded in when
+   * candidates are grouped by model identity — the chart plots the best
+   * price; these surface in the tooltip.
+   */
+  prices?: ReadonlyArray<{ id: string; costPerMTok: number }>
 }
 
 export interface FrontierPoint extends FrontierCandidate {
@@ -72,10 +80,42 @@ export function computeParetoFrontier(candidates: readonly FrontierCandidate[]):
 }
 
 /**
+ * Group candidates that are the SAME weights (identity via
+ * {@link resolveIntellectModelId}, falling back to the raw id): the cheapest
+ * offering becomes the point, the rest fold into its `prices` list. A worse
+ * price for identical weights is dominated by definition — plotting it would
+ * only add noise.
+ */
+export function groupByModelIdentity(
+  candidates: readonly FrontierCandidate[],
+): FrontierCandidate[] {
+  const groups = new Map<string, FrontierCandidate[]>()
+  for (const c of candidates) {
+    const key = resolveIntellectModelId(c.id) ?? c.id
+    const list = groups.get(key) ?? []
+    list.push(c)
+    groups.set(key, list)
+  }
+  const out: FrontierCandidate[] = []
+  for (const list of groups.values()) {
+    const sorted = [...list].sort(
+      (a, b) => a.costPerMTok - b.costPerMTok || a.id.localeCompare(b.id),
+    )
+    const best = sorted[0]
+    if (!best) continue
+    const others = sorted.slice(1).map((c) => ({ id: c.id, costPerMTok: c.costPerMTok }))
+    out.push(others.length > 0 ? { ...best, prices: others } : best)
+  }
+  return out
+}
+
+/**
  * The frontier over every tracked cloud model that has BOTH catalog pricing and
  * a canonical intellect score (models missing either are skipped, never
  * invented), plus any extra candidates the caller supplies (e.g. loaded local
  * models whose quant-adjusted intellect came via `localBenchmarkScore`).
+ * Offerings of the same weights are grouped: best price plots, the rest ride
+ * along in `prices`.
  */
 export function frontierForKnownModels(extra: readonly FrontierCandidate[] = []): FrontierPoint[] {
   const cloud: FrontierCandidate[] = []
@@ -90,5 +130,5 @@ export function frontierForKnownModels(extra: readonly FrontierCandidate[] = [])
       costPerMTok: blendedPricePerMTok(info),
     })
   }
-  return computeParetoFrontier([...cloud, ...extra])
+  return computeParetoFrontier(groupByModelIdentity([...cloud, ...extra]))
 }
