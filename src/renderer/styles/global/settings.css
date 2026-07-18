@@ -673,6 +673,9 @@ dialog.settings-overlay::backdrop {
   color: var(--text-primary);
   padding: 16px;
   width: min(960px, 92vw);
+  /* The close button must stay reachable however tall the chart gets. */
+  max-height: 85vh;
+  overflow: auto;
 }
 .frontier-expand-dialog::backdrop {
   background: rgb(0 0 0 / 55%);

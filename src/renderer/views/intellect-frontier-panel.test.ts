@@ -237,6 +237,40 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(details.textContent, /model-19/)
   })
 
+  it('collapses dominated live models into a disclosure instead of flooding the map', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({
+        ok: true,
+        indexVersion: '4.1',
+        models: [
+          { id: 'claude-fable-5', intellect: 60 },
+          { id: 'claude-opus-4-8', intellect: 56 },
+          // 60 uncurated priced models, almost all dominated.
+          ...Array.from({ length: 60 }, (_, i) => ({
+            id: `live-model-${String(i)}`,
+            intellect: 20 + (i % 30),
+            inputPricePerMTok: 0.5 + (i % 20) * 0.3,
+            outputPricePerMTok: 2,
+          })),
+        ],
+      }),
+    )
+    await panel.refresh()
+    const svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    // Far fewer plotted points than the feed carried: curated set + the live
+    // frontier only.
+    const plotted = svg.querySelectorAll('circle.frontier-point').length
+    assert.ok(plotted < 30, `plotted ${String(plotted)}`)
+    const details = panel.root.querySelector('details.frontier-dominated-live')
+    assert.ok(details)
+    assert.match(details.textContent, /live-scored models are dominated/)
+    // Verified-feed attribution still present.
+    assert.match(panel.root.textContent, /verified against 2 curated anchors/)
+  })
+
   it('expands into a larger dialog rendering of the same points and gutters', async () => {
     const panel = createIntellectFrontierPanel(async () => [])
     await panel.refresh()

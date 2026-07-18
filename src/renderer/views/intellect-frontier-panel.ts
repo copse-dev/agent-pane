@@ -419,6 +419,9 @@ export function renderFrontierSvg(
   // stay in the tooltip). Collision layout is interval-aware: a label bumps
   // down until its horizontal extent overlaps nothing on its row.
   // Deterministic: processed in y order.
+  // On a crowded chart only frontier points keep labels — the rest stay
+  // hover-only so the label cascade cannot outgrow the plot.
+  const labelledPoints = points.length > 28 ? points.filter((p) => p.onFrontier) : [...points]
   const labelText = new Map<string, string>()
   const labelY = new Map<string, number>()
   // Dots are obstacles too — a label must not sit under another point's mark.
@@ -427,7 +430,7 @@ export function renderFrontierSvg(
     x1: x(p.costPerMTok) + 7,
     py: y(p.intellect) + 3,
   }))
-  for (const p of [...points].sort((a, b) => y(a.intellect) - y(b.intellect))) {
+  for (const p of labelledPoints.sort((a, b) => y(a.intellect) - y(b.intellect))) {
     const text = `${displayModelLabel(p.id)}${p.intellectEstimated ? ' (~)' : ''}${p.local ? ' · free' : ''}`
     labelText.set(p.id, text)
     const x0 = x(p.costPerMTok) + 8
@@ -472,18 +475,23 @@ export function renderFrontierSvg(
         })
     const hit = svgEl('circle', { cx, cy, r: '11', fill: 'transparent', class: 'frontier-hit' })
     hit.append(svgEl('title', {}, tooltipFor(p)))
-    const label = svgEl(
-      'text',
-      {
-        x: String(x(p.costPerMTok) + 8),
-        y: String(labelY.get(p.id) ?? y(p.intellect) + 3),
-        'font-size': '9',
-        fill: 'var(--text-secondary)',
-        class: 'frontier-label',
-      },
-      labelText.get(p.id) ?? displayModelLabel(p.id),
-    )
-    svg.append(dot, label, hit)
+    const text = labelText.get(p.id)
+    if (text !== undefined) {
+      svg.append(
+        svgEl(
+          'text',
+          {
+            x: String(x(p.costPerMTok) + 8),
+            y: String(labelY.get(p.id) ?? y(p.intellect) + 3),
+            'font-size': '9',
+            fill: 'var(--text-secondary)',
+            class: 'frontier-label',
+          },
+          text,
+        ),
+      )
+    }
+    svg.append(dot, hit)
   }
 
   // Right gutter: scored-but-unpriced models at their TRUE y on the shared
@@ -823,22 +831,65 @@ export function createIntellectFrontierPanel(
     } else if (liveFetch.error) {
       liveNoteParts.push(`Live Artificial Analysis data unavailable: ${liveFetch.error}`)
     }
-    const points = frontierForKnownModels([
+    const allPoints = frontierForKnownModels([
       ...localFrontierCandidates(localIds),
       ...extraProviderFrontierCandidates(extraProviders),
       ...live.candidates,
     ])
+    // A verified feed can carry a hundred-plus priced models; the map's job is
+    // the frontier, so dominated LIVE points collapse into a disclosure rather
+    // than each claiming a labelled dot. Curated/local/provider points always
+    // plot — the user chose to hold those. Dropping dominated points cannot
+    // change the frontier.
+    const liveIds = new Set(live.candidates.map((c) => c.id))
+    const dominatedLive = allPoints.filter((p) => liveIds.has(p.id) && !p.onFrontier)
+    const points = allPoints.filter((p) => !liveIds.has(p.id) || p.onFrontier)
     const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
     lastPoints = points
     lastGutters = {
       unpriced: unpricedCanonicalModels(plottedIds, live.hintOnly),
       unscored: unscoredPricedModels(extraProviders),
     }
+    if (dominatedLive.length > 0) {
+      liveNoteParts.push(
+        el(
+          'details',
+          { class: 'frontier-dominated-live' },
+          el(
+            'summary',
+            {},
+            `${String(dominatedLive.length)} live-scored models are dominated (better value exists at their level)`,
+          ),
+          el(
+            'p',
+            {},
+            dominatedLive
+              .map(
+                (p) =>
+                  `${displayModelLabel(p.id)} (${p.intellectEstimated ? '~' : ''}${String(p.intellect)} at $${String(Number(p.costPerMTok.toFixed(2)))})`,
+              )
+              .join(' · '),
+          ),
+        ),
+      )
+    }
     const unscoredList = lastGutters.unscored ?? []
+    let chart: SVGSVGElement | HTMLElement
+    try {
+      chart =
+        points.length > 0
+          ? renderFrontierSvg(points, {}, lastGutters)
+          : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
+    } catch (err) {
+      // The map must never take the settings dialog down with it.
+      chart = el(
+        'p',
+        { class: 'field-hint' },
+        `The value map failed to render: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
     chartHost.replaceChildren(
-      points.length > 0
-        ? renderFrontierSvg(points, {}, lastGutters)
-        : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.'),
+      chart,
       ...(unscoredList.length > UNSCORED_ROW_LIMIT
         ? [
             el(
