@@ -73,6 +73,16 @@ grinding out large amounts of work before those PRs merge.
   focused. Deliberately not auto-sent: the user reviews and hits send, which also
   leaves the item's status for the agent/user to update once work actually starts.
   Hidden in pop-out windows, which have no chat pane.
+- **Attachments** — items accept pasted, dropped, or picked files and images (`.jsonl`
+  eval sets, screenshots for prompts). Payloads are plain files under
+  `<knowledge dir>/attachments/<noteId>/` (`knowledge-attachments.ts`) with metadata
+  JSON-encoded in an `attachments` frontmatter field
+  (`src/shared/knowledge/attachments.ts`), staying inside the store's string-only
+  `fields` model. Edits are staged in the editor and persist on Save
+  (`roadmap:create`/`roadmap:update` carry adds/removals; `roadmap:attachmentData`
+  hydrates thumbnails lazily). "Start thread" carries them into the composer — images
+  as image attachments, UTF-8 files as file chips — and the `roadmap_plan` list output
+  names each item's attachments.
 
 While the flag is off the tool is not registered, the pane's titlebar button is hidden,
 and nothing reads or writes the store — the feature is fully inert.
