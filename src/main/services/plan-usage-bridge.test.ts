@@ -126,4 +126,25 @@ describe('loadPlanUsageSnapshot', () => {
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
     }
   })
+
+  it('returns the auth-error mock fixture when COPSE_PLAN_USAGE_MOCK=auth-errors', async () => {
+    const prev = process.env['COPSE_PLAN_USAGE_MOCK']
+    process.env['COPSE_PLAN_USAGE_MOCK'] = 'auth-errors'
+    try {
+      const snap = await loadPlanUsageSnapshot()
+      assert.equal(snap.providers.length, 4)
+      const claude = snap.providers.find((provider) => provider.provider === 'claude')
+      if (!claude || claude.status !== 'unavailable') assert.fail('Expected Claude unavailable')
+      assert.match(claude.reason, /credentials were rejected/i)
+      const codex = snap.providers.find((provider) => provider.provider === 'codex')
+      if (!codex || codex.status !== 'ok') assert.fail('Expected Codex ok')
+      const huggingface = snap.providers.find((provider) => provider.provider === 'huggingface')
+      if (!huggingface || huggingface.status !== 'error') {
+        assert.fail('Expected Hugging Face error')
+      }
+    } finally {
+      if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
+      else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
+    }
+  })
 })
