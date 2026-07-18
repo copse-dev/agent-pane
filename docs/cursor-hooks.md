@@ -7,7 +7,9 @@ can observe, block, or annotate the action that triggered it.
 
 This document records the Cursor hooks contract, what Copse honours today, and what
 remains for fuller parity. It is the hooks counterpart to
-[`docs/cursor-plugins.md`](./cursor-plugins.md).
+[`docs/cursor-plugins.md`](./cursor-plugins.md). For the cross-cutting architecture — the
+unified registry, canonical events, executors, async/budget/epoch, spine, sandbox, and UI
+that are dialect-agnostic — see [`docs/hooks.md`](./hooks.md).
 
 ## On-disk layout
 
@@ -327,6 +329,7 @@ UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1 npm test
 - `src/main/services/hooks/payload-snapshots.test.ts` — dialect wire payload snapshot tests (G4)
 - `src/main/services/hooks/__snapshots__/wire-payloads.json` — committed golden wire-payload fixture (G4)
 - `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
+- `docs/hooks.md` — dialect-agnostic hooks architecture umbrella
 - `docs/claude-hooks.md` — Claude Code hooks contract
 - `docs/cursor-plugins.md` — sibling exploration of Cursor plugin support
 - `docs/supply-chain-security.md` — trust boundaries for executed code
