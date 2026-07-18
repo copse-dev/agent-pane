@@ -26,7 +26,15 @@ export const DEFAULT_AWS_INSTANCE_TYPE = 'c7i.2xlarge'
 export const DEFAULT_AWS_REMOTE_USER = 'ubuntu'
 export const DEFAULT_SCW_IMAGE = 'ubuntu_noble'
 export const DEFAULT_SCW_REMOTE_USER = 'root'
-export const DEFAULT_SCW_TYPE = 'PLAY2-MICRO'
+// The e2e tier is CPU-bound (Chromium-under-Xvfb) and wants ~4 vCPU + ~6 GiB per
+// runner (~1.5 GiB/vCPU). The High-CPU POP2-HC line (2 GiB/vCPU) matches that
+// profile at ~half the €/vCPU of the general PRO2 line (4 GiB/vCPU), whose extra
+// RAM the runner never uses. 8C-16G packs two runners (4 vCPU + a 6 GiB
+// mem_limit each) behind one shared image build — the Scaleway analogue of the
+// AWS c7i.2xlarge/2-runner default. The earlier PLAY2-MICRO default (4 vCPU /
+// 8 GiB, shared vCPU, no SLA) split 4 vCPU across contending suites and its CPU
+// steal reintroduced the timeout variance this fleet exists to avoid.
+export const DEFAULT_SCW_TYPE = 'POP2-HC-8C-16G'
 /** Preferred Scaleway AZs when --zone is omitted (quota is per-AZ). */
 export const SCALEWAY_ZONES = [
   'fr-par-1',

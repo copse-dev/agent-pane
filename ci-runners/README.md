@@ -74,25 +74,24 @@ Prerequisites:
   `GITHUB_URL` (org or repo), and `BUILD_GH_TOKEN` with read access to
   `agent-pane` plus the private `@copse/streaming-markdown` dependency.
 
-Cost-first general e2e burst:
-
-```bash
-GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
-  npm run runners:burst:scw -- up \
-    --instances 6 \
-    --scw-type PLAY2-MICRO \
-    --runners-per-instance 1 \
-    --ttl-minutes 240
-```
-
-More memory headroom (omit `--zone` to auto-pick an AZ with quota):
+Default (`POP2-HC-8C-16G`, two runners per host — omit `--zone` to auto-pick an
+AZ with quota):
 
 ```bash
 GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
   npm run runners:burst:scw -- up \
     --instances 3 \
-    --scw-type BASIC3-X4C-16G \
-    --runners-per-instance 2 \
+    --ttl-minutes 240
+```
+
+Cheaper, granular alternative — one runner on the half-size HC box:
+
+```bash
+GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \
+  npm run runners:burst:scw -- up \
+    --instances 6 \
+    --scw-type POP2-HC-4C-8G \
+    --runners-per-instance 1 \
     --ttl-minutes 240
 ```
 
@@ -109,12 +108,23 @@ Scaleway sizing guidance:
   Warsaw → Milan AZs (Scaleway quotas are per-AZ). Partial creates are kept
   when an AZ hits quota; the remainder is requested in the next AZ. Pass
   `--zone` to pin. `status`/`down` without `--zone` scan all.
-- `PLAY2-MICRO` (4 vCPU / 8 GiB) with one runner is the cheapest general
-  e2e/check shape and is roughly one third the hourly cost of AWS `c7i.xlarge`.
-- `BASIC3-X4C-16G` / `PRO2-XS` (4 vCPU / 16 GiB) can run two denser runners.
-  Prefer BASIC3 when PRO2-XS AZ quotas are exhausted.
-- `DEV1-L` is slightly cheaper than PLAY2-MICRO with the same nominal CPU/RAM,
-  but PLAY2 is the newer x86 line and the safer default for burst CI.
+- The e2e tier is CPU-bound (Chromium-under-Xvfb) and wants ~4 vCPU + ~6 GiB per
+  runner, i.e. ~1.5 GiB/vCPU. The High-CPU `POP2-HC` line (2 GiB/vCPU) matches
+  that profile at ~half the €/vCPU of the general `PRO2` line (4 GiB/vCPU), whose
+  extra RAM the runner never uses.
+- **Default: `POP2-HC-8C-16G` (8 vCPU / 16 GiB) with two runners** — 4 vCPU + a
+  6 GiB `mem_limit` each, with one shared image build amortized across both. The
+  Scaleway analogue of the AWS `c7i.2xlarge`/2-runner balanced default.
+- Granular/cheaper: `POP2-HC-4C-8G` (4 vCPU / 8 GiB) with **one** runner (all
+  4 vCPU to it) — finer scale-down, half the blast radius, at the cost of an
+  extra per-host image build. Do **not** put two runners on this box: 2 × 6 GiB
+  caps oversubscribe an 8 GiB, swapless host, so the host OOM-killer (not the
+  container cap) becomes the arbiter — the failure that reads as clustered spec
+  timeouts. Two runners need a 16 GiB box.
+- `PRO2-XS` / `BASIC3-X4C-16G` (4 vCPU / 16 GiB) remain fine fallbacks when
+  `POP2-HC` AZ quota is exhausted; they just pay for RAM the runner won't use.
+  Avoid the shared-vCPU `PLAY2` line for the e2e tier — CPU steal reintroduces
+  the timeout variance this fleet exists to avoid; it's fine for check-only.
 - For check-only bursts, smaller 2 vCPU / 4 GiB types can be cost-effective, but
   remove the e2e label: `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
 - `--ttl-minutes` defaults to 240. On Scaleway the host **self-terminates** via

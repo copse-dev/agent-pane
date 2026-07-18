@@ -187,11 +187,13 @@ Example:
       --subnet-id subnet-123 \\
       --security-group-id sg-123
 
+  # Default is POP2-HC-8C-16G with two runners. Cheaper, granular alternative —
+  # one runner on the half-size HC box (do not run two runners on an 8 GiB box):
   GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \\
     npm run runners:burst:scw -- up \\
-      --instances 3 \\
-      --scw-type BASIC3-X4C-16G \\
-      --runners-per-instance 2 \\
+      --instances 6 \\
+      --scw-type POP2-HC-4C-8G \\
+      --runners-per-instance 1 \\
       --ttl-minutes 240
 `
 }
@@ -302,7 +304,12 @@ function buildScalewayUpConfig(options: Options, zone: string): ScalewayUpConfig
     zone,
     ...buildRunnerConfig(options, {
       remoteUser: DEFAULT_SCW_REMOTE_USER,
-      runnersPerInstance: 1,
+      // Two runners fit the default POP2-HC-8C-16G (8 vCPU / 16 GiB): 4 vCPU + a
+      // 6 GiB mem_limit each, matching AWS. Coupled to DEFAULT_SCW_TYPE — if you
+      // override --scw-type to a half-size 8 GiB box (POP2-HC-4C-8G), also pass
+      // --runners-per-instance 1, or 2 × 6 GiB caps oversubscribe its (swapless)
+      // RAM and the host OOM-killer, not the container cap, becomes the arbiter.
+      runnersPerInstance: DEFAULT_RUNNERS_PER_INSTANCE,
     }),
     image: optionWithDefault(options, 'scw-image', DEFAULT_SCW_IMAGE),
     securityGroupId: option(options, 'security-group-id'),
