@@ -272,6 +272,29 @@ a load gate** (a config that violates an upstream schema still loads):
    Cursor events above; the long tail of Claude events (`Notification`,
    `TeammateIdle`, …) is intentionally-unsupported v1.
 
+## Wire payload snapshots (G4)
+
+Every dialect wire **request** payload — the stdin JSON a Cursor / Claude / Copse
+hook actually receives — is snapshot-tested against a committed golden fixture
+[`src/main/services/hooks/__snapshots__/wire-payloads.json`](../src/main/services/hooks/__snapshots__/wire-payloads.json)
+by [`src/main/services/hooks/payload-snapshots.test.ts`](../src/main/services/hooks/payload-snapshots.test.ts).
+The test marshals a fixed synthetic payload (with a fixed agent-session identity,
+so the B4 `model` fields are captured) for every canonical event each dialect
+declares a marshaller for — including the tool-flavor splits (shell / MCP / read
+for `toolGate`, shell / MCP for `afterToolUse`) — and asserts the result is
+byte-identical to the fixture.
+
+This implements **decision 14** of
+[`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md):
+pre-v1 with zero consumers we do not version payloads, but the request direction
+is the stability contract, so **changing a snapshot is a publish-time stability
+audit** — the reviewed JSON diff of the golden fixture _is_ the stability
+declaration. Regenerate the fixture (and review the diff) with:
+
+```bash
+UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1 npm test
+```
+
 ## Gaps and future work
 
 1. **Content rewriting** — `updated_input` on tool gates (rewrite the proposed tool
@@ -301,6 +324,8 @@ a load gate** (a config that violates an upstream schema still loads):
 - `src/shared/hooks/vendored-hook-schemas.ts` — published-event mirrors + intentionally-unsupported sets (G3)
 - `schemas/vendor/` — pinned upstream Cursor + Claude hook schemas (G3); see its `README.md`
 - `src/main/services/hooks/vendor-schema-drift.test.ts` — CI drift detector (G3)
+- `src/main/services/hooks/payload-snapshots.test.ts` — dialect wire payload snapshot tests (G4)
+- `src/main/services/hooks/__snapshots__/wire-payloads.json` — committed golden wire-payload fixture (G4)
 - `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
 - `docs/claude-hooks.md` — Claude Code hooks contract
 - `docs/cursor-plugins.md` — sibling exploration of Cursor plugin support
