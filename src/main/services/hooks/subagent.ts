@@ -153,7 +153,7 @@ export async function runSubagentStopHooks(
     // A `followup_message` outcome lands in the renderer's pending queue via this
     // sink (decision 4). The C3 budget consumes it at drain time; a stale-epoch
     // send-now is downgraded to held on the renderer side (decision 16).
-    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId),
+    onAsyncOutcome: hookQueueOutcomeSink(opts.threadId, opts.recordingSnapshot),
     ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
   })
 
