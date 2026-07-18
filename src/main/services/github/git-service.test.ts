@@ -11,6 +11,7 @@ import {
   getGitDiffText,
   getGitFileDiff,
   getGitShowText,
+  parseAheadBehind,
   parsePorcelainV1,
   resolveWorkspaceRelativeGitPath,
   sumDiffNumstat,
@@ -19,6 +20,19 @@ import {
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
 import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
+
+describe('parseAheadBehind', () => {
+  it('reads the "<behind>\\t<ahead>" left-right count', () => {
+    assert.deepEqual(parseAheadBehind('40\t2'), { ahead: 2, behind: 40 })
+    assert.deepEqual(parseAheadBehind('0   0\n'), { ahead: 0, behind: 0 })
+  })
+
+  it('returns null on malformed output', () => {
+    assert.equal(parseAheadBehind(''), null)
+    assert.equal(parseAheadBehind('nope'), null)
+    assert.equal(parseAheadBehind('1\t2\t3'), null)
+  })
+})
 
 describe('sumDiffNumstat', () => {
   it('sums additions and deletions across rows', () => {
