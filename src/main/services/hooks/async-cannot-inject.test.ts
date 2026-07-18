@@ -9,7 +9,8 @@
 // a hook prints an `additionalContext` field on its stdout — the field a
 // blocking gate would honour. An async hook that wants to reach the model
 // mid-turn (Claude's `asyncRewake`) is exactly the path decision 11 refuses:
-// its output is converted to a queued message, never injected.
+// its injectContext is dropped (never injected mid-turn); only a followup_message
+// becomes a queued message.
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { cursorAdapter } from './cursor-adapter.ts'
