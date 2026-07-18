@@ -59,6 +59,7 @@ import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
+import { runCheckupTool } from '../tools/checkup-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -170,6 +171,9 @@ export function createRegistry(): ToolRegistry {
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
   registry.register(askUserTool)
+  // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
+  // returns a report; the agent proposes any fixes for the user to approve.
+  registry.register(runCheckupTool)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     for (const tool of browserTools) registry.register(tool)
   }
