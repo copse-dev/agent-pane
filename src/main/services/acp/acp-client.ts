@@ -4,6 +4,7 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type ClientConnection,
+  type ContentBlock,
   type McpCapabilities,
   type McpServer,
   type NewSessionResponse,
@@ -13,6 +14,7 @@ import {
   type RequestPermissionResponse,
   type ResumeSessionResponse,
   type SessionConfigOption,
+  type SessionModeState,
   type SessionUpdate,
   type StopReason,
   type Stream,
@@ -24,7 +26,14 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
-import type { AcpAgentSandboxConfig, AcpModelChoice, AcpModelSelector } from '@shared/types/acp.ts'
+import type {
+  AcpAgentProbe,
+  AcpAgentSandboxConfig,
+  AcpModeChoice,
+  AcpModeSelector,
+  AcpModelChoice,
+  AcpModelSelector,
+} from '@shared/types/acp.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
@@ -39,7 +48,7 @@ import {
   withSandboxShellPath,
 } from '../../project-sandbox/spawn.ts'
 
-export type { AcpModelChoice, AcpModelSelector }
+export type { AcpAgentProbe, AcpModeChoice, AcpModeSelector, AcpModelChoice, AcpModelSelector }
 
 /**
  * ACP **Client role** for Copse: spawn and drive an external ACP agent
@@ -75,6 +84,15 @@ export interface AcpAgentSpawnConfig {
    * is already current.
    */
   model?: string
+  /**
+   * Selected ACP **session mode** as a `SessionModeId` advertised in the
+   * agent's `session/new` `modes` (issue #607). Applied via `session/set_mode`
+   * immediately after the session is created — before the first prompt — so the
+   * agent's own permission prompting is relaxed/tightened for the whole session.
+   * Ignored when the agent advertises no modes, the id isn't offered, or it's
+   * already the current mode.
+   */
+  permissionMode?: string
   /**
    * Copse-configured MCP servers to hand the agent via `session/new`
    * (`mcpServers`), so the external agent can mount the user's servers itself.
@@ -123,6 +141,54 @@ export function modelSelectorFrom(
     }
   }
   return { configId: option.id, currentValue: option.currentValue, choices }
+}
+
+/**
+ * Find the agent's session-mode selector in a `session/new` response, if any
+ * (issue #607). ACP surfaces agent permission behavior as **session modes**: a
+ * `modes` state with the current mode id and the set of `availableModes` the
+ * agent can operate in (e.g. Claude Code's default / acceptEdits /
+ * bypassPermissions / plan). Switched with `session/set_mode`. Returns `null`
+ * when the agent advertises no modes (its prompting is then whatever it decides).
+ */
+export function modeSelectorFrom(response: {
+  modes?: SessionModeState | null
+}): AcpModeSelector | null {
+  const modes = response.modes
+  if (!modes || modes.availableModes.length === 0) return null
+  const choices: AcpModeChoice[] = modes.availableModes.map((mode) => ({
+    value: mode.id,
+    label: mode.name,
+    ...(mode.description ? { description: mode.description } : {}),
+  }))
+  return { currentValue: modes.currentModeId, choices }
+}
+
+/**
+ * Apply an ACP session mode to a newly created or resumed session via `session/set_mode`
+ * (issue #607). No-op when no mode is requested, the agent advertises no modes,
+ * the requested id isn't one the agent offers, or it's already the current mode.
+ * A rejected set is swallowed so a bad/stale mode selection degrades to the
+ * agent's own default rather than failing the session.
+ */
+async function applySessionMode(
+  connection: ClientConnection,
+  session: ManagedAcpSession,
+  permissionMode: string | undefined,
+): Promise<void> {
+  if (!permissionMode) return
+  const selector = modeSelectorFrom(session.response)
+  if (!selector) return
+  const isKnown = selector.choices.some((choice) => choice.value === permissionMode)
+  if (!isKnown || permissionMode === selector.currentValue) return
+  try {
+    await connection.agent.request(methods.agent.session.setMode, {
+      sessionId: session.sessionId,
+      modeId: permissionMode,
+    })
+  } catch {
+    // Fall back to the agent's own default mode for this session.
+  }
 }
 
 /**
@@ -319,6 +385,11 @@ export interface OpenAcpSession {
   mcpCapabilities: McpCapabilities | undefined
   /** Whether this agent advertised the optional `session/resume` capability. */
   canResume: boolean
+  /**
+   * Whether this agent advertised `promptCapabilities.image` — when true,
+   * Copse forwards attached images as ACP image content blocks (issue #831).
+   */
+  promptImage: boolean
   /** True when this connection restored a prior ACP session rather than creating one. */
   resumed: boolean
   /** Last model applied via `session/set_config_option` (avoid re-sending). */
@@ -462,6 +533,7 @@ export async function openAcpSession(
     })
     const mcpCapabilities = initResponse.agentCapabilities?.mcpCapabilities
     const canResume = Boolean(initResponse.agentCapabilities?.sessionCapabilities?.resume)
+    const promptImage = initResponse.agentCapabilities?.promptCapabilities?.image === true
     const mcpServers = toAcpMcpServers(config.mcpServers ?? [], mcpCapabilities)
     // Copse's own tools ride the same channel as forwarded servers: an http
     // MCP endpoint the agent mounts itself (#602 tier 2). http-capable only —
@@ -500,6 +572,11 @@ export async function openAcpSession(
     for (const update of pendingUpdates.get(session.sessionId) ?? []) updates.enqueue(update)
     pendingUpdates.clear()
     activeUpdates = { sessionId: session.sessionId, queue: updates }
+    // Relax/tighten the agent's own permission prompting for the whole session
+    // (issue #607) — e.g. a sandboxed Claude preset runs in `acceptEdits` since
+    // the seatbelt already contains writes. Applied here, before the first
+    // prompt, so the session's first tool call already honors the mode.
+    await applySessionMode(connection, session, config.permissionMode)
 
     const open: OpenAcpSession = {
       session,
@@ -508,6 +585,7 @@ export async function openAcpSession(
       handlers,
       mcpCapabilities,
       canResume,
+      promptImage,
       resumed,
       appliedModel: undefined,
       suppressChunks: false,
@@ -545,12 +623,24 @@ export async function openAcpSession(
 export const ACP_CANCEL_GRACE_MS = 2000
 
 /**
+ * Normalize a string or content-block prompt into the ACP `session/prompt`
+ * shape. Strings stay one text block (existing tests / call sites); arrays
+ * pass through so image blocks (issue #831) are kept.
+ */
+export function toAcpPromptBlocks(prompt: string | ContentBlock[]): ContentBlock[] {
+  return typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt
+}
+
+/**
  * Run one prompt turn on a persistent session: apply a model change if the
  * picker's selection moved, send the prompt, and wait for the turn's stop. The
  * agent's updates — this turn's and any that arrive between turns — are
  * forwarded to the UI by the session's update pump (see
  * {@link startAcpUpdatePump}). The prompt response settles this turn after the
  * agent completes the request.
+ *
+ * `prompt` may be a plain string (one text block) or a full ACP content-block
+ * array — use the latter when forwarding images (issue #831).
  *
  * Cancellation (`signal` abort, i.e. the Stop button): we send `session/cancel`
  * and stop forwarding the agent's chunks to the UI immediately
@@ -562,12 +652,13 @@ export const ACP_CANCEL_GRACE_MS = 2000
  */
 export async function runAcpSessionPrompt(
   open: OpenAcpSession,
-  prompt: string,
+  prompt: string | ContentBlock[],
   model: string | undefined,
   signal?: AbortSignal,
   cancelGraceMs: number = ACP_CANCEL_GRACE_MS,
 ): Promise<AcpTurnStop> {
   const { session, connection } = open
+  const promptBlocks = toAcpPromptBlocks(prompt)
 
   // Resolves only once the user has aborted AND the agent has failed to settle
   // its prompt within the grace window — our cue to stop waiting on a stuck
@@ -631,7 +722,7 @@ export async function runAcpSessionPrompt(
     void connection.agent
       .request(methods.agent.session.prompt, {
         sessionId: session.sessionId,
-        prompt: [{ type: 'text', text: prompt }],
+        prompt: promptBlocks,
       })
       .then(settleStop.resolve, settleStop.reject)
     const outcome = await Promise.race([stopped, graceExpired])
@@ -650,19 +741,20 @@ export async function runAcpSessionPrompt(
 }
 
 /**
- * Discover the models an external ACP agent offers, for the settings picker.
- * Spawns the agent, initializes, opens a throwaway session, reads its
- * `category: "model"` config option, and tears the process down. Returns `null`
- * when the agent exposes no model selector (its model is fixed to its default).
+ * Probe an external ACP agent for what it offers the settings picker: its
+ * selectable models AND its session (permission) modes (issue #607). Spawns the
+ * agent, initializes, opens a throwaway session, reads both the `category:
+ * "model"` config option and the `modes` state, and tears the process down.
+ * Each selector is `null` when the agent exposes none of that kind.
  *
  * This is a probe, not a turn: no prompt is sent, so it does not consume model
  * tokens — but it does start the agent process (and may trigger its auth), so
  * call it on demand (a "Detect models" action), not on every picker open.
  */
-export async function listAcpAgentModels(
+export async function probeAcpAgent(
   config: AcpAgentSpawnConfig,
   timeoutMs = 15000,
-): Promise<AcpModelSelector | null> {
+): Promise<AcpAgentProbe> {
   const child = await spawnAcpAgentProcess(config)
   if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
@@ -680,9 +772,12 @@ export async function listAcpAgentModels(
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
       })
       return ctx.buildSession(config.cwd).withSession((session) => {
-        const selector = modelSelectorFrom(session.newSessionResponse)
+        const probe: AcpAgentProbe = {
+          models: modelSelectorFrom(session.newSessionResponse),
+          modes: modeSelectorFrom(session.newSessionResponse),
+        }
         void ctx.notify('session/cancel', { sessionId: session.sessionId })
-        return selector
+        return probe
       })
     })
   } finally {

@@ -18,7 +18,7 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
     assert.equal(update?.sessionUpdate, 'agent_message_chunk')
   })
 
-  it('maps a tool_call to a pending tool_call update', () => {
+  it('maps a tool_call to a pending tool_call update with its ACP kind', () => {
     const update = streamChunkToSessionUpdate({
       type: 'tool_call',
       toolCall: { id: 't1', name: 'read_file', args: { path: 'a.ts' } },
@@ -27,10 +27,43 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
       sessionUpdate: 'tool_call',
       toolCallId: 't1',
       title: 'read_file',
-      kind: 'other',
+      kind: 'read',
       status: 'pending',
       rawInput: { path: 'a.ts' },
     })
+  })
+
+  it('titles a run_shell call with the command and kind execute', () => {
+    const update = streamChunkToSessionUpdate({
+      type: 'tool_call',
+      toolCall: { id: 't2', name: 'run_shell', args: { command: 'git status' } },
+    })
+    assert.deepEqual(update, {
+      sessionUpdate: 'tool_call',
+      toolCallId: 't2',
+      title: 'git status',
+      kind: 'execute',
+      status: 'pending',
+      rawInput: { command: 'git status' },
+    })
+  })
+
+  it('falls back to the tool name when a shell call has no command', () => {
+    const update = streamChunkToSessionUpdate({
+      type: 'tool_call',
+      toolCall: { id: 't3', name: 'run_background', args: { action: 'list' } },
+    })
+    assert.equal(update?.sessionUpdate, 'tool_call')
+    assert.equal((update as { title: string }).title, 'run_background')
+    assert.equal((update as { kind: string }).kind, 'execute')
+  })
+
+  it('keeps unmapped tools as kind other', () => {
+    const update = streamChunkToSessionUpdate({
+      type: 'tool_call',
+      toolCall: { id: 't4', name: 'ask_user', args: {} },
+    })
+    assert.equal((update as { kind: string }).kind, 'other')
   })
 
   it('maps a successful tool_result to a completed tool_call_update', () => {
