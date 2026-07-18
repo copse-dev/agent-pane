@@ -5,7 +5,9 @@
 handlers) so repos that already ship Claude Code policy hooks work without a Cursor-format
 `hooks.json`. Tracks issue #639.
 
-This is the Claude counterpart to [`docs/cursor-hooks.md`](./cursor-hooks.md).
+This is the Claude counterpart to [`docs/cursor-hooks.md`](./cursor-hooks.md). For the
+dialect-agnostic architecture (registry, canonical events, async/budget/epoch, spine,
+sandbox, UI) see [`docs/hooks.md`](./hooks.md).
 
 ## On-disk layout
 
