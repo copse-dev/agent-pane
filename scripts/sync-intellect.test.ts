@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   detectPayloadVersion,
+  graduateWanted,
   mergeApiModels,
   type AaApiModel,
   type DataFile,
@@ -85,6 +86,17 @@ describe('mergeApiModels', () => {
     const api: AaApiModel[] = [{ slug: 'qwen3-6-35b-a3b', evaluations: {} }]
     const { matched } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
     assert.equal(matched, 0)
+  })
+})
+
+describe('graduateWanted', () => {
+  it('drops a wanted model once it has a score (the --from-api graduation)', () => {
+    const api: AaApiModel[] = [
+      { slug: 'qwen3-6-35b-a3b', evaluations: { artificial_analysis_intelligence_index: 43 } },
+    ]
+    const { scores } = mergeApiModels(BASE, api, 'v4.1', '2026-07-18')
+    const wanted = graduateWanted(BASE.wanted ?? [], scores)
+    assert.ok(!wanted.some((w) => w.modelId === 'qwen/qwen3.6-35b-a3b'))
   })
 })
 

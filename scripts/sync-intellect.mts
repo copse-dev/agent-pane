@@ -414,6 +414,15 @@ export function mergeApiModels(
   return { scores: next, matched }
 }
 
+/** Drop `wanted` entries that now have a measurement in `scores`. */
+export function graduateWanted(
+  wanted: readonly WantedModel[],
+  scores: readonly Measurement[],
+): WantedModel[] {
+  const scoredIds = new Set(scores.map((m) => m.modelId))
+  return wanted.filter((w) => !scoredIds.has(w.modelId))
+}
+
 async function main(): Promise<void> {
   const refit = process.argv.includes('--refit')
   const fromApi = process.argv.includes('--from-api')
@@ -428,7 +437,11 @@ async function main(): Promise<void> {
     if (!apiKey) fail('--from-api requires ARTIFICIAL_ANALYSIS_API_KEY')
     const pinned = versionArg?.slice('--index-version='.length)
     const scores = await refreshFromApi(data, pinned, apiKey, today)
-    data = { ...data, scores }
+    // A wanted model the API just populated has graduated into `scores`, so
+    // drop it from the allowlist — otherwise it lives in both lists and
+    // validate() (rightly) rejects the overlap.
+    const wanted = graduateWanted(data.wanted ?? [], scores)
+    data = { ...data, scores, wanted }
     validate(data)
     await writeFile(DATA_PATH, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
   }
