@@ -15,7 +15,13 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { ClaudePermissionDecision } from '@shared/types/claude-hooks.ts'
 import { CLAUDE_PERMISSION_DECISIONS } from '@shared/types/claude-hooks.ts'
-import type { HookScope, HookSummary } from '@shared/types/hooks.ts'
+import type {
+  HookScope,
+  HookSummary,
+  HookValidationWarning,
+  HooksListResult,
+} from '@shared/types/hooks.ts'
+import { isPublishedClaudeEvent } from '@shared/hooks/vendored-hook-schemas.ts'
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
 import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
@@ -46,7 +52,16 @@ export const CLAUDE_DEFAULT_HOOK_TIMEOUT_MS = 600_000
  */
 type DiscoveredClaudeEvent = 'PreToolUse' | 'SessionStart'
 
-const CLAUDE_DISCOVERED_EVENTS: readonly DiscoveredClaudeEvent[] = ['PreToolUse', 'SessionStart']
+/**
+ * The Claude events Copse actually wires (discovers + fires): the `PreToolUse`
+ * tool gate (A2/B4) and `SessionStart` (H4). Every other event the vendored
+ * SchemaStore schema publishes is intentionally-unsupported v1 — the G3 drift
+ * detector pins this set against `schemas/vendor/claude-code-settings.schema.json`.
+ */
+export const CLAUDE_WIRED_HOOK_EVENTS: readonly DiscoveredClaudeEvent[] = [
+  'PreToolUse',
+  'SessionStart',
+]
 
 /** A parsed Claude command hook ready to spawn. */
 interface DiscoveredClaudeHook {
@@ -125,38 +140,69 @@ export function claudeMatcherMatches(matcher: string | undefined, toolName: stri
   }
 }
 
+/** One parsed Claude settings file: usable hooks plus per-entry authoring warnings. */
+interface ParsedClaudeConfig {
+  hooks: DiscoveredClaudeHook[]
+  warnings: HookValidationWarning[]
+}
+
 /**
- * Parse one Claude `settings.json` for command hooks under `hooks.PreToolUse`.
- * Unknown events, non-command handlers, and malformed entries are skipped — a
- * bad settings file must never break the agent loop.
+ * Parse one Claude `settings.json` for command hooks under `hooks.*`. Only the
+ * wired events ({@link CLAUDE_WIRED_HOOK_EVENTS}) are honoured; non-command
+ * handlers and malformed entries are skipped — a bad settings file must never
+ * break the agent loop.
+ *
+ * G3 warn-level authoring lint (decision 8: "unknown events in a foreign file
+ * are warned about, never silently skipped"): a hooks group under an event Copse
+ * does not wire is skipped **with a warning** — distinguishing an event the
+ * pinned Claude schema recognises (`schemas/vendor/…`) but Copse doesn't act on
+ * yet, from an outright unknown event (likely a typo). This is a warn-only lint;
+ * it never gates loading the valid hooks.
  */
-async function parseClaudeSettings(
-  path: string,
-  scope: HookScope,
-): Promise<DiscoveredClaudeHook[]> {
+async function parseClaudeSettings(path: string, scope: HookScope): Promise<ParsedClaudeConfig> {
+  const warnings: HookValidationWarning[] = []
+  const warn = (message: string, event?: string): void => {
+    warnings.push({ source: path, scope, message, ...(event !== undefined ? { event } : {}) })
+  }
+
   let raw: string
   try {
     raw = await fsp.readFile(path, 'utf-8')
   } catch {
-    return []
+    // A missing settings file is the normal case, not an authoring problem.
+    return { hooks: [], warnings }
   }
 
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return []
+    warn(`${claudeFileLabel(path)} is not valid JSON — file ignored`)
+    return { hooks: [], warnings }
   }
 
   // parsed comes from JSON.parse and can legitimately be null; optional-chain.
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const hooksRoot = (parsed as { hooks?: unknown })?.hooks
-  if (typeof hooksRoot !== 'object' || hooksRoot === null) return []
+  if (typeof hooksRoot !== 'object' || hooksRoot === null) return { hooks: [], warnings }
 
   const cwd = dirname(path)
   const out: DiscoveredClaudeHook[] = []
-  for (const event of CLAUDE_DISCOVERED_EVENTS) {
-    const groups = (hooksRoot as Record<string, unknown>)[event]
+  for (const [event, groups] of Object.entries(hooksRoot as Record<string, unknown>)) {
+    if (!(CLAUDE_WIRED_HOOK_EVENTS as readonly string[]).includes(event)) {
+      // Only warn for keys that actually declare hook groups; ignore empties.
+      if (Array.isArray(groups) && groups.length > 0) {
+        if (isPublishedClaudeEvent(event)) {
+          warn(
+            `Claude hook event "${event}" is recognised by Claude Code but not supported by Copse yet — entries ignored`,
+            event,
+          )
+        } else {
+          warn(`Unknown Claude hook event "${event}" — entries ignored`, event)
+        }
+      }
+      continue
+    }
     if (!Array.isArray(groups)) continue
     for (const group of groups) {
       if (typeof group !== 'object' || group === null) continue
@@ -174,7 +220,7 @@ async function parseClaudeSettings(
         if (typeof command !== 'string' || !command.trim()) continue
         const timeoutMs = normalizeClaudeTimeout((handler as { timeout?: unknown }).timeout)
         const entry: DiscoveredClaudeHook = {
-          event,
+          event: event as DiscoveredClaudeEvent,
           command: command.trim(),
           cwd,
           source: path,
@@ -186,11 +232,18 @@ async function parseClaudeSettings(
       }
     }
   }
-  return out
+  return { hooks: out, warnings }
 }
 
-async function discoverClaudeHooks(opts: DialectDiscoverOpts): Promise<DiscoveredClaudeHook[]> {
-  const configs: Array<Promise<DiscoveredClaudeHook[]>> = [
+/** A short label for a Claude settings file used in warning messages. */
+function claudeFileLabel(path: string): string {
+  return path.endsWith('settings.local.json')
+    ? '.claude/settings.local.json'
+    : '.claude/settings.json'
+}
+
+async function discoverClaudeHooksDetailed(opts: DialectDiscoverOpts): Promise<ParsedClaudeConfig> {
+  const configs: Array<Promise<ParsedClaudeConfig>> = [
     parseClaudeSettings(userClaudeSettingsPath(), 'user'),
   ]
   if (opts.workspaceRoot && opts.projectTrusted) {
@@ -198,13 +251,20 @@ async function discoverClaudeHooks(opts: DialectDiscoverOpts): Promise<Discovere
     configs.push(parseClaudeSettings(projectClaudeLocalSettingsPath(opts.workspaceRoot), 'project'))
   }
   const results = await Promise.all(configs)
-  return results.flat()
+  return {
+    hooks: results.flatMap((r) => r.hooks),
+    warnings: results.flatMap((r) => r.warnings),
+  }
 }
 
-/** Diagnostics / Settings → Sources — discovered Claude hooks, regardless of enablement. */
-export async function listClaudeHooks(opts: DialectDiscoverOpts): Promise<HookSummary[]> {
-  const hooks = await discoverClaudeHooks(opts)
-  return hooks.map((h) => {
+async function discoverClaudeHooks(opts: DialectDiscoverOpts): Promise<DiscoveredClaudeHook[]> {
+  return (await discoverClaudeHooksDetailed(opts)).hooks
+}
+
+/** Diagnostics / Settings → Sources — discovered Claude hooks + authoring warnings. */
+export async function listClaudeHooks(opts: DialectDiscoverOpts): Promise<HooksListResult> {
+  const { hooks, warnings } = await discoverClaudeHooksDetailed(opts)
+  const summaries = hooks.map((h) => {
     const summary: HookSummary = {
       family: 'claude',
       event: h.event,
@@ -219,6 +279,7 @@ export async function listClaudeHooks(opts: DialectDiscoverOpts): Promise<HookSu
     if (h.matcher !== undefined) summary.matcher = h.matcher
     return summary
   })
+  return { hooks: summaries, warnings }
 }
 
 /**

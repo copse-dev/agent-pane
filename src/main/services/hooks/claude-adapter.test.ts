@@ -119,7 +119,10 @@ describe('claude-adapter', () => {
         },
       })
 
-      const hooks = await listClaudeHooks({ workspaceRoot: null, projectTrusted: false })
+      const { hooks, warnings } = await listClaudeHooks({
+        workspaceRoot: null,
+        projectTrusted: false,
+      })
       assert.equal(hooks.length, 1)
       const [hook] = hooks
       assert.ok(hook)
@@ -128,6 +131,40 @@ describe('claude-adapter', () => {
       assert.equal(hook.matcher, 'Bash')
       assert.equal(hook.command, './audit.sh')
       assert.equal(hook.scope, 'user')
+      // G3 warn-level lint: a declared-but-unwired vendor event is skipped WITH a
+      // warning (never a load gate — the PreToolUse hook still loaded above).
+      const postToolWarning = warnings.find((w) => w.event === 'PostToolUse')
+      assert.ok(postToolWarning, 'expected a warning for the unsupported PostToolUse event')
+      assert.match(postToolWarning.message, /not supported by Copse/)
+    })
+
+    it('warns (warn-only, never a gate) on unknown vs recognised-unsupported events', async () => {
+      await writeUserSettings({
+        hooks: {
+          // Recognised by the vendored Claude schema, unsupported by Copse.
+          Notification: [{ hooks: [{ type: 'command', command: './notify.sh' }] }],
+          // Not a real Claude event — a typo.
+          PreToolUseTypo: [{ hooks: [{ type: 'command', command: './typo.sh' }] }],
+          // Wired event still loads normally alongside the warnings.
+          PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './ok.sh' }] }],
+        },
+      })
+
+      const { hooks, warnings } = await listClaudeHooks({
+        workspaceRoot: null,
+        projectTrusted: false,
+      })
+      // The valid hook loaded despite the two bad events — the lint never gates.
+      assert.equal(hooks.length, 1)
+      assert.equal(hooks[0]?.event, 'PreToolUse')
+
+      const recognised = warnings.find((w) => w.event === 'Notification')
+      assert.ok(recognised)
+      assert.match(recognised.message, /recognised by Claude Code but not supported/)
+
+      const unknown = warnings.find((w) => w.event === 'PreToolUseTypo')
+      assert.ok(unknown)
+      assert.match(unknown.message, /Unknown Claude hook event/)
     })
 
     it('discovers project and local settings only when the workspace is trusted', async () => {
@@ -141,11 +178,11 @@ describe('claude-adapter', () => {
       })
 
       const untrusted = await listClaudeHooks({ workspaceRoot: tempProject, projectTrusted: false })
-      assert.equal(untrusted.length, 0)
+      assert.equal(untrusted.hooks.length, 0)
 
       const trusted = await listClaudeHooks({ workspaceRoot: tempProject, projectTrusted: true })
-      assert.equal(trusted.length, 2)
-      assert.ok(trusted.every((h) => h.scope === 'project'))
+      assert.equal(trusted.hooks.length, 2)
+      assert.ok(trusted.hooks.every((h) => h.scope === 'project'))
     })
   })
 
