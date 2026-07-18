@@ -246,6 +246,32 @@ This is the same trust boundary described in
 [`docs/supply-chain-security.md`](./supply-chain-security.md): trusting a workspace means
 trusting the code it can cause to run.
 
+## Vendored upstream schemas & drift detection (G3)
+
+Copse pins committed copies of the upstream hook-config JSON schemas for both
+foreign dialects under [`schemas/vendor/`](../schemas/vendor/) —
+`claude-code-settings.schema.json` (Claude Code, from SchemaStore) and
+`cursor-hooks.schema.json` (the community `cursor-hooks` npm schema). See
+[`schemas/vendor/README.md`](../schemas/vendor/README.md) for provenance, pins,
+and the re-vendoring steps.
+
+These exist for exactly two purposes, and are subject to two hard rules — they
+are **never fetched over the network** at runtime or in CI, and they are **never
+a load gate** (a config that violates an upstream schema still loads):
+
+1. **Warn-level authoring lint.** Parsing a foreign config uses the schema's
+   published event list to warn when a hooks group targets an event the vendor
+   recognises but Copse does not act on yet (vs an outright typo). The valid
+   hooks still load; the warning surfaces in Settings → Sources.
+2. **CI drift detector** (`src/main/services/hooks/vendor-schema-drift.test.ts`)
+   diffs each vendored schema's published events against the events our adapters
+   wire. Every published event must be either wired or listed in an explicit
+   intentionally-unsupported set (`src/shared/hooks/vendored-hook-schemas.ts`); an
+   upstream release adding an unaccounted event fails CI until it is wired or
+   documented. Copse currently wires Claude `PreToolUse` + `SessionStart` and the
+   Cursor events above; the long tail of Claude events (`Notification`,
+   `TeammateIdle`, …) is intentionally-unsupported v1.
+
 ## Gaps and future work
 
 1. **Content rewriting** — `updated_input` on tool gates (rewrite the proposed tool
@@ -272,6 +298,9 @@ trusting the code it can cause to run.
 - `src/main/services/security/permission-gate.ts` — calls the tool-gate hooks
 - `src/shared/types/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
 - `src/shared/types/hooks.ts` — shared `HookSummary` for Sources / `hooks:list`
+- `src/shared/hooks/vendored-hook-schemas.ts` — published-event mirrors + intentionally-unsupported sets (G3)
+- `schemas/vendor/` — pinned upstream Cursor + Claude hook schemas (G3); see its `README.md`
+- `src/main/services/hooks/vendor-schema-drift.test.ts` — CI drift detector (G3)
 - `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
 - `docs/claude-hooks.md` — Claude Code hooks contract
 - `docs/cursor-plugins.md` — sibling exploration of Cursor plugin support

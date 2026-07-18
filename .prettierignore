@@ -10,3 +10,6 @@ tests/e2e/electron-shell/.e2e-env.json
 tests/fixtures/git-changes-repo/
 # E2E markdown fixture with intentional hard-break trailing spaces + &nbsp;.
 tests/fixtures/job-description-metadata.md
+# Vendored upstream hook schemas (G3) — pinned byte-identical to upstream; never
+# reformatted so the drift detector compares against exactly what was published.
+schemas/vendor/*.json

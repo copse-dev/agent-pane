@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unpkg.com/cursor-hooks/schema/hooks.schema.json",
+  "title": "Cursor Hooks Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "hooks"],
+  "definitions": {
+    "hookDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Command to execute. Supports absolute paths, paths relative to hooks.json, or shell snippets."
+        }
+      }
+    },
+    "hooksArray": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/hookDefinition" }
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Configuration schema version. Currently only 1 is supported."
+    },
+    "hooks": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Hook event name to hook definition mappings.",
+      "properties": {
+        "beforeShellExecution": { "$ref": "#/definitions/hooksArray" },
+        "beforeMCPExecution": { "$ref": "#/definitions/hooksArray" },
+        "afterFileEdit": { "$ref": "#/definitions/hooksArray" },
+        "beforeReadFile": { "$ref": "#/definitions/hooksArray" },
+        "beforeSubmitPrompt": { "$ref": "#/definitions/hooksArray" },
+        "stop": { "$ref": "#/definitions/hooksArray" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
