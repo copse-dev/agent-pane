@@ -360,9 +360,7 @@ export function createLmStudioSection(
     const currentWebApproval = (await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING)) as
       boolean | undefined
     const currentProviderHosts = (await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING)) as
-      | string[]
-      | undefined
-      | null
+      string[] | undefined | null
     const currentProviderApproval = (await api.settings.get(
       PROVIDER_ALLOW_USER_APPROVAL_SETTING,
     )) as boolean | undefined

@@ -1972,9 +1972,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
       const savedProviderHosts = (await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING)) as
-        | string[]
-        | undefined
-        | null
+        string[] | undefined | null
       ;(form.elements.namedItem('approvedProviderHosts') as HTMLTextAreaElement).value = (
         Array.isArray(savedProviderHosts) ? savedProviderHosts : []
       ).join('\n')
