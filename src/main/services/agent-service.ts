@@ -945,7 +945,6 @@ export async function runAgent(
       return { todos, ...(extraMessage ? { extraMessage } : {}) }
     })
 
-
     // The parent tool executor, shared by the main loop and any post-turn parent
     // continuation turns (pre-review todo gate, review remediation) so both route
     // subagents, advisor, comparison, and shell tagging identically.
