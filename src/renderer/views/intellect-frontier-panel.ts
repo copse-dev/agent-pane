@@ -16,11 +16,13 @@
 // second y-axis ever.
 
 import {
+  blendedPricePerMTok,
   blendedRate,
   frontierForKnownModels,
   type FrontierCandidate,
   type FrontierPoint,
 } from '@copse/llm/pareto-frontier.ts'
+import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
 import {
   getIntellectScore,
   explainIntellectScore,
@@ -246,20 +248,58 @@ function ticks(max: number, count: number): number[] {
   return out
 }
 
+/** Models that have one coordinate but not the other — chart-margin gutters. */
+export interface FrontierGutters {
+  /** Scored on the canonical scale, no price — right gutter, true y position. */
+  unpriced?: readonly CanonicalScoredModel[]
+  /** Priced, no sourced score — bottom gutter, true x position. */
+  unscored?: readonly { id: string; costPerMTok: number }[]
+}
+
+const UNPRICED_GUTTER_W = 150
+
 export function renderFrontierSvg(
   points: readonly FrontierPoint[],
   size: { width?: number; height?: number } = {},
+  gutters: FrontierGutters = {},
 ): SVGSVGElement {
-  const width = size.width ?? WIDTH
-  const height = size.height ?? HEIGHT
-  const plotW = width - MARGIN.left - MARGIN.right
-  const plotH = height - MARGIN.top - MARGIN.bottom
-  const maxCost = Math.max(1, ...points.map((p) => p.costPerMTok)) * 1.15
-  const maxIntellect = Math.max(10, ...points.map((p) => p.intellect)) + 5
-  const minIntellect = Math.max(0, Math.min(...points.map((p) => p.intellect)) - 8)
+  const unpriced = gutters.unpriced ?? []
+  const unscored = gutters.unscored ?? []
+  const gutterW = unpriced.length > 0 ? UNPRICED_GUTTER_W : 0
+  const baseHeight = size.height ?? HEIGHT
+  const width = (size.width ?? WIDTH) + gutterW
+  const plotW = width - gutterW - MARGIN.left - MARGIN.right
+  const plotH = baseHeight - MARGIN.top - MARGIN.bottom
+  const allCosts = [...points.map((p) => p.costPerMTok), ...unscored.map((u) => u.costPerMTok)]
+  const allIntellects = [...points.map((p) => p.intellect), ...unpriced.map((u) => u.intellect)]
+  const maxCost = Math.max(1, ...allCosts) * 1.15
+  const maxIntellect = Math.max(10, ...allIntellects) + 5
+  const minIntellect = Math.max(0, Math.min(...allIntellects) - 8)
   const x = (cost: number): number => MARGIN.left + (cost / maxCost) * plotW
   const y = (intellect: number): number =>
     MARGIN.top + plotH - ((intellect - minIntellect) / (maxIntellect - minIntellect)) * plotH
+
+  // Bottom-gutter rows assigned greedily so labels never overlap within a row.
+  const unscoredRows: Array<{ id: string; costPerMTok: number; row: number; text: string }> = []
+  {
+    const rowEnds: number[] = []
+    for (const u of [...unscored].sort((a, b) => a.costPerMTok - b.costPerMTok)) {
+      const text = displayModelLabel(u.id)
+      const x0 = x(u.costPerMTok) - 6
+      const x1 = x(u.costPerMTok) + 8 + approxLabelWidth(text)
+      let row = rowEnds.findIndex((end) => end < x0)
+      if (row === -1) {
+        row = rowEnds.length
+        rowEnds.push(x1)
+      } else {
+        rowEnds[row] = x1
+      }
+      unscoredRows.push({ id: u.id, costPerMTok: u.costPerMTok, row, text })
+    }
+  }
+  const unscoredRowCount = unscoredRows.reduce((m, u) => Math.max(m, u.row + 1), 0)
+  const bottomGutterH = unscoredRowCount > 0 ? 12 + unscoredRowCount * 12 : 0
+  const height = baseHeight + bottomGutterH
 
   const svg = svgEl('svg', {
     viewBox: `0 0 ${String(width)} ${String(height)}`,
@@ -432,6 +472,130 @@ export function renderFrontierSvg(
     )
     svg.append(dot, label, hit)
   }
+
+  // Right gutter: scored-but-unpriced models at their TRUE y on the shared
+  // intellect axis, offset into a marked "no price" margin instead of claiming
+  // a fake $0.
+  if (unpriced.length > 0) {
+    const sepX = width - gutterW + 4
+    const dotX = width - gutterW + 16
+    svg.append(
+      svgEl('line', {
+        x1: String(sepX),
+        x2: String(sepX),
+        y1: String(MARGIN.top),
+        y2: String(MARGIN.top + plotH),
+        stroke: 'var(--border-subtle)',
+        'stroke-width': '1',
+        'stroke-dasharray': '3 3',
+      }),
+      svgEl(
+        'text',
+        {
+          x: String(dotX - 2),
+          y: String(MARGIN.top + plotH + 14),
+          'font-size': '9',
+          fill: 'var(--text-muted)',
+        },
+        'no price yet',
+      ),
+    )
+    let prevY = -Infinity
+    for (const u of [...unpriced].sort((a, b) => b.intellect - a.intellect)) {
+      const dotY = y(u.intellect)
+      const labelYPos = Math.max(dotY + 3, prevY + 10)
+      prevY = labelYPos
+      const dot = u.estimated
+        ? svgEl('circle', {
+            cx: String(dotX),
+            cy: String(dotY),
+            r: '5',
+            fill: 'var(--bg-base)',
+            stroke: 'var(--accent)',
+            'stroke-width': '2',
+            class: 'gutter-unpriced estimated',
+          })
+        : svgEl('circle', {
+            cx: String(dotX),
+            cy: String(dotY),
+            r: '5',
+            fill: 'var(--accent)',
+            class: 'gutter-unpriced',
+          })
+      const explanation = explainIntellectScore(u.id)
+      dot.append(
+        svgEl(
+          'title',
+          {},
+          explanation
+            ? `${u.id}\n${explanation.steps.map((s) => `${s.step}: ${s.detail}`).join('\n')}\nNo price data yet — position on intellect only.`
+            : `${u.id}\nintellect ${u.estimated ? '~' : ''}${String(u.intellect)} (live Artificial Analysis)\nNo price data yet — position on intellect only.`,
+        ),
+      )
+      svg.append(
+        dot,
+        svgEl(
+          'text',
+          {
+            x: String(dotX + 9),
+            y: String(labelYPos),
+            'font-size': '9',
+            fill: 'var(--text-secondary)',
+            class: 'gutter-unpriced-label',
+          },
+          `${displayModelLabel(u.id)} · ${u.estimated ? '~' : ''}${String(u.intellect)}`,
+        ),
+      )
+    }
+  }
+
+  // Bottom gutter: priced-but-unscored models at their TRUE x on the shared
+  // price axis, in a "no score" band under the axis.
+  if (unscoredRows.length > 0) {
+    svg.append(
+      svgEl(
+        'text',
+        {
+          x: '4',
+          y: String(baseHeight - 2),
+          'font-size': '9',
+          fill: 'var(--text-muted)',
+        },
+        'no score yet',
+      ),
+    )
+    for (const u of unscoredRows) {
+      const rowY = baseHeight - 6 + u.row * 12
+      const dot = svgEl('circle', {
+        cx: String(x(u.costPerMTok)),
+        cy: String(rowY),
+        r: '4',
+        fill: 'var(--border-strong)',
+        class: 'gutter-unscored',
+      })
+      dot.append(
+        svgEl(
+          'title',
+          {},
+          `${u.id}\n$${String(u.costPerMTok)}/MTok blended (80% input / 20% output)\nNo sourced intellect measurement yet — position on price only.`,
+        ),
+      )
+      svg.append(
+        dot,
+        svgEl(
+          'text',
+          {
+            x: String(x(u.costPerMTok) + 7),
+            y: String(rowY + 3),
+            'font-size': '9',
+            fill: 'var(--text-secondary)',
+            class: 'gutter-unscored-label',
+          },
+          u.text,
+        ),
+      )
+    }
+  }
   return svg
 }
 
@@ -464,94 +628,30 @@ export function unpricedCanonicalModels(
   return out.sort((a, b) => b.intellect - a.intellect || a.id.localeCompare(b.id))
 }
 
-/** One-axis dot strip on the canonical scale for {@link unpricedCanonicalModels}. */
-export function renderCanonicalStrip(models: readonly CanonicalScoredModel[]): SVGSVGElement {
-  const height = 46 + models.length * 14
-  const axisY = height - 18
-  const left = 40
-  const right = 16
-  const plotW = WIDTH - left - right
-  const max = Math.max(70, ...models.map((m) => m.intellect + 5))
-  const x = (value: number): number => left + (value / max) * plotW
-
-  const svg = svgEl('svg', {
-    viewBox: `0 0 ${String(WIDTH)} ${String(height)}`,
-    role: 'img',
-    'aria-label': 'Scored models without pricing, on the canonical index scale',
-    style: 'width:100%;height:auto;display:block',
-  }) as SVGSVGElement
-
-  svg.append(
-    svgEl('line', {
-      x1: String(left),
-      x2: String(left + plotW),
-      y1: String(axisY),
-      y2: String(axisY),
-      stroke: 'var(--border)',
-      'stroke-width': '1',
-    }),
-  )
-  for (const t of [0, 20, 40, 60]) {
-    svg.append(
-      svgEl(
-        'text',
-        {
-          x: String(x(t)),
-          y: String(axisY + 12),
-          'text-anchor': 'middle',
-          'font-size': '9',
-          fill: 'var(--text-muted)',
-        },
-        String(t),
-      ),
-    )
+/**
+ * Priced models with no sourced score: tracked cloud models whose measurement
+ * is absent, plus priced extra-provider models nothing resolves for. They get
+ * the bottom "no score" gutter at their true price.
+ */
+export function unscoredPricedModels(
+  extraProviders: readonly ExtraProvider[],
+): Array<{ id: string; costPerMTok: number }> {
+  const out: Array<{ id: string; costPerMTok: number }> = []
+  for (const id of TRACKED_MODELS) {
+    const info = getModelInfo(id)
+    if (!info || getIntellectScore(id)) continue
+    out.push({ id, costPerMTok: blendedPricePerMTok(info) })
   }
-  models.forEach((m, i) => {
-    const cy = axisY - 12 - i * 14
-    const cx = String(x(m.intellect))
-    const dot = m.estimated
-      ? svgEl('circle', {
-          cx,
-          cy: String(cy),
-          r: '5',
-          fill: 'var(--bg-base)',
-          stroke: 'var(--accent)',
-          'stroke-width': '2',
-          class: 'canonical-point estimated',
-        })
-      : svgEl('circle', {
-          cx,
-          cy: String(cy),
-          r: '5',
-          fill: 'var(--accent)',
-          class: 'canonical-point',
-        })
-    const explanation = explainIntellectScore(m.id)
-    dot.append(
-      svgEl(
-        'title',
-        {},
-        explanation
-          ? `${m.id}\n${explanation.steps.map((s) => `${s.step}: ${s.detail}`).join('\n')}\nNo price data yet — position on intellect only.`
-          : `${m.id}\nintellect ${m.estimated ? '~' : ''}${String(m.intellect)} (live Artificial Analysis)\nNo price data yet — position on intellect only.`,
-      ),
-    )
-    svg.append(
-      dot,
-      svgEl(
-        'text',
-        {
-          x: String(x(m.intellect) + 9),
-          y: String(cy + 3),
-          'font-size': '9',
-          fill: 'var(--text-secondary)',
-          class: 'canonical-label',
-        },
-        `${displayModelLabel(m.id)} · ${m.estimated ? '~' : ''}${String(m.intellect)}`,
-      ),
-    )
-  })
-  return svg
+  for (const provider of extraProviders) {
+    for (const m of provider.models) {
+      if (typeof m.inputPricePerMTok !== 'number' || getIntellectScore(m.id)) continue
+      out.push({
+        id: `${provider.id}:${m.id}`,
+        costPerMTok: blendedRate(m.inputPricePerMTok, m.outputPricePerMTok ?? m.inputPricePerMTok),
+      })
+    }
+  }
+  return out.sort((a, b) => a.costPerMTok - b.costPerMTok || a.id.localeCompare(b.id))
 }
 
 export interface IntellectFrontierPanel {
@@ -580,9 +680,9 @@ export function createIntellectFrontierPanel(
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
   const liveNotes = el('div', { class: 'field-hint frontier-live-notes' })
-  const canonicalHost = el('div', { class: 'frontier-canonical-strip' })
   const compositeHost = el('div', { class: 'frontier-composite-strip' })
   let lastPoints: FrontierPoint[] = []
+  let lastGutters: FrontierGutters = {}
   const expandBtn = el('button', { type: 'button', class: 'frontier-expand' }, 'Expand')
   expandBtn.addEventListener('click', () => {
     if (lastPoints.length === 0) return
@@ -591,7 +691,7 @@ export function createIntellectFrontierPanel(
     close.addEventListener('click', () => {
       dialog.remove()
     })
-    dialog.append(renderFrontierSvg(lastPoints, { width: 920, height: 460 }), close)
+    dialog.append(renderFrontierSvg(lastPoints, { width: 920, height: 460 }, lastGutters), close)
     fieldset.append(dialog)
     // jsdom (tests) lacks showModal; the open attribute is the fallback.
     if (typeof dialog.showModal === 'function') dialog.showModal()
@@ -609,7 +709,6 @@ export function createIntellectFrontierPanel(
     ),
     chartHost,
     liveNotes,
-    canonicalHost,
     compositeHost,
   )
 
@@ -697,28 +796,19 @@ export function createIntellectFrontierPanel(
       ...extraProviderFrontierCandidates(extraProviders),
       ...live.candidates,
     ])
+    const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
     lastPoints = points
+    lastGutters = {
+      unpriced: unpricedCanonicalModels(plottedIds, live.hintOnly),
+      unscored: unscoredPricedModels(extraProviders),
+    }
     chartHost.replaceChildren(
       points.length > 0
-        ? renderFrontierSvg(points)
+        ? renderFrontierSvg(points, {}, lastGutters)
         : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.'),
     )
     liveNotes.replaceChildren(
       ...liveNoteParts.map((t) => (typeof t === 'string' ? el('span', {}, `${t} `) : t)),
-    )
-    const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
-    const unpriced = unpricedCanonicalModels(plottedIds, live.hintOnly)
-    canonicalHost.replaceChildren(
-      ...(unpriced.length > 0
-        ? [
-            el(
-              'p',
-              { class: 'field-hint' },
-              'Scored on the same scale but with no price data yet — position on intellect only:',
-            ),
-            renderCanonicalStrip(unpriced),
-          ]
-        : []),
     )
     const compositeModels = compositeScoredLocalModels(localIds)
     compositeHost.replaceChildren(

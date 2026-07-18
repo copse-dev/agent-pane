@@ -117,9 +117,9 @@ describe('createIntellectFrontierPanel', () => {
     const panel = createIntellectFrontierPanel(async () => ['qwen/qwen2.5-coder-32b'])
     assert.equal(panel.root.querySelector('svg'), null)
     await panel.refresh()
-    // Main scatter + canonical unpriced strip + composite strip — three
-    // separate charts (scales are never mixed on one axis).
-    assert.equal(panel.root.querySelectorAll('svg').length, 3)
+    // Main scatter (with its gutters) + composite strip — two separate charts
+    // (the composite scale is never mixed onto the main axes).
+    assert.equal(panel.root.querySelectorAll('svg').length, 2)
     assert.match(panel.root.textContent, /own composite scale/)
     assert.match(panel.root.textContent, /not comparable with the intellect axis/)
   })
@@ -166,7 +166,7 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(details.querySelector('code'))
   })
 
-  it('gives scored-but-unpriced models the canonical strip, not a footnote', async () => {
+  it('puts scored-but-unpriced models in the right gutter on the shared intellect axis', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],
       undefined,
@@ -180,15 +180,31 @@ describe('createIntellectFrontierPanel', () => {
       }),
     )
     await panel.refresh()
-    const strip = panel.root.querySelector('.frontier-canonical-strip svg')
-    assert.ok(strip)
-    // Curated-but-unpriced (Kimi K3 = 57) and live-unpriced both appear.
-    assert.match(strip.textContent, /kimi-k3 · 57/)
-    assert.match(strip.textContent, /live-unpriced-model · ~41/)
-    assert.match(panel.root.textContent, /no price data yet/)
+    const svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    // Curated-but-unpriced (Kimi K3 = 57) and live-unpriced share the main
+    // chart's y-axis in the "no price yet" gutter — same vertical scale.
+    assert.match(svg.textContent, /no price yet/)
+    assert.match(svg.textContent, /kimi-k3 · 57/)
+    assert.match(svg.textContent, /live-unpriced-model · ~41/)
+    assert.ok(svg.querySelector('circle.gutter-unpriced'))
   })
 
-  it('expands into a larger dialog rendering of the same points', async () => {
+  it('puts priced-but-unscored models in the bottom gutter at their true price', async () => {
+    const panel = createIntellectFrontierPanel(async () => [])
+    await panel.refresh()
+    const svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    // gpt-4o has synced pricing but no sourced measurement.
+    assert.match(svg.textContent, /no score yet/)
+    assert.match(svg.textContent, /gpt-4o/)
+    const dot = svg.querySelector('circle.gutter-unscored')
+    assert.ok(dot)
+    const title = dot.querySelector('title')
+    assert.match(title?.textContent ?? '', /No sourced intellect measurement yet/)
+  })
+
+  it('expands into a larger dialog rendering of the same points and gutters', async () => {
     const panel = createIntellectFrontierPanel(async () => [])
     await panel.refresh()
     const btn = panel.root.querySelector<HTMLButtonElement>('button.frontier-expand')
@@ -198,7 +214,10 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(dialog)
     const svg = dialog.querySelector('svg')
     assert.ok(svg)
-    assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 920 460$/)
+    // 920 wide + the 150px unpriced gutter (Kimi K3 etc. are always unpriced
+    // in this environment); height grows with the bottom gutter rows.
+    assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 1070 \d+$/)
+    assert.match(svg.textContent, /no price yet/)
   })
 
   it('degrades to a quiet note when the local server is unreachable', async () => {
