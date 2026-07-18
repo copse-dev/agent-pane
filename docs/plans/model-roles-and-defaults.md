@@ -286,6 +286,19 @@ per-role axes can't provide. Pieces:
 - **Phase 4 — light evals:** per-role rubric tasks, "measured" catalog column,
   feedback into the classifier.
 
+  **Status upgrade (2026-07): necessary, not optional.** A live probe of every
+  named public source found the leaderboard ecosystem stale for the current
+  local-model generation: Aider's boards stop at the gpt-5 / DeepSeek-V3.2 era,
+  EvalPlus predates even Phi-4, SWE-bench restricted submissions to academic
+  teams in late 2025, and LiveCodeBench / LMArena have no fetchable export.
+  None of them will ever carry Qwen3.6 / Gemma 4 / community fine-tunes. For
+  current local weights the only data channels are (a) the Artificial Analysis
+  API for the big open weights AA measures (`sync:intellect --from-api`), and
+  (b) self-measured per-role evals — this phase. The good news: the axes,
+  sourcing rules, quant adjustment, composite, and the value-map strip are all
+  already wired, so measured numbers light everything up with no further
+  plumbing.
+
 ## Answers to the specific questions
 
 - **Improve default model advice** — yes; make defaults data-derived (role →
