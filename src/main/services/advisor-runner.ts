@@ -1,19 +1,27 @@
-import type { LLMMessage } from '@shared/types'
+import type { ModelUsage } from '@shared/types'
+import { parseAcpModelSelection } from '@shared/acp.ts'
 import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
-import { getSettingTrimmed } from './storage/settings.ts'
+import { routedModelSetting } from './providers/role-models.ts'
+import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
+import { buildAdvisorRepoState, buildAdvisorWorkingDiff } from './advisor-context.ts'
 import { addSubagentUsage } from './subagent-usage.ts'
+import { getAdvisorContext } from './advisor-runner-context.ts'
 import {
   ADVISOR_MODEL_SETTING,
   DEFAULT_ADVISOR_MODEL,
+  attributeAdvice,
   buildAdvisorTranscript,
   normalizeAdvisorResult,
   renderAdvisorResult,
 } from './advisor-strategy.ts'
 
-/** Resolve the configured advisor model id (empty setting -> frontier default). */
+/**
+ * Resolve the configured advisor model id: a model assigned to the `advisor`
+ * role wins, then the legacy `advisorModel` setting, then the frontier default.
+ */
 export function resolveAdvisorModelId(): string {
-  return getSettingTrimmed(ADVISOR_MODEL_SETTING) || DEFAULT_ADVISOR_MODEL
+  return routedModelSetting(ADVISOR_MODEL_SETTING) || DEFAULT_ADVISOR_MODEL
 }
 
 /**
@@ -23,19 +31,20 @@ export function resolveAdvisorModelId(): string {
  * far — the client-side equivalent of the native server forwarding the
  * conversation automatically.
  */
-export interface AdvisorRunnerContext {
-  advisorModel: string
-  executorModel: string
-  getTranscript: () => LLMMessage[]
+/**
+ * Optional, executor-controlled shaping of a consult. Both are additive: the
+ * no-arg call still forwards the full transcript + repo state and asks for
+ * generic strategic guidance (native-tool-compatible), so these only *add*
+ * focus/context, never withhold it.
+ */
+export interface AdvisorCallOptions {
+  /** The executor's specific question, if any — focuses the advice. */
+  question?: string
+  /** Attach the current working-tree diff to the advisor's context. */
+  includeDiff?: boolean
 }
 
-export type AdvisorRunner = (signal: AbortSignal) => Promise<string>
-
-let activeContext: AdvisorRunnerContext | null = null
-
-export function setAdvisorContext(ctx: AdvisorRunnerContext | null): void {
-  activeContext = ctx
-}
+export type AdvisorRunner = (signal: AbortSignal, options?: AdvisorCallOptions) => Promise<string>
 
 // The advisor runs "bare" (no tools, no context management) per the native
 // tool's contract; only the advice text reaches the executor. This system-style
@@ -46,23 +55,52 @@ const ADVISOR_PREAMBLE =
   'tool call, and every result so far. Do not answer the task yourself or write ' +
   'the deliverable. Give concise strategic guidance: the approach to take, the ' +
   'key risk or failure mode to avoid, and the single most important next step. ' +
-  'Keep guidance under ~200 words — a focused starting point, not a full plan.'
+  'If the executor included a specific question below, answer that directly ' +
+  'first. Keep guidance under ~200 words — a focused starting point, not a full plan.'
 
 const ADVISOR_TIMEOUT_MS = 120_000
 
 export function getAdvisorRunner(): AdvisorRunner | null {
-  if (!activeContext) return null
-  const ctx = activeContext
-  return async (_signal: AbortSignal) => {
-    const provider = await buildProvider(ctx.advisorModel)
+  const ctx = getAdvisorContext()
+  if (!ctx) return null
+  return async (signal: AbortSignal, options?: AdvisorCallOptions) => {
     const transcript = buildAdvisorTranscript(ctx.getTranscript())
-    const prompt = `${ADVISOR_PREAMBLE}\n\n# Executor transcript\n\n${transcript}`
-    const { text, usage } = await completeTextWithUsage(provider, prompt, ADVISOR_TIMEOUT_MS)
+    // Prepend verified repo facts (branch, ahead/behind, working-tree status) so
+    // the advisor anchors on ground truth instead of inferring repo state from a
+    // lossy, sometimes-trimmed transcript (which made it hallucinate that a
+    // merely-behind branch had lots of local changes). See advisor-context.ts.
+    const repoState = await buildAdvisorRepoState()
+    // "More context", executor-controlled: attach the live working diff on request.
+    const workingDiff = options?.includeDiff ? await buildAdvisorWorkingDiff() : ''
+    // "Prompt what it wants": the executor's specific question goes last, so it
+    // is the most salient instruction the advisor reads.
+    const question = options?.question?.trim()
+    const questionBlock = question ? `\n# The executor’s specific question\n\n${question}\n` : ''
+    const prompt = `${ADVISOR_PREAMBLE}\n\n${repoState}${workingDiff}# Executor transcript\n\n${transcript}\n${questionBlock}`
+
+    let text: string
+    let usage: ModelUsage
+    const acpSelection = parseAcpModelSelection(ctx.advisorModel)
+    if (acpSelection) {
+      // An `acp:<id>` advisor routes the consultation through the external ACP
+      // agent on a throwaway bare session (see acp-advisor.ts).
+      ;({ text, usage } = await runAcpAdvisorPrompt({
+        agentId: acpSelection.id,
+        model: acpSelection.model,
+        prompt,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(ADVISOR_TIMEOUT_MS)]),
+      }))
+    } else {
+      const provider = await buildProvider(ctx.advisorModel)
+      ;({ text, usage } = await completeTextWithUsage(provider, prompt, ADVISOR_TIMEOUT_MS))
+    }
     // Advisor tokens are billed at the advisor model's rate. For now they fold
     // into the run's aux-model usage; a dedicated advisor cost line (mirroring
     // the native `usage.iterations[].advisor_message`) is a tracked follow-up.
     addSubagentUsage(usage)
     if (!text.trim()) return 'Advisor returned no guidance.'
-    return renderAdvisorResult(normalizeAdvisorResult(text))
+    // Attribute the advice to the advisor model so the tool card shows whose
+    // output it is (the advisor's, distinct from the executor's conversation).
+    return attributeAdvice(renderAdvisorResult(normalizeAdvisorResult(text)), ctx.advisorModel)
   }
 }

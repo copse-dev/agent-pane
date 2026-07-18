@@ -80,7 +80,9 @@ import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
-import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
+import { resolveAdvisorModelId } from './advisor-runner.ts'
+import { runWithAdvisorContext } from './advisor-runner-context.ts'
+import { advisorAddsLift } from './advisor-strategy.ts'
 import {
   runWithOrchestrationContext,
   resolveOrchestrationWorkerModelId,
@@ -212,8 +214,19 @@ function parentTools(
   registry: ToolRegistry,
   subagentsEnabled: boolean,
   readonlyMode: boolean,
+  executorModel: string,
 ): LLMTool[] {
   let tools = registry.toLLMTools()
+  // Hide the advisor tool when the configured advisor is not more capable than
+  // the executor (same model, or a confidently weaker annotated pairing) — it
+  // would only spend tokens for no lift. Conservative: cross-scale/unannotated
+  // pairings keep it (see advisorAddsLift). No-op unless the tool is registered.
+  if (
+    tools.some((t) => t.name === 'advisor') &&
+    !advisorAddsLift(executorModel, resolveAdvisorModelId())
+  ) {
+    tools = tools.filter((t) => t.name !== 'advisor')
+  }
   if (!subagentsEnabled) {
     tools = tools
       .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
@@ -492,6 +505,30 @@ export async function runAgent(
     setActiveRunThread(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
+    // The advisor works both ways for ACP: an external executor can consult it
+    // through the native-tool bridge. Unlike the native loop (context set around
+    // each call), bridged calls arrive over HTTP at any point in the turn, so
+    // the context is scoped to the whole ACP run. The transcript is Copse's
+    // view: prior thread history, this turn's user prompt, and whatever the
+    // agent has streamed so far.
+    let acpAssistantText = ''
+    const acpChunkSink = (chunk: StreamChunk): void => {
+      if (chunk.type === 'text') acpAssistantText += chunk.text
+      sendChunk(chunk)
+    }
+    const advisorContext = registry.has('advisor')
+      ? {
+          advisorModel: resolveAdvisorModelId(),
+          executorModel: model,
+          getTranscript: (): LLMMessage[] => [
+            ...priorMessages,
+            { role: 'user' as const, content: outboundPrompt },
+            ...(acpAssistantText.trim()
+              ? [{ role: 'assistant' as const, content: acpAssistantText }]
+              : []),
+          ],
+        }
+      : null
     try {
       const result = await runAcpAgentFromSettings({
         threadId,
@@ -499,8 +536,9 @@ export async function runAgent(
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
-        onChunk: sendChunk,
+        onChunk: acpChunkSink,
         registry,
+        ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
@@ -669,7 +707,7 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode)
+    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, model)
     setHookRunToolset(parentLoopTools)
 
     const turnStart = await createHookRegistry().emit(
@@ -855,16 +893,14 @@ export async function runAgent(
         // Client-side advisor: hand the tool the live transcript so it can
         // forward it to a larger advisor model (issue #566). Mirrors the
         // native tool's automatic transcript forwarding.
-        setAdvisorContext({
-          advisorModel: resolveAdvisorModelId(),
-          executorModel: model,
-          getTranscript: () => trimmed,
-        })
-        try {
-          return await registry.executeNormalized(name, args, signal)
-        } finally {
-          setAdvisorContext(null)
-        }
+        return runWithAdvisorContext(
+          {
+            advisorModel: resolveAdvisorModelId(),
+            executorModel: model,
+            getTranscript: () => trimmed,
+          },
+          () => registry.executeNormalized(name, args, signal),
+        )
       }
       if (name === 'delegate_step') {
         // Orchestration strategy: the parent stays the orchestrator while a
