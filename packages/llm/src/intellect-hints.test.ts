@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { cloudModelIntellectHint, localModelIntellectHint } from './intellect-hints.ts'
+import {
+  cloudModelIntellectHint,
+  localModelIntellectHint,
+  modelIntellectHint,
+} from './intellect-hints.ts'
 
 describe('cloudModelIntellectHint', () => {
   it('shows intellect, blended price, and frontier for a scored tracked model', () => {
@@ -19,6 +23,14 @@ describe('cloudModelIntellectHint', () => {
 
   it('returns null for an unknown model so the picker renders it unchanged', () => {
     assert.equal(cloudModelIntellectHint('made-up-model'), null)
+  })
+})
+
+describe('modelIntellectHint', () => {
+  it('gives an intellect-only hint for alias and vendor id forms', () => {
+    assert.equal(modelIntellectHint('Opus 4.8'), 'intellect 56')
+    assert.equal(modelIntellectHint('moonshotai/kimi-k2.6'), 'intellect 54')
+    assert.equal(modelIntellectHint('totally-unknown'), null)
   })
 })
 

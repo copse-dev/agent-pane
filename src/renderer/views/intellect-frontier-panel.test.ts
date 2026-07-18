@@ -2,9 +2,10 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  compositeOnlyNotes,
+  compositeScoredLocalModels,
   createIntellectFrontierPanel,
   localFrontierCandidates,
+  renderCompositeStrip,
   renderFrontierSvg,
 } from './intellect-frontier-panel.ts'
 import { frontierForKnownModels } from '@copse/llm/pareto-frontier.ts'
@@ -51,27 +52,41 @@ describe('renderFrontierSvg', () => {
   })
 })
 
-describe('local candidates and composite notes', () => {
+describe('local candidates and the composite strip', () => {
   it('only canonical-scale local scores become plot candidates', () => {
     // qwen has 3 sourced benchmark axes but no canonical intellect measurement,
-    // so it must NOT be plotted (its composite is a different scale)…
+    // so it must NOT be plotted on the main scatter (different scale)…
     assert.deepEqual(localFrontierCandidates(['qwen/qwen2.5-coder-32b', 'unknown/x']), [])
-    // …and is disclosed as composite-scored beneath the chart instead.
-    const notes = compositeOnlyNotes(['qwen/qwen2.5-coder-32b', 'microsoft/phi-4'])
-    const [note] = notes
-    assert.ok(note)
-    assert.equal(notes.length, 1)
-    assert.match(note, /^qwen\/qwen2\.5-coder-32b: composite [\d.]+ \(copse-intellect-v1, 3 axes/)
+    // …and becomes a composite-strip entry instead.
+    const models = compositeScoredLocalModels(['qwen/qwen2.5-coder-32b', 'microsoft/phi-4'])
+    const [entry] = models
+    assert.ok(entry)
+    assert.equal(models.length, 1)
+    assert.equal(entry.id, 'qwen/qwen2.5-coder-32b')
+    assert.equal(entry.composite.version, 'copse-intellect-v1')
+  })
+
+  it('renders composite models as a separate own-scale strip with derivations', () => {
+    const models = compositeScoredLocalModels(['qwen/qwen2.5-coder-32b'])
+    const svg = renderCompositeStrip(models)
+    assert.equal(svg.querySelectorAll('circle.composite-point').length, 1)
+    const title = svg.querySelector('circle.composite-point > title')
+    assert.ok(title)
+    assert.match(title.textContent, /own scale, not the canonical index/)
+    assert.match(title.textContent, /weighted mean of 3\//)
+    assert.match(title.textContent, /free \(runs on-device\)/)
   })
 })
 
 describe('createIntellectFrontierPanel', () => {
-  it('renders the chart after refresh and lists composite-scored local models', async () => {
+  it('renders the chart after refresh and the composite strip for local models', async () => {
     const panel = createIntellectFrontierPanel(async () => ['qwen/qwen2.5-coder-32b'])
     assert.equal(panel.root.querySelector('svg'), null)
     await panel.refresh()
-    assert.ok(panel.root.querySelector('svg'))
+    // Main scatter + composite strip are two separate charts (never one axis).
+    assert.equal(panel.root.querySelectorAll('svg').length, 2)
     assert.match(panel.root.textContent, /own composite scale/)
+    assert.match(panel.root.textContent, /not comparable with the intellect axis/)
   })
 
   it('degrades to a quiet note when the local server is unreachable', async () => {

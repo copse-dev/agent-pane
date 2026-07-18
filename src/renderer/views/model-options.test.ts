@@ -148,7 +148,9 @@ describe('fetchModelOptions visibility', () => {
       acp.map((o) => ({ value: o.value, label: o.label })),
       [
         { value: 'acp:cursor#auto', label: 'Auto' },
-        { value: 'acp:cursor#opus[]', label: 'Opus 4.8' },
+        // The agent's "Opus 4.8" label aliases to the sourced measurement, so
+        // the row earns an intellect-only hint (ACP has no token pricing).
+        { value: 'acp:cursor#opus[]', label: 'Opus 4.8 — intellect 56' },
       ],
     )
     // The bare "acp:cursor" (agent default) entry is intentionally omitted.
@@ -212,15 +214,21 @@ describe('fetchModelOptions visibility', () => {
   })
 
   it('annotates scored cloud models with intellect, blended price, and frontier', async () => {
-    const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
+    const options = await fetchModelOptions(
+      mockApi({ available: { anthropic: true, openai: true } }),
+      '',
+    )
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
     assert.equal(opus.label, 'claude-opus-4-8 — intellect 56 · $9/MTok · frontier')
-    // A tracked model with pricing but no sourced measurement shows price only.
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
-    assert.match(haiku.label, /\$[\d.]+\/MTok/)
-    assert.doesNotMatch(haiku.label, /intellect/)
+    assert.equal(haiku.label, 'claude-haiku-4-5 — intellect 24 · $1.80/MTok · frontier')
+    // A tracked model with pricing but no sourced measurement shows price only.
+    const gpt4o = options.find((o) => o.value === 'gpt-4o')
+    assert.ok(gpt4o)
+    assert.match(gpt4o.label, /\$[\d.]+\/MTok/)
+    assert.doesNotMatch(gpt4o.label, /intellect/)
   })
 
   it('keeps the current selection selectable even with no key', async () => {

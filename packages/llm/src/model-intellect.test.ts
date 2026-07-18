@@ -24,6 +24,20 @@ describe('getIntellectScore', () => {
     assert.equal(getIntellectScore('made-up-model'), null)
   })
 
+  it('resolves alias and provider-prefixed forms to the same measurement', () => {
+    const direct = getIntellectScore('claude-opus-4-8')
+    assert.ok(direct)
+    // ACP picker label, OpenRouter id, and a provider-prefixed value all
+    // resolve to the one measurement — never a second score.
+    assert.deepEqual(getIntellectScore('Opus 4.8'), direct)
+    assert.deepEqual(getIntellectScore('anthropic/claude-opus-4-8'), direct)
+    assert.deepEqual(getIntellectScore('openrouter:anthropic/claude-opus-4-8'), direct)
+    // Open-weights measurement reachable under its vendor id.
+    assert.equal(getIntellectScore('moonshotai/kimi-k2.6')?.value, 54)
+    // A prefix strip must not invent matches for unknown ids.
+    assert.equal(getIntellectScore('lmstudio:unknown/model'), null)
+  })
+
   it('every synced measurement carries a citation and version', () => {
     for (const [modelId, entries] of Object.entries(MODEL_INTELLECT_RAW)) {
       for (const m of entries) {

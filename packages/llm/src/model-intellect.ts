@@ -19,6 +19,7 @@ import type { BenchmarkScore } from './local-model-catalog.ts'
 import { describeEquating, equateAcrossVersions } from './intellect-equating.ts'
 import {
   CANONICAL_INTELLECT_VERSION,
+  INTELLECT_ALIASES,
   INTELLECT_ATTRIBUTION,
   INTELLECT_EQUATING_MAPS,
   MODEL_INTELLECT_RAW,
@@ -54,6 +55,21 @@ export interface IntellectExplanation {
 }
 
 /**
+ * Resolve any id/label form a model appears under (bare catalog id, an alias
+ * from the sync data such as an OpenRouter id or ACP picker label, or a
+ * provider-prefixed value like `lmstudio:<id>`) to the measurement's catalog
+ * id. Null when nothing matches — never a fuzzy guess.
+ */
+export function resolveIntellectModelId(id: string): string | null {
+  if (id in MODEL_INTELLECT_RAW) return id
+  const aliased = INTELLECT_ALIASES[id]
+  if (aliased !== undefined) return aliased
+  const sep = id.indexOf(':')
+  if (sep > 0) return resolveIntellectModelId(id.slice(sep + 1))
+  return null
+}
+
+/**
  * The measurement to derive the canonical score from: the canonical-version
  * entry when one exists, else the entry with a translation path to canonical
  * (fewest hops, then most recent). Null when nothing usable is sourced.
@@ -61,7 +77,8 @@ export interface IntellectExplanation {
 function pickMeasurement(
   modelId: string,
 ): { measurement: IntellectMeasurement; hops: number } | null {
-  const entries = MODEL_INTELLECT_RAW[modelId]
+  const resolved = resolveIntellectModelId(modelId)
+  const entries = resolved === null ? undefined : MODEL_INTELLECT_RAW[resolved]
   if (!entries || entries.length === 0) return null
   let best: { measurement: IntellectMeasurement; hops: number } | null = null
   for (const m of entries) {

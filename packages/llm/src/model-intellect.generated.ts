@@ -21,6 +21,15 @@ export const INTELLECT_ATTRIBUTION =
   'Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)'
 
 export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
+  'claude-haiku-4-5': [
+    {
+      value: 24,
+      indexVersion: 'v4.1',
+      source:
+        'Artificial Analysis model page for Claude 4.5 Haiku (non-reasoning variant), https://artificialanalysis.ai/models/claude-4-5-haiku, retrieved 2026-07-18',
+      asOf: '2026-07-18',
+    },
+  ],
   'claude-opus-4-8': [
     {
       value: 56,
@@ -39,6 +48,30 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-07-02',
     },
   ],
+  'moonshotai/kimi-k2.6': [
+    {
+      value: 54,
+      indexVersion: 'v4.1',
+      source:
+        'Artificial Analysis open-weights leaders (July 2026): Kimi K2.6 (Reasoning) and MiMo V2.5 Pro tie at 54 on the Intelligence Index, https://artificialanalysis.ai/models/open-source, retrieved 2026-07-18',
+      asOf: '2026-07-18',
+    },
+  ],
+}
+
+/** Alternate id/label forms (OpenRouter ids, ACP labels) → catalog model id. */
+export const INTELLECT_ALIASES: Record<string, string> = {
+  'anthropic/claude-haiku-4-5': 'claude-haiku-4-5',
+  'anthropic/claude-opus-4-8': 'claude-opus-4-8',
+  'anthropic/claude-sonnet-4-6': 'claude-sonnet-4-6',
+  'claude-haiku-4-5-latest': 'claude-haiku-4-5',
+  'claude-opus-4-8-latest': 'claude-opus-4-8',
+  'claude-sonnet-4-6-latest': 'claude-sonnet-4-6',
+  'Haiku 4.5': 'claude-haiku-4-5',
+  'Kimi K2.6': 'moonshotai/kimi-k2.6',
+  'moonshotai/kimi-k2-6': 'moonshotai/kimi-k2.6',
+  'Opus 4.8': 'claude-opus-4-8',
+  'Sonnet 4.6': 'claude-sonnet-4-6',
 }
 
 export const INTELLECT_EQUATING_MAPS: readonly EquatingMap[] = []

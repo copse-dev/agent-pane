@@ -21,7 +21,7 @@ import {
   type FrontierPoint,
 } from '@copse/llm/pareto-frontier.ts'
 import { explainIntellectScore } from '@copse/llm/model-intellect.ts'
-import { compositeIntellect } from '@copse/llm/composite-intellect.ts'
+import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
 import { el } from '../dom/helpers.ts'
 
@@ -61,19 +61,106 @@ export function localFrontierCandidates(localModelIds: readonly string[]): Front
   return out
 }
 
+export interface CompositeScoredModel {
+  id: string
+  composite: CompositeIntellect
+}
+
 /** Local models whose only capability number is the composite (own scale). */
-export function compositeOnlyNotes(localModelIds: readonly string[]): string[] {
-  const notes: string[] = []
+export function compositeScoredLocalModels(
+  localModelIds: readonly string[],
+): CompositeScoredModel[] {
+  const out: CompositeScoredModel[] = []
   for (const id of localModelIds) {
     const cap = getLocalModelCapability(id)
     if (!cap || cap.benchmarks['aa-intelligence']) continue
     const composite = compositeIntellect(cap)
-    if (!composite) continue
-    notes.push(
-      `${id}: composite ${String(composite.value)} (${composite.version}, ${String(composite.axes.length)} axes — own scale, not plotted)`,
+    if (composite) out.push({ id, composite })
+  }
+  return out
+}
+
+/**
+ * The composite models' own chart: a one-axis dot strip on the copse-intellect
+ * 0–100 scale. A SEPARATE chart, deliberately — composite values are not on
+ * the canonical index scale, and plotting them into the main scatter would
+ * fake a comparison (and be a second y-scale in disguise).
+ */
+export function renderCompositeStrip(models: readonly CompositeScoredModel[]): SVGSVGElement {
+  const height = 46 + models.length * 14
+  const axisY = height - 18
+  const left = 40
+  const right = 16
+  const plotW = WIDTH - left - right
+  const x = (value: number): number => left + (value / 100) * plotW
+
+  const svg = svgEl('svg', {
+    viewBox: `0 0 ${String(WIDTH)} ${String(height)}`,
+    role: 'img',
+    'aria-label': 'Local models on the copse-intellect composite scale',
+    style: 'width:100%;height:auto;display:block',
+  }) as SVGSVGElement
+
+  svg.append(
+    svgEl('line', {
+      x1: String(left),
+      x2: String(left + plotW),
+      y1: String(axisY),
+      y2: String(axisY),
+      stroke: 'var(--border)',
+      'stroke-width': '1',
+    }),
+  )
+  for (const t of [0, 25, 50, 75, 100]) {
+    svg.append(
+      svgEl(
+        'text',
+        {
+          x: String(x(t)),
+          y: String(axisY + 12),
+          'text-anchor': 'middle',
+          'font-size': '9',
+          fill: 'var(--text-muted)',
+        },
+        String(t),
+      ),
     )
   }
-  return notes
+  models.forEach((m, i) => {
+    const cy = axisY - 12 - i * 14
+    const cx = String(x(m.composite.value))
+    const dot = svgEl('circle', {
+      cx,
+      cy: String(cy),
+      r: '5',
+      fill: 'var(--bg-base)',
+      stroke: 'var(--border-strong)',
+      'stroke-width': '2',
+      class: 'composite-point',
+    })
+    dot.append(
+      svgEl(
+        'title',
+        {},
+        `${m.id}\ncomposite ${String(m.composite.value)} — ${m.composite.version} (own scale, not the canonical index)\n${m.composite.basis}\ncost: free (runs on-device)`,
+      ),
+    )
+    svg.append(
+      dot,
+      svgEl(
+        'text',
+        {
+          x: String(x(m.composite.value) + 9),
+          y: String(cy + 3),
+          'font-size': '9',
+          fill: 'var(--text-secondary)',
+          class: 'composite-label',
+        },
+        `${m.id} · ${String(m.composite.value)}`,
+      ),
+    )
+  })
+  return svg
 }
 
 function tooltipFor(point: FrontierPoint): string {
@@ -271,7 +358,7 @@ export function createIntellectFrontierPanel(
   loadLocalModels: () => Promise<string[]>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
-  const notes = el('p', { class: 'field-hint' })
+  const compositeHost = el('div', { class: 'frontier-composite-strip' })
   const fieldset = el(
     'fieldset',
     {},
@@ -282,7 +369,7 @@ export function createIntellectFrontierPanel(
       'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived.',
     ),
     chartHost,
-    notes,
+    compositeHost,
   )
 
   async function refresh(): Promise<void> {
@@ -298,10 +385,18 @@ export function createIntellectFrontierPanel(
         ? renderFrontierSvg(points)
         : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.'),
     )
-    const compositeNotes = compositeOnlyNotes(localIds)
-    notes.replaceChildren(
-      ...(compositeNotes.length > 0
-        ? [`Scored on their own composite scale: ${compositeNotes.join('; ')}`]
+    const compositeModels = compositeScoredLocalModels(localIds)
+    compositeHost.replaceChildren(
+      ...(compositeModels.length > 0
+        ? [
+            el(
+              'p',
+              { class: 'field-hint' },
+              'Local models without an index measurement, on their own composite scale ' +
+                '(copse-intellect-v1, from their sourced benchmark axes — not comparable with the intellect axis above):',
+            ),
+            renderCompositeStrip(compositeModels),
+          ]
         : []),
     )
   }

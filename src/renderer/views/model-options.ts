@@ -1,7 +1,11 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
 import { localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
-import { cloudModelIntellectHint, localModelIntellectHint } from '@copse/llm/intellect-hints.ts'
+import {
+  cloudModelIntellectHint,
+  localModelIntellectHint,
+  modelIntellectHint,
+} from '@copse/llm/intellect-hints.ts'
 import {
   isOpenRouterModel,
   openRouterDisplayLabel,
@@ -75,8 +79,15 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
     if (models.length > 0) {
       // The agent exposes a model selector: list only its models (the bare
       // "agent default" entry is dropped — it's redundant and confusing).
+      // ACP agents expose no token pricing, so the hint is intellect-only —
+      // resolved via the measurement alias map (agent labels like "Opus 4.8").
       for (const model of models) {
-        options.push({ value: acpModelValue(agent.id, model.value), label: model.label, group })
+        const hint = modelIntellectHint(model.value) ?? modelIntellectHint(model.label)
+        options.push({
+          value: acpModelValue(agent.id, model.value),
+          label: hint ? `${model.label} — ${hint}` : model.label,
+          group,
+        })
       }
     } else {
       // No discovered models (never detected, or the agent has a fixed model):
@@ -118,7 +129,10 @@ async function openRouterOptions(
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    entries.push({ value, label, group: OPENROUTER_GROUP })
+    // Intellect-only hint (no catalog pricing for OpenRouter ids), matched via
+    // the measurement alias map.
+    const hint = modelIntellectHint(id)
+    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group: OPENROUTER_GROUP })
   }
 
   for (const model of liveModels) add(model.id, model.name || model.id)

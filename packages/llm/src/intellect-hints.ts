@@ -45,6 +45,20 @@ export function cloudModelIntellectHint(id: string): string | null {
 }
 
 /**
+ * Intellect-only hint for any model id or label form — OpenRouter ids, ACP
+ * picker labels, provider-prefixed values — resolved through the sync data's
+ * alias map. No price/frontier parts: those need catalog pricing, which only
+ * tracked cloud models have (ACP agents are subscription-billed and expose no
+ * token price at all). Null when nothing resolves, so unknown rows render
+ * exactly as before.
+ */
+export function modelIntellectHint(idOrLabel: string): string | null {
+  const score = getIntellectScore(idOrLabel)
+  if (!score) return null
+  return `intellect ${score.estimated ? '~' : ''}${String(score.value)}`
+}
+
+/**
  * Intellect hint for a local model as it runs on-device: the quant-adjusted
  * canonical score when one is sourced ("intellect ~55"), else the crystallised
  * composite over its sourced benchmark axes ("composite 58.2 (3 axes)" — its
