@@ -27,6 +27,7 @@ import { initSshWorkspaceIpc } from './services/ssh-workspace/ssh-workspace-ipc.
 import { initDiffQueue } from './services/diff-queue.ts'
 import { initFsWatcher, closeAllWatchers } from './ipc/fs-watcher.ts'
 import { stopWorkspaceIndexWatcher } from './services/search/workspace-index-watcher.ts'
+import { reapOversizedGortexDaemon, stopGortexDaemon } from './services/search/semantic-index.ts'
 import { initTerminal } from './ipc/terminal.ts'
 import { registerAllHandlers } from './ipc/register-handlers.ts'
 import { initSkillsRegistry } from './services/skills/skills-registry.ts'
@@ -115,6 +116,12 @@ app
       await runAcpAgentMode()
       return
     }
+
+    // Before we allocate our window/renderer: reap an oversized gortex daemon
+    // left over from a previous (possibly SIGKILLed) session. Freeing its memory
+    // while our own footprint is still minimal is what keeps a multi-GB zombie
+    // from pushing the machine over its ceiling and OOM-killing us mid-boot.
+    await reapOversizedGortexDaemon()
 
     await checkToolAvailability()
     await initProjectSandbox()
@@ -414,7 +421,9 @@ async function cleanupBeforeQuit(): Promise<void> {
   stopWorkspaceIndexWatcher()
   shutdownBrowserSession()
   await drainWriteQueue()
-  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox()])
+  // Reap the detached gortex daemon too — left running it accumulates multi-GB
+  // graphs across sessions and OOM-kills the app on a later launch.
+  await Promise.allSettled([shutdownMcpServers(), shutdownProjectSandbox(), stopGortexDaemon()])
 }
 
 app.on('before-quit', (event) => {

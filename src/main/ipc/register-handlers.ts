@@ -236,8 +236,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
     setWorkspaceRoot(canonical)
     startWorkspaceIndexing(canonical)
-    await initSkillsRegistry()
-    registerSkillTools(registry)
+    // Do NOT block the IPC response (and therefore the renderer's boot / first
+    // paint) on the skills scan. It re-scans user + bundled + workspace skill
+    // roots and, when the workspace index build is churning the event loop, can
+    // take many seconds — which left the UI stuck on "loading" because
+    // `api.workspace.set` never returned. Populate skills in the background and
+    // register their tools when ready; the window renders immediately.
+    void initSkillsRegistry()
+      .then(() => {
+        registerSkillTools(registry)
+      })
+      .catch((err: unknown) => {
+        console.warn('[skills] background init failed:', err)
+      })
     return canonical
   })
 
