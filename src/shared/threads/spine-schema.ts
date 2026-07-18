@@ -135,6 +135,12 @@ export interface SpineHookRunDecision {
    * `subagentStop`'s `followup_message`, routed to the pending-message queue).
    */
   queuedMessageChars?: number
+  /**
+   * Number of session-scoped env keys a `sessionStart` hook exported (H4;
+   * Cursor's `env` output). Recorded so an env-propagating session start is
+   * visible in the transcript — the values themselves stay in the stdout blob.
+   */
+  sessionEnvKeys?: number
 }
 
 /**

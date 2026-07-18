@@ -43,6 +43,15 @@ export interface DialectInterpretation {
    * set it; the runner passes it through to {@link CommandHookResult.queueMessage}.
    */
   queueMessage?: HookQueueMessage
+  /**
+   * Session-scoped environment variables a `sessionStart` hook returned (H4;
+   * Cursor's `env` output field). Fire-and-forget: the runner passes it through
+   * to {@link CommandHookResult.sessionEnv}, and the fire site collects it into
+   * the session env store so it propagates to *later* hook process spawns for
+   * the session (decision-doc "`sessionStart` env propagation"). Only the
+   * `sessionStart` interpretation sets it.
+   */
+  sessionEnv?: Record<string, string>
   /** True when the process crashed, timed out, or emitted invalid JSON. */
   failed: boolean
   /** Whether stdout parsed cleanly (empty stdout counts as an intentional no-response). */
@@ -218,6 +227,32 @@ export interface DialectAdapter {
   interpretAfterToolUse?(
     spawn: HookSpawnResult,
     payload: HookEventPayloads['afterToolUse'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `sessionStart` payload into this dialect's stdin wire
+   * shape (H4). Optional: a dialect with no session-start hook omits it and the
+   * runner abstains for that dialect. Cursor's `sessionStart` carries
+   * `session_id` / `is_background_agent` / `composer_mode`; Claude's carries
+   * `source` and the **optional `model`** (B4 readiness — the only Claude
+   * agent-session event with a model field). `session` supplies the ids + model.
+   */
+  marshalSessionStartRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['sessionStart'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `sessionStart` response table (H4). Optional, paired
+   * with {@link marshalSessionStartRequest}. `sessionStart` is fire-and-forget
+   * (decision 3), so it never yields a control-flow `outcome`; its actionable
+   * output is {@link DialectInterpretation.sessionEnv} (Cursor's `env` object),
+   * which the fire site propagates to later hook spawns. A crash / timeout /
+   * non-zero exit is reported `failed` for the spine + Sources only — there is
+   * nothing to block (the session has already started).
+   */
+  interpretSessionStart?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['sessionStart'],
   ): DialectInterpretation
   /**
    * Record the first runtime failure of a hook this session (deduped per

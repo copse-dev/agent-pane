@@ -90,6 +90,14 @@ export interface CommandHookResult {
    * protocol). Absent on blocking-event runs and notification-only completions.
    */
   queueMessage?: HookQueueMessage
+  /**
+   * Session-scoped environment variables a `sessionStart` command hook returned
+   * (H4). The async fire site (`emitAsync`) forwards this to `onAsyncOutcome` as
+   * the outcome's {@link AsyncHookOutcome.sessionEnv}, so the host collects it
+   * into the session env store for propagation to later hook spawns. Absent on
+   * every non-`sessionStart` run.
+   */
+  sessionEnv?: Record<string, string>
 }
 
 /**

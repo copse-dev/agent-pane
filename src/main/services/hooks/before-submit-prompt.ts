@@ -18,6 +18,7 @@ import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/can
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorBeforeSubmitPromptHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import { withRunDeadlinePaused } from './run-deadline.ts'
 
 /** The decision reduced from the compose-path `beforeSubmitPrompt` hooks. */
 export interface BeforeSubmitPromptDecision {
@@ -62,11 +63,17 @@ export async function runBeforeSubmitPromptHooks(
   const registry = new HookRegistry()
   for (const hook of hooks) registry.registerCommand(hook)
 
-  const { outcomes } = await registry.emit('beforeSubmitPrompt', payload, {
-    runCommandHook: createCommandHookRunner(),
-    ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
-  })
+  // H4 (decision 13): pause the run's idle deadline while the blocking hooks are
+  // awaited. On the compose path the run's deadline usually is not registered
+  // yet (it is created after this fires), so this is a transparent pass-through
+  // there; it still holds when a compose-path hook runs mid-session.
+  const { outcomes } = await withRunDeadlinePaused(opts.agentSession?.conversationId, () =>
+    registry.emit('beforeSubmitPrompt', payload, {
+      runCommandHook: createCommandHookRunner(),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
+    }),
+  )
   const merged = mergeBlockingOutcomes(outcomes)
 
   // `continue: false` maps to `haltRun`; a `deny` decision would too, though the

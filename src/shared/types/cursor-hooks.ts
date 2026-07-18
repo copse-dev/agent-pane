@@ -18,6 +18,7 @@ export const CURSOR_HOOK_EVENTS = [
   'stop',
   'subagentStart',
   'subagentStop',
+  'sessionStart',
 ] as const
 
 export type CursorHookEvent = (typeof CURSOR_HOOK_EVENTS)[number]
@@ -57,7 +58,8 @@ export type CursorAfterToolHookEvent = (typeof CURSOR_AFTER_TOOL_HOOK_EVENTS)[nu
  * (D1 — the subagent spawn gate + detached completion, matcher on subagent type),
  * and `afterShellExecution` / `afterMCPExecution` (D2 — post-tool observations,
  * flavors of the canonical `afterToolUse`, dispatched detached with a capped
- * output snapshot).
+ * output snapshot), and `sessionStart` (H4 — fire-and-forget on a new
+ * conversation's first turn; its `env` output propagates to later hook spawns).
  */
 export const CURSOR_WIRED_HOOK_EVENTS = [
   ...CURSOR_PERMISSION_HOOK_EVENTS,
@@ -66,6 +68,7 @@ export const CURSOR_WIRED_HOOK_EVENTS = [
   'stop',
   'subagentStart',
   'subagentStop',
+  'sessionStart',
   ...CURSOR_AFTER_TOOL_HOOK_EVENTS,
 ] as const
 

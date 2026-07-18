@@ -61,6 +61,32 @@ describe('agent-loop-limits', () => {
     assert.equal(deadline.isIdleExpired(start + 201), true)
   })
 
+  it('composes nested pauses (ref-counted) so an inner resume never un-pauses the outer region', () => {
+    // H4 (decision 13): a blocking hook that pauses the idle deadline while it
+    // already sits inside a paused tool-execution region must not re-arm the
+    // idle clock when *its* resume fires — only the outermost resume records the
+    // elapsed pause. The idle window is 100ms.
+    const start = 1_000
+    const deadline = new AgentRunDeadline(100, AGENT_RUN_HARD_MAX_MS, start)
+    deadline.pause(start + 10) // outer: tool execution begins
+    deadline.pause(start + 20) // inner: a blocking hook fires within it
+    deadline.resume(start + 30) // inner hook completes — must NOT re-arm the clock
+    // Well past the idle window in wall-clock terms, but all of it was paused.
+    assert.equal(deadline.isIdleExpired(start + 500), false)
+    deadline.resume(start + 510) // outer region ends — clock re-arms here
+    // Only now does the idle window count from the outer resume.
+    assert.equal(deadline.isIdleExpired(start + 599), false)
+    assert.equal(deadline.isIdleExpired(start + 611), true)
+  })
+
+  it('ignores an unbalanced resume (no active pause) without shifting the clock', () => {
+    const start = 1_000
+    const deadline = new AgentRunDeadline(100, AGENT_RUN_HARD_MAX_MS, start)
+    deadline.resume(start + 5) // resume with depth 0 is a no-op
+    assert.equal(deadline.isIdleExpired(start + 50), false)
+    assert.equal(deadline.isIdleExpired(start + 101), true)
+  })
+
   it('enforces the hard wall-clock cap regardless of activity', () => {
     const start = 1_000
     const deadline = new AgentRunDeadline(AGENT_RUN_IDLE_TIMEOUT_MS, 200, start)
