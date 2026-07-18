@@ -26,6 +26,18 @@ cloud containers for any workspace) is
 >   via `up aws`, default `c7i.xlarge` for the single-host dev case). Runs
 >   always use `wdio.ci.conf.ts` for CI parity; `--all` means "no oracle
 >   filtering", not the local `wdio.conf.ts` spec set.
+> - **Scaleway Container Registry for host images (follow-up).** When
+>   `COPSE_CI_REGISTRY=rg.fr-par.scw.cloud/<namespace>` (or `--registry`) is
+>   set, `up`/`adopt`/`rebake` **pull** a pre-baked `copse-ci-runner:<lockhash>`
+>   instead of `docker compose build` on the host. `publish` (or
+>   `rebake --push`) bakes once locally with `BUILD_GH_TOKEN` as a BuildKit
+>   secret and pushes; subsequent `up` needs **no GitHub token**. Registry
+>   auth uses `SCW_SECRET_KEY` for an ephemeral host `docker login` (stdin →
+>   pull → logout + config wipe) — credentials are never stored in Docker
+>   layers or Scaleway instance snapshots. `--transfer-image` is the stricter
+>   path (pull locally, `docker save|load` over SSH; host never sees registry
+>   creds). On-host bake remains the fallback when no registry is configured
+>   or `--rebuild` is passed.
 
 ## Problem
 
