@@ -36,12 +36,17 @@ typechecks, and manual inspection as supporting evidence, not replacements for t
    - DOM assertions first, then `browser.saveScreenshot(...)` → `tests/e2e/screenshots/`
    - Mock env: `COPSE_PANEL_MOCK_LLM=1`, empty API keys (WDIO sets these; repeat for manual runs).
 3. **Drive tools without a model** — User message `[[mcp:write_file {"path":"…","content":"…"}]]` (mock honors this on the **current user turn only**).
-4. **Run**:
+4. **Run** — Prefer `e2e:remote` when a remote host exists or can be provisioned
+   (keeps the machine free; Linux screenshots match CI). Use local `test:e2e` for
+   macOS-only surfaces or when cloud creds/registry are missing:
    ```bash
    npm run build
-   npm run test:e2e -- --spec tests/e2e/<feature>.e2e.ts
+   npm run e2e:remote -- run --spec tests/e2e/<feature>.e2e.ts --detach
+   npm run e2e:remote -- wait <run-id>
+   # fallback: npm run test:e2e -- --spec tests/e2e/<feature>.e2e.ts
    ```
-5. **Read PNGs** — Visually confirm layout, labels, no spawn errors / red errors.
+5. **Read PNGs** — Visually confirm layout, labels, no spawn errors / red errors
+   (remote artifacts under `.tmp/remote-e2e/runs/<run-id>/`).
 6. **Fix** on the feature branch if assertions or screenshots fail; re-run until pass.
 7. **Gate** — `npm run check` before push.
 

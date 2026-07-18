@@ -33,12 +33,15 @@ import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
 import {
   beginHookRunRecording,
+  clearHookRunLiveSink,
   endHookRunRecording,
   recordFunctionHookRun,
   snapshotHookRunContext,
+  setHookRunLiveSink,
   setHookRunStep,
   setHookRunToolset,
 } from './hook-run-recorder.ts'
+import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
   buildSubagentRoute,
@@ -102,6 +105,7 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
+import { runPostTurnReviewHooks } from './hooks/post-turn-review.ts'
 import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
 import { registerHaltTarget, clearHaltTarget } from './hooks/halt-run.ts'
 import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
@@ -396,6 +400,36 @@ function fireStopHook(
 }
 
 /**
+ * Fire `postTurnReview` (F2, Copse-native) after a post-turn review verdict.
+ * **Detached, never awaited (decision 3):** dispatched with `void` so a slow
+ * observer can never delay the run's terminal `done`. Gated behind
+ * `cursorHooksEnabled` (default off), the same flag every other fire site uses.
+ * Any dispatch error is swallowed — an observation hook can never fail the turn.
+ */
+function firePostTurnReviewHook(
+  threadId: string,
+  turnTreeId: TurnTreeId,
+  payload: { issuesFound: boolean; summary: string },
+): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  // Snapshot the recording context now, synchronously, like `fireStopHook`:
+  // `postTurnReview` fires just before the terminal `done` and the dispatch is
+  // detached, so the hook may settle after `endHookRunRecording` (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
+  void runPostTurnReviewHooks(payload, {
+    threadId,
+    turnTreeId,
+    workspaceRoot,
+    projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    agentSession: currentAgentSessionInfo(),
+    recordingSnapshot,
+  }).catch((err: unknown) => {
+    console.warn('[hooks] postTurnReview hook dispatch error:', errorMessage(err))
+  })
+}
+
+/**
  * Fire `afterToolUse` (D2) after a tool result — the canonical post-tool
  * observation. Cursor's `afterShellExecution` / `afterMCPExecution` are payload
  * flavors chosen by the tool name; discovery yields no hooks for other tools, so
@@ -676,6 +710,13 @@ export async function runAgent(
   // Attribute hook executions (function + command) to this run's spine records
   // (decision 6 — always-on).
   beginHookRunRecording(threadId)
+  // G1 (decision 10): mirror each spine `hook_run` append onto the live stream as
+  // a `hook_run` chunk so the hook-card family appears as it runs — the renderer
+  // anchors it to the current turn's message. Cleared in the finally.
+  const hookCardSink = (card: HookCard): void => {
+    sendChunk({ type: 'hook_run', card })
+  }
+  setHookRunLiveSink(hookCardSink)
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
   // H4 (decision 13): register this run's idle deadline so host-side blocking
@@ -1229,6 +1270,14 @@ export async function runAgent(
           })
           return remediation
         },
+        // F2: fire the Copse-native `postTurnReview` observation (detached) for
+        // each review verdict the cycle produces.
+        onReviewVerdict: (review) => {
+          firePostTurnReviewHook(threadId, turnTreeId, {
+            issuesFound: review.verdict.issuesFound,
+            summary: review.summary,
+          })
+        },
       })
     }
 
@@ -1274,6 +1323,7 @@ export async function runAgent(
     clearRunDeadline(threadId, runAbort.deadline)
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
+    clearHookRunLiveSink(hookCardSink)
     endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
     clearHaltTarget(threadId, turnTreeId)

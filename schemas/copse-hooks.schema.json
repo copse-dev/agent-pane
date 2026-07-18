@@ -23,7 +23,11 @@
         "subagentStart": { "$ref": "#/$defs/hookArray" },
         "subagentStop": { "$ref": "#/$defs/hookArray" },
         "afterToolUse": { "$ref": "#/$defs/hookArray" },
-        "sessionStart": { "$ref": "#/$defs/hookArray" }
+        "sessionStart": { "$ref": "#/$defs/hookArray" },
+        "beforeDiffApply": { "$ref": "#/$defs/hookArray" },
+        "afterDiffApply": { "$ref": "#/$defs/hookArray" },
+        "permissionDecision": { "$ref": "#/$defs/hookArray" },
+        "postTurnReview": { "$ref": "#/$defs/hookArray" }
       }
     }
   },
@@ -69,11 +73,11 @@
           "exclusiveMinimum": 0
         },
         "matcher": {
-          "description": "Optional regular expression filtering which actions the hook fires for. The field it tests against depends on the event: the canonical tool name for toolGate / afterToolUse, and the subagent type for subagentStart / subagentStop. An absent matcher fires for every action; a malformed regex skips the hook (with a warning).",
+          "description": "Optional regular expression filtering which actions the hook fires for. The field it tests against depends on the event: the canonical tool name for toolGate / afterToolUse / permissionDecision, and the subagent type for subagentStart / subagentStop. An absent matcher fires for every action; a malformed regex skips the hook (with a warning).",
           "type": "string"
         },
         "glob": {
-          "description": "Optional path glob(s) for afterFileEdit — the hook fires only for edited paths matching one of the globs. Matched against the absolute path, the workspace-relative path, and the basename. An absent glob fires for every edit.",
+          "description": "Optional path glob(s) for afterFileEdit / beforeDiffApply / afterDiffApply — the hook fires only for paths matching one of the globs. Matched against the absolute path, the workspace-relative path, and the basename. An absent glob fires for every edit.",
           "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }]
         }
       }

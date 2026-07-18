@@ -1,9 +1,15 @@
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
+import { runPermissionDecisionHooks } from '../hooks/permission-decision.ts'
+import { snapshotHookRunContext } from '../hook-run-recorder.ts'
 import { haltRunFromBlockingHook } from '../hooks/halt-run.ts'
 import { currentAgentSessionInfo } from '../hooks/agent-session.ts'
 import { getActiveRunThread } from '../thread-models.ts'
+import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
+import type { ShellPermissionDecision } from './permission-policy.ts'
+import { errorMessage } from '@shared/errors.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
@@ -285,6 +291,41 @@ async function checkGithubWriteToolPermission(toolName: string, args: unknown): 
   return approved
 }
 
+/** Map a shell permission verdict onto the canonical {@link HookDecision} vocabulary. */
+function shellVerdictToHookDecision(action: ShellPermissionDecision['action']): HookDecision {
+  // `prompt` means the user is asked to confirm — the canonical `ask`.
+  return action === 'prompt' ? 'ask' : action
+}
+
+/**
+ * Fire the canonical `permissionDecision` event **after** a permission verdict
+ * (F2, Copse-native; observation-only, decision 3). A clean seam an audit logger
+ * (#840) can subscribe to — it can never change the verdict that already
+ * happened. Detached: dispatched and never awaited, so observing a decision
+ * cannot delay the tool. Gated behind `cursorHooksEnabled` (default off), the
+ * same flag `applyToolGateHooks` uses; any dispatch error is swallowed.
+ */
+function firePermissionDecision(toolName: string, decision: HookDecision): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  const agentSession = currentAgentSessionInfo()
+  const threadId = agentSession.conversationId || getActiveRunThread() || 'permission'
+  const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  // Snapshot the recording context now, synchronously (decision 3/6): the
+  // dispatch is detached and may settle after this turn's window closes.
+  const recordingSnapshot = snapshotHookRunContext()
+  void runPermissionDecisionHooks(toolName, decision, {
+    threadId,
+    turnTreeId,
+    workspaceRoot,
+    projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    agentSession,
+    recordingSnapshot,
+  }).catch((err: unknown) => {
+    console.warn('[hooks] permissionDecision dispatch error:', errorMessage(err))
+  })
+}
+
 async function checkShellPermission(args: unknown): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
@@ -328,6 +369,12 @@ export async function ensureShellCommandPermitted(
     classification: sandboxEnabled ? null : await classifyShellScope(command),
     externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
+
+  // F2: fire the canonical `permissionDecision` observation with the verdict
+  // `decideShellPermission` produced (audit-trail-ready; feeds a future #840
+  // subscriber). Fired here, right after the verdict, so it reflects the policy
+  // decision itself rather than the downstream prompt result.
+  firePermissionDecision('run_shell', shellVerdictToHookDecision(decision.action))
 
   if (decision.action === 'allow') return true
 

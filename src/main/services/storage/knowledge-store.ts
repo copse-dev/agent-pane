@@ -351,9 +351,12 @@ function scanNoteFiles(type?: string): string[] {
   } catch {
     return []
   }
+  // Notes live under the *slugified* type (`Roadmap` → `roadmap/`, relFile), so
+  // the type filter must compare against the slug, not the raw type name.
+  const typeDir = type ? slugify(type) || 'note' : null
   const files: string[] = []
   for (const dir of typeDirs) {
-    if (type && dir !== type) continue
+    if (typeDir && dir !== typeDir) continue
     let entries: string[]
     try {
       entries = readdirSync(join(base, dir))

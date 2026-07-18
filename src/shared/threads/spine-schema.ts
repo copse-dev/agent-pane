@@ -1,5 +1,6 @@
 import type {
   ModelUsage,
+  QueuedMessageOrigin,
   SubagentSession,
   Thread,
   ThreadReview,
@@ -91,6 +92,14 @@ export interface SpineMessageLine {
   model?: string
   /** Post-turn review verdict anchored to this message (kept inline — small). */
   review?: ThreadReview
+  /**
+   * Hook provenance when this turn was started by a hook follow-up (decision
+   * 10). Persisted so the transcript can mark a hook-originated turn after a
+   * reload; `editedByUser` records that a human edited the hook's text before it
+   * dispatched (authorship stays honest). Absent = human-authored.
+   */
+  origin?: QueuedMessageOrigin
+  editedByUser?: boolean
   toolCalls: SpineToolCall[]
 }
 
@@ -141,6 +150,15 @@ export interface SpineHookRunDecision {
    * visible in the transcript — the values themselves stay in the stdout blob.
    */
   sessionEnvKeys?: number
+  /**
+   * The hook ran inside the project sandbox and was **blocked by it** (F3,
+   * decision 7): the OS seatbelt logged policy violations (or the sandbox
+   * wrapper failed to start), so the run is resolved as a failure per the hook's
+   * `onFailure` — never a silent fail-open that hides the block. Keyed off
+   * runner-side signals only (recorded violations / wrapper spawn failure), never
+   * the hook's own stdout (issue #104), so a hook cannot forge or hide it.
+   */
+  sandboxBlocked?: boolean
 }
 
 /**

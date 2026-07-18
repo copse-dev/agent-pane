@@ -11,6 +11,7 @@ import {
   getGitDiffText,
   getGitFileDiff,
   getGitShowText,
+  getGitWorkingFileDiff,
   parseAheadBehind,
   parsePorcelainV1,
   resolveWorkspaceRelativeGitPath,
@@ -346,6 +347,70 @@ describe('getGitFileDiff unstaged blob', { skip: !gitOk && 'git not installed' }
     assert.match(diff.before, /Intro paragraph\.\n\n## Section/)
     assert.match(diff.after, /Intro paragraph\.\n\n\n\n\n\n## Section/)
     assert.notEqual(diff.before, diff.after)
+  })
+})
+
+describe('getGitWorkingFileDiff', { skip: !gitOk && 'git not installed' }, () => {
+  let repo = ''
+  let restore: (() => void) | undefined
+
+  const git = (...args: string[]): SpawnSyncReturns<string> =>
+    spawnSync('git', args, { cwd: repo, encoding: 'utf8' })
+
+  before(async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-working-diff-'))
+    git('init', '-q')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    await writeFile(join(repo, 'mixed.ts'), '// header\nexport const value = 1\n')
+    await writeFile(join(repo, 'clean.ts'), 'export const untouched = true\n')
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    )
+    git('add', '.')
+    git('commit', '-qm', 'init')
+    // Staged edit (value = 2) followed by a further unstaged edit (value = 3):
+    // the working diff must span both, from HEAD straight to the working tree.
+    await writeFile(join(repo, 'mixed.ts'), '// header\nexport const value = 2\n')
+    git('add', 'mixed.ts')
+    await writeFile(join(repo, 'mixed.ts'), '// header\nexport const value = 3\n')
+    await writeFile(join(repo, 'fresh.ts'), 'export const fresh = true\n')
+    await writeFile(
+      join(repo, 'logo.png'),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xff, 0xff, 0xff, 0xff]),
+    )
+    restore = setWorkspaceRootForTest(repo)
+    setGitAvailableForTest(true)
+  })
+
+  after(async () => {
+    setGitAvailableForTest(null)
+    restore?.()
+    if (repo) await rm(repo, { recursive: true, force: true })
+  })
+
+  it('spans staged and unstaged edits, from HEAD to the working tree', async () => {
+    const diff = await getGitWorkingFileDiff('mixed.ts')
+    assert.ok(diff)
+    assert.match(diff.before, /value = 1/)
+    assert.match(diff.after, /value = 3/)
+    assert.equal(diff.language, 'typescript')
+  })
+
+  it('returns null for a file that matches HEAD', async () => {
+    assert.equal(await getGitWorkingFileDiff('clean.ts'), null)
+  })
+
+  it('treats an untracked file as fully added', async () => {
+    const diff = await getGitWorkingFileDiff('fresh.ts')
+    assert.ok(diff)
+    assert.equal(diff.before, '')
+    assert.match(diff.after, /fresh = true/)
+  })
+
+  it('returns null for images (the file viewer does not render them)', async () => {
+    assert.equal(await getGitWorkingFileDiff('logo.png'), null)
   })
 })
 

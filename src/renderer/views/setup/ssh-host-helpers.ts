@@ -48,8 +48,7 @@ export function removeHost(list: SshWorkspaceHost[], id: string): SshWorkspaceHo
 }
 
 export type ParseSshHostDraftResult =
-  | { ok: true; host: SshWorkspaceHost }
-  | { ok: false; error: string }
+  { ok: true; host: SshWorkspaceHost } | { ok: false; error: string }
 
 /** Validate draft fields and build a persisted host entry. */
 export function parseSshHostDraft(draft: SshHostDraft): ParseSshHostDraftResult {

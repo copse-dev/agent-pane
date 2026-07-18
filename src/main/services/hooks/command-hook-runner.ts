@@ -14,6 +14,13 @@
 // `onFailure: open` (the vendor default). A dialect that treats a signal as a
 // *decision* (Claude exit-2 deny) reports it as a non-failed outcome, so it is
 // never routed through this resolution.
+//
+// F3 (decision 7) adds one more dialect-agnostic escalation the runner owns:
+// a hook that ran inside the project sandbox and was blocked by it (runner-side
+// violation signals — never the hook's stdout, issue #104) is turned into a
+// `failed` run via {@link applySandboxBlock}, so the block flows through the
+// same `onFailure` resolution + spine recording + Sources error surfacing —
+// never a silent fail-open.
 import type {
   CommandHookRunner,
   CommandHookResult,
@@ -26,6 +33,7 @@ import type {
 } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome } from '@copse/agent/hooks/hook-outcome.ts'
 import { recordCommandHookRun, type HookRunRecordingSnapshot } from '../hook-run-recorder.ts'
+import { detectSandboxFailure } from '../security/sandbox-failure.ts'
 import { hookRecursionGuardTripped } from './hook-depth.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
@@ -90,6 +98,40 @@ function isSessionStartPayload(payload: unknown): payload is HookEventPayloads['
   return typeof payload === 'object' && payload !== null && 'firstTurn' in payload
 }
 
+function isBeforeDiffApplyPayload(
+  payload: unknown,
+): payload is HookEventPayloads['beforeDiffApply'] {
+  // Shares `filePath` with `afterFileEdit`; the caller gates on `hook.event`
+  // first, so distinguishing from the (applied-bearing) afterDiffApply is enough.
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'filePath' in payload &&
+    !('applied' in payload)
+  )
+}
+
+function isAfterDiffApplyPayload(payload: unknown): payload is HookEventPayloads['afterDiffApply'] {
+  return (
+    typeof payload === 'object' && payload !== null && 'filePath' in payload && 'applied' in payload
+  )
+}
+
+function isPermissionDecisionPayload(
+  payload: unknown,
+): payload is HookEventPayloads['permissionDecision'] {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'toolName' in payload &&
+    'decision' in payload
+  )
+}
+
+function isPostTurnReviewPayload(payload: unknown): payload is HookEventPayloads['postTurnReview'] {
+  return typeof payload === 'object' && payload !== null && 'issuesFound' in payload
+}
+
 /**
  * Resolve a `failed` run to its outcome per the hook's `onFailure` (decision 9):
  * `closed` blocks (Cursor `failClosed: true`), `open` abstains (vendor default).
@@ -109,6 +151,42 @@ function resolveFailure(
         }
       : null
   return { outcome, failed: true, failureMode: hook.onFailure }
+}
+
+/**
+ * Escalate a blocked-by-sandbox run to a failure (F3, decision 7). When a hook
+ * ran inside the project sandbox and the runner-recorded signals say the OS
+ * seatbelt blocked it (violations on a non-zero exit, or the wrapper failed to
+ * start), the run is turned into a `failed` interpretation regardless of what
+ * the hook printed — so the block routes through the hook's `onFailure`
+ * (`closed` → deny; `open` → no-op but still recorded + surfaced) and never a
+ * silent fail-open that hides it. Detection keys off runner-side signals only
+ * (never the hook's own stdout — issue #104), and it is a no-op for an
+ * unsandboxed run (Linux / Windows / `sandbox: false`), where nothing contained
+ * the hook to begin with. A clean sandboxed run passes through untouched.
+ */
+export function applySandboxBlock(
+  interpretation: DialectInterpretation,
+  spawn: HookSpawnResult,
+): DialectInterpretation {
+  if (!spawn.sandboxed) return interpretation
+  const detection = detectSandboxFailure({
+    exitCode: spawn.exitCode,
+    violationCount: spawn.sandboxViolationCount,
+    spawnFailed: spawn.spawnError,
+  })
+  if (!detection.likely) return interpretation
+  // Rebuild explicitly (rather than spreading) so any async follow-up /
+  // session env the hook printed before seatbelt killed it is dropped — a
+  // blocked hook produced no trustworthy response.
+  return {
+    outcome: null,
+    failed: true,
+    parseOk: false,
+    spineEvent: interpretation.spineEvent,
+    spineDecision: { ...interpretation.spineDecision, sandboxBlocked: true },
+    runtimeError: `blocked by the macOS project sandbox (${detection.reasons.join('; ')})`,
+  }
 }
 
 /**
@@ -139,9 +217,16 @@ async function spawnInterpretResolve(
     ...(hook.timeoutMs !== undefined ? { timeoutMs: hook.timeoutMs } : {}),
     ...(context.signal ? { signal: context.signal } : {}),
     ...(sessionEnv ? { sessionEnv } : {}),
+    // F3 (decision 7): sandboxed by default; the Copse `sandbox: false` escape is
+    // the only opt-out (Cursor / Claude never set the field, so they default to
+    // sandboxed too). macOS-only enforcement, a default not a guarantee.
+    ...(hook.sandbox !== undefined ? { sandbox: hook.sandbox } : {}),
   })
 
-  const interpretation = interpret(spawn)
+  // A blocked-by-sandbox run is escalated to a failure BEFORE recording /
+  // resolution (F3): the block is recorded on the spine + surfaced in Sources
+  // and routed through `onFailure`, never a silent fail-open.
+  const interpretation = applySandboxBlock(interpret(spawn), spawn)
 
   // Always-on spine recording (decision 6): one hook_run line per execution,
   // raw stdout AND stderr as blobs, next to the normalized decision. Detached
@@ -191,8 +276,12 @@ async function spawnInterpretResolve(
  * on subagent type) and `subagentStop` (detached completion, `followup_message`
  * routed to the queue channel); D2 adds `afterToolUse` (post-tool observation,
  * dispatched detached — the Cursor `afterShellExecution` / `afterMCPExecution`
- * flavors with a capped output snapshot). Other canonical events land their fire
- * sites in later phases and register no command hooks yet, so they abstain.
+ * flavors with a capped output snapshot). F2 adds the four Copse-native events —
+ * `beforeDiffApply` (blocking diff-apply gate), `afterDiffApply` /
+ * `permissionDecision` / `postTurnReview` (detached observations). Foreign
+ * adapters (Cursor / Claude) declare no marshaller for those, so the runner
+ * abstains for them. Other canonical events land their fire sites in later
+ * phases and register no command hooks yet, so they abstain.
  */
 export function createCommandHookRunner(opts?: {
   /**
@@ -330,6 +419,66 @@ export function createCommandHookRunner(opts?: {
         const adapter = getDialectAdapter(hook.dialect)
         const marshal = adapter?.marshalSessionStartRequest?.bind(adapter)
         const interpret = adapter?.interpretSessionStart?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'beforeDiffApply' && isBeforeDiffApplyPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalBeforeDiffApplyRequest?.bind(adapter)
+        const interpret = adapter?.interpretBeforeDiffApply?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'afterDiffApply' && isAfterDiffApplyPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalAfterDiffApplyRequest?.bind(adapter)
+        const interpret = adapter?.interpretAfterDiffApply?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'permissionDecision' && isPermissionDecisionPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalPermissionDecisionRequest?.bind(adapter)
+        const interpret = adapter?.interpretPermissionDecision?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'postTurnReview' && isPostTurnReviewPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalPostTurnReviewRequest?.bind(adapter)
+        const interpret = adapter?.interpretPostTurnReview?.bind(adapter)
         if (!adapter || !marshal || !interpret) return ABSTAIN
         return spawnInterpretResolve(
           hook,

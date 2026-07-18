@@ -94,11 +94,14 @@ describe('copse-adapter (F1)', () => {
       assert.ok(warnings.some((w) => /notARealEvent/.test(w.message)))
     })
 
-    it('badges a known-but-unwired canonical event unsupported (F2-native)', async () => {
+    it('badges a known-but-unwired canonical event unsupported', async () => {
       await writeUserHooks({
         hooks: {
           toolGate: [{ command: './gate.sh' }],
-          beforeDiffApply: [{ command: './diff.sh' }],
+          // `compaction` is a real canonical event that has no wired fire site
+          // yet (the F2 diff-apply / permission-decision / postTurnReview events
+          // are now wired), so it stands in for the "known-but-unwired" case.
+          compaction: [{ command: './compact.sh' }],
         },
       })
 
@@ -107,14 +110,36 @@ describe('copse-adapter (F1)', () => {
         projectTrusted: false,
       })
       // Both are kept (the event is a real canonical event), but only the wired
-      // one is supported; the F2-native one is badged unsupported + warned.
+      // one is supported; the unwired one is badged unsupported + warned.
       assert.equal(hooks.find((h) => h.event === 'toolGate')?.supported, true)
-      assert.equal(hooks.find((h) => h.event === 'beforeDiffApply')?.supported, false)
+      assert.equal(hooks.find((h) => h.event === 'compaction')?.supported, false)
       assert.ok(
-        warnings.some(
-          (w) => /beforeDiffApply/.test(w.message) && /no wired fire site/.test(w.message),
-        ),
+        warnings.some((w) => /compaction/.test(w.message) && /no wired fire site/.test(w.message)),
       )
+    })
+
+    it('marks the F2 Copse-native events supported', async () => {
+      await writeUserHooks({
+        hooks: {
+          beforeDiffApply: [{ command: './before-diff.sh' }],
+          afterDiffApply: [{ command: './after-diff.sh' }],
+          permissionDecision: [{ command: './perm.sh' }],
+          postTurnReview: [{ command: './review.sh' }],
+        },
+      })
+
+      const { hooks } = await listCopseHooksForSources({
+        workspaceRoot: null,
+        projectTrusted: false,
+      })
+      for (const event of [
+        'beforeDiffApply',
+        'afterDiffApply',
+        'permissionDecision',
+        'postTurnReview',
+      ]) {
+        assert.equal(hooks.find((h) => h.event === event)?.supported, true, event)
+      }
     })
 
     it('warns on malformed entries without dropping valid ones', async () => {
@@ -213,6 +238,21 @@ describe('copse-adapter (F1)', () => {
       )
       assert.equal(hooks.find((h) => h.command === './escape.sh')?.sandbox, false)
       assert.equal(hooks.find((h) => h.command === './default.sh')?.sandbox, true)
+    })
+
+    it('surfaces the sandbox:false escape on the Sources summary (F3), omitting it for the default', async () => {
+      await writeUserHooks({
+        hooks: {
+          toolGate: [{ command: './escape.sh', sandbox: false }, { command: './default.sh' }],
+        },
+      })
+      const { hooks } = await listCopseHooksForSources({
+        workspaceRoot: null,
+        projectTrusted: false,
+      })
+      // The escape is badged (present + false); the sandboxed-by-default hook omits it.
+      assert.equal(hooks.find((h) => h.command === './escape.sh')?.sandbox, false)
+      assert.equal('sandbox' in (hooks.find((h) => h.command === './default.sh') ?? {}), false)
     })
 
     it('honours async:true on afterFileEdit but rejects it on a decision event', async () => {
