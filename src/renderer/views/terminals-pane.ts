@@ -9,6 +9,9 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { installTerminalFileLinks, type TerminalFileLinks } from './terminal-file-links.ts'
 import { planScope, tabsForScope } from './scoped-tabs.ts'
 import { at } from '@shared/array-utils.ts'
+import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
+import { registerShellCatalog } from '../terminal/shell-catalog.ts'
+import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
 
 const XTERM_THEME = {
   dark: {
@@ -122,19 +125,26 @@ export function mountTerminalsPane(
     tab.label = label
     tab.labelSpan.textContent = label
     tab.tabBtn.title = label
+    publishMeta(tab)
   }
 
   // Read the recent visible/scrollback text from the xterm buffer (ANSI-free),
-  // for handing to the small-tasks model when auto-naming.
-  function readTerminalText(tab: TerminalTab): string {
-    const buf = tab.term.buffer.active
-    const end = buf.length
-    const start = Math.max(0, end - 200)
-    const lines: string[] = []
-    for (let i = start; i < end; i++) {
-      lines.push(buf.getLine(i)?.translateToString(true) ?? '')
-    }
-    return lines.join('\n').trim()
+  // for handing to the small-tasks model when auto-naming and for `@shell`.
+  function readTerminalText(tab: TerminalTab, maxLines = READ_TERMINAL_DEFAULT_LINES): string {
+    return readXtermScrollback(tab.term, maxLines)
+  }
+
+  function publishMeta(tab: TerminalTab): void {
+    if (!tab.sessionId) return
+    void api.terminal.setMeta(tab.sessionId, {
+      label: tab.label,
+      threadId: tab.scopeId,
+    })
+  }
+
+  function publishActive(tab: TerminalTab): void {
+    if (!tab.sessionId) return
+    void api.terminal.setActive(tab.sessionId)
   }
 
   async function autoNameTab(tab: TerminalTab): Promise<void> {
@@ -236,7 +246,11 @@ export function mountTerminalsPane(
     try {
       openTerminalSurface(tab)
       fitTab(tab)
-      tab.sessionId = await api.terminal.create(tab.term.cols, tab.term.rows)
+      tab.sessionId = await api.terminal.create(tab.term.cols, tab.term.rows, {
+        label: tab.label,
+        threadId: tab.scopeId,
+      })
+      publishActive(tab)
       await flushPendingInput(tab)
     } catch (err) {
       tab.term.writeln(`\x1b[31mFailed to start terminal: ${String(err)}\x1b[0m`)
@@ -281,6 +295,7 @@ export function mountTerminalsPane(
     }
     const tab = tabs.get(tabId)
     if (tab && terminalModeActive(store)) {
+      publishActive(tab)
       void ensureSession(tab)
       requestAnimationFrame(() => {
         fitTab(tab)
@@ -529,7 +544,24 @@ export function mountTerminalsPane(
     store.on('workspace_changed', onThreadMaybeChanged),
   ]
 
+  const unregisterCatalog = registerShellCatalog(
+    () =>
+      [...tabs.values()].map((tab) => ({
+        tabId: tab.id,
+        sessionId: tab.sessionId,
+        label: tab.label,
+        scopeId: tab.scopeId,
+        active: tab.id === activeTabId,
+      })),
+    (tabId, maxLines = READ_TERMINAL_DEFAULT_LINES) => {
+      const tab = tabs.get(tabId)
+      if (!tab) return null
+      return readTerminalText(tab, maxLines)
+    },
+  )
+
   return () => {
+    unregisterCatalog()
     unsubs.forEach((u) => {
       u()
     })
