@@ -890,7 +890,7 @@ test('budget reset (decision 5): releaseHeldMessage resets the budget for the fr
   assert.equal(getThread(store, threadId).continuationUsed, 1)
 })
 
-test('run→drain fold-back (decision 5): folds the run in-run spend onto the same turn tree', () => {
+test('run→drain fold-back (decision 5 / E3): folds the run in-run spend onto the same turn tree', () => {
   const store = createStore()
   const threadId = createThread(store)
   setCurrentEpoch(store, threadId, 'tree-1')

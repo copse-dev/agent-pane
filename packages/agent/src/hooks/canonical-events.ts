@@ -14,6 +14,7 @@
 // contract; the fire sites are the incremental work.
 import type { TodoItem } from '../wire-types.ts'
 import type { AgentStreamChunk } from '../wire-types.ts'
+import type { ConversationPressure, EscalationInput } from '../agent-loop-escalation.ts'
 import type { BlockingHookOutcome, AsyncHookOutcome, HookDecision } from './hook-outcome.ts'
 import type { CommandHookRunner } from './command-executor.ts'
 
@@ -48,6 +49,58 @@ export interface BeforeFinalizePayload {
   openTodos: readonly TodoItem[]
   /** Zero-based closeout attempt index; nudge text escalates after the first. */
   attempt: number
+}
+
+/**
+ * Which step boundary within one `runAgentLoop` iteration fired `stepBoundary`
+ * (E1). The four in-loop nudges split cleanly across two moments:
+ *   - `preStream`: the context-pressure escalation checkpoint at the top of a
+ *     step, before the provider stream (`loop-nudge`, `stuck-finalize-nudge`).
+ *   - `postStream`: after the stream completes, inspecting the just-finished
+ *     turn's stop reason (`truncation-continue`, `reasoning-runaway`).
+ */
+export type StepBoundaryPhase = 'preStream' | 'postStream'
+
+/**
+ * Escalation / context-pressure signals the pre-stream nudge hooks read. Carried
+ * only for `preStream`, and only when the loop tracks a context window
+ * (`maxContextTokens`) — mirroring the inline `if (maxContextTokens)` gate the
+ * escalation checks lived under. `pressure` is measured once per step and reused
+ * by both pre-stream nudges, exactly as the inline code shared one measurement.
+ */
+export interface StepBoundaryEscalation {
+  /** The escalation input pressure was measured from. */
+  input: EscalationInput
+  /** Conversation pressure for this step (shared by loop / stuck-finalize nudges). */
+  pressure: ConversationPressure
+}
+
+/**
+ * Payload for `stepBoundary` (E1). The step-boundary event the in-loop nudge
+ * policies fire at. It carries the pressure/escalation signals the pre-stream
+ * nudges need and the stop-reason signals the post-stream nudges need, keyed by
+ * {@link StepBoundaryPhase}; a hook reads only the fields for its phase and
+ * abstains otherwise. The one-shot lifecycle flags (`loopNudgeSent`,
+ * `forceTextAttempted`) let the pre-stream nudges reproduce their once-per-run
+ * gates without owning loop state — the harness still tracks the flags.
+ */
+export interface StepBoundaryPayload {
+  /** Which of the two per-step checkpoints fired. */
+  phase: StepBoundaryPhase
+  /** Pressure/escalation signals; present only for `preStream` under a context window. */
+  escalation?: StepBoundaryEscalation
+  /** Whether the loop nudge already fired this run (its once-per-run gate). */
+  loopNudgeSent: boolean
+  /** Whether the forced text answer was already attempted this run (its once gate). */
+  forceTextAttempted: boolean
+  /** Provider stop reason of the just-finished stream (`postStream` nudges). */
+  stopReason?: string
+  /**
+   * True when the loop's own per-stream output cap cut off a pure-reasoning
+   * stream (`postStream`; drives the reasoning-runaway nudge). Always false for
+   * `preStream`.
+   */
+  streamCappedAsRunaway: boolean
 }
 
 /**
@@ -98,16 +151,38 @@ export interface StopPayload {
 }
 
 /**
- * Payload for `afterToolUse` (D2). The generic post-tool observation; shell/MCP
- * variants are payload flavors, not separate event names.
+ * Payload for `afterToolUse` (D2). The generic post-tool observation; the
+ * Cursor `afterShellExecution` / `afterMCPExecution` variants are payload
+ * *flavors* of this one canonical event (matching how `toolGate` unifies
+ * `beforeShell`/`beforeMCP`/`beforeReadFile`), not separate event names. Async,
+ * observation-only (decision 3): a hook here can never gate control flow.
  */
 export interface AfterToolUsePayload {
-  /** Canonical tool name that just ran. */
+  /** Canonical tool name that just ran (drives the shell/MCP flavor split). */
   toolName: string
   /** The tool call this result belongs to. */
   toolCallId: string
   /** Whether the tool reported an error. */
   isError: boolean
+  /**
+   * Tool input the model passed — the shell `command` (`input.command`) or the
+   * MCP params object. Marshalled per flavor by the dialect adapter (shell:
+   * `command`; MCP: `tool_input`). Absent when the caller has no structured input.
+   */
+  input?: Record<string, unknown>
+  /**
+   * A **capped** snapshot of the tool's output/result — the shell terminal
+   * output or the MCP result JSON. Bounded at the fire site (a tool's stdout can
+   * be arbitrarily large; a known implementation trap of D2 is dumping unbounded
+   * output into a hook's stdin), so the wire payload is always safe to marshal
+   * verbatim. Absent when the tool produced no output.
+   */
+  output?: string
+  /**
+   * Wall-clock execution time in ms (Cursor's `duration` on the after-events),
+   * measured at the fire site. Absent when the caller did not time the call.
+   */
+  durationMs?: number
 }
 
 /**
@@ -192,6 +267,7 @@ export interface AfterDiffApplyPayload {
 export interface HookEventPayloads {
   turnStart: TurnStartPayload
   beforeFinalize: BeforeFinalizePayload
+  stepBoundary: StepBoundaryPayload
   beforeSubmitPrompt: BeforeSubmitPromptPayload
   toolGate: ToolGatePayload
   afterFileEdit: AfterFileEditPayload
@@ -214,6 +290,7 @@ export interface HookEventPayloads {
 export const HOOK_EVENT_NAMES = [
   'turnStart',
   'beforeFinalize',
+  'stepBoundary',
   'beforeSubmitPrompt',
   'toolGate',
   'afterFileEdit',
@@ -260,6 +337,7 @@ export interface HookEventSpec {
 export const HOOK_EVENT_SPECS: Record<HookEventName, HookEventSpec> = {
   turnStart: { name: 'turnStart', dispatch: 'blocking', role: 'assembly' },
   beforeFinalize: { name: 'beforeFinalize', dispatch: 'blocking', role: 'assembly' },
+  stepBoundary: { name: 'stepBoundary', dispatch: 'blocking', role: 'assembly' },
   beforeSubmitPrompt: { name: 'beforeSubmitPrompt', dispatch: 'blocking', role: 'decision' },
   toolGate: { name: 'toolGate', dispatch: 'blocking', role: 'decision' },
   afterFileEdit: {

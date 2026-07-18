@@ -29,6 +29,7 @@ import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/can
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorAfterFileEditHooks } from './cursor-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
+import { withRunDeadlinePaused } from './run-deadline.ts'
 
 /** What the diff-queue / write-tool fire site learns from the afterFileEdit hooks. */
 export interface AfterFileEditResult {
@@ -70,12 +71,16 @@ export async function runAfterFileEditHooks(
 
   // Blocking dispatch: `emit` awaits every command hook (decision 2). We ignore
   // the outcomes — Cursor afterFileEdit is notification-only, so there is no
-  // decision to act on and the edit has already landed.
-  await registry.emit('afterFileEdit', payload, {
-    runCommandHook: createCommandHookRunner(),
-    ...(opts.signal ? { signal: opts.signal } : {}),
-    ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
-  })
+  // decision to act on and the edit has already landed. H4 (decision 13): pause
+  // the run's idle deadline while a (blocking) formatter hook runs so a slow
+  // formatter does not advance the idle clock.
+  await withRunDeadlinePaused(opts.agentSession?.conversationId, () =>
+    registry.emit('afterFileEdit', payload, {
+      runCommandHook: createCommandHookRunner(),
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.agentSession ? { agentSession: opts.agentSession } : {}),
+    }),
+  )
 
   return { ran: hooks.length }
 }

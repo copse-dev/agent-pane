@@ -51,6 +51,13 @@ export class AgentRunDeadline {
   private lastActivityAt: number
   private pauseStartedAt: number | null = null
   private accumulatedPauseMs = 0
+  // Reference count so nested pauses compose (decision 13, H4): a blocking hook
+  // that fires *inside* an already-paused region (e.g. a `toolGate` hook during
+  // `executeToolBatch`'s pause) pauses/resumes the same deadline without the
+  // inner `resume` prematurely un-pausing the outer region. Only the outermost
+  // resume records the elapsed pause; a single pause/resume pair (the pre-H4
+  // usage) behaves exactly as before.
+  private pauseDepth = 0
   private readonly idleTimeoutMs: number
   private readonly hardMaxMs: number
 
@@ -76,11 +83,15 @@ export class AgentRunDeadline {
   }
 
   pause(now = Date.now()): void {
-    if (this.pauseStartedAt === null) this.pauseStartedAt = now
+    if (this.pauseDepth === 0 && this.pauseStartedAt === null) this.pauseStartedAt = now
+    this.pauseDepth += 1
   }
 
   resume(now = Date.now()): void {
-    if (this.pauseStartedAt !== null) {
+    if (this.pauseDepth === 0) return
+    this.pauseDepth -= 1
+    // Only the outermost resume records the elapsed pause and re-arms the clock.
+    if (this.pauseDepth === 0 && this.pauseStartedAt !== null) {
       this.accumulatedPauseMs += now - this.pauseStartedAt
       this.pauseStartedAt = null
     }

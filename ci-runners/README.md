@@ -117,10 +117,12 @@ Scaleway sizing guidance:
   but PLAY2 is the newer x86 line and the safer default for burst CI.
 - For check-only bursts, smaller 2 vCPU / 4 GiB types can be cost-effective, but
   remove the e2e label: `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
-- `--ttl-minutes` defaults to 240. The host schedules a shutdown after that TTL;
-  Scaleway stopped instances still cost for attached volumes/IPs, so prefer
-  `down --yes` when the queue drains. The TTL is a backstop, not the primary
-  cleanup path.
+- `--ttl-minutes` defaults to 240. On Scaleway the host **self-terminates** via
+  the Instance API after that TTL (server + SBS volume + flexible IP), matching
+  AWS terminate-on-shutdown — a guest `shutdown` alone would only enter billed
+  standby. Requires `SCW_SECRET_KEY` or a configured `scw` secret-key at `up`
+  time. Prefer `down --yes` when the queue drains; the TTL is a backstop, not
+  the primary cleanup path.
 - `--volume-size-gb` defaults to 80 (Scaleway SBS root). The default PLAY2 image
   disk is too small for `docker compose build` + dep bake; omit the flag to get
   80 GB, or raise it if builds still hit `no space left on device`.
@@ -254,10 +256,11 @@ under Xvfb → collect logs + changed reference screenshots. Results land in
 Dev hosts carry their own tag namespace (`copse-remote-e2e` /
 `copse-remote-e2e-hosts`), so `e2e:remote down` can never terminate burst CI
 capacity and `runners:burst down` can never take a dev host. The same
-TTL-shutdown backstop applies (`--ttl-minutes`, default 240) — `down --yes`
-remains the real cleanup. After a `package-lock.json` change, runs warn and
-fall back to `npm ci`; refresh with `npm run e2e:remote -- rebake --push`
-(publish + pull onto the saved host) or `rebake --rebuild` (on-host bake).
+TTL backstop applies (`--ttl-minutes`, default 240; Scaleway self-terminates
+via API, AWS uses terminate-on-shutdown) — `down --yes` remains the real
+cleanup. After a `package-lock.json` change, runs warn and fall back to
+`npm ci`; refresh with `npm run e2e:remote -- rebake --push` (publish + pull
+onto the saved host) or `rebake --rebuild` (on-host bake).
 A spare machine with Docker + passwordless sudo works too:
 `npm run e2e:remote -- adopt --host user@box`.
 

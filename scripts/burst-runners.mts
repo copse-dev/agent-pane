@@ -66,14 +66,16 @@ import {
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
 const DEFAULT_NAME = 'copse-burst'
 const DEFAULT_RUNNER_GROUP = 'default'
-// Split-tier slot layout: ONE e2e-capable slot per host plus checks-only slots
-// for the rest. Running two Electron e2e suites concurrently on a 4-vCPU burst
-// host pushed the slowest specs over their fixed mocha timeouts (observed: all
-// recent e2e failures clustered on burst hosts under queue pressure, while the
-// same runners passed when a host ran a single e2e shard). One e2e lane per
-// host removes the contention without giving up burst e2e capacity; the extra
-// slots still serve the light check tier. The `burst` marker label makes these
-// hosts identifiable per-job in triage.
+// Unified slots: every slot serves both tiers. An earlier split-tier layout
+// (one e2e lane per host) guarded against two concurrent Electron e2e suites
+// contending on a 4-vCPU host — but the checks-only slots sat idle, and the
+// app-side fixes (#988) plus harness hardening (#991/#992) likely removed the
+// slowness that made contention fatal. Running unified again to validate; if
+// timeout-clustered failures on burst hosts recur (check runner_name per failed
+// job), re-enable the split by writing COMPOSE_PROFILES=split-tiers to the
+// remote .env and scaling runner=1/runner-checks=N-1 — the compose service and
+// RUNNER_CHECKS_LABELS plumbing below are kept for exactly that. The `burst`
+// marker label stays: it is what made the failure clustering diagnosable.
 const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks,burst'
 const DEFAULT_RUNNER_CHECKS_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
 const DEFAULT_RUNNERS_PER_INSTANCE = 2
@@ -82,7 +84,7 @@ const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
 /** Tag namespace for the CI burst fleet — status/down only ever see these hosts. */
 const BURST_TAGS: FleetTags = { kind: 'copse-burst', managedBy: 'copse-burst-runners' }
 
-type Command = 'up' | 'status' | 'down' | 'help'
+type Command = 'up' | 'status' | 'drain' | 'down' | 'help'
 type Provider = 'aws' | 'scaleway'
 
 interface ParsedArgs {
@@ -121,11 +123,19 @@ function usage(): string {
   npm run runners:burst:scw -- status [--name ${DEFAULT_NAME}]
   npm run runners:burst -- down --yes [--name ${DEFAULT_NAME}]
   npm run runners:burst:scw -- down --yes [--name ${DEFAULT_NAME}]
+  npm run runners:burst:scw -- drain --yes --key-path <key> [--name ${DEFAULT_NAME}]
 
 Commands:
   up       Launch host(s), upload ci-runners/, and start ephemeral GitHub runners.
   status   List non-terminated instances tagged for this burst fleet.
   down     Terminate instances tagged for this burst fleet. Requires --yes.
+  drain    Gracefully retire a fleet: stop each host's runners from accepting new
+           jobs (flip the ephemeral containers' restart policy off, stop idle
+           runners, wait for in-flight jobs to finish), then — with --yes —
+           terminate the drained hosts. Without --yes it drains and leaves the
+           empty hosts for a later \`down\`. Scaleway only for now.
+           --drain-timeout-minutes <n> bounds the wait for busy runners
+           (default: 45); on timeout nothing is terminated.
 
 Required for AWS up:
   --key-name <name>             EC2 key pair name for the launched instance(s).
@@ -205,6 +215,7 @@ function parseCommand(value: string): Command {
   if (
     value === 'up' ||
     value === 'status' ||
+    value === 'drain' ||
     value === 'down' ||
     value === 'help' ||
     value === '--help'
@@ -317,9 +328,9 @@ function remoteEnv(config: RunnerConfig): string {
     `TARGET_REPO=${config.targetRepo}`,
     `TARGET_REF=${config.targetRef}`,
     `RUNNER_LABELS=${config.runnerLabels}`,
+    // Inert unless COMPOSE_PROFILES=split-tiers is also set (see label comment
+    // above) — kept so re-enabling the split-tier layout is a one-line change.
     `RUNNER_CHECKS_LABELS=${config.runnerChecksLabels}`,
-    // Activates the checks-only sibling service in ci-runners/docker-compose.yml.
-    'COMPOSE_PROFILES=split-tiers',
     `RUNNER_GROUP=${config.runnerGroup}`,
     'EPHEMERAL=true',
     '',
@@ -375,10 +386,7 @@ async function provisionHost(
           '. ./.env',
           'set +a',
           'export DOCKER_BUILDKIT=1',
-          // Split-tier layout: exactly one e2e-capable `runner` slot per host;
-          // remaining slots are checks-only so concurrent e2e shards never
-          // contend on one host (see DEFAULT_RUNNER_LABELS comment).
-          `docker compose up -d --build --pull always --scale runner=1 --scale runner-checks=${String(Math.max(0, config.runnersPerInstance - 1))}`,
+          `docker compose up -d --build --pull always --scale runner=${String(config.runnersPerInstance)}`,
           'docker compose ps',
         ].join(' && '),
       )}`,
@@ -519,6 +527,88 @@ function scalewayStatus(options: Options): void {
   )
 }
 
+const DEFAULT_DRAIN_TIMEOUT_MINUTES = 45
+
+/**
+ * Remote drain: the runners are EPHEMERAL (the agent exits after each job and
+ * only compose's `restart: always` re-registers it), so flipping the restart
+ * policy off turns "stop accepting new runs" into a first-class operation.
+ * Idle runners are stopped immediately (an idle ephemeral agent would still
+ * accept one more job); busy ones (Runner.Worker present = mid-job) are left
+ * to finish, after which they exit for good. Exits 0 when the box has no
+ * runner containers left, 1 on timeout.
+ */
+function drainScript(timeoutMinutes: number): string {
+  return [
+    'set -u',
+    'containers() { docker ps --format "{{.Names}}" | grep -E "^ci-runners-runner" || true; }',
+    'for c in $(containers); do docker update --restart=no "$c" >/dev/null; done',
+    `deadline=$(( $(date +%s) + ${String(timeoutMinutes * 60)} ))`,
+    'while :; do',
+    '  busy=""',
+    '  for c in $(containers); do',
+    '    if docker exec "$c" pgrep -f Runner.Worker >/dev/null 2>&1; then',
+    '      busy="$busy $c"',
+    '    else',
+    '      docker stop -t 30 "$c" >/dev/null 2>&1 || true',
+    '      echo "stopped idle runner: $c"',
+    '    fi',
+    '  done',
+    '  [ -z "$(containers)" ] && { echo "box drained"; exit 0; }',
+    '  [ "$(date +%s)" -ge "$deadline" ] && { echo "DRAIN TIMEOUT; still busy:$busy"; exit 1; }',
+    '  echo "waiting for in-flight jobs on:$busy"',
+    '  sleep 20',
+    'done',
+  ].join('\n')
+}
+
+async function scalewayDrain(options: Options): Promise<void> {
+  requireScalewayTool()
+  const hosts = listScalewayFleet(
+    { name: fleetName(options), tags: BURST_TAGS },
+    scalewayZonesForOptions(options),
+  ).filter((host) => host.state !== 'terminated')
+  if (hosts.length === 0) {
+    console.log('No Scaleway burst instances to drain.')
+    return
+  }
+  printHosts(hosts)
+  const sshConfig = {
+    keyPath: option(options, 'key-path') ?? '',
+    remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_SCW_REMOTE_USER),
+    sshHost: optionWithDefault(options, 'ssh-host', 'public') as 'public' | 'private',
+  }
+  const timeoutMinutes = positiveInt(
+    optionWithDefault(options, 'drain-timeout-minutes', String(DEFAULT_DRAIN_TIMEOUT_MINUTES)),
+    '--drain-timeout-minutes',
+  )
+  for (const host of hosts) {
+    console.log(`${hostPrefix(host)}==> Draining (${sshTarget(sshConfig, host)})`)
+    try {
+      await sshRunAsync(sshConfig, host, drainScript(timeoutMinutes))
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      const keyHint =
+        !sshConfig.keyPath && detail.includes('Permission denied')
+          ? ' SSH was attempted without an identity file — pass the key the fleet was provisioned with, e.g. --key-path ~/.ssh/id_scw_instances.'
+          : ''
+      die(
+        `${hostPrefix(host)}drain failed (${detail}) — nothing terminated.${keyHint} ` +
+          'Resolve or re-run; a busy runner past the timeout keeps its host alive.',
+      )
+    }
+  }
+  console.log('==> All hosts drained (no runners registered).')
+  if (hasFlag(options, 'yes')) {
+    scalewayDown(options)
+  } else {
+    console.log(
+      'Drain-only run (no --yes): hosts are empty but still up. Terminate with: ' +
+        `npm run runners:burst:scw -- down --yes --name ${fleetName(options)}`,
+    )
+  }
+}
+
 function scalewayDown(options: Options): void {
   requireScalewayTool()
   if (!hasFlag(options, 'yes')) die('down requires --yes')
@@ -555,6 +645,10 @@ async function main(): Promise<void> {
       await scalewayUp(options)
     } else if (provider === 'scaleway' && command === 'status') {
       scalewayStatus(options)
+    } else if (provider === 'scaleway' && command === 'drain') {
+      await scalewayDrain(options)
+    } else if (command === 'drain') {
+      die('drain is currently implemented for Scaleway only: npm run runners:burst:scw -- drain')
     } else if (provider === 'scaleway') {
       scalewayDown(options)
     } else if (command === 'up') {

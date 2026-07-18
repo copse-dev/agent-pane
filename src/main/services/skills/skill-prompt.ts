@@ -1,4 +1,4 @@
-import { listSkills, readSkill, getSkill } from './skills-registry.ts'
+import { listSkills, listModelInvocableSkills, readSkill, getSkill } from './skills-registry.ts'
 import { splitSkillMarkdown } from './parse-skill-frontmatter.ts'
 import { getSetting } from '../storage/settings.ts'
 import type { SkillSource } from '@shared/types/skills.ts'
@@ -44,7 +44,9 @@ export function buildSkillsToolsPromptLine(): string {
 
 /** Tier 1 — skill catalog (name, description, path) without full instructions. */
 export function buildSkillsCatalogBlock(): string {
-  const skills = listSkills()
+  // Only advertise model-invocable skills — a skill with
+  // `disable-model-invocation: true` stays user-only and is never shown here.
+  const skills = listModelInvocableSkills()
   if (skills.length === 0) return ''
 
   const entries = skills

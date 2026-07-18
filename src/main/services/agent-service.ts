@@ -5,12 +5,13 @@ import {
   createAgentRunAbortScheduler,
   DEFAULT_MAX_LLM_CALLS,
 } from '@copse/agent/agent-loop-limits.ts'
-import type {
-  LLMMessage,
-  LLMTool,
-  StreamChunk,
-  ToolExecuteResult,
-  UserContent,
+import {
+  normalizeToolExecuteResult,
+  type LLMMessage,
+  type LLMTool,
+  type StreamChunk,
+  type ToolExecuteResult,
+  type UserContent,
 } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
@@ -47,11 +48,9 @@ import {
 } from './providers/provider-selection.ts'
 import { requestApproval } from './approval.ts'
 import {
-  applyReviewTodoUpdates,
-  buildReviewRemediationNudge,
-  MAX_POST_TURN_REVIEW_CYCLES,
   reviewSpendApprovalBody,
   runParentContinuationTurn,
+  runPostTurnReviewCycle,
   runPostTurnReviewOnce,
   runPreReviewTodoGate,
   type RunParentContinuationOptions,
@@ -79,7 +78,9 @@ import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
-import { setAdvisorContext, resolveAdvisorModelId } from './advisor-runner.ts'
+import { resolveAdvisorModelId } from './advisor-runner.ts'
+import { runWithAdvisorContext } from './advisor-runner-context.ts'
+import { advisorAddsLift } from './advisor-strategy.ts'
 import {
   runWithOrchestrationContext,
   resolveOrchestrationWorkerModelId,
@@ -101,6 +102,10 @@ import { getWorkspaceRoot } from './workspace.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
+import { runAfterToolUseHooks } from './hooks/after-tool-use.ts'
+import { registerHaltTarget, clearHaltTarget } from './hooks/halt-run.ts'
+import { registerRunDeadline, clearRunDeadline } from './hooks/run-deadline.ts'
+import { fireSessionStartHook } from './hooks/session-start.ts'
 import { asTurnTreeId, type TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
@@ -210,8 +215,19 @@ function parentTools(
   registry: ToolRegistry,
   subagentsEnabled: boolean,
   readonlyMode: boolean,
+  executorModel: string,
 ): LLMTool[] {
   let tools = registry.toLLMTools()
+  // Hide the advisor tool when the configured advisor is not more capable than
+  // the executor (same model, or a confidently weaker annotated pairing) — it
+  // would only spend tokens for no lift. Conservative: cross-scale/unannotated
+  // pairings keep it (see advisorAddsLift). No-op unless the tool is registered.
+  if (
+    tools.some((t) => t.name === 'advisor') &&
+    !advisorAddsLift(executorModel, resolveAdvisorModelId())
+  ) {
+    tools = tools.filter((t) => t.name !== 'advisor')
+  }
   if (!subagentsEnabled) {
     tools = tools
       .filter((t) => !SUBAGENT_ENTRY_TOOLS.has(t.name))
@@ -259,15 +275,26 @@ function promptTextForSubmit(userPrompt: UserContent): string {
  * to this thread (decision 6); the turn itself re-begins recording with its own
  * turn id.
  */
+interface BeforeSubmitPromptResult {
+  /** The user-facing notice to show when a hook halted the submit; null to proceed. */
+  blocked: string | null
+  /**
+   * Current-turn context a hook injected (H2), pre-built into the system-reminder
+   * block. Folded into the local turn's system message (like `turnStart`); absent
+   * when no hook injected or the submit was halted.
+   */
+  injectContext?: string
+}
+
 async function runBeforeSubmitPrompt(
   threadId: string,
   userPrompt: UserContent,
-): Promise<string | null> {
+): Promise<BeforeSubmitPromptResult> {
   // Gate on the same master switch as every other hook path (tool gate, stop,
   // afterFileEdit). Without this, "always-trusted" user `~/.cursor/hooks.json`
   // beforeSubmitPrompt hooks would spawn on every submit even with the feature
   // off (the default) — a consent-gate bypass and needless per-submit discovery.
-  if (!getSetting<boolean>('cursorHooksEnabled', false)) return null
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return { blocked: null }
   const workspaceRoot = getWorkspaceRoot()
   beginHookRunRecording(threadId)
   try {
@@ -277,13 +304,51 @@ async function runBeforeSubmitPrompt(
       // Real conversation/generation ids + running model on the wire payload (B4).
       agentSession: currentAgentSessionInfo({ conversationId: threadId }),
     })
-    if (!decision.blocked) return null
-    return (
-      decision.userMessage ?? decision.reason ?? 'A hook blocked this prompt from being submitted.'
-    )
+    if (!decision.blocked) {
+      return {
+        blocked: null,
+        ...(decision.injectContext !== undefined ? { injectContext: decision.injectContext } : {}),
+      }
+    }
+    return {
+      blocked:
+        decision.userMessage ??
+        decision.reason ??
+        'A hook blocked this prompt from being submitted.',
+    }
   } finally {
     endHookRunRecording(threadId)
   }
+}
+
+/**
+ * Stamp a hook `haltRun` reason onto the terminal `done` chunk as its
+ * `stopReason` (H3). Only fills it in when a hook actually halted the run and
+ * the loop did not already report a `stopReason` (e.g. the model's own
+ * `end_turn` / `max_tokens`), so a hook halt is attributable on the existing
+ * user-visible channel without clobbering a real completion reason.
+ */
+function withHookHaltStopReason(
+  done: Extract<StreamChunk, { type: 'done' }>,
+  reason: string | undefined,
+): Extract<StreamChunk, { type: 'done' }> {
+  if (reason === undefined || done.stopReason !== undefined) return done
+  return { ...done, stopReason: reason }
+}
+
+/**
+ * The C3 run→drain budget fold-back chunk (E3, decision 5). Carries how many
+ * machine-initiated new turns this run spent in-process (todo closeout, the
+ * pre-review gate, remediation cycles) plus the turn-tree epoch it belongs to,
+ * so the renderer can fold the count onto its per-turn-tree counter — but only
+ * when the epoch still matches (a human action since minted a new turn tree with
+ * a reset budget, decision 16). Non-visual: the renderer updates state only.
+ */
+function continuationBudgetChunk(
+  used: number,
+  turnTreeId: TurnTreeId,
+): Extract<StreamChunk, { type: 'continuation_budget' }> {
+  return { type: 'continuation_budget', used, turnTreeId }
 }
 
 /**
@@ -327,6 +392,67 @@ function fireStopHook(
     recordingSnapshot,
   }).catch((err: unknown) => {
     console.warn('[hooks] stop hook dispatch error:', errorMessage(err))
+  })
+}
+
+/**
+ * Fire `afterToolUse` (D2) after a tool result — the canonical post-tool
+ * observation. Cursor's `afterShellExecution` / `afterMCPExecution` are payload
+ * flavors chosen by the tool name; discovery yields no hooks for other tools, so
+ * firing generically for every result is cheap and only shell/MCP hooks run.
+ *
+ * **Detached, never awaited (decision 3, no drain barrier):** dispatched with
+ * `void` so a slow observation hook can never delay the agent loop. Gated behind
+ * `cursorHooksEnabled` (default off) at the fire site — the same flag the
+ * tool-gate / stop paths use — because honouring a hook spawns a user/project
+ * script. Any dispatch error is swallowed: a broken observation hook can never
+ * fail the tool call that already produced its result. The output snapshot is
+ * capped by `runAfterToolUseHooks` before it reaches a hook's stdin.
+ */
+function fireAfterToolUseHook(args: {
+  threadId: string
+  turnTreeId: TurnTreeId
+  toolName: string
+  toolCallId: string
+  isError: boolean
+  input: unknown
+  output: string
+  durationMs: number
+}): void {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return
+  const workspaceRoot = getWorkspaceRoot()
+  // Capture the agent-session identity by value now — the hook dispatches
+  // detached (decision 3) and may marshal after this turn's recording context is
+  // torn down (B4).
+  const agentSession = currentAgentSessionInfo()
+  // Snapshot the recording context now, synchronously, like `fireStopHook`: a
+  // detached `afterToolUse` hook may settle after `endHookRunRecording` clears
+  // the live context, and its `hook_run` line must still attribute to the
+  // emitting turn (decision 3/6).
+  const recordingSnapshot = snapshotHookRunContext()
+  const input =
+    typeof args.input === 'object' && args.input !== null
+      ? (args.input as Record<string, unknown>)
+      : undefined
+  void runAfterToolUseHooks(
+    {
+      toolName: args.toolName,
+      toolCallId: args.toolCallId,
+      isError: args.isError,
+      ...(input ? { input } : {}),
+      output: args.output,
+      durationMs: args.durationMs,
+    },
+    {
+      threadId: args.threadId,
+      turnTreeId: args.turnTreeId,
+      workspaceRoot,
+      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+      agentSession,
+      recordingSnapshot,
+    },
+  ).catch((err: unknown) => {
+    console.warn('[hooks] afterToolUse hook dispatch error:', errorMessage(err))
   })
 }
 
@@ -380,12 +506,18 @@ export async function runAgent(
   // the existing text/`done` channel and return without starting the turn — the
   // blocked prompt never enters LLM history. Spine recording is attributed the
   // same way the turn's own hooks are (decision 6, always-on).
-  const blocked = await runBeforeSubmitPrompt(threadId, userPrompt)
-  if (blocked) {
-    sendChunk({ type: 'text', text: blocked })
+  const submit = await runBeforeSubmitPrompt(threadId, userPrompt)
+  if (submit.blocked) {
+    sendChunk({ type: 'text', text: submit.blocked })
     sendChunk({ type: 'done' })
     return { usage: { inputTokens: 0, outputTokens: 0 }, messages: priorMessages }
   }
+  // H2: a `beforeSubmitPrompt` hook may inject current-turn context (Cursor
+  // `additionalContext`). It is folded into the local turn's system message
+  // alongside `turnStart` steering below. ACP / remote paths compose the prompt
+  // out-of-process and have no equivalent injection point, so this is honoured
+  // on the local agent-loop path (the compose-path hook's home).
+  const submitInjectContext = submit.injectContext
 
   // Experimental PII redaction: when enabled, swap personal data the user typed
   // for stable placeholders before the prompt leaves the device — for every
@@ -404,6 +536,30 @@ export async function runAgent(
     setActiveRunThread(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
+    // The advisor works both ways for ACP: an external executor can consult it
+    // through the native-tool bridge. Unlike the native loop (context set around
+    // each call), bridged calls arrive over HTTP at any point in the turn, so
+    // the context is scoped to the whole ACP run. The transcript is Copse's
+    // view: prior thread history, this turn's user prompt, and whatever the
+    // agent has streamed so far.
+    let acpAssistantText = ''
+    const acpChunkSink = (chunk: StreamChunk): void => {
+      if (chunk.type === 'text') acpAssistantText += chunk.text
+      sendChunk(chunk)
+    }
+    const advisorContext = registry.has('advisor')
+      ? {
+          advisorModel: resolveAdvisorModelId(),
+          executorModel: model,
+          getTranscript: (): LLMMessage[] => [
+            ...priorMessages,
+            { role: 'user' as const, content: outboundPrompt },
+            ...(acpAssistantText.trim()
+              ? [{ role: 'assistant' as const, content: acpAssistantText }]
+              : []),
+          ],
+        }
+      : null
     try {
       const result = await runAcpAgentFromSettings({
         threadId,
@@ -411,8 +567,9 @@ export async function runAgent(
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
-        onChunk: sendChunk,
+        onChunk: acpChunkSink,
         registry,
+        ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
         ...(acpSelection?.model ? { model: acpSelection.model } : {}),
       })
@@ -506,11 +663,31 @@ export async function runAgent(
   const controller = new AbortController()
   abortMap.set(threadId, controller)
   setActiveRunThread(threadId)
+  // H3: register this run as the abort target for hook `haltRun` (decision 12).
+  // A hook halt (blocking mid-turn, or async from the current epoch) aborts the
+  // run through this same controller and stashes the reason so the terminal
+  // `done` chunk carries it as `stopReason` (the existing user-visible channel;
+  // the dedicated card is G1). Stale async halts (decision 16) never reach here.
+  let hookHaltStopReason: string | undefined
+  registerHaltTarget(threadId, turnTreeId, (reason) => {
+    hookHaltStopReason = reason
+    controller.abort()
+  })
   // Attribute hook executions (function + command) to this run's spine records
   // (decision 6 — always-on).
   beginHookRunRecording(threadId)
   const runAbort = createAgentRunAbortScheduler(controller)
   runAbort.schedule()
+  // H4 (decision 13): register this run's idle deadline so host-side blocking
+  // hook fire sites (tool gate, subagent spawn gate, afterFileEdit formatter)
+  // can pause it while a blocking hook is awaited — "the same way tool execution
+  // does". Cleared in the finally, guarded on the same deadline object.
+  registerRunDeadline(threadId, runAbort.deadline)
+  // H4: fire the canonical `sessionStart` event on the thread's first turn (a new
+  // composer conversation), fire-and-forget (decision 3) — its `env` outcome is
+  // collected into this session's env store and propagates to later hook
+  // process spawns. Never awaited: a slow sessionStart hook cannot delay the turn.
+  fireSessionStartHook(threadId, { firstTurn: priorMessages.length === 0, turnTreeId })
 
   // Seed the shared continuation budget for this turn tree (decision 5) with the
   // machine turns already spent on the renderer's queue-drain continuations, so
@@ -550,10 +727,14 @@ export async function runAgent(
     // Set when the agent already ran a comparison via the `compare_models` tool
     // this turn, so the auto-on-review trigger doesn't run a second (billable) one.
     let comparisonRanThisTurn = false
-    // The agent loop's terminal `done` chunk is held back until the post-turn
-    // review finishes, so the thread doesn't flip to idle (and drain its queued
-    // messages) while the review is still running.
-    let deferredDone: Extract<StreamChunk, { type: 'done' }> | null = null
+    // E3: the run emits a single terminal `done` at the very end, after the
+    // post-turn orchestration (pre-review gate + review/remediation) has run —
+    // there is no held-back `done` chunk (the deferred-`done` dance is gone). The
+    // main loop's own `done` is suppressed (not forwarded); we keep only its
+    // `stopReason` so the one terminal `done` carries the model's completion
+    // reason. The thread stays "running" because that orchestration is awaited
+    // inline below, not because a chunk is withheld.
+    let loopStopReason: string | undefined
 
     const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills })
 
@@ -581,7 +762,7 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode)
+    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, model)
     setHookRunToolset(parentLoopTools)
 
     const turnStart = await createHookRegistry().emit(
@@ -593,11 +774,16 @@ export async function runAgent(
         recordHookRun: recordFunctionHookRun,
       },
     )
-    const injected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
-    if (injected && messages[0]?.role === 'system') {
+    // Fold both the `turnStart` steering (M0.2) and any `beforeSubmitPrompt`
+    // injected context (H2, already a system-reminder block) into messages[0].
+    const turnStartInjected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
+    const injectedBlocks = [turnStartInjected, submitInjectContext].filter(
+      (block): block is string => block !== undefined && block.length > 0,
+    )
+    if (injectedBlocks.length > 0 && messages[0]?.role === 'system') {
       messages[0] = {
         role: 'system',
-        content: messages[0].content + `\n\n${injected}`,
+        content: messages[0].content + `\n\n${injectedBlocks.join('\n\n')}`,
       }
     }
 
@@ -715,7 +901,7 @@ export async function runAgent(
     // The parent tool executor, shared by the main loop and any post-turn parent
     // continuation turns (pre-review todo gate, review remediation) so both route
     // subagents, advisor, comparison, and shell tagging identically.
-    const executeParentTool = async (
+    const runParentTool = async (
       name: string,
       args: unknown,
       signal: AbortSignal,
@@ -762,16 +948,14 @@ export async function runAgent(
         // Client-side advisor: hand the tool the live transcript so it can
         // forward it to a larger advisor model (issue #566). Mirrors the
         // native tool's automatic transcript forwarding.
-        setAdvisorContext({
-          advisorModel: resolveAdvisorModelId(),
-          executorModel: model,
-          getTranscript: () => trimmed,
-        })
-        try {
-          return await registry.executeNormalized(name, args, signal)
-        } finally {
-          setAdvisorContext(null)
-        }
+        return runWithAdvisorContext(
+          {
+            advisorModel: resolveAdvisorModelId(),
+            executorModel: model,
+            getTranscript: () => trimmed,
+          },
+          () => registry.executeNormalized(name, args, signal),
+        )
       }
       if (name === 'delegate_step') {
         // Orchestration strategy: the parent stays the orchestrator while a
@@ -823,6 +1007,48 @@ export async function runAgent(
       return registry.executeNormalized(name, args, signal)
     }
 
+    // D2: fire the canonical `afterToolUse` observation after each tool result
+    // (shell / MCP flavors), detached — never blocking the loop. Wrapping the
+    // shared executor is the single tool-result choke point that covers the main
+    // loop and every post-turn continuation turn. The output snapshot is capped
+    // downstream (`runAfterToolUseHooks`) before it reaches a hook's stdin.
+    const executeParentTool = async (
+      name: string,
+      args: unknown,
+      signal: AbortSignal,
+      toolCallId: string,
+    ): Promise<ToolExecuteResult> => {
+      const startedAt = Date.now()
+      try {
+        const raw = await runParentTool(name, args, signal, toolCallId)
+        fireAfterToolUseHook({
+          threadId,
+          turnTreeId,
+          toolName: name,
+          toolCallId,
+          isError: false,
+          input: args,
+          output: normalizeToolExecuteResult(raw).result,
+          durationMs: Date.now() - startedAt,
+        })
+        return raw
+      } catch (err) {
+        // The loop turns a thrown tool into an error tool-result; mirror that so
+        // the observation sees the same `isError: true` + message the model does.
+        fireAfterToolUseHook({
+          threadId,
+          turnTreeId,
+          toolName: name,
+          toolCallId,
+          isError: true,
+          input: args,
+          output: `Error: ${errorMessage(err)}`,
+          durationMs: Date.now() - startedAt,
+        })
+        throw err
+      }
+    }
+
     await runWithAgentRunReadonly(readonlyMode, async () => {
       await runWithAgentRunReadFileLimits(runReadLimits, async () => {
         await runAgentLoop({
@@ -848,7 +1074,9 @@ export async function runAgent(
           getLastUsage: () => (hasLastUsage(provider) ? provider.lastUsage : null),
           onChunk: (chunk) => {
             if (chunk.type === 'done') {
-              deferredDone = chunk
+              // Suppress the loop's terminal `done` (E3): the run emits one
+              // terminal `done` after post-turn work. Keep its stop reason.
+              loopStopReason = chunk.stopReason
               return
             }
             sendChunk(chunk)
@@ -926,13 +1154,16 @@ export async function runAgent(
 
     // Post-turn review: read-only review over the working diff, with an optional
     // bounded parent remediation loop when the reviewer requests follow-up. Runs
-    // before the deferred `done` so the thread stays "running" until it lands.
+    // before the single terminal `done` so the thread stays "running" until it
+    // lands (E3: the orchestration is awaited inline — no held-back `done`).
     //
     // Cost gates (#584): (a) skip when the working diff is empty / below
     // `postTurnReviewMinChangedLines` — there's nothing worth a review LLM run; and
     // (b) when the review would use a billable model, ask once per chat for spend
     // approval (remembered) so paid reviews on every file-mutating turn are opt-in.
-    // A free / local review model runs on the full diff with no prompt.
+    // A free / local review model runs on the full diff with no prompt. The
+    // host-interactive gate resolution stays here; `runPostTurnReviewCycle` owns
+    // the review/remediation *sequencing* + the shared C3 budget (decision 5).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
     if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
       const reviewRoute = await buildReviewRoute()
@@ -940,7 +1171,6 @@ export async function runAgent(
       const reviewUsageModel = reviewRoute?.usageModel ?? model
       const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
       const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
-
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
       const reviewApproved =
@@ -948,90 +1178,58 @@ export async function runAgent(
         !isBillableModel(reviewUsageModel) ||
         (await ensureReviewApproved(reviewUsageModel, threadId, controller.signal))
 
-      if (nothingToReview) {
+      const onReviewUsage = (u: { inputTokens: number; outputTokens: number }): void => {
+        inputTokens += u.inputTokens
+        outputTokens += u.outputTokens
         sendChunk({
-          type: 'post_turn_review',
-          status: 'skipped',
-          summary: 'Nothing to review in the working diff.',
+          type: 'usage',
+          model: reviewUsageModel,
+          inputTokens: u.inputTokens,
+          outputTokens: u.outputTokens,
         })
-      } else if (!reviewApproved) {
-        sendChunk({
-          type: 'post_turn_review',
-          status: 'skipped',
-          summary: controller.signal.aborted
-            ? 'Review cancelled.'
-            : `Review skipped — spending on ${reviewUsageModel} was not approved.`,
-        })
-      } else {
-        for (let cycle = 0; cycle < MAX_POST_TURN_REVIEW_CYCLES; cycle++) {
-          sendChunk({ type: 'post_turn_review', status: 'running', summary: '' })
-          try {
-            const review = await runPostTurnReviewOnce({
-              parentGoal,
-              todos: getAgentRunTodos(),
-              provider: reviewProvider,
-              registry,
-              contextWindow: reviewContextWindow,
-              toolSchemaReserve: reviewToolSchemaReserve,
-              signal: controller.signal,
-              usageModel: reviewUsageModel,
-              onUsage: (u) => {
-                inputTokens += u.inputTokens
-                outputTokens += u.outputTokens
-                sendChunk({
-                  type: 'usage',
-                  model: reviewUsageModel,
-                  inputTokens: u.inputTokens,
-                  outputTokens: u.outputTokens,
-                })
+      }
+
+      await runPostTurnReviewCycle({
+        reviewUsageModel,
+        nothingToReview,
+        reviewApproved,
+        signal: controller.signal,
+        getTodos: () => getAgentRunTodos(),
+        setTodos: (todos) => {
+          setAgentRunTodos(todos)
+        },
+        emitChunk: sendChunk,
+        continuationBudget,
+        runReviewOnce: (todos) =>
+          runPostTurnReviewOnce({
+            parentGoal,
+            todos,
+            provider: reviewProvider,
+            registry,
+            contextWindow: reviewContextWindow,
+            toolSchemaReserve: reviewToolSchemaReserve,
+            signal: controller.signal,
+            usageModel: reviewUsageModel,
+            onUsage: onReviewUsage,
+          }),
+        runRemediationTurn: async (nudge) => {
+          const remediation = { madeEdits: false }
+          await runWithAgentRunReadFileLimits(runReadLimits, async () => {
+            await runParentContinuationTurn({
+              ...parentContinuationBase,
+              userNudge: nudge,
+              maxSteps: 8,
+              onEditTool: (name: string): void => {
+                if (isEditTool(name)) {
+                  turnChangedFiles = true
+                  remediation.madeEdits = true
+                }
               },
             })
-
-            const todosAfterReview = applyReviewTodoUpdates(getAgentRunTodos(), review.verdict)
-            if (todosAfterReview.length > 0 || getAgentRunTodos().length > 0) {
-              setAgentRunTodos(todosAfterReview)
-            }
-
-            sendChunk({
-              type: 'post_turn_review',
-              status: 'done',
-              summary: review.summary,
-              issuesFound: review.verdict.issuesFound,
-            })
-
-            const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
-            if (!review.verdict.requestFollowUp || lastCycle || controller.signal.aborted) {
-              break
-            }
-
-            // A remediation cycle is a machine-initiated new turn (decision 5):
-            // consume one grant from the shared budget before running it. The
-            // local cap (MAX_POST_TURN_REVIEW_CYCLES) tightens inside the shared
-            // cap — once the budget is exhausted, no further remediation runs.
-            if (!continuationBudget.tryGrant()) break
-
-            const remediation = { madeEdits: false }
-            await runWithAgentRunReadFileLimits(runReadLimits, async () => {
-              await runParentContinuationTurn({
-                ...parentContinuationBase,
-                userNudge: buildReviewRemediationNudge(review.verdict),
-                maxSteps: 8,
-                onEditTool: (name: string): void => {
-                  if (isEditTool(name)) {
-                    turnChangedFiles = true
-                    remediation.madeEdits = true
-                  }
-                },
-              })
-            })
-            if (!remediation.madeEdits) break
-          } catch (err) {
-            const detail = controller.signal.aborted ? 'Review cancelled.' : classifyAgentError(err)
-            sendChunk({ type: 'post_turn_review', status: 'error', summary: detail })
-            break
-          }
-        }
-      }
+          })
+          return remediation
+        },
+      })
     }
 
     // Auto model comparison: when this turn changed files and the harness is set
@@ -1045,21 +1243,23 @@ export async function runAgent(
       )
     }
 
-    // C3 run→drain fold-back (decision 5): report the machine turns this run
-    // spent in-process (closeout / pre-review / remediation grants) back to the
-    // renderer *before* the terminal `done` triggers its next queue drain, so
-    // the drain-time budget check sees the full turn-tree spend. Epoch-guarded
-    // + monotonic on the renderer side (decision 16).
-    sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assigned inside the onChunk callback above; TS narrows to the `null` initializer
-    sendChunk(deferredDone ?? { type: 'done' })
+    const terminalDone: Extract<StreamChunk, { type: 'done' }> =
+      loopStopReason !== undefined ? { type: 'done', stopReason: loopStopReason } : { type: 'done' }
+    // C3 run→drain fold-back (E3): report the machine turns this run spent
+    // in-process (closeout / pre-review / remediation) so the renderer folds them
+    // back onto the turn tree's counter and its *next* queue drain respects the
+    // shared cap. Emitted before the terminal `done` (which triggers the drain).
+    sendChunk(continuationBudgetChunk(budgetLedger.used(turnTreeId), turnTreeId))
+    sendChunk(withHookHaltStopReason(terminalDone, hookHaltStopReason))
   } catch (err) {
     const msg = classifyAgentError(err)
     sendChunk({ type: 'text', text: msg })
     // Fold back any in-run spend even on the error path — grants consumed before
     // the failure still count against the turn tree (decision 5).
     sendChunk({ type: 'continuation_budget', used: budgetLedger.used(turnTreeId), turnTreeId })
-    sendChunk({ type: 'done' })
+    // H3: a hook `haltRun` aborts the run through the catch path; surface its
+    // reason as the terminal `done`'s `stopReason` so the stop is attributable.
+    sendChunk(withHookHaltStopReason({ type: 'done' }, hookHaltStopReason))
   } finally {
     // B3: agent work has stopped (turn end, error, or abort) — fire `stop`
     // detached (decision 3). Fired before `endHookRunRecording` so the dispatch
@@ -1071,10 +1271,12 @@ export async function runAgent(
     // per-run seed here need not persist — this keeps the ledger map bounded.
     budgetLedger.forget(turnTreeId)
     runAbort.clear()
+    clearRunDeadline(threadId, runAbort.deadline)
     clearAgentRunTodos()
     setTodoToolPostProcess(null)
     endHookRunRecording(threadId)
     clearActiveRunThread(threadId)
+    clearHaltTarget(threadId, turnTreeId)
     abortMap.delete(threadId)
   }
 

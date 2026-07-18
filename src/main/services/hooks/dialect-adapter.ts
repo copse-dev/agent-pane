@@ -43,6 +43,15 @@ export interface DialectInterpretation {
    * set it; the runner passes it through to {@link CommandHookResult.queueMessage}.
    */
   queueMessage?: HookQueueMessage
+  /**
+   * Session-scoped environment variables a `sessionStart` hook returned (H4;
+   * Cursor's `env` output field). Fire-and-forget: the runner passes it through
+   * to {@link CommandHookResult.sessionEnv}, and the fire site collects it into
+   * the session env store so it propagates to *later* hook process spawns for
+   * the session (decision-doc "`sessionStart` env propagation"). Only the
+   * `sessionStart` interpretation sets it.
+   */
+  sessionEnv?: Record<string, string>
   /** True when the process crashed, timed out, or emitted invalid JSON. */
   failed: boolean
   /** Whether stdout parsed cleanly (empty stdout counts as an intentional no-response). */
@@ -193,6 +202,57 @@ export interface DialectAdapter {
   interpretSubagentStop?(
     spawn: HookSpawnResult,
     payload: HookEventPayloads['subagentStop'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `afterToolUse` payload into this dialect's stdin wire
+   * shape (D2). Optional. Cursor splits it into `afterShellExecution` (shell:
+   * `command` + capped `output` + `duration`) and `afterMCPExecution` (MCP:
+   * `tool_name` + `tool_input` + capped `result_json` + `duration`) by the tool
+   * name — payload flavors of the one canonical event. Returns null when the
+   * hook does not apply to this tool (the final guard past discovery matching).
+   */
+  marshalAfterToolUseRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['afterToolUse'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `afterToolUse` response table (D2). Optional, paired
+   * with {@link marshalAfterToolUseRequest}. Cursor's after-events are
+   * fire-and-forget (detached, decision 3): they return nothing, so the outcome
+   * is always null; a crash / timeout / non-zero exit is reported as `failed`
+   * for the spine + Sources error indicator only — there is nothing to block
+   * post-hoc (the tool already ran).
+   */
+  interpretAfterToolUse?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['afterToolUse'],
+  ): DialectInterpretation
+  /**
+   * Marshal a canonical `sessionStart` payload into this dialect's stdin wire
+   * shape (H4). Optional: a dialect with no session-start hook omits it and the
+   * runner abstains for that dialect. Cursor's `sessionStart` carries
+   * `session_id` / `is_background_agent` / `composer_mode`; Claude's carries
+   * `source` and the **optional `model`** (B4 readiness — the only Claude
+   * agent-session event with a model field). `session` supplies the ids + model.
+   */
+  marshalSessionStartRequest?(
+    hook: CommandHook,
+    payload: HookEventPayloads['sessionStart'],
+    session?: AgentSessionInfo,
+  ): unknown
+  /**
+   * Apply this dialect's `sessionStart` response table (H4). Optional, paired
+   * with {@link marshalSessionStartRequest}. `sessionStart` is fire-and-forget
+   * (decision 3), so it never yields a control-flow `outcome`; its actionable
+   * output is {@link DialectInterpretation.sessionEnv} (Cursor's `env` object),
+   * which the fire site propagates to later hook spawns. A crash / timeout /
+   * non-zero exit is reported `failed` for the spine + Sources only — there is
+   * nothing to block (the session has already started).
+   */
+  interpretSessionStart?(
+    spawn: HookSpawnResult,
+    payload: HookEventPayloads['sessionStart'],
   ): DialectInterpretation
   /**
    * Record the first runtime failure of a hook this session (deduped per

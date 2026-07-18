@@ -1,7 +1,9 @@
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
+import { haltRunFromBlockingHook } from '../hooks/halt-run.ts'
 import { currentAgentSessionInfo } from '../hooks/agent-session.ts'
+import { getActiveRunThread } from '../thread-models.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
@@ -482,9 +484,27 @@ async function promptHookAsk(check: PermissionCheck, decision: HookGateDecision)
  *     B4). Approval falls through to the normal gate; a decline blocks the call.
  *   - **allow** — falls through: a hook can only *tighten* the gate, never
  *     auto-approve something Copse would otherwise prompt about.
+ *
+ * A hook may also **rewrite** the tool input (`updatedInput`, H1). The rewrite
+ * is returned here (not applied yet); {@link ensureToolPermitted} applies it and
+ * lets the downstream policy gates (`analyzeShellCommand` / `decideShellPermission`)
+ * re-run on the rewritten input — a rewrite is never trusted without re-analysis.
  */
-async function applyToolGateHooks(check: PermissionCheck): Promise<boolean> {
-  if (!getSetting<boolean>('cursorHooksEnabled', false)) return true
+interface ToolGateHookOutcome {
+  /** Whether the call may proceed to Copse's own gate (false = blocked). */
+  ok: boolean
+  /** Final hook-rewritten tool input (H1), when the pipeline rewrote it. */
+  updatedInput?: Record<string, unknown>
+  /**
+   * Current-turn system-reminder block a hook injected (H2), already 10k-capped.
+   * Carried only on a proceeding gate; {@link ensureToolPermitted} stamps it onto
+   * the check so the tool runner appends it to the result.
+   */
+  injectContext?: string
+}
+
+async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookOutcome> {
+  if (!getSetting<boolean>('cursorHooksEnabled', false)) return { ok: true }
 
   const workspaceRoot = getWorkspaceRoot()
   const projectTrusted = isWorkspaceTrusted(workspaceRoot)
@@ -494,23 +514,49 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<boolean> {
     { workspaceRoot, projectTrusted, agentSession: currentAgentSessionInfo() },
   )
 
+  // H3 (decision 12): a `haltRun` stops the whole turn, not just this tool call.
+  // Route it through the run's abort path — attributed to the hook, spine-recorded
+  // — in addition to blocking the call below. A blocking hook fires synchronously
+  // inside the active run, so it is current by construction (no epoch to be stale
+  // against, decision 16); when no run is active this is a harmless no-op.
+  if (decision.haltRun) {
+    const threadId = getActiveRunThread()
+    if (threadId) {
+      haltRunFromBlockingHook({
+        threadId,
+        event: 'toolGate',
+        hookId: decision.haltRun.hookId,
+        reason: decision.haltRun.reason,
+      })
+    }
+    // Block the triggering call too: `haltRun` outranks everything (decision 12),
+    // so the tool must not execute once before the abort is observed — regardless
+    // of whether the hook also set `permission: 'deny'`.
+    return { ok: false }
+  }
+
   if (decision.permission === 'deny') {
     if (decision.agentMessage) {
       // Surface the hook's message to the agent via the tool-result error path.
       throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
     }
     console.warn(`[hooks] toolGate denied ${check.toolName}`)
-    return false
+    return { ok: false }
   }
+
+  const rewrite = decision.updatedInput !== undefined ? { updatedInput: decision.updatedInput } : {}
+  // H2: a proceeding gate may also carry current-turn injected context.
+  const inject =
+    decision.injectContext !== undefined ? { injectContext: decision.injectContext } : {}
 
   if (decision.permission === 'ask') {
     const approved = await promptHookAsk(check, decision)
-    if (approved) return true
+    if (approved) return { ok: true, ...rewrite, ...inject }
     if (decision.agentMessage) throw new Error(`Blocked by a hook: ${decision.agentMessage}`)
-    return false
+    return { ok: false }
   }
 
-  return true
+  return { ok: true, ...rewrite, ...inject }
 }
 
 /**
@@ -525,9 +571,26 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<boolean> {
  * diff queue or get an explicit case here; do not rely on the default branch.
  */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
-  const { toolName, args } = check
+  const gate = await applyToolGateHooks(check)
+  if (!gate.ok) return false
 
-  if (!(await applyToolGateHooks(check))) return false
+  // H1: a hook rewrote the tool input. Apply the rewrite *in place* so (a) the
+  // policy gates below re-run `analyzeShellCommand` / `decideShellPermission` on
+  // the rewritten input — a rewrite that turns a contained command into an
+  // external one is caught by the matrix, never auto-allowed — and (b) the tool
+  // executes with the rewritten input (ToolRegistry passes a fresh parsed-args
+  // object, so mutating it is safe and is what carries the rewrite to execute()).
+  if (gate.updatedInput && typeof check.args === 'object' && check.args !== null) {
+    Object.assign(check.args, gate.updatedInput)
+  }
+
+  // H2: surface a hook's current-turn injected context on the check so the tool
+  // runner appends it to this call's result (the fire-point injection). Set here
+  // rather than acted on: the gate only decides *whether* to inject; the runner
+  // owns *placing* it into the turn (ToolRegistry.execute).
+  if (gate.injectContext !== undefined) check.injectContext = gate.injectContext
+
+  const { toolName, args } = check
 
   // Read-only runs block mutating tools and any MCP tool not provably read-only.
   // Allowed tools fall through to the normal gates below — read-only mode never

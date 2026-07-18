@@ -29,6 +29,7 @@ import { recordCommandHookRun, type HookRunRecordingSnapshot } from '../hook-run
 import { hookRecursionGuardTripped } from './hook-depth.ts'
 import { getDialectAdapter } from './dialect-registry.ts'
 import { spawnHookProcess, type HookSpawnResult } from './hook-spawn.ts'
+import { getSessionEnv } from './session-env.ts'
 import type { DialectAdapter, DialectInterpretation } from './dialect-adapter.ts'
 
 /** No usable response — the action proceeds (a command hook is never fail-hard). */
@@ -77,6 +78,18 @@ function isSubagentStopPayload(payload: unknown): payload is HookEventPayloads['
   )
 }
 
+function isAfterToolUsePayload(payload: unknown): payload is HookEventPayloads['afterToolUse'] {
+  // Distinguished from `toolGate` (which has `toolName` + `input` but no
+  // `isError`) by the `isError` observation field the post-tool payload carries.
+  return (
+    typeof payload === 'object' && payload !== null && 'toolName' in payload && 'isError' in payload
+  )
+}
+
+function isSessionStartPayload(payload: unknown): payload is HookEventPayloads['sessionStart'] {
+  return typeof payload === 'object' && payload !== null && 'firstTurn' in payload
+}
+
 /**
  * Resolve a `failed` run to its outcome per the hook's `onFailure` (decision 9):
  * `closed` blocks (Cursor `failClosed: true`), `open` abstains (vendor default).
@@ -114,10 +127,18 @@ async function spawnInterpretResolve(
 ): Promise<CommandHookResult> {
   if (request === null) return ABSTAIN
 
+  // H4: propagate this session's `sessionStart` env into the hook process. Keyed
+  // by the session id (`conversation_id` = thread id) on the agent-session info;
+  // the store is empty until a `sessionStart` hook has populated it, so this is a
+  // no-op outside an env-propagating session.
+  const sessionId = context.agentSession?.conversationId
+  const sessionEnv = sessionId ? getSessionEnv(sessionId) : undefined
+
   const spawn = await spawnHookProcess(hook.command, request, {
     cwd: hook.cwd ?? process.cwd(),
     ...(hook.timeoutMs !== undefined ? { timeoutMs: hook.timeoutMs } : {}),
     ...(context.signal ? { signal: context.signal } : {}),
+    ...(sessionEnv ? { sessionEnv } : {}),
   })
 
   const interpretation = interpret(spawn)
@@ -155,6 +176,9 @@ async function spawnInterpretResolve(
     // Async follow-up (D1 subagentStop) rides through to the queue channel via
     // emitAsync's `onAsyncOutcome`; absent on every blocking-event run.
     ...(interpretation.queueMessage ? { queueMessage: interpretation.queueMessage } : {}),
+    // Session env (H4 sessionStart): forwarded to `onAsyncOutcome` by emitAsync
+    // and collected into the session env store; absent on every other run.
+    ...(interpretation.sessionEnv ? { sessionEnv: interpretation.sessionEnv } : {}),
   }
 }
 
@@ -165,8 +189,10 @@ async function spawnInterpretResolve(
  * diff-queue / write-tool site); B3 adds `stop` (turn end / abort, dispatched
  * detached — decision 3); D1 adds `subagentStart` (blocking spawn gate, matcher
  * on subagent type) and `subagentStop` (detached completion, `followup_message`
- * routed to the queue channel). Other canonical events land their fire sites in
- * later phases and register no command hooks yet, so they abstain.
+ * routed to the queue channel); D2 adds `afterToolUse` (post-tool observation,
+ * dispatched detached — the Cursor `afterShellExecution` / `afterMCPExecution`
+ * flavors with a capped output snapshot). Other canonical events land their fire
+ * sites in later phases and register no command hooks yet, so they abstain.
  */
 export function createCommandHookRunner(opts?: {
   /**
@@ -274,6 +300,36 @@ export function createCommandHookRunner(opts?: {
         const adapter = getDialectAdapter(hook.dialect)
         const marshal = adapter?.marshalSubagentStopRequest?.bind(adapter)
         const interpret = adapter?.interpretSubagentStop?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'afterToolUse' && isAfterToolUsePayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalAfterToolUseRequest?.bind(adapter)
+        const interpret = adapter?.interpretAfterToolUse?.bind(adapter)
+        if (!adapter || !marshal || !interpret) return ABSTAIN
+        return spawnInterpretResolve(
+          hook,
+          adapter,
+          marshal(hook, payload, session),
+          (spawn) => interpret(spawn, payload),
+          context,
+          recordingSnapshot,
+        )
+      }
+
+      if (hook.event === 'sessionStart' && isSessionStartPayload(payload)) {
+        const adapter = getDialectAdapter(hook.dialect)
+        const marshal = adapter?.marshalSessionStartRequest?.bind(adapter)
+        const interpret = adapter?.interpretSessionStart?.bind(adapter)
         if (!adapter || !marshal || !interpret) return ABSTAIN
         return spawnInterpretResolve(
           hook,

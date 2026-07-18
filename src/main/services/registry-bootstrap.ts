@@ -59,6 +59,7 @@ import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
+import { runCheckupTool } from '../tools/checkup-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -129,9 +130,10 @@ export function createRegistry(): ToolRegistry {
     registry.register(suggestModelTool)
   }
   // Experimental client-side advisor strategy (off by default, issue #566). Adds
-  // a no-parameter `advisor` tool that forwards the full transcript to a larger
-  // advisor model for strategic guidance, so the executor can run on a cheaper /
-  // on-device model. Shaped to match Claude's native advisor tool contract.
+  // an `advisor` tool that forwards the full transcript + verified repo state to
+  // a larger advisor model for strategic guidance, so the executor can run on a
+  // cheaper / on-device model. The no-arg call matches Claude's native advisor
+  // tool contract; optional question / include_diff params only add context.
   if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
     registry.register(advisorTool)
   }
@@ -170,6 +172,9 @@ export function createRegistry(): ToolRegistry {
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)
   registry.register(askUserTool)
+  // Always-on setup health check ("doctor"). Read-only — gathers diagnostics and
+  // returns a report; the agent proposes any fixes for the user to approve.
+  registry.register(runCheckupTool)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
     for (const tool of browserTools) registry.register(tool)
   }
