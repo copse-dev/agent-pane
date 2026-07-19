@@ -59,19 +59,24 @@
   overflow-y: auto;
   scrollbar-gutter: stable;
   padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--bg-elevated);
-  /* Soft upward shadow instead of a hard border line — the panel reads as
-     floating above the conversation rather than butting against it with a
-     visible seam. --shadow-composer is the theme-tuned upward shadow used by
-     the other bottom-docked chrome. */
-  box-shadow: var(--shadow-composer);
+  /* No solid fill or border here: the panel used to be a full-width
+     hard-cornered box docked above the rounded floating composer, whose square
+     corners obscured the conversation scrolling behind it. Left transparent, it
+     recedes — only the queued bubbles below show, each carrying its own
+     background and accent stripe, floating over the conversation. */
+  background: transparent;
 }
 .conversation-queued[hidden] {
   display: none;
 }
 .conversation-queued .msg-queued {
-  background: var(--bg-base);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-left: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: var(--radius);
+  /* Now that the panel behind them is transparent, each queued item reads as
+     its own floating card over the conversation. */
+  box-shadow: var(--shadow-sm);
 }
 .agent-activity {
   flex-shrink: 0;
