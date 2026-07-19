@@ -120,6 +120,64 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
     ]
     for (const chunk of dropped) assert.equal(streamChunkToSessionUpdate(chunk), null)
   })
+
+  it('maps a copse.todos panel_update to a plan (P4)', () => {
+    // The `copse.todos` first-party pack emits `panel_update` with a level-2
+    // list panel (`todosToPanelListData`). External ACP clients speak `plan`,
+    // so the adapter forwards the pack panel through as a plan update with
+    // the same cancelled-omitted policy the `todo_update` path uses.
+    const update = streamChunkToSessionUpdate({
+      type: 'panel_update',
+      packId: 'copse.todos',
+      contributionId: 'plan',
+      data: {
+        kind: 'list',
+        title: 'To-dos',
+        summary: '1/2 done',
+        rows: [
+          { id: 't1', label: 'first', status: 'completed' },
+          { id: 't2', label: 'skipped', status: 'cancelled' },
+          { id: 't3', label: 'next', status: 'in_progress' },
+        ],
+      },
+    })
+    assert.deepEqual(update, {
+      sessionUpdate: 'plan',
+      entries: [
+        { content: 'first', priority: 'medium', status: 'completed' },
+        { content: 'next', priority: 'medium', status: 'in_progress' },
+      ],
+    })
+  })
+
+  it('drops a panel_update from a pack that has no ACP counterpart', () => {
+    // Only the todos plan panel maps to `plan`. A generic pack panel from
+    // some future pack (or a wrong contribution id) is silently dropped so
+    // external clients never receive a plan update they cannot interpret.
+    const notTodos = streamChunkToSessionUpdate({
+      type: 'panel_update',
+      packId: 'copse.someday',
+      contributionId: 'plan',
+      data: { kind: 'list', rows: [] },
+    })
+    assert.equal(notTodos, null)
+
+    const wrongContribution = streamChunkToSessionUpdate({
+      type: 'panel_update',
+      packId: 'copse.todos',
+      contributionId: 'not-plan',
+      data: { kind: 'list', rows: [] },
+    })
+    assert.equal(wrongContribution, null)
+
+    const treePanel = streamChunkToSessionUpdate({
+      type: 'panel_update',
+      packId: 'copse.todos',
+      contributionId: 'plan',
+      data: { kind: 'tree', roots: [] },
+    })
+    assert.equal(treePanel, null)
+  })
 })
 
 describe('sessionUpdateToStreamChunk (client role)', () => {

@@ -1,6 +1,8 @@
 import type { PlanEntry, SessionUpdate, ToolCallContent, ToolKind } from '@agentclientprotocol/sdk'
 import type { StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
+import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
+import type { PanelEntry } from '@copse/agent/packs/pack-panel.ts'
 
 /**
  * Translate between Copse's internal `StreamChunk` stream and ACP
@@ -101,6 +103,29 @@ export function streamChunkToSessionUpdate(chunk: StreamChunk): SessionUpdate | 
             status: todo.status,
           })),
       }
+    // P4: the `copse.todos` pack emits `panel_update` for the plan panel
+    // (level 2, id `plan`). Map that to ACP `plan` too — it is the same data,
+    // just carried on the pack-panel chunk vocabulary — so an external ACP
+    // client (Buzz, cursor-agent) sees one plan stream regardless of which
+    // shape Copse emits internally. Only the todos plan panel maps here; a
+    // future generic panel from another pack would carry no ACP counterpart
+    // and stays as a dropped update.
+    case 'panel_update': {
+      if (chunk.packId !== TODOS_PACK_ID) return null
+      if (chunk.contributionId !== TODOS_PANEL_CONTRIBUTION_ID) return null
+      if (chunk.data.kind !== 'list') return null
+      const entries = chunk.data.rows
+        .filter(
+          (row): row is PanelEntry & { status: PlanEntry['status'] } =>
+            !!row.status && row.status !== 'cancelled',
+        )
+        .map((row): PlanEntry => ({
+          content: row.label,
+          priority: 'medium',
+          status: row.status,
+        }))
+      return { sessionUpdate: 'plan', entries }
+    }
     case 'tool_call': {
       const kind = NATIVE_TOOL_ACP_KIND[chunk.toolCall.name] ?? 'other'
       // Shell calls title the actual command — the convention external ACP

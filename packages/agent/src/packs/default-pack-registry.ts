@@ -36,8 +36,9 @@ export function setDefaultPackRegistry(registry: PackRegistry | null): void {
 /**
  * The current shared pack registry, or a fresh first-party seed when none has
  * been installed yet. The fallback keeps unit tests + `createHookRegistry`
- * callers in `packages/agent` working without host wiring (byte-identical to
- * P1's behavior — the skeleton `copse.noop` pack contributes nothing).
+ * callers in `packages/agent` working without host wiring. Post-P4 the seed
+ * carries the `copse.todos` pack's typed hooks/tool/panel contributions, so
+ * unwired callers see the same shipped surface a fresh install would.
  */
 export function getDefaultPackRegistry(): PackRegistry {
   return installed ?? createFirstPartyPackRegistry()

@@ -112,6 +112,20 @@ describe('createPackPanelEl (list)', () => {
     assert.ok(secondRow, 'expected the second row')
     assert.equal(qsRequired(secondRow, '.pack-panel-badge-assigned-model').textContent, 'local')
   })
+
+  it('omits cancelled todos and computes progress from visible rows', () => {
+    const data = todosToPanelListData([
+      { id: 'done', content: 'Done step', status: 'completed' },
+      { id: 'cancelled', content: 'Skipped', status: 'cancelled' },
+      { id: 'open', content: 'Still open', status: 'pending' },
+    ])
+    const panel = createPackPanelEl(data)
+    assert.equal(qsRequired(panel, '.pack-panel-summary').textContent, '1/2 done')
+    assert.equal(panel.querySelectorAll('.pack-panel-row').length, 2)
+    assert.equal(panel.querySelector('[data-row-id="cancelled"]'), null)
+    assert.ok(panel.querySelector('[data-row-id="done"]'))
+    assert.ok(panel.querySelector('[data-row-id="open"]'))
+  })
 })
 
 describe('createPackPanelEl (tree)', () => {
