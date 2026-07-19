@@ -59,6 +59,7 @@ export interface ApiClient {
     set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
+    unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {

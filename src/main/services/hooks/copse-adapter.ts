@@ -347,6 +347,28 @@ function parseCopseEntry(
   }
 }
 
+/** One project hook that opted out of the sandbox (decision 7 / F3). */
+export interface UnsandboxedProjectHook {
+  event: string
+  command: string
+}
+
+/**
+ * List the project's `.copse/hooks.json` entries that declare `sandbox: false`
+ * — **independent of workspace trust** (decision 7 / F3). This is read-only
+ * display parsing for the workspace-trust prompt: the user must see, *at the
+ * consent moment*, that trusting this workspace will let these repo-supplied
+ * scripts run outside the project sandbox. Nothing here spawns or registers a
+ * hook; discovery for execution stays trust-gated in
+ * {@link discoverCopseHooksDetailed}.
+ */
+export async function listUnsandboxedProjectHooks(
+  workspaceRoot: string,
+): Promise<UnsandboxedProjectHook[]> {
+  const parsed = await parseCopseConfig(projectCopseHooksConfigPath(workspaceRoot), 'project')
+  return parsed.hooks.filter((h) => !h.sandbox).map((h) => ({ event: h.event, command: h.command }))
+}
+
 /**
  * Discover all Copse hooks visible in the current context, with warnings.
  *
