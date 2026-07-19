@@ -60,7 +60,11 @@
   scrollbar-gutter: stable;
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--bg-elevated);
-  border-top: 1px solid var(--border);
+  /* Soft upward shadow instead of a hard border line — the panel reads as
+     floating above the conversation rather than butting against it with a
+     visible seam. --shadow-composer is the theme-tuned upward shadow used by
+     the other bottom-docked chrome. */
+  box-shadow: var(--shadow-composer);
 }
 .conversation-queued[hidden] {
   display: none;
