@@ -79,6 +79,10 @@ import {
 } from './ipc/ipc-guards.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import {
+  resolveThreadExecutionContext,
+  runWithThreadExecutionContext,
+} from './services/thread-execution-context.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -248,14 +252,17 @@ app
       }
 
       const priorMessages = messageHistory.get(threadId) ?? []
-      const result = await runAgent(threadId, userContent, priorMessages, agentHost, registry, {
-        invokedSkills,
-        priorTodos,
-        ...(workingBrief !== undefined ? { workingBrief } : {}),
-        ...(model !== undefined ? { model } : {}),
-        ...(turnTreeId !== undefined ? { turnTreeId } : {}),
-        ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
-      })
+      const executionContext = resolveThreadExecutionContext(threadId)
+      const result = await runWithThreadExecutionContext(executionContext, () =>
+        runAgent(threadId, userContent, priorMessages, agentHost, registry, {
+          invokedSkills,
+          priorTodos,
+          ...(workingBrief !== undefined ? { workingBrief } : {}),
+          ...(model !== undefined ? { model } : {}),
+          ...(turnTreeId !== undefined ? { turnTreeId } : {}),
+          ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
+        }),
+      )
       messageHistory.set(threadId, result.messages)
       storageSet(`llm-history:${threadId}`, result.messages)
     })
