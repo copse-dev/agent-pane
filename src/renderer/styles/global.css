@@ -17,6 +17,7 @@
 @import './global/approval.css';
 @import './global/ask-user.css';
 @import './global/ssh-prompt.css';
+@import './global/update-prompt.css';
 @import './global/mcp.css';
 @import './global/composer-extras.css';
 @import './global/file-search.css';
