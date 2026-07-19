@@ -55,6 +55,21 @@ describe('roadmap start-thread tracking and reopen', () => {
     await expect($('.prompt-input')).toHaveText(PROMPT)
     await $('.roadmap-reopen-btn').waitForDisplayed({ timeout: 15_000 })
     await $('.roadmap-thread-chip').waitForDisplayed({ timeout: 15_000 })
+    await browser.execute(() => {
+      const viewer = document.querySelector<HTMLElement>('.memories-viewer-host')
+      if (viewer) viewer.scrollTop = viewer.scrollHeight
+    })
+    const actionRowBounds = await browser.execute(() => {
+      const cancel = document.querySelector<HTMLButtonElement>('.roadmap-cancel-btn')
+      if (!cancel) return { right: false, bottom: false }
+      const rect = cancel.getBoundingClientRect()
+      return {
+        right: rect.right <= document.documentElement.clientWidth,
+        bottom: rect.bottom <= window.innerHeight,
+      }
+    })
+    assert.equal(actionRowBounds.right, true, 'all roadmap actions should fit horizontally')
+    assert.equal(actionRowBounds.bottom, true, 'the scrolled action row should be fully visible')
     await saveAppScreenshot('roadmap-thread-reopen-tracked.png')
 
     // Switch away to a fresh thread — the composer clears.

@@ -48,6 +48,20 @@
   width: auto;
   align-self: flex-start;
 }
+/* The roadmap has two thread actions (Start + Reopen) in addition to
+   Save/Delete/Cancel. A compact three-column grid keeps every action inside
+   the fixed-width editor column instead of clipping the trailing button. */
+.roadmap-form .memories-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.roadmap-form .memories-actions .memories-btn {
+  min-width: 0;
+  padding-inline: var(--spacing-sm);
+}
+.roadmap-form .memories-actions .memories-btn-danger {
+  margin-left: 0;
+}
 .roadmap-row-meta {
   display: flex;
   flex-wrap: wrap;
