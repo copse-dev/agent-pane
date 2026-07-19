@@ -244,7 +244,7 @@ describe('input bar two-step stop', () => {
     assert.equal(aborts, 0)
 
     composer.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
     )
     await settle()
 

@@ -33,7 +33,7 @@ describe('two-step stop shortcut', function () {
 
     const stopButton = $('.stop-btn')
     await expect(stopButton).toHaveElementClass('stop-pending')
-    await saveElementScreenshot('.input-bar', 'two-step-stop-armed.png')
+    await saveElementScreenshot('#input-bar', 'two-step-stop-armed.png')
 
     await browser.keys('Escape')
     await expect(stopButton).not.toHaveElementClass('stop-pending')

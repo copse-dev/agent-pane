@@ -72,7 +72,7 @@ export function mountInputBar(
   store: AppStore,
   api: ApiClient,
   opts: MountInputBarOptions = {},
-): { handleStopShortcut(key: 'Escape' | 'Enter'): boolean; unmount: () => void } {
+): { handleStopShortcut: (key: 'Escape' | 'Enter') => boolean; unmount: () => void } {
   const chips = el('div', { class: 'attachment-chips' })
   const composer = mountComposerEditor()
   composer.setPlaceholder('Message…')
