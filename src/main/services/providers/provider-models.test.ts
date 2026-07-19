@@ -118,6 +118,27 @@ describe('fetchOpenAiCompatibleModels', () => {
     ])
   })
 
+  it('discovers Perplexity Agent API models from the public endpoint without a key', async () => {
+    let requested = ''
+    let authorization: string | null = 'unexpected'
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      requested = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+      authorization = new Headers(init?.headers).get('authorization')
+      return {
+        ok: true,
+        status: 200,
+        json: async (): Promise<unknown> => ({ data: [{ id: 'openai/live-model' }] }),
+      }
+    }) as typeof fetch
+
+    const res = await fetchOpenAiCompatibleModels('https://api.perplexity.ai/v1')
+
+    assert.equal(res.ok, true)
+    assert.equal(requested, 'https://api.perplexity.ai/v1/models')
+    assert.equal(authorization, null)
+    assert.deepEqual(res.models, [{ id: 'openai/live-model', contextLength: null }])
+  })
+
   it('surfaces an HTTP error', async () => {
     stubFetch(() => ({ ok: false, status: 401, statusText: 'Unauthorized' }))
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1', 'bad-key')

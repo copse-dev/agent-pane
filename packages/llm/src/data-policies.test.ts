@@ -77,6 +77,15 @@ describe('policy defaults match the researched provider behavior', () => {
     assert.equal(policy.trainsOnData, null)
     assert.equal(policy.zdr, 'unknown')
   })
+
+  it('does not overstate the Agent API policy beyond Perplexity’s published wording', () => {
+    const policy = dataPolicyForProvider({ id: 'perplexity' })
+    assert.ok(policy)
+    assert.equal(policy.retainsPrompts, null)
+    assert.equal(policy.trainsOnData, null)
+    assert.equal(policy.zdr, 'unknown')
+    assert.match(policy.note, /Sonar API only/)
+  })
 })
 
 describe('openRouterDataPolicy', () => {

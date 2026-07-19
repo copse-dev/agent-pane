@@ -12,7 +12,7 @@ The machine-readable version of this table lives in
 `packages/llm/src/data-policies.ts` and drives the privacy badges in
 Settings → Providers and the annotations in the model picker.
 
-Last verified: **2026-07-18** (each claim against the provider's own
+Last verified: **2026-07-19** (each claim against the provider's own
 documentation; see sources).
 
 ## What Copse sends by default
@@ -58,6 +58,7 @@ models under the tier Copse's preset advertises, before any opt-out.
 | Google Gemini (`gemini`)            | Yes (55 days on paid tier)             | **Yes** on the free tier            | Paid tier stops product-improvement use; per-project ZDR program by request             |
 | DeepSeek (`deepseek`)               | Yes — indefinitely, stored in the PRC  | **Yes** (service improvement)       | Opt-out by request (privacy@deepseek.com); no documented ZDR                            |
 | Hugging Face router (`huggingface`) | HF: no bodies (30-day debug logs only) | **Partner-dependent**               | None — HF explicitly delegates to each routed partner's policy                          |
+| Perplexity Agent API (`perplexity`) | **Unclear for Agent API**              | **Unclear for Agent API**           | General API FAQ says no query retention/training; dedicated ZDR page names Sonar only   |
 | Together AI (custom prefill)        | No (org privacy setting)               | No (opt-in)                         | Confirm org setting answers "No" to storing prompts                                     |
 | Groq (custom prefill)               | No (≤30-day troubleshooting logs)      | No                                  | Console Data Controls → Zero Data Retention toggle                                      |
 | Fireworks AI (custom prefill)       | No (volatile memory only)              | No (opt-in)                         | ZDR is the default                                                                      |
@@ -73,6 +74,11 @@ Notes:
   no ZDR guarantee on their behalf. Copse pins each HF model to a specific
   partner (`org/model:provider`), so the responsible party is at least visible
   in the model id.
+- **Perplexity Agent API** is intentionally marked unknown rather than ZDR.
+  Perplexity's FAQ says API query data is not retained or trained on, but its
+  dedicated zero-retention documentation explicitly scopes the promise to the
+  Sonar API. Until Perplexity names Agent API or third-party routed models in
+  that guarantee, Copse does not show a zero-retention badge for this preset.
 - **Anthropic ZDR caveat**: under a strict Anthropic ZDR arrangement, models
   that require 30-day retention are unavailable; that trade-off is between the
   customer and Anthropic, not something Copse configures.
@@ -120,6 +126,8 @@ is worse than a stale one.
 - Mistral privacy & ZDR: <https://help.mistral.ai/en/articles/455207-can-i-opt-out-of-my-input-or-output-data-being-used-for-training>,
   <https://help.mistral.ai/en/articles/347612-can-i-activate-zero-data-retention-zdr>
 - DeepSeek privacy policy: <https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html>
+- Perplexity API FAQ and privacy page: <https://docs.perplexity.ai/docs/resources/faq>,
+  <https://docs.perplexity.ai/docs/resources/privacy-security>
 - Together AI: <https://docs.together.ai/docs/privacy-and-security>
 - Groq: <https://console.groq.com/docs/your-data>
 - Fireworks AI: <https://docs.fireworks.ai/guides/security_compliance/data_handling>

@@ -15,7 +15,7 @@
 // coverage of the built-ins.
 
 /** When the entries below were last checked against the linked sources. */
-export const DATA_POLICIES_LAST_VERIFIED = '2026-07-18'
+export const DATA_POLICIES_LAST_VERIFIED = '2026-07-19'
 
 export interface ProviderDataPolicy {
   /**
@@ -100,6 +100,13 @@ const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {
     zdr: 'unknown',
     note: 'Hugging Face does not store request/response bodies (30-day debug logs only), but requests are routed to third-party partners (Together, Fireworks, Novita, …) who each apply their OWN retention and training policy.',
     policyUrl: 'https://huggingface.co/docs/inference-providers/security',
+  },
+  perplexity: {
+    retainsPrompts: null,
+    trainsOnData: null,
+    zdr: 'unknown',
+    note: 'Perplexity’s API FAQ says query data is not retained or used for training, but its dedicated zero-retention page currently names Sonar API only and does not explicitly cover Agent API.',
+    policyUrl: 'https://docs.perplexity.ai/docs/resources/faq',
   },
 }
 
