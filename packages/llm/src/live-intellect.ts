@@ -30,6 +30,18 @@ export const LIVE_ANCHOR_TOLERANCE = 1
 /** Fewer verified anchors than this and the cohort cannot be trusted. */
 export const MIN_LIVE_ANCHORS = 2
 
+/**
+ * The most diverging anchors the gate tolerates, as a fraction of those
+ * checked. A whole-index renormalisation moves EVERY anchor by whole points at
+ * once (v4.0→v4.1 shifted them all by ~5), so it shows up as a majority — far
+ * over this bar — and is still refused. A lone outlier, by contrast, is almost
+ * always one stale curated anchor (e.g. a value we sourced from a chart or a
+ * model page rather than the API), and must not veto an otherwise-canonical
+ * feed. Below this fraction the feed is trusted and the outliers are reported
+ * as stale rather than treated as a scale shift.
+ */
+export const MAX_MISMATCH_FRACTION = 0.25
+
 /** One model row from the live AA feed, already reduced to what we consume. */
 export interface LiveAaModel {
   /** AA's identifier for the model (slug or name) — shown as-is when uncurated. */
@@ -43,9 +55,12 @@ export interface LiveAaModel {
 }
 
 export interface LiveCohortVerification {
-  /** True when the scale is confirmed canonical and no anchor diverged. */
+  /** True when the scale is confirmed canonical: enough anchors agree and the
+   * diverging ones are a minority (see {@link MAX_MISMATCH_FRACTION}). */
   verified: boolean
   anchorsChecked: number
+  /** Anchors within tolerance — the agreeing majority a verified feed needs. */
+  agreeingAnchors: number
   maxDrift: number
   /** Anchors that diverged beyond tolerance (empty when verified). */
   mismatches: Array<{ modelId: string; canonical: number; live: number }>
@@ -101,9 +116,18 @@ export function verifyLiveCohort(
   }
   const version = normalizeIndexVersion(reportedVersion)
   const versionMismatch = version !== undefined && version !== CANONICAL_INTELLECT_VERSION
+  // Trust the feed when enough anchors AGREE and the diverging ones are a
+  // minority (stale individual values, not a renormalised scale). `agreeing`,
+  // not the raw total, must clear MIN_LIVE_ANCHORS so a feed that resolves few
+  // anchors and disagrees on them never passes.
+  const agreeingAnchors = anchorsChecked - mismatches.length
+  const mismatchesAreAMinority =
+    mismatches.length <= Math.floor(anchorsChecked * MAX_MISMATCH_FRACTION)
   return {
-    verified: !versionMismatch && anchorsChecked >= MIN_LIVE_ANCHORS && mismatches.length === 0,
+    verified:
+      !versionMismatch && agreeingAnchors >= MIN_LIVE_ANCHORS && mismatchesAreAMinority,
     anchorsChecked,
+    agreeingAnchors,
     maxDrift,
     mismatches,
     ...(version !== undefined ? { reportedVersion: version } : {}),

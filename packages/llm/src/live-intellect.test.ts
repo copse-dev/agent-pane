@@ -56,6 +56,37 @@ describe('verifyLiveCohort', () => {
     assert.equal(next.reportedVersion, 'v4.2')
   })
 
+  it('trusts a canonical feed despite a minority of stale anchors', () => {
+    // Six anchors agree; one curated value is stale (our 24 vs a live 20). A
+    // lone outlier is stale data, not a renormalised scale, so the feed still
+    // verifies — with the outlier reported.
+    const v = verifyLiveCohort([
+      { id: 'claude-opus-4-8', intellect: 55.7 },
+      { id: 'claude-fable-5', intellect: 59.9 },
+      { id: 'claude-sonnet-4-6', intellect: 35.9 },
+      { id: 'claude-sonnet-5', intellect: 53.4 },
+      { id: 'gpt-4o', intellect: 11.2 },
+      { id: 'gpt-5', intellect: 34.7 },
+      { id: 'claude-haiku-4-5', intellect: 20 },
+    ])
+    assert.equal(v.verified, true)
+    assert.equal(v.agreeingAnchors, 6)
+    assert.equal(v.mismatches.length, 1)
+    assert.equal(v.mismatches[0]?.modelId, 'claude-haiku-4-5')
+  })
+
+  it('still refuses when diverging anchors are not a minority (a real renorm)', () => {
+    // Half the anchors shift — that is a scale change, not stale data.
+    const v = verifyLiveCohort([
+      { id: 'claude-opus-4-8', intellect: 55.7 },
+      { id: 'claude-fable-5', intellect: 59.9 },
+      { id: 'claude-sonnet-4-6', intellect: 41 },
+      { id: 'gpt-4o', intellect: 18 },
+    ])
+    assert.equal(v.verified, false)
+    assert.equal(v.mismatches.length, 2)
+  })
+
   it('anchor defense still applies when the declared version matches', () => {
     // A feed claiming v4.1 whose anchor values are v4.0-shaped is refused.
     const v = verifyLiveCohort(

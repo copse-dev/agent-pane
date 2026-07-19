@@ -1118,8 +1118,15 @@ export function createIntellectFrontierPanel(
     discoverBtn.classList.toggle('active', discover)
     const liveNoteParts: Array<string | HTMLElement> = []
     if (liveFetch.models.length > 0 && live.verification.verified) {
+      const stale = live.verification.mismatches
+      const staleNote =
+        stale.length > 0
+          ? ` ${String(stale.length)} curated value${stale.length === 1 ? '' : 's'} look stale next to the live feed (${stale
+              .map((m) => `${displayModelLabel(m.modelId)} map ${String(m.canonical)} / live ${String(m.live)}`)
+              .join('; ')}) — a maintainer can refresh them with npm run sync:intellect -- --from-api.`
+          : ''
       liveNoteParts.push(
-        `Live points from the Artificial Analysis API, verified against ${String(live.verification.anchorsChecked)} curated anchors. ${INTELLECT_ATTRIBUTION}.`,
+        `Live points from the Artificial Analysis API, verified against ${String(live.verification.agreeingAnchors)} curated anchors. ${INTELLECT_ATTRIBUTION}.${staleNote}`,
       )
     } else if (liveFetch.models.length > 0) {
       // The refusal is working as designed, so keep the headline calm and put
