@@ -28,6 +28,7 @@ function fakeSandbox(opts: {
   enabled: boolean
   violations?: number
   throwOnSpawn?: boolean
+  hangOnSpawn?: boolean
 }): FakeSandbox {
   const fake: FakeSandbox = {
     spawnCalls: 0,
@@ -36,6 +37,7 @@ function fakeSandbox(opts: {
     spawnShell: (command, spawnOpts): Promise<ChildProcess> => {
       fake.spawnCalls += 1
       if (opts.throwOnSpawn) return Promise.reject(new Error('fake sandbox wrapper failed'))
+      if (opts.hangOnSpawn) return new Promise<ChildProcess>(() => {}) // never settles
       const child = spawn(command, {
         cwd: spawnOpts.cwd,
         shell: true,
@@ -108,6 +110,18 @@ describe('hook-spawn — sandbox-by-default reversal (F3)', () => {
     const sandbox = fakeSandbox({ enabled: true, throwOnSpawn: true })
     setHookSandboxRuntimeForTest(sandbox)
     const result = await spawnHookProcess('printf hi', {}, { cwd: process.cwd() })
+    assert.equal(result.spawnError, true)
+    assert.equal(result.sandboxed, true)
+    assert.equal(result.exitCode, null)
+  })
+
+  it('a wedged sandbox wrapper cannot hang a blocking hook: the timeout races the spawn', async () => {
+    const sandbox = fakeSandbox({ enabled: true, hangOnSpawn: true })
+    setHookSandboxRuntimeForTest(sandbox)
+    // The wrapper promise never settles; without the race, the kill timer never
+    // arms (it only exists once a ChildProcess does) and this would hang forever
+    // with the run deadline paused (H4).
+    const result = await spawnHookProcess('printf hi', {}, { cwd: process.cwd(), timeoutMs: 50 })
     assert.equal(result.spawnError, true)
     assert.equal(result.sandboxed, true)
     assert.equal(result.exitCode, null)

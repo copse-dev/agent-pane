@@ -130,6 +130,25 @@ export function setHookSandboxRuntimeForTest(runtime: HookSandboxRuntime | null)
   sandboxRuntime = runtime ?? realSandboxRuntime
 }
 
+/** Reject when `promise` does not settle within `ms` (wedged sandbox wrapper). */
+function promiseWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`sandbox wrapper did not start within ${String(ms)}ms`))
+    }, ms)
+    promise.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (err: unknown) => {
+        clearTimeout(timer)
+        reject(err instanceof Error ? err : new Error(String(err)))
+      },
+    )
+  })
+}
+
 /**
  * Spawn one hook command through a shell, write `stdinPayload` (JSON-serialized)
  * to its stdin, and resolve once it closes / is killed. Never rejects: a spawn
@@ -164,11 +183,20 @@ export async function spawnHookProcess(
       // — session env (H4) then the depth guard last, so a session var can never
       // clobber `COPSE_HOOK_DEPTH` (the recursion guard, decision 5).
       const overlay: NodeJS.ProcessEnv = { ...(opts.sessionEnv ?? {}), ...depthEnv }
-      child = await sandboxRuntime.spawnShell(command, {
-        cwd: opts.cwd,
-        env: overlay,
-        ...(opts.signal ? { signal: opts.signal } : {}),
-      })
+      // Race the wrapper against the hook's own timeout: the kill timer below
+      // only arms once a ChildProcess exists, so a wedged sandbox-wrapper
+      // promise would otherwise hang a *blocking* hook indefinitely (with the
+      // run deadline paused, H4). A wrapper that loses the race is reported as
+      // a spawn error — same failure surface as a wrapper throw.
+      const timeoutMs = opts.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS
+      child = await promiseWithTimeout(
+        sandboxRuntime.spawnShell(command, {
+          cwd: opts.cwd,
+          env: overlay,
+          ...(opts.signal ? { signal: opts.signal } : {}),
+        }),
+        timeoutMs,
+      )
     } else {
       // Unsandboxed path: arbitrary user/project shell with non-LLM tool tokens
       // present in `env`, gated by workspace trust + `cursorHooksEnabled` (see
