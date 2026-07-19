@@ -1045,6 +1045,70 @@ export function renderProviderGroupedList(
   return table
 }
 
+/**
+ * Render the scatter, guarding against a render error taking the whole settings
+ * dialog down — a broken chart degrades to a quiet note. Shared by the inline
+ * panel and the pop-out (which passes a larger size).
+ */
+function renderChart(
+  points: readonly FrontierPoint[],
+  gutters: FrontierGutters,
+  tooltip: FrontierTooltip | undefined,
+  size: { width?: number; height?: number } = {},
+): SVGSVGElement | HTMLElement {
+  try {
+    return points.length > 0
+      ? renderFrontierSvg(points, size, gutters, tooltip)
+      : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
+  } catch (err) {
+    return el(
+      'p',
+      { class: 'field-hint' },
+      `The value map failed to render: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+}
+
+/**
+ * The two "below the chart" disclosures: scored-but-unpriced models in intellect
+ * bands, and priced-but-unscored models grouped by provider. Shared so the
+ * pop-out shows the same lists the inline panel does (its gutter only overlays
+ * the top few on the chart itself).
+ */
+function buildAuxLists(
+  unpricedList: readonly CanonicalScoredModel[],
+  unscoredList: readonly { id: string; costPerMTok: number }[],
+): HTMLElement[] {
+  const out: HTMLElement[] = []
+  if (unpricedList.length > 0) {
+    out.push(
+      el(
+        'details',
+        { class: 'field-hint frontier-unpriced-list' },
+        el('summary', {}, `${String(unpricedList.length)} scored models with no price data yet`),
+        renderBandedModelList(
+          unpricedList.map((u) => ({ id: u.id, intellect: u.intellect, estimated: u.estimated })),
+        ),
+      ),
+    )
+  }
+  if (unscoredList.length > UNSCORED_ROW_LIMIT) {
+    out.push(
+      el(
+        'details',
+        { class: 'field-hint frontier-unscored-list' },
+        el(
+          'summary',
+          {},
+          `${String(unscoredList.length)} priced models without an intellect score`,
+        ),
+        renderProviderGroupedList([...unscoredList]),
+      ),
+    )
+  }
+  return out
+}
+
 export interface IntellectFrontierPanel {
   root: HTMLFieldSetElement
   refresh: () => Promise<void>
@@ -1083,20 +1147,37 @@ export function createIntellectFrontierPanel(
   } | null = null
   let discover = false
   let showUnpriced = false
+  // The full lists behind the chart, cached so the pop-out can show the same
+  // "below the chart" content the inline panel does.
+  let lastUnpriced: readonly CanonicalScoredModel[] = []
+  let lastUnscored: readonly { id: string; costPerMTok: number }[] = []
+  // The open pop-out's chart host + tooltip + toggle buttons (null when closed).
+  // render() repaints these in place so the pop-out's own Discover / Show
+  // unpriced toggles behave exactly like the inline chart's.
+  let expandChartHost: HTMLElement | null = null
+  let expandTooltip: FrontierTooltip | null = null
+  let expandDiscoverBtn: HTMLButtonElement | null = null
+  let expandUnpricedBtn: HTMLButtonElement | null = null
 
-  const discoverBtn = el('button', { type: 'button', class: 'frontier-btn frontier-discover' })
-  discoverBtn.addEventListener('click', () => {
+  function toggleDiscover(): void {
     discover = !discover
     render()
+  }
+  function toggleUnpriced(): void {
+    showUnpriced = !showUnpriced
+    render()
+  }
+
+  const discoverBtn = el('button', {
+    type: 'button',
+    class: 'frontier-btn frontier-discover',
   })
+  discoverBtn.addEventListener('click', toggleDiscover)
   const unpricedBtn = el('button', {
     type: 'button',
     class: 'frontier-btn frontier-unpriced-toggle',
   })
-  unpricedBtn.addEventListener('click', () => {
-    showUnpriced = !showUnpriced
-    render()
-  })
+  unpricedBtn.addEventListener('click', toggleUnpriced)
   const expandBtn = el(
     'button',
     { type: 'button', class: 'frontier-btn frontier-expand' },
@@ -1105,16 +1186,37 @@ export function createIntellectFrontierPanel(
   expandBtn.addEventListener('click', () => {
     if (lastPoints.length === 0) return
     const dialog = el('dialog', { class: 'frontier-expand-dialog' })
-    const close = el('button', { type: 'button' }, 'Close')
-    close.addEventListener('click', () => {
-      dialog.remove()
+    const close = el('button', { type: 'button', class: 'frontier-btn' }, 'Close')
+    expandDiscoverBtn = el('button', {
+      type: 'button',
+      class: 'frontier-btn frontier-discover',
     })
-    const dialogTooltip = createTooltipLayer(dialog)
+    expandDiscoverBtn.addEventListener('click', toggleDiscover)
+    expandUnpricedBtn = el('button', {
+      type: 'button',
+      class: 'frontier-btn frontier-unpriced-toggle',
+    })
+    expandUnpricedBtn.addEventListener('click', toggleUnpriced)
+    const bigChart = el('div', { class: 'frontier-chart frontier-expand-chart' })
+    expandChartHost = bigChart
+    expandTooltip = createTooltipLayer(dialog)
+    const closeDialog = (): void => {
+      expandChartHost = null
+      expandTooltip = null
+      expandDiscoverBtn = null
+      expandUnpricedBtn = null
+      dialog.remove()
+    }
+    close.addEventListener('click', closeDialog)
+    // Esc on a modal dialog fires `cancel`, not a click on Close.
+    dialog.addEventListener('cancel', closeDialog)
     dialog.append(
-      renderFrontierSvg(lastPoints, { width: 920, height: 460 }, lastGutters, dialogTooltip),
-      close,
+      el('div', { class: 'frontier-expand-controls' }, expandDiscoverBtn, expandUnpricedBtn, close),
+      bigChart,
     )
     fieldset.append(dialog)
+    // Paint the pop-out (and sync its toggle buttons) from current state.
+    render()
     // jsdom (tests) lacks showModal; the open attribute is the fallback.
     if (typeof dialog.showModal === 'function') dialog.showModal()
     else dialog.setAttribute('open', '')
@@ -1171,12 +1273,28 @@ export function createIntellectFrontierPanel(
     render()
   }
 
+  // Fill the open pop-out with a large chart plus the same lists the inline
+  // panel shows below its chart (so its "in the list below" gutter note is
+  // accurate). A no-op when no pop-out is open.
+  function paintExpanded(): void {
+    if (!expandChartHost) return
+    expandChartHost.replaceChildren(
+      renderChart(lastPoints, lastGutters, expandTooltip ?? undefined, { width: 1200, height: 680 }),
+      ...buildAuxLists(lastUnpriced, lastUnscored),
+    )
+  }
+
   function render(): void {
     if (!state) return
     const { localIds, extraProviders, live, liveFetch } = state
-    discoverBtn.hidden = live.candidates.length === 0
-    discoverBtn.textContent = discover ? 'Hide discoverable' : 'Discover models'
-    discoverBtn.classList.toggle('active', discover)
+    const applyDiscover = (btn: HTMLButtonElement | null): void => {
+      if (!btn) return
+      btn.hidden = live.candidates.length === 0
+      btn.textContent = discover ? 'Hide discoverable' : 'Discover models'
+      btn.classList.toggle('active', discover)
+    }
+    applyDiscover(discoverBtn)
+    applyDiscover(expandDiscoverBtn)
     const liveNoteParts: Array<string | HTMLElement> = []
     if (liveFetch.models.length > 0 && live.verification.verified) {
       const stale = live.verification.mismatches
@@ -1275,9 +1393,14 @@ export function createIntellectFrontierPanel(
     lastPoints = points
     // The unpriced gutter is off by default (it can carry hundreds); the toggle
     // overlays the top few on the left axis, the full set stays in the list.
-    unpricedBtn.hidden = unpricedModels.length === 0
-    unpricedBtn.textContent = showUnpriced ? 'Hide unpriced' : 'Show unpriced'
-    unpricedBtn.classList.toggle('active', showUnpriced)
+    const applyUnpriced = (btn: HTMLButtonElement | null): void => {
+      if (!btn) return
+      btn.hidden = unpricedModels.length === 0
+      btn.textContent = showUnpriced ? 'Hide unpriced' : 'Show unpriced'
+      btn.classList.toggle('active', showUnpriced)
+    }
+    applyUnpriced(unpricedBtn)
+    applyUnpriced(expandUnpricedBtn)
     lastGutters = {
       ...(showUnpriced ? { unpriced: unpricedModels } : {}),
       unscored: unscoredPricedModels(extraProviders),
@@ -1317,61 +1440,14 @@ export function createIntellectFrontierPanel(
     // The disclosure lists the FULL unpriced set regardless of the gutter
     // toggle (the gutter only overlays the top few on the chart).
     const unpricedList = unpricedModels
-    let chart: SVGSVGElement | HTMLElement
-    try {
-      chart =
-        points.length > 0
-          ? renderFrontierSvg(points, {}, lastGutters, panelTooltip)
-          : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
-    } catch (err) {
-      // The map must never take the settings dialog down with it.
-      chart = el(
-        'p',
-        { class: 'field-hint' },
-        `The value map failed to render: ${err instanceof Error ? err.message : String(err)}`,
-      )
-    }
+    lastUnpriced = unpricedList
+    lastUnscored = unscoredList
     chartHost.replaceChildren(
-      chart,
-      // Scored-but-unpriced models grouped into intellect bands — the canonical
-      // home for them (the left gutter only overlays the top few when toggled).
-      ...(unpricedList.length > 0
-        ? [
-            el(
-              'details',
-              { class: 'field-hint frontier-unpriced-list' },
-              el(
-                'summary',
-                {},
-                `${String(unpricedList.length)} scored models with no price data yet`,
-              ),
-              renderBandedModelList(
-                unpricedList.map((u) => ({
-                  id: u.id,
-                  intellect: u.intellect,
-                  estimated: u.estimated,
-                })),
-              ),
-            ),
-          ]
-        : []),
-      // Priced-but-unscored models, grouped by provider (the natural axis —
-      // "here's what DeepInfra offers that we can't score yet").
-      ...(unscoredList.length > UNSCORED_ROW_LIMIT
-        ? [
-            el(
-              'details',
-              { class: 'field-hint frontier-unscored-list' },
-              el(
-                'summary',
-                {},
-                `${String(unscoredList.length)} priced models without an intellect score`,
-              ),
-              renderProviderGroupedList(unscoredList),
-            ),
-          ]
-        : []),
+      renderChart(points, lastGutters, panelTooltip),
+      ...buildAuxLists(unpricedList, unscoredList),
     )
+    // Repaint the pop-out from the same freshly computed data (no-op if closed).
+    paintExpanded()
     liveNotes.replaceChildren(
       ...liveNoteParts.map((t) => (typeof t === 'string' ? el('span', {}, `${t} `) : t)),
     )

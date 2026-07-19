@@ -423,9 +423,31 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(dialog)
     const svg = dialog.querySelector('svg')
     assert.ok(svg)
-    // 920 wide + the 150px left unpriced gutter; height grows with bottom rows.
-    assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 1070 \d+$/)
+    // 1200 wide + the 150px left unpriced gutter; height grows with bottom rows.
+    assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 1350 \d+$/)
     assert.match(svg.textContent, /no price yet/)
+    // The pop-out carries its own controls and the same "below the chart" list,
+    // so its gutter overflow note ("in the list below") is accurate in place.
+    assert.ok(dialog.querySelector('.frontier-expand-controls button.frontier-discover'))
+    assert.ok(dialog.querySelector('.frontier-expand-controls button.frontier-unpriced-toggle'))
+    assert.ok(dialog.querySelector('details.frontier-unpriced-list'))
+  })
+
+  it('pop-out Show unpriced toggle repaints the pop-out in place', async () => {
+    const panel = createIntellectFrontierPanel(async () => [])
+    await panel.refresh()
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-expand')?.click()
+    const dialog = panel.root.querySelector('dialog.frontier-expand-dialog')
+    assert.ok(dialog)
+    // Gutter off initially: no "no price yet" column in the pop-out chart.
+    assert.doesNotMatch(dialog.querySelector('svg')?.textContent ?? '', /no price yet/)
+    const dlgUnpriced = dialog.querySelector<HTMLButtonElement>(
+      '.frontier-expand-controls button.frontier-unpriced-toggle',
+    )
+    assert.ok(dlgUnpriced)
+    dlgUnpriced.click()
+    // The pop-out repaints in place with the gutter now shown.
+    assert.match(dialog.querySelector('svg')?.textContent ?? '', /no price yet/)
   })
 
   it('degrades to a quiet note when the local server is unreachable', async () => {

@@ -739,15 +739,36 @@ dialog.settings-overlay::backdrop {
   color: var(--text-primary);
 }
 .frontier-expand-dialog {
+  /* position:relative makes the dialog the containing block for the hover
+     tooltip layer appended inside it — without it the absolutely-positioned
+     tooltip resolves against an ancestor behind the modal and never shows. */
+  position: relative;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-base);
   color: var(--text-primary);
   padding: 16px;
-  width: min(960px, 92vw);
-  /* The close button must stay reachable however tall the chart gets. */
-  max-height: 85vh;
+  width: min(1400px, 96vw);
+  /* The controls must stay reachable however tall the chart gets. */
+  max-height: 90vh;
   overflow: auto;
+}
+.frontier-expand-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+/* The controls stay put while the (tall) chart scrolls under them. */
+.frontier-expand-controls {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-base);
+  padding-bottom: 6px;
+}
+.frontier-expand-chart {
+  min-height: 0;
 }
 .frontier-expand-dialog::backdrop {
   background: rgb(0 0 0 / 55%);
