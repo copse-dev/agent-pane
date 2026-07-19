@@ -1,5 +1,6 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { ownedIt } from '../services/thread-execution-context.test-support.ts'
 import { mkdtemp, mkdir, writeFile, rm, stat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -52,7 +53,7 @@ describe('file-ops tools (#122)', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('delete_file stages a deletion that removes the file only after approval', async () => {
+  ownedIt('delete_file stages a deletion that removes the file only after approval', async () => {
     await writeFile(join(tempRoot, 'gone.txt'), 'bye\n', 'utf8')
     const msg = await run(registry, 'delete_file', { path: 'gone.txt' })
     assert.match(msg, /Deletion of gone\.txt staged/)
@@ -68,7 +69,7 @@ describe('file-ops tools (#122)', () => {
     assert.equal(await exists(join(tempRoot, 'gone.txt')), false)
   })
 
-  it('delete_file reports every removed line as edit stats for the tool card', async () => {
+  ownedIt('delete_file reports every removed line as edit stats for the tool card', async () => {
     await writeFile(join(tempRoot, 'gone.txt'), 'a\nb\nc\n', 'utf8')
     const { editStats } = normalizeToolExecuteResult(
       await registry.execute('delete_file', { path: 'gone.txt' }, new AbortController().signal),
@@ -76,13 +77,13 @@ describe('file-ops tools (#122)', () => {
     assert.deepEqual(editStats, { additions: 0, deletions: 3 })
   })
 
-  it('delete_file reports a missing file without staging', async () => {
+  ownedIt('delete_file reports a missing file without staging', async () => {
     const msg = await run(registry, 'delete_file', { path: 'nope.txt' })
     assert.match(msg, /File not found: nope\.txt/)
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
-  it('rename_file stages a move applied only after approval', async () => {
+  ownedIt('rename_file stages a move applied only after approval', async () => {
     await writeFile(join(tempRoot, 'old.txt'), 'data\n', 'utf8')
     const msg = await run(registry, 'rename_file', { from: 'old.txt', to: 'sub/new.txt' })
     assert.match(msg, /Rename of old\.txt/)
@@ -96,7 +97,7 @@ describe('file-ops tools (#122)', () => {
     assert.equal(await readFile(join(tempRoot, 'sub/new.txt'), 'utf8'), 'data\n')
   })
 
-  it('rename_file refuses to clobber an existing destination', async () => {
+  ownedIt('rename_file refuses to clobber an existing destination', async () => {
     await writeFile(join(tempRoot, 'a.txt'), 'a\n', 'utf8')
     await writeFile(join(tempRoot, 'b.txt'), 'b\n', 'utf8')
     const msg = await run(registry, 'rename_file', { from: 'a.txt', to: 'b.txt' })
@@ -104,7 +105,7 @@ describe('file-ops tools (#122)', () => {
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
-  it('make_directory stages creation applied only after approval', async () => {
+  ownedIt('make_directory stages creation applied only after approval', async () => {
     const msg = await run(registry, 'make_directory', { path: 'new/nested/dir' })
     assert.match(msg, /Creation of directory new\/nested\/dir staged/)
     assert.equal(await exists(join(tempRoot, 'new/nested/dir')), false)
@@ -116,7 +117,7 @@ describe('file-ops tools (#122)', () => {
     assert.equal(await exists(join(tempRoot, 'new/nested/dir')), true)
   })
 
-  it('make_directory reports an already-existing directory without staging', async () => {
+  ownedIt('make_directory reports an already-existing directory without staging', async () => {
     await mkdir(join(tempRoot, 'there'), { recursive: true })
     const msg = await run(registry, 'make_directory', { path: 'there' })
     assert.match(msg, /Directory already exists: there/)

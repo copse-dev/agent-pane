@@ -103,6 +103,30 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     syncAgentActivity(store, tid, get(tid).writing)
   }
 
+  type QueuedDiffSummary = { path: string; language: string }
+  const diffQueuesByOwner = new Map<string, QueuedDiffSummary[]>()
+  const ownerKey = (projectId: string, threadId: string): string =>
+    JSON.stringify([projectId, threadId])
+  const isActiveOwner = (projectId: string, threadId: string): boolean => {
+    const current = store.getState()
+    return current.activeProjectId === projectId && current.activeThreadId === threadId
+  }
+  const publishActiveQueue = (entries: QueuedDiffSummary[]): void => {
+    const { activeDiff } = store.getState()
+    const stillQueued =
+      activeDiff && entries.some((entry) => entry.path === activeDiff.path) ? activeDiff : null
+    store.setState({
+      stagedDiffs: entries,
+      rightPanelMode: entries.length > 0 ? 'changes' : store.getState().rightPanelMode,
+      filesPaneOpen: entries.length > 0 ? true : store.getState().filesPaneOpen,
+      activeDiff: entries.length === 0 ? null : stillQueued,
+    })
+    store.emit('staged_diffs_changed')
+    store.emit('panel_changed')
+    if (entries.length > 0) store.emit('right_panel_mode_changed')
+    store.emit('files_pane_changed')
+  }
+
   const unsub = api.agent.onChunk((threadId, chunk) => {
     const st = get(threadId)
     switch (chunk.type) {
@@ -370,7 +394,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     addUsageDelta(store, threadId, usage)
   })
 
-  api.diff.onShowDiff((path, before, after, language) => {
+  api.diff.onShowDiff((projectId, threadId, path, before, after, language) => {
+    if (!isActiveOwner(projectId, threadId)) return
     store.setState({
       activeDiff: { path, before, after, language },
       rightPanelMode: 'changes',
@@ -397,25 +422,34 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     })
   })
 
-  api.diff.onQueued((entries) => {
-    const { activeDiff } = store.getState()
-    const stillQueued =
-      activeDiff && entries.some((e) => e.path === activeDiff.path) ? activeDiff : null
-    store.setState({
-      stagedDiffs: entries,
-      rightPanelMode: entries.length > 0 ? 'changes' : store.getState().rightPanelMode,
-      filesPaneOpen: entries.length > 0 ? true : store.getState().filesPaneOpen,
-      activeDiff: entries.length === 0 ? null : stillQueued,
-    })
-    store.emit('staged_diffs_changed')
-    store.emit('panel_changed')
-    if (entries.length > 0) store.emit('right_panel_mode_changed')
-    store.emit('files_pane_changed')
+  api.diff.onQueued((projectId, threadId, entries) => {
+    diffQueuesByOwner.set(ownerKey(projectId, threadId), entries)
+    if (isActiveOwner(projectId, threadId)) publishActiveQueue(entries)
   })
+
+  let publishedOwnerKey = ownerKey(
+    store.getState().activeProjectId ?? '',
+    store.getState().activeThreadId ?? '',
+  )
+  const syncDiffOwner = (): void => {
+    const { activeProjectId, activeThreadId } = store.getState()
+    const nextOwnerKey = ownerKey(activeProjectId ?? '', activeThreadId ?? '')
+    if (nextOwnerKey === publishedOwnerKey) return
+    publishedOwnerKey = nextOwnerKey
+    const entries =
+      activeProjectId && activeThreadId
+        ? (diffQueuesByOwner.get(ownerKey(activeProjectId, activeThreadId)) ?? [])
+        : []
+    publishActiveQueue(entries)
+  }
+  const unsubDiffWorkspace = store.on('workspace_changed', syncDiffOwner)
+  const unsubDiffThreads = store.on('threads_changed', syncDiffOwner)
 
   return () => {
     unsub()
     unsubHookQueue()
+    unsubDiffWorkspace()
+    unsubDiffThreads()
   }
 }
 

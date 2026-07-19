@@ -77,6 +77,8 @@ afterEach(() => {
 describe('git changes pane catches up on async mount (#459)', () => {
   it('refreshes itself when mounted with changes mode already active', async () => {
     const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
       filesPaneOpen: true,
       rightPanelMode: 'changes',
     })
@@ -102,6 +104,8 @@ describe('git changes pane catches up on async mount (#459)', () => {
 
   it('does not refresh when changes mode is not active on mount', async () => {
     const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
       filesPaneOpen: false,
       rightPanelMode: 'explorer',
     })

@@ -12,8 +12,9 @@
 //
 // House style mirrors `stop.test.ts` (async orchestrator) and
 // `after-file-edit-diff-site.test.ts` (the diff-queue wiring).
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { ownedIt } from '../thread-execution-context.test-support.ts'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -96,7 +97,7 @@ describe('diff-apply Copse-native events (F2)', () => {
   }
 
   describe('runBeforeDiffApplyHooks (blocking)', () => {
-    it('returns not-blocked when no hooks match', async () => {
+    ownedIt('returns not-blocked when no hooks match', async () => {
       const decision = await runBeforeDiffApplyHooks('/abs/src/app.ts', {
         workspaceRoot: null,
         projectTrusted: false,
@@ -104,7 +105,7 @@ describe('diff-apply Copse-native events (F2)', () => {
       assert.deepEqual(decision, { blocked: false })
     })
 
-    it('blocks the apply on a hook deny, surfacing the agent message', async () => {
+    ownedIt('blocks the apply on a hook deny, surfacing the agent message', async () => {
       const script = await writeResponseHook(
         'deny.sh',
         '{"decision":"deny","agentMessage":"secrets not allowed"}',
@@ -119,7 +120,7 @@ describe('diff-apply Copse-native events (F2)', () => {
       assert.equal(decision.agentMessage, 'secrets not allowed')
     })
 
-    it('treats a hook `ask` as a block (a diff apply cannot pause for approval)', async () => {
+    ownedIt('treats a hook `ask` as a block (a diff apply cannot pause for approval)', async () => {
       const script = await writeResponseHook('ask.sh', '{"decision":"ask"}')
       await writeUserCopseHooks({ hooks: { beforeDiffApply: [{ command: script }] } })
 
@@ -130,7 +131,7 @@ describe('diff-apply Copse-native events (F2)', () => {
       assert.equal(decision.blocked, true)
     })
 
-    it('honours a path glob — a non-matching path is not gated', async () => {
+    ownedIt('honours a path glob — a non-matching path is not gated', async () => {
       const script = await writeResponseHook('deny-ts.sh', '{"decision":"deny"}')
       await writeUserCopseHooks({
         hooks: { beforeDiffApply: [{ command: script, glob: '*.ts' }] },
@@ -151,7 +152,7 @@ describe('diff-apply Copse-native events (F2)', () => {
   })
 
   describe('runAfterDiffApplyHooks (async, detached)', () => {
-    it('returns ran:0 when no hooks match', async () => {
+    ownedIt('returns ran:0 when no hooks match', async () => {
       const result = await runAfterDiffApplyHooks(
         { filePath: '/abs/src/app.ts', applied: true },
         {
@@ -165,7 +166,7 @@ describe('diff-apply Copse-native events (F2)', () => {
       await result.settled
     })
 
-    it('dispatches the hook with the applied flag on stdin', async () => {
+    ownedIt('dispatches the hook with the applied flag on stdin', async () => {
       const stdinFile = join(tempHome, 'after.json')
       const script = await writeCaptureHook('after.sh', stdinFile)
       await writeUserCopseHooks({ hooks: { afterDiffApply: [{ command: script }] } })
@@ -191,7 +192,7 @@ describe('diff-apply Copse-native events (F2)', () => {
   })
 
   describe('diff-queue wiring', () => {
-    it('a beforeDiffApply deny fails the apply (gated on cursorHooksEnabled)', async () => {
+    ownedIt('a beforeDiffApply deny fails the apply (gated on cursorHooksEnabled)', async () => {
       const script = await writeResponseHook('block.sh', '{"decision":"deny","agentMessage":"no"}')
       await writeUserCopseHooks({ hooks: { beforeDiffApply: [{ command: script }] } })
       await setSetting('cursorHooksEnabled', true)
@@ -206,7 +207,7 @@ describe('diff-apply Copse-native events (F2)', () => {
       assert.equal(existsSync(join(workspaceRoot, 'src/app.ts')), false)
     })
 
-    it('does not block the apply when cursorHooksEnabled is off (default)', async () => {
+    ownedIt('does not block the apply when cursorHooksEnabled is off (default)', async () => {
       const script = await writeResponseHook('block.sh', '{"decision":"deny"}')
       await writeUserCopseHooks({ hooks: { beforeDiffApply: [{ command: script }] } })
       // Setting left at its default (off).
@@ -220,7 +221,7 @@ describe('diff-apply Copse-native events (F2)', () => {
       assert.deepEqual(result, { status: 'written' })
     })
 
-    it('afterDiffApply fires with applied:false on a reject (headless resolver)', async () => {
+    ownedIt('afterDiffApply fires with applied:false on a reject (headless resolver)', async () => {
       const stdinFile = join(tempHome, 'rejected.json')
       const script = await writeCaptureHook('after-reject.sh', stdinFile)
       await writeUserCopseHooks({ hooks: { afterDiffApply: [{ command: script }] } })
@@ -233,17 +234,20 @@ describe('diff-apply Copse-native events (F2)', () => {
       assert.equal(stdin.applied, false)
     })
 
-    it('afterDiffApply fires with applied:true on an approve (headless resolver)', async () => {
-      const stdinFile = join(tempHome, 'approved.json')
-      const script = await writeCaptureHook('after-approve.sh', stdinFile)
-      await writeUserCopseHooks({ hooks: { afterDiffApply: [{ command: script }] } })
-      await setSetting('cursorHooksEnabled', true)
-      setStagedDiffResolver(() => Promise.resolve(true))
+    ownedIt(
+      'afterDiffApply fires with applied:true on an approve (headless resolver)',
+      async () => {
+        const stdinFile = join(tempHome, 'approved.json')
+        const script = await writeCaptureHook('after-approve.sh', stdinFile)
+        await writeUserCopseHooks({ hooks: { afterDiffApply: [{ command: script }] } })
+        await setSetting('cursorHooksEnabled', true)
+        setStagedDiffResolver(() => Promise.resolve(true))
 
-      await stageDiff('src/ok.ts', '', 'export const y = 2\n', 'typescript')
-      assert.equal(await waitForFile(stdinFile), true)
-      const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { applied?: boolean }
-      assert.equal(stdin.applied, true)
-    })
+        await stageDiff('src/ok.ts', '', 'export const y = 2\n', 'typescript')
+        assert.equal(await waitForFile(stdinFile), true)
+        const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { applied?: boolean }
+        assert.equal(stdin.applied, true)
+      },
+    )
   })
 })

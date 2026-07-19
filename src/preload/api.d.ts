@@ -120,16 +120,31 @@ export interface ApiClient {
     ) => () => void
   }
   diff: {
-    approve: (path: string) => Promise<void>
-    reject: (path: string) => Promise<void>
-    approveAll: () => Promise<void>
-    rejectAll: () => Promise<void>
-    content: (path: string) => Promise<ActiveDiff | null>
+    approve: (projectId: string, threadId: string, path: string) => Promise<void>
+    reject: (projectId: string, threadId: string, path: string) => Promise<void>
+    approveAll: (projectId: string, threadId: string) => Promise<void>
+    rejectAll: (projectId: string, threadId: string) => Promise<void>
+    content: (projectId: string, threadId: string, path: string) => Promise<ActiveDiff | null>
     onShowDiff: (
-      handler: (path: string, before: string, after: string, lang: string) => void,
+      handler: (
+        projectId: string,
+        threadId: string,
+        path: string,
+        before: string,
+        after: string,
+        lang: string,
+      ) => void,
     ) => () => void
-    onQueued: (handler: (entries: { path: string; language: string }[]) => void) => () => void
-    onConflict: (handler: (paths: string[]) => void) => () => void
+    onQueued: (
+      handler: (
+        projectId: string,
+        threadId: string,
+        entries: { path: string; language: string }[],
+      ) => void,
+    ) => () => void
+    onConflict: (
+      handler: (projectId: string, threadId: string, paths: string[]) => void,
+    ) => () => void
   }
   approval: {
     respond: (
@@ -515,9 +530,9 @@ export interface ApiClient {
     listBranches: () => Promise<GitBranchInfo[]>
     getDefaultBranch: () => Promise<string | null>
     /** The pre-session worktree backup taken this session, or null when none. */
-    sessionBackup: () => Promise<SessionBackup | null>
+    sessionBackup: (projectId: string, threadId: string) => Promise<SessionBackup | null>
     /** Revert the session backup's captured paths to their pre-session content. */
-    restoreBackup: () => Promise<boolean>
+    restoreBackup: (projectId: string, threadId: string) => Promise<boolean>
   }
   gh: {
     status: () => Promise<GhCliStatus>

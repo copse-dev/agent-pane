@@ -2,12 +2,16 @@ import { errorMessage } from '@shared/errors.ts'
 import { dirname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
-import { assertWorkspaceWriteTarget, resolveWorkspacePath } from './workspace.ts'
+import {
+  assertWorkspaceWriteTarget,
+  getActiveProjectId,
+  getWorkspaceRoot,
+  resolveWorkspacePath,
+} from './workspace.ts'
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
-import { getWorkspaceRoot } from './workspace.ts'
 import { buildIndex } from './search/file-index.ts'
 import { getGitStatus } from './github/git-service.ts'
-import { assertMainFrameSender } from '../ipc/ipc-guards.ts'
+import { assertMainFrameSender, parseIpcArgs, zProjectId, zThreadId } from '../ipc/ipc-guards.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { ensureSessionBackup, getSessionBackup } from './worktree-backup.ts'
 import { READONLY_MODE_BLOCK_MESSAGE } from '@shared/tools/readonly-tools.ts'
@@ -18,6 +22,10 @@ import { runBeforeDiffApplyHooks, runAfterDiffApplyHooks } from './hooks/diff-ap
 import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 import { snapshotHookRunContext } from './hook-run-recorder.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import {
+  requireThreadExecutionOwner,
+  type ThreadExecutionOwner,
+} from './thread-execution-context.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -62,8 +70,40 @@ export type ApplyResult =
   | { status: 'conflict'; current: string }
   | { status: 'error'; error: string }
 
-const queue: QueueEntry[] = []
-const recentDecisions: DiffDecision[] = []
+type DecisionWaiter = (status: DiffDecision['status']) => void
+
+interface DiffQueueState {
+  readonly queue: QueueEntry[]
+  readonly recentDecisions: DiffDecision[]
+  readonly directAppliedSnapshots: Map<string, string>
+  readonly decisionWaiters: Map<string, Set<DecisionWaiter>>
+}
+
+const statesByProject = new Map<string, Map<string, DiffQueueState>>()
+
+function createDiffQueueState(): DiffQueueState {
+  return {
+    queue: [],
+    recentDecisions: [],
+    directAppliedSnapshots: new Map(),
+    decisionWaiters: new Map(),
+  }
+}
+
+function stateFor(owner: ThreadExecutionOwner = requireThreadExecutionOwner()): DiffQueueState {
+  let projectStates = statesByProject.get(owner.projectId)
+  if (!projectStates) {
+    projectStates = new Map()
+    statesByProject.set(owner.projectId, projectStates)
+  }
+  let state = projectStates.get(owner.threadId)
+  if (!state) {
+    state = createDiffQueueState()
+    projectStates.set(owner.threadId, state)
+  }
+  return state
+}
+
 /**
  * Content Copse last wrote directly (bypassing the approval queue) per path.
  * `canApplyDirectly` uses it to tell its own past edits apart from unowned
@@ -72,7 +112,6 @@ const recentDecisions: DiffDecision[] = []
  * (it falls back to staging for approval), never less safe. Bounded by
  * insertion order so a long-running session can't grow it without limit.
  */
-const directAppliedSnapshots = new Map<string, string>()
 const MAX_DIRECT_APPLIED_SNAPSHOTS = 1000
 let mainWindow: BrowserWindow | null = null
 
@@ -97,7 +136,9 @@ export function setStagedDiffResolver(resolver: StagedDiffResolver | null): void
  * headless mode where there is no renderer to approve via IPC.
  */
 async function resolveStagedEntry(path: string): Promise<string> {
-  const entry = queue.find((e) => e.path === path)
+  const owner = requireThreadExecutionOwner()
+  const state = stateFor(owner)
+  const entry = state.queue.find((e) => e.path === path)
   if (!entry) return `No staged change found for ${path}.`
   const resolver = stagedDiffResolver
   if (!resolver) return `No staged change found for ${path}.`
@@ -108,24 +149,24 @@ async function resolveStagedEntry(path: string): Promise<string> {
     approved = false
   }
   if (!approved) {
-    recordDecision({ path, status: 'rejected' })
-    removeEntry(path)
+    recordDecision(state, owner, { path, status: 'rejected' })
+    removeEntry(state, owner, path)
     return `Change to ${path} was rejected; nothing was written to disk.`
   }
   const result = await applyDiffEntry(entry)
   if (result.status === 'conflict') {
-    restage(entry, result.current)
-    recordDecision({ path, status: 'conflict' })
+    restage(owner, entry, result.current)
+    recordDecision(state, owner, { path, status: 'conflict' })
     return `Could not write ${path}: it changed on disk since the edit was prepared. Re-read the file and try again.`
   }
   if (result.status === 'error') {
-    recordDecision({ path, status: 'error', error: result.error })
-    removeEntry(path)
+    recordDecision(state, owner, { path, status: 'error', error: result.error })
+    removeEntry(state, owner, path)
     return `Failed to write ${path}: ${result.error}`
   }
-  recordOwnershipAfterApply(entry)
-  recordDecision({ path, status: 'approved' })
-  removeEntry(path)
+  recordOwnershipAfterApply(state, entry)
+  recordDecision(state, owner, { path, status: 'approved' })
+  removeEntry(state, owner, path)
   const root = getWorkspaceRoot()
   if (root) await buildIndex(root)
   return `Approved and applied change to ${path}.`
@@ -142,15 +183,15 @@ function ownedKey(path: string): string {
   return path.replace(/\\/g, '/').replace(/^(?:\.\/)+/, '')
 }
 
-function recordDirectAppliedSnapshot(path: string, content: string): void {
+function recordDirectAppliedSnapshot(state: DiffQueueState, path: string, content: string): void {
   const key = ownedKey(path)
   // Re-insert so a refreshed path counts as most-recent for eviction.
-  directAppliedSnapshots.delete(key)
-  directAppliedSnapshots.set(key, content)
-  while (directAppliedSnapshots.size > MAX_DIRECT_APPLIED_SNAPSHOTS) {
-    const oldest = directAppliedSnapshots.keys().next().value
+  state.directAppliedSnapshots.delete(key)
+  state.directAppliedSnapshots.set(key, content)
+  while (state.directAppliedSnapshots.size > MAX_DIRECT_APPLIED_SNAPSHOTS) {
+    const oldest = state.directAppliedSnapshots.keys().next().value
     if (oldest === undefined) break
-    directAppliedSnapshots.delete(oldest)
+    state.directAppliedSnapshots.delete(oldest)
   }
 }
 
@@ -164,15 +205,15 @@ function recordDirectAppliedSnapshot(path: string, content: string): void {
  * source are gone (empty, matching a missing-file read); a mkdir leaves no file
  * that surfaces in `git status`, so there is nothing to own.
  */
-function recordOwnershipAfterApply(entry: QueueEntry): void {
+function recordOwnershipAfterApply(state: DiffQueueState, entry: QueueEntry): void {
   const op = entry.op ?? 'write'
   if (op === 'write') {
-    recordDirectAppliedSnapshot(entry.path, entry.after)
+    recordDirectAppliedSnapshot(state, entry.path, entry.after)
   } else if (op === 'delete') {
-    recordDirectAppliedSnapshot(entry.path, '')
+    recordDirectAppliedSnapshot(state, entry.path, '')
   } else if (op === 'rename' && entry.renameTo) {
-    recordDirectAppliedSnapshot(entry.path, '')
-    recordDirectAppliedSnapshot(entry.renameTo, entry.after)
+    recordDirectAppliedSnapshot(state, entry.path, '')
+    recordDirectAppliedSnapshot(state, entry.renameTo, entry.after)
   }
 }
 
@@ -180,17 +221,17 @@ function cloneEntry(entry: QueueEntry): QueueEntry {
   return { ...entry }
 }
 
-export function listStagedDiffEntries(): QueueEntry[] {
-  return queue.map(cloneEntry)
+export function listStagedDiffEntries(owner?: ThreadExecutionOwner): QueueEntry[] {
+  return stateFor(owner).queue.map(cloneEntry)
 }
 
-export function getStagedDiffEntry(path: string): QueueEntry | null {
-  const entry = queue.find((e) => e.path === path)
+export function getStagedDiffEntry(path: string, owner?: ThreadExecutionOwner): QueueEntry | null {
+  const entry = stateFor(owner).queue.find((e) => e.path === path)
   return entry ? cloneEntry(entry) : null
 }
 
 export function getPendingAfterContent(path: string): string | null {
-  return queue.find((e) => e.path === path)?.after ?? null
+  return stateFor().queue.find((e) => e.path === path)?.after ?? null
 }
 
 async function readCurrentContent(path: string): Promise<string> {
@@ -203,9 +244,10 @@ async function readCurrentContent(path: string): Promise<string> {
 }
 
 async function canApplyDirectly(
+  state: DiffQueueState,
   path: string,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (queue.length > 0) {
+  if (state.queue.length > 0) {
     return { ok: false, reason: 'there are pending staged diffs waiting for user approval' }
   }
 
@@ -216,7 +258,7 @@ async function canApplyDirectly(
 
   const changedPaths = [...status.staged, ...status.unstaged].map((change) => change.path)
   const unownedChanges = changedPaths.filter(
-    (changedPath) => !directAppliedSnapshots.has(ownedKey(changedPath)),
+    (changedPath) => !state.directAppliedSnapshots.has(ownedKey(changedPath)),
   )
   if (unownedChanges.length > 0) {
     // The user has uncommitted work Copse didn't make this turn. Rather than
@@ -233,11 +275,11 @@ async function canApplyDirectly(
       }
     }
     for (const changedPath of new Set(unownedChanges)) {
-      recordDirectAppliedSnapshot(changedPath, await readCurrentContent(changedPath))
+      recordDirectAppliedSnapshot(state, changedPath, await readCurrentContent(changedPath))
     }
   }
 
-  const lastDirectContent = directAppliedSnapshots.get(ownedKey(path))
+  const lastDirectContent = state.directAppliedSnapshots.get(ownedKey(path))
   if (lastDirectContent !== undefined && (await readCurrentContent(path)) !== lastDirectContent) {
     return {
       ok: false,
@@ -275,8 +317,9 @@ export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
  * stale-overwrite guard still protects them. Returns the adopted paths.
  */
 export async function adoptWorktreeChangesSince(baseline: Map<string, string>): Promise<string[]> {
+  const state = stateFor()
   const changes = await worktreeChangesSince(baseline)
-  for (const { path, after } of changes) recordDirectAppliedSnapshot(path, after)
+  for (const { path, after } of changes) recordDirectAppliedSnapshot(state, path, after)
   return changes.map((c) => c.path)
 }
 
@@ -318,8 +361,6 @@ export async function listWorktreeChangesSince(baseline: Map<string, string>): P
  * resolved from {@link recordDecision}, the single choke point every terminal
  * decision flows through.
  */
-const decisionWaiters = new Map<string, Set<(status: DiffDecision['status']) => void>>()
-
 /**
  * Resolve once a staged diff for `path` reaches a terminal decision
  * (applied/approved/rejected/error). A `conflict` is not terminal — the entry is
@@ -327,53 +368,64 @@ const decisionWaiters = new Map<string, Set<(status: DiffDecision['status']) => 
  * decision settles it.
  */
 export function awaitStagedDiffDecision(path: string): Promise<DiffDecision['status']> {
+  const state = stateFor()
   return new Promise((resolve) => {
-    let waiters = decisionWaiters.get(path)
+    let waiters = state.decisionWaiters.get(path)
     if (!waiters) {
       waiters = new Set()
-      decisionWaiters.set(path, waiters)
+      state.decisionWaiters.set(path, waiters)
     }
     waiters.add(resolve)
   })
 }
 
-function settleDecisionWaiters(path: string, status: DiffDecision['status']): void {
-  const waiters = decisionWaiters.get(path)
+function settleDecisionWaiters(
+  state: DiffQueueState,
+  path: string,
+  status: DiffDecision['status'],
+): void {
+  const waiters = state.decisionWaiters.get(path)
   if (!waiters) return
-  decisionWaiters.delete(path)
+  state.decisionWaiters.delete(path)
   for (const resolve of waiters) resolve(status)
 }
 
-function recordDecision(decision: Omit<DiffDecision, 'at'>): void {
-  recentDecisions.unshift({ ...decision, at: Date.now() })
-  recentDecisions.splice(20)
+function recordDecision(
+  state: DiffQueueState,
+  owner: ThreadExecutionOwner,
+  decision: Omit<DiffDecision, 'at'>,
+): void {
+  state.recentDecisions.unshift({ ...decision, at: Date.now() })
+  state.recentDecisions.splice(20)
   // Unblock awaitStagedDiffDecision on terminal outcomes only; a conflict
   // re-stages the entry and the user decides again.
-  if (decision.status !== 'conflict') settleDecisionWaiters(decision.path, decision.status)
+  if (decision.status !== 'conflict') {
+    settleDecisionWaiters(state, decision.path, decision.status)
+  }
   // F2: `afterDiffApply` fires at this single terminal-decision choke point.
   // A conflict is not terminal (the entry is re-staged), so it never fires; every
   // other status does — `applied` is true only when the diff actually landed.
   if (decision.status !== 'conflict') {
     const applied = decision.status === 'approved' || decision.status === 'applied_directly'
-    fireAfterDiffApply(decision.path, applied)
+    fireAfterDiffApply(owner, decision.path, applied)
   }
 }
 
-export function listRecentStagedDiffDecisions(): DiffDecision[] {
-  return recentDecisions.map((d) => ({ ...d }))
+export function listRecentStagedDiffDecisions(owner?: ThreadExecutionOwner): DiffDecision[] {
+  return stateFor(owner).recentDecisions.map((d) => ({ ...d }))
 }
 
-export function getRecentStagedDiffDecision(path: string): DiffDecision | null {
-  const decision = recentDecisions.find((d) => d.path === path)
+export function getRecentStagedDiffDecision(
+  path: string,
+  owner?: ThreadExecutionOwner,
+): DiffDecision | null {
+  const decision = stateFor(owner).recentDecisions.find((d) => d.path === path)
   return decision ? { ...decision } : null
 }
 
 /** @internal test helper */
 export function clearStagedDiffsForTest(): void {
-  queue.length = 0
-  recentDecisions.length = 0
-  directAppliedSnapshots.clear()
-  decisionWaiters.clear()
+  statesByProject.clear()
 }
 
 /**
@@ -474,11 +526,11 @@ async function fireBeforeDiffApply(path: string): Promise<{ blocked: boolean; re
  * (default off). `applied` is true for approve / direct-apply, false for a
  * reject or write error.
  */
-function fireAfterDiffApply(path: string, applied: boolean): void {
+function fireAfterDiffApply(owner: ThreadExecutionOwner, path: string, applied: boolean): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
   const workspaceRoot = getWorkspaceRoot()
   const agentSession = currentAgentSessionInfo()
-  const threadId = agentSession.conversationId || 'diff-apply'
+  const threadId = agentSession.conversationId || owner.threadId
   const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
   // Snapshot the recording context now, synchronously, like `fireStopHook`: the
   // dispatch below is detached and the path resolution is async, so the live
@@ -593,34 +645,55 @@ async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
 export function initDiffQueue(win: BrowserWindow): void {
   mainWindow = win
 
-  ipcMain.handle('diff:approve', async (event, path: string) => {
-    assertMainFrameSender(event, win)
-    const entry = queue.find((e) => e.path === path)
-    if (!entry) return
-    const result = await applyDiffEntry(entry)
-    if (result.status === 'conflict') {
-      restage(entry, result.current)
-      recordDecision({ path: entry.path, status: 'conflict' })
-      mainWindow?.webContents.send('diff:conflict', [entry.path])
-      return
+  function parseOwner(projectIdArg: unknown, threadIdArg: unknown): ThreadExecutionOwner {
+    const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+    if (getActiveProjectId() !== projectId) {
+      throw new Error(`Cannot manage diffs for inactive project "${projectId}"`)
     }
-    if (result.status === 'error') {
-      // Leave the entry queued so the user can retry; surface the failure.
-      recordDecision({ path: entry.path, status: 'error', error: result.error })
-      throw new Error(`Failed to write ${entry.path}: ${result.error}`)
-    }
-    const root = getWorkspaceRoot()
-    if (root) await buildIndex(root)
-    recordOwnershipAfterApply(entry)
-    recordDecision({ path: entry.path, status: 'approved' })
-    removeEntry(path)
-  })
+    return { projectId, threadId }
+  }
 
-  ipcMain.handle('diff:reject', (event, path: string) => {
-    assertMainFrameSender(event, win)
-    if (queue.some((e) => e.path === path)) recordDecision({ path, status: 'rejected' })
-    removeEntry(path)
-  })
+  ipcMain.handle(
+    'diff:approve',
+    async (event, projectIdArg: unknown, threadIdArg: unknown, path: string) => {
+      assertMainFrameSender(event, win)
+      const owner = parseOwner(projectIdArg, threadIdArg)
+      const state = stateFor(owner)
+      const entry = state.queue.find((e) => e.path === path)
+      if (!entry) return
+      const result = await applyDiffEntry(entry)
+      if (result.status === 'conflict') {
+        restage(owner, entry, result.current)
+        recordDecision(state, owner, { path: entry.path, status: 'conflict' })
+        mainWindow?.webContents.send('diff:conflict', owner.projectId, owner.threadId, [entry.path])
+        return
+      }
+      if (result.status === 'error') {
+        // Leave the entry queued so the user can retry; surface the failure.
+        recordDecision(state, owner, { path: entry.path, status: 'error', error: result.error })
+        throw new Error(`Failed to write ${entry.path}: ${result.error}`)
+      }
+      const root = getWorkspaceRoot()
+      if (root) await buildIndex(root)
+      recordOwnershipAfterApply(state, entry)
+      recordDecision(state, owner, { path: entry.path, status: 'approved' })
+      removeEntry(state, owner, path)
+    },
+  )
+
+  ipcMain.handle(
+    'diff:reject',
+    (event, projectIdArg: unknown, threadIdArg: unknown, path: string) => {
+      assertMainFrameSender(event, win)
+      const owner = parseOwner(projectIdArg, threadIdArg)
+      const state = stateFor(owner)
+      if (state.queue.some((e) => e.path === path)) {
+        recordDecision(state, owner, { path, status: 'rejected' })
+      }
+      removeEntry(state, owner, path)
+    },
+  )
 
   // On-demand fetch of a queued diff's full content. `agent:show_diff` pushes the
   // before/after payload once when a diff is staged, but the renderer's Changes
@@ -628,28 +701,36 @@ export function initDiffQueue(win: BrowserWindow): void {
   // loads async, #459) or is remounted on popout/workspace switch, and nothing
   // replays the push. Selecting such a proposed file would otherwise clear the
   // viewer; this lets the pane pull the content the queue still holds.
-  ipcMain.handle('diff:content', (event, path: string) => {
+  ipcMain.handle(
+    'diff:content',
+    (event, projectIdArg: unknown, threadIdArg: unknown, path: string) => {
+      assertMainFrameSender(event, win)
+      const owner = parseOwner(projectIdArg, threadIdArg)
+      const entry = typeof path === 'string' ? getStagedDiffEntry(path, owner) : null
+      if (!entry) return null
+      return {
+        path: entry.path,
+        before: entry.before,
+        after: entry.after,
+        language: entry.language,
+      }
+    },
+  )
+
+  ipcMain.handle('diff:approveAll', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
-    const entry = typeof path === 'string' ? getStagedDiffEntry(path) : null
-    if (!entry) return null
-    return {
-      path: entry.path,
-      before: entry.before,
-      after: entry.after,
-      language: entry.language,
+    return approveAllStagedDiffs(parseOwner(projectIdArg, threadIdArg))
+  })
+
+  ipcMain.handle('diff:rejectAll', (event, projectIdArg: unknown, threadIdArg: unknown) => {
+    assertMainFrameSender(event, win)
+    const owner = parseOwner(projectIdArg, threadIdArg)
+    const state = stateFor(owner)
+    for (const entry of state.queue) {
+      recordDecision(state, owner, { path: entry.path, status: 'rejected' })
     }
-  })
-
-  ipcMain.handle('diff:approveAll', (event) => {
-    assertMainFrameSender(event, win)
-    return approveAllStagedDiffs()
-  })
-
-  ipcMain.handle('diff:rejectAll', (event) => {
-    assertMainFrameSender(event, win)
-    for (const entry of queue) recordDecision({ path: entry.path, status: 'rejected' })
-    queue.length = 0
-    broadcastQueue()
+    state.queue.length = 0
+    broadcastQueue(state, owner)
   })
 }
 
@@ -662,36 +743,49 @@ export function initDiffQueue(win: BrowserWindow): void {
  * concurrently — even a re-stage of an already-applied path, which upsert
  * replaces with a fresh object — survives. Throws if any write failed (#118).
  */
-export async function approveAllStagedDiffs(): Promise<void> {
+export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promise<void> {
+  const resolvedOwner = owner ?? requireThreadExecutionOwner()
+  const state = stateFor(resolvedOwner)
   const conflicts: string[] = []
   const failures: { path: string; error: string }[] = []
-  const toApply = [...queue]
+  const toApply = [...state.queue]
   const appliedEntries = new Set<QueueEntry>()
   for (const entry of toApply) {
     const result = await applyDiffEntry(entry)
     if (result.status === 'conflict') {
-      restage(entry, result.current)
-      recordDecision({ path: entry.path, status: 'conflict' })
+      restage(resolvedOwner, entry, result.current)
+      recordDecision(state, resolvedOwner, { path: entry.path, status: 'conflict' })
       conflicts.push(entry.path)
     } else if (result.status === 'error') {
-      recordDecision({ path: entry.path, status: 'error', error: result.error })
+      recordDecision(state, resolvedOwner, {
+        path: entry.path,
+        status: 'error',
+        error: result.error,
+      })
       failures.push({ path: entry.path, error: result.error })
     } else {
-      recordOwnershipAfterApply(entry)
-      recordDecision({ path: entry.path, status: 'approved' })
+      recordOwnershipAfterApply(state, entry)
+      recordDecision(state, resolvedOwner, { path: entry.path, status: 'approved' })
       appliedEntries.add(entry)
     }
   }
   if (appliedEntries.size > 0) {
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
-    for (let i = queue.length - 1; i >= 0; i--) {
-      const queued = queue[i]
-      if (queued && appliedEntries.has(queued)) queue.splice(i, 1)
+    for (let i = state.queue.length - 1; i >= 0; i--) {
+      const queued = state.queue[i]
+      if (queued && appliedEntries.has(queued)) state.queue.splice(i, 1)
     }
   }
-  if (conflicts.length) mainWindow?.webContents.send('diff:conflict', conflicts)
-  broadcastQueue()
+  if (conflicts.length) {
+    mainWindow?.webContents.send(
+      'diff:conflict',
+      resolvedOwner.projectId,
+      resolvedOwner.threadId,
+      conflicts,
+    )
+  }
+  broadcastQueue(state, resolvedOwner)
   if (failures.length > 0) {
     throw new Error(
       `Failed to write ${String(failures.length)} file(s):\n${failures
@@ -706,10 +800,12 @@ export async function approveAllStagedDiffs(): Promise<void> {
  * current on-disk content and re-emit the diff so the user reviews their change
  * against the file's real state before re-approving.
  */
-function restage(entry: QueueEntry, current: string): void {
+function restage(owner: ThreadExecutionOwner, entry: QueueEntry, current: string): void {
   entry.before = current
   mainWindow?.webContents.send(
     'agent:show_diff',
+    owner.projectId,
+    owner.threadId,
     entry.path,
     entry.before,
     entry.after,
@@ -724,13 +820,23 @@ export function stageDiff(
   language: string,
 ): Promise<string> {
   if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
-  const hadPending = queue.some((e) => e.path === path)
-  upsertStagedDiffEntry(queue, { path, before, after, language, op: 'write' })
-  const entry = queue.find((e) => e.path === path)
+  const owner = requireThreadExecutionOwner()
+  const state = stateFor(owner)
+  const hadPending = state.queue.some((e) => e.path === path)
+  upsertStagedDiffEntry(state.queue, { path, before, after, language, op: 'write' })
+  const entry = state.queue.find((e) => e.path === path)
   if (!entry) throw new Error(`Staged diff entry for ${path} missing immediately after upsert`)
   // Payload before queue broadcast so the renderer can populate activeDiff first.
-  mainWindow?.webContents.send('agent:show_diff', path, entry.before, entry.after, entry.language)
-  broadcastQueue()
+  mainWindow?.webContents.send(
+    'agent:show_diff',
+    owner.projectId,
+    owner.threadId,
+    path,
+    entry.before,
+    entry.after,
+    entry.language,
+  )
+  broadcastQueue(state, owner)
   // Headless host (e.g. ACP): resolve the staged entry inline instead of waiting
   // for a renderer that will never answer.
   if (stagedDiffResolver) return resolveStagedEntry(path)
@@ -746,7 +852,9 @@ export async function applyOrStageDiff(
   language: string,
 ): Promise<string> {
   if (isAgentRunReadonly()) return READONLY_MODE_BLOCK_MESSAGE
-  const direct = await canApplyDirectly(path)
+  const owner = requireThreadExecutionOwner()
+  const state = stateFor(owner)
+  const direct = await canApplyDirectly(state, path)
   if (!direct.ok) {
     const staged = await stageDiff(path, before, after, language)
     return `${staged}\nReason approval is required: ${direct.reason}.`
@@ -754,8 +862,8 @@ export async function applyOrStageDiff(
 
   const result = await applyDiffEntry({ path, before, after, language })
   if (result.status === 'written') {
-    recordDirectAppliedSnapshot(path, after)
-    recordDecision({ path, status: 'applied_directly' })
+    recordDirectAppliedSnapshot(state, path, after)
+    recordDecision(state, owner, { path, status: 'applied_directly' })
     const root = getWorkspaceRoot()
     if (root) await buildIndex(root)
     const backup = getSessionBackup()
@@ -766,10 +874,10 @@ export async function applyOrStageDiff(
   }
   if (result.status === 'conflict') {
     const staged = await stageDiff(path, result.current, after, language)
-    recordDecision({ path, status: 'conflict' })
+    recordDecision(state, owner, { path, status: 'conflict' })
     return `${staged}\nDirect apply was skipped because the file changed after it was read; review the staged diff before approval.`
   }
-  recordDecision({ path, status: 'error', error: result.error })
+  recordDecision(state, owner, { path, status: 'error', error: result.error })
   return `Failed to write ${path}: ${result.error}`
 }
 
@@ -789,7 +897,9 @@ export function stageFileOp(entry: {
   renameTo?: string
 }): Promise<string> {
   if (isAgentRunReadonly()) return Promise.resolve(READONLY_MODE_BLOCK_MESSAGE)
-  const existingIdx = queue.findIndex((e) => e.path === entry.path)
+  const owner = requireThreadExecutionOwner()
+  const state = stateFor(owner)
+  const existingIdx = state.queue.findIndex((e) => e.path === entry.path)
   const queued: QueueEntry = {
     path: entry.path,
     before: entry.before,
@@ -799,18 +909,20 @@ export function stageFileOp(entry: {
     ...(entry.renameTo ? { renameTo: entry.renameTo } : {}),
   }
   if (existingIdx !== -1) {
-    queue[existingIdx] = queued
+    state.queue[existingIdx] = queued
   } else {
-    queue.push(queued)
+    state.queue.push(queued)
   }
   mainWindow?.webContents.send(
     'agent:show_diff',
+    owner.projectId,
+    owner.threadId,
     entry.path,
     entry.before,
     entry.after,
     entry.language,
   )
-  broadcastQueue()
+  broadcastQueue(state, owner)
   if (stagedDiffResolver) return resolveStagedEntry(entry.path)
   const verb =
     entry.op === 'delete'
@@ -824,8 +936,10 @@ export function stageFileOp(entry: {
 }
 
 /** @internal test helper — snapshot the current queue. */
-export function getDiffQueueForTest(): ReadonlyArray<Readonly<QueueEntry>> {
-  return queue.map((e) => ({ ...e }))
+export function getDiffQueueForTest(
+  owner?: ThreadExecutionOwner,
+): ReadonlyArray<Readonly<QueueEntry>> {
+  return stateFor(owner).queue.map((e) => ({ ...e }))
 }
 
 /** @internal test helper — reset queue state between tests. */
@@ -833,16 +947,18 @@ export function clearDiffQueueForTest(): void {
   clearStagedDiffsForTest()
 }
 
-function removeEntry(path: string): void {
-  for (let i = queue.length - 1; i >= 0; i--) {
-    if (queue[i]?.path === path) queue.splice(i, 1)
+function removeEntry(state: DiffQueueState, owner: ThreadExecutionOwner, path: string): void {
+  for (let i = state.queue.length - 1; i >= 0; i--) {
+    if (state.queue[i]?.path === path) state.queue.splice(i, 1)
   }
-  broadcastQueue()
+  broadcastQueue(state, owner)
 }
 
-function broadcastQueue(): void {
+function broadcastQueue(state: DiffQueueState, owner: ThreadExecutionOwner): void {
   mainWindow?.webContents.send(
     'diff:queued',
-    queue.map((e) => ({ path: e.path, language: e.language })),
+    owner.projectId,
+    owner.threadId,
+    state.queue.map((e) => ({ path: e.path, language: e.language })),
   )
 }

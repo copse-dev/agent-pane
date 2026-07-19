@@ -11,6 +11,11 @@ import { setStagedDiffResolver } from '../diff-queue.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { runWithActiveRunIdentity } from '../thread-models.ts'
+import { getActiveProjectId, getProjectRoot } from '../workspace.ts'
+import {
+  resolveThreadExecutionContext,
+  runWithThreadExecutionContext,
+} from '../thread-execution-context.ts'
 
 /**
  * Headless entry for `copse --acp`: expose the Copse agent loop to an ACP
@@ -71,8 +76,19 @@ export async function runAcpAgentMode(): Promise<void> {
     ctx.signal.addEventListener('abort', onAbort, { once: true })
 
     try {
-      const result = await runWithActiveRunIdentity(ctx.sessionId, () =>
-        runAgent(ctx.sessionId, ctx.prompt, history, host, registry),
+      const projectId = getActiveProjectId()
+      if (!projectId) throw new Error('Cannot run an ACP turn without an active project')
+      // ACP session ids are generated and retained by the main-process server,
+      // not persisted in the GUI thread store. The project still comes from
+      // trusted app state; acknowledge that main-owned membership explicitly.
+      const executionContext = await resolveThreadExecutionContext(projectId, ctx.sessionId, {
+        getProjectRoot,
+        getThreadMeta: (_ownerProjectId, threadId) => Promise.resolve({ id: threadId }),
+      })
+      const result = await runWithThreadExecutionContext(executionContext, () =>
+        runWithActiveRunIdentity(ctx.sessionId, () =>
+          runAgent(ctx.sessionId, ctx.prompt, history, host, registry),
+        ),
       )
       history.length = 0
       history.push(...result.messages)
