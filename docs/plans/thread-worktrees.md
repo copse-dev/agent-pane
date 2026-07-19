@@ -156,8 +156,21 @@ boundaries rather than every mechanical call site.
 | Todos, run model selection, readonly state               | Thread + turn      | Never process-global mutable pointers.                                                      |
 | ACP session                                              | Thread             | Session pool already keys by thread; include root in fingerprint.                           |
 | File tree, editor, changes pane                          | Active thread      | Switching threads re-roots these surfaces.                                                  |
+| Agent semantic-search tool                               | See note below     | Must not silently disagree with the agent's grep/file search.                               |
 | New terminal                                             | Active thread      | Existing terminals keep their original cwd and show owning thread/root.                     |
 | Background process                                       | Owning thread      | Needed to stop processes before worktree retirement.                                        |
+
+The routing above contains a deliberate collision that must be resolved in v1, not
+deferred: the agent's own tools list **"Agent file/read/write/search paths → Thread"**,
+but **"Semantic index and watcher → Project"**. In an isolated thread, `grep`/file
+search reads the worktree while the semantic-search tool reads the project index — the
+agent gets different answers to the same query depending on which tool it picks, and the
+semantic one points at the tree it is _not_ editing. That is a correctness footgun inside
+the exact mode this feature creates, not merely "known index staleness" to document
+later. Pick one v1 behavior explicitly: either the agent's semantic-search tool maps
+results into the thread root and tolerates misses (as the renderer result-open path
+already promises), or semantic search is flagged/disabled for isolated threads until the
+overlay exists. Do not ship the ambiguous state.
 
 ## Persisted model and migration
 
@@ -228,7 +241,10 @@ Project setting:
 The composer displays the computed outcome before first send and lets the user change
 it. Do not derive the branch from the generated thread title: title generation happens
 after the first run. Slug the first prompt, add a stable short thread-ID suffix, and
-collision-suffix if needed, for example `copse/fix-flicker-a1b2`.
+collision-suffix if needed, for example `copse/fix-flicker-a1b2`. Slugging must handle
+non-ASCII, emoji, and very long or empty-after-slug prompts deterministically: the
+thread-ID suffix guards against collisions but not against an empty or git-invalid slug,
+so fall back to a fixed stem (for example `copse/thread-a1b2`) when the slug is empty.
 
 ## First-message transaction
 
@@ -285,6 +301,11 @@ Implementation requirements:
   merged or explicitly retained elsewhere. Report dirty/unmerged orphans to the user.
 - Keep internal worktree roots separate from user-openable project roots. Do not call
   `registerAllowedWorkspaceRoot()` in a way that makes them selectable projects.
+- Each isolated thread is a full working tree under `~/.copse/worktrees/`, so N threads
+  on a large repo means N checkouts on disk with no cap. Surface aggregate worktree disk
+  usage somewhere the user can see it, and account for out-of-disk during `allocate` as a
+  retryable failure (same path as any other allocation failure) rather than a corrupt
+  half-created worktree.
 
 ### Dirty checkout seeding
 
@@ -312,6 +333,12 @@ for status, diff, add, and commit plus negative tests for hooks/config writes.
 The OS sandbox remains macOS-only. Linux and Windows continue through the documented
 permission policy; the classifier is not an authorization boundary.
 
+State plainly what enforces invariant 6 ("the user's checkout is not mutated") off
+macOS. With no OS sandbox there, the guarantee rests entirely on path containment being
+tied to the thread root — an agent that traverses out of the worktree back into the
+project checkout would violate it. The plan should name the containment check as the
+enforcing mechanism on Linux/Windows so no one assumes the sandbox covers it.
+
 ## Concurrency foundation
 
 Land this before allocation can be enabled. Audit every process-global mutable value
@@ -320,7 +347,17 @@ reachable from an agent turn, not only directory resolution.
 Minimum known audit list:
 
 - `worktree-backup.ts`: replace `current` / `inFlight` with thread + turn ownership;
-- `diff-queue.ts`: isolate queue, recent decisions, and direct-applied snapshots;
+- `diff-queue.ts`: isolate queue, recent decisions, and direct-applied snapshots.
+  Note that `decisionWaiters` is keyed by `path` and settled by `recordDecision`,
+  which fires from an `ipcMain` callback when the user resolves a diff in the
+  renderer. That callback is **not** inside the originating turn's AsyncLocalStorage
+  context, so thread identity cannot be recovered from async context on the settle
+  path. Two threads editing the same relative path would share one `path` waiter and
+  a single user decision would settle both (an invariant-5 violation). The waiter key
+  must become `(threadId, turnId, path)` and the thread/turn identity must be carried
+  through the renderer round-trip in the IPC payload, not read from ALS. This is the
+  one audited service where the ALS model genuinely breaks; scoping by `path` alone is
+  the bug, not the fix;
 - `thread-models.ts`: remove global active thread/model pointers;
 - `hook-run-recorder.ts`: scope recording context and live sink to thread + turn;
 - `todo-tool.ts` and `agent-run-todos.ts`: scope post-processing and todo state;
@@ -337,6 +374,21 @@ PR and add its required contract tests.
 Concurrency acceptance test: run two agent contexts simultaneously against two roots,
 write different content to the same relative filename, invoke git/diff/backup/todo/hook
 paths, and prove every output and persisted event remains attached to its owner.
+
+Phase 0 has no user-visible surface, so this test is the _only_ evidence that the
+foundation is isolated — and "run two contexts, repeat" is weak evidence. In Node's
+single-threaded loop, cross-attribution bugs only manifest under a specific interleaving
+at `await` points; repeating a non-deterministic interleaving proves little. The gate
+therefore requires both:
+
+1. **Deterministic interleaving.** The test must force thread B to interleave at the
+   exact point thread A holds shared state (for example, while `worktree-backup.ts`
+   holds `inFlight` or while a `decisionWaiters` entry is pending), using injected await
+   barriers or a controllable scheduler — not `Promise.all` and hope.
+2. **A dev-mode runtime guard.** Run-scoped state accessors throw when read without a
+   bound `ThreadExecutionContext`. This is cheap defense-in-depth: it converts an
+   accidental process-global read into a loud crash instead of a silent
+   mis-attribution, and it protects every later phase, not just this test.
 
 ## Active-thread UI and IPC
 
@@ -436,6 +488,14 @@ Scope:
 - thread-scope backups, diff queue, model, hook recorder, todos, abort/approval state;
 - add owner + disposal APIs for terminals, background processes, and ACP sessions;
 - add the two-context concurrency test.
+
+Phase 0 is the crux and the widest slice — it touches backups, diff queue, models, hook
+recorder, todos, abort/approval, terminals, background processes, and ACP disposal, with
+no user-visible surface to sanity-check it against. Do not treat it as one PR. Land the
+dev-mode runtime guard first, then scope one state owner per PR behind that guard so each
+migration is independently reviewable and verifiable. A single 40-file PR here is
+effectively unreviewable, and the "2–3 weeks for foundation + opt-in" estimate assumes
+this decomposition.
 
 Exit gate: concurrent shared-mode runs cannot cross-attribute any audited state. No UI
 or worktree creation yet.
@@ -581,6 +641,16 @@ for renderer work also run `npm run build` and the focused e2e specs.
   weakens the sandbox.
 - AsyncLocalStorage does not cover later IPC or orphaned background processes. Persist
   owner IDs on those resources.
+- `diff-queue.ts` `decisionWaiters` is keyed by `path` and settled from an `ipcMain`
+  callback outside the turn's async context. Scoping it by `path` alone lets one user
+  decision settle two threads editing the same relative path. Key it by thread + turn +
+  path and carry that identity through the renderer round-trip.
+- The Phase 0 concurrency gate can false-green: repeating a non-deterministic interleaving
+  proves nothing. Force the interleaving deterministically and add a dev-mode guard that
+  throws on run-scoped state access with no bound context.
+- The agent's grep/file search resolves to the thread root while semantic search resolves
+  to the project index. In an isolated thread these disagree on the same query. Resolve
+  this in v1 rather than filing it under index staleness.
 - Applying a snapshot commit recreates content but may collapse index staging state.
   Do not claim index fidelity unless it is deliberately implemented and tested.
 - A missing worktree must not fall back to shared, even if that seems convenient.
