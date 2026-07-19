@@ -357,7 +357,7 @@ async function refreshFromApi(
   if (!declared && !pinned) {
     console.warn(
       `[sync-intellect] WARNING: the feed declared no index version; assuming the canonical ` +
-        `${String(indexVersion)}. If Artificial Analysis has renormalised its index, pass ` +
+        `${indexVersion}. If Artificial Analysis has renormalised its index, pass ` +
         `--index-version=<vX.Y> instead.`,
     )
   }

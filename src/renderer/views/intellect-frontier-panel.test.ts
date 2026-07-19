@@ -179,7 +179,7 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(details.querySelector('code'))
   })
 
-  it('puts scored-but-unpriced models in the right gutter on the shared intellect axis', async () => {
+  it('lists unpriced models always, and overlays the gutter only when toggled on', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],
       undefined,
@@ -193,14 +193,23 @@ describe('createIntellectFrontierPanel', () => {
       }),
     )
     await panel.refresh()
-    const svg = panel.root.querySelector('.frontier-chart svg')
+    // Off by default: no gutter dots, but the full banded disclosure lists them.
+    let svg = panel.root.querySelector('.frontier-chart svg')
     assert.ok(svg)
-    // Curated-but-unpriced (Kimi K3 = 57) and live-unpriced share the main
-    // chart's y-axis in the "no price yet" gutter — same vertical scale.
+    assert.equal(svg.querySelector('circle.gutter-unpriced'), null)
+    const list = panel.root.querySelector('details.frontier-unpriced-list')
+    assert.ok(list)
+    assert.match(list.textContent, /scored models with no price data yet/)
+    // Toggle on: the top-few gutter appears (on the shared intellect axis).
+    const btn = panel.root.querySelector<HTMLButtonElement>('button.frontier-unpriced-toggle')
+    assert.ok(btn)
+    assert.equal(btn.hidden, false)
+    btn.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
     assert.match(svg.textContent, /no price yet/)
-    assert.match(svg.textContent, /kimi-k3 · 57/)
-    assert.match(svg.textContent, /live-unpriced-model · ~41/)
     assert.ok(svg.querySelector('circle.gutter-unpriced'))
+    assert.match(svg.textContent, /kimi-k3 · 57/)
   })
 
   it('puts priced-but-unscored models in the bottom gutter at their true price', async () => {
@@ -405,6 +414,8 @@ describe('createIntellectFrontierPanel', () => {
   it('expands into a larger dialog rendering of the same points and gutters', async () => {
     const panel = createIntellectFrontierPanel(async () => [])
     await panel.refresh()
+    // Turn the unpriced gutter on so the expanded render carries it (+150px).
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-unpriced-toggle')?.click()
     const btn = panel.root.querySelector<HTMLButtonElement>('button.frontier-expand')
     assert.ok(btn)
     btn.click()
@@ -412,8 +423,7 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(dialog)
     const svg = dialog.querySelector('svg')
     assert.ok(svg)
-    // 920 wide + the 150px unpriced gutter (Kimi K3 etc. are always unpriced
-    // in this environment); height grows with the bottom gutter rows.
+    // 920 wide + the 150px left unpriced gutter; height grows with bottom rows.
     assert.match(svg.getAttribute('viewBox') ?? '', /^0 0 1070 \d+$/)
     assert.match(svg.textContent, /no price yet/)
   })

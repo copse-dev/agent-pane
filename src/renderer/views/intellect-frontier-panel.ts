@@ -427,7 +427,7 @@ const UNPRICED_GUTTER_W = 150
 export const UNSCORED_ROW_LIMIT = 8
 
 /** Highest-intellect unpriced models shown as gutter dots; rest go to a list. */
-export const UNPRICED_GUTTER_LIMIT = 14
+export const UNPRICED_GUTTER_LIMIT = 8
 
 export function renderFrontierSvg(
   points: readonly FrontierPoint[],
@@ -442,12 +442,16 @@ export function renderFrontierSvg(
   const width = (size.width ?? WIDTH) + gutterW
   const plotW = width - gutterW - MARGIN.left - MARGIN.right
   const plotH = baseHeight - MARGIN.top - MARGIN.bottom
+  // The unpriced gutter is a LEFT column: it shares the intellect (y) axis but
+  // has no price, so it sits before the priced plot rather than after it (the
+  // right side is where the priciest models and their labels live).
+  const plotLeft = gutterW + MARGIN.left
   const allCosts = [...points.map((p) => p.costPerMTok), ...unscored.map((u) => u.costPerMTok)]
   const allIntellects = [...points.map((p) => p.intellect), ...unpriced.map((u) => u.intellect)]
   const maxCost = Math.max(1, ...allCosts) * 1.15
   const maxIntellect = Math.max(10, ...allIntellects) + 5
   const minIntellect = Math.max(0, Math.min(...allIntellects) - 8)
-  const x = (cost: number): number => MARGIN.left + (cost / maxCost) * plotW
+  const x = (cost: number): number => plotLeft + (cost / maxCost) * plotW
   const y = (intellect: number): number =>
     MARGIN.top + plotH - ((intellect - minIntellect) / (maxIntellect - minIntellect)) * plotH
 
@@ -491,8 +495,8 @@ export function renderFrontierSvg(
     if (t < minIntellect) continue
     svg.append(
       svgEl('line', {
-        x1: String(MARGIN.left),
-        x2: String(MARGIN.left + plotW),
+        x1: String(plotLeft),
+        x2: String(plotLeft + plotW),
         y1: String(y(t)),
         y2: String(y(t)),
         stroke: 'var(--border-subtle)',
@@ -501,7 +505,7 @@ export function renderFrontierSvg(
       svgEl(
         'text',
         {
-          x: String(MARGIN.left - 6),
+          x: String(plotLeft - 6),
           y: String(y(t) + 3),
           'text-anchor': 'end',
           'font-size': '9',
@@ -514,8 +518,8 @@ export function renderFrontierSvg(
   // X axis line + ticks.
   svg.append(
     svgEl('line', {
-      x1: String(MARGIN.left),
-      x2: String(MARGIN.left + plotW),
+      x1: String(plotLeft),
+      x2: String(plotLeft + plotW),
       y1: String(MARGIN.top + plotH),
       y2: String(MARGIN.top + plotH),
       stroke: 'var(--border)',
@@ -541,7 +545,7 @@ export function renderFrontierSvg(
     svgEl(
       'text',
       {
-        x: String(MARGIN.left + plotW / 2),
+        x: String(plotLeft + plotW / 2),
         y: String(height - 4),
         'text-anchor': 'middle',
         'font-size': '9',
@@ -552,9 +556,9 @@ export function renderFrontierSvg(
     svgEl(
       'text',
       {
-        x: '10',
+        x: String(gutterW + 10),
         y: String(MARGIN.top + plotH / 2),
-        transform: `rotate(-90 10 ${String(MARGIN.top + plotH / 2)})`,
+        transform: `rotate(-90 ${String(gutterW + 10)} ${String(MARGIN.top + plotH / 2)})`,
         'text-anchor': 'middle',
         'font-size': '9',
         fill: 'var(--text-secondary)',
@@ -582,11 +586,14 @@ export function renderFrontierSvg(
 
   // Direct labels sit right of their point, in compact display form (full ids
   // stay in the tooltip). Collision layout is interval-aware: a label bumps
-  // down until its horizontal extent overlaps nothing on its row.
-  // Deterministic: processed in y order.
-  // On a crowded chart only frontier points keep labels — the rest stay
-  // hover-only so the label cascade cannot outgrow the plot.
-  const labelledPoints = points.length > 28 ? points.filter((p) => p.onFrontier) : [...points]
+  // down until its horizontal extent overlaps nothing on its row. Frontier
+  // points are placed FIRST so they win the room; a label that can only land
+  // below the plot is DROPPED (the point stays hover-only) so the cascade can
+  // never overflow the axis into the copy below.
+  const labelledPoints = [...points].sort(
+    (a, b) => Number(b.onFrontier) - Number(a.onFrontier) || y(a.intellect) - y(b.intellect),
+  )
+  const plotBottom = MARGIN.top + plotH
   const labelText = new Map<string, string>()
   const labelY = new Map<string, number>()
   // Dots are obstacles too — a label must not sit under another point's mark.
@@ -595,10 +602,9 @@ export function renderFrontierSvg(
     x1: x(p.costPerMTok) + 7,
     py: y(p.intellect) + 3,
   }))
-  for (const p of labelledPoints.sort((a, b) => y(a.intellect) - y(b.intellect))) {
+  for (const p of labelledPoints) {
     const suffix = p.plan ? ' · plan' : p.local ? ' · free' : ''
     const text = `${displayModelLabel(p.id)}${p.quant ? ` @${p.quant}` : ''}${p.intellectEstimated ? ' (~)' : ''}${suffix}`
-    labelText.set(p.id, text)
     const x0 = x(p.costPerMTok) + 8
     const x1 = x0 + approxLabelWidth(text)
     let py = y(p.intellect) + 3
@@ -612,7 +618,10 @@ export function renderFrontierSvg(
         }
       }
     }
+    // Drop a label that can only land below the plot — hover still has it.
+    if (py > plotBottom) continue
     placed.push({ x0, x1, py })
+    labelText.set(p.id, text)
     labelY.set(p.id, py)
   }
 
@@ -687,12 +696,13 @@ export function renderFrontierSvg(
     svg.append(dot, hit)
   }
 
-  // Right gutter: scored-but-unpriced models at their TRUE y on the shared
-  // intellect axis, offset into a marked "no price" margin instead of claiming
-  // a fake $0.
+  // LEFT gutter: scored-but-unpriced models at their TRUE y on the shared
+  // intellect axis, in a marked "no price" column before the priced plot (the
+  // right side is where the priciest models and their labels sit). Labels point
+  // LEFT (text-anchor end) so they stay inside the gutter's width.
   if (unpriced.length > 0) {
-    const sepX = width - gutterW + 4
-    const dotX = width - gutterW + 16
+    const sepX = gutterW - 4
+    const dotX = gutterW - 14
     svg.append(
       svgEl('line', {
         x1: String(sepX),
@@ -706,8 +716,9 @@ export function renderFrontierSvg(
       svgEl(
         'text',
         {
-          x: String(dotX - 2),
+          x: String(dotX + 2),
           y: String(MARGIN.top + plotH + 14),
+          'text-anchor': 'end',
           'font-size': '9',
           fill: 'var(--text-muted)',
         },
@@ -721,7 +732,7 @@ export function renderFrontierSvg(
     let prevY = -Infinity
     for (const u of shownUnpriced) {
       const dotY = y(u.intellect)
-      const labelYPos = Math.max(dotY + 3, prevY + 10)
+      const labelYPos = Math.max(dotY + 3, prevY + 11)
       prevY = labelYPos
       const dot = u.estimated
         ? svgEl('circle', {
@@ -759,8 +770,9 @@ export function renderFrontierSvg(
         svgEl(
           'text',
           {
-            x: String(dotX + 9),
+            x: String(dotX - 9),
             y: String(labelYPos),
+            'text-anchor': 'end',
             'font-size': '9',
             fill: 'var(--text-secondary)',
             class: 'gutter-unpriced-label',
@@ -774,13 +786,14 @@ export function renderFrontierSvg(
         svgEl(
           'text',
           {
-            x: String(dotX),
+            x: String(dotX + 2),
             y: String(MARGIN.top + plotH - 4),
+            'text-anchor': 'end',
             'font-size': '9',
             fill: 'var(--text-muted)',
             class: 'gutter-unpriced-more',
           },
-          `+${String(sortedUnpriced.length - shownUnpriced.length)} more below`,
+          `+${String(sortedUnpriced.length - shownUnpriced.length)} in the list below`,
         ),
       )
     }
@@ -1032,10 +1045,19 @@ export function createIntellectFrontierPanel(
     liveFetch: LiveModelsFetch
   } | null = null
   let discover = false
+  let showUnpriced = false
 
   const discoverBtn = el('button', { type: 'button', class: 'frontier-btn frontier-discover' })
   discoverBtn.addEventListener('click', () => {
     discover = !discover
+    render()
+  })
+  const unpricedBtn = el('button', {
+    type: 'button',
+    class: 'frontier-btn frontier-unpriced-toggle',
+  })
+  unpricedBtn.addEventListener('click', () => {
+    showUnpriced = !showUnpriced
     render()
   })
   const expandBtn = el(
@@ -1069,6 +1091,8 @@ export function createIntellectFrontierPanel(
       { class: 'settings-fieldset-desc' },
       'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived. ',
       discoverBtn,
+      ' ',
+      unpricedBtn,
       ' ',
       expandBtn,
     ),
@@ -1210,9 +1234,15 @@ export function createIntellectFrontierPanel(
     const dominatedLive = allPoints.filter((p) => liveIds.has(p.id) && !p.onFrontier)
     const points = allPoints.filter((p) => !liveIds.has(p.id) || p.onFrontier)
     const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
+    const unpricedModels = unpricedCanonicalModels(plottedIds, live.hintOnly)
     lastPoints = points
+    // The unpriced gutter is off by default (it can carry hundreds); the toggle
+    // overlays the top few on the left axis, the full set stays in the list.
+    unpricedBtn.hidden = unpricedModels.length === 0
+    unpricedBtn.textContent = showUnpriced ? 'Hide unpriced' : 'Show unpriced'
+    unpricedBtn.classList.toggle('active', showUnpriced)
     lastGutters = {
-      unpriced: unpricedCanonicalModels(plottedIds, live.hintOnly),
+      ...(showUnpriced ? { unpriced: unpricedModels } : {}),
       unscored: unscoredPricedModels(extraProviders),
     }
     // When discovery is OFF, tell the user how many models the toggle reveals.
@@ -1247,7 +1277,9 @@ export function createIntellectFrontierPanel(
       )
     }
     const unscoredList = lastGutters.unscored ?? []
-    const unpricedList = lastGutters.unpriced ?? []
+    // The disclosure lists the FULL unpriced set regardless of the gutter
+    // toggle (the gutter only overlays the top few on the chart).
+    const unpricedList = unpricedModels
     let chart: SVGSVGElement | HTMLElement
     try {
       chart =
@@ -1264,9 +1296,9 @@ export function createIntellectFrontierPanel(
     }
     chartHost.replaceChildren(
       chart,
-      // Scored-but-unpriced overflow (the gutter shows only the top few),
-      // grouped into intellect bands.
-      ...(unpricedList.length > UNPRICED_GUTTER_LIMIT
+      // Scored-but-unpriced models grouped into intellect bands — the canonical
+      // home for them (the left gutter only overlays the top few when toggled).
+      ...(unpricedList.length > 0
         ? [
             el(
               'details',
