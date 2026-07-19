@@ -210,7 +210,14 @@ async function remoteAgentOptions(
     // is configured, even when the live catalog is empty.
     add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), 'Default')
     for (const model of liveModels) {
-      add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id), model.label || model.id)
+      const label = model.label || model.id
+      // Intellect-only hint (remote agents are subscription-billed, no token
+      // price), matched via the measurement alias map on id or label.
+      const hint = modelIntellectHint(model.id) ?? modelIntellectHint(label)
+      add(
+        remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
+        hint ? `${label} — ${hint}` : label,
+      )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
     if (

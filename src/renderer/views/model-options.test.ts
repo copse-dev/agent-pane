@@ -188,6 +188,20 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /no valid key/)
   })
 
+  it('adds an intellect hint to a remote-agent model that resolves to a measurement', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { cursor: true },
+        // A Cursor Cloud model whose label aliases to a curated measurement.
+        cursorCloudModels: [{ id: 'opus-4-8', label: 'Opus 4.8' }],
+      }),
+      '',
+    )
+    const row = options.find((o) => o.group === 'Cursor Cloud Agent' && /Opus 4\.8/.test(o.label))
+    assert.ok(row)
+    assert.match(row.label, /Opus 4\.8 — intellect 56/)
+  })
+
   it('groups hosted cloud models under a heading', async () => {
     const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
     const cloud = options.filter((o) => o.group === 'Cloud models')
