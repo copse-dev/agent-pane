@@ -39,8 +39,11 @@ import { el } from '../dom/helpers.ts'
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
 const WIDTH = 460
-const HEIGHT = 230
-const MARGIN = { top: 14, right: 96, bottom: 34, left: 40 }
+const HEIGHT = 290
+// A tight right margin: labels no longer need a wide reserved gutter because a
+// point near the right edge flips its label to the left (see the label
+// placement below), so the plot itself claims almost the full panel width.
+const MARGIN = { top: 14, right: 20, bottom: 34, left: 40 }
 
 /**
  * Compact display form of a model id for chart labels: provider prefixes and
@@ -448,7 +451,7 @@ export function renderFrontierSvg(
   const plotLeft = gutterW + MARGIN.left
   const allCosts = [...points.map((p) => p.costPerMTok), ...unscored.map((u) => u.costPerMTok)]
   const allIntellects = [...points.map((p) => p.intellect), ...unpriced.map((u) => u.intellect)]
-  const maxCost = Math.max(1, ...allCosts) * 1.15
+  const maxCost = Math.max(1, ...allCosts) * 1.08
   const maxIntellect = Math.max(10, ...allIntellects) + 5
   const minIntellect = Math.max(0, Math.min(...allIntellects) - 8)
   const x = (cost: number): number => plotLeft + (cost / maxCost) * plotW
@@ -584,18 +587,23 @@ export function renderFrontierSvg(
     )
   }
 
-  // Direct labels sit right of their point, in compact display form (full ids
+  // Direct labels sit beside their point, in compact display form (full ids
   // stay in the tooltip). Collision layout is interval-aware: a label bumps
   // down until its horizontal extent overlaps nothing on its row. Frontier
   // points are placed FIRST so they win the room; a label that can only land
   // below the plot is DROPPED (the point stays hover-only) so the cascade can
-  // never overflow the axis into the copy below.
+  // never overflow the axis into the copy below. A label whose natural right
+  // placement would run off the (now tight) right edge FLIPS to the left of its
+  // point instead, so the trimmed margin never clips it.
   const labelledPoints = [...points].sort(
     (a, b) => Number(b.onFrontier) - Number(a.onFrontier) || y(a.intellect) - y(b.intellect),
   )
   const plotBottom = MARGIN.top + plotH
+  const rightEdge = width - 2
   const labelText = new Map<string, string>()
   const labelY = new Map<string, number>()
+  const labelX = new Map<string, number>()
+  const labelAnchor = new Map<string, string>()
   // Dots are obstacles too — a label must not sit under another point's mark.
   const placed: Array<{ x0: number; x1: number; py: number }> = points.map((p) => ({
     x0: x(p.costPerMTok) - 7,
@@ -605,15 +613,41 @@ export function renderFrontierSvg(
   for (const p of labelledPoints) {
     const suffix = p.plan ? ' · plan' : p.local ? ' · free' : ''
     const text = `${displayModelLabel(p.id)}${p.quant ? ` @${p.quant}` : ''}${p.intellectEstimated ? ' (~)' : ''}${suffix}`
-    const x0 = x(p.costPerMTok) + 8
-    const x1 = x0 + approxLabelWidth(text)
+    const w = approxLabelWidth(text)
+    const px = x(p.costPerMTok)
+    // Prefer a right-hand label; flip to the left for points near the right
+    // edge. Drop only when neither side fits horizontally.
+    let x0: number
+    let x1: number
+    let tx: number
+    let anchor: string
+    if (px + 8 + w <= rightEdge) {
+      x0 = px + 8
+      x1 = px + 8 + w
+      tx = px + 8
+      anchor = 'start'
+    } else if (px - 8 - w >= plotLeft) {
+      x0 = px - 8 - w
+      x1 = px - 8
+      tx = px - 8
+      anchor = 'end'
+    } else {
+      continue
+    }
     let py = y(p.intellect) + 3
     let moved = true
     while (moved) {
       moved = false
       for (const prev of placed) {
-        if (Math.abs(py - prev.py) < 10 && x0 < prev.x1 && x1 > prev.x0) {
-          py = prev.py + 10
+        // Only resolve a collision when it actually pushes the label DOWN. The
+        // naive `py = prev.py + 10` can hit a floating-point fixed point where
+        // |py − prev.py| rounds to just under 10 while prev.py + 10 === py, so
+        // the assignment is a no-op yet `moved` stays true forever. Requiring a
+        // strict increase drops only that artifact (a real overlap always
+        // implies prev.py + 10 > py) and guarantees termination.
+        const next = prev.py + 10
+        if (next > py && Math.abs(py - prev.py) < 10 && x0 < prev.x1 && x1 > prev.x0) {
+          py = next
           moved = true
         }
       }
@@ -623,6 +657,8 @@ export function renderFrontierSvg(
     placed.push({ x0, x1, py })
     labelText.set(p.id, text)
     labelY.set(p.id, py)
+    labelX.set(p.id, tx)
+    labelAnchor.set(p.id, anchor)
   }
 
   // Points, with a larger transparent hit target and a rich hover card.
@@ -683,8 +719,9 @@ export function renderFrontierSvg(
         svgEl(
           'text',
           {
-            x: String(x(p.costPerMTok) + 8),
+            x: String(labelX.get(p.id) ?? x(p.costPerMTok) + 8),
             y: String(labelY.get(p.id) ?? y(p.intellect) + 3),
+            'text-anchor': labelAnchor.get(p.id) ?? 'start',
             'font-size': '9',
             fill: 'var(--text-secondary)',
             class: 'frontier-label',
