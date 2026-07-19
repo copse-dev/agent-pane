@@ -91,8 +91,9 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
   return options
 }
 
-// OpenRouter's free, tool-capable models fetched live from its catalog, plus any
-// custom id the user saved (or currently has selected — which may be a paid id).
+// OpenRouter tool-capable models fetched live from its catalog (free-only when
+// openRouterFreeMode is on), plus any custom id the user saved (or currently
+// has selected — which may be a paid id).
 // When no key is configured we contribute nothing (the provider is hidden from
 // the picker rather than shown as a disabled "add a key" row).
 async function openRouterOptions(
@@ -142,10 +143,16 @@ async function openRouterOptions(
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
   if (entries.length === 0) {
+    let freeOnly = false
+    try {
+      freeOnly = (await api.settings.get('openRouterFreeMode')) === true
+    } catch {
+      /* default: show all models */
+    }
     return [
       {
         value: '',
-        label: 'No free tool-capable models found',
+        label: freeOnly ? 'No free tool-capable models found' : 'No tool-capable models found',
         group,
         disabled: true,
       },
