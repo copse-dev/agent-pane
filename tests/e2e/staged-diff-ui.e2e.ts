@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 const PROJECT_ID = 'e2e-staged-diff-project'
@@ -94,6 +95,26 @@ describe('staged diff approval UI', () => {
     await expect(second).toHaveElementClass('is-selected')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-multi.png'))
+
+    await $('.project-new-thread-btn').click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
+    await browser.waitUntil(async () => !(await $('.git-changes-section-proposed').isDisplayed()), {
+      timeout: 10_000,
+      timeoutMsg: "another thread must not display the first thread's proposed diffs",
+    })
+    await saveAppScreenshot('staged-diff-thread-isolated.png')
+
+    const showMore = await $('.chats-show-more')
+    if (await showMore.isExisting()) await showMore.click()
+    await browser.execute(() => {
+      const rows = [...document.querySelectorAll('.chats-list .chat-row')]
+      const row = rows.find((candidate) => !candidate.classList.contains('selected'))
+      row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await browser.waitUntil(async () => (await $$('.git-change-row-proposed')).length === 2, {
+      timeout: 10_000,
+      timeoutMsg: 'returning to the owner thread must restore its proposed diffs',
+    })
   })
 
   it('accepting a CSS staged diff clears the view without error toasts', async function () {

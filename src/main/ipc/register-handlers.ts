@@ -1040,11 +1040,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('git:listBranches', () => getBranches())
   ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
-  ipcMain.handle('git:sessionBackup', () => getSessionBackup())
-  ipcMain.handle('git:restoreBackup', async (event) => {
+  ipcMain.handle('git:sessionBackup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
-    return restoreSessionBackup()
+    const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+    return getSessionBackup({ projectId, threadId })
   })
+  ipcMain.handle(
+    'git:restoreBackup',
+    async (event, projectIdArg: unknown, threadIdArg: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+      return restoreSessionBackup({ projectId, threadId })
+    },
+  )
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())
