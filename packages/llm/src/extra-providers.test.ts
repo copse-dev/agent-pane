@@ -43,9 +43,22 @@ describe('extra provider lookups against a resolved list', () => {
   const providers = resolveExtraProviders([])
 
   it('resolves the provider that owns a model slug', () => {
+    assert.equal(
+      extraProviderForModel(providers, 'perplexity:openai/gpt-5.6-sol')?.apiStyle,
+      'responses',
+    )
     assert.equal(extraProviderForModel(providers, 'gemini:gemini-2.0-flash')?.id, 'gemini')
     assert.equal(extraProviderForModel(providers, 'deepseek:deepseek-chat')?.id, 'deepseek')
     assert.equal(extraProviderForModel(providers, 'claude-sonnet-4-6'), null)
+  })
+
+  it('ships Perplexity as a Responses API preset with server-side web search', () => {
+    const perplexity = providers.find((provider) => provider.id === 'perplexity')
+    assert.ok(perplexity)
+    assert.equal(perplexity.baseUrl, 'https://api.perplexity.ai/v1')
+    assert.equal(perplexity.envVar, 'PERPLEXITY_API_KEY')
+    assert.deepEqual(perplexity.extraBody, { tools: [{ type: 'web_search' }] })
+    assert.ok(perplexity.models.some((model) => model.id === 'openai/gpt-5.6-sol'))
   })
 
   it('labels curated models by name and falls back to the raw id', () => {
@@ -140,7 +153,7 @@ describe('resolveExtraProviders', () => {
   })
 
   it('merges editable overrides onto a preset but locks label/baseUrl', () => {
-    const [mistral] = resolveExtraProviders([
+    const mistral = resolveExtraProviders([
       {
         slug: 'mistral',
         label: 'Hacked',
@@ -149,7 +162,7 @@ describe('resolveExtraProviders', () => {
         fallbackContextWindow: 4096,
         models: [{ id: 'mistral-tiny', label: 'Tiny' }],
       },
-    ])
+    ]).find((provider) => provider.id === 'mistral')
     assert.ok(mistral)
     assert.equal(mistral.label, 'Mistral') // locked
     assert.equal(mistral.baseUrl, 'https://api.mistral.ai/v1') // locked

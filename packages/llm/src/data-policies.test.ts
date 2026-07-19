@@ -77,6 +77,14 @@ describe('policy defaults match the researched provider behavior', () => {
     assert.equal(policy.trainsOnData, null)
     assert.equal(policy.zdr, 'unknown')
   })
+
+  it('marks Perplexity API requests as zero-retention and no-training', () => {
+    const policy = dataPolicyForProvider({ id: 'perplexity' })
+    assert.ok(policy)
+    assert.equal(policy.retainsPrompts, false)
+    assert.equal(policy.trainsOnData, false)
+    assert.equal(policy.zdr, 'default')
+  })
 })
 
 describe('openRouterDataPolicy', () => {

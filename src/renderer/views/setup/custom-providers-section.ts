@@ -71,6 +71,7 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
 // "Other". Local-server presets are ordered separately (LOCAL_CHIP_ORDER).
 const CHIP_ORDER: readonly string[] = [
   'openai',
+  'perplexity',
   'gemini',
   'mistral',
   'deepseek',
@@ -94,7 +95,6 @@ const CLOUD_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
   { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
   { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'Fireworks AI', baseUrl: 'https://api.fireworks.ai/inference/v1' },
-  { label: 'Perplexity', baseUrl: 'https://api.perplexity.ai' },
   { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1' },
 ]
 
@@ -609,7 +609,9 @@ export function createCustomProvidersSection(
         'label',
         { class: 'checkbox-label' },
         usageBox,
-        ' Report token usage (stream_options.include_usage)',
+        provider.apiStyle === 'responses'
+          ? ' Report token usage from the completed response'
+          : ' Report token usage (stream_options.include_usage)',
       ),
       el(
         'label',

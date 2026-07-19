@@ -15,7 +15,7 @@
 // coverage of the built-ins.
 
 /** When the entries below were last checked against the linked sources. */
-export const DATA_POLICIES_LAST_VERIFIED = '2026-07-18'
+export const DATA_POLICIES_LAST_VERIFIED = '2026-07-19'
 
 export interface ProviderDataPolicy {
   /**
@@ -100,6 +100,13 @@ const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {
     zdr: 'unknown',
     note: 'Hugging Face does not store request/response bodies (30-day debug logs only), but requests are routed to third-party partners (Together, Fireworks, Novita, …) who each apply their OWN retention and training policy.',
     policyUrl: 'https://huggingface.co/docs/inference-providers/security',
+  },
+  perplexity: {
+    retainsPrompts: false,
+    trainsOnData: false,
+    zdr: 'default',
+    note: 'Perplexity API requests have zero-day retention: prompt and response content is not stored or used for training; only billing metadata is retained.',
+    policyUrl: 'https://docs.perplexity.ai/docs/resources/privacy-security',
   },
 }
 

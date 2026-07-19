@@ -1,8 +1,8 @@
 // OpenAI-compatible "extra" providers offered alongside OpenRouter. The app
 // ships a few curated presets (Mistral, Google Gemini, DeepSeek) and lets the
-// user add as many more OpenAI-compatible endpoints as they like. Every one of
-// them speaks the OpenAI chat API, so — like OpenRouter — it is reached through
-// `OpenAIProvider` with a custom base URL (see create-provider.ts).
+// user add as many more OpenAI-compatible endpoints as they like. Most speak
+// the OpenAI Chat Completions API; a preset may opt into the Responses API when
+// its endpoint uses that protocol (see create-provider.ts).
 //
 // A provider is identified by a single slug (see provider-slug.ts). Selected
 // models are stored as `<slug>:<modelId>` (e.g. `gemini:gemini-2.5-flash`),
@@ -75,6 +75,8 @@ export interface ExtraProvider {
   prefix: string
   /** OpenAI-compatible base URL the SDK talks to. */
   baseUrl: string
+  /** Wire protocol used by the provider. Defaults to Chat Completions. */
+  apiStyle?: 'chat-completions' | 'responses'
   /** True for a shipped preset (locked label/base URL, env-var fallback). */
   builtin: boolean
   /**
@@ -122,6 +124,35 @@ const GEMINI_CONTEXT = 1_048_576
 const DEEPSEEK_CONTEXT = 65_536
 
 export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
+  {
+    id: 'perplexity',
+    label: 'Perplexity Agent API',
+    prefix: 'perplexity:',
+    baseUrl: 'https://api.perplexity.ai/v1',
+    apiStyle: 'responses',
+    builtin: true,
+    local: false,
+    envVar: 'PERPLEXITY_API_KEY',
+    keyLabel: 'Perplexity API key',
+    keyPlaceholder: 'Perplexity API key',
+    keyHint:
+      'Runs third-party models through the Agent API with Perplexity web search enabled. Validated via the free models endpoint.',
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: true,
+    extraBody: { tools: [{ type: 'web_search' }] },
+    models: [
+      {
+        id: 'openai/gpt-5.6-sol',
+        label: 'GPT-5.6 Sol + web search',
+        contextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+      },
+      {
+        id: 'anthropic/claude-sonnet-4-6',
+        label: 'Claude Sonnet 4.6 + web search',
+        contextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+      },
+    ],
+  },
   {
     id: 'mistral',
     label: 'Mistral',

@@ -24,6 +24,7 @@ const ALL_UNCONFIGURED = {
   openai: false,
   cursor: false,
   openrouter: false,
+  perplexity: false,
   mistral: false,
   gemini: false,
   deepseek: false,
@@ -51,6 +52,19 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
+  it('lists Perplexity Agent API models only when its key is configured', async () => {
+    const hidden = await fetchModelOptions(mockApi(), '')
+    assert.ok(!hidden.some((option) => option.group === 'Perplexity Agent API'))
+
+    const configured = await fetchModelOptions(mockApi({ available: { perplexity: true } }), '')
+    assert.deepEqual(
+      configured
+        .filter((option) => option.group === 'Perplexity Agent API')
+        .map((option) => option.value),
+      ['perplexity:openai/gpt-5.6-sol', 'perplexity:anthropic/claude-sonnet-4-6'],
+    )
+  })
+
   it('shows a single guiding message when nothing is configured', async () => {
     const options = await fetchModelOptions(mockApi(), '')
     assert.equal(options.length, 1)
