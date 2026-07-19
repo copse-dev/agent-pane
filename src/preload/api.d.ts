@@ -3,6 +3,7 @@ import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
+import type { PacksListResult } from '@shared/types/packs.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -444,6 +445,14 @@ export interface ApiClient {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
     test: (req: HookTestRequest) => Promise<HookTestResult>
+  }
+  packs: {
+    /** Enumerate every registered pack with contributions + enablement + settings values (P3). */
+    list: () => Promise<PacksListResult>
+    /** Atomic enable/disable (P1 contract) — persists and flips the shared registry flag. */
+    setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
+    /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
+    setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

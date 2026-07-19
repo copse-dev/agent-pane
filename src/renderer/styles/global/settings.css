@@ -1012,3 +1012,130 @@ dialog.settings-overlay::backdrop {
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* P3 Settings → Packs list ("about:addons" for feature packs). One row per
+   registered pack: name + trust badge + enable toggle in the header, then a
+   description, contribution chips enumerating what the pack contributes, and a
+   generic settings block rendered from the manifest schema. */
+.packs-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  font-size: var(--font-size-sm);
+}
+.packs-empty {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+.pack-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.pack-row-disabled {
+  opacity: 0.65;
+}
+.pack-row-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.pack-row-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-sm);
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.pack-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+.pack-version {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.pack-badge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
+.pack-badge-first-party {
+  color: var(--accent, #7aa2ff);
+  border-color: var(--accent, #7aa2ff);
+}
+.pack-badge-user {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
+.pack-row-desc {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+.pack-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+.pack-chip {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
+.pack-chips-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.pack-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-sm);
+}
+.pack-settings-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.pack-setting-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+.pack-setting-title {
+  color: var(--text-primary);
+}
+.pack-setting-desc {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.pack-setting-input {
+  justify-self: end;
+}
+.pack-setting-input.pack-setting-string,
+.pack-setting-input.pack-setting-number {
+  min-width: 180px;
+}
