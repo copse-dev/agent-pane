@@ -29,10 +29,13 @@
       }
 
       .architecture-back {
-        display: inline-block;
-        margin-bottom: var(--spacing-md);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: var(--spacing-lg);
         color: var(--color-text-light);
         text-decoration: none;
+        font-weight: 500;
       }
 
       .architecture-back:hover {
@@ -40,19 +43,40 @@
       }
 
       .architecture-heading {
-        max-width: 820px;
+        max-width: 860px;
         margin-bottom: var(--spacing-lg);
+      }
+
+      .arch-eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: var(--spacing-sm);
+        padding: 5px 12px 5px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(124, 58, 237, 0.16);
+        background: rgba(124, 58, 237, 0.06);
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--color-wave-start);
+      }
+
+      .arch-eyebrow svg {
+        display: block;
       }
 
       .architecture-heading h1 {
         margin-bottom: var(--spacing-sm);
-        font-size: 2.75rem;
-        line-height: 1.1;
+        font-size: 2.85rem;
+        line-height: 1.08;
+        letter-spacing: -0.02em;
       }
 
       .architecture-heading p {
         color: var(--color-text-light);
-        font-size: 1.125rem;
+        font-size: 1.15rem;
       }
 
       /* ---- Interactive systems map ---- */
@@ -71,8 +95,8 @@
         --viz-series-4: var(--k-data);
         --viz-series-5: var(--k-safety);
         --viz-series-6: var(--k-external);
-        --edge: rgba(30, 42, 34, 0.3);
-        --edge-strong: rgba(30, 42, 34, 0.5);
+        --edge: rgba(30, 42, 34, 0.26);
+        --edge-strong: rgba(30, 42, 34, 0.42);
       }
 
       .arch-tabs {
@@ -86,22 +110,24 @@
         appearance: none;
         cursor: pointer;
         font: inherit;
-        font-size: 0.95rem;
+        font-size: 0.92rem;
         font-weight: 600;
         padding: 8px 15px;
         border-radius: 999px;
-        border: 1px solid rgba(30, 42, 34, 0.14);
-        background: var(--color-white);
-        color: var(--color-text);
+        border: 1px solid rgba(30, 42, 34, 0.12);
+        background: rgba(255, 255, 255, 0.7);
+        color: var(--color-text-light);
         transition:
           background 0.18s ease,
           border-color 0.18s ease,
+          color 0.18s ease,
           box-shadow 0.18s ease,
           transform 0.18s ease;
       }
 
       .arch-tab:hover {
-        border-color: rgba(30, 42, 34, 0.3);
+        border-color: rgba(30, 42, 34, 0.28);
+        color: var(--color-text);
         transform: translateY(-1px);
       }
 
@@ -113,7 +139,7 @@
         );
         border-color: transparent;
         color: #fff;
-        box-shadow: var(--shadow);
+        box-shadow: 0 6px 16px rgba(47, 111, 78, 0.28);
       }
 
       .arch-tab:focus-visible {
@@ -122,11 +148,22 @@
       }
 
       .arch-board {
+        position: relative;
         background: #fff;
         border: 1px solid rgba(30, 42, 34, 0.08);
         border-radius: var(--border-radius);
-        box-shadow: var(--shadow);
-        padding: var(--spacing-md);
+        box-shadow: var(--shadow-lg);
+        padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
+        overflow: hidden;
+      }
+
+      /* Copse wave accent along the top of the board */
+      .arch-board::before {
+        content: '';
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 4px;
+        background: linear-gradient(90deg, var(--color-wave-start) 0%, var(--color-wave-end) 100%);
       }
 
       .arch-canvas {
@@ -140,59 +177,64 @@
         overflow: visible;
       }
 
-      /* Edges + direction markers */
+      /* Curved edges + direction markers */
       .arch-canvas .diagram-edge {
         fill: none;
         stroke: var(--edge);
-        stroke-width: 1.6;
+        stroke-width: 1.5;
         stroke-linecap: round;
-        stroke-linejoin: round;
         vector-effect: non-scaling-stroke;
+        transition:
+          stroke 0.15s ease,
+          stroke-width 0.15s ease;
       }
 
       .arch-canvas .diagram-edge.is-external {
-        stroke-dasharray: 5 5;
-        opacity: 0.85;
+        stroke-dasharray: 5 6;
       }
 
       .arch-canvas .diagram-edge.is-active {
         stroke: var(--color-primary);
-        stroke-width: 2.6;
-        opacity: 1;
+        stroke-width: 2.4;
       }
 
       .arch-canvas .edge-arrow {
         fill: var(--edge-strong);
       }
 
-      /* Edge labels read as attached chips */
+      .arch-canvas .edge-arrow-active {
+        fill: var(--color-primary);
+      }
+
+      /* Edge labels read as attached chips centred on the curve */
       .arch-canvas .edge-label-bg {
         fill: #fff;
-        stroke: rgba(30, 42, 34, 0.14);
+        stroke: rgba(30, 42, 34, 0.12);
         stroke-width: 1;
       }
 
       .arch-canvas .edge-label {
-        fill: rgba(30, 42, 34, 0.66);
-        font-size: 12.5px;
+        fill: rgba(30, 42, 34, 0.6);
+        font-size: 12px;
         font-weight: 500;
         text-anchor: middle;
       }
 
       /* Lanes */
       .arch-canvas .lane-label {
-        fill: rgba(30, 42, 34, 0.42);
-        font-size: 11px;
-        font-weight: 600;
-        letter-spacing: 0.06em;
+        fill: rgba(30, 42, 34, 0.4);
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         text-anchor: start;
       }
 
       .arch-canvas .lane-rule {
-        stroke: rgba(30, 42, 34, 0.09);
+        stroke: rgba(30, 42, 34, 0.08);
         stroke-width: 1;
-        stroke-dasharray: 2 5;
+        stroke-dasharray: 1 6;
+        stroke-linecap: round;
         vector-effect: non-scaling-stroke;
       }
 
@@ -202,19 +244,25 @@
       }
 
       .arch-canvas .node-box {
-        fill: color-mix(in srgb, var(--node-color) 14%, #fff);
-        stroke: color-mix(in srgb, var(--node-color) 46%, rgba(30, 42, 34, 0.14));
-        stroke-width: 1.25;
-        rx: 12px;
-        filter: drop-shadow(0 1px 1.5px rgba(30, 42, 34, 0.1));
+        fill: color-mix(in srgb, var(--node-color) 9%, #fff);
+        stroke: color-mix(in srgb, var(--node-color) 40%, transparent);
+        stroke-width: 1.5;
+        rx: 13px;
+        filter: drop-shadow(0 1px 2px rgba(16, 24, 40, 0.06))
+          drop-shadow(0 4px 10px rgba(16, 24, 40, 0.05));
         transition:
           fill 0.15s ease,
           stroke 0.15s ease;
       }
 
       .arch-canvas .diagram-node:hover .node-box {
-        fill: color-mix(in srgb, var(--node-color) 22%, #fff);
-        stroke: color-mix(in srgb, var(--node-color) 62%, transparent);
+        fill: color-mix(in srgb, var(--node-color) 16%, #fff);
+        stroke: color-mix(in srgb, var(--node-color) 58%, transparent);
+      }
+
+      /* small kind indicator dot, top-left inside each node */
+      .arch-canvas .node-dot {
+        fill: var(--node-color);
       }
 
       .arch-canvas .node-title {
@@ -225,7 +273,7 @@
       }
 
       .arch-canvas .node-subtitle {
-        fill: rgba(30, 42, 34, 0.6);
+        fill: rgba(30, 42, 34, 0.58);
         font-size: 11.5px;
         font-weight: 400;
         text-anchor: middle;
@@ -234,12 +282,16 @@
       .arch-canvas .diagram-node.is-selected .node-box {
         fill: var(--color-primary);
         stroke: var(--color-primary);
-        filter: drop-shadow(0 3px 9px rgba(47, 111, 78, 0.32));
+        filter: drop-shadow(0 4px 14px rgba(47, 111, 78, 0.36));
       }
 
       .arch-canvas .diagram-node.is-selected .node-title,
       .arch-canvas .diagram-node.is-selected .node-subtitle {
         fill: #fff;
+      }
+
+      .arch-canvas .diagram-node.is-selected .node-dot {
+        fill: rgba(255, 255, 255, 0.9);
       }
 
       .arch-canvas .diagram-node:focus {
@@ -271,21 +323,30 @@
       }
 
       .arch-legend-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 4px;
-        background: color-mix(in srgb, var(--dot) 24%, #fff);
-        border: 1.5px solid color-mix(in srgb, var(--dot) 70%, transparent);
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--dot);
       }
 
       /* Inspector */
       .arch-inspector {
+        position: relative;
         margin-top: var(--spacing-md);
         background: #fff;
         border: 1px solid rgba(30, 42, 34, 0.08);
         border-radius: var(--border-radius);
         box-shadow: var(--shadow);
         padding: var(--spacing-md) var(--spacing-lg);
+        overflow: hidden;
+      }
+
+      .arch-inspector::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: var(--kind, var(--color-primary));
       }
 
       .arch-inspector-head {
@@ -297,13 +358,13 @@
       }
 
       .arch-badge {
-        font-size: 0.75rem;
-        font-weight: 600;
-        letter-spacing: 0.01em;
-        padding: 3px 11px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        padding: 4px 11px;
         border-radius: 999px;
-        border: 1px solid color-mix(in srgb, var(--kind) 32%, transparent);
-        color: color-mix(in srgb, var(--kind) 64%, var(--color-text));
+        color: color-mix(in srgb, var(--kind) 62%, var(--color-text));
         background: color-mix(in srgb, var(--kind) 14%, #fff);
       }
 
@@ -316,7 +377,7 @@
       .arch-inspector p {
         margin: 0;
         color: var(--color-text-light);
-        max-width: 70ch;
+        max-width: 72ch;
       }
 
       .arch-files {
@@ -327,9 +388,9 @@
       }
 
       .arch-files code {
-        background: rgba(246, 231, 201, 0.4);
-        border: 1px solid rgba(30, 42, 34, 0.12);
-        color: var(--color-text);
+        background: rgba(47, 111, 78, 0.06);
+        border: 1px solid rgba(47, 111, 78, 0.16);
+        color: var(--color-primary-strong);
         font-family: 'Monaco', 'Courier New', monospace;
         font-size: 0.82rem;
         padding: 3px 9px;
@@ -350,18 +411,28 @@
         font-size: 0.9rem;
         font-weight: 500;
         text-align: left;
-        padding: 9px 12px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 10px 12px;
         border-radius: 10px;
-        border: 1px solid rgba(30, 42, 34, 0.14);
-        border-left: 4px solid color-mix(in srgb, var(--dot) 75%, transparent);
+        border: 1px solid rgba(30, 42, 34, 0.12);
         background: #fff;
         color: var(--color-text);
       }
 
+      .arch-pick::before {
+        content: '';
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--dot);
+        flex: none;
+      }
+
       .arch-pick.is-active {
-        background: color-mix(in srgb, var(--dot) 12%, #fff);
-        border-color: color-mix(in srgb, var(--dot) 55%, transparent);
-        border-left-color: var(--dot);
+        border-color: var(--dot);
+        box-shadow: 0 0 0 1px var(--dot);
       }
 
       .arch-flow {
@@ -414,7 +485,7 @@
         }
 
         .arch-inspector {
-          padding: var(--spacing-md);
+          padding: var(--spacing-md) var(--spacing-md) var(--spacing-md) var(--spacing-md);
         }
       }
     </style>
@@ -423,6 +494,24 @@
     <main class="architecture-container">
       <a class="architecture-back" href="index.html">← Back to Copse</a>
       <div class="architecture-heading">
+        <span class="arch-eyebrow">
+          <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+            <path
+              d="M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24"
+              fill="none"
+              stroke="url(#eyebrow-wave)"
+              stroke-width="3.5"
+              stroke-linecap="round"
+            />
+            <defs>
+              <linearGradient id="eyebrow-wave" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#7c3aed" />
+                <stop offset="1" stop-color="#22d3ee" />
+              </linearGradient>
+            </defs>
+          </svg>
+          System map
+        </span>
         <h1>How Copse fits together</h1>
         <p>
           Explore the desktop runtime, agent turn, safety gates, persistent data, UI bridge,
@@ -2756,363 +2845,16 @@
         const ns = 'http://www.w3.org/2000/svg'
 
         function svgEl(name, attrs = {}) {
-          const el = document.createElementNS(ns, name)
-          Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, String(value)))
-          return el
+          const node = document.createElementNS(ns, name)
+          Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)))
+          return node
         }
 
         function addText(parent, text, x, y, className) {
-          const el = svgEl('text', { x, y, class: className })
-          el.textContent = text
-          parent.appendChild(el)
-          return el
-        }
-
-        const routeMargin = 18
-        const routeTurnCost = 18
-
-        function nodeObstacle(node) {
-          return {
-            left: node.x - routeMargin,
-            right: node.x + node.w + routeMargin,
-            top: node.y - routeMargin,
-            bottom: node.y + node.h + routeMargin,
-          }
-        }
-
-        function routePorts(node) {
-          const cx = node.x + node.w / 2
-          const cy = node.y + node.h / 2
-          return [
-            {
-              anchor: { x: node.x + node.w, y: cy },
-              outer: { x: node.x + node.w + routeMargin, y: cy },
-              direction: 1,
-            },
-            {
-              anchor: { x: node.x, y: cy },
-              outer: { x: node.x - routeMargin, y: cy },
-              direction: 1,
-            },
-            {
-              anchor: { x: cx, y: node.y + node.h },
-              outer: { x: cx, y: node.y + node.h + routeMargin },
-              direction: 2,
-            },
-            {
-              anchor: { x: cx, y: node.y },
-              outer: { x: cx, y: node.y - routeMargin },
-              direction: 2,
-            },
-          ]
-        }
-
-        function pointInsideObstacle(point, obstacle) {
-          return (
-            point.x > obstacle.left &&
-            point.x < obstacle.right &&
-            point.y > obstacle.top &&
-            point.y < obstacle.bottom
-          )
-        }
-
-        function segmentIsClear(a, b, obstacles) {
-          const epsilon = 0.01
-          if (a.y === b.y) {
-            const left = Math.min(a.x, b.x)
-            const right = Math.max(a.x, b.x)
-            return !obstacles.some(
-              (obstacle) =>
-                a.y > obstacle.top + epsilon &&
-                a.y < obstacle.bottom - epsilon &&
-                right > obstacle.left + epsilon &&
-                left < obstacle.right - epsilon,
-            )
-          }
-          if (a.x === b.x) {
-            const top = Math.min(a.y, b.y)
-            const bottom = Math.max(a.y, b.y)
-            return !obstacles.some(
-              (obstacle) =>
-                a.x > obstacle.left + epsilon &&
-                a.x < obstacle.right - epsilon &&
-                bottom > obstacle.top + epsilon &&
-                top < obstacle.bottom - epsilon,
-            )
-          }
-          return false
-        }
-
-        function simplifyRoute(points) {
-          const deduplicated = points.filter(
-            (point, index) =>
-              index === 0 || point.x !== points[index - 1].x || point.y !== points[index - 1].y,
-          )
-          return deduplicated.filter((point, index) => {
-            if (index === 0 || index === deduplicated.length - 1) return true
-            const previous = deduplicated[index - 1]
-            const next = deduplicated[index + 1]
-            return !(
-              (previous.x === point.x && point.x === next.x) ||
-              (previous.y === point.y && point.y === next.y)
-            )
-          })
-        }
-
-        function pushHeap(heap, item) {
-          heap.push(item)
-          let index = heap.length - 1
-          while (index > 0) {
-            const parent = Math.floor((index - 1) / 2)
-            if (heap[parent].cost <= item.cost) break
-            heap[index] = heap[parent]
-            index = parent
-          }
-          heap[index] = item
-        }
-
-        function popHeap(heap) {
-          if (heap.length === 0) return null
-          const root = heap[0]
-          const tail = heap.pop()
-          if (heap.length === 0) return root
-          let index = 0
-          while (true) {
-            const left = index * 2 + 1
-            const right = left + 1
-            if (left >= heap.length) break
-            const child = right < heap.length && heap[right].cost < heap[left].cost ? right : left
-            if (heap[child].cost >= tail.cost) break
-            heap[index] = heap[child]
-            index = child
-          }
-          heap[index] = tail
-          return root
-        }
-
-        function routeEdge(source, target, nodes, height) {
-          const obstacles = nodes.map(nodeObstacle)
-          const sourcePorts = routePorts(source).filter((port) =>
-            obstacles.every(
-              (obstacle) =>
-                obstacle === obstacles[nodes.indexOf(source)] ||
-                !pointInsideObstacle(port.outer, obstacle),
-            ),
-          )
-          const targetPorts = routePorts(target).filter((port) =>
-            obstacles.every(
-              (obstacle) =>
-                obstacle === obstacles[nodes.indexOf(target)] ||
-                !pointInsideObstacle(port.outer, obstacle),
-            ),
-          )
-          const xValues = new Set([8, 712])
-          const yValues = new Set([54, height - 8])
-          obstacles.forEach((obstacle) => {
-            xValues.add(obstacle.left)
-            xValues.add(obstacle.right)
-            yValues.add(obstacle.top)
-            yValues.add(obstacle.bottom)
-          })
-          ;[...sourcePorts, ...targetPorts].forEach((port) => {
-            xValues.add(port.outer.x)
-            yValues.add(port.outer.y)
-          })
-
-          const points = []
-          const pointIndex = new Map()
-          ;[...xValues]
-            .sort((a, b) => a - b)
-            .forEach((x) => {
-              ;[...yValues]
-                .sort((a, b) => a - b)
-                .forEach((y) => {
-                  const point = { x, y }
-                  if (obstacles.some((obstacle) => pointInsideObstacle(point, obstacle))) return
-                  pointIndex.set(`${x},${y}`, points.length)
-                  points.push(point)
-                })
-            })
-
-          const adjacency = Array.from({ length: points.length }, () => [])
-          const connectLine = (indexes, direction) => {
-            for (let index = 1; index < indexes.length; index += 1) {
-              const from = indexes[index - 1]
-              const to = indexes[index]
-              if (!segmentIsClear(points[from], points[to], obstacles)) continue
-              const distance =
-                Math.abs(points[from].x - points[to].x) + Math.abs(points[from].y - points[to].y)
-              adjacency[from].push({ to, distance, direction })
-              adjacency[to].push({ to: from, distance, direction })
-            }
-          }
-
-          const rows = new Map()
-          const columns = new Map()
-          points.forEach((point, index) => {
-            if (!rows.has(point.y)) rows.set(point.y, [])
-            if (!columns.has(point.x)) columns.set(point.x, [])
-            rows.get(point.y).push(index)
-            columns.get(point.x).push(index)
-          })
-          rows.forEach((indexes) =>
-            connectLine(
-              indexes.sort((a, b) => points[a].x - points[b].x),
-              1,
-            ),
-          )
-          columns.forEach((indexes) =>
-            connectLine(
-              indexes.sort((a, b) => points[a].y - points[b].y),
-              2,
-            ),
-          )
-
-          const stateCount = points.length * 3
-          const distances = new Array(stateCount).fill(Infinity)
-          const previous = new Array(stateCount).fill(-1)
-          const sourceForState = new Array(stateCount).fill(-1)
-          const heap = []
-          sourcePorts.forEach((port, portIndex) => {
-            const index = pointIndex.get(`${port.outer.x},${port.outer.y}`)
-            if (index === undefined) return
-            const state = index * 3 + port.direction
-            distances[state] = routeMargin
-            sourceForState[state] = portIndex
-            pushHeap(heap, { state, cost: routeMargin })
-          })
-
-          while (heap.length > 0) {
-            const current = popHeap(heap)
-            if (!current || current.cost !== distances[current.state]) continue
-            const point = Math.floor(current.state / 3)
-            const direction = current.state % 3
-            adjacency[point].forEach((edge) => {
-              const nextState = edge.to * 3 + edge.direction
-              const turn = direction === edge.direction ? 0 : routeTurnCost
-              const cost = current.cost + edge.distance + turn
-              if (cost >= distances[nextState]) return
-              distances[nextState] = cost
-              previous[nextState] = current.state
-              sourceForState[nextState] = sourceForState[current.state]
-              pushHeap(heap, { state: nextState, cost })
-            })
-          }
-
-          let best = null
-          targetPorts.forEach((port, portIndex) => {
-            const index = pointIndex.get(`${port.outer.x},${port.outer.y}`)
-            if (index === undefined) return
-            ;[1, 2].forEach((direction) => {
-              const state = index * 3 + direction
-              const turn = direction === port.direction ? 0 : routeTurnCost
-              const cost = distances[state] + routeMargin + turn
-              if (!Number.isFinite(cost) || (best && cost >= best.cost)) return
-              best = { state, cost, targetPort: portIndex }
-            })
-          })
-
-          if (!best) {
-            return [
-              { x: source.x + source.w / 2, y: source.y + source.h / 2 },
-              { x: target.x + target.w / 2, y: target.y + target.h / 2 },
-            ]
-          }
-
-          const routed = []
-          let state = best.state
-          const sourcePort = sourcePorts[sourceForState[state]]
-          while (state !== -1) {
-            routed.push(points[Math.floor(state / 3)])
-            state = previous[state]
-          }
-          routed.reverse()
-          return simplifyRoute([sourcePort.anchor, ...routed, targetPorts[best.targetPort].anchor])
-        }
-
-        function rectanglesOverlap(a, b, gap = 0) {
-          return !(
-            a.right + gap <= b.left ||
-            a.left >= b.right + gap ||
-            a.bottom + gap <= b.top ||
-            a.top >= b.bottom + gap
-          )
-        }
-
-        function placeEdgeLabel(points, label, nodes, placedLabels, height) {
-          const width = Math.max(46, label.length * 7.6)
-          const candidates = []
-          for (let index = 1; index < points.length; index += 1) {
-            const a = points[index - 1]
-            const b = points[index]
-            const horizontal = a.y === b.y
-            const length = horizontal ? Math.abs(b.x - a.x) : Math.abs(b.y - a.y)
-            ;[0.5, 0.3, 0.7, 0.16, 0.84].forEach((ratio) => {
-              if (horizontal) {
-                ;[-64, 64, -48, 48, -40, 40, -24, 24, 0].forEach((side) =>
-                  candidates.push({
-                    x: a.x + (b.x - a.x) * ratio,
-                    y: a.y + side,
-                    width,
-                    length,
-                    horizontal: true,
-                  }),
-                )
-              } else {
-                ;[-1, 1].forEach((side) =>
-                  candidates.push({
-                    x: a.x + side * (width / 2 + 7),
-                    y: a.y + (b.y - a.y) * ratio,
-                    width,
-                    length,
-                    horizontal: false,
-                  }),
-                )
-              }
-            })
-          }
-          candidates.sort(
-            (a, b) => Number(b.horizontal) - Number(a.horizontal) || b.length - a.length,
-          )
-          const nodeRects = nodes.map((node) => ({
-            left: node.x,
-            right: node.x + node.w,
-            top: node.y,
-            bottom: node.y + node.h,
-          }))
-          const candidate =
-            candidates.find((item) => {
-              const rect = {
-                left: item.x - width / 2 - 4,
-                right: item.x + width / 2 + 4,
-                top: item.y - 12,
-                bottom: item.y + 8,
-              }
-              return (
-                rect.left >= 4 &&
-                rect.right <= 716 &&
-                rect.top >= 48 &&
-                rect.bottom <= height - 4 &&
-                nodeRects.every((node) => !rectanglesOverlap(rect, node, 3)) &&
-                placedLabels.every((placed) => !rectanglesOverlap(rect, placed, 4))
-              )
-            }) ?? candidates[0]
-          const rect = {
-            left: candidate.x - width / 2 - 4,
-            right: candidate.x + width / 2 + 4,
-            top: candidate.y - 12,
-            bottom: candidate.y + 8,
-          }
-          placedLabels.push(rect)
-          return { x: candidate.x, y: candidate.y, width }
-        }
-
-        function labelPlacementFlex(route) {
-          const longestHorizontal = route.points.reduce((longest, point, index) => {
-            if (index === 0 || point.y !== route.points[index - 1].y) return longest
-            return Math.max(longest, Math.abs(point.x - route.points[index - 1].x))
-          }, 0)
-          return longestHorizontal - Math.max(46, route.label.length * 7.6)
+          const node = svgEl('text', { x, y, class: className })
+          node.textContent = text
+          parent.appendChild(node)
+          return node
         }
 
         const el = (tag, className) => {
@@ -3121,19 +2863,67 @@
           return node
         }
 
+        // ---- Curved connector geometry ----
+        // Anchor each edge on the node sides that face one another, then draw a
+        // smooth cubic bezier. Labels ride the curve.
+        function edgeAnchors(a, b) {
+          const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 }
+          const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 }
+          const dx = bc.x - ac.x
+          const dy = bc.y - ac.y
+          if (Math.abs(dy) >= Math.abs(dx) * 0.8) {
+            const down = dy >= 0
+            return {
+              axis: 'v',
+              s: { x: ac.x, y: down ? a.y + a.h : a.y },
+              t: { x: bc.x, y: down ? b.y : b.y + b.h },
+            }
+          }
+          const right = dx >= 0
+          return {
+            axis: 'h',
+            s: { x: right ? a.x + a.w : a.x, y: ac.y },
+            t: { x: right ? b.x : b.x + b.w, y: bc.y },
+          }
+        }
+
+        function bezierPoint(p0, p1, p2, p3, t) {
+          const u = 1 - t
+          return {
+            x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+            y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+          }
+        }
+
+        function edgeCurve(a, b) {
+          const { axis, s, t } = edgeAnchors(a, b)
+          let c1
+          let c2
+          if (axis === 'v') {
+            const k = Math.max(24, Math.abs(t.y - s.y) * 0.5)
+            const sign = t.y >= s.y ? 1 : -1
+            c1 = { x: s.x, y: s.y + sign * k }
+            c2 = { x: t.x, y: t.y - sign * k }
+          } else {
+            const k = Math.max(24, Math.abs(t.x - s.x) * 0.5)
+            const sign = t.x >= s.x ? 1 : -1
+            c1 = { x: s.x + sign * k, y: s.y }
+            c2 = { x: t.x - sign * k, y: t.y }
+          }
+          return {
+            d: `M ${s.x} ${s.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${t.x} ${t.y}`,
+            p: [s, c1, c2, t],
+          }
+        }
+
+        function rectsOverlap(a, b) {
+          return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+        }
+
         function selectNode(id) {
           selectedNodeId = id
-          canvas.querySelectorAll('.diagram-node').forEach((group) => {
-            const on = group.dataset.id === id
-            group.classList.toggle('is-selected', on)
-            group.setAttribute('aria-pressed', String(on))
-          })
-          canvas.querySelectorAll('.diagram-edge').forEach((path) => {
-            path.classList.toggle('is-active', path.dataset.from === id || path.dataset.to === id)
-          })
-          picker.querySelectorAll('.arch-pick').forEach((button) => {
-            button.classList.toggle('is-active', button.dataset.id === id)
-          })
+          renderDiagram()
+          renderPicker()
           renderDetail()
         }
 
@@ -3167,17 +2957,22 @@
           svg.append(titleEl, descEl)
 
           const defs = svgEl('defs')
-          const marker = svgEl('marker', {
-            id: 'arch-arrow',
-            viewBox: '0 0 10 10',
-            refX: 9,
-            refY: 5,
-            markerWidth: 6,
-            markerHeight: 6,
-            orient: 'auto-start-reverse',
+          ;[
+            ['arch-arrow', 'edge-arrow'],
+            ['arch-arrow-active', 'edge-arrow-active'],
+          ].forEach(([id, cls]) => {
+            const marker = svgEl('marker', {
+              id,
+              viewBox: '0 0 10 10',
+              refX: 8.5,
+              refY: 5,
+              markerWidth: 7,
+              markerHeight: 7,
+              orient: 'auto-start-reverse',
+            })
+            marker.appendChild(svgEl('path', { d: 'M 0 1 L 9 5 L 0 9 z', class: cls }))
+            defs.appendChild(marker)
           })
-          marker.appendChild(svgEl('path', { d: 'M 0 0 L 10 5 L 0 10 z', class: 'edge-arrow' }))
-          defs.appendChild(marker)
           svg.appendChild(defs)
 
           activeView.lanes.forEach((lane) => {
@@ -3190,20 +2985,11 @@
           const byNode = new Map(activeView.nodes.map((n) => [n.id, n]))
           const edgeLayer = svgEl('g')
           const labelLayer = svgEl('g')
-          const placedLabels = []
           const routes = activeView.edges.flatMap(([from, to, label, external]) => {
             const a = byNode.get(from)
             const b = byNode.get(to)
             if (!a || !b) return []
-            return [
-              {
-                from,
-                to,
-                label,
-                external,
-                points: routeEdge(a, b, activeView.nodes, activeView.height),
-              },
-            ]
+            return [{ from, to, label, external, ...edgeCurve(a, b) }]
           })
 
           // Draw edges connected to the selection last so they sit on top.
@@ -3211,51 +2997,18 @@
           ;[...routes]
             .sort((a, b) => Number(isActive(a)) - Number(isActive(b)))
             .forEach((route) => {
-              const path = route.points
-                .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
-                .join(' ')
+              const active = isActive(route)
               edgeLayer.appendChild(
                 svgEl('path', {
-                  d: path,
-                  class: `diagram-edge${route.external ? ' is-external' : ''}${isActive(route) ? ' is-active' : ''}`,
-                  'data-from': route.from,
-                  'data-to': route.to,
-                  'marker-end': 'url(#arch-arrow)',
+                  d: route.d,
+                  class: `diagram-edge${route.external ? ' is-external' : ''}${active ? ' is-active' : ''}`,
+                  'marker-end': `url(#${active ? 'arch-arrow-active' : 'arch-arrow'})`,
                 }),
               )
             })
+          svg.appendChild(edgeLayer)
 
-          const renderedLabelKeys = new Set()
-          routes
-            .filter((route) => {
-              const key = `${route.from} ${route.label}`
-              if (renderedLabelKeys.has(key)) return false
-              renderedLabelKeys.add(key)
-              return true
-            })
-            .sort((a, b) => labelPlacementFlex(a) - labelPlacementFlex(b))
-            .forEach(({ label, points }) => {
-              const placement = placeEdgeLabel(
-                points,
-                label,
-                activeView.nodes,
-                placedLabels,
-                activeView.height,
-              )
-              labelLayer.appendChild(
-                svgEl('rect', {
-                  x: placement.x - placement.width / 2 - 4,
-                  y: placement.y - 12,
-                  width: placement.width + 8,
-                  height: 20,
-                  rx: 6,
-                  class: 'edge-label-bg',
-                }),
-              )
-              addText(labelLayer, label, placement.x, placement.y + 3, 'edge-label')
-            })
-          svg.append(edgeLayer, labelLayer)
-
+          // Nodes.
           const labelFits = []
           activeView.nodes.forEach((node) => {
             const selected = node.id === selectedNodeId
@@ -3274,15 +3027,18 @@
                 y: node.y,
                 width: node.w,
                 height: node.h,
-                rx: 12,
+                rx: 13,
                 class: 'node-box',
               }),
+            )
+            group.appendChild(
+              svgEl('circle', { cx: node.x + 13, cy: node.y + 13, r: 3.2, class: 'node-dot' }),
             )
             const cx = node.x + node.w / 2
             const cy = node.y + node.h / 2
             const titleText = addText(group, node.title, cx, cy - 5, 'node-title')
             const subText = addText(group, node.sub, cx, cy + 16, 'node-subtitle')
-            labelFits.push({ maxWidth: node.w - 16, els: [titleText, subText] })
+            labelFits.push({ maxWidth: node.w - 20, els: [titleText, subText] })
             group.addEventListener('click', () => selectNode(node.id))
             group.addEventListener('keydown', (event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -3292,9 +3048,51 @@
             })
             svg.appendChild(group)
           })
+
+          // Labels last so they sit above everything; step along each curve (and
+          // off it) to dodge nodes and other labels so nothing overlaps a box.
+          const nodeBoxes = activeView.nodes.map((n) => ({
+            x: n.x - 3,
+            y: n.y - 3,
+            w: n.w + 6,
+            h: n.h + 6,
+          }))
+          const placed = []
+          const seen = new Set()
+          routes.forEach(({ from, to, label, p }) => {
+            const key = [from, to, label].join('|')
+            if (!label || seen.has(key)) return
+            seen.add(key)
+            const width = Math.max(30, label.length * 6.6) + 12
+            const box = (pt) => ({ x: pt.x - width / 2, y: pt.y - 10, w: width, h: 20 })
+            const clear = (pt) =>
+              !nodeBoxes.some((n) => rectsOverlap(n, box(pt))) &&
+              !placed.some((q) => rectsOverlap(q, box(pt)))
+            const mid = bezierPoint(p[0], p[1], p[2], p[3], 0.5)
+            const candidates = [0.5, 0.44, 0.56, 0.38, 0.62, 0.68, 0.32].map((t) =>
+              bezierPoint(p[0], p[1], p[2], p[3], t),
+            )
+            ;[16, -16, 30, -30, 46, -46].forEach((dy) =>
+              candidates.push({ x: mid.x, y: mid.y + dy }),
+            )
+            const spot = candidates.find(clear) ?? mid
+            placed.push(box(spot))
+            labelLayer.appendChild(
+              svgEl('rect', {
+                x: spot.x - width / 2,
+                y: spot.y - 10,
+                width,
+                height: 20,
+                rx: 7,
+                class: 'edge-label-bg',
+              }),
+            )
+            addText(labelLayer, label, spot.x, spot.y + 4, 'edge-label')
+          })
+          svg.appendChild(labelLayer)
           canvas.appendChild(svg)
 
-          // Shrink any label that would overflow its box so text always fits.
+          // Shrink any node label that would overflow its box so text always fits.
           labelFits.forEach(({ maxWidth, els }) => {
             els.forEach((textEl) => {
               const length = textEl.getComputedTextLength()
