@@ -76,7 +76,7 @@ export interface ApiClient {
     onChanged: (handler: (path: string, content: string | null) => void) => () => void
   }
   agent: {
-    run: (threadId: string, prompt: string) => Promise<void>
+    run: (projectId: string, threadId: string, prompt: string) => Promise<void>
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
     retryReview: (threadId: string, payload: string) => Promise<void>

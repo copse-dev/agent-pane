@@ -33,7 +33,10 @@ export interface IpcInvokeMap {
   'fs:unwatch': { args: [path: string]; result: undefined }
 
   // Agent
-  'agent:run': { args: [threadId: string, prompt: string]; result: undefined }
+  'agent:run': {
+    args: [projectId: string, threadId: string, prompt: string]
+    result: undefined
+  }
   'agent:abort': { args: [threadId: string]; result: undefined }
   'agent:clearHistory': { args: [threadId: string]; result: undefined }
   'agent:refreshModelContext': { args: []; result: undefined }

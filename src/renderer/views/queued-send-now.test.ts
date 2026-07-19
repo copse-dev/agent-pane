@@ -17,6 +17,12 @@ import { mountConversation } from './conversation.ts'
 
 // Records agent.run/agent.abort so the send-now wiring is observable without an
 // Electron runtime. Mirrors the stub in controller/message-queue.test.ts.
+function createProjectStore(): ReturnType<typeof createStore> {
+  const store = createStore()
+  store.setState({ activeProjectId: 'project-1' })
+  return store
+}
+
 function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[] } {
   const runs: Array<[string, string]> = []
   const aborts: string[] = []
@@ -24,7 +30,7 @@ function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[
     runs,
     aborts,
     agent: {
-      run: (threadId: string, payload: string) => {
+      run: (_projectId: string, threadId: string, payload: string) => {
         runs.push([threadId, payload])
         return Promise.resolve()
       },
@@ -45,7 +51,7 @@ function mountWithQueued(status: 'idle' | 'running'): {
   threadId: string
   messageId: string
 } {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, status)

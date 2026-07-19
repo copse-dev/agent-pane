@@ -24,11 +24,10 @@ function resolver(
   overrides: Partial<ThreadExecutionContextDependencies> = {},
 ): ThreadExecutionContext {
   const dependencies: ThreadExecutionContextDependencies = {
-    getActiveProjectId: () => 'project-1',
     getProjectRoot: () => '/project',
     ...overrides,
   }
-  return resolveThreadExecutionContext('thread-1', dependencies)
+  return resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
 }
 
 describe('thread execution context', () => {
@@ -37,7 +36,7 @@ describe('thread execution context', () => {
     assert.throws(() => requireThreadExecutionContext(), /No thread execution context/)
   })
 
-  it('resolves shared mode from the active persisted project', () => {
+  it('resolves shared mode from the explicitly selected project', () => {
     const context = resolver()
 
     assert.deepEqual(context, {
@@ -51,8 +50,7 @@ describe('thread execution context', () => {
     assert.equal(Object.isFrozen(context), true)
   })
 
-  it('rejects a missing active project or persisted project root', () => {
-    assert.throws(() => resolver({ getActiveProjectId: () => null }), /active project/)
+  it('rejects a missing persisted project root', () => {
     assert.throws(() => resolver({ getProjectRoot: () => null }), /Cannot resolve root/)
   })
 

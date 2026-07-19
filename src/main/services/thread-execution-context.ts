@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { getActiveProjectId, getProjectRoot } from './workspace.ts'
+import { getProjectRoot } from './workspace.ts'
 
 export type ThreadCheckoutMode = 'shared' | 'worktree'
 
@@ -14,14 +14,12 @@ export interface ThreadExecutionContext {
 }
 
 export interface ThreadExecutionContextDependencies {
-  getActiveProjectId: () => string | null
   getProjectRoot: (projectId: string) => string | null
 }
 
 const storage = new AsyncLocalStorage<ThreadExecutionContext>()
 
 const defaultDependencies: ThreadExecutionContextDependencies = {
-  getActiveProjectId,
   getProjectRoot,
 }
 
@@ -31,14 +29,12 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
  * boundary once the first-message transaction and worktree metadata exist.
  */
 export function resolveThreadExecutionContext(
+  projectId: string,
   threadId: string,
   dependencies: ThreadExecutionContextDependencies = defaultDependencies,
 ): ThreadExecutionContext {
-  const projectId = dependencies.getActiveProjectId()
-  if (!projectId) throw new Error('Cannot run thread without an active project')
-
   const projectRoot = dependencies.getProjectRoot(projectId)
-  if (!projectRoot) throw new Error(`Cannot resolve root for active project "${projectId}"`)
+  if (!projectRoot) throw new Error(`Cannot resolve root for project "${projectId}"`)
 
   return Object.freeze({
     projectId,

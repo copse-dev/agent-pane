@@ -19,6 +19,12 @@ import { mountConversation } from './conversation.ts'
 // are unit-tested in controller/message-queue.test.ts; this covers the view's
 // rendering of the held state and that the release control is wired.
 
+function createProjectStore(): ReturnType<typeof createStore> {
+  const store = createStore()
+  store.setState({ activeProjectId: 'project-1' })
+  return store
+}
+
 function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[] } {
   const runs: Array<[string, string]> = []
   const aborts: string[] = []
@@ -26,7 +32,7 @@ function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[
     runs,
     aborts,
     agent: {
-      run: (threadId: string, payload: string) => {
+      run: (_projectId: string, threadId: string, payload: string) => {
         runs.push([threadId, payload])
         return Promise.resolve()
       },
@@ -44,7 +50,7 @@ afterEach(() => {
 
 describe('held queued message (component)', () => {
   it('renders a Held badge + Release action for a held hook message', () => {
-    const store = createStore()
+    const store = createProjectStore()
     const api = fakeApi()
     const threadId = createThread(store)
     const host = document.createElement('div')
@@ -77,7 +83,7 @@ describe('held queued message (component)', () => {
   })
 
   it('Release un-holds and dispatches the held message', () => {
-    const store = createStore()
+    const store = createProjectStore()
     const api = fakeApi()
     const threadId = createThread(store)
     const host = document.createElement('div')
@@ -116,7 +122,7 @@ describe('held queued message (component)', () => {
   // (over budget vs stale). This asserts the C3 drain-time path renders that UI
   // plus the visible budget note, so no new WDIO visual is needed.
   it('renders the held UI + budget note for an over-budget hook follow-up (drain-time)', () => {
-    const store = createStore()
+    const store = createProjectStore()
     const api = fakeApi()
     const threadId = createThread(store)
     const host = document.createElement('div')

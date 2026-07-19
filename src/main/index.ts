@@ -75,6 +75,7 @@ import {
   lmStudioDownloadStatusSchema,
   lmStudioTestSchema,
   parseIpcArgs,
+  zProjectId,
   zThreadId,
 } from './ipc/ipc-guards.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
@@ -83,6 +84,7 @@ import {
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
 } from './services/thread-execution-context.ts'
+import { runWithActiveRunIdentity } from './services/thread-models.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -230,42 +232,48 @@ app
     // missing handler. The registry these close over is populated lazily below.
     const messageHistory = new Map<string, LLMMessage[]>()
 
-    ipcMain.handle('agent:run', async (event, threadIdArg: unknown, rawPrompt: string) => {
-      assertMainFrameSender(event, win)
-      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const {
-        userContent,
-        invokedSkills,
-        priorTodos,
-        workingBrief,
-        model,
-        turnTreeId,
-        continuationBudgetUsed,
-      } = parseAgentRunPayload(rawPrompt)
-
-      // Hydrate from persisted storage on first use after a restart
-      if (!messageHistory.has(threadId)) {
-        const stored = storageGet(`llm-history:${threadId}`)
-        if (Array.isArray(stored)) {
-          messageHistory.set(threadId, stored as LLMMessage[])
-        }
-      }
-
-      const priorMessages = messageHistory.get(threadId) ?? []
-      const executionContext = resolveThreadExecutionContext(threadId)
-      const result = await runWithThreadExecutionContext(executionContext, () =>
-        runAgent(threadId, userContent, priorMessages, agentHost, registry, {
+    ipcMain.handle(
+      'agent:run',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        const {
+          userContent,
           invokedSkills,
           priorTodos,
-          ...(workingBrief !== undefined ? { workingBrief } : {}),
-          ...(model !== undefined ? { model } : {}),
-          ...(turnTreeId !== undefined ? { turnTreeId } : {}),
-          ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
-        }),
-      )
-      messageHistory.set(threadId, result.messages)
-      storageSet(`llm-history:${threadId}`, result.messages)
-    })
+          workingBrief,
+          model,
+          turnTreeId,
+          continuationBudgetUsed,
+        } = parseAgentRunPayload(rawPrompt)
+
+        // Hydrate from persisted storage on first use after a restart
+        if (!messageHistory.has(threadId)) {
+          const stored = storageGet(`llm-history:${threadId}`)
+          if (Array.isArray(stored)) {
+            messageHistory.set(threadId, stored as LLMMessage[])
+          }
+        }
+
+        const priorMessages = messageHistory.get(threadId) ?? []
+        const executionContext = resolveThreadExecutionContext(projectId, threadId)
+        const result = await runWithThreadExecutionContext(executionContext, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            runAgent(threadId, userContent, priorMessages, agentHost, registry, {
+              invokedSkills,
+              priorTodos,
+              ...(workingBrief !== undefined ? { workingBrief } : {}),
+              ...(model !== undefined ? { model } : {}),
+              ...(turnTreeId !== undefined ? { turnTreeId } : {}),
+              ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
+            }),
+          ),
+        )
+        messageHistory.set(threadId, result.messages)
+        storageSet(`llm-history:${threadId}`, result.messages)
+      },
+    )
 
     ipcMain.handle(
       'agent:estimateContext',
@@ -356,12 +364,14 @@ app
     ipcMain.handle('agent:retryReview', async (event, threadIdArg: unknown, payload: unknown) => {
       assertMainFrameSender(event, win)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      await retryPostTurnReview(
-        threadId,
-        hydrateHistory(threadId),
-        agentHost,
-        registry,
-        parseRetryPayload(payload),
+      await runWithActiveRunIdentity(threadId, () =>
+        retryPostTurnReview(
+          threadId,
+          hydrateHistory(threadId),
+          agentHost,
+          registry,
+          parseRetryPayload(payload),
+        ),
       )
     })
 
@@ -370,12 +380,14 @@ app
       async (event, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await retryModelComparison(
-          threadId,
-          hydrateHistory(threadId),
-          agentHost,
-          registry,
-          parseRetryPayload(payload),
+        await runWithActiveRunIdentity(threadId, () =>
+          retryModelComparison(
+            threadId,
+            hydrateHistory(threadId),
+            agentHost,
+            registry,
+            parseRetryPayload(payload),
+          ),
         )
       },
     )
