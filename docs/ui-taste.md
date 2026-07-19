@@ -266,6 +266,7 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
   `Message.origin`), never from live hook registration (decision 17), so history renders identically
   to the live run. Spec: [`tests/e2e/hook-cards.e2e.ts`](../tests/e2e/hook-cards.e2e.ts); DOM in
   [`src/renderer/views/hook-cards.test.ts`](../src/renderer/views/hook-cards.test.ts).
+
 ## Context menus (right-click)
 
 Right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
