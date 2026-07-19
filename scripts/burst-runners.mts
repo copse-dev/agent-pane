@@ -66,19 +66,25 @@ import {
 const DEFAULT_GITHUB_URL = 'https://github.com/copse-dev'
 const DEFAULT_NAME = 'copse-burst'
 const DEFAULT_RUNNER_GROUP = 'default'
-// Unified slots: every slot serves both tiers. An earlier split-tier layout
-// (one e2e lane per host) guarded against two concurrent Electron e2e suites
-// contending on a 4-vCPU host — but the checks-only slots sat idle, and the
-// app-side fixes (#988) plus harness hardening (#991/#992) likely removed the
-// slowness that made contention fatal. Running unified again to validate; if
-// timeout-clustered failures on burst hosts recur (check runner_name per failed
-// job), re-enable the split by writing COMPOSE_PROFILES=split-tiers to the
-// remote .env and scaling runner=1/runner-checks=N-1 — the compose service and
-// RUNNER_CHECKS_LABELS plumbing below are kept for exactly that. The `burst`
-// marker label stays: it is what made the failure clustering diagnosable.
+// One e2e runner per host. The prior default packed TWO e2e-capable runners on
+// a 16 GiB host (#1016); under load two Electron suites + Docker + Xvfb + page
+// cache oversubscribed the swapless box, so the HOST OOM-killer — not the 6 GiB
+// container cap — killed WebDriver sessions mid-run (the timeout-clustered burst
+// failures, diagnosed per runner_name). Dropping to one e2e runner gives that
+// single 6 GiB suite the whole 16 GiB box (~10 GiB headroom), so no co-tenant
+// e2e suite can trigger the host OOM-killer. Scale e2e WIDTH with --instances
+// (more hosts), never more runners per host. Check jobs still land here when no
+// e2e is queued (unified labels); for a dedicated checks tier, run a second `up`
+// with a small box and checks-only --runner-labels (see usage()) — the shared
+// fleet tag means status/down cover both. The `burst` marker label stays: it is
+// what made the failure clustering diagnosable per runner_name.
 const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks,burst'
 const DEFAULT_RUNNER_CHECKS_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
-const DEFAULT_RUNNERS_PER_INSTANCE = 2
+// One e2e runner per host — two Electron suites on one 16 GiB box oversubscribe
+// it (see above). Add hosts (--instances), not runners, to widen the e2e tier.
+const DEFAULT_RUNNERS_PER_INSTANCE = 1
+// Default e2e fleet width: two 16 GiB hosts, one e2e runner each.
+const DEFAULT_INSTANCES = 2
 const DEFAULT_TARGET_REF = 'main'
 const DEFAULT_TARGET_REPO = 'copse-dev/agent-pane'
 /** Tag namespace for the CI burst fleet — status/down only ever see these hosts. */
@@ -155,8 +161,9 @@ Common options:
   --region <region>             AWS region (default: $${AWS_REGION_ENV} / AWS CLI config).
   --zone <zone>                  Scaleway AZ. Omit on up to auto-pick an AZ with
                                 capacity; omit on status/down to scan all AZs.
-  --instances <n>               Hosts to launch (default: 1).
-  --runners-per-instance <n>    Docker runner containers per host (default: ${String(DEFAULT_RUNNERS_PER_INSTANCE)}).
+  --instances <n>               e2e hosts to launch (default: ${String(DEFAULT_INSTANCES)}).
+  --runners-per-instance <n>    e2e runners per host (default: ${String(DEFAULT_RUNNERS_PER_INSTANCE)}); add
+                                hosts, not runners, to widen the e2e tier.
   --instance-type <type>        EC2 instance type (default: ${DEFAULT_AWS_INSTANCE_TYPE}).
   --scw-type <type>             Scaleway instance type (default: ${DEFAULT_SCW_TYPE}).
   --ami-id <ami>                AMI id. Defaults to latest Ubuntu 24.04 amd64 via SSM.
@@ -175,25 +182,26 @@ Common options:
   --serial                     Provision hosts one at a time (default: provision in parallel).
 
 Example:
+  # e2e fleet — one e2e runner per 16 GiB host (default), two hosts:
   GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \\
     npm run runners:burst -- up \\
       --region us-east-1 \\
-      --instances 3 \\
-      --runners-per-instance 2 \\
+      --instances 2 \\
       --ttl-minutes 240 \\
-      --instance-type c7i.2xlarge \\
       --key-name copse-ci \\
       --key-path ~/.ssh/copse-ci.pem \\
       --subnet-id subnet-123 \\
       --security-group-id sg-123
 
-  # Default is POP2-HC-8C-16G with two runners. Cheaper, granular alternative —
-  # one runner on the half-size HC box (do not run two runners on an 8 GiB box):
+  # Dedicated checks-only host — small box, checks-only labels, several light
+  # runners. Same default --name (${DEFAULT_NAME}) so status/down cover it
+  # alongside the e2e hosts. This is the third machine in the default fleet:
   GITHUB_RUNNER_PAT=ghp_... BUILD_GH_TOKEN=ghp_... \\
     npm run runners:burst:scw -- up \\
-      --instances 6 \\
+      --instances 1 \\
       --scw-type POP2-HC-4C-8G \\
-      --runners-per-instance 1 \\
+      --runners-per-instance 3 \\
+      --runner-labels ${DEFAULT_RUNNER_CHECKS_LABELS} \\
       --ttl-minutes 240
 `
 }
@@ -241,7 +249,10 @@ function buildRunnerConfig(
     accessToken: envValue(accessTokenEnv),
     buildToken: envValue(buildTokenEnv),
     githubUrl: optionWithDefault(options, 'github-url', DEFAULT_GITHUB_URL),
-    instanceCount: positiveInt(optionWithDefault(options, 'instances', '1'), 'instances'),
+    instanceCount: positiveInt(
+      optionWithDefault(options, 'instances', String(DEFAULT_INSTANCES)),
+      'instances',
+    ),
     keyPath: optionWithDefault(options, 'key-path', ''),
     remoteUser: optionWithDefault(options, 'remote-user', defaults.remoteUser),
     runnerGroup: optionWithDefault(options, 'runner-group', DEFAULT_RUNNER_GROUP),
@@ -304,11 +315,10 @@ function buildScalewayUpConfig(options: Options, zone: string): ScalewayUpConfig
     zone,
     ...buildRunnerConfig(options, {
       remoteUser: DEFAULT_SCW_REMOTE_USER,
-      // Two runners fit the default POP2-HC-8C-16G (8 vCPU / 16 GiB): 4 vCPU + a
-      // 6 GiB mem_limit each, matching AWS. Coupled to DEFAULT_SCW_TYPE — if you
-      // override --scw-type to a half-size 8 GiB box (POP2-HC-4C-8G), also pass
-      // --runners-per-instance 1, or 2 × 6 GiB caps oversubscribe its (swapless)
-      // RAM and the host OOM-killer, not the container cap, becomes the arbiter.
+      // One e2e runner on the default POP2-HC-8C-16G (8 vCPU / 16 GiB): the
+      // single 6 GiB Electron suite gets ~8 vCPU and ~10 GiB of headroom, so no
+      // co-tenant e2e suite can push the swapless host into its OOM-killer. Add
+      // hosts (--instances), not runners, to widen the e2e tier.
       runnersPerInstance: DEFAULT_RUNNERS_PER_INSTANCE,
     }),
     image: optionWithDefault(options, 'scw-image', DEFAULT_SCW_IMAGE),
@@ -469,7 +479,10 @@ async function scalewayUp(options: Options): Promise<void> {
   requireTool('tar')
   const zones = scalewayZonesForOptions(options)
   const autoZone = option(options, 'zone') === undefined
-  const requested = positiveInt(optionWithDefault(options, 'instances', '1'), 'instances')
+  const requested = positiveInt(
+    optionWithDefault(options, 'instances', String(DEFAULT_INSTANCES)),
+    'instances',
+  )
   let remaining = requested
   const batches: { config: ScalewayUpConfig; ids: string[] }[] = []
 
