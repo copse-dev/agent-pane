@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   getThreadExecutionContext,
+  prepareThreadExecutionContext,
   requireThreadExecutionContext,
   resolveThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -22,9 +23,10 @@ function sharedContext(threadId: string, root: string): ThreadExecutionContext {
 
 function resolver(
   overrides: Partial<ThreadExecutionContextDependencies> = {},
-): ThreadExecutionContext {
+): Promise<ThreadExecutionContext> {
   const dependencies: ThreadExecutionContextDependencies = {
     getProjectRoot: () => '/project',
+    getThreadMeta: async () => ({ id: 'thread-1' }),
     ...overrides,
   }
   return resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
@@ -36,8 +38,8 @@ describe('thread execution context', () => {
     assert.throws(() => requireThreadExecutionContext(), /No thread execution context/)
   })
 
-  it('resolves shared mode from the explicitly selected project', () => {
-    const context = resolver()
+  it('resolves shared mode from an explicitly selected persisted project/thread pair', async () => {
+    const context = await resolver()
 
     assert.deepEqual(context, {
       projectId: 'project-1',
@@ -50,8 +52,38 @@ describe('thread execution context', () => {
     assert.equal(Object.isFrozen(context), true)
   })
 
-  it('rejects a missing persisted project root', () => {
-    assert.throws(() => resolver({ getProjectRoot: () => null }), /Cannot resolve root/)
+  it('rejects a missing persisted project root', async () => {
+    await assert.rejects(resolver({ getProjectRoot: () => null }), /Cannot resolve root/)
+  })
+
+  it('rejects a thread that is not persisted under the selected project', async () => {
+    await assert.rejects(
+      resolver({ getThreadMeta: async () => null }),
+      /does not belong to project/,
+    )
+  })
+
+  it('emits a terminal stream when identity setup fails', async () => {
+    const emitted: Array<{ threadId: string; chunk: unknown }> = []
+    const context = await prepareThreadExecutionContext(
+      'project-1',
+      'thread-1',
+      {
+        emit: (threadId, chunk) => {
+          emitted.push({ threadId, chunk })
+        },
+      },
+      {
+        getProjectRoot: () => '/project',
+        getThreadMeta: async () => null,
+      },
+    )
+
+    assert.equal(context, null)
+    assert.equal(emitted.length, 2)
+    assert.equal(emitted[0]?.threadId, 'thread-1')
+    assert.deepEqual(emitted[1]?.chunk, { type: 'done' })
+    assert.match(JSON.stringify(emitted[0].chunk), /does not belong to project/)
   })
 
   it('keeps simultaneous thread roots isolated across awaits', async () => {

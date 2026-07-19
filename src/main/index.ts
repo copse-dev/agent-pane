@@ -81,7 +81,7 @@ import {
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import {
-  resolveThreadExecutionContext,
+  prepareThreadExecutionContext,
   runWithThreadExecutionContext,
 } from './services/thread-execution-context.ts'
 import { runWithActiveRunIdentity } from './services/thread-models.ts'
@@ -257,7 +257,8 @@ app
         }
 
         const priorMessages = messageHistory.get(threadId) ?? []
-        const executionContext = resolveThreadExecutionContext(projectId, threadId)
+        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
+        if (!executionContext) return
         const result = await runWithThreadExecutionContext(executionContext, () =>
           runWithActiveRunIdentity(threadId, () =>
             runAgent(threadId, userContent, priorMessages, agentHost, registry, {
