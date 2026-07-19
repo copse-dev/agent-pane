@@ -1,5 +1,6 @@
 import { AnthropicProvider } from './anthropic-provider.ts'
 import { OpenAIProvider } from './openai-provider.ts'
+import { ResponsesProvider } from './responses-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
@@ -19,6 +20,12 @@ interface ProviderKeys {
 // baseURL don't get it (some reject unknown fields, and the parameter is
 // OpenAI-specific). See docs/provider-data-policies.md.
 const OPENAI_STORE_OPT_OUT = { extraBody: { store: false } } as const
+
+function isWebSearchTool(tool: unknown): tool is { type: 'web_search' } {
+  if (!tool || typeof tool !== 'object') return false
+  const candidate = tool as { type?: unknown }
+  return candidate.type === 'web_search'
+}
 
 // `model` is the user's selected model (from settings). It both picks the
 // provider family (claude* → Anthropic, gpt* → OpenAI) and is passed through as
@@ -148,6 +155,16 @@ export function createExtraCloudProvider(
 ): LLMProvider {
   validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
   assertProviderHostAllowed(provider.baseUrl, approvedHosts)
+  if (provider.apiStyle === 'responses') {
+    const { tools, ...extraBody } = provider.extraBody ?? {}
+    const serverTools = Array.isArray(tools) ? tools.filter(isWebSearchTool) : []
+    return new ResponsesProvider(model, {
+      baseURL: provider.baseUrl,
+      apiKey,
+      serverTools,
+      ...(Object.keys(extraBody).length ? { extraBody } : {}),
+    })
+  }
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     // Local servers usually run without auth but still want a non-empty key

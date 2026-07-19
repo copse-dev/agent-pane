@@ -24,6 +24,7 @@ const ALL_UNCONFIGURED = {
   openai: false,
   cursor: false,
   openrouter: false,
+  perplexity: false,
   mistral: false,
   gemini: false,
   deepseek: false,
@@ -51,6 +52,25 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
+  it('lists fetched Perplexity models only when its key is configured', async () => {
+    const providers = resolveExtraProviders([
+      { slug: 'perplexity', models: [{ id: 'openai/gpt-live' }] },
+    ])
+    const hidden = await fetchModelOptions(mockApi({ extraProviders: providers }), '')
+    assert.ok(!hidden.some((option) => option.group?.startsWith('Perplexity')))
+
+    const configured = await fetchModelOptions(
+      mockApi({ available: { perplexity: true }, extraProviders: providers }),
+      '',
+    )
+    assert.deepEqual(
+      configured
+        .filter((option) => option.group === 'Perplexity — retention varies by provider')
+        .map((option) => option.value),
+      ['perplexity:openai/gpt-live'],
+    )
+  })
+
   it('shows a single guiding message when nothing is configured', async () => {
     const options = await fetchModelOptions(mockApi(), '')
     assert.equal(options.length, 1)
