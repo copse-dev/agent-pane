@@ -52,15 +52,11 @@
         align-items: center;
         gap: 8px;
         margin-bottom: var(--spacing-sm);
-        padding: 5px 12px 5px 8px;
-        border-radius: 999px;
-        border: 1px solid rgba(124, 58, 237, 0.16);
-        background: rgba(124, 58, 237, 0.06);
         font-size: 0.78rem;
         font-weight: 600;
-        letter-spacing: 0.04em;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: var(--color-wave-start);
+        color: var(--color-text-light);
       }
 
       .arch-eyebrow svg {
@@ -69,9 +65,13 @@
 
       .architecture-heading h1 {
         margin-bottom: var(--spacing-sm);
-        font-size: 2.85rem;
+        font-size: 2.6rem;
         line-height: 1.08;
         letter-spacing: -0.02em;
+        /* Override the site's gradient wordmark treatment — solid heading. */
+        background: none;
+        color: var(--color-text);
+        -webkit-text-fill-color: var(--color-text);
       }
 
       .architecture-heading p {
@@ -148,22 +148,11 @@
       }
 
       .arch-board {
-        position: relative;
         background: #fff;
         border: 1px solid rgba(30, 42, 34, 0.08);
         border-radius: var(--border-radius);
         box-shadow: var(--shadow-lg);
         padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
-        overflow: hidden;
-      }
-
-      /* Copse wave accent along the top of the board */
-      .arch-board::before {
-        content: '';
-        position: absolute;
-        inset: 0 0 auto 0;
-        height: 4px;
-        background: linear-gradient(90deg, var(--color-wave-start) 0%, var(--color-wave-end) 100%);
       }
 
       .arch-canvas {
@@ -206,7 +195,19 @@
         fill: var(--color-primary);
       }
 
-      /* Edge labels read as attached chips centred on the curve */
+      /* Edge labels ride the curve but stay hidden until the connected node is
+         selected or hovered, so dense views read cleanly. */
+      .arch-canvas .edge-label-group {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.12s ease;
+      }
+
+      .arch-canvas .edge-label-group.is-shown,
+      .arch-canvas .edge-label-group.hover-shown {
+        opacity: 1;
+      }
+
       .arch-canvas .edge-label-bg {
         fill: #fff;
         stroke: rgba(30, 42, 34, 0.12);
@@ -214,7 +215,7 @@
       }
 
       .arch-canvas .edge-label {
-        fill: rgba(30, 42, 34, 0.6);
+        fill: rgba(30, 42, 34, 0.62);
         font-size: 12px;
         font-weight: 500;
         text-anchor: middle;
@@ -331,22 +332,12 @@
 
       /* Inspector */
       .arch-inspector {
-        position: relative;
         margin-top: var(--spacing-md);
         background: #fff;
         border: 1px solid rgba(30, 42, 34, 0.08);
         border-radius: var(--border-radius);
         box-shadow: var(--shadow);
         padding: var(--spacing-md) var(--spacing-lg);
-        overflow: hidden;
-      }
-
-      .arch-inspector::before {
-        content: '';
-        position: absolute;
-        inset: 0 auto 0 0;
-        width: 4px;
-        background: var(--kind, var(--color-primary));
       }
 
       .arch-inspector-head {
@@ -431,8 +422,9 @@
       }
 
       .arch-pick.is-active {
-        border-color: var(--dot);
-        box-shadow: 0 0 0 1px var(--dot);
+        border-color: color-mix(in srgb, var(--dot) 55%, transparent);
+        background: color-mix(in srgb, var(--dot) 9%, #fff);
+        font-weight: 600;
       }
 
       .arch-flow {
@@ -2994,22 +2986,26 @@
 
           // Draw edges connected to the selection last so they sit on top.
           const isActive = (route) => route.from === selectedNodeId || route.to === selectedNodeId
+          const edgePaths = []
           ;[...routes]
             .sort((a, b) => Number(isActive(a)) - Number(isActive(b)))
             .forEach((route) => {
               const active = isActive(route)
-              edgeLayer.appendChild(
-                svgEl('path', {
-                  d: route.d,
-                  class: `diagram-edge${route.external ? ' is-external' : ''}${active ? ' is-active' : ''}`,
-                  'marker-end': `url(#${active ? 'arch-arrow-active' : 'arch-arrow'})`,
-                }),
-              )
+              const path = svgEl('path', {
+                d: route.d,
+                class: `diagram-edge${route.external ? ' is-external' : ''}${active ? ' is-active' : ''}`,
+                'marker-end': `url(#${active ? 'arch-arrow-active' : 'arch-arrow'})`,
+                'data-from': route.from,
+                'data-to': route.to,
+              })
+              edgeLayer.appendChild(path)
+              edgePaths.push(path)
             })
           svg.appendChild(edgeLayer)
 
-          // Nodes.
+          // Nodes. The kind dot is positioned against the rendered title below.
           const labelFits = []
+          const nodeGroups = []
           activeView.nodes.forEach((node) => {
             const selected = node.id === selectedNodeId
             const group = svgEl('g', {
@@ -3031,14 +3027,18 @@
                 class: 'node-box',
               }),
             )
-            group.appendChild(
-              svgEl('circle', { cx: node.x + 13, cy: node.y + 13, r: 3.2, class: 'node-dot' }),
-            )
+            const dot = svgEl('circle', {
+              cx: node.x + 14,
+              cy: node.y + 14,
+              r: 3.4,
+              class: 'node-dot',
+            })
+            group.appendChild(dot)
             const cx = node.x + node.w / 2
             const cy = node.y + node.h / 2
             const titleText = addText(group, node.title, cx, cy - 5, 'node-title')
             const subText = addText(group, node.sub, cx, cy + 16, 'node-subtitle')
-            labelFits.push({ maxWidth: node.w - 20, els: [titleText, subText] })
+            labelFits.push({ maxWidth: node.w - 22, els: [titleText, subText], dot, titleText })
             group.addEventListener('click', () => selectNode(node.id))
             group.addEventListener('keydown', (event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -3047,6 +3047,7 @@
               }
             })
             svg.appendChild(group)
+            nodeGroups.push({ group, id: node.id })
           })
 
           // Labels last so they sit above everything; step along each curve (and
@@ -3077,7 +3078,13 @@
             )
             const spot = candidates.find(clear) ?? mid
             placed.push(box(spot))
-            labelLayer.appendChild(
+            const shown = from === selectedNodeId || to === selectedNodeId
+            const labelGroup = svgEl('g', {
+              class: `edge-label-group${shown ? ' is-shown' : ''}`,
+              'data-from': from,
+              'data-to': to,
+            })
+            labelGroup.appendChild(
               svgEl('rect', {
                 x: spot.x - width / 2,
                 y: spot.y - 10,
@@ -3087,13 +3094,15 @@
                 class: 'edge-label-bg',
               }),
             )
-            addText(labelLayer, label, spot.x, spot.y + 4, 'edge-label')
+            addText(labelGroup, label, spot.x, spot.y + 4, 'edge-label')
+            labelLayer.appendChild(labelGroup)
           })
           svg.appendChild(labelLayer)
           canvas.appendChild(svg)
 
-          // Shrink any node label that would overflow its box so text always fits.
-          labelFits.forEach(({ maxWidth, els }) => {
+          // With the SVG laid out: shrink overflowing node text, then seat each
+          // kind dot just left of its (centred) title so it always reads as a pair.
+          labelFits.forEach(({ maxWidth, els, dot, titleText }) => {
             els.forEach((textEl) => {
               const length = textEl.getComputedTextLength()
               if (length > maxWidth) {
@@ -3101,6 +3110,35 @@
                 textEl.style.fontSize = `${Math.max(8, (current * maxWidth) / length)}px`
               }
             })
+            const bounds = titleText.getBBox()
+            if (bounds.width > 0) {
+              dot.setAttribute('cx', `${bounds.x - 8}`)
+              dot.setAttribute('cy', `${bounds.y + bounds.height / 2}`)
+            }
+          })
+
+          // Reveal an edge's label only while its node (or the edge) is hovered,
+          // focused, or selected — keeps dense views uncluttered.
+          const labelGroups = [...labelLayer.children]
+          const reveal = (match, on) => {
+            labelGroups.forEach((groupEl) => {
+              if (match(groupEl.dataset.from, groupEl.dataset.to)) {
+                groupEl.classList.toggle('hover-shown', on)
+              }
+            })
+          }
+          nodeGroups.forEach(({ group, id }) => {
+            const show = (on) => reveal((from, to) => from === id || to === id, on)
+            group.addEventListener('pointerenter', () => show(true))
+            group.addEventListener('pointerleave', () => show(false))
+            group.addEventListener('focus', () => show(true))
+            group.addEventListener('blur', () => show(false))
+          })
+          edgePaths.forEach((path) => {
+            const { from, to } = path.dataset
+            const show = (on) => reveal((f, t) => f === from && t === to, on)
+            path.addEventListener('pointerenter', () => show(true))
+            path.addEventListener('pointerleave', () => show(false))
           })
         }
 
