@@ -82,6 +82,14 @@ describe('settings sources cursor rules (#636)', () => {
 
     await browser.execute(() => {
       const list = document.querySelector('#sources-cursor-rules-list')
+      for (const row of list?.querySelectorAll<HTMLElement>('.sources-row') ?? []) {
+        const title = row.querySelector<HTMLElement>('.sources-row-title')?.textContent
+        const detail = row.querySelector<HTMLElement>('.sources-row-detail')
+        if (!title || !detail?.textContent) continue
+        const parts = detail.textContent.split(' · ')
+        parts[parts.length - 1] = `<workspace>/${title}`
+        detail.textContent = parts.join(' · ')
+      }
       list?.closest('fieldset')?.scrollIntoView({ block: 'start' })
     })
     await browser.pause(100)
