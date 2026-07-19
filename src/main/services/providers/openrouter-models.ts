@@ -219,8 +219,9 @@ export function filterToZdrModels(
 export async function listFreeOpenRouterModels(): Promise<OpenRouterModelOption[]> {
   const result = await fetchOpenRouterModelsCached()
   if (!result.ok) return []
+  const freeOnly = getSetting<boolean>('openRouterFreeMode', false)
   let models = result.models
-    .filter((m) => m.free && m.supportsTools)
+    .filter((m) => m.supportsTools && (freeOnly ? m.free : true))
     .map((m) => ({ id: m.id, name: m.name }))
     .sort((a, b) => a.name.localeCompare(b.name))
   if (getSetting<boolean>('openRouterZdrOnly', true)) {

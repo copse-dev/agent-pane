@@ -1962,6 +1962,34 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
       banner.append(text, trustBtn)
       listEl.append(banner)
+      // Decision 7 / F3: the `sandbox: false` escape is surfaced at the consent
+      // moment. If this (untrusted) workspace's .copse/hooks.json declares hooks
+      // that opt out of the project sandbox, say so *before* the user trusts —
+      // trusting is what lets those repo-supplied scripts run unsandboxed.
+      void api.workspace
+        .unsandboxedProjectHooks()
+        .then((unsandboxed) => {
+          if (unsandboxed.length === 0) return
+          const warn = document.createElement('div')
+          warn.className = 'mcp-trust-banner trust-unsandboxed-hooks-warning'
+          const label = document.createElement('span')
+          const plural = unsandboxed.length === 1 ? 'hook' : 'hooks'
+          label.textContent =
+            `⚠ This workspace declares ${String(unsandboxed.length)} ${plural} with ` +
+            `"sandbox": false in .copse/hooks.json. Trusting this workspace allows ` +
+            `${unsandboxed.length === 1 ? 'it' : 'them'} to run OUTSIDE the project sandbox:`
+          const list = document.createElement('ul')
+          for (const h of unsandboxed) {
+            const li = document.createElement('li')
+            li.textContent = `${h.event}: ${h.command}`
+            list.append(li)
+          }
+          warn.append(label, list)
+          banner.after(warn)
+        })
+        .catch(() => {
+          /* display-only; a parse error never blocks the trust flow */
+        })
     }
 
     for (const s of statuses) {

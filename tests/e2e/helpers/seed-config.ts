@@ -374,7 +374,10 @@ export function seedProjectSwitchFixture(
  * record matches the base64-plaintext shape `setApiKey` writes when OS secure
  * storage is unavailable, which is all `hasApiKey` needs to report it set.
  */
-export function seedOpenRouterFixture(workspaceRoot: string, options?: { apiBase?: string }): void {
+export function seedOpenRouterFixture(
+  workspaceRoot: string,
+  options?: { apiBase?: string; freeMode?: boolean },
+): void {
   const projectId = 'e2e-openrouter-project'
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
@@ -385,6 +388,7 @@ export function seedOpenRouterFixture(workspaceRoot: string, options?: { apiBase
   writeSettings({
     model: 'openrouter:qwen/qwen3-235b-a22b:free',
     openRouterModel: 'anthropic/claude-3.5-sonnet',
+    ...(options?.freeMode ? { openRouterFreeMode: true } : {}),
     ...(options?.apiBase ? { openRouterApiBase: options.apiBase } : {}),
     apiKey: {
       openrouter: {

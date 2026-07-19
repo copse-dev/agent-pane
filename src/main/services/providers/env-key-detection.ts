@@ -37,6 +37,7 @@ export const PROVIDER_ENV_VARS: Readonly<Record<string, readonly string[]>> = {
   openai: ['OPENAI_API_KEY'],
   cursor: ['CURSOR_API_KEY'],
   openrouter: ['OPENROUTER_API_KEY'],
+  perplexity: ['PERPLEXITY_API_KEY'],
   mistral: ['MISTRAL_API_KEY'],
   gemini: ['GEMINI_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'],
   deepseek: ['DEEPSEEK_API_KEY'],

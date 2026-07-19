@@ -10,8 +10,10 @@ import {
   createOpenRouterProvider,
   createProvider,
 } from './create-provider.ts'
+import { BUILTIN_EXTRA_PROVIDERS } from './extra-providers.ts'
 import { OpenAIProvider } from './openai-provider.ts'
 import type { ExtraProvider } from './extra-providers.ts'
+import { ResponsesProvider } from './responses-provider.ts'
 
 describe('anthropicMaxOutputTokens', () => {
   it('uses per-model catalog metadata', () => {
@@ -284,5 +286,16 @@ describe('createExtraCloudProvider host allowlist', () => {
     assert.doesNotThrow(() => {
       createExtraCloudProvider(local, 'llama', '', [])
     })
+  })
+})
+
+describe('createExtraCloudProvider Responses transport', () => {
+  it('uses the Responses transport for the Perplexity Agent API preset', () => {
+    const perplexity = BUILTIN_EXTRA_PROVIDERS.find((provider) => provider.id === 'perplexity')
+    assert.ok(perplexity)
+
+    const provider = createExtraCloudProvider(perplexity, 'openai/gpt-5.6-sol', 'pplx-test')
+
+    assert.ok(provider instanceof ResponsesProvider)
   })
 })
