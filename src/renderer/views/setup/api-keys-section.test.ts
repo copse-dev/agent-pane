@@ -1,8 +1,13 @@
 import '../../../../tests/setup-dom.ts'
-import { describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { createApiKeysSection } from './api-keys-section.ts'
+import {
+  clickActiveConfirmDialogCancel,
+  clickActiveConfirmDialogConfirm,
+  mountConfirmDialog,
+} from '../../views/confirm-dialog.ts'
 
 type SetKeyResult = { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
 
@@ -42,6 +47,14 @@ function stubApi(state: StubState): ApiClient {
     },
   } as unknown as ApiClient
 }
+
+beforeEach(() => {
+  mountConfirmDialog()
+})
+
+afterEach(() => {
+  document.body.replaceChildren()
+})
 
 describe('api-keys-section', () => {
   it('renders saved and unset key states with inline icons', async () => {
@@ -115,13 +128,10 @@ describe('api-keys-section', () => {
     assert.ok(input)
     input.value = 'sk-test'
 
-    const priorConfirm = globalThis.confirm
-    globalThis.confirm = (): boolean => true
-    try {
-      await section.saveKeys()
-    } finally {
-      globalThis.confirm = priorConfirm
-    }
+    const savePromise = section.saveKeys()
+    await Promise.resolve()
+    clickActiveConfirmDialogConfirm()
+    await savePromise
 
     // First call without consent (refused), second retried with allowPlaintext.
     assert.deepEqual(state.setKeyCalls, [
@@ -150,13 +160,10 @@ describe('api-keys-section', () => {
     assert.ok(input)
     input.value = 'sk-test'
 
-    const priorConfirm = globalThis.confirm
-    globalThis.confirm = (): boolean => false
-    try {
-      await section.saveKeys()
-    } finally {
-      globalThis.confirm = priorConfirm
-    }
+    const savePromise = section.saveKeys()
+    await Promise.resolve()
+    clickActiveConfirmDialogCancel()
+    await savePromise
 
     // Only the initial consent-less attempt was made; no plaintext retry.
     assert.deepEqual(state.setKeyCalls, [{ provider: 'anthropic', allowPlaintext: false }])

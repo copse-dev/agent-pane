@@ -248,6 +248,47 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  updatePrompt: {
+    respond: (id: string, buttonIndex: number) =>
+      ipcRenderer.invoke('update-prompt:respond', id, buttonIndex),
+    onRequest: (
+      handler: (req: {
+        id: string
+        message: string
+        detail?: string
+        buttons: string[]
+        defaultIndex?: number
+        cancelIndex?: number
+      }) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: {
+          id: string
+          message: string
+          detail?: string
+          buttons: string[]
+          defaultIndex?: number
+          cancelIndex?: number
+        },
+      ): void => {
+        handler(req)
+      }
+      ipcRenderer.on('update:prompt_request', listener)
+      return (): void => {
+        ipcRenderer.off('update:prompt_request', listener)
+      }
+    },
+    onDevNotice: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('update:dev_notice', listener)
+      return (): void => {
+        ipcRenderer.off('update:dev_notice', listener)
+      }
+    },
+  },
   sshWorkspace: {
     listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
     listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),

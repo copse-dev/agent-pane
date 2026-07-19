@@ -10,6 +10,7 @@ import type { LLMMessage, StreamChunk } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
+import { initUpdatePrompt } from './services/update-prompt.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
 import { getPackService } from './services/packs/pack-service.ts'
@@ -146,6 +147,7 @@ app
     const win = createMainWindow()
     applyAppIcon([win])
     buildAppMenu(win)
+    initUpdatePrompt(win)
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     // P3: boot the pack service before `createRegistry()` so the persisted

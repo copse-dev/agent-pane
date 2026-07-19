@@ -335,6 +335,17 @@ export interface IpcEventMap {
       kind: 'confirm' | 'secret'
     },
   ]
+  'update:prompt_request': [
+    {
+      id: string
+      message: string
+      detail?: string
+      buttons: string[]
+      defaultIndex?: number
+      cancelIndex?: number
+    },
+  ]
+  'update:dev_notice': []
   'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
