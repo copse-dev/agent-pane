@@ -11,6 +11,7 @@ import { clampLoopLimit } from '@copse/agent/hooks/continuation-budget.ts'
 import {
   listCopseHooksForSources,
   userCopseHooksConfigPath,
+  listUnsandboxedProjectHooks,
   projectCopseHooksConfigPath,
   copseStopHooks,
   copseAfterFileEditHooks,
@@ -452,5 +453,42 @@ describe('copse-adapter (F1)', () => {
       // onFailure enum matches the decision-9 vocabulary.
       assert.deepEqual(schema.$defs?.hook?.properties?.onFailure?.enum, ['open', 'closed'])
     })
+  })
+})
+
+describe('listUnsandboxedProjectHooks — trust-prompt surfacing (decision 7 / F3)', () => {
+  let proj = ''
+  beforeEach(async () => {
+    proj = await mkdtemp(join(tmpdir(), 'copse-unsandboxed-proj-'))
+  })
+  afterEach(async () => {
+    await rm(proj, { recursive: true, force: true })
+  })
+
+  async function writeProject(config: unknown): Promise<void> {
+    await mkdir(join(proj, '.copse'), { recursive: true })
+    await writeFile(projectCopseHooksConfigPath(proj), JSON.stringify(config), 'utf-8')
+  }
+
+  it('lists only the sandbox:false entries, independent of workspace trust', async () => {
+    await writeProject({
+      hooks: {
+        toolGate: [{ command: 'audit.sh' }, { command: 'escape.sh', sandbox: false }],
+        stop: [{ command: 'notify.sh', sandbox: false }],
+      },
+    })
+    // No trust flag is consulted anywhere — the consent prompt must see this
+    // BEFORE the workspace is trusted.
+    const unsandboxed = await listUnsandboxedProjectHooks(proj)
+    assert.deepEqual(unsandboxed.map((h) => `${h.event}:${h.command}`).sort(), [
+      'stop:notify.sh',
+      'toolGate:escape.sh',
+    ])
+  })
+
+  it('returns [] for a missing or hook-free project config', async () => {
+    assert.deepEqual(await listUnsandboxedProjectHooks(proj), [])
+    await writeProject({ hooks: { toolGate: [{ command: 'sandboxed.sh' }] } })
+    assert.deepEqual(await listUnsandboxedProjectHooks(proj), [])
   })
 })

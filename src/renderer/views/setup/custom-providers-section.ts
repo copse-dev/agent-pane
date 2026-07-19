@@ -308,6 +308,8 @@ export function createCustomProvidersSection(
   let pendingOpenRouterZdr: boolean | null = null
   let openRouterAllowTrainingValue = false
   let pendingOpenRouterAllowTraining: boolean | null = null
+  let openRouterFreeModeValue = false
+  let pendingOpenRouterFreeMode: boolean | null = null
 
   function chipKeys(): string[] {
     const extraById = new Map(providers.map((p) => [p.id, p]))
@@ -425,6 +427,16 @@ export function createCustomProvidersSection(
     input.addEventListener('input', () => {
       pendingOpenRouterModel = input.value
     })
+
+    const freeModeBox = el('input', {
+      type: 'checkbox',
+      name: 'openRouterFreeMode',
+    })
+    if (pendingOpenRouterFreeMode ?? openRouterFreeModeValue) freeModeBox.checked = true
+    freeModeBox.addEventListener('change', () => {
+      pendingOpenRouterFreeMode = freeModeBox.checked
+    })
+
     return el(
       'div',
       { class: 'provider-field-group' },
@@ -435,6 +447,12 @@ export function createCustomProvidersSection(
         'Adds a model id beyond the built-in OpenRouter shortlist to the picker. Needs the key above. Browse ids at ',
         el('code', {}, 'openrouter.ai/models'),
         '.',
+      ),
+      el('label', { class: 'checkbox-label' }, freeModeBox, ' Show only free models'),
+      el(
+        'span',
+        { class: 'field-hint' },
+        'When unchecked, the model picker lists every tool-capable OpenRouter model, not just :free tiers.',
       ),
     )
   }
@@ -869,6 +887,11 @@ export function createCustomProvidersSection(
       } catch {
         openRouterAllowTrainingValue = false
       }
+      try {
+        openRouterFreeModeValue = (await api.settings.get('openRouterFreeMode')) === true
+      } catch {
+        openRouterFreeModeValue = false
+      }
     }
     // Let native providers (LM Studio) re-run their own detection.
     await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
@@ -912,6 +935,11 @@ export function createCustomProvidersSection(
       await api.settings.set('openRouterAllowTraining', pendingOpenRouterAllowTraining)
       openRouterAllowTrainingValue = pendingOpenRouterAllowTraining
       pendingOpenRouterAllowTraining = null
+    }
+    if (pendingOpenRouterFreeMode !== null) {
+      await api.settings.set('openRouterFreeMode', pendingOpenRouterFreeMode)
+      openRouterFreeModeValue = pendingOpenRouterFreeMode
+      pendingOpenRouterFreeMode = null
     }
   }
 
