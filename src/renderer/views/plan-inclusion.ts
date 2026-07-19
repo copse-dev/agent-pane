@@ -19,6 +19,8 @@
 // (all models) still has headroom.
 
 import type { PlanProviderId, PlanUsageSnapshot, PlanWindow } from '@copse/plan-usage'
+import type { FrontierCandidate } from '@copse/llm/pareto-frontier.ts'
+import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 
 export interface PlanInclusion {
   provider: PlanProviderId
@@ -108,6 +110,55 @@ export function resolvePlanInclusion(
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
     exhausted: binding.usedPercent >= 100,
+  }
+}
+
+/**
+ * Which subscription plan (if any) can bill a model, keyed off the model's
+ * identity. Conservative on purpose — only the paths the user confirmed run on a
+ * plan: Claude models on the Claude plan, and Grok on the Cursor plan (Cursor
+ * includes it). The mapping only ever *activates* when the snapshot actually
+ * carries that provider's windows, so an unused mapping is harmless.
+ */
+export function planProviderForModel(id: string): PlanProviderId | null {
+  const rid = (resolveIntellectModelId(id) ?? id).toLowerCase()
+  if (rid.includes('claude') || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return 'claude'
+  if (rid.includes('grok')) return 'cursor'
+  return null
+}
+
+/**
+ * Re-price one grouped frontier candidate against the live plan snapshot. When a
+ * plan-billed path covers the model and its governing window has headroom, the
+ * candidate plots at $0 with a plan badge (the off-plan price is kept for the
+ * hover); when that window is spent, it keeps its real price and carries a
+ * limit-reached note instead. Everything else passes through untouched — a null
+ * snapshot or an unmapped/uncovered model is never marked included.
+ */
+export function applyPlanCoverage(
+  candidate: FrontierCandidate,
+  snapshot: PlanUsageSnapshot | null,
+): FrontierCandidate {
+  if (!snapshot) return candidate
+  const provider = planProviderForModel(candidate.id)
+  if (!provider) return candidate
+  const inclusion = resolvePlanInclusion(provider, candidate.id, snapshot)
+  if (!inclusion) return candidate
+  if (inclusion.exhausted) {
+    return {
+      ...candidate,
+      planLimitReached: { label: inclusion.windowLabel, resetsAt: inclusion.resetsAt },
+    }
+  }
+  return {
+    ...candidate,
+    costPerMTok: 0,
+    plan: inclusion.windowLabel,
+    planDetail: {
+      usedPercent: inclusion.usedPercent,
+      resetsAt: inclusion.resetsAt,
+      apiPricePerMTok: candidate.costPerMTok,
+    },
   }
 }
 

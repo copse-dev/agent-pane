@@ -34,6 +34,8 @@ import { liveIntellectCandidates, type LiveAaModel } from '@copse/llm/live-intel
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
+import type { PlanUsageSnapshot } from '@copse/plan-usage'
+import { applyPlanCoverage } from './plan-inclusion.ts'
 import { el } from '../dom/helpers.ts'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -236,6 +238,14 @@ function ttRow(cls: string, ...children: (Node | string)[]): HTMLElement {
 
 const formatPrice = (v: number): string => `$${String(Number(v.toFixed(2)))}/MTok`
 
+/** ", resets Tue" from an ISO reset time, or '' when unknown/unparseable. */
+function formatReset(resetsAt: string | null): string {
+  if (!resetsAt) return ''
+  const d = new Date(resetsAt)
+  if (Number.isNaN(d.getTime())) return ''
+  return `, resets ${d.toLocaleDateString(undefined, { weekday: 'short' })}`
+}
+
 /**
  * Rich hover card for a plotted point: bold identity, the score's full
  * derivation, every known price for the same weights, and frontier status.
@@ -305,6 +315,25 @@ export function pointTooltipContent(p: FrontierPoint): HTMLElement {
   for (const offer of p.prices ?? []) {
     root.append(
       ttRow('tt-muted', `${displayModelLabel(offer.id)}: ${formatPrice(offer.costPerMTok)}`),
+    )
+  }
+  // Plan-covered: how much of the window is used + the off-plan fallback price.
+  if (p.plan && p.planDetail) {
+    root.append(
+      ttRow(
+        'tt-muted',
+        `${String(Math.round(p.planDetail.usedPercent))}% of this plan window used${formatReset(p.planDetail.resetsAt)}.`,
+      ),
+      ttRow('tt-muted', `Off-plan you'd pay ${formatPrice(p.planDetail.apiPricePerMTok)} blended.`),
+    )
+  }
+  // Plan window spent: it's plotted at its real price now, not as included.
+  if (p.planLimitReached) {
+    root.append(
+      ttRow(
+        'tt-muted',
+        `${p.planLimitReached.label} plan limit reached${formatReset(p.planLimitReached.resetsAt)} — plotted at its off-plan price.`,
+      ),
     )
   }
 
@@ -1132,6 +1161,7 @@ export function createIntellectFrontierPanel(
   loadLocalModels: () => Promise<string[]>,
   loadExtraProviders?: () => Promise<readonly ExtraProvider[]>,
   loadLiveModels?: () => Promise<LiveModelsFetch>,
+  loadPlanUsage?: () => Promise<PlanUsageSnapshot>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
   const liveNotes = el('div', { class: 'field-hint frontier-live-notes' })
@@ -1144,6 +1174,7 @@ export function createIntellectFrontierPanel(
     extraProviders: readonly ExtraProvider[]
     live: ReturnType<typeof liveIntellectCandidates>
     liveFetch: LiveModelsFetch
+    planUsage: PlanUsageSnapshot | null
   } | null = null
   let discover = false
   let showUnpriced = false
@@ -1265,11 +1296,17 @@ export function createIntellectFrontierPanel(
     } catch {
       liveFetch = { ok: true, models: [] }
     }
+    let planUsage: PlanUsageSnapshot | null
+    try {
+      planUsage = (await loadPlanUsage?.()) ?? null
+    } catch {
+      planUsage = null
+    }
     // The gate: live models join ONLY when the feed's declared index version
     // matches the canonical one (when declared) AND its values agree with our
     // curated anchors — a renormalised feed must never share the axis.
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion)
-    state = { localIds, extraProviders, live, liveFetch }
+    state = { localIds, extraProviders, live, liveFetch, planUsage }
     render()
   }
 
@@ -1279,14 +1316,17 @@ export function createIntellectFrontierPanel(
   function paintExpanded(): void {
     if (!expandChartHost) return
     expandChartHost.replaceChildren(
-      renderChart(lastPoints, lastGutters, expandTooltip ?? undefined, { width: 1200, height: 680 }),
+      renderChart(lastPoints, lastGutters, expandTooltip ?? undefined, {
+        width: 1200,
+        height: 680,
+      }),
       ...buildAuxLists(lastUnpriced, lastUnscored),
     )
   }
 
   function render(): void {
     if (!state) return
-    const { localIds, extraProviders, live, liveFetch } = state
+    const { localIds, extraProviders, live, liveFetch, planUsage } = state
     const applyDiscover = (btn: HTMLButtonElement | null): void => {
       if (!btn) return
       btn.hidden = live.candidates.length === 0
@@ -1301,8 +1341,13 @@ export function createIntellectFrontierPanel(
       const staleNote =
         stale.length > 0
           ? ` ${String(stale.length)} curated value${stale.length === 1 ? '' : 's'} look stale next to the live feed (${stale
-              .map((m) => `${displayModelLabel(m.modelId)} map ${String(m.canonical)} / live ${String(m.live)}`)
-              .join('; ')}) — a maintainer can refresh them with npm run sync:intellect -- --from-api.`
+              .map(
+                (m) =>
+                  `${displayModelLabel(m.modelId)} map ${String(m.canonical)} / live ${String(m.live)}`,
+              )
+              .join(
+                '; ',
+              )}) — a maintainer can refresh them with npm run sync:intellect -- --from-api.`
           : ''
       liveNoteParts.push(
         `Live points from the Artificial Analysis API, verified against ${String(live.verification.agreeingAnchors)} curated anchors. ${INTELLECT_ATTRIBUTION}.${staleNote}`,
@@ -1375,11 +1420,14 @@ export function createIntellectFrontierPanel(
     // the Discover toggle is on — so by default the map shows what the user can
     // actually route to, and the toggle overlays what they could set up.
     const discoveryCandidates = discover ? live.candidates : []
-    const allPoints = frontierForKnownModels([
-      ...baseCandidates,
-      ...livePricedCurated,
-      ...discoveryCandidates,
-    ])
+    // Re-price each model against the live plan snapshot: a plan-covered model
+    // drops to $0 (best price → wins the frontier) with a plan badge; a model
+    // whose plan window is spent keeps its real price and carries a
+    // limit-reached note. Applied per grouped identity inside the frontier.
+    const allPoints = frontierForKnownModels(
+      [...baseCandidates, ...livePricedCurated, ...discoveryCandidates],
+      (c) => applyPlanCoverage(c, planUsage),
+    )
     // A verified feed can carry a hundred-plus priced models; the map's job is
     // the frontier, so dominated LIVE points collapse into a disclosure rather
     // than each claiming a labelled dot. Curated/local/provider points always

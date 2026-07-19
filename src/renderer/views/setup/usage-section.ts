@@ -297,6 +297,7 @@ export function createUsageSection(
     () => api.lmStudio.models(),
     () => api.settings.extraProviders(),
     () => api.intellect.liveModels(),
+    () => api.usage.getPlanUsage(),
   )
   root.append(frontierPanel.root)
 

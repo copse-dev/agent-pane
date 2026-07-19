@@ -53,6 +53,19 @@ export interface FrontierCandidate {
   discovery?: boolean
   /** Covered by a subscription (e.g. "Claude Max"): ~$0 marginal, fixed fee. */
   plan?: string
+  /**
+   * Plan-coverage detail for the hover when `plan` is set: how much of the
+   * governing window is used, its reset, and the price you'd pay off-plan (the
+   * blended rate this candidate would otherwise plot at). The renderer sets
+   * this from the live usage snapshot; the frontier never interprets it.
+   */
+  planDetail?: { usedPercent: number; resetsAt: string | null; apiPricePerMTok: number }
+  /**
+   * Set instead of `plan` when the governing plan window is spent: the model is
+   * plotted at its real price (no `plan` badge), with this note explaining why
+   * it stopped being included.
+   */
+  planLimitReached?: { label: string; resetsAt: string | null }
   /** AA's own cost-per-Intelligence-Index-task in USD, when the feed carries it. */
   costPerTask?: number
 }
@@ -127,7 +140,10 @@ export function groupByModelIdentity(
  * Offerings of the same weights are grouped: best price plots, the rest ride
  * along in `prices`.
  */
-export function frontierForKnownModels(extra: readonly FrontierCandidate[] = []): FrontierPoint[] {
+export function frontierForKnownModels(
+  extra: readonly FrontierCandidate[] = [],
+  adjust?: (candidate: FrontierCandidate) => FrontierCandidate,
+): FrontierPoint[] {
   const cloud: FrontierCandidate[] = []
   for (const id of TRACKED_MODELS) {
     const info = getModelInfo(id)
@@ -140,5 +156,9 @@ export function frontierForKnownModels(extra: readonly FrontierCandidate[] = [])
       costPerMTok: blendedPricePerMTok(info),
     })
   }
-  return computeParetoFrontier(groupByModelIdentity([...cloud, ...extra]))
+  // Group first (best price per identity), then let the caller re-price each
+  // representative — e.g. drop a plan-covered model's cost to $0. Adjusting the
+  // grouped candidate (not each raw offering) applies coverage once per model.
+  const grouped = groupByModelIdentity([...cloud, ...extra])
+  return computeParetoFrontier(adjust ? grouped.map(adjust) : grouped)
 }

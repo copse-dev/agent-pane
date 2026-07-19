@@ -1,9 +1,12 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { PlanProviderId, PlanUsageSnapshot, PlanWindow } from '@copse/plan-usage'
+import type { FrontierCandidate } from '@copse/llm/pareto-frontier.ts'
 import {
+  applyPlanCoverage,
   claudeGoverningWindowIds,
   planInclusionHint,
+  planProviderForModel,
   resolvePlanInclusion,
 } from './plan-inclusion.ts'
 
@@ -67,10 +70,15 @@ describe('resolvePlanInclusion', () => {
     assert.equal(inc.usedPercent, 65)
   })
 
-  it("flags the model as limit-reached when its OWN cap is spent even though the pool has room", () => {
+  it('flags the model as limit-reached when its OWN cap is spent even though the pool has room', () => {
     const snap = snapshot('claude', [
       { id: 'seven_day', label: 'Weekly', usedPercent: 30 },
-      { id: 'seven_day_fable', label: 'Weekly Fable', usedPercent: 100, resetsAt: '2026-07-21T00:00:00Z' },
+      {
+        id: 'seven_day_fable',
+        label: 'Weekly Fable',
+        usedPercent: 100,
+        resetsAt: '2026-07-21T00:00:00Z',
+      },
     ])
     const inc = resolvePlanInclusion('claude', 'claude-fable-5', snap)
     assert.ok(inc)
@@ -114,5 +122,66 @@ describe('resolvePlanInclusion', () => {
   it('returns null when no window governs the model (never implies free)', () => {
     const snap = snapshot('claude', [{ id: 'unrelated', label: 'Other', usedPercent: 10 }])
     assert.equal(resolvePlanInclusion('claude', 'claude-opus-4-8', snap), null)
+  })
+})
+
+describe('planProviderForModel', () => {
+  it('maps Claude models to the Claude plan and Grok to Cursor', () => {
+    assert.equal(planProviderForModel('claude-fable-5'), 'claude')
+    assert.equal(planProviderForModel('anthropic/claude-opus-4-8'), 'claude')
+    assert.equal(planProviderForModel('grok-4.5'), 'cursor')
+  })
+  it('leaves unmapped models with no plan provider', () => {
+    assert.equal(planProviderForModel('gpt-5.6'), null)
+    assert.equal(planProviderForModel('lmstudio:qwen/qwen2.5-coder-32b'), null)
+  })
+})
+
+describe('applyPlanCoverage', () => {
+  const candidate: FrontierCandidate = { id: 'claude-fable-5', intellect: 60, costPerMTok: 12 }
+
+  it('drops a covered model to $0 with a plan badge, keeping the off-plan price', () => {
+    const snap = snapshot('claude', [
+      {
+        id: 'seven_day_fable',
+        label: 'Weekly Fable',
+        usedPercent: 30,
+        resetsAt: '2026-07-21T00:00:00Z',
+      },
+    ])
+    const out = applyPlanCoverage(candidate, snap)
+    assert.equal(out.costPerMTok, 0)
+    assert.equal(out.plan, 'Weekly Fable')
+    assert.deepEqual(out.planDetail, {
+      usedPercent: 30,
+      resetsAt: '2026-07-21T00:00:00Z',
+      apiPricePerMTok: 12,
+    })
+    assert.equal(out.planLimitReached, undefined)
+  })
+
+  it('keeps the real price and notes limit-reached when the window is spent', () => {
+    const snap = snapshot('claude', [
+      {
+        id: 'seven_day_fable',
+        label: 'Weekly Fable',
+        usedPercent: 100,
+        resetsAt: '2026-07-21T00:00:00Z',
+      },
+    ])
+    const out = applyPlanCoverage(candidate, snap)
+    assert.equal(out.costPerMTok, 12)
+    assert.equal(out.plan, undefined)
+    assert.deepEqual(out.planLimitReached, {
+      label: 'Weekly Fable',
+      resetsAt: '2026-07-21T00:00:00Z',
+    })
+  })
+
+  it('passes through unchanged with no snapshot or an unmapped model', () => {
+    assert.equal(applyPlanCoverage(candidate, null), candidate)
+    const snap = snapshot('claude', [{ id: 'seven_day', label: 'Weekly', usedPercent: 10 }])
+    const gpt: FrontierCandidate = { id: 'gpt-5.6', intellect: 59, costPerMTok: 8 }
+    assert.equal(applyPlanCoverage(gpt, snap), gpt)
   })
 })

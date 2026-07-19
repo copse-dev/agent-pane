@@ -6,10 +6,12 @@ import {
   createIntellectFrontierPanel,
   extraProviderFrontierCandidates,
   localFrontierCandidates,
+  pointTooltipContent,
   renderCompositeStrip,
   renderFrontierSvg,
 } from './intellect-frontier-panel.ts'
-import { frontierForKnownModels } from '@copse/llm/pareto-frontier.ts'
+import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-frontier.ts'
+import type { PlanUsageSnapshot } from '@copse/plan-usage'
 
 describe('renderFrontierSvg', () => {
   it('plots every scored model with a derivation tooltip and one frontier line', () => {
@@ -457,5 +459,84 @@ describe('createIntellectFrontierPanel', () => {
     await panel.refresh()
     // Cloud points still render (catalog data needs no I/O).
     assert.ok(panel.root.querySelector('svg'))
+  })
+})
+
+describe('plan coverage on the map', () => {
+  function claudePlan(window: {
+    id: string
+    label: string
+    usedPercent: number
+    resetsAt?: string | null
+  }): PlanUsageSnapshot {
+    return {
+      checkedAt: '2026-07-19T00:00:00Z',
+      providers: [
+        {
+          status: 'ok',
+          provider: 'claude',
+          usage: {
+            provider: 'claude',
+            plan: 'Max',
+            checkedAt: '2026-07-19T00:00:00Z',
+            windows: [{ resetsAt: null, ...window }],
+          },
+        },
+      ],
+    }
+  }
+
+  it('plots a plan-covered Claude model at $0 with a plan badge', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      undefined,
+      async () => claudePlan({ id: 'seven_day_fable', label: 'Weekly Fable', usedPercent: 20 }),
+    )
+    await panel.refresh()
+    // The dashed plan-badge ring is only drawn for a plan-covered point.
+    assert.ok(panel.root.querySelector('circle.frontier-plan-badge'))
+    // And a label carries the "· plan" suffix.
+    const labels = [...panel.root.querySelectorAll('text.frontier-label')].map((t) => t.textContent)
+    assert.ok(labels.some((l) => l.includes('· plan')))
+  })
+
+  it('does not badge a model whose plan window is spent', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      undefined,
+      async () => claudePlan({ id: 'seven_day_fable', label: 'Weekly Fable', usedPercent: 100 }),
+    )
+    await panel.refresh()
+    assert.equal(panel.root.querySelector('circle.frontier-plan-badge'), null)
+  })
+
+  it('tooltip shows plan headroom + off-plan price when covered', () => {
+    const p: FrontierPoint = {
+      id: 'claude-fable-5',
+      intellect: 60,
+      costPerMTok: 0,
+      onFrontier: true,
+      plan: 'Weekly Fable',
+      planDetail: { usedPercent: 20, resetsAt: null, apiPricePerMTok: 12 },
+    }
+    const card = pointTooltipContent(p)
+    assert.match(card.textContent, /included in your plan/)
+    assert.match(card.textContent, /20% of this plan window used/)
+    assert.match(card.textContent, /Off-plan you'd pay \$12\/MTok/)
+  })
+
+  it('tooltip explains a limit-reached point is plotted at its real price', () => {
+    const p: FrontierPoint = {
+      id: 'claude-fable-5',
+      intellect: 60,
+      costPerMTok: 12,
+      onFrontier: false,
+      planLimitReached: { label: 'Weekly Fable', resetsAt: null },
+    }
+    const card = pointTooltipContent(p)
+    assert.match(card.textContent, /Weekly Fable plan limit reached/)
+    assert.match(card.textContent, /plotted at its off-plan price/)
   })
 })
