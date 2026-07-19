@@ -8,6 +8,7 @@ interface CapturedRequest {
   input: unknown
   stream: boolean
   tools: Array<Record<string, unknown>>
+  max_output_tokens?: number
 }
 
 type TestEvent =
@@ -125,6 +126,7 @@ describe('ResponsesProvider streaming', () => {
       baseURL: 'https://api.perplexity.ai/v1',
       apiKey: 'test-key',
       serverTools: [{ type: 'web_search' }],
+      extraBody: { max_output_tokens: 8192 },
     })
     let request: CapturedRequest | undefined
     withFakeStream(
@@ -163,6 +165,7 @@ describe('ResponsesProvider streaming', () => {
     assert.ok(request)
     assert.equal(request.model, 'openai/gpt-test')
     assert.equal(request.stream, true)
+    assert.equal(request.max_output_tokens, 8192)
     assert.deepEqual(request.tools, [
       { type: 'web_search' },
       {

@@ -52,16 +52,22 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
-  it('lists Perplexity Agent API models only when its key is configured', async () => {
-    const hidden = await fetchModelOptions(mockApi(), '')
-    assert.ok(!hidden.some((option) => option.group === 'Perplexity Agent API'))
+  it('lists fetched Perplexity models only when its key is configured', async () => {
+    const providers = resolveExtraProviders([
+      { slug: 'perplexity', models: [{ id: 'openai/gpt-live' }] },
+    ])
+    const hidden = await fetchModelOptions(mockApi({ extraProviders: providers }), '')
+    assert.ok(!hidden.some((option) => option.group?.startsWith('Perplexity')))
 
-    const configured = await fetchModelOptions(mockApi({ available: { perplexity: true } }), '')
+    const configured = await fetchModelOptions(
+      mockApi({ available: { perplexity: true }, extraProviders: providers }),
+      '',
+    )
     assert.deepEqual(
       configured
-        .filter((option) => option.group === 'Perplexity Agent API')
+        .filter((option) => option.group === 'Perplexity — retention varies by provider')
         .map((option) => option.value),
-      ['perplexity:openai/gpt-5.6-sol', 'perplexity:anthropic/claude-sonnet-4-6'],
+      ['perplexity:openai/gpt-live'],
     )
   })
 

@@ -126,7 +126,7 @@ const DEEPSEEK_CONTEXT = 65_536
 export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
   {
     id: 'perplexity',
-    label: 'Perplexity Agent API',
+    label: 'Perplexity',
     prefix: 'perplexity:',
     baseUrl: 'https://api.perplexity.ai/v1',
     apiStyle: 'responses',
@@ -136,22 +136,13 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     keyLabel: 'Perplexity API key',
     keyPlaceholder: 'Perplexity API key',
     keyHint:
-      'Runs third-party models through the Agent API with Perplexity web search enabled. Validated via the free models endpoint.',
+      'Uses the Agent API with Perplexity web search enabled. Fetch the current model list from its public models endpoint.',
     fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
     includeUsage: true,
-    extraBody: { tools: [{ type: 'web_search' }] },
-    models: [
-      {
-        id: 'openai/gpt-5.6-sol',
-        label: 'GPT-5.6 Sol + web search',
-        contextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-      },
-      {
-        id: 'anthropic/claude-sonnet-4-6',
-        label: 'Claude Sonnet 4.6 + web search',
-        contextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
-      },
-    ],
+    // Anthropic models require max_output_tokens on Agent API; the parameter
+    // is accepted for the other live-discovered models too.
+    extraBody: { tools: [{ type: 'web_search' }], max_output_tokens: 8192 },
+    models: [],
   },
   {
     id: 'mistral',

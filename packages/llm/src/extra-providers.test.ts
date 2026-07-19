@@ -57,8 +57,11 @@ describe('extra provider lookups against a resolved list', () => {
     assert.ok(perplexity)
     assert.equal(perplexity.baseUrl, 'https://api.perplexity.ai/v1')
     assert.equal(perplexity.envVar, 'PERPLEXITY_API_KEY')
-    assert.deepEqual(perplexity.extraBody, { tools: [{ type: 'web_search' }] })
-    assert.ok(perplexity.models.some((model) => model.id === 'openai/gpt-5.6-sol'))
+    assert.deepEqual(perplexity.extraBody, {
+      tools: [{ type: 'web_search' }],
+      max_output_tokens: 8192,
+    })
+    assert.deepEqual(perplexity.models, [])
   })
 
   it('labels curated models by name and falls back to the raw id', () => {

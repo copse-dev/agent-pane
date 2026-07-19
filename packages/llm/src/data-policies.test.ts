@@ -78,12 +78,13 @@ describe('policy defaults match the researched provider behavior', () => {
     assert.equal(policy.zdr, 'unknown')
   })
 
-  it('marks Perplexity API requests as zero-retention and no-training', () => {
+  it('does not overstate the Agent API policy beyond Perplexity’s published wording', () => {
     const policy = dataPolicyForProvider({ id: 'perplexity' })
     assert.ok(policy)
-    assert.equal(policy.retainsPrompts, false)
-    assert.equal(policy.trainsOnData, false)
-    assert.equal(policy.zdr, 'default')
+    assert.equal(policy.retainsPrompts, null)
+    assert.equal(policy.trainsOnData, null)
+    assert.equal(policy.zdr, 'unknown')
+    assert.match(policy.note, /Sonar API only/)
   })
 })
 

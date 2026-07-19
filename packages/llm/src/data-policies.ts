@@ -102,11 +102,11 @@ const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {
     policyUrl: 'https://huggingface.co/docs/inference-providers/security',
   },
   perplexity: {
-    retainsPrompts: false,
-    trainsOnData: false,
-    zdr: 'default',
-    note: 'Perplexity API requests have zero-day retention: prompt and response content is not stored or used for training; only billing metadata is retained.',
-    policyUrl: 'https://docs.perplexity.ai/docs/resources/privacy-security',
+    retainsPrompts: null,
+    trainsOnData: null,
+    zdr: 'unknown',
+    note: 'Perplexity’s API FAQ says query data is not retained or used for training, but its dedicated zero-retention page currently names Sonar API only and does not explicitly cover Agent API.',
+    policyUrl: 'https://docs.perplexity.ai/docs/resources/faq',
   },
 }
 
