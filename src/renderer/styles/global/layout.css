@@ -482,7 +482,8 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
-  border-top: 1px solid var(--border-subtle);
+  /* The tree resizer is the seam; a top border here framed the xterm in an L
+     with the sidebar divider and read as an inset box around the terminal. */
 }
 .git-changes-host {
   flex: 1;
@@ -967,7 +968,6 @@
 }
 .terminal-container {
   flex: 1;
-  padding: var(--spacing-xs);
   overflow: hidden;
   -webkit-app-region: no-drag;
 }
