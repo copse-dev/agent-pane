@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { showConfirmDialog } from './confirm-dialog.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
@@ -718,7 +719,15 @@ export function mountRoadmapPane(
   async function remove(): Promise<void> {
     if (!selectedId) return
     const item = items.find((m) => m.id === selectedId)
-    if (!confirm(`Delete roadmap item "${item?.title || 'untitled'}"?`)) return
+    if (
+      !(await showConfirmDialog({
+        message: `Delete roadmap item "${item?.title || 'untitled'}"?`,
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    ) {
+      return
+    }
     deleteBtn.disabled = true
     try {
       await api.roadmap.delete(selectedId)

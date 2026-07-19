@@ -1,6 +1,7 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import { el } from '../../dom/helpers.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
+import { showConfirmDialog } from '../../views/confirm-dialog.ts'
 
 // Fixed cloud providers with bespoke key validation. OpenAI-compatible presets
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
@@ -187,13 +188,13 @@ export function createApiKeysSection(
 
   // Explicit per-key consent to store unencrypted when no OS keyring is available.
   // Returns whether the user approved a plaintext write for this provider.
-  function confirmPlaintextStorage(provider: ApiKeyProvider): boolean {
+  async function confirmPlaintextStorage(provider: ApiKeyProvider): Promise<boolean> {
     const label = API_KEY_PROVIDER_CONFIGS[provider].label
-    return confirm(
-      `No OS keyring is available to encrypt your ${label} at rest. ` +
-        'Install and unlock a system keyring to store it encrypted.\n\n' +
-        'Store it unencrypted on this machine anyway?',
-    )
+    return showConfirmDialog({
+      message: `No OS keyring is available to encrypt your ${label} at rest. Install and unlock a system keyring to store it encrypted.`,
+      detail: 'Store it unencrypted on this machine anyway?',
+      confirmLabel: 'Store anyway',
+    })
   }
 
   async function saveKeys(): Promise<void> {
@@ -207,7 +208,7 @@ export function createApiKeysSection(
       // Not ok means `plaintext-consent-required`: OS secure storage is unavailable
       // and no consent was given yet. Ask before writing the key to disk in the
       // clear, and retry with explicit consent on approval.
-      if (!result.ok && confirmPlaintextStorage(field.provider)) {
+      if (!result.ok && (await confirmPlaintextStorage(field.provider))) {
         result = await api.settings.setKey(field.provider, key, { allowPlaintext: true })
       }
       if (result.ok) {

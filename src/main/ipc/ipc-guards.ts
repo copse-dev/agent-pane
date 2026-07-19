@@ -140,6 +140,8 @@ export const askRespondSchema = z.tuple([z.uuid(), z.array(z.string().max(8192))
 
 export const sshPromptRespondSchema = z.tuple([z.uuid(), z.string().max(8192)])
 
+export const updatePromptRespondSchema = z.tuple([z.uuid(), z.number().int().min(-1).max(10)])
+
 export const zSshHostId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/)
 
 export const providerSchema = z.enum([

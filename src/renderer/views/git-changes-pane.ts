@@ -13,6 +13,7 @@ import type {
   SessionBackup,
 } from '@shared/types/git.ts'
 import { showToast, showErrorToast } from './toast.ts'
+import { showConfirmDialog } from './confirm-dialog.ts'
 import type { ActiveDiff } from '@shared/types/state.ts'
 import {
   pruneStagedDiffCache,
@@ -316,12 +317,16 @@ export function mountGitChangesPane(
     const backup = sessionBackup
     if (!backup || restoreInFlight) return
     const count = backup.paths.length
-    const confirmed = window.confirm(
-      `Restore ${count === 1 ? 'this file' : `these ${String(count)} files`} to their state ` +
-        `before this session? Any edits Copse applied to ` +
-        `${count === 1 ? 'it' : 'them'} will be replaced with your pre-session version. ` +
+    const confirmed = await showConfirmDialog({
+      message:
+        `Restore ${count === 1 ? 'this file' : `these ${String(count)} files`} to their state ` +
+        `before this session?`,
+      detail:
+        `Any edits Copse applied to ${count === 1 ? 'it' : 'them'} will be replaced with your pre-session version. ` +
         `A snapshot of the current state is kept so this can be undone via git.`,
-    )
+      confirmLabel: 'Restore',
+      danger: true,
+    })
     if (!confirmed) return
     restoreInFlight = true
     renderRestoreBanner()

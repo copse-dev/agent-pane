@@ -148,6 +148,20 @@ export interface ApiClient {
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
     ) => () => void
   }
+  updatePrompt: {
+    respond: (id: string, buttonIndex: number) => Promise<void>
+    onRequest: (
+      handler: (req: {
+        id: string
+        message: string
+        detail?: string
+        buttons: string[]
+        defaultIndex?: number
+        cancelIndex?: number
+      }) => void,
+    ) => () => void
+    onDevNotice: (handler: () => void) => () => void
+  }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>

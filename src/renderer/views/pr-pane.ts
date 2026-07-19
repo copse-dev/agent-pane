@@ -13,6 +13,7 @@ import type {
 } from '@shared/types/git.ts'
 import { getActiveThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { at } from '@shared/array-utils.ts'
+import { showConfirmDialog } from './confirm-dialog.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import { mergePrLists, placeholderPrTitle, prListDisplayTitle, type PrRef } from './pr-pane-list.ts'
@@ -406,11 +407,11 @@ export function mountPrPane(
     btn.addEventListener('click', () => {
       const ref = selectedPr
       if (!ref) return
-      if (!window.confirm(confirmMessage)) return
-      for (const other of metaHost.querySelectorAll<HTMLButtonElement>('.pr-action-btn')) {
-        other.disabled = true
-      }
       void (async (): Promise<void> => {
+        if (!(await showConfirmDialog({ message: confirmMessage, confirmLabel: label }))) return
+        for (const other of metaHost.querySelectorAll<HTMLButtonElement>('.pr-action-btn')) {
+          other.disabled = true
+        }
         let outcome: { text: string; ok: boolean }
         try {
           const result = await run(ref)

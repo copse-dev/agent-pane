@@ -1,10 +1,11 @@
 import '../../../tests/setup-dom.ts'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
+import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 
 // Minimal KnowledgeNote (Roadmap) factory; only the fields the pane reads matter.
 function makeItem(
@@ -287,6 +288,10 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
+beforeEach(() => {
+  mountConfirmDialog()
+})
+
 describe('roadmap pane', () => {
   it('lists items with their status badges when mounted with the pane active', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
@@ -448,20 +453,19 @@ describe('roadmap pane', () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls } = makeApi([makeItem('a', 'Doomed')])
     const { list, viewer } = mountHosts()
-    const priorConfirm = globalThis.confirm
-    globalThis.confirm = (): boolean => true
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
       await flush()
       list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
       viewer.querySelector<HTMLButtonElement>('.roadmap-delete-btn')?.click()
       await flush()
+      clickActiveConfirmDialogConfirm()
+      await flush()
       assert.deepEqual(calls.delete, ['a'])
       assert.equal(list.querySelectorAll('.roadmap-row').length, 0)
       // With nothing selected, the editor falls back to its empty state.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
     } finally {
-      globalThis.confirm = priorConfirm
       unmount()
     }
   })
