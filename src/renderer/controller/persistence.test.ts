@@ -284,6 +284,32 @@ test('a finalized message is appended immediately on message_done', async () => 
   autosave.detach()
 })
 
+test('a new user message sends thread creation before an agent run can be dispatched', async () => {
+  __resetPersistenceForTest()
+  const message = userMsg('m1')
+  const { api, calls } = fakeApi()
+  const store = createStore({
+    activeProjectId: 'p1',
+    activeThreadId: 't1',
+    threads: [thread('t1', { messages: [message] })],
+    projects: [],
+  })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('message_added', 't1', message.id)
+
+  assert.deepEqual(
+    calls.creates.map((entry) => [entry.projectId, entry.thread.id]),
+    [['p1', 't1']],
+  )
+  await tick()
+  assert.deepEqual(
+    calls.appends.map((entry) => [entry.projectId, entry.threadId, entry.message.id]),
+    [['p1', 't1', 'm1']],
+  )
+  autosave.detach()
+})
+
 test('a removed thread emits delete', async () => {
   __resetPersistenceForTest()
   const { api, calls } = fakeApi()

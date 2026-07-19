@@ -14,12 +14,18 @@ import { mountConversation } from './conversation.ts'
 // controller/message-queue.test.ts; this covers the conversation view's
 // rendering of that drained state.
 
+function createProjectStore(): ReturnType<typeof createStore> {
+  const store = createStore()
+  store.setState({ activeProjectId: 'project-1' })
+  return store
+}
+
 function fakeApi(): ApiClient & { runs: Array<[string, string]> } {
   const runs: Array<[string, string]> = []
   return {
     runs,
     agent: {
-      run: (threadId: string, payload: string) => {
+      run: (_projectId: string, threadId: string, payload: string) => {
         runs.push([threadId, payload])
         return Promise.resolve()
       },
@@ -34,7 +40,7 @@ afterEach(() => {
 
 describe('message queue (component)', () => {
   it('queues a follow-up while running, then drains it inline after the turn', () => {
-    const store = createStore()
+    const store = createProjectStore()
     const api = fakeApi()
     const threadId = createThread(store)
     setThreadStatus(store, threadId, 'running')

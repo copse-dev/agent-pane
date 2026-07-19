@@ -168,10 +168,12 @@ export function dispatchAgentRun(
   threadId: string,
   payload: AgentRunPayload,
 ): void {
+  const projectId = store.getState().activeProjectId
+  if (!projectId) throw new Error('Cannot run thread without an active project')
   clearContextSnapshot(store, threadId)
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
-  void api.agent.run(threadId, JSON.stringify(refreshPayload(store, threadId, payload)))
+  void api.agent.run(projectId, threadId, JSON.stringify(refreshPayload(store, threadId, payload)))
 }
 
 export function enqueueUserMessage(

@@ -10,6 +10,7 @@ import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setStagedDiffResolver } from '../diff-queue.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
+import { runWithActiveRunIdentity } from '../thread-models.ts'
 
 /**
  * Headless entry for `copse --acp`: expose the Copse agent loop to an ACP
@@ -70,7 +71,9 @@ export async function runAcpAgentMode(): Promise<void> {
     ctx.signal.addEventListener('abort', onAbort, { once: true })
 
     try {
-      const result = await runAgent(ctx.sessionId, ctx.prompt, history, host, registry)
+      const result = await runWithActiveRunIdentity(ctx.sessionId, () =>
+        runAgent(ctx.sessionId, ctx.prompt, history, host, registry),
+      )
       history.length = 0
       history.push(...result.messages)
       return { stopReason: 'end_turn' }

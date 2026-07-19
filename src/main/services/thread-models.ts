@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 // Tracks which LLM models actually ran in each thread so `git_commit` can credit
 // them in the Copse attribution trailer. Populated from usage chunks during a
 // run (the same signal the renderer uses to build `ThreadUsage.byModel`), and
@@ -7,15 +9,17 @@
 
 const modelsByThread = new Map<string, Set<string>>()
 
-// The app runs one global model and serializes agent runs, so a single
-// "current run" pointer is enough to tell a tool which thread it belongs to.
-let activeRunThreadId: string | null = null
+interface ActiveRunIdentity {
+  readonly threadId: string
+  model: string | null
+}
 
-// The resolved model (post-fallback) the active run is actually executing on.
-// This is the "model actually running" the Cursor hook agent-session payloads
-// report (B4); distinct from `modelsByThread`, which is the *set* of models a
-// thread ever used (for commit attribution).
-let activeRunModel: string | null = null
+const activeRunStorage = new AsyncLocalStorage<ActiveRunIdentity>()
+
+/** Scope the active thread/model identity to one complete asynchronous run. */
+export function runWithActiveRunIdentity<T>(threadId: string, fn: () => T): T {
+  return activeRunStorage.run({ threadId, model: null }, fn)
+}
 
 /** Record a model id observed for a thread (no-op for blank ids). */
 export function recordThreadModel(threadId: string, model: string): void {
@@ -35,33 +39,35 @@ export function getThreadModels(threadId: string): string[] {
 }
 
 /** Mark the thread whose agent run is currently executing tools. */
-export function setActiveRunThread(threadId: string | null): void {
-  activeRunThreadId = threadId
+export function setActiveRunThread(threadId: string): void {
+  const active = activeRunStorage.getStore()
+  if (!active) throw new Error('No active run identity context')
+  if (active.threadId !== threadId) {
+    throw new Error(`Active run identity belongs to "${active.threadId}", not "${threadId}"`)
+  }
 }
 
-/** Clear the active-run pointer only if it still points at this thread. */
+/** Clear mutable model state only when this async context owns the thread. */
 export function clearActiveRunThread(threadId: string): void {
-  if (activeRunThreadId === threadId) {
-    activeRunThreadId = null
-    // No active run ⇒ no active model. The app serializes runs, so clearing the
-    // model here keeps the two pointers consistent without touching every finally.
-    activeRunModel = null
-  }
+  const active = activeRunStorage.getStore()
+  if (active?.threadId === threadId) active.model = null
 }
 
 /** Thread whose run is currently executing tools, or null when idle. */
 export function getActiveRunThread(): string | null {
-  return activeRunThreadId
+  return activeRunStorage.getStore()?.threadId ?? null
 }
 
 /** Record the resolved model the active run is executing on (blank clears it). */
 export function setActiveRunModel(model: string | null): void {
-  activeRunModel = model && model.length > 0 ? model : null
+  const active = activeRunStorage.getStore()
+  if (!active) throw new Error('No active run identity context')
+  active.model = model && model.length > 0 ? model : null
 }
 
 /** The model the active run is executing on, or null when idle / unknown. */
 export function getActiveRunModel(): string | null {
-  return activeRunModel
+  return activeRunStorage.getStore()?.model ?? null
 }
 
 /** Drop tracked models for a thread (e.g. when it is deleted). */
