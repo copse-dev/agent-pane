@@ -7,9 +7,9 @@ import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 
 const OPENROUTER_FIXTURE_PORT = 51235
 
-// Mimics OpenRouter's /models payload: a free tool-capable model (shown), a free
-// model without tool support (filtered out), a paid model (filtered out), and a
-// non-text generator (filtered out).
+// Mimics OpenRouter's /models payload: a free tool-capable model, a free model
+// without tool support (filtered out), a paid tool-capable model (shown when
+// free mode is off), and a non-text generator (filtered out).
 const MODELS_PAYLOAD = {
   data: [
     {
@@ -91,7 +91,7 @@ describe('OpenRouter model picker', () => {
     if (fixture) await fixture.close()
   })
 
-  it('lists only free tool-capable models from the live catalog, plus the custom id', async () => {
+  it('lists all tool-capable models from the live catalog by default', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
 
     await $('.model-picker-trigger').click()
@@ -107,28 +107,27 @@ describe('OpenRouter model picker', () => {
       return { groupLabels, optionLabels }
     })
 
+    // ZDR-only routing is on by default, so the group heading carries the
+    // routing-state annotation (see @copse/llm/data-policies.ts).
     assert.ok(
-      picker.groupLabels.includes('OpenRouter'),
-      `expected an OpenRouter group, saw ${JSON.stringify(picker.groupLabels)}`,
+      picker.groupLabels.includes('OpenRouter (ZDR routing)'),
+      `expected an OpenRouter (ZDR routing) group, saw ${JSON.stringify(picker.groupLabels)}`,
     )
-    // Free + tool-capable model is offered.
     assert.ok(
       picker.optionLabels.includes('Qwen3 235B A22B (free)'),
       `expected the free Qwen model, saw ${JSON.stringify(picker.optionLabels)}`,
     )
-    // Free-but-no-tools and paid models are filtered out.
+    assert.ok(
+      picker.optionLabels.includes('Claude 3.5 Sonnet (paid)'),
+      `expected the paid Claude model, saw ${JSON.stringify(picker.optionLabels)}`,
+    )
     assert.ok(
       !picker.optionLabels.some((l) => l.includes('GLM 4.5 Air')),
       'free model without tool support should be filtered out',
     )
     assert.ok(
-      !picker.optionLabels.some((l) => l.includes('(paid)')),
-      'paid models should be filtered out',
-    )
-    // The custom id from Settings is still offered.
-    assert.ok(
-      picker.optionLabels.some((l) => l === 'anthropic/claude-3.5-sonnet (custom)'),
-      `expected the custom model, saw ${JSON.stringify(picker.optionLabels)}`,
+      !picker.optionLabels.some((l) => l.includes('(custom)')),
+      'custom id that matches the live catalog should not duplicate',
     )
 
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-menu.png')
@@ -160,13 +159,13 @@ describe('OpenRouter model picker', () => {
     assert.deepEqual(
       initialOptions,
       [
+        { text: 'Claude 3.5 Sonnet (paid)', active: 'false' },
         { text: 'Qwen3 235B A22B (free)', active: 'true' },
-        { text: 'anthropic/claude-3.5-sonnet (custom)', active: 'false' },
       ],
       'the currently applied model should be highlighted when the picker opens',
     )
 
-    await browser.keys('ArrowDown')
+    await browser.keys('ArrowUp')
     const afterArrow = await browser.execute(() =>
       [
         ...document.querySelectorAll<HTMLButtonElement>('.model-picker-menu .model-picker-option'),
@@ -177,12 +176,8 @@ describe('OpenRouter model picker', () => {
       })),
     )
     assert.deepEqual(afterArrow, [
+      { text: 'Claude 3.5 Sonnet (paid)', active: 'true', hasActiveClass: true },
       { text: 'Qwen3 235B A22B (free)', active: 'false', hasActiveClass: false },
-      {
-        text: 'anthropic/claude-3.5-sonnet (custom)',
-        active: 'true',
-        hasActiveClass: true,
-      },
     ])
     await saveElementScreenshot('.model-picker-menu', 'openrouter-model-picker-keyboard.png')
 
@@ -190,10 +185,7 @@ describe('OpenRouter model picker', () => {
     await $('.model-picker-filter').click()
     await browser.keys('Enter')
     await $('.model-picker-menu').waitForDisplayed({ reverse: true, timeout: 5_000 })
-    assert.equal(
-      (await $('.model-picker-label').getText()).trim(),
-      'anthropic/claude-3.5-sonnet (custom)',
-    )
+    assert.equal((await $('.model-picker-label').getText()).trim(), 'Claude 3.5 Sonnet (paid)')
     assert.equal(
       await browser.execute(() => document.activeElement?.classList.contains('prompt-input')),
       true,
@@ -223,7 +215,7 @@ describe('OpenRouter model picker', () => {
       'Qwen3 235B A22B (free)',
     ])
     assert.deepEqual(await $$('.model-picker-group-label').map((label) => label.getText()), [
-      'OPENROUTER',
+      'OPENROUTER (ZDR ROUTING)',
     ])
 
     await filter.setValue('no-such-model')
@@ -259,10 +251,17 @@ describe('OpenRouter model picker', () => {
     assert.equal(selected, true, 'expected an OpenRouter provider chip')
 
     await $('.provider-form input[name="openRouterModel"]').waitForExist({ timeout: 5_000 })
+    await $('.provider-form input[name="openRouterFreeMode"]').waitForExist({ timeout: 5_000 })
 
     const fields = await browser.execute(() => ({
       hasOpenRouterKey: !!document.querySelector('.provider-form input[type="password"]'),
       hasCustomModel: !!document.querySelector('.provider-form input[name="openRouterModel"]'),
+      hasFreeModeToggle: !!document.querySelector(
+        '.provider-form input[name="openRouterFreeMode"]',
+      ),
+      freeModeChecked:
+        document.querySelector<HTMLInputElement>('.provider-form input[name="openRouterFreeMode"]')
+          ?.checked ?? false,
       customModelValue:
         document.querySelector<HTMLInputElement>('.provider-form input[name="openRouterModel"]')
           ?.value ?? '',
@@ -270,6 +269,8 @@ describe('OpenRouter model picker', () => {
 
     assert.equal(fields.hasOpenRouterKey, true)
     assert.equal(fields.hasCustomModel, true)
+    assert.equal(fields.hasFreeModeToggle, true)
+    assert.equal(fields.freeModeChecked, false)
     assert.equal(fields.customModelValue, 'anthropic/claude-3.5-sonnet')
 
     await saveElementScreenshot('#settings-dialog', 'openrouter-settings-fields.png')

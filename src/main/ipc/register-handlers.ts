@@ -52,6 +52,7 @@ import {
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
 import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
+import { migrateApprovedProviderHosts } from '../services/providers/approved-provider-hosts.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -59,7 +60,7 @@ import {
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
-import { fetchOpenAiCompatibleModels } from '../services/providers/provider-models.ts'
+import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
@@ -87,16 +88,22 @@ import { listSkills, initSkillsRegistry } from '../services/skills/skills-regist
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
-import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
+import {
+  listCopseHooksForSources,
+  listUnsandboxedProjectHooks,
+} from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
+import { getPackService } from '../services/packs/pack-service.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
   syncOkfMemoryTools,
   syncPiiTools,
+  syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
+import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import {
   OKF_MEMORIES_ENABLED_SETTING,
   MEMORY_TYPE,
@@ -217,6 +224,9 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  // Issue #438: persist grandfathered custom-provider hosts once so Settings
+  // and runtime gates share the same allowlist after upgrade.
+  void migrateApprovedProviderHosts()
   const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
@@ -681,6 +691,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (k === PII_REDACTION_ENABLED_SETTING) {
       syncPiiTools(registry)
     }
+    if (k === READ_TERMINAL_ENABLED_SETTING) {
+      syncReadTerminalTools(registry)
+    }
     // Toggle the DevTools shortcut registration when the setting changes.
     if (k === 'devtoolsShortcutEnabled') {
       const win = getMainWindow()
@@ -695,7 +708,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
-    await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
+    await Promise.all(
+      Object.entries(prefs)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => setSetting(k, v)),
+    )
   })
   ipcMain.handle('settings:getKey', (event, provider: unknown) => {
     assertMainFrameSender(event, win)
@@ -819,7 +836,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const url = parseIpcArgs(z.string().max(2048), [baseUrl])
     const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
-    return fetchOpenAiCompatibleModels(url, apiKey)
+    return fetchOpenAiCompatibleModelsForSettings(url, apiKey)
   })
   ipcMain.handle('settings:refreshHuggingFaceModels', async (event, key: unknown) => {
     assertMainFrameSender(event, win)
@@ -910,8 +927,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       listCopseHooksForSources(opts),
     ])
     return {
-      hooks: [...cursor.hooks, ...claude, ...copse.hooks],
-      warnings: [...cursor.warnings, ...copse.warnings],
+      hooks: [...cursor.hooks, ...claude.hooks, ...copse.hooks],
+      warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
   })
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
@@ -932,6 +949,47 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       scope: parsed.scope,
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
+  })
+  // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
+  // Settings pack list ("about:addons") calls these to enumerate every
+  // registered pack, toggle enablement atomically (P1 contract), and read /
+  // write pack-scoped settings values under the manifest's declared schema.
+  ipcMain.handle('packs:list', (event) => {
+    assertMainFrameSender(event, win)
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+    const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    await getPackService().setEnabled(id, enabled)
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle(
+    'packs:setSetting',
+    async (event, rawId: unknown, rawKey: unknown, rawValue: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+      const key = parseIpcArgs(zNonEmptyString.max(128), [rawKey])
+      // Pack-scoped setting values are declaratively-shaped by the manifest;
+      // the renderer sends the primitive it read from the form. Cap to a sane
+      // upper bound so a compromised renderer can't stuff arbitrary payloads.
+      const value = parseIpcArgs(
+        z.union([z.boolean(), z.number(), z.string().max(8192), z.null()]),
+        [rawValue],
+      )
+      await getPackService().setSetting(id, key, value)
+      return { packs: getPackService().list() }
+    },
+  )
+
+  // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
+  // declare `sandbox: false` at the consent moment. Read-only display parsing —
+  // trust-independent by design (the whole point is showing this BEFORE trust).
+  ipcMain.handle('hooks:unsandboxedProjectHooks', async () => {
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    return listUnsandboxedProjectHooks(root)
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({

@@ -3,6 +3,7 @@ import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
+import type { PacksListResult } from '@shared/types/packs.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -59,6 +60,7 @@ export interface ApiClient {
     set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
+    unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
@@ -319,6 +321,8 @@ export interface ApiClient {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
+      approvedProviderHosts?: string[]
+      providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
     }) => Promise<void>
     getKey: (provider: string) => Promise<boolean>
@@ -456,14 +460,31 @@ export interface ApiClient {
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
     test: (req: HookTestRequest) => Promise<HookTestResult>
   }
+  packs: {
+    /** Enumerate every registered pack with contributions + enablement + settings values (P3). */
+    list: () => Promise<PacksListResult>
+    /** Atomic enable/disable (P1 contract) — persists and flips the shared registry flag. */
+    setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
+    /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
+    setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
+  }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
   }
   terminal: {
-    create: (cols: number, rows: number) => Promise<string>
+    create: (
+      cols: number,
+      rows: number,
+      meta?: { label?: string; threadId?: string | null },
+    ) => Promise<string>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
     destroy: (sessionId: string) => Promise<void>
+    setMeta: (
+      sessionId: string,
+      meta: { label?: string; threadId?: string | null },
+    ) => Promise<void>
+    setActive: (sessionId: string) => Promise<void>
     onOutput: (handler: (sessionId: string, data: string) => void) => () => void
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
   }

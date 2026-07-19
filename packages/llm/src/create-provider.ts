@@ -1,14 +1,30 @@
 import { AnthropicProvider } from './anthropic-provider.ts'
 import { OpenAIProvider } from './openai-provider.ts'
+import { ResponsesProvider } from './responses-provider.ts'
 import { MockLLMProvider } from './mock-provider.ts'
 import { DEFAULT_CLOUD_MODEL } from './model-catalog.ts'
 import { OPENROUTER_BASE_URL } from './openrouter.ts'
+import { assertProviderHostAllowed } from './provider-host-policy.ts'
+import { validateCredentialBaseUrl } from './credential-url.ts'
 import type { ExtraProvider } from './extra-providers.ts'
 import type { LLMProvider } from './types.ts'
 
 interface ProviderKeys {
   anthropicApiKey?: string | null
   openAiApiKey?: string | null
+}
+
+// OpenAI stores Chat Completions/Responses output for 30 days by default on
+// new accounts ("application state"); `store: false` opts each request out.
+// Only sent to api.openai.com — OpenAI-compatible servers reached via a custom
+// baseURL don't get it (some reject unknown fields, and the parameter is
+// OpenAI-specific). See docs/provider-data-policies.md.
+const OPENAI_STORE_OPT_OUT = { extraBody: { store: false } } as const
+
+function isWebSearchTool(tool: unknown): tool is { type: 'web_search' } {
+  if (!tool || typeof tool !== 'object') return false
+  const candidate = tool as { type?: unknown }
+  return candidate.type === 'web_search'
 }
 
 // `model` is the user's selected model (from settings). It both picks the
@@ -34,7 +50,7 @@ export function createProvider(
         'OpenAI is not configured. Add OPENAI_API_KEY in Settings or choose a Claude or LM Studio model.',
       )
     }
-    return new OpenAIProvider(m, { apiKey: openAiApiKey, ...cacheKeyOpt })
+    return new OpenAIProvider(m, { apiKey: openAiApiKey, ...cacheKeyOpt, ...OPENAI_STORE_OPT_OUT })
   }
   if (m.startsWith('claude')) {
     if (!anthropicApiKey) {
@@ -53,6 +69,7 @@ export function createProvider(
     return new OpenAIProvider(model ?? process.env['OPENAI_MODEL'] ?? 'gpt-4o', {
       apiKey: openAiApiKey,
       ...cacheKeyOpt,
+      ...OPENAI_STORE_OPT_OUT,
     })
   }
   throw new Error(
@@ -85,16 +102,37 @@ export const createLMStudioProvider = createLocalOpenAIProvider
 // upstream endpoints that support every parameter we send — crucially `tools`.
 // Without it a model id can be load-balanced onto an endpoint that ignores
 // function calling, so the model narrates instead of emitting tool calls.
+//
+// Retention and training are separate OpenRouter policy axes, controlled by
+// two independent options (see https://openrouter.ai/docs/guides/features/zdr):
+//
+// - `zdrOnly` (default ON, `openRouterZdrOnly` setting) sends `zdr: true`,
+//   routing only to zero-data-retention endpoints. Trade-off: models with no
+//   ZDR endpoint — most `:free` variants — fail with a routing error until
+//   the setting is turned off in Settings → Providers → OpenRouter.
+// - `allowTraining` (default OFF, `openRouterAllowTraining` setting) controls
+//   `data_collection: 'deny'`, which excludes providers that store or train
+//   on inputs. Kept independent of `zdrOnly` so relaxing ZDR (to reach
+//   retained-but-not-trained endpoints) does not silently re-admit trainers.
 export function createOpenRouterProvider(
   model: string,
   apiKey: string,
   promptCacheKey?: string,
+  opts: { zdrOnly?: boolean; allowTraining?: boolean } = {},
 ): LLMProvider {
+  const zdrOnly = opts.zdrOnly ?? true
+  const allowTraining = opts.allowTraining ?? false
   return new OpenAIProvider(model, {
     baseURL: OPENROUTER_BASE_URL,
     apiKey,
     includeUsage: true,
-    extraBody: { provider: { require_parameters: true } },
+    extraBody: {
+      provider: {
+        require_parameters: true,
+        ...(zdrOnly ? { zdr: true } : {}),
+        ...(allowTraining ? {} : { data_collection: 'deny' }),
+      },
+    },
     ...(promptCacheKey ? { promptCacheKey } : {}),
   })
 }
@@ -105,11 +143,28 @@ export function createOpenRouterProvider(
 // on for billed cloud APIs and off for a localhost server (which rarely reports
 // usage); `extraBody` carries any provider-specific request fields (e.g. an
 // OpenRouter-style routing hint a user pastes into the advanced field).
+//
+// `approvedHosts` is the user-approved custom-provider host list (issue #438).
+// Built-in / loopback hosts pass without it; an unapproved custom host throws
+// before the SDK client is constructed so no key or prompt is sent.
 export function createExtraCloudProvider(
   provider: ExtraProvider,
   model: string,
   apiKey: string,
+  approvedHosts: readonly string[] = [],
 ): LLMProvider {
+  validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
+  assertProviderHostAllowed(provider.baseUrl, approvedHosts)
+  if (provider.apiStyle === 'responses') {
+    const { tools, ...extraBody } = provider.extraBody ?? {}
+    const serverTools = Array.isArray(tools) ? tools.filter(isWebSearchTool) : []
+    return new ResponsesProvider(model, {
+      baseURL: provider.baseUrl,
+      apiKey,
+      serverTools,
+      ...(Object.keys(extraBody).length ? { extraBody } : {}),
+    })
+  }
   return new OpenAIProvider(model, {
     baseURL: provider.baseUrl,
     // Local servers usually run without auth but still want a non-empty key

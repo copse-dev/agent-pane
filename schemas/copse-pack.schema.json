@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://copse.dev/schemas/copse-pack.schema.json",
+  "title": "Copse feature-pack manifest",
+  "description": "The declarative manifest for a Copse feature pack. A pack bundles a feature via slots (tools/hooks/prompt/ui/settings/storage) on top of the plugin.json shape Copse already loads (name/version/description/skills/mcpServers). First-party and user packs share this manifest (decision 15); first-party packs additionally supply typed runtime contributions (native tools, in-process function hooks, real renderer views) that are defined in code, not on disk. See docs/packs.md and docs/plans/hooks-and-feature-packs.md (P1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name"],
+  "properties": {
+    "name": {
+      "description": "Pack id / name (plugin.json `name`). Also the grouping key across all slots.",
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "description": "Pack version (plugin.json `version`).",
+      "type": "string"
+    },
+    "description": {
+      "description": "Human description shown in the Settings pack list (P3).",
+      "type": "string"
+    },
+    "trust": {
+      "description": "Whether the pack is shipped by Copse or user-installed (decision 15). A discovered plugin.json is always `user`; first-party packs declare `first-party` in code.",
+      "enum": ["first-party", "user"]
+    },
+    "skills": {
+      "description": "Existing plugin.json slot: relative path to a skills directory.",
+      "type": "string"
+    },
+    "tools": {
+      "description": "Tools slot: native tool names (first-party) contributed to the model tool list, or an MCP config file path (user packs).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "native": {
+          "description": "Native tool names added to the model tool list while enabled (first-party).",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "mcpServers": {
+          "description": "Path to an MCP config file (user packs), like the plugin.json `mcpServers` field.",
+          "type": "string"
+        }
+      }
+    },
+    "hooks": {
+      "description": "Command-hook declarations (user packs). First-party function hooks are typed runtime contributions defined in code, not declared here (decision 15).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event", "command"],
+        "properties": {
+          "event": {
+            "description": "Canonical event name the hook subscribes to.",
+            "type": "string"
+          },
+          "command": {
+            "description": "Shell command spawned when the event fires.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "prompt": {
+      "description": "Prompt / steering blocks folded into assembly while enabled, each with trust framing.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "trust"],
+        "properties": {
+          "id": { "type": "string" },
+          "text": { "type": "string" },
+          "trust": {
+            "description": "A `trusted` (first-party) block is injected verbatim; an `untrusted` (user) block is delimited as data.",
+            "enum": ["trusted", "untrusted"]
+          }
+        }
+      }
+    },
+    "ui": {
+      "description": "UI contributions. Level 1 = declarative cards, level 2 = a named panel slot fed structured data, level 3 = a real renderer view (first-party).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "level"],
+        "properties": {
+          "id": { "type": "string" },
+          "level": {
+            "description": "UI contribution level (1–3).",
+            "enum": [1, 2, 3]
+          },
+          "slot": {
+            "description": "Named host slot this mounts into (level 2/3); omitted for level-1 cards.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Human title for the Settings pack-list enumeration (P3).",
+            "type": "string"
+          },
+          "panel": {
+            "description": "Level-2 refinement (P2). Declares the panel shape the pack emits so the host can validate incoming panel_update payloads. Required when level = 2; the host rejects a level-2 contribution without a panel decl.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+              "kind": {
+                "description": "Data shape: a flat ordered list (ACP plan–shaped) or a nested tree.",
+                "enum": ["list", "tree"]
+              },
+              "header": {
+                "description": "Human header rendered above the panel; falls back to the contribution `title`.",
+                "type": "string"
+              },
+              "ariaLabel": {
+                "description": "Optional a11y label; defaults to `header` / contribution `title`.",
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "settings": {
+      "description": "Pack-scoped settings schema, keyed by setting id, rendered generically in Settings (P3).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "title"],
+        "properties": {
+          "kind": { "enum": ["boolean", "string", "number", "enum"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "default": {
+            "type": ["boolean", "string", "number"]
+          },
+          "options": {
+            "description": "Allowed values for an `enum` field.",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "storage": {
+      "description": "Namespaced storage declaration. Pack state persists across disable, like a disabled browser extension's data (decision 17).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace"],
+      "properties": {
+        "namespace": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

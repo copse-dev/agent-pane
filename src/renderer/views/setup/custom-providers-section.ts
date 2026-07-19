@@ -1,5 +1,12 @@
 import type { ApiClient, ExtraProvider, ExtraProviderModel } from '../../../preload/api.d.ts'
 import { providerSlugFromBaseUrl } from '@copse/llm/provider-slug.ts'
+import {
+  dataPolicyForProvider,
+  openRouterDataPolicy,
+  privacyBadge,
+  type PrivacyBadge,
+  type ProviderDataPolicy,
+} from '@copse/llm/data-policies.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon } from '../../dom/icons.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
@@ -64,6 +71,7 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
 // "Other". Local-server presets are ordered separately (LOCAL_CHIP_ORDER).
 const CHIP_ORDER: readonly string[] = [
   'openai',
+  'perplexity',
   'gemini',
   'mistral',
   'deepseek',
@@ -87,7 +95,6 @@ const CLOUD_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
   { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
   { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
   { label: 'Fireworks AI', baseUrl: 'https://api.fireworks.ai/inference/v1' },
-  { label: 'Perplexity', baseUrl: 'https://api.perplexity.ai' },
   { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1' },
 ]
 
@@ -99,6 +106,25 @@ const LOCAL_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
   { label: 'KoboldCpp', baseUrl: 'http://localhost:5001/v1', slug: 'koboldcpp' },
   { label: 'text-generation-webui', baseUrl: 'http://localhost:5000/v1', slug: 'textgen' },
 ]
+
+// ---- Privacy badge -------------------------------------------------------
+// Data-policy badge + hint shown in every provider form so it's visible where
+// prompts go by default (see packages/llm/src/data-policies.ts and
+// docs/provider-data-policies.md). The badge compresses the policy to one of
+// local / zdr / no-training / trains / unknown; the hint carries the detail
+// and the primary source.
+function privacyBadgeEl(badge: PrivacyBadge): HTMLElement {
+  return el('span', { class: `provider-privacy-badge ${badge.kind}` }, badge.label)
+}
+
+function policyHintEl(policy: ProviderDataPolicy): HTMLElement {
+  return el(
+    'span',
+    { class: 'field-hint provider-privacy-hint' },
+    `${policy.note} Source: `,
+    el('code', {}, policy.policyUrl.replace(/^https:\/\//, '')),
+  )
+}
 
 // A small structured editor for a provider's model shortlist: one row of
 // id / context-window / in & out price / label inputs each, with add and remove
@@ -274,6 +300,16 @@ export function createCustomProvidersSection(
   // so an unsaved edit survives chip switches and only persists on dialog Save.
   let openRouterModelValue = ''
   let pendingOpenRouterModel: string | null = null
+  // OpenRouter privacy-routing toggles. Same pending pattern: the checkboxes
+  // edit the `pending*` values, flushed to the settings on Save. ZDR-only
+  // defaults ON; allow-training defaults OFF — they are independent axes
+  // (retention vs training) in OpenRouter's routing policy.
+  let openRouterZdrValue = true
+  let pendingOpenRouterZdr: boolean | null = null
+  let openRouterAllowTrainingValue = false
+  let pendingOpenRouterAllowTraining: boolean | null = null
+  let openRouterFreeModeValue = false
+  let pendingOpenRouterFreeMode: boolean | null = null
 
   function chipKeys(): string[] {
     const extraById = new Map(providers.map((p) => [p.id, p]))
@@ -391,6 +427,16 @@ export function createCustomProvidersSection(
     input.addEventListener('input', () => {
       pendingOpenRouterModel = input.value
     })
+
+    const freeModeBox = el('input', {
+      type: 'checkbox',
+      name: 'openRouterFreeMode',
+    })
+    if (pendingOpenRouterFreeMode ?? openRouterFreeModeValue) freeModeBox.checked = true
+    freeModeBox.addEventListener('change', () => {
+      pendingOpenRouterFreeMode = freeModeBox.checked
+    })
+
     return el(
       'div',
       { class: 'provider-field-group' },
@@ -402,18 +448,80 @@ export function createCustomProvidersSection(
         el('code', {}, 'openrouter.ai/models'),
         '.',
       ),
+      el('label', { class: 'checkbox-label' }, freeModeBox, ' Show only free models'),
+      el(
+        'span',
+        { class: 'field-hint' },
+        'When unchecked, the model picker lists every tool-capable OpenRouter model, not just :free tiers.',
+      ),
+    )
+  }
+
+  // ---- OpenRouter privacy-routing toggles ----------------------------------
+  // Two independent axes (see @copse/llm/data-policies.ts):
+  // - ZDR-only (default ON): provider.zdr=true routes only to zero-retention
+  //   endpoints. Models without one — most ":free" variants — fail routing.
+  // - Allow may-train providers (default OFF): drops data_collection:"deny".
+  //   Kept separate so relaxing ZDR never silently re-admits trainers.
+  function openRouterPrivacyFields(): HTMLElement {
+    const zdrBox = el('input', { type: 'checkbox' })
+    zdrBox.checked = pendingOpenRouterZdr ?? openRouterZdrValue
+    zdrBox.addEventListener('change', () => {
+      pendingOpenRouterZdr = zdrBox.checked
+      // Re-render so the privacy badge in the form title tracks the choice.
+      renderForm()
+    })
+    const trainBox = el('input', { type: 'checkbox' })
+    trainBox.checked = pendingOpenRouterAllowTraining ?? openRouterAllowTrainingValue
+    trainBox.addEventListener('change', () => {
+      pendingOpenRouterAllowTraining = trainBox.checked
+      renderForm()
+    })
+    return el(
+      'div',
+      { class: 'provider-field-group' },
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        zdrBox,
+        ' Only route to zero-data-retention providers (ZDR)',
+      ),
+      el(
+        'span',
+        { class: 'field-hint' },
+        'Sends provider.zdr with every request, restricting routing to endpoints that never store prompts. Models without a ZDR endpoint fail with a routing error while this is on, and the picker only lists ZDR-capable models.',
+      ),
+      el(
+        'label',
+        { class: 'checkbox-label' },
+        trainBox,
+        ' Allow providers that may train on prompts',
+      ),
+      el(
+        'span',
+        { class: 'field-hint' },
+        'Off (default): data_collection:"deny" excludes providers that store or train on inputs — even when the ZDR toggle above is off. Turn on only if you need models served exclusively by may-train providers (common for free models).',
+      ),
     )
   }
 
   // ---- Fixed provider form ------------------------------------------------
   function fixedForm(fixed: FixedProvider): HTMLElement {
+    const policy =
+      fixed.id === 'openrouter'
+        ? openRouterDataPolicy(
+            pendingOpenRouterZdr ?? openRouterZdrValue,
+            pendingOpenRouterAllowTraining ?? openRouterAllowTrainingValue,
+          )
+        : dataPolicyForProvider({ id: fixed.id })
     const form = el(
       'div',
       { class: 'provider-form' },
-      el('h4', { class: 'provider-form-title' }, fixed.label),
+      el('h4', { class: 'provider-form-title' }, fixed.label, privacyBadgeEl(privacyBadge(policy))),
       keyField(fixed.id, `${fixed.label} API key`, fixed.placeholder, fixed.hint),
     )
-    if (fixed.id === 'openrouter') form.append(openRouterModelField())
+    if (fixed.id === 'openrouter') form.append(openRouterPrivacyFields(), openRouterModelField())
+    if (policy) form.append(policyHintEl(policy))
     return form
   }
 
@@ -421,13 +529,16 @@ export function createCustomProvidersSection(
   function extraForm(provider: ExtraProvider): HTMLElement {
     const form = el('div', { class: 'provider-form' })
 
+    const policy = provider.local ? null : dataPolicyForProvider(provider)
     const title = el(
       'h4',
       { class: 'provider-form-title' },
       provider.label,
       el('span', { class: 'provider-form-tag' }, provider.builtin ? 'built-in' : 'custom'),
+      privacyBadgeEl(privacyBadge(policy, { local: provider.local })),
     )
     form.append(title)
+    if (policy) form.append(policyHintEl(policy))
 
     const urlInput = el('input', {
       type: 'url',
@@ -516,7 +627,9 @@ export function createCustomProvidersSection(
         'label',
         { class: 'checkbox-label' },
         usageBox,
-        ' Report token usage (stream_options.include_usage)',
+        provider.apiStyle === 'responses'
+          ? ' Report token usage from the completed response'
+          : ' Report token usage (stream_options.include_usage)',
       ),
       el(
         'label',
@@ -763,6 +876,24 @@ export function createCustomProvidersSection(
       } catch {
         openRouterModelValue = ''
       }
+      try {
+        const zdr = await api.settings.get('openRouterZdrOnly')
+        // Default ON: only an explicit stored `false` turns ZDR-only routing off.
+        openRouterZdrValue = zdr !== false
+      } catch {
+        openRouterZdrValue = true
+      }
+      try {
+        // Default OFF: only an explicit stored `true` admits may-train providers.
+        openRouterAllowTrainingValue = (await api.settings.get('openRouterAllowTraining')) === true
+      } catch {
+        openRouterAllowTrainingValue = false
+      }
+      try {
+        openRouterFreeModeValue = (await api.settings.get('openRouterFreeMode')) === true
+      } catch {
+        openRouterFreeModeValue = false
+      }
     }
     // Let native providers (LM Studio) re-run their own detection.
     await Promise.all(nativeProviders.map(async (p) => p.refresh?.()))
@@ -795,6 +926,22 @@ export function createCustomProvidersSection(
       await api.settings.set('openRouterModel', trimmed)
       openRouterModelValue = trimmed
       pendingOpenRouterModel = null
+    }
+    // Persist the privacy-routing toggles only when they were touched.
+    if (pendingOpenRouterZdr !== null) {
+      await api.settings.set('openRouterZdrOnly', pendingOpenRouterZdr)
+      openRouterZdrValue = pendingOpenRouterZdr
+      pendingOpenRouterZdr = null
+    }
+    if (pendingOpenRouterAllowTraining !== null) {
+      await api.settings.set('openRouterAllowTraining', pendingOpenRouterAllowTraining)
+      openRouterAllowTrainingValue = pendingOpenRouterAllowTraining
+      pendingOpenRouterAllowTraining = null
+    }
+    if (pendingOpenRouterFreeMode !== null) {
+      await api.settings.set('openRouterFreeMode', pendingOpenRouterFreeMode)
+      openRouterFreeModeValue = pendingOpenRouterFreeMode
+      pendingOpenRouterFreeMode = null
     }
   }
 

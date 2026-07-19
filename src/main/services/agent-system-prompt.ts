@@ -17,18 +17,25 @@ import {
   EXTERNAL_API_SAFETY_BLOCK,
   MEMORY_TOOLS_BLOCK,
   PII_REDACTION_BLOCK,
+  READ_TERMINAL_BLOCK,
 } from './agent-prompt.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
+import {
+  READ_TERMINAL_ENABLED_DEFAULT,
+  READ_TERMINAL_ENABLED_SETTING,
+} from '@shared/terminal/read-terminal.ts'
+import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */
 export async function buildSystemPrompt(opts: {
   subagentsEnabled: boolean
   invokedSkills: string[]
+  threadId?: string
 }): Promise<string> {
-  const { subagentsEnabled, invokedSkills } = opts
+  const { subagentsEnabled, invokedSkills, threadId } = opts
   const skillsToolsLine = buildSkillsToolsPromptLine()
   const projectInstructions = await loadProjectInstructions()
 
@@ -40,6 +47,9 @@ export async function buildSystemPrompt(opts: {
   )
   const okfMemoriesEnabled = getSetting<boolean>(OKF_MEMORIES_ENABLED_SETTING, false)
   const piiRedactionEnabled = getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)
+  const readTerminalEnabled =
+    getSetting<boolean>(READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT) &&
+    (threadId ? hasTerminalSessions(threadId) : hasTerminalSessions())
   const customInstructions = getSettingTrimmed('customInstructions')
   return (
     basePrompt
@@ -47,6 +57,7 @@ export async function buildSystemPrompt(opts: {
       .replace('{WORKSPACE_ROOT}', getWorkspaceRoot() ?? '(none)') +
     (externalApiSafety ? EXTERNAL_API_SAFETY_BLOCK : '') +
     (browserToolsEnabled ? BROWSER_TOOLS_BLOCK : '') +
+    (readTerminalEnabled ? READ_TERMINAL_BLOCK : '') +
     (okfMemoriesEnabled ? MEMORY_TOOLS_BLOCK : '') +
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
     buildSkillsCatalogBlock() +

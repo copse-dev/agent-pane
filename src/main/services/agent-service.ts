@@ -80,6 +80,7 @@ import { getMcpToolMeta } from './mcp/mcp-registry.ts'
 import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
+import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
@@ -220,6 +221,7 @@ function parentTools(
   subagentsEnabled: boolean,
   readonlyMode: boolean,
   executorModel: string,
+  threadId: string,
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -259,6 +261,10 @@ function parentTools(
           : undefined,
       }),
     )
+  }
+  // Only advertise read_terminal while this chat has an open Shells tab.
+  if (!hasTerminalSessions(threadId)) {
+    tools = tools.filter((t) => t.name !== 'read_terminal')
   }
   return tools
 }
@@ -777,7 +783,7 @@ export async function runAgent(
     // inline below, not because a chunk is withheld.
     let loopStopReason: string | undefined
 
-    const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills })
+    const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills, threadId })
 
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -803,7 +809,7 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, model)
+    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, model, threadId)
     setHookRunToolset(parentLoopTools)
 
     const turnStart = await createHookRegistry().emit(

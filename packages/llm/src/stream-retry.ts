@@ -11,11 +11,29 @@ function errorHeaders(err: unknown): Headers | undefined {
   return undefined
 }
 
+/**
+ * OpenRouter's routing-policy failure: no endpoint satisfies the request's
+ * provider constraints (e.g. ZDR-only routing via `provider.zdr`, or
+ * `data_collection: "deny"`). Deterministic — the same request always fails —
+ * so retrying only adds latency. Served as a 503 ("There is no available model
+ * provider that meets your routing requirements"); older responses used a 404
+ * "No endpoints found matching your data policy" form. Matched on message
+ * because it would otherwise fall into the retryable-5xx bucket below.
+ */
+export function isRoutingPolicyError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  return /no available model provider that meets your routing requirements|no endpoints found matching your data policy/i.test(
+    err.message,
+  )
+}
+
 export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof Anthropic.APIUserAbortError) return false
   if (err instanceof OpenAI.APIUserAbortError) return false
   if (err instanceof DOMException && err.name === 'AbortError') return false
   if (err instanceof Error && err.name === 'AbortError') return false
+
+  if (isRoutingPolicyError(err)) return false
 
   if (err instanceof Anthropic.RateLimitError) return true
   if (err instanceof Anthropic.APIConnectionError) return true

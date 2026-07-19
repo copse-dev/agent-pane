@@ -12,6 +12,8 @@ interface MockOpts {
   cursorCloudModels?: Array<{ id: string; label: string }>
   lmStudioModels?: string[]
   openRouterModelSetting?: string
+  openRouterZdrOnlySetting?: boolean
+  openRouterAllowTrainingSetting?: boolean
   acpAgents?: AcpAgentConfig[]
 }
 
@@ -22,6 +24,7 @@ const ALL_UNCONFIGURED = {
   openai: false,
   cursor: false,
   openrouter: false,
+  perplexity: false,
   mistral: false,
   gemini: false,
   deepseek: false,
@@ -36,6 +39,8 @@ function mockApi(opts: MockOpts = {}): ApiClient {
       extraProviders: async () => opts.extraProviders ?? resolveExtraProviders([]),
       get: async (key: string) => {
         if (key === 'openRouterModel') return opts.openRouterModelSetting ?? ''
+        if (key === 'openRouterZdrOnly') return opts.openRouterZdrOnlySetting ?? null
+        if (key === 'openRouterAllowTraining') return opts.openRouterAllowTrainingSetting ?? null
         if (key === 'registeredAcpAgents') return opts.acpAgents ?? null
         return null
       },
@@ -47,6 +52,25 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
+  it('lists fetched Perplexity models only when its key is configured', async () => {
+    const providers = resolveExtraProviders([
+      { slug: 'perplexity', models: [{ id: 'openai/gpt-live' }] },
+    ])
+    const hidden = await fetchModelOptions(mockApi({ extraProviders: providers }), '')
+    assert.ok(!hidden.some((option) => option.group?.startsWith('Perplexity')))
+
+    const configured = await fetchModelOptions(
+      mockApi({ available: { perplexity: true }, extraProviders: providers }),
+      '',
+    )
+    assert.deepEqual(
+      configured
+        .filter((option) => option.group === 'Perplexity — retention varies by provider')
+        .map((option) => option.value),
+      ['perplexity:openai/gpt-live'],
+    )
+  })
+
   it('shows a single guiding message when nothing is configured', async () => {
     const options = await fetchModelOptions(mockApi(), '')
     assert.equal(options.length, 1)
@@ -64,9 +88,57 @@ describe('fetchModelOptions visibility', () => {
     const labels = options.map((o) => o.label)
     assert.ok(!labels.some((l) => /Add a|Add an|API key in Settings/.test(l)))
     // Mistral (configured) + local model are present; no global empty message.
-    assert.ok(options.some((o) => o.group === 'Mistral'))
+    // Mistral's group heading carries the data-policy annotation (it trains on
+    // free/Pro-plan inputs by default — see @copse/llm/data-policies.ts).
+    assert.ok(options.some((o) => o.group === 'Mistral — may train on your data'))
     assert.ok(options.some((o) => o.value === 'lmstudio:local-x'))
     assert.ok(!labels.some((l) => /No models available/.test(l)))
+  })
+
+  it('annotates the OpenRouter group with the ZDR routing state', async () => {
+    const openRouterModels = [{ id: 'openai/gpt-4o', name: 'GPT-4o' }]
+
+    // Default (setting unset) → ZDR-only routing is on.
+    const zdrOn = await fetchModelOptions(
+      mockApi({ available: { openrouter: true }, openRouterModels }),
+      '',
+    )
+    assert.ok(zdrOn.some((o) => o.group === 'OpenRouter (ZDR routing)'))
+
+    // Explicitly off → upstream retention applies (training still denied), and
+    // the heading says so.
+    const zdrOff = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true },
+        openRouterModels,
+        openRouterZdrOnlySetting: false,
+      }),
+      '',
+    )
+    assert.ok(zdrOff.some((o) => o.group === 'OpenRouter — retention varies by provider'))
+
+    // Both relaxed → the heading carries the may-train warning.
+    const training = await fetchModelOptions(
+      mockApi({
+        available: { openrouter: true },
+        openRouterModels,
+        openRouterZdrOnlySetting: false,
+        openRouterAllowTrainingSetting: true,
+      }),
+      '',
+    )
+    assert.ok(training.some((o) => o.group === 'OpenRouter — may train on your data'))
+  })
+
+  it('flags Hugging Face as partner-dependent in its group heading', async () => {
+    const providers = resolveExtraProviders([
+      { slug: 'huggingface', models: [{ id: 'org/model:together' }] },
+    ])
+    const options = await fetchModelOptions(
+      mockApi({ available: { huggingface: true }, extraProviders: providers }),
+      '',
+    )
+    assert.ok(options.some((o) => o.group === 'Hugging Face — retention varies by provider'))
   })
 
   it('hides each remote agent until its own provider key is configured', async () => {

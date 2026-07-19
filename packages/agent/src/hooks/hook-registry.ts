@@ -45,6 +45,8 @@ function recordRun(context: HookContext, record: HookRunRecord): void {
 import { TURN_START_HOOKS } from './turn-start-hooks.ts'
 import { BEFORE_FINALIZE_HOOKS } from './before-finalize-hooks.ts'
 import { STEP_BOUNDARY_HOOKS } from './step-boundary-hooks.ts'
+import { getDefaultPackRegistry } from '../packs/default-pack-registry.ts'
+import type { PackRegistry } from '../packs/pack-registry.ts'
 
 /**
  * Thread a tool-gate rewrite into the payload so the **next** hook in the
@@ -523,11 +525,23 @@ export const FIRST_PARTY_HOOKS: readonly BlockingHook[] = [
   ...STEP_BOUNDARY_HOOKS,
 ]
 
-/** Build a registry pre-loaded with the static first-party hook list. */
+/**
+ * Build a registry pre-loaded with the static first-party hook list **and** the
+ * hooks contributed by every enabled first-party pack (P1). The pack seam is the
+ * forcing function for decision 15: a pack's hooks are registered through the
+ * same registry the loop uses, so disabling the pack (a `PackRegistry` flag)
+ * removes them from new work without touching loop code. In P1 the skeleton pack
+ * contributes no hooks, so this is byte-identical to the M0 behavior; P4's todos
+ * pack registers its turn-start / finalize hooks via `packs` instead of the
+ * static {@link FIRST_PARTY_HOOKS} list.
+ */
 export function createHookRegistry(
   hooks: readonly BlockingHook[] = FIRST_PARTY_HOOKS,
+  packs: PackRegistry = getDefaultPackRegistry(),
 ): HookRegistry {
   const registry = new HookRegistry()
   for (const hook of hooks) registry.register(hook)
+  for (const hook of packs.activeBlockingHooks()) registry.register(hook)
+  for (const hook of packs.activeAsyncHooks()) registry.registerAsync(hook)
   return registry
 }

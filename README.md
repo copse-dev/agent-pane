@@ -70,6 +70,7 @@ LM Studio reloads local models at a small default context length after a reboot,
 
 - [Security policy and private vulnerability reporting](SECURITY.md)
 - [Privacy and complete data-flow inventory](docs/privacy-data-flow.md)
+- [Provider data retention & training policies, and Copse's ZDR defaults](docs/provider-data-policies.md)
 - [Support, known issues, and safe diagnostics](SUPPORT.md)
 - [Changelog and GitHub Release note process](CHANGELOG.md)
 - [Backup, migration, and forward recovery](docs/recovery.md)

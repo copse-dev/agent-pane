@@ -127,6 +127,7 @@ let cache: {
 
 export function invalidateOpenRouterModelsCache(): void {
   cache = null
+  zdrCache = null
 }
 
 /** All OpenRouter models (cached); failures are cached too to avoid repeat timeouts. */
@@ -143,14 +144,90 @@ export async function fetchOpenRouterModelsCached(): Promise<{
   return result
 }
 
-/** Free, tool-capable text models for the picker (sorted by display name). */
+// ---- ZDR endpoint list ----------------------------------------------------
+// OpenRouter publishes its zero-data-retention endpoints at /endpoints/zdr
+// (documented, no auth, auto-updated on provider policy changes). Rows carry a
+// display `model_name` plus an endpoint `name`; some payloads also expose a
+// slug-like id. We collect every plausible identifier lowercased and match
+// models on either display name or id, so a schema variation degrades to
+// fewer matches rather than a parse failure.
+
+function collectZdrIdentifiers(json: unknown): Set<string> {
+  const out = new Set<string>()
+  const data = (json as { data?: unknown } | null)?.data
+  if (!Array.isArray(data)) return out
+  for (const row of data) {
+    if (!row || typeof row !== 'object') continue
+    const rec = row as Record<string, unknown>
+    for (const key of ['model_name', 'name', 'model', 'model_slug', 'permaslug', 'slug']) {
+      const value = rec[key]
+      if (typeof value === 'string' && value.trim()) out.add(value.trim().toLowerCase())
+    }
+  }
+  return out
+}
+
+async function fetchZdrIdentifiers(): Promise<Set<string>> {
+  const base = openRouterApiBase()
+  try {
+    const res = await fetch(`${base}/endpoints/zdr`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUTS.modelList),
+    })
+    if (!res.ok) return new Set()
+    return collectZdrIdentifiers(await res.json())
+  } catch {
+    return new Set()
+  }
+}
+
+let zdrCache: { key: string; at: number; identifiers: Set<string> } | null = null
+
+async function fetchZdrIdentifiersCached(): Promise<Set<string>> {
+  const key = openRouterApiBase()
+  const now = Date.now()
+  if (zdrCache && zdrCache.key === key && now - zdrCache.at < MODELS_TTL_MS) {
+    return zdrCache.identifiers
+  }
+  const identifiers = await fetchZdrIdentifiers()
+  zdrCache = { key, at: now, identifiers }
+  return identifiers
+}
+
+/**
+ * Restrict `models` to those with at least one zero-data-retention endpoint.
+ * Fails OPEN: an empty/unfetchable ZDR list leaves the input unfiltered. This
+ * filter is picker UX only — the actual guarantee is request-level
+ * (`provider.zdr`, see create-provider.ts), so a stale or missing list can
+ * surface a model that then fails routing, but can never weaken enforcement.
+ */
+export function filterToZdrModels(
+  models: OpenRouterModelOption[],
+  zdrIdentifiers: ReadonlySet<string>,
+): OpenRouterModelOption[] {
+  if (zdrIdentifiers.size === 0) return models
+  return models.filter(
+    (m) => zdrIdentifiers.has(m.name.toLowerCase()) || zdrIdentifiers.has(m.id.toLowerCase()),
+  )
+}
+
+/**
+ * Free, tool-capable text models for the picker (sorted by display name).
+ * When ZDR-only routing is enabled (default), the list is additionally
+ * restricted to models with a zero-data-retention endpoint so the picker
+ * doesn't offer selections that would deterministically fail routing.
+ */
 export async function listFreeOpenRouterModels(): Promise<OpenRouterModelOption[]> {
   const result = await fetchOpenRouterModelsCached()
   if (!result.ok) return []
-  return result.models
-    .filter((m) => m.free && m.supportsTools)
+  const freeOnly = getSetting<boolean>('openRouterFreeMode', false)
+  let models = result.models
+    .filter((m) => m.supportsTools && (freeOnly ? m.free : true))
     .map((m) => ({ id: m.id, name: m.name }))
     .sort((a, b) => a.name.localeCompare(b.name))
+  if (getSetting<boolean>('openRouterZdrOnly', true)) {
+    models = filterToZdrModels(models, await fetchZdrIdentifiersCached())
+  }
+  return models
 }
 
 /** Context length for one OpenRouter model id (from the cached catalog). */

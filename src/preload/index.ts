@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
+    unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxedProjectHooks'),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
         handler(root)
@@ -445,6 +446,8 @@ contextBridge.exposeInMainWorld('api', {
       defaultReadonlyMode: boolean
       webAllowedOrigins: string[]
       webAllowUserApproval: boolean
+      approvedProviderHosts?: string[]
+      providerAllowUserApproval?: boolean
       trustedShellCommands?: string[]
     }) => ipcRenderer.invoke('settings:setSecurity', prefs),
     getKey: (provider: string) => ipcRenderer.invoke('settings:getKey', provider),
@@ -553,16 +556,27 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
   },
+  packs: {
+    list: () => ipcRenderer.invoke('packs:list'),
+    setEnabled: (id: string, enabled: boolean) =>
+      ipcRenderer.invoke('packs:setEnabled', id, enabled),
+    setSetting: (id: string, key: string, value: unknown) =>
+      ipcRenderer.invoke('packs:setSetting', id, key, value),
+  },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
   },
   terminal: {
-    create: (cols: number, rows: number) => ipcRenderer.invoke('terminal:create', cols, rows),
+    create: (cols: number, rows: number, meta?: { label?: string; threadId?: string | null }) =>
+      ipcRenderer.invoke('terminal:create', cols, rows, meta),
     write: (sessionId: string, data: string) =>
       ipcRenderer.invoke('terminal:write', sessionId, data),
     resize: (sessionId: string, cols: number, rows: number) =>
       ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
     destroy: (sessionId: string) => ipcRenderer.invoke('terminal:destroy', sessionId),
+    setMeta: (sessionId: string, meta: { label?: string; threadId?: string | null }) =>
+      ipcRenderer.invoke('terminal:setMeta', sessionId, meta),
+    setActive: (sessionId: string) => ipcRenderer.invoke('terminal:setActive', sessionId),
     onOutput: (handler: (sessionId: string, data: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, id: string, data: string): void => {
         handler(id, data)

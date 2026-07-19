@@ -22,6 +22,12 @@ const ATTACHMENT_ICON_PATHS: Record<TranscriptAttachment['kind'], string[]> = {
     'M16 17H8',
     'M10 9H8',
   ],
+  // lucide `square-terminal` — an @shell tab snapshot
+  shell: [
+    'm7 11 2-2-2-2',
+    'M11 13h4',
+    'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2Z',
+  ],
 }
 
 /** The outline icon for an attachment kind, at a caller-styled size/color. */

@@ -12,6 +12,7 @@ export * from './wire-types.ts'
 
 // Provider construction + the interface every provider implements.
 export * from './create-provider.ts'
+export * from './responses-provider.ts'
 
 // Model catalog, cost estimation, and usage-adjacent helpers.
 export * from './model-catalog.ts'
@@ -24,6 +25,7 @@ export * from './reserved-prefixes.ts'
 
 // Credentials, slugs, resilience, and the test/mocking seams.
 export * from './credential-url.ts'
+export * from './provider-host-policy.ts'
 export * from './provider-slug.ts'
 export * from './stream-retry.ts'
 export * from './redacting-provider.ts'

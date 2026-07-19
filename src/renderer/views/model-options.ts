@@ -20,6 +20,11 @@ import {
   toExtraProviderModel,
   type ExtraProvider,
 } from '@copse/llm/extra-providers.ts'
+import {
+  dataPolicyForProvider,
+  openRouterDataPolicy,
+  pickerPrivacyNote,
+} from '@copse/llm/data-policies.ts'
 
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
 import {
@@ -98,8 +103,9 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
   return options
 }
 
-// OpenRouter's free, tool-capable models fetched live from its catalog, plus any
-// custom id the user saved (or currently has selected — which may be a paid id).
+// OpenRouter tool-capable models fetched live from its catalog (free-only when
+// openRouterFreeMode is on), plus any custom id the user saved (or currently
+// has selected — which may be a paid id).
 // When no key is configured we contribute nothing (the provider is hidden from
 // the picker rather than shown as a disabled "add a key" row).
 async function openRouterOptions(
@@ -108,6 +114,18 @@ async function openRouterOptions(
   current: string,
 ): Promise<ModelOption[]> {
   if (!available) return []
+
+  // Annotate the group heading when ZDR-only routing is off, so the picker
+  // shows that upstream retention/training policies then apply per model.
+  let group = OPENROUTER_GROUP
+  try {
+    const zdrOnly = (await api.settings.get('openRouterZdrOnly')) !== false
+    const allowTraining = (await api.settings.get('openRouterAllowTraining')) === true
+    const note = pickerPrivacyNote(openRouterDataPolicy(zdrOnly, allowTraining))
+    group = note ? `${OPENROUTER_GROUP} — ${note}` : `${OPENROUTER_GROUP} (ZDR routing)`
+  } catch {
+    /* keep the plain heading */
+  }
 
   let liveModels: Array<{ id: string; name: string }> = []
   try {
@@ -130,9 +148,9 @@ async function openRouterOptions(
     if (!id || seen.has(value)) return
     seen.add(value)
     // Intellect-only hint (no catalog pricing for OpenRouter ids), matched via
-    // the measurement alias map.
+    // the measurement alias map. `group` carries the ZDR/retention annotation.
     const hint = modelIntellectHint(id)
-    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group: OPENROUTER_GROUP })
+    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
   for (const model of liveModels) add(model.id, model.name || model.id)
@@ -140,11 +158,17 @@ async function openRouterOptions(
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
   if (entries.length === 0) {
+    let freeOnly = false
+    try {
+      freeOnly = (await api.settings.get('openRouterFreeMode')) === true
+    } catch {
+      /* default: show all models */
+    }
     return [
       {
         value: '',
-        label: 'No free tool-capable models found',
-        group: OPENROUTER_GROUP,
+        label: freeOnly ? 'No free tool-capable models found' : 'No tool-capable models found',
+        group,
         disabled: true,
       },
     ]
@@ -164,6 +188,12 @@ function extraProviderOptions(
 ): ModelOption[] {
   if (!available) return []
 
+  // Flag providers that may train on inputs (Gemini free tier, Mistral free
+  // plans, DeepSeek) or whose retention depends on a routed partner (Hugging
+  // Face) directly in the group heading. Local servers never carry a note.
+  const note = provider.local ? null : pickerPrivacyNote(dataPolicyForProvider(provider))
+  const group = note ? `${provider.label} — ${note}` : provider.label
+
   const seen = new Set<string>()
   const entries: ModelOption[] = []
   const add = (id: string, label: string): void => {
@@ -171,9 +201,10 @@ function extraProviderOptions(
     if (!id || seen.has(value)) return
     seen.add(value)
     // Intellect-only hint (extra-provider ids carry no catalog pricing),
-    // matched via the measurement alias map.
+    // matched via the measurement alias map. `group` carries the data-policy
+    // annotation (may-train / retention-varies).
     const hint = modelIntellectHint(id)
-    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group: provider.label })
+    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
   for (const model of provider.models) add(model.id, model.label ?? model.id)

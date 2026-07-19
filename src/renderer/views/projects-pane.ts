@@ -1,5 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
-import { chevronRightIcon, closeIcon } from '../dom/icons.ts'
+import { chevronRightIcon, closeIcon, runningStatusIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { openNewThread, deleteThread } from '@shared/store/thread-helpers.ts'
@@ -43,6 +43,18 @@ function attentionBell(label: string): SVGSVGElement {
     'M12 2a1 1 0 0 1 1 1v.6a6 6 0 0 1 5 5.9v3l1.4 2.9A1 1 0 0 1 18.5 17h-13a1 1 0 0 1-.9-1.6L6 12.5v-3a6 6 0 0 1 5-5.9V3a1 1 0 0 1 1-1Zm0 20a2.5 2.5 0 0 1-2.45-2h4.9A2.5 2.5 0 0 1 12 22Z',
   )
   svg.append(path)
+  return svg
+}
+
+/**
+ * Animated "…" to the left of a running thread's title — same three-dot glyph
+ * used for overflow elsewhere, with opacity walking across the dots.
+ */
+function runningStatus(label: string): SVGSVGElement {
+  const svg = runningStatusIcon('ui-icon ui-icon-sm chat-running-status')
+  svg.setAttribute('role', 'img')
+  svg.setAttribute('aria-label', label)
+  svg.removeAttribute('aria-hidden')
   return svg
 }
 
@@ -194,16 +206,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chats.append(el('div', { class: 'sidebar-empty chats-loading' }, 'Loading…'))
       }
       for (const thread of visibleThreads) {
+        const title = el('span', { class: 'chat-title' }, thread.title || 'New Thread')
         const chatRow = el(
           'div',
           {
             class: `chat-row${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
           },
-          el('span', { class: 'chat-title' }, thread.title || 'New Thread'),
+          title,
         )
         chatRow.addEventListener('click', () => {
           switchProjectThread(store, api, project.id, thread.id)
         })
+
+        if (thread.status === 'running') {
+          chatRow.classList.add('is-running')
+          chatRow.insertBefore(runningStatus('Agent is working'), title)
+        }
 
         if (isThreadAwaitingAttention(thread.id)) {
           chatRow.classList.add('needs-attention')
@@ -243,6 +261,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const unsubs = [
     store.on('projects_changed', render),
     store.on('threads_changed', render),
+    // Status flips on its own event (not threads_changed) so the sidebar can
+    // show/hide the running-dots mark without a full thread list rewrite.
+    store.on('thread_status_changed', render),
     store.on('workspace_changed', render),
     store.on('attention_changed', render),
   ]

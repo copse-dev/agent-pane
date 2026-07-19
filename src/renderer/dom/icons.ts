@@ -67,6 +67,14 @@ export function moreHorizontalIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('more-horizontal', ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'], className)
 }
 
+/**
+ * Same three-dot glyph as {@link moreHorizontalIcon}, used as a running-thread
+ * status mark. CSS animates opacity across the paths so the ellipsis "walks".
+ */
+export function runningStatusIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon('running-status', ['M5 12h.01', 'M12 12h.01', 'M19 12h.01'], className)
+}
+
 export function checkIcon(className = DEFAULT): SVGSVGElement {
   return outlineIcon('check', ['M20 6 9 17l-5-5'], className)
 }
