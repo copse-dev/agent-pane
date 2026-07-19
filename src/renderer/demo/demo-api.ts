@@ -50,6 +50,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       },
       isTrusted: () => resolved(true),
       setTrusted: emptyArray,
+      unsandboxedProjectHooks: emptyArray,
       onOpened: subscribe,
     },
     browser: {
@@ -70,7 +71,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       onChanged: subscribe,
     },
     agent: {
-      run: (threadId: string, payload: string) => {
+      run: (_projectId: string, threadId: string, payload: string) => {
         const { userContent } = parseAgentRunPayload(payload)
         const prompt = workingBriefFromUserContent(userContent) ?? 'image prompt'
         emitChunk(threadId, {
@@ -132,6 +133,11 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     sshPrompt: {
       respond: resolvedVoid,
       onRequest: subscribe,
+    },
+    updatePrompt: {
+      respond: resolvedVoid,
+      onRequest: subscribe,
+      onDevNotice: subscribe,
     },
     sshWorkspace: {
       listHosts: emptyArray,
@@ -230,7 +236,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     },
     acp: {
       detectAgents: emptyArray,
-      listModels: () => resolved(null),
+      probeAgent: unsupported,
       autoSetup: () =>
         resolved({
           installed: [],
@@ -322,17 +328,28 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       openIssues: () => resolved({ slug: 'copse-dev/agent-pane', issues: [] }),
       importIssues: emptyArray,
       checkFit: unsupported,
+      attachmentData: () => resolved(null),
       onChanged: subscribe,
     },
     skills: { list: emptyArray },
     plugins: { list: emptyArray },
-    hooks: { list: () => resolved({ hooks: [], warnings: [] }) },
+    hooks: {
+      list: () => resolved({ hooks: [], warnings: [] }),
+      test: unsupported,
+    },
+    packs: {
+      list: () => resolved({ packs: [] }),
+      setEnabled: () => resolved({ packs: [] }),
+      setSetting: () => resolved({ packs: [] }),
+    },
     instructions: { list: emptyArray },
     terminal: {
       create: () => resolved('demo-terminal'),
       write: resolvedVoid,
       resize: resolvedVoid,
       destroy: resolvedVoid,
+      setMeta: resolvedVoid,
+      setActive: resolvedVoid,
       onOutput: subscribe,
       onExit: subscribe,
     },
@@ -341,6 +358,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       status: () => resolved({ staged: [], unstaged: [] }),
       changeStats: () => resolved(null),
       fileDiff: () => resolved(null),
+      workingFileDiff: () => resolved(null),
       branchStatus: (forBranch?: string) =>
         resolved({
           currentBranch: forBranch ?? currentBranch,
