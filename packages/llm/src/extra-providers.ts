@@ -124,6 +124,60 @@ const GEMINI_CONTEXT = 1_048_576
 const DEEPSEEK_CONTEXT = 65_536
 
 export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
+  // Hosted providers whose standard inference path is zero-retention and
+  // non-training are first-class presets rather than being buried under the
+  // custom-provider form. Their catalogs move quickly, so users import the
+  // current tool-capable models with "Fetch models" instead of relying on a
+  // stale shipped shortlist.
+  {
+    id: 'together',
+    label: 'Together AI',
+    prefix: 'together:',
+    baseUrl: 'https://api.together.xyz/v1',
+    builtin: true,
+    local: false,
+    envVar: 'TOGETHER_API_KEY',
+    keyLabel: 'Together AI API key',
+    keyPlaceholder: 'Together AI API key',
+    keyHint:
+      'For Together AI serverless models. Confirm the organization privacy setting does not store prompts, then Fetch models to import the current catalog.',
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: true,
+    models: [],
+  },
+  {
+    id: 'groq',
+    label: 'Groq',
+    prefix: 'groq:',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    builtin: true,
+    local: false,
+    envVar: 'GROQ_API_KEY',
+    keyLabel: 'Groq API key',
+    keyPlaceholder: 'gsk_…',
+    keyHint:
+      'For Groq inference models. Inference data is not retained by default; enable Zero Data Retention in Groq Data Controls for the strictest setting, then Fetch models.',
+    keyPrefix: 'gsk_',
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: true,
+    models: [],
+  },
+  {
+    id: 'fireworks',
+    label: 'Fireworks AI',
+    prefix: 'fireworks:',
+    baseUrl: 'https://api.fireworks.ai/inference/v1',
+    builtin: true,
+    local: false,
+    envVar: 'FIREWORKS_API_KEY',
+    keyLabel: 'Fireworks AI API key',
+    keyPlaceholder: 'Fireworks AI API key',
+    keyHint:
+      'For Fireworks AI serverless models. Standard open-model inference is zero-retention unless logging is explicitly enabled; Fetch models to import the current catalog.',
+    fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
+    includeUsage: true,
+    models: [],
+  },
   {
     id: 'perplexity',
     label: 'Perplexity',

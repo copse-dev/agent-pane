@@ -86,6 +86,14 @@ describe('policy defaults match the researched provider behavior', () => {
     assert.equal(policy.zdr, 'unknown')
     assert.match(policy.note, /Sonar API only/)
   })
+
+  it('marks every promoted hosted privacy preset as zero retention', () => {
+    for (const id of ['groq', 'together', 'fireworks']) {
+      const provider = BUILTIN_EXTRA_PROVIDERS.find((candidate) => candidate.id === id)
+      assert.ok(provider, `'${id}' should be a built-in provider preset`)
+      assert.equal(privacyBadge(dataPolicyForProvider(provider)).kind, 'zdr')
+    }
+  })
 })
 
 describe('openRouterDataPolicy', () => {
