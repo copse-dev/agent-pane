@@ -429,6 +429,24 @@ export interface ApiClient {
     checkFit: (
       id: string,
     ) => Promise<import('../main/services/roadmap-fit-check.ts').RoadmapFitResult>
+    prepareReview: () => Promise<
+      import('../main/services/roadmap-review.ts').RoadmapReviewPrepareResult
+    >
+    lastReviewAt: () => Promise<{
+      lastReviewAt: string | null
+      lastAcknowledgedBulkRun: string | null
+      pendingBulkRun: string | null
+    }>
+    reviewItem: (
+      id: string,
+      commits: string,
+      runId?: string,
+    ) => Promise<import('../main/services/roadmap-review.ts').RoadmapReviewItemResult>
+    reviewItemDeep: (
+      id: string,
+    ) => Promise<import('../main/services/roadmap-review.ts').RoadmapReviewItemResult>
+    completeReview: (runId: string) => Promise<void>
+    abortReview: () => Promise<void>
     /** Subscribe to background roadmap changes (e.g. a complexity stamp landing
      * after a save returned). Returns an unsubscribe function. */
     onChanged: (handler: () => void) => () => void

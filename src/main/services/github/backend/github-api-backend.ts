@@ -333,7 +333,16 @@ export const githubApiBackend: GitHubBackend = {
                 .map((l) => (typeof l['name'] === 'string' ? l['name'] : null))
                 .filter((name): name is string => name != null)
             : []
-          const summary: GhIssueSummary = { owner, repo, number, title, url, body, labels }
+          const summary: GhIssueSummary = {
+            owner,
+            repo,
+            number,
+            title,
+            url,
+            body,
+            labels,
+            state: 'open',
+          }
           if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
           return summary
         })
@@ -364,8 +373,43 @@ export const githubApiBackend: GitHubBackend = {
             .filter((name): name is string => name != null)
         : [],
     }
+    if (item['state'] === 'open' || item['state'] === 'closed') summary.state = item['state']
     if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
     return summary
+  },
+
+  async searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
+    const slug = await getGithubRepoSlug()
+    if (!slug) return []
+    const [owner, repo] = slug.split('/')
+    if (!owner || !repo) return []
+    const trimmed = query.trim()
+    if (!trimmed) return []
+    const q = encodeURIComponent(`repo:${slug} ${trimmed}`)
+    const result = await rest(`/search/issues?q=${q}&per_page=${String(limit)}`)
+    if (!result.ok) throw new Error(result.errorMessage ?? 'Issue search failed.')
+    const items = (result.json as { items?: Array<Record<string, unknown>> }).items ?? []
+    return items
+      .filter((item) => !('pull_request' in item))
+      .map((item) => {
+        const number = typeof item['number'] === 'number' ? item['number'] : null
+        const title = typeof item['title'] === 'string' ? item['title'] : null
+        const url = typeof item['html_url'] === 'string' ? item['html_url'] : null
+        if (number == null || !title || !url) return null
+        const body = typeof item['body'] === 'string' ? item['body'].slice(0, 4000) : ''
+        const labels = Array.isArray(item['labels'])
+          ? (item['labels'] as Array<Record<string, unknown>>)
+              .map((l) => (typeof l['name'] === 'string' ? l['name'] : null))
+              .filter((name): name is string => name != null)
+          : []
+        const summary: GhIssueSummary = { owner, repo, number, title, url, body, labels }
+        if (item['state'] === 'open' || item['state'] === 'closed') {
+          summary.state = item['state']
+        }
+        if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
+        return summary
+      })
+      .filter((entry): entry is GhIssueSummary => entry != null)
   },
 
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {

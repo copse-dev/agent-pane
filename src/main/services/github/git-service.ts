@@ -887,3 +887,18 @@ export async function getGitLogText(maxCount: number, path?: string): Promise<st
   if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
   return stdout.trim() || '(no output)'
 }
+
+/** Recent commits since an ISO timestamp (or the newest `maxCount` when `since` is empty). */
+export async function getGitLogSinceText(
+  since: string | null,
+  maxCount: number,
+  path?: string,
+): Promise<string> {
+  if (!(await isGitAvailableForTarget())) return 'git is not available on this system.'
+  const args = ['log', `--max-count=${String(maxCount)}`, '--oneline']
+  if (since) args.push(`--since=${since}`)
+  args.push('--', ...(path ? [path] : []))
+  const { stdout, stderr, code } = await runGit(args)
+  if (code !== 0) return stderr.trim() || `git exited with code ${String(code)}`
+  return stdout.trim() || '(no commits in this window)'
+}

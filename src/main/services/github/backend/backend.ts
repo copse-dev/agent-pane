@@ -47,6 +47,8 @@ export interface GitHubBackend {
   listWorkspaceOpenIssues(limit: number): Promise<GhIssueSummary[]>
   /** One issue by coordinates (any state); null when missing or actually a PR. */
   getIssue(ref: PrRef): Promise<GhIssueSummary | null>
+  /** Search issues in the workspace repo (any state) — backs roadmap review. */
+  searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]>
 
   // Writes — Wave 1 PR lifecycle actions.
   rerunFailedRuns(ref: PrRef): Promise<PrActionResult>

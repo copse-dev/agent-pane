@@ -77,6 +77,12 @@ interface RoadmapCalls {
   openIssues: number
   importIssues: { number: number; title: string; body: string }[][]
   checkFit: string[]
+  prepareReview: number
+  reviewItem: { id: string; commits: string; runId?: string }[]
+  reviewItemDeep: string[]
+  lastReviewAt: number
+  completeReview: string[]
+  abortReview: number
 }
 
 interface MockOpenIssue {
@@ -124,6 +130,12 @@ function makeApi(
     openIssues: 0,
     importIssues: [],
     checkFit: [],
+    prepareReview: 0,
+    reviewItem: [],
+    reviewItemDeep: [],
+    lastReviewAt: 0,
+    completeReview: [],
+    abortReview: 0,
   }
   const api = {
     panes: { popout: async (): Promise<void> => {} },
@@ -213,6 +225,72 @@ function makeApi(
           }
         }
         return { verdict: 'partial', detail: '- prompt does not mention the startup flash' }
+      },
+      prepareReview: async () => {
+        calls.prepareReview++
+        return {
+          runId: 'bulk-run-1',
+          since: null,
+          commits: 'abc123 Fix startup flash',
+          items: items
+            .filter((i) => i.status !== 'archived')
+            .map((i) => ({ id: i.id, title: i.title })),
+        }
+      },
+      reviewItem: async (id: string, commits: string, runId?: string) => {
+        calls.reviewItem.push({ id, commits, ...(runId ? { runId } : {}) })
+        const item = items.find((i) => i.id === id)
+        if (item) {
+          item.fields = {
+            ...item.fields,
+            reviewVerdict: 'likely',
+            reviewDetail: 'Commit matches · Issue still open',
+            reviewBulkRun: runId ?? 'bulk-run-1',
+          }
+        }
+        return {
+          id,
+          verdict: 'likely' as const,
+          detail: 'Commit matches · Issue still open',
+          depth: 'bulk' as const,
+          pinnedIssue: null,
+          linkedIssues: [],
+        }
+      },
+      reviewItemDeep: async (id: string) => {
+        calls.reviewItemDeep.push(id)
+        const item = items.find((i) => i.id === id)
+        if (item) {
+          item.fields = {
+            ...item.fields,
+            reviewVerdict: 'resolved',
+            reviewDetail: 'Deep check · Issue closed',
+            reviewDepth: 'deep',
+            reviewBulkRun: 'bulk-run-1',
+          }
+        }
+        return {
+          id,
+          verdict: 'resolved' as const,
+          detail: 'Deep check · Issue closed',
+          depth: 'deep' as const,
+          pinnedIssue: null,
+          linkedIssues: [],
+        }
+      },
+      lastReviewAt: async () => {
+        calls.lastReviewAt++
+        return {
+          lastReviewAt: '2026-07-15T00:00:00.000Z',
+          lastAcknowledgedBulkRun: 'bulk-run-1',
+          pendingBulkRun: null,
+        }
+      },
+      completeReview: async (runId: string) => {
+        calls.completeReview.push(runId)
+      },
+      abortReview: async () => {
+        calls.abortReview++
       },
       importIssues: async (selected: { number: number; title: string; body: string }[]) => {
         calls.importIssues.push(selected)
@@ -992,6 +1070,165 @@ describe('roadmap pane', () => {
         viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
         'Half-typed new prompt',
       )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('runs review across active items and advances checkpoint only on close', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Fix startup flash', 'ready', undefined, '#41')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      assert.equal(calls.prepareReview, 1)
+      assert.equal(calls.reviewItem.length, 1)
+      assert.equal(calls.reviewItem[0]?.runId, 'bulk-run-1')
+      assert.equal(calls.completeReview.length, 0)
+      assert.match(viewer.querySelector('.roadmap-review-status')?.textContent ?? '', /complete/i)
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-close')?.click()
+      await flush()
+      assert.deepEqual(calls.completeReview, ['bulk-run-1'])
+      assert.ok(list.querySelector('.roadmap-review-badge.is-likely'))
+      assert.ok(viewer.querySelector('.roadmap-review-row-detail ul'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('auto deep-checks a stale item on open', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const stale = makeItem('a', 'Fix startup flash', 'ready', undefined, '#41')
+    stale.fields = {
+      ...stale.fields,
+      reviewVerdict: 'likely',
+      reviewBulkRun: 'old-run',
+    }
+    const { api, calls } = makeApi([stale])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      await flush()
+      assert.deepEqual(calls.reviewItemDeep, ['a'])
+      assert.match(
+        viewer.querySelector('.roadmap-review-result-meta')?.textContent ?? '',
+        /resolved/i,
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('clears the deep-check spinner when switching items mid-flight', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const itemA = makeItem('a', 'Fix A', 'ready', undefined, '#41')
+    itemA.fields = {
+      ...itemA.fields,
+      reviewVerdict: 'open',
+      reviewDetail: 'Still open',
+      reviewBulkRun: 'bulk-run-1',
+    }
+    const itemB = makeItem('b', 'Fix B', 'ready', undefined, '#42')
+    itemB.fields = {
+      ...itemB.fields,
+      reviewVerdict: 'likely',
+      reviewDetail: 'Probably done',
+      reviewBulkRun: 'bulk-run-1',
+    }
+    let releaseDeep: (() => void) | undefined
+    const deepGate = new Promise<void>((resolve) => {
+      releaseDeep = resolve
+    })
+    const { api, calls } = makeApi([itemA, itemB])
+    api.roadmap.reviewItemDeep = async (
+      id: string,
+    ): Promise<{
+      id: string
+      verdict: 'resolved'
+      detail: string
+      depth: 'deep'
+      pinnedIssue: null
+      linkedIssues: []
+    }> => {
+      calls.reviewItemDeep.push(id)
+      await deepGate
+      return {
+        id,
+        verdict: 'resolved' as const,
+        detail: 'Deep check · Issue closed',
+        depth: 'deep' as const,
+        pinnedIssue: null,
+        linkedIssues: [],
+      }
+    }
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const rows = list.querySelectorAll<HTMLButtonElement>('.roadmap-row')
+      rows[0]?.click()
+      await flush()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-resolution-btn')?.click()
+      await flush()
+      assert.match(
+        viewer.querySelector('.roadmap-review-result-meta')?.textContent ?? '',
+        /Deep resolution check/i,
+      )
+      rows[1]?.click()
+      await flush()
+      const meta = viewer.querySelector('.roadmap-review-result-meta')?.textContent ?? ''
+      assert.doesNotMatch(meta, /Deep resolution check/i)
+      assert.match(meta, /review: likely/i)
+      releaseDeep?.()
+      await flush()
+    } finally {
+      unmount()
+    }
+  })
+
+  it('shows the review panel when review starts with an item already open', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Fix startup flash', 'ready', undefined, '#41')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      await flush()
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-form:not([hidden])'))
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      const reviewView = viewer.querySelector<HTMLElement>('.roadmap-review')
+      assert.ok(reviewView)
+      assert.equal(reviewView.hidden, false)
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-form[hidden]'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('marks a likely review row done from triage actions', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Fix startup flash', 'ready', 'notes', '#41')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-mark-done')?.click()
+      await flush()
+      assert.equal(calls.update.length, 1)
+      const update = calls.update[0]
+      assert.ok(update)
+      assert.equal(update.status, 'done')
+      assert.equal(update.prompt, 'Fix startup flash')
+      assert.ok(viewer.querySelector('.roadmap-review-applied-badge'))
     } finally {
       unmount()
     }

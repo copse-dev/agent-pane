@@ -146,6 +146,14 @@ import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
+import {
+  abortRoadmapReview,
+  completeRoadmapReview,
+  prepareRoadmapReview,
+  readRoadmapReviewCheckpointForRenderer,
+  reviewRoadmapItem,
+  reviewRoadmapItemDeep,
+} from '../services/roadmap-review.ts'
 import { getGitBranchStatus } from '../services/github/pr-context-service.ts'
 import { getSessionBackup, restoreSessionBackup } from '../services/worktree-backup.ts'
 import { isGitAvailableForTarget } from '../services/tool-availability.ts'
@@ -522,6 +530,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       if (promptChanged || issue !== (existing.fields['issue'] ?? '')) {
         delete fields['fit']
         delete fields['fitDetail']
+        delete fields['reviewVerdict']
+        delete fields['reviewDetail']
+        delete fields['reviewAt']
       }
       const current = parseKnowledgeAttachments(existing.fields[ATTACHMENTS_FIELD])
       const removeSet = new Set(removeAttachmentIds)
@@ -635,6 +646,51 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
     return checkRoadmapFit(id)
+  })
+
+  ipcMain.handle('roadmap:prepareReview', (event) => {
+    assertMainFrameSender(event, win)
+    return prepareRoadmapReview()
+  })
+
+  ipcMain.handle('roadmap:lastReviewAt', (event) => {
+    assertMainFrameSender(event, win)
+    return readRoadmapReviewCheckpointForRenderer()
+  })
+
+  ipcMain.handle(
+    'roadmap:reviewItem',
+    async (event, rawId: unknown, rawCommits: unknown, rawRunId: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(zRoadmapId, [rawId])
+      const commits = parseIpcArgs(z.string().max(20_000), [rawCommits])
+      const bulkRunId =
+        rawRunId === undefined || rawRunId === null ? undefined : parseIpcArgs(z.uuid(), [rawRunId])
+      const result = await reviewRoadmapItem(id, commits, 'bulk', bulkRunId)
+      notifyRoadmapChanged()
+      return result
+    },
+  )
+
+  ipcMain.handle('roadmap:reviewItemDeep', async (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const result = await reviewRoadmapItemDeep(id)
+    notifyRoadmapChanged()
+    return result
+  })
+
+  ipcMain.handle('roadmap:completeReview', (event, rawRunId: unknown) => {
+    assertMainFrameSender(event, win)
+    const runId = parseIpcArgs(z.uuid(), [rawRunId])
+    completeRoadmapReview(runId)
+    notifyRoadmapChanged()
+  })
+
+  ipcMain.handle('roadmap:abortReview', (event) => {
+    assertMainFrameSender(event, win)
+    abortRoadmapReview()
+    notifyRoadmapChanged()
   })
 
   ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {
