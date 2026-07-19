@@ -1,204 +1,601 @@
 # Per-thread worktrees
 
-Give each thread its own git working tree so threads can run in parallel
-without fighting over the single checkout — and so the user's editor stays on
-their branch while agents work. Allocation is **conditional**: a new thread
-defaults to a fresh worktree **when the project checkout is on the default
-branch** (main/master); otherwise it shares the checkout as today. Ergonomics
-is the design driver throughout: no ceremony to get an isolated thread, no
-surprise about what the agent can see, and a one-click path to bring work back.
+Status: implementation plan; no per-thread worktree support is implemented as of
+2026-07-19. Related tracking: #349 and #869.
 
-## Why
+## Outcome
 
-Today one global `workspaceRoot` (`src/main/services/workspace.ts`) backs every
-subsystem — file/shell tools, path containment, the seatbelt sandbox scope,
-semantic index + watcher, terminal cwd, the git service, the editor. Threads
-carry a `gitBranch` label, but it is a fiction under concurrency:
+Give each local chat thread an optional git worktree so agents can edit in parallel
+without sharing HEAD, the index, or tracked files. The existing project checkout
+remains the user's checkout. A thread either uses that shared checkout or owns one
+linked worktree for its lifetime.
 
-- `src/shared/git/sync-thread-branch.ts` exists to rebind a thread when
-  _another thread_ moves HEAD under it.
-- `src/main/services/worktree-backup.ts` keeps the pre-turn safety snapshot in
-  a process-global singleton, so concurrent threads silently share one backup
-  and "Restore pre-session changes" can restore the wrong baseline.
+Allocation is lazy at the first message. The eventual default is:
 
-Two agents editing at once clobber each other's checkout and the user's open
-buffers. Worktrees solve this at the git layer: shared object database, cheap
-creation, independent HEAD/index/files per thread.
+- project checkout on its resolved default branch: create an isolated worktree;
+- project checkout on any other branch: share the project checkout;
+- unsupported or ambiguous repository state: share the project checkout and explain
+  why;
+- an explicit supported user choice: use it.
 
-## Allocation policy
+Do not enable that default until isolation, active-thread UI re-rooting, safe cleanup,
+and a clear route for bringing work back have all shipped. Early phases remain behind
+`worktreeMode: never`.
 
-Decided lazily at **first message** (not thread creation — blank threads and
-drafts stay free), at the same point `bindThreadGitBranchIfUnset` runs today
-(`src/renderer/views/input-bar.ts`).
+## Why this is not a `git worktree add` feature
 
-| Situation at first message                                          | Default                                                                                         |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Checkout on the default branch (`getDefaultBranch()`)               | **New worktree**, new branch `copse/<thread-slug>`                                              |
-| Checkout on a non-default branch                                    | Share the checkout (status quo — user is mid-feature and likely wants the agent alongside them) |
-| Not a git repo / no default branch resolvable / submodules detected | Share the checkout                                                                              |
-| Explicit user choice (chip in the input bar, see UX)                | Wins over all of the above                                                                      |
+Today `src/main/services/workspace.ts` exposes one process-global `workspaceRoot`.
+File and shell tools, git, diffs, backups, terminals, ACP sessions, hook recording,
+path containment, and much of the renderer all assume it is the only checkout.
+Threads persist a `gitBranch` label, but they do not own a checkout.
 
-Rationale for the main-branch trigger: work started from main is almost always
-a _new_ task, where isolation is pure upside; work started from a feature
-branch is usually _continuation_, where the user expects the agent to see the
-branch state and their editor.
+Several services also carry process-global mutable run state. In particular,
+`worktree-backup.ts`, `diff-queue.ts`, `thread-models.ts`,
+`hook-run-recorder.ts`, and `todo-tool.ts` cannot safely distinguish two concurrent
+thread runs. Giving tools different directories before removing those ambiguities can
+attribute a backup, hook event, diff, model, or todo to the wrong thread.
 
-Project-level setting `worktreeMode`: `from-default-branch` (default) ·
-`always` · `never`.
+The work therefore has two foundations:
 
-### Dirty main checkout
+1. make thread identity and the effective root explicit at every run boundary;
+2. make all mutable run state thread-scoped before allowing concurrent isolated runs.
 
-If the checkout is on main but dirty, we still allocate a worktree and **carry
-the uncommitted work into it**: `createWorktreeBackup()` already snapshots the
-entire tree (staged + unstaged + untracked) into a commit ref without touching
-the index — seed the new worktree from HEAD, then apply that snapshot on top.
-The agent sees exactly what the user sees; the user's checkout is untouched.
-The input-bar chip says so ("includes your 3 uncommitted files") so nothing is
-invisible or surprising.
+## Product invariants
+
+These are acceptance criteria, not implementation suggestions.
+
+1. The **project root** remains the user's selected checkout and the source of project
+   identity, trust, settings, and the v1 semantic index.
+2. The **thread root** is the directory visible to that thread's file, shell, git,
+   diff, terminal, hook, and ACP operations. In shared mode it equals the project
+   root; in isolated mode it is the linked worktree.
+3. Main-process code resolves the thread root from trusted `projectId` + `threadId`.
+   Renderer input never supplies an arbitrary root.
+4. A missing or invalid isolated worktree blocks writes. It never silently falls back
+   to the project checkout. The user can recreate it or explicitly continue shared.
+5. Two active threads may read and write the same relative path without sharing files,
+   backups, diffs, todos, hooks, model state, terminals, or background processes.
+6. The user's checkout, current branch, index, and working files are not mutated when
+   an isolated worktree is allocated.
+7. Dirty seeding preserves file content, including staged, unstaged, untracked, and
+   deleted files. V1 does not promise to preserve the staged/unstaged partition inside
+   the new worktree; the UI and tests must state that limitation.
+8. No dirty or unmerged worktree is deleted without an explicit, itemized confirmation.
+9. Old threads and non-git projects continue in shared mode without migration work.
+10. macOS sandboxing permits normal git operations in a linked worktree without
+    broadly exposing the parent repository or weakening hook/config protections.
 
 ## Architecture
 
-### Phase 0 — prerequisites (standalone wins, land first)
+The distinction between project identity and thread execution root is the central
+design. This diagram should be kept current if ownership changes during implementation.
 
-1. **Root-parameterize the git service.** `git-service.ts` reads
-   `getWorkspaceRoot()` internally; `getGithubRepoSlug(root)` already shows the
-   target shape. Give every exported function an explicit `root` argument
-   (call sites pass the thread root once Phase 2 lands; until then a default
-   keeps the diff mechanical).
-2. **Per-thread session backup.** Replace the module singletons in
-   `worktree-backup.ts` (`current`, `inFlight`) with a `Map<threadId, …>`.
-   Fixes the concurrent-backup bug that exists today regardless of this plan.
-3. **Thread-scoped root resolution.** Introduce a `ThreadContext { root }`
-   threaded through the tool registry so `resolveWorkspacePath`,
-   `assertWorkspaceWriteTarget`, shell-tool cwd, and the read/write fs IPC
-   resolve against the thread's root instead of the global. The global
-   `workspaceRoot` remains the _project_ root; a thread without a worktree has
-   `root === workspaceRoot`, so the shared-checkout path stays the same code
-   path, not a second mode.
-
-### Phase 1 — worktree manager
-
-New `src/main/services/worktree-manager.ts`:
-
-- `allocate(projectRoot, threadId, title, opts)` →
-  `git worktree add -b copse/<slug> <dir> <default-branch>`, optional dirty
-  snapshot apply. Registers the new root with
-  `registerAllowedWorkspaceRoot()` and the seatbelt scope so containment and
-  sandboxing are per-thread-root from the start.
-- `remove(threadId, { force })`, `list(projectRoot)`,
-  `pruneOrphans(projectRoot)` (worktrees whose thread no longer exists in the
-  catalog _and_ whose branch is merged/clean; anything dirty or unmerged is
-  kept and surfaced, never silently deleted).
-- Placement: `~/.copse/worktrees/<projectId>/<threadId>/` — outside the repo
-  (no `.gitignore` change, never indexed by the project, consistent with the
-  `~/.copse` store). Honors `COPSE_WORKSPACE_DIR`-style override
-  (`COPSE_WORKTREES_DIR`).
-- Branch naming: `copse/<slug>` from the thread title (same slugging as thread
-  ids), collision-suffixed. Bound via `setThreadGitBranch` so the existing
-  footer/PR machinery keeps working unchanged.
-
-`Thread` gains a persisted field:
-
-```ts
-/** Isolated working tree allocated to this thread, when any. */
-worktree?: { path: string; baseBranch: string; baseCommit: string; createdAt: number }
+```mermaid
+flowchart LR
+    Renderer["Renderer<br/>projectId + threadId"] --> Boundary["Main-process IPC / run boundary"]
+    Boundary --> Resolver["Resolve trusted ThreadExecutionContext"]
+    Resolver --> Project["Project root<br/>identity, trust, settings, index"]
+    Resolver --> Thread["Thread root<br/>shared checkout or linked worktree"]
+    Manager["Worktree manager<br/>allocate, validate, retire"] --> Thread
+    Manager --> CommonGit["Parent repository<br/>common git metadata"]
+    Thread --> RunContext["AsyncLocal run context"]
+    RunContext --> Tools["Agent file / shell / git / diff"]
+    RunContext --> Services["Backups / todos / hooks / models"]
+    Thread --> ActiveUI["Active-thread file tree / changes / terminal / editor"]
+    Thread --> ACP["Per-thread ACP session"]
+    Project --> Index["Project semantic index<br/>v1 remains singleton"]
 ```
 
-### Phase 2 — policy + composer UX
+### Runtime contract
 
-- Policy function (pure, unit-tested) in `src/shared/git/worktree-policy.ts`
-  taking `{ currentBranch, defaultBranch, isGitRepo, hasSubmodules, setting,
-explicitChoice }` → `'worktree' | 'shared'`.
-- **Composer chip** (input bar, pre-first-message): shows what will happen —
-  `⎇ isolated · copse/fix-flicker` or `⎇ shared · main` — click to flip. After
-  the first message it becomes the existing footer branch status. One glance
-  answers "where will this thread's edits go", which is the core ergonomic
-  contract.
-- Footer branch status (`footer-branch-status.ts`) learns the worktree state;
-  the mismatch warning path is unnecessary for worktree threads (HEAD cannot
-  be moved by another thread).
+Add one main-process value object and make it the only way run-scoped code learns its
+root:
 
-### Phase 3 — UI re-rooting on thread switch
+```ts
+type ThreadCheckoutMode = 'shared' | 'worktree'
 
-The three-pane UI follows the **active thread's root**:
+interface ThreadExecutionContext {
+  projectId: string
+  threadId: string
+  projectRoot: string
+  root: string
+  checkoutMode: ThreadCheckoutMode
+  branch: string | null
+}
+```
 
-- Editor file tree / Monaco open-file resolution, `fs:*` IPC, and the git pane
-  resolve against `getThreadRoot(activeThreadId)`.
-- Terminal: new terminals spawn in the thread root. Existing terminal sessions
-  keep their cwd (they are processes); the terminal tab shows which root it
-  belongs to.
-- Search: **v1 keeps the single semantic index on the project root.** Worktree
-  trees are near-identical, relative paths carry over, and read/write tools
-  already operate on the thread root — so search results stay useful, at the
-  cost of staleness for files the thread itself changed. Documented
-  limitation; follow-up is an index overlay of the thread's touched files
-  (the diff queue already knows them).
+Create it at the `agent:run` boundary after validating that the thread belongs to the
+project and that persisted worktree metadata matches a registered git worktree. Install
+it with `AsyncLocalStorage` around the complete agent turn. Follow the existing
+`agent-run-readonly.ts` / orchestration context patterns rather than adding another
+mutable singleton.
 
-### Phase 4 — bringing work back (the other half of ergonomics)
+Async context is for call paths that are genuinely inside one agent turn. Renderer IPC,
+terminal creation, background process management, cleanup, and startup recovery are
+not reliably inside that context and must accept `projectId` + `threadId` explicitly.
 
-Isolation is only ergonomic if the return trip is one click:
+Do not change `getWorkspaceRoot()` to mean "sometimes a thread root." Keep it as the
+project root during migration so trust, indexing, and repo identity cannot accidentally
+follow whichever agent happens to be active.
 
-- **Changes chip** on each worktree thread: ahead/behind vs `baseBranch`,
-  dirty-file count (data via the root-parameterized `getGitChangeStats`).
-- **"Bring into project" action** with three modes:
-  1. _Merge to <base>_ — commit (existing `commitWithAttribution`), then
-     fast-forward/merge in the main checkout; conflicts open the existing
-     diff view.
-  2. _Create PR_ — reuses the existing remote-agent/PR flow; the thread
-     already owns a real branch, so this is free.
-  3. _Keep branch_ — just leave `copse/<slug>` for manual handling.
-- After a successful merge + clean tree, offer to retire the worktree.
+### Current code map
 
-### Phase 5 — lifecycle, environment bootstrap, polish
+Start each phase from these entry points. Re-run `rg "getWorkspaceRoot\\(" src` during
+Phase 1: the current call set is broad and this table intentionally lists ownership
+boundaries rather than every mechanical call site.
 
-- **GC:** on startup, `git worktree prune` + `pruneOrphans`. Thread deletion
-  removes its worktree (guarded: dirty/unmerged ⇒ confirm, listing what would
-  be lost). Settings: retention count/age.
-- **Environment bootstrap:** untracked state (`node_modules`, `.env`) does not
-  come along in a worktree. Two opt-in project settings:
-  - `worktreeSetupCommand` — run in the new tree after creation (e.g.
-    `npm install`), streamed to the thread like a normal shell tool call so
-    failures are visible and retryable.
-  - `worktreeCopyGlobs` — untracked files copied from the main checkout (e.g.
-    `.env`, `.env.local`). Copy, never symlink — trees diverge.
-    First worktree in a project without these configured gets a one-time,
-    dismissible hint when the agent's first command fails in a way that smells
-    like missing deps. v2: warm-spare tree (pre-created + pre-installed) to make
-    allocation instant for heavyweight projects.
+| Area                         | Current entry point                                                                         | Required direction                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Thread creation and metadata | `src/shared/store/thread-helpers.ts`, `src/shared/types/thread.ts`                          | Add optional checkout metadata; blank thread creation remains free.                                                   |
+| First submit                 | `src/renderer/views/input-bar.ts`                                                           | Stop binding the authoritative branch entirely in renderer; send identity and choice to the main-process transaction. |
+| Agent run boundary           | `src/main/index.ts` (`agent:run`)                                                           | Load/validate thread + project and install `ThreadExecutionContext`.                                                  |
+| Global root and containment  | `src/main/services/workspace.ts`                                                            | Preserve project root; add trusted thread-root resolution and internal-root registration.                             |
+| Agent shell and paths        | `src/main/tools/shell-tool.ts` plus filesystem tools                                        | Read thread root from run context and use it for default cwd/containment.                                             |
+| Git                          | `src/main/services/github/git-service.ts`                                                   | Require explicit roots; expose resolved-vs-fallback default-branch state.                                             |
+| Sandbox                      | `src/main/project-sandbox/config.ts`, `spawn.ts`                                            | Build a validated worktree overlay including narrowly-scoped git administration paths.                                |
+| Backups and diffs            | `src/main/services/worktree-backup.ts`, `diff-queue.ts`                                     | Key state by thread/turn and keep semantic-index refresh on project root.                                             |
+| Run globals                  | `src/main/services/thread-models.ts`, `hook-run-recorder.ts`, `src/main/tools/todo-tool.ts` | Replace global active state with thread/turn-owned context.                                                           |
+| Renderer IPC                 | `src/main/ipc/register-handlers.ts`                                                         | Add `projectId` + `threadId` to filesystem and git contracts; never accept a root.                                    |
+| Terminal/processes           | `src/main/services/exec/terminal-service.ts`, `background-process.ts`                       | Persist owner thread, default to its root, and add awaited stop-by-thread APIs.                                       |
+| ACP                          | `src/main/services/acp/acp-agent-service.ts`, `acp-session-pool.ts`                         | Resolve cwd from thread; preserve per-thread pooling and add disposal before retirement.                              |
+| Thread deletion              | `src/main/services/thread-store.ts` and renderer delete flows                               | Route deletion through ordered main-process cleanup before removing the thread directory.                             |
+| Semantic index               | index/watcher call sites reached from `diff-queue.ts`                                       | Keep the singleton project-rooted in v1; never rebuild it from a worktree root.                                       |
 
-## Edge cases
+### Root routing table
 
-- **Branch already checked out elsewhere:** `git worktree add` refuses; the
-  manager retries with a suffixed branch name.
-- **Default-branch detection fails** (no remote, detached HEAD): policy
-  returns `shared` — never guess.
-- **Submodules:** worktree support is poor; policy returns `shared` and the
-  chip explains why.
-- **User deletes the worktree directory manually:** thread falls back to
-  shared mode with a notice; `git worktree prune` cleans the stale entry.
-- **Disk pressure:** worktree checkout cost is tracked-files only, but setup
-  commands can be heavy; GC settings plus the changes chip keep it visible.
-- **`workspace:set` gating:** worktree roots are registered as _allowed_ roots
-  for containment but are not offered as openable projects — they belong to
-  their parent project.
+| Consumer                                                 | Root in v1         | Notes                                                                                       |
+| -------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------- |
+| Project identity, trust, settings, instruction discovery | Project            | Stable across threads.                                                                      |
+| Semantic index and watcher                               | Project            | Known staleness for files changed only in a worktree; add an overlay later.                 |
+| Agent file/read/write/search paths                       | Thread             | Path containment uses the same resolved context.                                            |
+| Shell default cwd and sandbox overlay                    | Thread             | Explicit in-worktree cwd remains allowed; external paths follow existing permission policy. |
+| Git status/diff/commit/branch operations                 | Thread             | Repository identity/remote lookup may use the project root.                                 |
+| Diff queue and pre-turn backup                           | Thread + thread ID | State must be isolated even when two shared threads have the same root.                     |
+| Hook discovery/config                                    | Project            | Hook invocation cwd and workspace payload use the thread root.                              |
+| Hook run records and live events                         | Thread + turn      | Must follow the binding hooks plan.                                                         |
+| Todos, run model selection, readonly state               | Thread + turn      | Never process-global mutable pointers.                                                      |
+| ACP session                                              | Thread             | Session pool already keys by thread; include root in fingerprint.                           |
+| File tree, editor, changes pane                          | Active thread      | Switching threads re-roots these surfaces.                                                  |
+| New terminal                                             | Active thread      | Existing terminals keep their original cwd and show owning thread/root.                     |
+| Background process                                       | Owning thread      | Needed to stop processes before worktree retirement.                                        |
 
-## Testing
+## Persisted model and migration
 
-- Unit: policy function (all rows of the table above); worktree-manager
-  against throwaway git repos (pattern exists in `git-service.test.ts`);
-  per-thread backup map; dirty-snapshot seeding (staged + unstaged +
-  untracked all arrive).
-- e2e (wdio): start thread on main → worktree allocated, chip correct; two
-  threads editing the same file in parallel → no interference; merge-back
-  happy path; thread deletion with dirty tree prompts.
-- Regression: shared-mode threads exercise the identical code path with
-  `root === workspaceRoot` (Phase 0.3), so existing suites keep covering it.
+Add optional metadata; absence always means shared mode. `ThreadMeta` already derives
+from `Thread`, so the filesystem-native thread store should round-trip this field once
+the shared type is updated.
 
-## Sequencing / risk
+```ts
+interface ThreadWorktree {
+  path: string
+  branch: string
+  baseBranch: string
+  baseCommit: string
+  createdAt: number
+  seededFromDirtyProject: boolean
+}
 
-Phases 0–2 are independently shippable and fix real bugs (global backup
-singleton) even if the default never flips. Phase 3 is the widest diff
-(UI re-rooting) and the main schedule risk; it can ship behind the `never`
-setting until stable. The default (`from-default-branch`) flips on only after
-Phase 4, because isolation without the one-click return trip is a net
-ergonomic loss.
+interface Thread {
+  // Existing fields omitted.
+  worktree?: ThreadWorktree
+  worktreeChoice?: 'automatic' | 'shared' | 'worktree'
+}
+
+interface Project {
+  // Existing fields omitted.
+  worktreeMode?: 'from-default-branch' | 'always' | 'never'
+}
+```
+
+Rules:
+
+- New fields are optional so old thread directories and project settings load unchanged.
+- Persisted `path` is diagnostic, not authority. Reconstruct the expected path from the
+  configured worktree root, then validate it against `git worktree list --porcelain -z`,
+  repository common-dir identity, branch, and thread metadata.
+- `worktreeChoice` captures the first-message decision. Do not continuously re-run
+  policy after a thread starts.
+- Persist allocation metadata before dispatching the first agent run. If persistence
+  fails, remove the newly-created clean worktree and leave the message unsent.
+- The thread's existing `gitBranch` remains populated for current footer/PR consumers,
+  but `worktree.branch` is the authoritative isolated-checkout branch.
+
+## Allocation policy
+
+Implement a pure function in `src/shared/git/worktree-policy.ts` and pin every row with
+table-driven tests.
+
+| Situation at first message                         | Automatic decision                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------------------- |
+| Local git checkout on the resolved default branch  | Worktree                                                                   |
+| Local git checkout on a non-default branch         | Shared                                                                     |
+| Dirty default-branch checkout                      | Worktree seeded with its file content                                      |
+| Not a git repository                               | Shared, with reason                                                        |
+| Default branch unresolved or HEAD detached         | Shared, with reason                                                        |
+| Repository uses submodules                         | Shared in v1, with reason                                                  |
+| SSH project or cloud/remote agent execution        | Shared in v1; local worktrees are not silently mixed with remote execution |
+| Explicit shared choice                             | Shared                                                                     |
+| Explicit worktree choice in a supported local repo | Worktree                                                                   |
+| Explicit worktree choice in an unsupported state   | Block the choice and explain the unsupported condition                     |
+
+Project setting:
+
+- `from-default-branch`: policy above; eventual default;
+- `always`: isolate every supported local git thread;
+- `never`: share unless the user explicitly chooses a supported worktree; rollout
+  default until all phases are complete.
+
+The composer displays the computed outcome before first send and lets the user change
+it. Do not derive the branch from the generated thread title: title generation happens
+after the first run. Slug the first prompt, add a stable short thread-ID suffix, and
+collision-suffix if needed, for example `copse/fix-flicker-a1b2`.
+
+## First-message transaction
+
+The first submit is a transaction; the message must not enter the agent loop while its
+checkout is indeterminate.
+
+1. Renderer sends `projectId`, `threadId`, prompt, and the selected policy override.
+2. Main process loads the project and thread and evaluates the pure policy against
+   fresh git state.
+3. Shared result: persist the choice and current branch, then dispatch exactly as now.
+4. Worktree result:
+   1. serialize allocations for that project;
+   2. capture dirty project content when required;
+   3. create and validate the linked worktree and branch;
+   4. apply the dirty snapshot without changing the project checkout;
+   5. persist worktree metadata and `gitBranch`;
+   6. optionally run configured bootstrap work;
+   7. dispatch the agent with the resolved execution context.
+5. Allocation or bootstrap failure leaves the prompt in the composer and shows a
+   retryable error. The user can retry, edit setup, or explicitly switch to shared.
+
+Bootstrap failure does not delete a successfully-created dirty worktree. It remains
+attached to the thread so a retry cannot lose seeded content.
+
+## Worktree manager
+
+Create `src/main/services/worktree-manager.ts` with a narrow API. It owns git worktree
+commands and on-disk placement; callers do not construct paths or invoke `git worktree`
+directly.
+
+```ts
+allocate(input): Promise<ThreadWorktree>
+validate(input): Promise<ValidatedThreadWorktree>
+get(threadId): Promise<ValidatedThreadWorktree | null>
+retire(threadId, options): Promise<RetireResult>
+listProject(projectRoot): Promise<WorktreeRecord[]>
+pruneSafeOrphans(projectRoot, knownThreadIds): Promise<PruneReport>
+```
+
+Implementation requirements:
+
+- Default placement is `~/.copse/worktrees/<projectId>/<threadId>/`; allow a test and
+  deployment override via `COPSE_WORKTREES_DIR`.
+- Serialize mutation per project. Two first messages may allocate concurrently, but
+  their `git worktree add`, branch collision checks, and metadata updates may not race.
+- Parse `git worktree list --porcelain -z`; do not scrape human output or assume paths
+  contain no whitespace/newlines.
+- Resolve the repository common dir and compare filesystem identity before trusting a
+  worktree.
+- Use argument arrays, never shell-concatenated prompt/title/path strings.
+- Retry branch-name collisions with deterministic suffixes.
+- Never use `--force` for normal allocation or startup cleanup.
+- Prune only entries whose owning thread is gone, checkout is clean, and branch is
+  merged or explicitly retained elsewhere. Report dirty/unmerged orphans to the user.
+- Keep internal worktree roots separate from user-openable project roots. Do not call
+  `registerAllowedWorkspaceRoot()` in a way that makes them selectable projects.
+
+### Dirty checkout seeding
+
+Reuse or extract the non-mutating snapshot machinery in `worktree-backup.ts`, but make
+its lifecycle thread-scoped. Tests must cover staged, unstaged, untracked, deleted,
+renamed, binary, and ignored files. Ignored files are not copied unless a configured
+copy rule includes them.
+
+The snapshot ref must remain reachable until apply succeeds. On success, clean it up
+only after verifying the resulting worktree content. On failure, retain enough metadata
+to retry or recover and show the ref in diagnostics.
+
+### Sandbox and git metadata
+
+A linked worktree's `.git` is a file pointing into the parent repository's common git
+directory. The current macOS overlay only allows the checkout root, so basic commands
+such as `git status` or `git commit` will otherwise be denied.
+
+Extend the sandbox from a validated worktree record, not by allowing an arbitrary
+parent directory. Permit only the common git metadata and per-worktree administrative
+directory required by normal git operation. Preserve existing denial of repository
+hooks, config mutation, and unrelated sibling worktrees. Add macOS integration coverage
+for status, diff, add, and commit plus negative tests for hooks/config writes.
+
+The OS sandbox remains macOS-only. Linux and Windows continue through the documented
+permission policy; the classifier is not an authorization boundary.
+
+## Concurrency foundation
+
+Land this before allocation can be enabled. Audit every process-global mutable value
+reachable from an agent turn, not only directory resolution.
+
+Minimum known audit list:
+
+- `worktree-backup.ts`: replace `current` / `inFlight` with thread + turn ownership;
+- `diff-queue.ts`: isolate queue, recent decisions, and direct-applied snapshots;
+- `thread-models.ts`: remove global active thread/model pointers;
+- `hook-run-recorder.ts`: scope recording context and live sink to thread + turn;
+- `todo-tool.ts` and `agent-run-todos.ts`: scope post-processing and todo state;
+- readonly, steering, orchestration, approval, and abort contexts: prove that existing
+  AsyncLocalStorage keys include stable thread/turn identity;
+- terminals and background processes: store owner thread ID and provide stop-by-thread;
+- ACP session disposal: expose and await dispose-by-thread before worktree retirement.
+
+For hooks, [`hooks-and-feature-packs.md`](./hooks-and-feature-packs.md) is binding. Read
+its "Execution guidance" and "Known implementation traps" before changing the recorder
+or event flow. If this work changes a hook-system decision, update that plan in the same
+PR and add its required contract tests.
+
+Concurrency acceptance test: run two agent contexts simultaneously against two roots,
+write different content to the same relative filename, invoke git/diff/backup/todo/hook
+paths, and prove every output and persisted event remains attached to its owner.
+
+## Active-thread UI and IPC
+
+Current renderer filesystem and git IPC often send only a path. Convert those contracts
+to include `projectId` + `threadId`; main-process handlers resolve the root and reject a
+thread/project mismatch.
+
+When the active thread changes:
+
+- the file tree, file previews, Monaco open/save, search result opening, and changes pane
+  re-root to that thread;
+- open editor models need an identity containing thread ID, not only relative path, so
+  two threads can open `src/index.ts` without sharing a buffer;
+- a new terminal starts in the active thread root and records its owner;
+- existing terminals and background processes keep their original cwd and display the
+  owning thread/root rather than teleporting;
+- the semantic search index stays on the project root in v1. Opening a project-index
+  result maps its relative path into the active thread root and handles a missing file.
+
+The renderer should cache display state, not authority. Main-process validation remains
+mandatory for every read and mutation.
+
+## Missing worktrees and recovery
+
+If validation fails because the directory was deleted, pruned, moved, belongs to another
+repo, or points at an unexpected branch:
+
+1. mark the thread checkout unavailable and block agent/file/git writes;
+2. leave persisted metadata intact for diagnostics;
+3. offer **Recreate worktree** from the recorded base/branch where safe;
+4. offer **Continue in shared checkout** only as an explicit destructive-context change;
+5. if recreation would omit dirty/unreachable content, explain that and require a choice.
+
+Never automatically change an isolated thread to shared. That turns an infrastructure
+failure into edits in the user's checkout.
+
+## Bringing work back
+
+Isolation is not complete without a safe return path. Each isolated thread shows dirty
+file count and ahead/behind state relative to `baseBranch`, plus:
+
+1. **Create PR**: commit through existing attribution, push with normal permission
+   handling, and open a PR from the owned branch.
+2. **Merge into project**: first inspect the project checkout. If it is dirty, on another
+   branch, or has moved since allocation, show the exact state and require a safe choice.
+   Snapshot project content before any merge attempt. Never silently checkout the base
+   branch. Conflicts remain in a recoverable branch/worktree and open the diff flow.
+3. **Keep branch**: retain the branch and worktree for manual handling.
+
+After a successful merge/PR and a clean worktree, offer retirement; do not retire it
+automatically while a terminal, process, or ACP session is alive.
+
+## Deletion, retention, and startup recovery
+
+Thread deletion becomes an ordered main-process operation:
+
+1. inspect worktree dirty/unmerged state and list live owned resources;
+2. for material loss, obtain explicit confirmation showing files/commits/processes;
+3. abort the agent run and await completion;
+4. dispose the ACP session, terminals, and background processes for that thread;
+5. remove a clean/approved worktree through the manager;
+6. update branch-retention metadata;
+7. delete the thread store directory.
+
+Do not let renderer autosave delete the thread directory before cleanup completes.
+Cleanup should be idempotent so a crash between steps is recoverable.
+
+At startup, compare git's registered worktrees, thread metadata, and on-disk paths.
+Automatically prune only provably clean, merged, ownerless entries. Surface every other
+orphan with retain/reconnect/remove actions. Retention count/age may limit suggestions,
+but never overrides the dirty/unmerged rule.
+
+## Environment bootstrap
+
+Linked worktrees do not inherit ignored dependencies or secrets. Add optional project
+settings only after the core lifecycle is safe:
+
+- `worktreeSetupCommand`: executed in the validated worktree with normal shell
+  permissions and streamed visibly; retryable on failure;
+- `worktreeCopyGlobs`: explicit project-relative ignored/untracked files to copy, never
+  symlink. Reject absolute paths, traversal, and matches outside the project root.
+
+Do not auto-copy `.env`, credentials, `node_modules`, or package-manager caches. A
+one-time hint can recommend configuration after a recognizable missing-dependency
+failure. Warm spare worktrees are out of scope for v1.
+
+## Implementation sequence
+
+Each phase should be a reviewable PR (split further if needed). Keep the feature default
+off through Phase 5.
+
+### Phase 0 — contract and concurrency fixes
+
+Scope:
+
+- add `ThreadExecutionContext` and AsyncLocal run boundary;
+- thread-scope backups, diff queue, model, hook recorder, todos, abort/approval state;
+- add owner + disposal APIs for terminals, background processes, and ACP sessions;
+- add the two-context concurrency test.
+
+Exit gate: concurrent shared-mode runs cannot cross-attribute any audited state. No UI
+or worktree creation yet.
+
+### Phase 1 — root-aware primitives
+
+Scope:
+
+- make exported git operations accept an explicit root; remove silent default-branch
+  fallback when detection is unresolved;
+- make file/path/shell/diff/backup/hook/ACP operations resolve the run's thread root;
+- preserve project-root indexing, trust, settings, and instruction discovery;
+- introduce trusted internal-root registration distinct from openable projects;
+- add the linked-worktree sandbox overlay and negative security tests.
+
+Exit gate: tests can install two synthetic execution contexts and every primitive uses
+the correct root; shared mode remains behaviorally identical.
+
+### Phase 2 — manager, persistence, and policy
+
+Scope:
+
+- implement manager allocation, validation, dirty seeding, retirement, and recovery;
+- add optional thread/project fields and migration tests;
+- implement the pure policy matrix and deterministic branch naming;
+- add throwaway-repository tests, including concurrent allocation and collisions.
+
+Exit gate: main-process tests can allocate, reopen, validate, seed, and safely retire a
+worktree without renderer involvement.
+
+### Phase 3 — first-message integration and composer state
+
+Scope:
+
+- move first-message checkout decision to a main-process transaction;
+- add the pre-send shared/isolated chip and retryable allocation state;
+- persist metadata before dispatch and bind existing branch UI;
+- ship behind `worktreeMode: never`, with explicit opt-in enabled for testing.
+
+Exit gate: opt-in first send creates exactly one worktree, failures never send the
+prompt, and old/shared threads remain unchanged.
+
+### Phase 4 — active-thread UI re-rooting
+
+Scope:
+
+- add project/thread identity to filesystem and git IPC;
+- re-root file tree, editor model identity, file preview, changes, and new terminals;
+- display terminal/process ownership;
+- add focused component tests and visual WDIO coverage.
+
+Exit gate: two threads can display and edit different copies of the same relative path
+without buffer or changes-pane leakage.
+
+### Phase 5 — return path and lifecycle
+
+Scope:
+
+- add dirty/ahead/behind status and PR/merge/keep actions;
+- implement ordered deletion, missing-worktree recovery, startup reconciliation, and
+  safe orphan reporting;
+- add crash/idempotency and dirty deletion tests.
+
+Exit gate: a user can opt in, complete work, bring it back, and delete/retain the thread
+without CLI cleanup or silent data loss.
+
+### Phase 6 — default flip and bootstrap polish
+
+Scope:
+
+- add setup command/copy-glob settings and visible failure/retry flow;
+- collect allocation timing/failure telemetry without paths or prompt content;
+- switch new projects to `from-default-branch` only after all prior gates pass;
+- document semantic-index staleness and unsupported remote/submodule cases.
+
+Exit gate: default isolation meets the product invariants and has a reversible project
+setting.
+
+## Test plan
+
+### Unit and integration
+
+- policy: every matrix row, settings, explicit overrides, detached/unborn HEAD;
+- manager: clean/dirty repos, staged/unstaged/untracked/deleted/renamed/binary files,
+  collisions, whitespace paths, concurrent allocation, manual deletion, stale git
+  entries, submodules, orphans, and idempotent retire;
+- context: two concurrent roots and same relative path through file, shell, git, diff,
+  backup, todo, hook, model, and abort flows;
+- persistence: old thread metadata, round-trip, invalid/tampered path, crash between
+  allocation and save;
+- sandbox: linked-worktree git status/diff/add/commit and denied hook/config/sibling
+  access on macOS;
+- lifecycle: live process disposal, dirty/unmerged refusal, partial failure retry;
+- renderer components: active-root switching, editor model separation, unavailable
+  worktree, allocation retry, deletion confirmation.
+
+### End-to-end and visual
+
+- first send on default branch shows and allocates isolated state;
+- non-default and unsupported projects clearly show shared state;
+- two active threads edit the same relative path independently;
+- switching threads re-roots tree/editor/changes/new terminal;
+- bring-back happy path and merge conflict recovery;
+- deleting dirty/unmerged worktree shows an itemized prompt;
+- missing worktree blocks edits and presents recovery actions.
+
+Any visible change needs a focused WDIO Electron spec and screenshot following
+`.cursor/skills/screenshot-validate/SKILL.md`. Prefer remote e2e while iterating when
+configured. Before each PR, run the narrow tests while developing, then `npm run check`;
+for renderer work also run `npm run build` and the focused e2e specs.
+
+## Definition of done
+
+- All product invariants have named automated coverage.
+- No production agent/tool call path resolves a thread operation from active-project
+  global state.
+- No renderer-provided filesystem root is trusted.
+- Shared mode is covered as the `threadRoot === projectRoot` case, not a separate tool
+  implementation.
+- Concurrent runs pass the cross-attribution test under repetition.
+- Worktree deletion and startup cleanup cannot silently remove dirty/unmerged work.
+- macOS linked-worktree git operations work in the sandbox without broad parent-repo
+  access.
+- Active-thread UI, terminals, ACP, hooks, backups, diffs, and todos all show correct
+  ownership.
+- Bring-back and recovery need no manual filesystem surgery.
+- Plan decisions and the binding hooks plan match the landed behavior.
+
+## Known implementation traps
+
+- `getDefaultBranch()` currently has a fallback branch value; policy must distinguish
+  "resolved" from "guessed" or detached/no-remote repositories isolate unexpectedly.
+- The generated thread title arrives after the first agent run; it cannot name the
+  branch used for that run.
+- `ThreadMeta` persistence is easy, but current deletion removes the thread directory
+  immediately. Cleanup must move ahead of that write path.
+- Registering a worktree as an allowed filesystem root must not make it a selectable
+  project or broaden workspace switching.
+- Rebuilding the singleton semantic index from a thread-root diff path would silently
+  replace the project index. Keep index refresh explicitly project-rooted.
+- A linked worktree `.git` file escapes into the parent repository. Allowing only the
+  checkout root breaks git; allowing the entire parent `.git` directory too broadly
+  weakens the sandbox.
+- AsyncLocalStorage does not cover later IPC or orphaned background processes. Persist
+  owner IDs on those resources.
+- Applying a snapshot commit recreates content but may collapse index staging state.
+  Do not claim index fidelity unless it is deliberately implemented and tested.
+- A missing worktree must not fall back to shared, even if that seems convenient.
+- Local merge can disturb the user's checkout branch or dirty state. Inspect and
+  snapshot first; never silently checkout the base branch.
+- Remote/cloud runs and local worktrees need an explicit future architecture. V1 keeps
+  them shared rather than pretending a local checkout controls a remote agent.
+
+## Estimate and main risk
+
+Expected size is 5–7 PRs and roughly 4–6 engineer-weeks including test and review time.
+The concurrency/context foundation plus an opt-in, main-process-only isolated run is
+roughly 2–3 weeks. Active-thread renderer re-rooting and lifecycle/return UX are the
+widest and highest-risk portions.
+
+The feature should not be split by building allocation first. The safest first PR is
+Phase 0: it fixes existing concurrency hazards and creates the ownership contract every
+later phase needs.
