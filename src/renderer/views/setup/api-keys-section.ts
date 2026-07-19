@@ -6,12 +6,7 @@ import { setInlineStatus } from '../../dom/inline-status.ts'
 // (Mistral/Gemini/DeepSeek) and user customs are managed in the separate
 // custom-providers section, not here.
 export type ApiKeyProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'cursor'
-  | 'openrouter'
-  | 'github'
-  | 'artificial-analysis'
+  'anthropic' | 'openai' | 'cursor' | 'openrouter' | 'github' | 'artificial-analysis'
 
 export interface ApiKeysSection {
   root: HTMLFieldSetElement

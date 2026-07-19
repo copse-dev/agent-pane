@@ -1,14 +1,14 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  liveCacheTtlMs,
-  requestLiveIntellectModels,
-} from './aa-live-intellect.ts'
+import { liveCacheTtlMs, requestLiveIntellectModels } from './aa-live-intellect.ts'
 
 /** A fake fetch that records the request init and returns a canned response. */
-function fakeFetch(
-  response: { status?: number; statusText?: string; body?: unknown; throwErr?: Error },
-): { fetch: typeof fetch; calls: RequestInit[] } {
+function fakeFetch(response: {
+  status?: number
+  statusText?: string
+  body?: unknown
+  throwErr?: Error
+}): { fetch: typeof fetch; calls: RequestInit[] } {
   const calls: RequestInit[] = []
   const fn = (async (_url: string | URL | Request, init?: RequestInit) => {
     calls.push(init ?? {})

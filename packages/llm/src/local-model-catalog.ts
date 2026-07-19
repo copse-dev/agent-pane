@@ -189,8 +189,7 @@ const BASE_CATALOG: readonly LocalModelCapability[] = [
  */
 export const LOCAL_MODEL_CATALOG: readonly LocalModelCapability[] = BASE_CATALOG.map((m) => {
   const synced = LOCAL_MODEL_BENCHMARKS[m.id] as
-    | Partial<Record<Benchmark, BenchmarkScore>>
-    | undefined
+    Partial<Record<Benchmark, BenchmarkScore>> | undefined
   const intellect = getIntellectScore(m.id)
   if (!synced && !intellect) return m
   return {

@@ -124,8 +124,7 @@ export function verifyLiveCohort(
   const mismatchesAreAMinority =
     mismatches.length <= Math.floor(anchorsChecked * MAX_MISMATCH_FRACTION)
   return {
-    verified:
-      !versionMismatch && agreeingAnchors >= MIN_LIVE_ANCHORS && mismatchesAreAMinority,
+    verified: !versionMismatch && agreeingAnchors >= MIN_LIVE_ANCHORS && mismatchesAreAMinority,
     anchorsChecked,
     agreeingAnchors,
     maxDrift,
