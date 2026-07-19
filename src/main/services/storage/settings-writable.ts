@@ -139,6 +139,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // security IPC.
   roleModels: z.record(z.string().max(64), z.string().max(256)),
   openRouterModel: z.string().max(256),
+  // Restrict OpenRouter routing to zero-data-retention endpoints
+  // (provider.zdr). Default ON; the read side (provider-selection.ts) treats
+  // a missing value as true.
+  openRouterZdrOnly: z.boolean(),
+  // Allow OpenRouter to route to providers that may store or train on inputs
+  // (drops data_collection:"deny"). Default OFF; independent of the ZDR
+  // toggle so relaxing retention never silently re-admits trainers.
+  openRouterAllowTraining: z.boolean(),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
   postTurnReviewEnabled: z.boolean(),
@@ -203,6 +211,8 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   comparisonJudgeModel: z.string().max(256),
   roadmapPlansEnabled: z.boolean(),
   backgroundTasksEnabled: z.boolean(),
+  /** When false, hide read_terminal and @shell (on by default). */
+  readTerminalEnabled: z.boolean(),
   piiRedactionEnabled: z.boolean(),
   devtoolsShortcutEnabled: z.boolean(),
   customInstructions: z.string().max(8192),
@@ -273,6 +283,10 @@ export const securitySettingsSchema = z.object({
   defaultReadonlyMode: z.boolean(),
   webAllowedOrigins: webAllowedOriginsSchema,
   webAllowUserApproval: z.boolean(),
+  // Custom LLM provider host allowlist (issue #438). Optional so older renderer
+  // bundles that never send them don't clobber a saved list / toggle.
+  approvedProviderHosts: z.array(z.string().max(256)).max(256).optional(),
+  providerAllowUserApproval: z.boolean().optional(),
   // Allow-list of command basenames trusted to run unsandboxed with no prompt.
   // Optional so bundles that never send it don't clobber a saved list.
   trustedShellCommands: trustedShellCommandsSchema.optional(),

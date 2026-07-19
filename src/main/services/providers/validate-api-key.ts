@@ -1,8 +1,10 @@
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
+import { assertApprovedProviderHost } from './approved-provider-hosts.ts'
 import { getResolvedExtraProvider } from './extra-providers-store.ts'
 import { getSetting } from '../storage/settings.ts'
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
+import { validateCredentialBaseUrl } from '@copse/llm/credential-url.ts'
 import { resolveCursorCloudApiBase } from '../remote/cursor-cloud-models.ts'
 
 // Same overridable base the model catalog fetch uses (openrouter-models.ts): the
@@ -162,9 +164,24 @@ export async function validateExtraProviderApiKey(
     return { ok: false, error: `Key should start with ${provider.keyPrefix}`, formatOk: false }
   }
 
+  // Validate the complete credential-bearing URL before the host allowlist.
+  // Approval is not permission to use plaintext HTTP, embedded credentials, or
+  // a private/link-local endpoint.
+  try {
+    validateCredentialBaseUrl(provider.baseUrl, 'Provider base URL')
+    assertApprovedProviderHost(provider.baseUrl)
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Provider host is not approved',
+      formatOk: true,
+    }
+  }
+
   try {
     const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, {
       headers: { Authorization: `Bearer ${trimmed}` },
+      redirect: 'manual',
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.apiKeyValidation),
     })
     if (res.status === 401 || res.status === 403) {

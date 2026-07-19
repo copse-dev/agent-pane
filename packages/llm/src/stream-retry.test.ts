@@ -62,6 +62,23 @@ describe('isRetryableStreamError', () => {
     assert.equal(isRetryableStreamError({ error: { type: 'overloaded_error' } }), true)
   })
 
+  it('does not retry a deterministic OpenRouter routing-policy failure, even as a 5xx', () => {
+    const current = Object.assign(
+      new Error(
+        '503 {"error":{"message":"There is no available model provider that meets your routing requirements.","code":503}}',
+      ),
+      { status: 503 },
+    )
+    assert.equal(isRetryableStreamError(current), false)
+    const legacy = Object.assign(
+      new Error(
+        '404 {"error":{"message":"No endpoints found matching your data policy (Zero data retention: true)","code":404}}',
+      ),
+      { status: 404 },
+    )
+    assert.equal(isRetryableStreamError(legacy), false)
+  })
+
   it('does not retry an unknown plain error', () => {
     assert.equal(isRetryableStreamError(new Error('boom')), false)
     assert.equal(isRetryableStreamError('boom'), false)

@@ -24,6 +24,7 @@ export * from './reserved-prefixes.ts'
 
 // Credentials, slugs, resilience, and the test/mocking seams.
 export * from './credential-url.ts'
+export * from './provider-host-policy.ts'
 export * from './provider-slug.ts'
 export * from './stream-retry.ts'
 export * from './redacting-provider.ts'

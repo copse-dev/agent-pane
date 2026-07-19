@@ -92,6 +92,8 @@ export interface IpcInvokeMap {
         defaultReadonlyMode: boolean
         webAllowedOrigins: string[]
         webAllowUserApproval: boolean
+        approvedProviderHosts?: string[]
+        providerAllowUserApproval?: boolean
       },
     ]
     result: undefined
@@ -199,10 +201,18 @@ export interface IpcInvokeMap {
   }
 
   // Terminal
-  'terminal:create': { args: [cols: number, rows: number]; result: string }
+  'terminal:create': {
+    args: [cols: number, rows: number, meta?: { label?: string; threadId?: string | null }]
+    result: string
+  }
   'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
   'terminal:resize': { args: [sessionId: string, cols: number, rows: number]; result: undefined }
   'terminal:destroy': { args: [sessionId: string]; result: undefined }
+  'terminal:setMeta': {
+    args: [sessionId: string, meta: { label?: string; threadId?: string | null }]
+    result: undefined
+  }
+  'terminal:setActive': { args: [sessionId: string]; result: undefined }
 
   // Git
   'git:status': { args: []; result: GitStatusResult | null }

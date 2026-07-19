@@ -182,6 +182,16 @@ export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext
       'Your provider account is out of credit. Add credit or update billing with your provider, then try again.'
     }`
 
+  // OpenRouter routing-policy failure: with ZDR-only routing (Copse's default)
+  // or training exclusion active, a model with no compliant endpoint fails
+  // deterministically. Point at the toggles rather than surfacing the raw 503.
+  if (
+    /no available model provider that meets your routing requirements|no endpoints found matching your data policy/i.test(
+      detail,
+    )
+  )
+    return 'No provider endpoint satisfies the current OpenRouter privacy routing (zero-data-retention / no-training). Pick another model, or relax the routing toggles in Settings → Providers → OpenRouter.'
+
   if (status === 429 || type === 'rate_limit_error' || detail.includes('rate_limit'))
     return 'Rate limit reached. Please wait a moment and try again.'
 

@@ -10,7 +10,9 @@ vendor translation layer. It also exposes Copse-native knobs the imported dialec
 
 Each hook is a process that receives a JSON payload on **stdin**, may print a JSON response
 on **stdout**, and can observe, block, or annotate the action that triggered it. Dialect is
-determined by source path (decision 8): `.copse/hooks.json` → the Copse adapter.
+determined by source path (decision 8): `.copse/hooks.json` → the Copse adapter. For the
+dialect-agnostic architecture (registry, canonical events, async/budget/epoch, spine,
+sandbox, UI) see [`docs/hooks.md`](./hooks.md).
 
 The official JSON schema is published at
 [`schemas/copse-hooks.schema.json`](../schemas/copse-hooks.schema.json)

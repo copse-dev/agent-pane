@@ -20,13 +20,16 @@
 .mention-item:hover {
   background: var(--bg-hover);
 }
-.mention-item-thread {
+.mention-item-thread,
+.mention-item-shell {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .mention-thread-icon,
-.thread-chip-icon {
+.thread-chip-icon,
+.mention-shell-icon,
+.shell-chip-icon {
   flex: none;
   width: 14px;
   height: 14px;
@@ -36,10 +39,12 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.mention-thread-icon {
+.mention-thread-icon,
+.mention-shell-icon {
   color: var(--text-muted);
 }
-.mention-thread-title {
+.mention-thread-title,
+.mention-shell-title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -47,7 +52,8 @@
   white-space: nowrap;
   font-weight: 600;
 }
-.mention-thread-date {
+.mention-thread-date,
+.mention-shell-kind {
   flex: none;
   color: var(--text-muted);
   font-size: var(--font-size-sm);

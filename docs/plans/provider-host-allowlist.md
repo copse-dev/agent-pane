@@ -1,6 +1,6 @@
 # Hostname sandboxing for LLM model provider egress
 
-**Status:** Design proposal (not yet implemented). Tracks issue #438.
+**Status:** Implemented (core allowlist + Settings UI). Tracks issue #438.
 
 Restrict outbound LLM-provider network traffic to known / approved hostnames.
 Today there is no hostname allowlist on model API calls, and a user-added custom

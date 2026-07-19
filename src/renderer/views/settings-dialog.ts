@@ -39,6 +39,10 @@ import {
   WEB_ALLOW_USER_APPROVAL_SETTING,
 } from '@shared/web-origins.ts'
 import {
+  APPROVED_PROVIDER_HOSTS_SETTING,
+  PROVIDER_ALLOW_USER_APPROVAL_SETTING,
+} from '@shared/provider-hosts.ts'
+import {
   TRUSTED_COMMANDS_SETTING,
   formatTrustedCommands,
   parseTrustedCommands,
@@ -141,6 +145,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Built-in browser tools (Electron's bundled Chromium); on by default so the
   // agent renders/screenshots web UIs in-app instead of installing a browser.
   { name: 'browserToolsEnabled', kind: 'checkbox', default: true, save: true },
+  // On by default: agent may read open Shells tabs via read_terminal / @shell.
+  { name: 'readTerminalEnabled', kind: 'checkbox', default: true, save: true },
   // On by default: clicked links open in the in-app browser pane. Off routes
   // external links to the system browser and marks them with an external icon.
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
@@ -167,6 +173,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'mcpAutoAllowReadOnly', kind: 'checkbox', default: false, save: false },
   { name: 'defaultReadonlyMode', kind: 'checkbox', default: false, save: false },
   { name: 'webAllowUserApproval', kind: 'checkbox', default: true, save: false },
+  { name: 'providerAllowUserApproval', kind: 'checkbox', default: true, save: false },
   { name: 'safetyExternalDenyThreshold', kind: 'text', default: '1', save: false },
 ]
 
@@ -238,6 +245,14 @@ function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
   return text
     .split(/\r?\n/)
     .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function parseApprovedProviderHosts(value: FormDataEntryValue | null): string[] {
+  const text = typeof value === 'string' ? value : ''
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim().toLowerCase().replace(/\.$/, ''))
     .filter(Boolean)
 }
 
@@ -467,6 +482,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 prompt.
               </p>
               <label class="checkbox-label">
+                <input type="checkbox" name="readTerminalEnabled" />
+                Let the agent read open Shells tabs
+              </label>
+              <p class="field-hint">
+                When on (the default), the agent gets a <code>read_terminal</code> tool while this
+                chat has an open Shells tab, and you can <code>@shell</code> a tab into the message.
+                Turn off to keep interactive terminals private from the agent.
+              </p>
+              <label class="checkbox-label">
                 <input type="checkbox" name="openLinksInBuiltInBrowser" />
                 Open links in the built-in browser
               </label>
@@ -491,6 +515,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <span class="field-hint">
                   One per line. Supports exact origins and wildcard subdomains such as
                   <code>https://*.duckduckgo.com</code>. Defaults include localhost and DuckDuckGo.
+                </span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="providerAllowUserApproval" />
+                Ask before allowing new model provider hosts
+              </label>
+              <label>
+                Approved provider hosts
+                <textarea
+                  name="approvedProviderHosts"
+                  rows="4"
+                  spellcheck="false"
+                  placeholder="api.together.xyz"
+                ></textarea>
+                <span class="field-hint">
+                  Hostnames only (one per line) that custom OpenAI-compatible providers may use.
+                  Built-in providers and localhost are always allowed. Saving a new custom provider
+                  prompts to approve its host when this is on.
                 </span>
               </label>
             </fieldset>
@@ -1968,6 +2010,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
+      const savedProviderHosts = (await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING)) as
+        string[] | undefined | null
+      ;(form.elements.namedItem('approvedProviderHosts') as HTMLTextAreaElement).value = (
+        Array.isArray(savedProviderHosts) ? savedProviderHosts : []
+      ).join('\n')
       ;(form.elements.namedItem('trustedShellCommands') as HTMLTextAreaElement).value =
         formatTrustedCommands(
           sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
@@ -2110,6 +2157,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         defaultReadonlyMode: data.get('defaultReadonlyMode') === 'on',
         webAllowedOrigins: parseWebAllowedOrigins(data.get('webAllowedOrigins')),
         webAllowUserApproval: data.get(WEB_ALLOW_USER_APPROVAL_SETTING) === 'on',
+        approvedProviderHosts: parseApprovedProviderHosts(data.get('approvedProviderHosts')),
+        providerAllowUserApproval: data.get(PROVIDER_ALLOW_USER_APPROVAL_SETTING) === 'on',
         trustedShellCommands: parseTrustedCommands(formDataString(data, 'trustedShellCommands')),
       })
 

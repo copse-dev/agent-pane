@@ -52,6 +52,7 @@ import {
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
 import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
+import { migrateApprovedProviderHosts } from '../services/providers/approved-provider-hosts.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -59,7 +60,7 @@ import {
   refreshHuggingFaceModels,
   HUGGINGFACE_SLUG,
 } from '../services/providers/extra-providers-store.ts'
-import { fetchOpenAiCompatibleModels } from '../services/providers/provider-models.ts'
+import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
@@ -97,9 +98,11 @@ import {
   registerSkillTools,
   syncOkfMemoryTools,
   syncPiiTools,
+  syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
+import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import {
   OKF_MEMORIES_ENABLED_SETTING,
   MEMORY_TYPE,
@@ -216,6 +219,9 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  // Issue #438: persist grandfathered custom-provider hosts once so Settings
+  // and runtime gates share the same allowlist after upgrade.
+  void migrateApprovedProviderHosts()
   const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
@@ -680,6 +686,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (k === PII_REDACTION_ENABLED_SETTING) {
       syncPiiTools(registry)
     }
+    if (k === READ_TERMINAL_ENABLED_SETTING) {
+      syncReadTerminalTools(registry)
+    }
     // Toggle the DevTools shortcut registration when the setting changes.
     if (k === 'devtoolsShortcutEnabled') {
       const win = getMainWindow()
@@ -694,7 +703,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
     const prefs = securitySettingsSchema.parse(raw)
-    await Promise.all(Object.entries(prefs).map(([k, v]) => setSetting(k, v)))
+    await Promise.all(
+      Object.entries(prefs)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => setSetting(k, v)),
+    )
   })
   ipcMain.handle('settings:getKey', (event, provider: unknown) => {
     assertMainFrameSender(event, win)
@@ -806,7 +819,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const url = parseIpcArgs(z.string().max(2048), [baseUrl])
     const apiKey = parseIpcArgs(z.string().max(8192).optional(), [key])
-    return fetchOpenAiCompatibleModels(url, apiKey)
+    return fetchOpenAiCompatibleModelsForSettings(url, apiKey)
   })
   ipcMain.handle('settings:refreshHuggingFaceModels', async (event, key: unknown) => {
     assertMainFrameSender(event, win)
@@ -897,8 +910,8 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       listCopseHooksForSources(opts),
     ])
     return {
-      hooks: [...cursor.hooks, ...claude, ...copse.hooks],
-      warnings: [...cursor.warnings, ...copse.warnings],
+      hooks: [...cursor.hooks, ...claude.hooks, ...copse.hooks],
+      warnings: [...cursor.warnings, ...claude.warnings, ...copse.warnings],
     }
   })
   ipcMain.handle('hooks:test', async (event, rawReq: unknown) => {
