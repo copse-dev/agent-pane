@@ -199,7 +199,7 @@ describe('fetchModelOptions visibility', () => {
     )
     const row = options.find((o) => o.group === 'Cursor Cloud Agent' && /Opus 4\.8/.test(o.label))
     assert.ok(row)
-    assert.match(row.label, /Opus 4\.8 — intellect 56/)
+    assert.match(row.label, /Opus 4\.8 — intellect 55\.7/)
   })
 
   it('groups hosted cloud models under a heading', async () => {

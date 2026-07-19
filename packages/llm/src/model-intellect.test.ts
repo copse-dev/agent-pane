@@ -62,7 +62,7 @@ describe('getIntellectScore', () => {
     assert.ok(explanation)
     assert.equal(explanation.steps.length, 1)
     assert.equal(explanation.steps[0]?.step, 'measured')
-    assert.equal(explanation.steps[0]?.value, 44.4)
+    assert.equal(explanation.steps[0].value, 44.4)
   })
 
   it('every synced measurement carries a citation and version', () => {

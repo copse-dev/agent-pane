@@ -24,7 +24,7 @@ function fakeFetch(
   return { fetch: fn, calls }
 }
 
-const AA_MODEL = (slug: string, idx: number, priceIn?: number) => ({
+const AA_MODEL = (slug: string, idx: number, priceIn?: number): Record<string, unknown> => ({
   slug,
   evaluations: { artificial_analysis_intelligence_index: idx },
   ...(priceIn !== undefined
@@ -61,8 +61,8 @@ describe('requestLiveIntellectModels', () => {
     assert.equal(result.indexVersion, '4.1')
     assert.equal(result.models.length, 1)
     assert.equal(result.models[0]?.id, 'claude-opus-4-8')
-    assert.equal(result.models[0]?.intellect, 55.7)
-    assert.equal(result.models[0]?.inputPricePerMTok, 5)
+    assert.equal(result.models[0].intellect, 55.7)
+    assert.equal(result.models[0].inputPricePerMTok, 5)
   })
 
   it('surfaces a rejected key (403) with an actionable message', async () => {
