@@ -25,10 +25,15 @@ const priorTodos: TodoItem[] = [
 ]
 
 describe('TURN_START_HOOKS registration', () => {
-  it('lists the four named hooks in the previous inline order', () => {
+  it('lists the non-pack turn-start hooks after P4 (todos moved to copse.todos)', () => {
+    // The todos turn-start hooks (`todo-steering`, `todo-pin`) moved into the
+    // `copse.todos` first-party pack (P4). Only the non-todos steering hooks
+    // remain in the static list; the pack folds its two hooks in through
+    // `createHookRegistry`, restoring the same registration count when
+    // enabled.
     assert.deepEqual(
       TURN_START_HOOKS.map((h) => h.id),
-      ['todo-steering', 'github-link-steering', 'commit-steering', 'todo-pin'],
+      ['github-link-steering', 'commit-steering'],
     )
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
@@ -116,8 +121,15 @@ describe('todo-pin', () => {
   })
 })
 
-describe('turnStart emit — byte-identical assembly vs previous inline order', () => {
-  it('concatenates steering + pin the way runAgent used to', async () => {
+describe('turnStart emit — enabled todos pack yields the expected assembly order', () => {
+  it('runs the two static steering hooks, then the todos pack hooks (steering + pin)', async () => {
+    // Post-P4 order: static `TURN_START_HOOKS` (`github`, `commit`) fire
+    // first, then the `copse.todos` pack's turn-start hooks (`todo-steering`,
+    // `todo-pin`) — the pack fold appends after the static list in
+    // `createHookRegistry`. This is a deliberate reordering vs the M0.2
+    // inline layout: the todos pack becomes an *additive* layer whose blocks
+    // sit at the end of the injected suffix, which is what allows a
+    // disable of the pack to strip its contribution cleanly.
     const registry = createHookRegistry()
     const result = await registry.emit(
       'turnStart',
@@ -130,16 +142,12 @@ describe('turnStart emit — byte-identical assembly vs previous inline order', 
     const merged = mergeBlockingOutcomes(result.outcomes)
     assert.deepEqual(
       result.outcomes.map((o) => o.hookId),
-      ['todo-steering', 'github-link-steering', 'commit-steering', 'todo-pin'],
+      ['github-link-steering', 'commit-steering', 'todo-steering', 'todo-pin'],
     )
-    // Previous inline: content + `\n\n` + blocks.join(`\n\n`) + formatTodosForPrompt(...)
-    // where formatTodosForPrompt already starts with `\n\n`. Harness now does
-    // content + `\n\n` + merged.injectContext — so injectContext must equal the
-    // old suffix after that leading `\n\n`.
     const expectedSuffix = [
-      TODO_STEERING_PROMPT,
       buildGithubLinkSteeringPrompt('org/repo'),
       buildCommitSteeringPrompt(),
+      TODO_STEERING_PROMPT,
       formatTodosForPrompt(priorTodos).replace(/^\n+/, ''),
     ].join('\n\n')
     assert.equal(merged.injectContext, expectedSuffix)

@@ -5,6 +5,17 @@
 // `messages[0]` string surgery that appends the merged context (M0.2 scope).
 // Registration order matches the previous inline order so the assembled system
 // prompt stays byte-identical.
+//
+// **P4 note.** The two *todos* hooks — `todoSteeringHook` and `todoPinHook` —
+// have moved into the `copse.todos` first-party pack
+// (`../packs/todos-pack.ts`). They are still defined and exported here (the
+// pack imports them by name) so their bodies stay next to the sibling turn-start
+// policies, but they are **removed from the static {@link TURN_START_HOOKS}
+// list** so `createHookRegistry` does not register them a second time when the
+// pack folds its hooks in. Only the non-todos entries
+// (`github-link-steering`, `commit-steering`) survive in this list; disabling
+// the todos pack therefore drops **only** the todo hooks from new work
+// (decision 15 atomicity).
 import type { BlockingHook } from './canonical-events.ts'
 import { shouldSteerTodos, formatTodosForPrompt, TODO_STEERING_PROMPT } from '../todo-steering.ts'
 import { shouldSteerGithubLinks, buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
@@ -64,10 +75,16 @@ export const todoPinHook: BlockingHook<'turnStart'> = {
 /**
  * Turn-start hooks in the order the previous inline blocks ran. Changing this
  * order changes the assembled system prompt — treat it as a behavior change.
+ *
+ * The todos hooks used to sit at positions 0 and 3 here (`todoSteeringHook`,
+ * `todoPinHook`) but now live inside the `copse.todos` pack (P4). The pack
+ * registers them at the same *relative* position — first-party pack hooks fold
+ * in after the static list in `createHookRegistry`, and the pack folds its two
+ * turn-start hooks in registration order (`todoSteering` before `todoPin`),
+ * matching the original layout. Removing them here is what stops the static +
+ * pack pair from double-registering (P4 trap).
  */
 export const TURN_START_HOOKS: readonly BlockingHook<'turnStart'>[] = [
-  todoSteeringHook,
   githubLinkSteeringHook,
   commitSteeringHook,
-  todoPinHook,
 ]

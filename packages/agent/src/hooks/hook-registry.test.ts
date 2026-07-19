@@ -53,13 +53,20 @@ describe('HookRegistry.emit — zero registered hooks changes nothing', () => {
 
 describe('FIRST_PARTY_HOOKS — M0 turn-start + finalize + E1 step-boundary lists', () => {
   it('registers turn-start and beforeFinalize hooks in their assembly orders', () => {
+    // P4: the todos hooks (`todo-steering`, `todo-pin`,
+    // `todo-finalize-closeout`) moved into the `copse.todos` first-party pack
+    // and are no longer part of the *static* FIRST_PARTY_HOOKS list. They are
+    // still registered on a fresh registry through the pack fold (see the
+    // `createHookRegistry` test below), so the emit-side count and behavior
+    // are unchanged when the pack is enabled — this list only pins the static
+    // members that survive independent of any pack registration.
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'turnStart').map((h) => h.id),
-      ['todo-steering', 'github-link-steering', 'commit-steering', 'todo-pin'],
+      ['github-link-steering', 'commit-steering'],
     )
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').map((h) => h.id),
-      ['todo-finalize-closeout'],
+      [],
     )
   })
 

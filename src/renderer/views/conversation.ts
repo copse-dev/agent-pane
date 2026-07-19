@@ -43,7 +43,9 @@ import {
   type ToolCallDisplayItem,
 } from '@shared/tools/tool-display.ts'
 import { navigateToChange } from '../controller/panels.ts'
-import { createTodoListEl } from './todo-panel.ts'
+import { createPackPanelEl } from './pack-panel.ts'
+import { todosToPanelListData, type PanelListData } from '@copse/agent/packs/pack-panel.ts'
+import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
 import { createReviewCardEl } from './review-panel.ts'
 import { createComparisonCardEl } from './comparison-panel.ts'
 import {
@@ -1286,11 +1288,26 @@ export function mountConversation(
   }
 
   function syncTodoPanel(): void {
+    // P4: the plan panel is a level-2 declarative pack contribution from
+    // `copse.todos`. Historical rendering resolves from `thread.todos` (the
+    // durable `todo_update` state persisted across sessions), never from the
+    // live pack registration (decision 17) — so an old thread's plan renders
+    // even if the pack is later disabled. The generic pack-panel renderer
+    // (`createPackPanelEl`) is fed the same `PanelListData` the pack emits
+    // via `panel_update` for new turns (`todosToPanelListData`), keeping the
+    // in-turn UI and reloaded-history UI byte-identical.
     todoHost.replaceChildren()
     const thread = getActiveThread(store)
-    if (thread?.todos?.length) {
-      todoHost.append(createTodoListEl(thread.todos, { compact: true }))
-    }
+    if (!thread?.todos?.length) return
+    const data: PanelListData = todosToPanelListData(thread.todos)
+    if (data.rows.length === 0) return
+    todoHost.append(
+      createPackPanelEl(data, {
+        packId: TODOS_PACK_ID,
+        contributionId: TODOS_PANEL_CONTRIBUTION_ID,
+        ariaLabel: 'To-dos',
+      }),
+    )
   }
 
   // Hook cards fired within a turn render as this message's next sibling (like
