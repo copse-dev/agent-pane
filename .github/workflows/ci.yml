@@ -685,8 +685,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.head_ref }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          if gh api "repos/${{ github.repository }}/branches/$BRANCH" --silent 2>/dev/null; then
+          # Self-hosted CHECKS_RUNNER images ship curl+jq but not `gh`
+          # (ubuntu-latest has the CLI preinstalled). Use curl so this check
+          # works after #1017 returned the job to the self-hosted fleet.
+          if curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${REPOSITORY}/branches/${BRANCH}" \
+            >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::Head branch '$BRANCH' no longer exists (PR merged and branch deleted) — skipping screenshot commit."
@@ -1039,6 +1048,11 @@ jobs:
   # `ci-refs/heads/main` with a tip push). Genuine cancels of the tip with no
   # newer run (manual cancel, runner death) still fail. Sibling-matrix cancels
   # after a real shard failure still fail because `ANY_FAILURE` is true first.
+  #
+  # Tip lookups use curl+jq (not `gh`): self-hosted CHECKS_RUNNER images ship
+  # those tools but historically omit the GitHub CLI. After #1017 returned
+  # ci-passed to that fleet, `gh: command not found` made every concurrency
+  # cancel fail closed — painting superseded tip SHAs red (e.g. e48ab120).
   ci-passed:
     name: CI Passed
     if: always()
@@ -1063,6 +1077,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           CURRENT_RUN_ID: ${{ github.run_id }}
         run: |
+          set -euo pipefail
+          github_api_json() {
+            curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/$1"
+          }
           FORK_PR=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           if $FORK_PR; then
             if [ "${{ needs.precheck.result }}" != "success" ]; then
@@ -1099,13 +1121,13 @@ jobs:
           if $ANY_CANCELLED; then
             # Fail closed if we cannot resolve tip — a tip cancel must stay red.
             if [ -n "$PR_NUMBER" ]; then
-              TIP_SHA=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha) || {
+              TIP_SHA=$(github_api_json "repos/${REPOSITORY}/pulls/${PR_NUMBER}" | jq -er .head.sha) || {
                 echo "Could not resolve PR tip SHA; treating cancel as failure."
                 echo '${{ toJSON(needs) }}'
                 exit 1
               }
             else
-              TIP_SHA=$(gh api "repos/${REPOSITORY}/commits/${REF_NAME}" --jq .sha) || {
+              TIP_SHA=$(github_api_json "repos/${REPOSITORY}/commits/${REF_NAME}" | jq -er .sha) || {
                 echo "Could not resolve branch tip SHA; treating cancel as failure."
                 echo '${{ toJSON(needs) }}'
                 exit 1
@@ -1118,13 +1140,16 @@ jobs:
             fi
             # Same tip, but a newer CI run on this SHA may have taken the
             # concurrency slot (delayed schedule, re-run, workflow_dispatch).
-            NEWER_RUN_ID=$(gh api \
-              "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RUN_HEAD_SHA}&per_page=20" \
-              --jq "[.workflow_runs[] | select(.id > ${CURRENT_RUN_ID}) | .id][0] // empty") || {
+            # Do not use `jq -e` here: no newer run yields empty output, which
+            # is success — only curl/API failure should fail closed.
+            RUNS_JSON=$(github_api_json \
+              "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RUN_HEAD_SHA}&per_page=20") || {
               echo "Could not resolve newer workflow runs; treating cancel as failure."
               echo '${{ toJSON(needs) }}'
               exit 1
             }
+            NEWER_RUN_ID=$(printf '%s' "$RUNS_JSON" | jq -r \
+              "[.workflow_runs[] | select(.id > ${CURRENT_RUN_ID}) | .id][0] // empty")
             if [ -n "$NEWER_RUN_ID" ]; then
               echo "Run superseded by newer CI run ${NEWER_RUN_ID} on tip ${RUN_HEAD_SHA}; cancelled jobs are concurrency noise."
               echo '${{ toJSON(needs) }}'
