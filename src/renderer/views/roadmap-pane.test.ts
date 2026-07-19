@@ -5,10 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
-import {
-  clickActiveConfirmDialogConfirm,
-  mountConfirmDialog,
-} from './confirm-dialog.ts'
+import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 
 // Minimal KnowledgeNote (Roadmap) factory; only the fields the pane reads matter.
 function makeItem(

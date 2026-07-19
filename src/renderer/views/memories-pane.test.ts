@@ -4,10 +4,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountMemoriesPane } from './memories-pane.ts'
-import {
-  clickActiveConfirmDialogConfirm,
-  mountConfirmDialog,
-} from './confirm-dialog.ts'
+import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
 
 // Minimal KnowledgeNote (Memory) factory; only the fields the pane reads matter.
 function makeNote(id: string, title: string, body: string, tags: string[] = []): unknown {

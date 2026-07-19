@@ -55,16 +55,14 @@ export function mountConfirmDialog(): void {
 
     const cancelLabel = active.cancelLabel ?? 'Cancel'
     const confirmLabel = active.confirmLabel ?? 'OK'
-    const cancelBtn = el(
-      'button',
-      { type: 'button', class: 'confirm-dialog-cancel' },
-      cancelLabel,
-    )
+    const cancelBtn = el('button', { type: 'button', class: 'confirm-dialog-cancel' }, cancelLabel)
     const confirmBtn = el(
       'button',
       {
         type: 'button',
-        class: active.danger ? 'confirm-dialog-confirm confirm-dialog-danger' : 'confirm-dialog-confirm',
+        class: active.danger
+          ? 'confirm-dialog-confirm confirm-dialog-danger'
+          : 'confirm-dialog-confirm',
       },
       confirmLabel,
     )
