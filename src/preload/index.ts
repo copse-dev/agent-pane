@@ -47,7 +47,8 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   agent: {
-    run: (threadId: string, prompt: string) => ipcRenderer.invoke('agent:run', threadId, prompt),
+    run: (projectId: string, threadId: string, prompt: string) =>
+      ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
     estimateContext: (threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),

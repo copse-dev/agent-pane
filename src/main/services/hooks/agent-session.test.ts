@@ -5,7 +5,11 @@
 import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildHookModelIdentity, currentAgentSessionInfo } from './agent-session.ts'
-import { setActiveRunThread, clearActiveRunThread, setActiveRunModel } from '../thread-models.ts'
+import {
+  runWithActiveRunIdentity,
+  setActiveRunThread,
+  setActiveRunModel,
+} from '../thread-models.ts'
 import { beginHookRunRecording, endHookRunRecording } from '../hook-run-recorder.ts'
 import { storageSet } from '../storage/storage.ts'
 
@@ -35,29 +39,31 @@ describe('agent-session (B4)', () => {
 
   describe('currentAgentSessionInfo', () => {
     afterEach(() => {
-      clearActiveRunThread('t-session')
-      setActiveRunModel(null)
       endHookRunRecording('t-session')
     })
 
     it('reads ambient thread + turn + model when set', () => {
-      setActiveRunThread('t-session')
-      setActiveRunModel('claude-sonnet-4-6')
-      // beginHookRunRecording only mints a turn id when a project is active.
-      storageSet('activeProjectId', 'proj-agent-session')
-      beginHookRunRecording('t-session')
-      const info = currentAgentSessionInfo()
-      assert.equal(info.conversationId, 't-session')
-      assert.ok(info.generationId.length > 0, 'generation id comes from the recording turn id')
-      assert.equal(info.model?.modelId, 'claude-sonnet-4-6')
+      runWithActiveRunIdentity('t-session', () => {
+        setActiveRunThread('t-session')
+        setActiveRunModel('claude-sonnet-4-6')
+        // beginHookRunRecording only mints a turn id when a project is active.
+        storageSet('activeProjectId', 'proj-agent-session')
+        beginHookRunRecording('t-session')
+        const info = currentAgentSessionInfo()
+        assert.equal(info.conversationId, 't-session')
+        assert.ok(info.generationId.length > 0, 'generation id comes from the recording turn id')
+        assert.equal(info.model?.modelId, 'claude-sonnet-4-6')
+      })
     })
 
     it('honours overrides and omits model when explicitly null', () => {
-      setActiveRunThread('t-session')
-      setActiveRunModel('claude-sonnet-4-6')
-      const info = currentAgentSessionInfo({ conversationId: 'override', model: null })
-      assert.equal(info.conversationId, 'override')
-      assert.equal(info.model, undefined)
+      runWithActiveRunIdentity('t-session', () => {
+        setActiveRunThread('t-session')
+        setActiveRunModel('claude-sonnet-4-6')
+        const info = currentAgentSessionInfo({ conversationId: 'override', model: null })
+        assert.equal(info.conversationId, 'override')
+        assert.equal(info.model, undefined)
+      })
     })
 
     it('degrades to empty ids and no model outside an active run', () => {

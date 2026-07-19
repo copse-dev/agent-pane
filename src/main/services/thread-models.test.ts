@@ -3,16 +3,18 @@ import assert from 'node:assert/strict'
 import {
   clearActiveRunThread,
   clearThreadModels,
+  getActiveRunModel,
   getActiveRunThread,
   getThreadModels,
   recordThreadModel,
+  runWithActiveRunIdentity,
+  setActiveRunModel,
   setActiveRunThread,
 } from './thread-models.ts'
 
 afterEach(() => {
   clearThreadModels('t1')
   clearThreadModels('t2')
-  setActiveRunThread(null)
 })
 
 describe('thread model tracking', () => {
@@ -32,15 +34,55 @@ describe('thread model tracking', () => {
   })
 })
 
-describe('active run thread', () => {
-  it('tracks the running thread and clears only its own pointer', () => {
-    setActiveRunThread('t1')
-    assert.equal(getActiveRunThread(), 't1')
-    // A later run takes over; t1 finishing must not clear t2's pointer.
-    setActiveRunThread('t2')
-    clearActiveRunThread('t1')
-    assert.equal(getActiveRunThread(), 't2')
-    clearActiveRunThread('t2')
+describe('active run identity', () => {
+  it('is absent outside a run and rejects an unbound setter', () => {
     assert.equal(getActiveRunThread(), null)
+    assert.equal(getActiveRunModel(), null)
+    assert.throws(() => {
+      setActiveRunThread('t1')
+    }, /No active run identity context/)
+  })
+
+  it('keeps thread and model attribution isolated across interleaved runs', async () => {
+    let releaseFirst: (() => void) | undefined
+    const firstCanFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let firstStarted: (() => void) | undefined
+    const firstIsRunning = new Promise<void>((resolve) => {
+      firstStarted = resolve
+    })
+
+    const first = runWithActiveRunIdentity('t1', async () => {
+      setActiveRunThread('t1')
+      setActiveRunModel('claude-opus-4-8')
+      firstStarted?.()
+      await firstCanFinish
+      return { threadId: getActiveRunThread(), model: getActiveRunModel() }
+    })
+    await firstIsRunning
+
+    const second = await runWithActiveRunIdentity('t2', async () => {
+      setActiveRunThread('t2')
+      setActiveRunModel('gpt-4o')
+      await Promise.resolve()
+      return { threadId: getActiveRunThread(), model: getActiveRunModel() }
+    })
+    releaseFirst?.()
+
+    assert.deepEqual(second, { threadId: 't2', model: 'gpt-4o' })
+    assert.deepEqual(await first, { threadId: 't1', model: 'claude-opus-4-8' })
+    assert.equal(getActiveRunThread(), null)
+    assert.equal(getActiveRunModel(), null)
+  })
+
+  it('clears model state only for its owning thread', () => {
+    runWithActiveRunIdentity('t1', () => {
+      setActiveRunModel('gpt-4o')
+      clearActiveRunThread('t2')
+      assert.equal(getActiveRunModel(), 'gpt-4o')
+      clearActiveRunThread('t1')
+      assert.equal(getActiveRunModel(), null)
+    })
   })
 })
