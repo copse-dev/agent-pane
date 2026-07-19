@@ -1,0 +1,3399 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Architecture — Copse</title>
+    <meta
+      name="description"
+      content="Interactive, source-verified systems diagrams for the Copse desktop coding assistant."
+    />
+    <meta property="og:title" content="Architecture — Copse" />
+    <meta
+      property="og:description"
+      content="Explore Copse's runtime, agent loop, tools, security boundaries, storage, integrations, and current-main changes."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://copse.dev/architecture.html" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .architecture-container {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+        padding: var(--spacing-lg) var(--spacing-md);
+      }
+
+      .architecture-back {
+        display: inline-block;
+        margin-bottom: var(--spacing-md);
+        color: var(--color-text-light);
+        text-decoration: none;
+      }
+
+      .architecture-back:hover {
+        color: var(--color-primary);
+      }
+
+      .architecture-heading {
+        max-width: 820px;
+        margin-bottom: var(--spacing-lg);
+      }
+
+      .architecture-heading h1 {
+        margin-bottom: var(--spacing-sm);
+        font-size: 2.75rem;
+        line-height: 1.1;
+      }
+
+      .architecture-heading p {
+        color: var(--color-text-light);
+        font-size: 1.125rem;
+      }
+
+      /* ---- Interactive systems map ---- */
+      .arch-map {
+        /* Node-kind palette — distinguishable, Copse-aligned hues */
+        --k-person: #2f6f4e;
+        --k-runtime: #c9772a;
+        --k-core: #2f9e8f;
+        --k-data: #cf5f9b;
+        --k-safety: #7c3aed;
+        --k-external: #1f93bf;
+        /* Aliases consumed by the render code */
+        --viz-series-1: var(--k-person);
+        --viz-series-2: var(--k-runtime);
+        --viz-series-3: var(--k-core);
+        --viz-series-4: var(--k-data);
+        --viz-series-5: var(--k-safety);
+        --viz-series-6: var(--k-external);
+        --edge: rgba(30, 42, 34, 0.3);
+        --edge-strong: rgba(30, 42, 34, 0.5);
+      }
+
+      .arch-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: var(--spacing-md);
+      }
+
+      .arch-tab {
+        appearance: none;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 600;
+        padding: 8px 15px;
+        border-radius: 999px;
+        border: 1px solid rgba(30, 42, 34, 0.14);
+        background: var(--color-white);
+        color: var(--color-text);
+        transition:
+          background 0.18s ease,
+          border-color 0.18s ease,
+          box-shadow 0.18s ease,
+          transform 0.18s ease;
+      }
+
+      .arch-tab:hover {
+        border-color: rgba(30, 42, 34, 0.3);
+        transform: translateY(-1px);
+      }
+
+      .arch-tab.is-active {
+        background: linear-gradient(
+          135deg,
+          var(--color-primary) 0%,
+          var(--color-primary-strong) 100%
+        );
+        border-color: transparent;
+        color: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .arch-tab:focus-visible {
+        outline: 2px solid var(--color-primary);
+        outline-offset: 2px;
+      }
+
+      .arch-board {
+        background: #fff;
+        border: 1px solid rgba(30, 42, 34, 0.08);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: var(--spacing-md);
+      }
+
+      .arch-canvas {
+        width: 100%;
+      }
+
+      .arch-canvas svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        overflow: visible;
+      }
+
+      /* Edges + direction markers */
+      .arch-canvas .diagram-edge {
+        fill: none;
+        stroke: var(--edge);
+        stroke-width: 1.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        vector-effect: non-scaling-stroke;
+      }
+
+      .arch-canvas .diagram-edge.is-external {
+        stroke-dasharray: 5 5;
+        opacity: 0.85;
+      }
+
+      .arch-canvas .diagram-edge.is-active {
+        stroke: var(--color-primary);
+        stroke-width: 2.6;
+        opacity: 1;
+      }
+
+      .arch-canvas .edge-arrow {
+        fill: var(--edge-strong);
+      }
+
+      /* Edge labels read as attached chips */
+      .arch-canvas .edge-label-bg {
+        fill: #fff;
+        stroke: rgba(30, 42, 34, 0.14);
+        stroke-width: 1;
+      }
+
+      .arch-canvas .edge-label {
+        fill: rgba(30, 42, 34, 0.66);
+        font-size: 12.5px;
+        font-weight: 500;
+        text-anchor: middle;
+      }
+
+      /* Lanes */
+      .arch-canvas .lane-label {
+        fill: rgba(30, 42, 34, 0.42);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        text-anchor: start;
+      }
+
+      .arch-canvas .lane-rule {
+        stroke: rgba(30, 42, 34, 0.09);
+        stroke-width: 1;
+        stroke-dasharray: 2 5;
+        vector-effect: non-scaling-stroke;
+      }
+
+      /* Nodes */
+      .arch-canvas .diagram-node {
+        cursor: pointer;
+      }
+
+      .arch-canvas .node-box {
+        fill: color-mix(in srgb, var(--node-color) 14%, #fff);
+        stroke: color-mix(in srgb, var(--node-color) 46%, rgba(30, 42, 34, 0.14));
+        stroke-width: 1.25;
+        rx: 12px;
+        filter: drop-shadow(0 1px 1.5px rgba(30, 42, 34, 0.1));
+        transition:
+          fill 0.15s ease,
+          stroke 0.15s ease;
+      }
+
+      .arch-canvas .diagram-node:hover .node-box {
+        fill: color-mix(in srgb, var(--node-color) 22%, #fff);
+        stroke: color-mix(in srgb, var(--node-color) 62%, transparent);
+      }
+
+      .arch-canvas .node-title {
+        fill: var(--color-text);
+        font-size: 14px;
+        font-weight: 600;
+        text-anchor: middle;
+      }
+
+      .arch-canvas .node-subtitle {
+        fill: rgba(30, 42, 34, 0.6);
+        font-size: 11.5px;
+        font-weight: 400;
+        text-anchor: middle;
+      }
+
+      .arch-canvas .diagram-node.is-selected .node-box {
+        fill: var(--color-primary);
+        stroke: var(--color-primary);
+        filter: drop-shadow(0 3px 9px rgba(47, 111, 78, 0.32));
+      }
+
+      .arch-canvas .diagram-node.is-selected .node-title,
+      .arch-canvas .diagram-node.is-selected .node-subtitle {
+        fill: #fff;
+      }
+
+      .arch-canvas .diagram-node:focus {
+        outline: none;
+      }
+
+      .arch-canvas .diagram-node:focus-visible .node-box {
+        stroke: var(--color-primary);
+        stroke-width: 2.5;
+      }
+
+      /* Legend */
+      .arch-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 20px;
+        margin-top: var(--spacing-md);
+        padding-top: var(--spacing-md);
+        border-top: 1px solid rgba(30, 42, 34, 0.08);
+      }
+
+      .arch-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--color-text-light);
+      }
+
+      .arch-legend-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--dot) 24%, #fff);
+        border: 1.5px solid color-mix(in srgb, var(--dot) 70%, transparent);
+      }
+
+      /* Inspector */
+      .arch-inspector {
+        margin-top: var(--spacing-md);
+        background: #fff;
+        border: 1px solid rgba(30, 42, 34, 0.08);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: var(--spacing-md) var(--spacing-lg);
+      }
+
+      .arch-inspector-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .arch-badge {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        padding: 3px 11px;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--kind) 32%, transparent);
+        color: color-mix(in srgb, var(--kind) 64%, var(--color-text));
+        background: color-mix(in srgb, var(--kind) 14%, #fff);
+      }
+
+      .arch-inspector h3 {
+        margin: 0;
+        font-size: 1.4rem;
+        color: var(--color-text);
+      }
+
+      .arch-inspector p {
+        margin: 0;
+        color: var(--color-text-light);
+        max-width: 70ch;
+      }
+
+      .arch-files {
+        margin-top: 16px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .arch-files code {
+        background: rgba(246, 231, 201, 0.4);
+        border: 1px solid rgba(30, 42, 34, 0.12);
+        color: var(--color-text);
+        font-family: 'Monaco', 'Courier New', monospace;
+        font-size: 0.82rem;
+        padding: 3px 9px;
+        border-radius: 6px;
+      }
+
+      /* Small-screen fallback: tappable component list + relationship table */
+      .arch-picker {
+        display: none;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 8px;
+      }
+
+      .arch-pick {
+        appearance: none;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.9rem;
+        font-weight: 500;
+        text-align: left;
+        padding: 9px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(30, 42, 34, 0.14);
+        border-left: 4px solid color-mix(in srgb, var(--dot) 75%, transparent);
+        background: #fff;
+        color: var(--color-text);
+      }
+
+      .arch-pick.is-active {
+        background: color-mix(in srgb, var(--dot) 12%, #fff);
+        border-color: color-mix(in srgb, var(--dot) 55%, transparent);
+        border-left-color: var(--dot);
+      }
+
+      .arch-flow {
+        display: none;
+        margin-top: var(--spacing-md);
+        overflow-x: auto;
+      }
+
+      .arch-flow table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+
+      .arch-flow th,
+      .arch-flow td {
+        text-align: left;
+        padding: 8px 12px 8px 0;
+        border-bottom: 1px solid rgba(30, 42, 34, 0.1);
+        vertical-align: top;
+      }
+
+      .arch-flow th {
+        color: var(--color-text-light);
+        font-weight: 600;
+      }
+
+      .architecture-note {
+        margin-top: var(--spacing-md);
+        color: var(--color-text-light);
+        font-size: 0.95rem;
+      }
+
+      @media (max-width: 660px) {
+        .architecture-heading h1 {
+          font-size: 2.1rem;
+        }
+
+        .arch-canvas,
+        .arch-legend {
+          display: none;
+        }
+
+        .arch-picker {
+          display: grid;
+        }
+
+        .arch-flow {
+          display: block;
+        }
+
+        .arch-inspector {
+          padding: var(--spacing-md);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="architecture-container">
+      <a class="architecture-back" href="index.html">← Back to Copse</a>
+      <div class="architecture-heading">
+        <h1>How Copse fits together</h1>
+        <p>
+          Explore the desktop runtime, agent turn, safety gates, persistent data, UI bridge,
+          auxiliary agents, workspace services, build pipeline, and the audited changes now on main.
+          Choose a view, then select any component to see its responsibilities and source files.
+        </p>
+      </div>
+
+      <div class="arch-map">
+        <div class="arch-tabs" id="arch-tabs" role="group" aria-label="System view"></div>
+        <div class="arch-board">
+          <div class="arch-canvas" id="arch-canvas" aria-live="polite"></div>
+          <div class="arch-picker" id="arch-picker" aria-label="Components"></div>
+          <div class="arch-flow" id="arch-flow"></div>
+          <div class="arch-legend" id="arch-legend" aria-hidden="true"></div>
+        </div>
+        <section class="arch-inspector" id="arch-inspector" aria-live="polite"></section>
+      </div>
+
+      <p class="architecture-note">
+        Verified against <code class="inline-code">origin/main</code> at
+        <code class="inline-code">cf0a14c2</code>. All 218 cited source paths exist at that
+        revision; the Main delta view summarizes the 46 incoming commits.
+      </p>
+    </main>
+
+    <script>
+      ;(() => {
+        const byId = (id) => document.getElementById(id)
+        const tabs = byId('arch-tabs')
+        const canvas = byId('arch-canvas')
+        const picker = byId('arch-picker')
+        const flow = byId('arch-flow')
+        const inspector = byId('arch-inspector')
+        const legend = byId('arch-legend')
+        if (!tabs || !canvas || !picker || !flow || !inspector || !legend) return
+        const kinds = {
+          person: { label: 'User surface', color: 'var(--viz-series-1)' },
+          runtime: { label: 'Runtime', color: 'var(--viz-series-2)' },
+          core: { label: 'Core logic', color: 'var(--viz-series-3)' },
+          data: { label: 'Persistent data', color: 'var(--viz-series-4)' },
+          safety: { label: 'Safety boundary', color: 'var(--viz-series-5)' },
+          external: { label: 'External system', color: 'var(--viz-series-6)' },
+        }
+
+        const views = [
+          {
+            id: 'overview',
+            label: 'Overview',
+            height: 610,
+            lanes: [
+              { y: 42, label: 'User interface' },
+              { y: 190, label: 'Desktop runtime' },
+              { y: 382, label: 'Execution and integrations' },
+              { y: 548, label: 'Durable state' },
+            ],
+            nodes: [
+              {
+                id: 'user',
+                x: 24,
+                y: 70,
+                w: 122,
+                h: 58,
+                kind: 'person',
+                title: 'User',
+                sub: 'prompts + approvals',
+                summary:
+                  'The user selects a workspace and model, submits prompts, reviews diffs, answers questions, and grants or denies privileged operations.',
+                files: ['src/renderer/views/input-bar.ts', 'src/renderer/views/approval-dialog.ts'],
+              },
+              {
+                id: 'renderer',
+                x: 204,
+                y: 70,
+                w: 148,
+                h: 58,
+                kind: 'runtime',
+                title: 'Renderer',
+                sub: 'DOM + store',
+                summary:
+                  'A framework-free DOM UI renders chat, panes, Monaco, terminal output, browser state, approvals, and streamed agent activity from an in-memory event store.',
+                files: [
+                  'src/renderer/main.ts',
+                  'src/shared/store/store.ts',
+                  'src/renderer/controller/agent.ts',
+                ],
+              },
+              {
+                id: 'preload',
+                x: 410,
+                y: 70,
+                w: 128,
+                h: 58,
+                kind: 'safety',
+                title: 'Preload bridge',
+                sub: 'typed IPC API',
+                summary:
+                  'The context-isolated preload exposes a narrow window.api surface. Renderer code never receives direct Node or Electron privileges.',
+                files: ['src/preload/index.ts', 'src/preload/api.d.ts'],
+              },
+              {
+                id: 'main',
+                x: 576,
+                y: 70,
+                w: 120,
+                h: 58,
+                kind: 'runtime',
+                title: 'Main process',
+                sub: 'trusted host',
+                summary:
+                  'The Electron main process owns startup, windows, IPC validation, native modules, subprocesses, providers, storage, and shutdown.',
+                files: ['src/main/index.ts', 'src/main/app-init.ts'],
+              },
+              {
+                id: 'agent',
+                x: 32,
+                y: 222,
+                w: 142,
+                h: 60,
+                kind: 'core',
+                title: 'Agent service',
+                sub: 'route + orchestrate',
+                summary:
+                  'The main orchestration seam resolves the selected execution mode, builds prompts and toolsets, enforces context budgets, starts hooks, and streams one coherent turn.',
+                files: [
+                  'src/main/services/agent-service.ts',
+                  'packages/agent/src/run-agent-loop.ts',
+                ],
+              },
+              {
+                id: 'registry',
+                x: 220,
+                y: 222,
+                w: 142,
+                h: 60,
+                kind: 'core',
+                title: 'Tool registry',
+                sub: 'validate + execute',
+                summary:
+                  'Built-in, MCP, skill, and custom tools share one registry that validates arguments, applies read-only restrictions, runs permission checks, and normalizes results.',
+                files: [
+                  'src/main/services/tool-registry.ts',
+                  'src/main/services/registry-bootstrap.ts',
+                ],
+              },
+              {
+                id: 'providers',
+                x: 408,
+                y: 222,
+                w: 132,
+                h: 60,
+                kind: 'external',
+                title: 'Model routes',
+                sub: 'native / ACP / remote',
+                summary:
+                  'A model selection routes to the built-in provider loop, a persistent local ACP agent, or a managed remote agent service. Direct providers also enforce approved egress hosts and surface retention/training policy.',
+                files: [
+                  'src/main/services/providers/provider-selection.ts',
+                  'src/main/services/providers/approved-provider-hosts.ts',
+                  'packages/llm/src/data-policies.ts',
+                  'src/main/services/acp/acp-agent-service.ts',
+                ],
+              },
+              {
+                id: 'ipc',
+                x: 584,
+                y: 222,
+                w: 112,
+                h: 60,
+                kind: 'safety',
+                title: 'IPC guards',
+                sub: 'sender + schema',
+                summary:
+                  'Every privileged renderer request crosses sender checks and Zod-backed argument validation before it reaches services.',
+                files: ['src/main/ipc/ipc-guards.ts', 'src/main/ipc/register-handlers.ts'],
+              },
+              {
+                id: 'workspace',
+                x: 24,
+                y: 420,
+                w: 130,
+                h: 58,
+                kind: 'runtime',
+                title: 'Workspace I/O',
+                sub: 'local or SSH',
+                summary:
+                  'A workspace abstraction directs file, Git, shell, terminal, and search work to the local machine or a configured SSH host.',
+                files: [
+                  'src/main/services/workspace.ts',
+                  'src/main/services/workspace-fs/get-workspace-fs.ts',
+                  'src/main/services/ssh-workspace/connection-manager.ts',
+                ],
+              },
+              {
+                id: 'sandbox',
+                x: 192,
+                y: 420,
+                w: 130,
+                h: 58,
+                kind: 'safety',
+                title: 'Safety plane',
+                sub: 'policy + sandbox',
+                summary:
+                  'Tool-specific approval policy, hooks, diff review, workspace trust, and the macOS project sandbox constrain what model-authored actions can do.',
+                files: [
+                  'src/main/services/security/permission-policy.ts',
+                  'src/main/services/security/permission-gate.ts',
+                  'src/main/project-sandbox/index.ts',
+                ],
+              },
+              {
+                id: 'integrations',
+                x: 360,
+                y: 420,
+                w: 138,
+                h: 58,
+                kind: 'external',
+                title: 'Integrations',
+                sub: 'MCP / web / GitHub',
+                summary:
+                  'Optional integrations include MCP servers, browser automation, direct web search/fetch, GitHub CLI/API operations, model APIs, and update infrastructure.',
+                files: [
+                  'src/main/services/mcp/mcp-registry.ts',
+                  'src/main/services/browser/session-manager.ts',
+                  'src/main/services/github/gh-service.ts',
+                ],
+              },
+              {
+                id: 'children',
+                x: 536,
+                y: 420,
+                w: 160,
+                h: 58,
+                kind: 'runtime',
+                title: 'Child processes',
+                sub: 'PTY / MCP / ACP / index',
+                summary:
+                  'The main process supervises terminal PTYs, command runners, background tasks, stdio MCP servers, ACP agents, SSH processes, gortex, and sandbox workers.',
+                files: [
+                  'src/main/services/exec/terminal-service.ts',
+                  'src/main/services/exec/command-runner.ts',
+                  'src/main/services/search/semantic-index.ts',
+                ],
+              },
+              {
+                id: 'stores',
+                x: 218,
+                y: 556,
+                w: 280,
+                h: 42,
+                kind: 'data',
+                title: 'Local stores',
+                sub: 'threads + settings + indexes',
+                summary:
+                  'Conversation spines and OKF message files live under ~/.copse; Electron user data holds settings, keys, browser state, usage, and semantic indexes; Git refs hold short-lived backups.',
+                files: [
+                  'src/main/services/thread-store.ts',
+                  'src/main/services/storage/settings.ts',
+                  'docs/thread-store-format.md',
+                ],
+              },
+            ],
+            edges: [
+              ['user', 'renderer', 'interacts'],
+              ['renderer', 'preload', 'window.api'],
+              ['preload', 'main', 'IPC'],
+              ['main', 'ipc', 'registers'],
+              ['ipc', 'agent', 'agent:run'],
+              ['agent', 'providers', 'selects'],
+              ['agent', 'registry', 'tool calls'],
+              ['registry', 'workspace', 'file / Git'],
+              ['registry', 'sandbox', 'permission'],
+              ['registry', 'integrations', 'optional'],
+              ['workspace', 'children', 'processes'],
+              ['main', 'stores', 'read / write'],
+              ['agent', 'stores', 'history'],
+              ['integrations', 'stores', 'results'],
+            ],
+          },
+          {
+            id: 'turn',
+            label: 'Agent turn',
+            height: 660,
+            lanes: [
+              { y: 40, label: 'Compose and route' },
+              { y: 230, label: 'Built-in loop' },
+              { y: 486, label: 'Stream and persist' },
+            ],
+            nodes: [
+              {
+                id: 'compose',
+                x: 18,
+                y: 72,
+                w: 118,
+                h: 58,
+                kind: 'person',
+                title: 'Composer',
+                sub: 'user content',
+                summary:
+                  'The renderer packages text, image/thread/file attachments, invoked skills, model, todos, working brief, and continuation budget into the run payload.',
+                files: [
+                  'src/renderer/views/input-bar.ts',
+                  'packages/agent/src/parse-agent-run-payload.ts',
+                ],
+              },
+              {
+                id: 'runipc',
+                x: 166,
+                y: 72,
+                w: 116,
+                h: 58,
+                kind: 'safety',
+                title: 'agent:run',
+                sub: 'IPC boundary',
+                summary:
+                  'The main process validates the sending frame and thread id, hydrates model history, invokes runAgent, then caches the returned LLM history.',
+                files: ['src/main/index.ts', 'src/main/ipc/ipc-guards.ts'],
+              },
+              {
+                id: 'presubmit',
+                x: 312,
+                y: 72,
+                w: 126,
+                h: 58,
+                kind: 'core',
+                title: 'Pre-submit',
+                sub: 'hook + PII',
+                summary:
+                  'beforeSubmitPrompt may block or inject context. Optional PII redaction replaces personal data before any local, remote, or ACP provider path.',
+                files: [
+                  'src/main/services/agent-service.ts',
+                  'src/main/services/security/pii-redactor.ts',
+                  'src/main/services/hooks/before-submit-prompt.ts',
+                ],
+              },
+              {
+                id: 'route',
+                x: 468,
+                y: 72,
+                w: 110,
+                h: 58,
+                kind: 'core',
+                title: 'Route model',
+                sub: '3 execution paths',
+                summary:
+                  'The resolved model id selects the built-in model loop, a local ACP process, or a remote managed-agent service.',
+                files: [
+                  'src/main/services/providers/resolve-agent-model.ts',
+                  'src/main/services/agent-service.ts',
+                ],
+              },
+              {
+                id: 'externalroute',
+                x: 608,
+                y: 72,
+                w: 96,
+                h: 58,
+                kind: 'external',
+                title: 'ACP / remote',
+                sub: 'own loop',
+                summary:
+                  'ACP agents keep per-thread local sessions and remote agents run service-managed sessions. Both translate their event streams into native StreamChunk records.',
+                files: [
+                  'src/main/services/acp/acp-agent-service.ts',
+                  'src/main/services/remote/remote-agent-client.ts',
+                ],
+              },
+              {
+                id: 'prepare',
+                x: 20,
+                y: 264,
+                w: 126,
+                h: 58,
+                kind: 'core',
+                title: 'Prepare turn',
+                sub: 'prompt + budget',
+                summary:
+                  'The native path builds the system prompt, fingerprints the offered toolset, runs turnStart hooks, estimates context, trims old history, and derives read limits.',
+                files: [
+                  'src/main/services/agent-system-prompt.ts',
+                  'src/main/services/history-trimming.ts',
+                  'src/main/services/context-estimate.ts',
+                ],
+              },
+              {
+                id: 'provider',
+                x: 174,
+                y: 264,
+                w: 120,
+                h: 58,
+                kind: 'external',
+                title: 'LLM provider',
+                sub: 'policy + stream',
+                summary:
+                  'Anthropic, OpenAI, OpenRouter, LM Studio, extra OpenAI-compatible providers, or the development mock enforce provider-specific request policy and emit text, reasoning, tool calls, usage, and a stop reason.',
+                files: [
+                  'packages/llm/src/create-provider.ts',
+                  'packages/llm/src/provider-host-policy.ts',
+                  'packages/llm/src/data-policies.ts',
+                ],
+              },
+              {
+                id: 'loop',
+                x: 322,
+                y: 264,
+                w: 112,
+                h: 58,
+                kind: 'core',
+                title: 'Agent loop',
+                sub: 'bounded steps',
+                summary:
+                  'runAgentLoop alternates provider streams and parallel tool execution within step, wall-clock, LLM-call, context, and output guards.',
+                files: [
+                  'packages/agent/src/run-agent-loop.ts',
+                  'packages/agent/src/agent-loop-limits.ts',
+                  'packages/agent/src/agent-loop-guards.ts',
+                ],
+              },
+              {
+                id: 'toolcall',
+                x: 462,
+                y: 264,
+                w: 112,
+                h: 58,
+                kind: 'core',
+                title: 'Tool call',
+                sub: 'registry path',
+                summary:
+                  'Tool arguments are parsed and validated, approved when necessary, executed, and returned to the conversation as tool-result messages.',
+                files: [
+                  'src/main/services/tool-registry.ts',
+                  'packages/agent/src/normalize-tool-result.test.ts',
+                ],
+              },
+              {
+                id: 'postturn',
+                x: 602,
+                y: 264,
+                w: 102,
+                h: 58,
+                kind: 'core',
+                title: 'Post-turn',
+                sub: 'review + follow-up',
+                summary:
+                  'Changed turns can run the pre-review hook, reviewer/remediation cycles, model comparison, todo closeout, stop hooks, and shared continuation accounting before one terminal done.',
+                files: [
+                  'src/main/services/post-turn-orchestration.ts',
+                  'src/main/services/review-subagent-runner.ts',
+                  'src/main/services/model-comparison-runner.ts',
+                ],
+              },
+              {
+                id: 'chunks',
+                x: 58,
+                y: 520,
+                w: 130,
+                h: 58,
+                kind: 'runtime',
+                title: 'StreamChunk bus',
+                sub: 'main → renderer',
+                summary:
+                  'The AgentHost sends typed chunks for text, reasoning, tools, usage, context pressure, subagents, todos, reviews, hooks, and completion over agent:chunk.',
+                files: [
+                  'src/main/services/agent-chunk-sink.ts',
+                  'src/shared/types/stream.ts',
+                  'src/preload/index.ts',
+                ],
+              },
+              {
+                id: 'controller',
+                x: 230,
+                y: 520,
+                w: 142,
+                h: 58,
+                kind: 'runtime',
+                title: 'Agent controller',
+                sub: 'fold UI state',
+                summary:
+                  'The renderer folds chunks into message bubbles, tool cards, subagent sessions, todos, review cards, context usage, and attention state.',
+                files: [
+                  'src/renderer/controller/agent.ts',
+                  'src/shared/store/thread-helpers.ts',
+                  'src/shared/store/subagent-helpers.ts',
+                ],
+              },
+              {
+                id: 'autosave',
+                x: 414,
+                y: 520,
+                w: 126,
+                h: 58,
+                kind: 'data',
+                title: 'Autosave',
+                sub: 'event-level writes',
+                summary:
+                  'Finalized messages append immediately; debounced metadata reconciliation creates, patches, or deletes thread records through serialized per-thread IPC writes.',
+                files: [
+                  'src/renderer/controller/persistence.ts',
+                  'src/main/services/thread-store.ts',
+                ],
+              },
+              {
+                id: 'queue',
+                x: 582,
+                y: 520,
+                w: 122,
+                h: 58,
+                kind: 'core',
+                title: 'Queue drain',
+                sub: 'next turn',
+                summary:
+                  'On done, held and queued messages are drained with turn-tree continuation budgets; async hooks can add epoch-scoped queue messages.',
+                files: [
+                  'src/renderer/controller/message-queue.ts',
+                  'src/main/services/hooks/continuation-ledger.ts',
+                ],
+              },
+            ],
+            edges: [
+              ['compose', 'runipc', 'invoke'],
+              ['runipc', 'presubmit', 'start'],
+              ['presubmit', 'route', 'redacted'],
+              ['route', 'externalroute', 'ACP / cloud'],
+              ['route', 'prepare', 'native'],
+              ['prepare', 'provider', 'messages + tools'],
+              ['provider', 'loop', 'chunks'],
+              ['loop', 'toolcall', 'execute'],
+              ['toolcall', 'provider', 'tool result'],
+              ['loop', 'postturn', 'stop'],
+              ['externalroute', 'chunks', 'translated'],
+              ['postturn', 'chunks', 'single done'],
+              ['chunks', 'controller', 'fold'],
+              ['controller', 'autosave', 'events'],
+              ['controller', 'queue', 'done'],
+              ['queue', 'runipc', 'continuation'],
+            ],
+          },
+          {
+            id: 'safety',
+            label: 'Tools & safety',
+            height: 670,
+            lanes: [
+              { y: 40, label: 'Common tool path' },
+              { y: 228, label: 'Policy branches' },
+              { y: 508, label: 'Execution boundaries' },
+            ],
+            nodes: [
+              {
+                id: 'offered',
+                x: 18,
+                y: 72,
+                w: 120,
+                h: 58,
+                kind: 'core',
+                title: 'Offered toolset',
+                sub: 'model-visible',
+                summary:
+                  'Registry bootstrap combines always-on tools with capability- and setting-gated tools. The parent loop can further filter delegated or read-only surfaces.',
+                files: [
+                  'src/main/services/registry-bootstrap.ts',
+                  'src/main/services/agent-service.ts',
+                ],
+              },
+              {
+                id: 'validate',
+                x: 172,
+                y: 72,
+                w: 118,
+                h: 58,
+                kind: 'safety',
+                title: 'Validate args',
+                sub: 'Zod / schema',
+                summary:
+                  'Every tool call is looked up by name and parsed against its own Zod schema before permission or execution.',
+                files: ['src/main/services/tool-registry.ts', 'src/shared/types/tools.ts'],
+              },
+              {
+                id: 'readonly',
+                x: 324,
+                y: 72,
+                w: 116,
+                h: 58,
+                kind: 'safety',
+                title: 'Read-only gate',
+                sub: 'deny mutations',
+                summary:
+                  'Run-scoped read-only mode rejects mutating built-ins and uses MCP annotations plus conservative defaults for external tools.',
+                files: [
+                  'src/main/services/agent-run-readonly.ts',
+                  'src/shared/tools/readonly-tools.ts',
+                ],
+              },
+              {
+                id: 'hookgate',
+                x: 474,
+                y: 72,
+                w: 110,
+                h: 58,
+                kind: 'safety',
+                title: 'toolGate hooks',
+                sub: 'deny / ask / inject',
+                summary:
+                  'Canonical hooks and Cursor/Claude adapters may allow, deny, ask, inject current-turn context, halt the run, or queue a later message.',
+                files: [
+                  'src/main/services/hooks/tool-gate.ts',
+                  'src/main/services/security/permission-gate.ts',
+                ],
+              },
+              {
+                id: 'policy',
+                x: 618,
+                y: 72,
+                w: 86,
+                h: 58,
+                kind: 'safety',
+                title: 'Policy',
+                sub: 'pure decision',
+                summary:
+                  'decideShellPermission and companion MCP/custom/browser rules combine platform, sandbox state, static scope, user settings, remembered grants, and optional classifier evidence.',
+                files: [
+                  'src/main/services/security/permission-policy.ts',
+                  'src/main/services/security/shell-scope.ts',
+                ],
+              },
+              {
+                id: 'reads',
+                x: 18,
+                y: 260,
+                w: 112,
+                h: 58,
+                kind: 'runtime',
+                title: 'Reads',
+                sub: 'scoped + screened',
+                summary:
+                  'Workspace-scoped files, search, Git, and diagnostics can auto-run when policy permits. User-owned terminal scrollback is separately screened for secrets and prompt injection, with approval on risk or classifier failure.',
+                files: [
+                  'src/main/tools/file-tools.ts',
+                  'src/main/tools/read-terminal-tool.ts',
+                  'src/main/services/security/terminal-read-guard.ts',
+                ],
+              },
+              {
+                id: 'edits',
+                x: 156,
+                y: 260,
+                w: 112,
+                h: 58,
+                kind: 'safety',
+                title: 'File edits',
+                sub: 'diff queue',
+                summary:
+                  'Write and replacement tools resolve workspace paths, create a proposed diff, block on the renderer approval queue, and apply only accepted content.',
+                files: [
+                  'src/main/tools/write-file-tool.ts',
+                  'src/main/tools/str-replace-tool.ts',
+                  'src/main/services/diff-queue.ts',
+                ],
+              },
+              {
+                id: 'shell',
+                x: 294,
+                y: 260,
+                w: 112,
+                h: 58,
+                kind: 'safety',
+                title: 'Shell',
+                sub: 'scope matrix',
+                summary:
+                  'Static analysis classifies commands as sandbox, ambiguous, or external. macOS can auto-run contained work inside ASRT; without a sandbox, host execution prompts.',
+                files: [
+                  'src/main/tools/shell-tool.ts',
+                  'src/main/services/security/shell-scope.ts',
+                  'src/main/project-sandbox/spawn.ts',
+                ],
+              },
+              {
+                id: 'mcp',
+                x: 432,
+                y: 260,
+                w: 112,
+                h: 58,
+                kind: 'external',
+                title: 'MCP tools',
+                sub: 'per-tool approval',
+                summary:
+                  'Namespaced mcp__server__tool calls use server metadata, annotations, workspace trust, remembered grants, and first-party bundled status to choose approval.',
+                files: [
+                  'src/main/services/mcp/mcp-registry.ts',
+                  'src/main/services/security/permission-policy.ts',
+                ],
+              },
+              {
+                id: 'custom',
+                x: 570,
+                y: 260,
+                w: 134,
+                h: 58,
+                kind: 'external',
+                title: 'Custom tools',
+                sub: 'full Node privilege',
+                summary:
+                  'User-installed JavaScript tools load only from the trusted user-data tools directory and always prompt before their in-process Node execution.',
+                files: ['src/main/services/mcp/custom-tools-registry.ts', 'docs/custom-tools.md'],
+              },
+              {
+                id: 'browser',
+                x: 82,
+                y: 390,
+                w: 122,
+                h: 58,
+                kind: 'safety',
+                title: 'Browser tools',
+                sub: 'origin allowlist',
+                summary:
+                  'Browser tools are setting-gated and constrain agent navigation and interaction through an origin policy while isolating website content in a guest session.',
+                files: [
+                  'src/main/tools/browser-tools.ts',
+                  'src/main/services/browser/browser-origin-policy.ts',
+                  'src/main/services/browser/session-manager.ts',
+                ],
+              },
+              {
+                id: 'install',
+                x: 254,
+                y: 390,
+                w: 128,
+                h: 58,
+                kind: 'safety',
+                title: 'Package install',
+                sub: 'extra hardening',
+                summary:
+                  'Detected package managers always surface approval and can be wrapped with Socket Firewall while JavaScript install lifecycle scripts are disabled.',
+                files: [
+                  'src/main/services/security/safe-install.ts',
+                  'src/main/services/security/socket-firewall.ts',
+                ],
+              },
+              {
+                id: 'trust',
+                x: 432,
+                y: 390,
+                w: 124,
+                h: 58,
+                kind: 'safety',
+                title: 'Workspace trust',
+                sub: 'project config gate',
+                summary:
+                  'Project MCP configs and project hooks are attacker-controlled until the user trusts the workspace; user/global definitions retain priority.',
+                files: [
+                  'src/main/services/security/workspace-trust.ts',
+                  'src/main/services/mcp/mcp-registry.ts',
+                ],
+              },
+              {
+                id: 'approval',
+                x: 604,
+                y: 390,
+                w: 100,
+                h: 58,
+                kind: 'person',
+                title: 'Approval UI',
+                sub: 'human decision',
+                summary:
+                  'The main process pauses a permission, diff, ask-user, SSH, install, or sandbox-escape request while the renderer presents the exact action and choices.',
+                files: [
+                  'src/main/services/approval.ts',
+                  'src/renderer/views/approval-dialog.ts',
+                  'src/main/services/ask-user.ts',
+                ],
+              },
+              {
+                id: 'contained',
+                x: 58,
+                y: 540,
+                w: 138,
+                h: 58,
+                kind: 'runtime',
+                title: 'Contained exec',
+                sub: 'workspace boundary',
+                summary:
+                  'Local/SSH workspace services, the macOS project sandbox, and path resolvers contain approved operations to their intended execution target.',
+                files: [
+                  'src/main/services/workspace.ts',
+                  'src/main/services/workspace-fs/workspace-fs.ts',
+                  'src/main/project-sandbox/index.ts',
+                ],
+              },
+              {
+                id: 'externalexec',
+                x: 290,
+                y: 540,
+                w: 140,
+                h: 58,
+                kind: 'external',
+                title: 'External exec',
+                sub: 'explicit approval',
+                summary:
+                  'Network access, out-of-workspace paths, GitHub mutations, package downloads, and sandbox retry run outside containment only after the relevant approval path.',
+                files: [
+                  'src/main/services/security/permission-gate.ts',
+                  'src/main/services/exec/command-runner.ts',
+                ],
+              },
+              {
+                id: 'result',
+                x: 524,
+                y: 540,
+                w: 136,
+                h: 58,
+                kind: 'core',
+                title: 'Normalized result',
+                sub: 'loop + audit',
+                summary:
+                  'Tool output is size-capped and normalized with optional edit stats or markdown format, then recorded in the thread and fed back to the model.',
+                files: [
+                  'src/main/services/tool-registry.ts',
+                  'src/main/services/exec/subprocess-output-cap.ts',
+                  'src/main/services/thread-store.ts',
+                ],
+              },
+            ],
+            edges: [
+              ['offered', 'validate', 'call'],
+              ['validate', 'readonly', 'parsed'],
+              ['readonly', 'hookgate', 'allowed'],
+              ['hookgate', 'policy', 'decision'],
+              ['policy', 'reads', 'read'],
+              ['policy', 'edits', 'write'],
+              ['policy', 'shell', 'command'],
+              ['policy', 'mcp', 'mcp__'],
+              ['policy', 'custom', 'custom__'],
+              ['policy', 'browser', 'web'],
+              ['shell', 'install', 'package op'],
+              ['mcp', 'trust', 'project config'],
+              ['hookgate', 'trust', 'project hook'],
+              ['edits', 'approval', 'diff'],
+              ['shell', 'approval', 'prompt'],
+              ['mcp', 'approval', 'prompt'],
+              ['custom', 'approval', 'always'],
+              ['browser', 'approval', 'origin'],
+              ['reads', 'contained', 'execute'],
+              ['edits', 'contained', 'apply'],
+              ['shell', 'contained', 'sandbox'],
+              ['approval', 'externalexec', 'approved escape'],
+              ['contained', 'result', 'output'],
+              ['externalexec', 'result', 'output'],
+            ],
+          },
+          {
+            id: 'storage',
+            label: 'Data & storage',
+            height: 650,
+            lanes: [
+              { y: 40, label: 'In-memory state and write coordination' },
+              { y: 226, label: 'Conversation and project state' },
+              { y: 452, label: 'Auxiliary local state' },
+            ],
+            nodes: [
+              {
+                id: 'store',
+                x: 20,
+                y: 74,
+                w: 130,
+                h: 58,
+                kind: 'runtime',
+                title: 'Renderer store',
+                sub: 'AppState + events',
+                summary:
+                  'A small in-memory store holds active project/thread state, pane layout, messages, tool calls, diffs, usage, todos, and transient UI state.',
+                files: [
+                  'src/shared/store/store.ts',
+                  'src/shared/store/events.ts',
+                  'src/shared/types/state.ts',
+                ],
+              },
+              {
+                id: 'autosave',
+                x: 184,
+                y: 74,
+                w: 130,
+                h: 58,
+                kind: 'core',
+                title: 'Autosave mapper',
+                sub: 'event → write',
+                summary:
+                  'Renderer events become serialized create, appendMessage, updateMeta, delete, or shared-storage writes, with a 250ms metadata debounce.',
+                files: ['src/renderer/controller/persistence.ts'],
+              },
+              {
+                id: 'ipc',
+                x: 348,
+                y: 74,
+                w: 110,
+                h: 58,
+                kind: 'safety',
+                title: 'Storage IPC',
+                sub: 'validated bridge',
+                summary:
+                  'threads:* and storage:* handlers validate identifiers and payloads before handing writes to main-process stores.',
+                files: ['src/main/ipc/register-handlers.ts', 'src/main/ipc/ipc-guards.ts'],
+              },
+              {
+                id: 'queues',
+                x: 492,
+                y: 74,
+                w: 124,
+                h: 58,
+                kind: 'core',
+                title: 'Write queues',
+                sub: 'per-key ordering',
+                summary:
+                  'Renderer-side chains and the main-process write queue prevent stale in-flight writes or read-modify-write races from clobbering newer state.',
+                files: [
+                  'src/renderer/controller/persistence.ts',
+                  'src/main/services/storage/write-queue.ts',
+                ],
+              },
+              {
+                id: 'historycache',
+                x: 642,
+                y: 74,
+                w: 62,
+                h: 58,
+                kind: 'data',
+                title: 'LLM',
+                sub: 'history',
+                summary:
+                  'Provider-format history is cached per thread in main memory and mirrored in config storage so the next turn can resume after restart.',
+                files: ['src/main/index.ts', 'src/main/services/storage/storage.ts'],
+              },
+              {
+                id: 'threadstore',
+                x: 18,
+                y: 260,
+                w: 140,
+                h: 62,
+                kind: 'data',
+                title: 'Thread directory',
+                sub: '~/.copse/workspace',
+                summary:
+                  'Each project/thread directory contains meta.json, append-only events.jsonl, OKF message and reasoning files, tool-result/image blobs, toolset fingerprints, and recursive subagent sessions.',
+                files: [
+                  'src/main/services/thread-store.ts',
+                  'src/shared/threads/spine-schema.ts',
+                  'docs/thread-store-format.md',
+                ],
+              },
+              {
+                id: 'catalog',
+                x: 190,
+                y: 260,
+                w: 118,
+                h: 62,
+                kind: 'data',
+                title: 'Catalogs',
+                sub: 'rebuildable JSONL',
+                summary:
+                  'Per-project catalog.jsonl powers thread references; an agent-PR index links threads to remote-agent PRs. Both can rebuild from thread directories.',
+                files: ['src/main/services/thread-store.ts'],
+              },
+              {
+                id: 'config',
+                x: 340,
+                y: 260,
+                w: 122,
+                h: 62,
+                kind: 'data',
+                title: 'config.json',
+                sub: 'electron-store',
+                summary:
+                  'Projects, active project, UI state, usage events, remembered grants, and provider-format LLM history use the cached general Electron store.',
+                files: [
+                  'src/main/services/storage/storage.ts',
+                  'src/main/services/storage/cached-store.ts',
+                ],
+              },
+              {
+                id: 'settings',
+                x: 494,
+                y: 260,
+                w: 122,
+                h: 62,
+                kind: 'data',
+                title: 'settings.json',
+                sub: 'keys + preferences',
+                summary:
+                  'Validated application settings and provider keys live in a separate Electron store. Keys use OS safeStorage when available or require explicit plaintext consent.',
+                files: [
+                  'src/main/services/storage/settings.ts',
+                  'src/main/services/storage/settings-schema.ts',
+                ],
+              },
+              {
+                id: 'projectgit',
+                x: 646,
+                y: 260,
+                w: 58,
+                h: 62,
+                kind: 'data',
+                title: 'Git',
+                sub: 'refs',
+                summary:
+                  'Dirty-worktree restore points are commits retained under refs/copse/backups/*; the newest ten are kept as a short-term safety net.',
+                files: ['src/main/services/worktree-backup.ts', 'docs/recovery.md'],
+              },
+              {
+                id: 'knowledge',
+                x: 20,
+                y: 486,
+                w: 132,
+                h: 62,
+                kind: 'data',
+                title: 'Knowledge OKF',
+                sub: '~/.copse/knowledge',
+                summary:
+                  'Project-scoped memories and roadmap notes are human-readable OKF Markdown with a rebuildable append-only ordering index.',
+                files: [
+                  'src/main/services/storage/knowledge-store.ts',
+                  'src/main/tools/memory-tools.ts',
+                  'src/main/tools/roadmap-tools.ts',
+                ],
+              },
+              {
+                id: 'longtasks',
+                x: 178,
+                y: 486,
+                w: 118,
+                h: 62,
+                kind: 'data',
+                title: 'Long tasks',
+                sub: 'resumable JSON',
+                summary:
+                  'Experimental long-horizon checklists persist by workspace outside any one chat thread.',
+                files: ['src/main/services/storage/long-task-tracker.ts'],
+              },
+              {
+                id: 'usage',
+                x: 322,
+                y: 486,
+                w: 112,
+                h: 62,
+                kind: 'data',
+                title: 'Usage ledger',
+                sub: 'tokens + cost',
+                summary:
+                  'Normalized usage events are deduplicated, pruned, attributed by model/project/thread/source, and combined with thread history for summaries.',
+                files: [
+                  'src/main/services/storage/usage-ledger.ts',
+                  'src/shared/usage/aggregate-usage.ts',
+                ],
+              },
+              {
+                id: 'browserprofile',
+                x: 460,
+                y: 486,
+                w: 118,
+                h: 62,
+                kind: 'data',
+                title: 'Browser profile',
+                sub: 'copse-browser',
+                summary:
+                  'The interactive browser uses a persistent profile partition isolated from the application renderer, retaining cookies and site storage.',
+                files: [
+                  'src/main/services/browser/session-manager.ts',
+                  'docs/privacy-data-flow.md',
+                ],
+              },
+              {
+                id: 'searchindex',
+                x: 604,
+                y: 486,
+                w: 100,
+                h: 62,
+                kind: 'data',
+                title: 'Search index',
+                sub: 'gortex / cache',
+                summary:
+                  'Semantic code indexes and daemon state live inside app data under a sandboxed HOME and can be rebuilt from the workspace.',
+                files: [
+                  'src/main/services/search/semantic-index.ts',
+                  'src/main/services/search/bundled-semantic.ts',
+                ],
+              },
+            ],
+            edges: [
+              ['store', 'autosave', 'events'],
+              ['autosave', 'ipc', 'invoke'],
+              ['ipc', 'queues', 'serialize'],
+              ['queues', 'historycache', 'provider history'],
+              ['queues', 'threadstore', 'messages / meta'],
+              ['threadstore', 'catalog', 'index'],
+              ['queues', 'config', 'shared state'],
+              ['queues', 'settings', 'preferences'],
+              ['queues', 'projectgit', 'backup'],
+              ['config', 'usage', 'usage events'],
+              ['ipc', 'knowledge', 'notes'],
+              ['ipc', 'longtasks', 'tasks'],
+              ['ipc', 'browserprofile', 'session'],
+              ['ipc', 'searchindex', 'index'],
+            ],
+          },
+          {
+            id: 'ui',
+            label: 'UI & IPC',
+            height: 640,
+            lanes: [
+              { y: 40, label: 'Renderer composition' },
+              { y: 274, label: 'Context-isolated bridge' },
+              { y: 462, label: 'Main-process handlers and streams' },
+            ],
+            nodes: [
+              {
+                id: 'shell',
+                x: 18,
+                y: 74,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'App shell',
+                sub: 'boot + layout',
+                summary:
+                  'renderer/main.ts initializes sanitization, highlighting, theme, project state, pane layout, controllers, dialogs, and all view mount points.',
+                files: ['src/renderer/main.ts', 'src/renderer/index.html'],
+              },
+              {
+                id: 'chat',
+                x: 160,
+                y: 74,
+                w: 116,
+                h: 58,
+                kind: 'person',
+                title: 'Chat surface',
+                sub: 'conversation + input',
+                summary:
+                  'Conversation, composer, mentions, skill picker, queues, context warnings, todos, tools, reasoning, subagents, hooks, reviews, and model comparisons compose the chat experience.',
+                files: [
+                  'src/renderer/views/conversation.ts',
+                  'src/renderer/views/input-bar.ts',
+                  'src/shared/tools/tool-display.ts',
+                ],
+              },
+              {
+                id: 'panes',
+                x: 302,
+                y: 74,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'Right panes',
+                sub: '7 work modes',
+                summary:
+                  'Explorer, terminal/tasks, changes, pull requests, browser, memories, and roadmap share responsive and pop-out pane infrastructure.',
+                files: [
+                  'src/renderer/views/right-panel-layout.ts',
+                  'src/renderer/controller/panels.ts',
+                  'src/renderer/views/pane-popout-button.ts',
+                ],
+              },
+              {
+                id: 'editor',
+                x: 444,
+                y: 74,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'Monaco',
+                sub: 'lazy bundle',
+                summary:
+                  'Monaco loads on demand for file viewing, diffs, and staged-change inspection, with its workers emitted as separate build assets.',
+                files: ['src/renderer/monaco/setup.ts', 'src/renderer/monaco/monaco-global.ts'],
+              },
+              {
+                id: 'markdown',
+                x: 586,
+                y: 74,
+                w: 118,
+                h: 58,
+                kind: 'safety',
+                title: 'Markdown',
+                sub: 'stream + sanitize',
+                summary:
+                  'Streaming Markdown injects host sanitization, highlighting, link decoration, artifact-image policy, code blocks, tables, and Mermaid rendering.',
+                files: [
+                  'src/renderer/markdown/sanitizer-backend.ts',
+                  'src/renderer/markdown/highlighter-backend.ts',
+                  'src/renderer/markdown/README.md',
+                ],
+              },
+              {
+                id: 'store',
+                x: 90,
+                y: 174,
+                w: 128,
+                h: 58,
+                kind: 'core',
+                title: 'Event store',
+                sub: 'state fan-out',
+                summary:
+                  'Controllers mutate AppState and emit typed events; views subscribe to narrow event families so streaming text and drafts avoid full-shell rerenders.',
+                files: [
+                  'src/shared/store/store.ts',
+                  'src/shared/store/events.ts',
+                  'src/shared/store/thread-helpers.ts',
+                ],
+              },
+              {
+                id: 'controllers',
+                x: 296,
+                y: 174,
+                w: 134,
+                h: 58,
+                kind: 'core',
+                title: 'Controllers',
+                sub: 'agent / project / queue',
+                summary:
+                  'Controllers coordinate agent chunks, project switching, persistence, files, panels, SSH UI, attention, review retries, and message queue continuations.',
+                files: [
+                  'src/renderer/controller/agent.ts',
+                  'src/renderer/controller/projects.ts',
+                  'src/renderer/controller/message-queue.ts',
+                ],
+              },
+              {
+                id: 'dialogs',
+                x: 508,
+                y: 174,
+                w: 124,
+                h: 58,
+                kind: 'person',
+                title: 'Dialogs',
+                sub: 'human checkpoints',
+                summary:
+                  'Approval, ask-user, SSH prompt, onboarding, settings, file search, conversation search, and keyboard shortcuts are mounted once and driven by events or IPC.',
+                files: [
+                  'src/renderer/views/approval-dialog.ts',
+                  'src/renderer/views/settings-dialog.ts',
+                  'src/renderer/views/ask-user-dialog.ts',
+                ],
+              },
+              {
+                id: 'api',
+                x: 140,
+                y: 310,
+                w: 150,
+                h: 62,
+                kind: 'safety',
+                title: 'window.api',
+                sub: 'contextBridge',
+                summary:
+                  'The preload exposes grouped clients for workspace, agent, storage, threads, files, Git/GitHub, terminal, settings, MCP, SSH, browser, roadmap, memories, usage, hooks, and tests.',
+                files: ['src/preload/index.ts', 'src/preload/api.d.ts'],
+              },
+              {
+                id: 'channels',
+                x: 420,
+                y: 310,
+                w: 162,
+                h: 62,
+                kind: 'safety',
+                title: 'IPC channels',
+                sub: 'invoke + event streams',
+                summary:
+                  'Request/response invokes coexist with push streams for agent chunks, terminal output, diffs, file/index changes, approvals, SSH prompts, MCP status, and menu actions.',
+                files: ['src/shared/types/ipc.ts', 'src/preload/index.ts'],
+              },
+              {
+                id: 'handlers',
+                x: 52,
+                y: 500,
+                w: 138,
+                h: 60,
+                kind: 'runtime',
+                title: 'Handler registry',
+                sub: 'service façade',
+                summary:
+                  'registerAllHandlers binds validated workspace, storage, thread, file, Git/GitHub, settings, MCP, roadmap, memory, index, and utility operations.',
+                files: ['src/main/ipc/register-handlers.ts'],
+              },
+              {
+                id: 'agentstream',
+                x: 222,
+                y: 500,
+                w: 126,
+                h: 60,
+                kind: 'runtime',
+                title: 'Agent stream',
+                sub: 'typed chunks',
+                summary:
+                  'The main entrypoint owns agent lifecycle handlers and forwards chunks through a tiny AgentHost seam guarded against destroyed windows.',
+                files: ['src/main/index.ts', 'src/main/services/agent-chunk-sink.ts'],
+              },
+              {
+                id: 'nativeipc',
+                x: 380,
+                y: 500,
+                w: 132,
+                h: 60,
+                kind: 'runtime',
+                title: 'Native IPC',
+                sub: 'terminal / watch / SSH',
+                summary:
+                  'Dedicated initializers own PTY lifecycle, filesystem watchers, diff approval, ask/approval requests, and SSH prompt/connection streams.',
+                files: [
+                  'src/main/ipc/terminal.ts',
+                  'src/main/ipc/fs-watcher.ts',
+                  'src/main/services/ssh-workspace/ssh-workspace-ipc.ts',
+                ],
+              },
+              {
+                id: 'windows',
+                x: 544,
+                y: 500,
+                w: 126,
+                h: 60,
+                kind: 'safety',
+                title: 'Window policy',
+                sub: 'lockdown + guests',
+                summary:
+                  'Main/pop-out windows use hardened webPreferences; non-browser webContents are locked down while browser guest contents receive a separate window/open policy.',
+                files: [
+                  'src/main/windows/create-main-window.ts',
+                  'src/main/windows/web-contents-lockdown.ts',
+                  'src/main/windows/browser-web-contents.ts',
+                ],
+              },
+            ],
+            edges: [
+              ['shell', 'chat', 'mounts'],
+              ['shell', 'panes', 'mounts'],
+              ['shell', 'editor', 'lazy'],
+              ['shell', 'markdown', 'installs'],
+              ['chat', 'store', 'render / emit'],
+              ['panes', 'store', 'render / emit'],
+              ['controllers', 'store', 'mutate'],
+              ['dialogs', 'controllers', 'respond'],
+              ['controllers', 'api', 'calls'],
+              ['dialogs', 'api', 'respond'],
+              ['api', 'channels', 'IPC'],
+              ['channels', 'handlers', 'invoke'],
+              ['channels', 'agentstream', 'agent:*'],
+              ['channels', 'nativeipc', 'push'],
+              ['handlers', 'windows', 'sender check'],
+              ['agentstream', 'controllers', 'chunks'],
+              ['nativeipc', 'controllers', 'events'],
+            ],
+          },
+          {
+            id: 'agents',
+            label: 'Agents & hooks',
+            height: 680,
+            lanes: [
+              { y: 40, label: 'Execution modes' },
+              { y: 234, label: 'Auxiliary model work' },
+              { y: 444, label: 'Hook and feature-pack platform' },
+            ],
+            nodes: [
+              {
+                id: 'native',
+                x: 18,
+                y: 74,
+                w: 124,
+                h: 58,
+                kind: 'core',
+                title: 'Native loop',
+                sub: 'Copse host',
+                summary:
+                  'The built-in agent package is hosted in the main process and receives providers, tool execution, chunk callbacks, hooks, budgets, and auxiliary-runner contexts from app services.',
+                files: [
+                  'packages/agent/src/agent-host.ts',
+                  'packages/agent/src/run-agent-loop.ts',
+                  'src/main/services/agent-service.ts',
+                ],
+              },
+              {
+                id: 'acpclient',
+                x: 174,
+                y: 74,
+                w: 124,
+                h: 58,
+                kind: 'external',
+                title: 'ACP client',
+                sub: 'local agent process',
+                summary:
+                  'Copse spawns a configured ACP agent over stdio, owns client callbacks and approvals, forwards eligible MCP servers, and translates session/update events to StreamChunk.',
+                files: [
+                  'src/main/services/acp/acp-client.ts',
+                  'src/main/services/acp/acp-agent-service.ts',
+                  'src/main/services/acp/session-update-adapter.ts',
+                ],
+              },
+              {
+                id: 'acpserver',
+                x: 330,
+                y: 74,
+                w: 124,
+                h: 58,
+                kind: 'external',
+                title: 'ACP server',
+                sub: 'copse --acp',
+                summary:
+                  'Headless server mode exposes Copse’s native loop over ACP stdio to an external ACP client without opening an Electron window.',
+                files: [
+                  'src/main/services/acp/acp-app-entry.ts',
+                  'src/main/services/acp/acp-agent-server.ts',
+                ],
+              },
+              {
+                id: 'remote',
+                x: 486,
+                y: 74,
+                w: 118,
+                h: 58,
+                kind: 'external',
+                title: 'Remote agents',
+                sub: 'managed services',
+                summary:
+                  'Cursor or Anthropic managed-agent clients start or resume remote sessions, normalize streamed events, link repository/branch/PR state, and download artifacts.',
+                files: [
+                  'src/main/services/remote/remote-agent-client.ts',
+                  'src/main/services/remote/managed-agents-client.ts',
+                  'src/main/services/remote/remote-agent-link-store.ts',
+                ],
+              },
+              {
+                id: 'bridge',
+                x: 630,
+                y: 74,
+                w: 74,
+                h: 58,
+                kind: 'safety',
+                title: 'Native',
+                sub: 'MCP bridge',
+                summary:
+                  'Eligible context-free Copse tools are exported through a per-session localhost HTTP MCP server so ACP agents reuse the same registry and permission path.',
+                files: [
+                  'src/main/services/acp/acp-native-bridge.ts',
+                  'src/main/services/tool-registry.ts',
+                ],
+              },
+              {
+                id: 'explore',
+                x: 18,
+                y: 268,
+                w: 116,
+                h: 58,
+                kind: 'core',
+                title: 'Explore',
+                sub: 'read-only subagent',
+                summary:
+                  'The explore tool starts a bounded read/search subagent, optionally routed to a local model, and streams its nested session into the parent tool card.',
+                files: [
+                  'src/main/services/explore-subagent-runner.ts',
+                  'src/main/tools/explore-tool.ts',
+                  'packages/agent/src/run-subagent.ts',
+                ],
+              },
+              {
+                id: 'worker',
+                x: 158,
+                y: 268,
+                w: 116,
+                h: 58,
+                kind: 'core',
+                title: 'Delegate worker',
+                sub: 'bounded implementer',
+                summary:
+                  'Experimental orchestration lets the chat model delegate one curated implementation step to a cheaper worker with a restricted toolset.',
+                files: [
+                  'src/main/services/orchestration-runner.ts',
+                  'src/main/services/orchestration-strategy.ts',
+                  'src/main/tools/delegate-step-tool.ts',
+                ],
+              },
+              {
+                id: 'advisor',
+                x: 298,
+                y: 268,
+                w: 116,
+                h: 58,
+                kind: 'core',
+                title: 'Advisor',
+                sub: 'stronger guidance',
+                summary:
+                  'The inverse strategy keeps a cheaper executor in chat and lets it consult a stronger model using transcript plus verified repository context.',
+                files: [
+                  'src/main/services/advisor-runner.ts',
+                  'src/main/services/advisor-context.ts',
+                  'src/main/tools/advisor-tool.ts',
+                ],
+              },
+              {
+                id: 'review',
+                x: 438,
+                y: 268,
+                w: 116,
+                h: 58,
+                kind: 'core',
+                title: 'Reviewers',
+                sub: 'diff verification',
+                summary:
+                  'Post-turn reviewers inspect the working diff; optional remediation cycles, CI investigation, and two-model comparison plus judge add specialized verification.',
+                files: [
+                  'src/main/services/review-subagent-runner.ts',
+                  'src/main/services/ci-investigator-runner.ts',
+                  'src/main/services/model-comparison-runner.ts',
+                ],
+              },
+              {
+                id: 'todos',
+                x: 578,
+                y: 268,
+                w: 126,
+                h: 58,
+                kind: 'core',
+                title: 'Todo workers',
+                sub: 'local item routing',
+                summary:
+                  'A newly in-progress local todo can be executed by a subagent and verified by a declarative check before its status is advanced.',
+                files: [
+                  'src/main/services/todo-worker-runner.ts',
+                  'src/main/services/todo-verification.ts',
+                  'src/main/services/agent-run-todos.ts',
+                ],
+              },
+              {
+                id: 'packs',
+                x: 18,
+                y: 478,
+                w: 100,
+                h: 60,
+                kind: 'core',
+                title: 'Pack registry',
+                sub: 'atomic lifecycle',
+                summary:
+                  'Feature packs group tools, hooks, prompts, UI panels, settings, and namespaced storage behind one manifest and atomic enable/disable boundary. Historical rendering never depends on live registration.',
+                files: [
+                  'packages/agent/src/packs/pack-manifest.ts',
+                  'packages/agent/src/packs/pack-registry.ts',
+                  'src/renderer/views/pack-panel.ts',
+                ],
+              },
+              {
+                id: 'registry',
+                x: 132,
+                y: 478,
+                w: 100,
+                h: 60,
+                kind: 'core',
+                title: 'Hook registry',
+                sub: 'canonical events',
+                summary:
+                  'A dialect registry merges Copse in-process hooks with Cursor and Claude command-hook adapters behind canonical event and decision types.',
+                files: [
+                  'src/main/services/hooks/dialect-registry.ts',
+                  'src/main/services/hooks/copse-adapter.ts',
+                  'src/main/services/hooks/cursor-adapter.ts',
+                ],
+              },
+              {
+                id: 'events',
+                x: 246,
+                y: 478,
+                w: 100,
+                h: 60,
+                kind: 'core',
+                title: 'Hook events',
+                sub: 'turn + tool',
+                summary:
+                  'Events cover before submit, session start, step boundaries, tool gates, after tool/edit, subagents, post-turn review, stop, and async queue/halt effects.',
+                files: [
+                  'packages/agent/src/hooks/canonical-events.ts',
+                  'packages/agent/src/hooks/step-boundary-hooks.ts',
+                  'src/main/services/hooks/post-turn-review.ts',
+                ],
+              },
+              {
+                id: 'executor',
+                x: 360,
+                y: 478,
+                w: 100,
+                h: 60,
+                kind: 'safety',
+                title: 'Executors',
+                sub: 'function / command',
+                summary:
+                  'Function hooks run in-process; command hooks receive scrubbed session environments, deadlines, depth limits, stdout response parsing, and project trust/sandbox policy.',
+                files: [
+                  'src/main/services/hooks/command-hook-runner.ts',
+                  'src/main/services/hooks/hook-spawn.ts',
+                  'src/main/services/hooks/run-deadline.ts',
+                ],
+              },
+              {
+                id: 'outcomes',
+                x: 474,
+                y: 478,
+                w: 100,
+                h: 60,
+                kind: 'safety',
+                title: 'Outcomes',
+                sub: 'ask / steer / halt',
+                summary:
+                  'Normalized outcomes can block, ask, inject context, apply a diff, alter environment, halt a run, or enqueue epoch-scoped continuation messages.',
+                files: [
+                  'src/main/services/hooks/permission-decision.ts',
+                  'src/main/services/hooks/diff-apply.ts',
+                  'src/main/services/hooks/halt-run.ts',
+                ],
+              },
+              {
+                id: 'recording',
+                x: 588,
+                y: 478,
+                w: 116,
+                h: 60,
+                kind: 'data',
+                title: 'Recording',
+                sub: 'spine + cards',
+                summary:
+                  'Every hook execution records a hook_run line with timing, parse status, decision, stream blobs, and toolset fingerprint, while live runs also emit hook cards.',
+                files: [
+                  'src/main/services/hook-run-recorder.ts',
+                  'src/main/services/thread-store.ts',
+                  'src/shared/hooks/hook-card.ts',
+                ],
+              },
+            ],
+            edges: [
+              ['native', 'explore', 'spawns'],
+              ['native', 'worker', 'delegates'],
+              ['native', 'advisor', 'consults'],
+              ['native', 'review', 'verifies'],
+              ['native', 'todos', 'routes'],
+              ['acpclient', 'bridge', 'HTTP MCP'],
+              ['bridge', 'native', 'ToolRegistry'],
+              ['remote', 'review', 'local post-turn'],
+              ['acpserver', 'native', 'hosts'],
+              ['native', 'events', 'fires'],
+              ['acpclient', 'events', 'lifecycle'],
+              ['packs', 'registry', 'contributes'],
+              ['registry', 'events', 'subscribes'],
+              ['events', 'executor', 'dispatch'],
+              ['executor', 'outcomes', 'normalize'],
+              ['outcomes', 'native', 'steer / halt'],
+              ['executor', 'recording', 'append'],
+              ['recording', 'native', 'live cards'],
+            ],
+          },
+          {
+            id: 'workspace',
+            label: 'Workspace & search',
+            height: 660,
+            lanes: [
+              { y: 40, label: 'Workspace selection and execution target' },
+              { y: 238, label: 'File, process, Git, and terminal services' },
+              { y: 458, label: 'Search and code intelligence' },
+            ],
+            nodes: [
+              {
+                id: 'project',
+                x: 20,
+                y: 74,
+                w: 120,
+                h: 58,
+                kind: 'person',
+                title: 'Project',
+                sub: 'root + optional SSH',
+                summary:
+                  'A project record binds an id and display state to either a local root or an SSH host/path; switching projects restores its thread and pane state.',
+                files: ['src/shared/types/state.ts', 'src/renderer/controller/projects.ts'],
+              },
+              {
+                id: 'workspace',
+                x: 178,
+                y: 74,
+                w: 126,
+                h: 58,
+                kind: 'core',
+                title: 'Workspace service',
+                sub: 'path policy',
+                summary:
+                  'The workspace service owns the active root, readable-path exceptions for thread references, write confinement, language hints, and local/remote execution target.',
+                files: [
+                  'src/main/services/workspace.ts',
+                  'src/main/services/ssh-workspace/execution-target.ts',
+                ],
+              },
+              {
+                id: 'fsfacade',
+                x: 342,
+                y: 74,
+                w: 126,
+                h: 58,
+                kind: 'core',
+                title: 'WorkspaceFS',
+                sub: 'backend interface',
+                summary:
+                  'A shared filesystem interface gives tools and IPC local or SSH implementations for listing, reading, writing, stat, mkdir, rename, and removal.',
+                files: [
+                  'src/main/services/workspace-fs/workspace-fs.ts',
+                  'src/main/services/workspace-fs/get-workspace-fs.ts',
+                ],
+              },
+              {
+                id: 'local',
+                x: 506,
+                y: 74,
+                w: 90,
+                h: 58,
+                kind: 'runtime',
+                title: 'Local',
+                sub: 'Node fs',
+                summary:
+                  'LocalWorkspaceFS and local process services operate directly against the selected workspace after path validation.',
+                files: [
+                  'src/main/services/workspace-fs/local-workspace-fs.ts',
+                  'src/main/services/workspace-fs/local-workspace-fs.test.ts',
+                ],
+              },
+              {
+                id: 'ssh',
+                x: 626,
+                y: 74,
+                w: 78,
+                h: 58,
+                kind: 'external',
+                title: 'SSH',
+                sub: 'OpenSSH',
+                summary:
+                  'SSH connection management, prompts, askpass, transport, remote exec, remote filesystem commands, capabilities, and process metadata support remote folders.',
+                files: [
+                  'src/main/services/ssh-workspace/connection-manager.ts',
+                  'src/main/services/ssh-workspace/openssh-transport.ts',
+                  'src/main/services/ssh-workspace/remote-exec.ts',
+                ],
+              },
+              {
+                id: 'filetools',
+                x: 20,
+                y: 272,
+                w: 116,
+                h: 58,
+                kind: 'core',
+                title: 'File tools',
+                sub: 'read / edit / diff',
+                summary:
+                  'File, search, edit, staged-diff, and filesystem-operation tools consume the workspace/path abstractions and feed the same approval and audit path.',
+                files: [
+                  'src/main/tools/file-tools.ts',
+                  'src/main/tools/write-file-tool.ts',
+                  'src/main/tools/file-ops-tools.ts',
+                ],
+              },
+              {
+                id: 'process',
+                x: 166,
+                y: 272,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'Process runner',
+                sub: 'shell + background',
+                summary:
+                  'Command routing selects local or SSH execution, caps output, propagates cancellation, and can keep opt-in background processes alive across turns.',
+                files: [
+                  'src/main/services/exec/command-runner.ts',
+                  'src/main/services/exec/background-process.ts',
+                  'src/main/services/ssh-workspace/ssh-spawn.ts',
+                ],
+              },
+              {
+                id: 'terminal',
+                x: 312,
+                y: 272,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'Terminal',
+                sub: 'PTY + agent reads',
+                summary:
+                  'Main-process node-pty sessions stream to renderer xterm instances. Open shells can be mentioned with @shell; read_terminal captures bounded scrollback only after the dedicated sharing guard allows it.',
+                files: [
+                  'src/main/services/exec/terminal-service.ts',
+                  'src/main/tools/read-terminal-tool.ts',
+                  'src/renderer/terminal/shell-catalog.ts',
+                ],
+              },
+              {
+                id: 'git',
+                x: 458,
+                y: 272,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'Git services',
+                sub: 'branch / diff / PR',
+                summary:
+                  'Dedicated Git and GitHub services power tool calls, changes pane, branch binding, PR details/actions, CI checks/logs, and worktree backups.',
+                files: [
+                  'src/main/services/github/git-service.ts',
+                  'src/main/services/github/gh-service.ts',
+                  'src/main/services/worktree-backup.ts',
+                ],
+              },
+              {
+                id: 'watch',
+                x: 604,
+                y: 272,
+                w: 100,
+                h: 58,
+                kind: 'runtime',
+                title: 'Watchers',
+                sub: 'fs + index',
+                summary:
+                  'Filesystem watchers notify the renderer and keep the search index synchronized, with platform-aware watcher limits and shutdown cleanup.',
+                files: [
+                  'src/main/ipc/fs-watcher.ts',
+                  'src/main/services/search/workspace-index-watcher.ts',
+                  'src/main/services/fs-watch-limits.ts',
+                ],
+              },
+              {
+                id: 'lexical',
+                x: 30,
+                y: 492,
+                w: 126,
+                h: 62,
+                kind: 'core',
+                title: 'Lexical search',
+                sub: 'rg + file index',
+                summary:
+                  'find_files, search_code, indexed grep, slow fallback search, ignores, and Git-derived exclusions provide deterministic workspace search.',
+                files: [
+                  'src/main/services/search/file-index.ts',
+                  'src/main/services/search/indexed-grep.ts',
+                  'src/main/services/search/slow-code-search.ts',
+                ],
+              },
+              {
+                id: 'routing',
+                x: 194,
+                y: 492,
+                w: 126,
+                h: 62,
+                kind: 'core',
+                title: 'Search routing',
+                sub: 'intent + fallback',
+                summary:
+                  'search_codebase and semantic_search choose lexical or semantic engines, resolve file references, enforce read limits, and return model-friendly summaries.',
+                files: [
+                  'src/main/tools/search-codebase-tool.ts',
+                  'packages/agent/src/search-routing.ts',
+                  'src/main/services/search/file-reference-resolver.ts',
+                ],
+              },
+              {
+                id: 'semantic',
+                x: 358,
+                y: 492,
+                w: 126,
+                h: 62,
+                kind: 'external',
+                title: 'Semantic index',
+                sub: 'gortex → vera',
+                summary:
+                  'Native semantic search probes a bundled gortex daemon first, then vera on PATH, while index status and workspace synchronization surface to the UI.',
+                files: [
+                  'src/main/services/search/semantic-index.ts',
+                  'src/main/services/search/bundled-semantic.ts',
+                  'src/main/services/search/semantic-search.ts',
+                ],
+              },
+              {
+                id: 'threadread',
+                x: 522,
+                y: 492,
+                w: 182,
+                h: 62,
+                kind: 'data',
+                title: 'Read-only thread mount',
+                sub: '@-referenced history',
+                summary:
+                  'The filesystem-native thread store is exposed as a read-only exception to ordinary workspace reads so agents can inspect referenced past conversations without gaining a write path.',
+                files: [
+                  'src/main/services/workspace.ts',
+                  'packages/agent/src/build-text-with-attachments.ts',
+                  'docs/thread-store-format.md',
+                ],
+              },
+            ],
+            edges: [
+              ['project', 'workspace', 'activate'],
+              ['workspace', 'fsfacade', 'select backend'],
+              ['fsfacade', 'local', 'local root'],
+              ['fsfacade', 'ssh', 'remote root'],
+              ['workspace', 'filetools', 'paths'],
+              ['workspace', 'process', 'target'],
+              ['workspace', 'terminal', 'target'],
+              ['workspace', 'git', 'cwd'],
+              ['fsfacade', 'watch', 'changes'],
+              ['filetools', 'lexical', 'queries'],
+              ['watch', 'lexical', 'refresh'],
+              ['lexical', 'routing', 'results'],
+              ['routing', 'semantic', 'fallback'],
+              ['workspace', 'threadread', 'read exception'],
+              ['routing', 'threadread', 'resolve refs'],
+            ],
+          },
+          {
+            id: 'build',
+            label: 'Build & CI',
+            height: 670,
+            lanes: [
+              { y: 40, label: 'Source graph and local build' },
+              { y: 258, label: 'Verification tiers' },
+              { y: 486, label: 'Packaging and distribution' },
+            ],
+            nodes: [
+              {
+                id: 'source',
+                x: 18,
+                y: 74,
+                w: 116,
+                h: 58,
+                kind: 'core',
+                title: 'TypeScript',
+                sub: 'src + packages',
+                summary:
+                  'Application code lives under src with reusable @copse/agent, @copse/llm, and @copse/plan-usage packages plus @shared aliases.',
+                files: ['src', 'packages/agent', 'packages/llm', 'packages/plan-usage'],
+              },
+              {
+                id: 'buildscript',
+                x: 160,
+                y: 74,
+                w: 120,
+                h: 58,
+                kind: 'core',
+                title: 'esbuild',
+                sub: 'scripts/build.mts',
+                summary:
+                  'The build emits main, sandbox worker, SSH askpass helper, preload, renderer, and lazy Monaco bundles plus copied assets, workers, icons, and optional native resources.',
+                files: ['scripts/build.mts', 'scripts/copy-monaco-workers.mts'],
+              },
+              {
+                id: 'mainbundle',
+                x: 306,
+                y: 74,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'Node bundles',
+                sub: 'CJS / node22',
+                summary:
+                  'Main-side bundles target Node 22 and externalize Electron, node-pty, sandbox runtime, browser parsing packages, shell-quote, and electron-updater.',
+                files: ['scripts/build.mts', 'src/main/index.ts'],
+              },
+              {
+                id: 'webbundle',
+                x: 448,
+                y: 74,
+                w: 116,
+                h: 58,
+                kind: 'runtime',
+                title: 'Web bundles',
+                sub: 'app + Monaco',
+                summary:
+                  'Renderer code and CSS target the browser; Monaco stays in a separate lazy bundle to keep initial application startup smaller.',
+                files: ['scripts/build.mts', 'src/renderer/monaco/setup.ts'],
+              },
+              {
+                id: 'releaseguard',
+                x: 590,
+                y: 74,
+                w: 114,
+                h: 58,
+                kind: 'safety',
+                title: 'Release guard',
+                sub: 'strip test directives',
+                summary:
+                  'COPSE_RELEASE disables mock steering directives, minifies syntax for dead-code elimination, and fails if directive markers survive in the shipped main bundle.',
+                files: ['scripts/build.mts', 'packages/llm/src/mock-provider.ts'],
+              },
+              {
+                id: 'check',
+                x: 18,
+                y: 292,
+                w: 118,
+                h: 60,
+                kind: 'safety',
+                title: 'npm run check',
+                sub: 'fast gate',
+                summary:
+                  'The standard gate runs node/web typecheck, ESLint, Prettier check, dead-code analysis, oracle validation, and bundled Node unit tests.',
+                files: ['package.json', 'scripts/check-dead-code.mts', 'scripts/run-tests.mts'],
+              },
+              {
+                id: 'unit',
+                x: 158,
+                y: 292,
+                w: 112,
+                h: 60,
+                kind: 'core',
+                title: 'Unit tests',
+                sub: 'node --test',
+                summary:
+                  'esbuild bundles src, package, and script tests with storage shims; Node’s test runner executes them in parallel after an Electron warm-up.',
+                files: ['scripts/run-tests.mts', 'src/main/services/storage/settings.test-shim.ts'],
+              },
+              {
+                id: 'e2e',
+                x: 292,
+                y: 292,
+                w: 112,
+                h: 60,
+                kind: 'runtime',
+                title: 'Electron e2e',
+                sub: 'WebdriverIO',
+                summary:
+                  'Focused WebdriverIO specs seed isolated app data and thread directories, drive the built Electron app with the mock LLM, assert DOM/runtime behavior, and capture reference screenshots.',
+                files: ['wdio.conf.ts', 'tests/e2e/helpers/seed-config.ts', 'tests/e2e'],
+              },
+              {
+                id: 'remote',
+                x: 426,
+                y: 292,
+                w: 124,
+                h: 60,
+                kind: 'external',
+                title: 'Remote e2e',
+                sub: 'cloud containers',
+                summary:
+                  'A dirty-tree snapshot is pushed to an isolated host; pre-baked registry images avoid on-host builds, sharded one-shot containers test under Xvfb, and logs/screenshots return locally.',
+                files: [
+                  'scripts/remote-e2e.mts',
+                  'ci-runners/entrypoint.sh',
+                  'ci-runners/exec-run.sh',
+                ],
+              },
+              {
+                id: 'ci',
+                x: 572,
+                y: 292,
+                w: 132,
+                h: 60,
+                kind: 'external',
+                title: 'GitHub Actions',
+                sub: 'trust-tiered DAG',
+                summary:
+                  'Precheck gates check, benchmarks, build, and e2e. Forks stay on hosted read-only precheck; trusted same-repo static gates and e2e use selected self-hosted fleets with screenshot reconciliation.',
+                files: ['.github/workflows/ci.yml', 'docs/ci-runner-security.md'],
+              },
+              {
+                id: 'builder',
+                x: 78,
+                y: 520,
+                w: 126,
+                h: 60,
+                kind: 'core',
+                title: 'electron-builder',
+                sub: 'asar + native unpack',
+                summary:
+                  'Packaging includes dist and package metadata in an asar while unpacking node-pty, the sandbox runtime, and bundled gortex resources required at runtime.',
+                files: ['package.json', 'build/entitlements.mac.plist'],
+              },
+              {
+                id: 'mac',
+                x: 240,
+                y: 520,
+                w: 126,
+                h: 60,
+                kind: 'safety',
+                title: 'macOS release',
+                sub: 'DMG + ZIP',
+                summary:
+                  'Release builds target arm64 and x64 macOS, use hardened runtime entitlements, sign/notarize when configured, and create DMG plus updater ZIP artifacts.',
+                files: [
+                  '.github/workflows/release-mac.yml',
+                  'package.json',
+                  'docs/release-checklist.md',
+                ],
+              },
+              {
+                id: 'update',
+                x: 402,
+                y: 520,
+                w: 126,
+                h: 60,
+                kind: 'external',
+                title: 'GitHub Release',
+                sub: 'prerelease channel',
+                summary:
+                  'electron-builder publishes release artifacts to GitHub; packaged macOS builds use electron-updater for background checks and user-controlled installation.',
+                files: ['src/main/services/auto-update.ts', 'package.json'],
+              },
+              {
+                id: 'security',
+                x: 564,
+                y: 520,
+                w: 140,
+                h: 60,
+                kind: 'safety',
+                title: 'Supply-chain gates',
+                sub: 'CodeQL + gitleaks',
+                summary:
+                  'Dedicated workflows scan TypeScript/JavaScript and repository history; dependency overrides, checksum-pinned gortex downloads, npm audit, and lockfile-exact CI reduce build-chain risk.',
+                files: [
+                  '.github/workflows/codeql.yml',
+                  '.github/workflows/gitleaks.yml',
+                  'scripts/gortex-checksums.json',
+                  'docs/supply-chain-security.md',
+                ],
+              },
+            ],
+            edges: [
+              ['source', 'buildscript', 'bundle'],
+              ['buildscript', 'mainbundle', 'emit'],
+              ['buildscript', 'webbundle', 'emit'],
+              ['buildscript', 'releaseguard', 'release mode'],
+              ['source', 'check', 'validate'],
+              ['check', 'unit', 'includes'],
+              ['mainbundle', 'e2e', 'launch'],
+              ['webbundle', 'e2e', 'launch'],
+              ['e2e', 'remote', 'optional'],
+              ['check', 'ci', 'precheck / coverage'],
+              ['unit', 'ci', 'results'],
+              ['e2e', 'ci', 'shards'],
+              ['releaseguard', 'builder', 'clean dist'],
+              ['builder', 'mac', 'package'],
+              ['mac', 'update', 'publish'],
+              ['ci', 'security', 'parallel gates'],
+            ],
+          },
+          {
+            id: 'main-delta',
+            label: 'Main delta',
+            height: 670,
+            lanes: [
+              { y: 40, label: 'Audit baseline' },
+              { y: 208, label: 'Runtime and policy changes' },
+              { y: 444, label: 'User experience and delivery changes' },
+            ],
+            nodes: [
+              {
+                id: 'baseline',
+                x: 274,
+                y: 72,
+                w: 180,
+                h: 62,
+                kind: 'data',
+                title: 'main @ cf0a14c2',
+                sub: '46 commits / 355 files',
+                summary:
+                  'The architecture audit compares the inherited d442ee4 snapshot with origin/main at cf0a14c2: 46 commits changed 355 files with 29,312 insertions and 6,438 deletions.',
+                files: ['CHANGELOG.md', 'AGENTS.md', '.github/workflows/ci.yml'],
+              },
+              {
+                id: 'hooks',
+                x: 18,
+                y: 244,
+                w: 122,
+                h: 62,
+                kind: 'core',
+                title: 'Hooks',
+                sub: 'canonical platform',
+                summary:
+                  'Main completed the Copse-native dialect, session and step events, context injection, permission re-runs, halt semantics, post-turn migration, sandboxed commands, payload snapshots, and hook cards.',
+                files: [
+                  'docs/hooks.md',
+                  'src/main/services/hooks/copse-adapter.ts',
+                  'packages/agent/src/hooks/step-boundary-hooks.ts',
+                ],
+              },
+              {
+                id: 'packs',
+                x: 158,
+                y: 244,
+                w: 122,
+                h: 62,
+                kind: 'core',
+                title: 'Feature packs',
+                sub: 'manifest + panels',
+                summary:
+                  'A pack manifest and registry now atomically group tools, hooks, prompts, UI, settings, and storage; level-2 panels carry declarative list/tree updates without arbitrary renderer code.',
+                files: [
+                  'docs/packs.md',
+                  'packages/agent/src/packs/pack-registry.ts',
+                  'src/renderer/views/pack-panel.ts',
+                ],
+              },
+              {
+                id: 'providers',
+                x: 298,
+                y: 244,
+                w: 122,
+                h: 62,
+                kind: 'safety',
+                title: 'Provider boundary',
+                sub: 'host + data policy',
+                summary:
+                  'Custom-provider egress is restricted to built-in, loopback, or explicitly approved hosts. Provider retention and training metadata now drives settings/model-picker badges and request-level protections.',
+                files: [
+                  'packages/llm/src/provider-host-policy.ts',
+                  'packages/llm/src/data-policies.ts',
+                  'src/main/services/providers/approved-provider-hosts.ts',
+                ],
+              },
+              {
+                id: 'terminal',
+                x: 438,
+                y: 244,
+                w: 122,
+                h: 62,
+                kind: 'safety',
+                title: 'Terminal context',
+                sub: '@shell + read guard',
+                summary:
+                  'Users can mention open shells and expose bounded scrollback through read_terminal. A local safety classifier screens secrets and prompt injection; uncertainty falls back to explicit approval.',
+                files: [
+                  'src/main/tools/read-terminal-tool.ts',
+                  'src/main/services/security/terminal-read-guard.ts',
+                  'src/renderer/terminal/shell-catalog.ts',
+                ],
+              },
+              {
+                id: 'advisor',
+                x: 578,
+                y: 244,
+                w: 126,
+                h: 62,
+                kind: 'core',
+                title: 'Advisor routing',
+                sub: 'pair assessment',
+                summary:
+                  'Advisor mode gained transcript plus verified repository context, ACP bridging, role-specific model selection, pair-quality assessment, and normalized tool-result handling.',
+                files: [
+                  'src/main/services/advisor-context.ts',
+                  'src/main/services/acp/acp-advisor.ts',
+                  'src/main/services/advisor-strategy.ts',
+                ],
+              },
+              {
+                id: 'ui',
+                x: 18,
+                y: 480,
+                w: 150,
+                h: 62,
+                kind: 'person',
+                title: 'Visible UI states',
+                sub: 'threads + diffs + cards',
+                summary:
+                  'Main added active-thread running dots, hook cards, file-viewer Changes mode, failed-comparison dismissal, provider policy badges, and the read-terminal/settings surfaces.',
+                files: [
+                  'src/renderer/views/projects-pane.ts',
+                  'src/renderer/views/context-panel.ts',
+                  'src/renderer/views/comparison-panel.ts',
+                ],
+              },
+              {
+                id: 'knowledge',
+                x: 196,
+                y: 480,
+                w: 150,
+                h: 62,
+                kind: 'data',
+                title: 'Roadmap knowledge',
+                sub: 'attachments + search',
+                summary:
+                  'Roadmap items now support persisted attachments and participate in the quick-open palette while preserving the existing knowledge-store and IPC boundaries.',
+                files: [
+                  'src/main/services/storage/knowledge-attachments.ts',
+                  'src/renderer/views/roadmap-pane.ts',
+                  'src/renderer/views/file-search-dialog.ts',
+                ],
+              },
+              {
+                id: 'delivery',
+                x: 374,
+                y: 480,
+                w: 150,
+                h: 62,
+                kind: 'external',
+                title: 'CI and security',
+                sub: 'gates + remote fleet',
+                summary:
+                  'CodeQL, gitleaks, npm-audit hardening, trust-tiered CI, label-forced full e2e, pre-baked remote images, drainable burst runners, and revised self-hosted routing changed delivery behavior.',
+                files: [
+                  '.github/workflows/codeql.yml',
+                  '.github/workflows/gitleaks.yml',
+                  'scripts/remote-e2e.mts',
+                ],
+              },
+              {
+                id: 'runtime',
+                x: 552,
+                y: 480,
+                w: 152,
+                h: 62,
+                kind: 'runtime',
+                title: 'Runtime baseline',
+                sub: 'deps + model cleanup',
+                summary:
+                  'Electron and npm dependencies advanced, adm-zip is overridden for the audit gate, and the obsolete live/composite intellect frontier stack was removed while model-intellect metadata remains.',
+                files: [
+                  'package.json',
+                  'packages/llm/src/model-intellect.ts',
+                  'packages/llm/src/model-catalog.ts',
+                ],
+              },
+            ],
+            edges: [
+              ['baseline', 'hooks', 'hooks'],
+              ['baseline', 'packs', 'packs'],
+              ['baseline', 'providers', 'egress'],
+              ['baseline', 'terminal', 'context'],
+              ['baseline', 'advisor', 'routing'],
+              ['hooks', 'ui', 'cards'],
+              ['packs', 'ui', 'panels'],
+              ['providers', 'ui', 'badges'],
+              ['terminal', 'ui', 'mentions'],
+              ['advisor', 'knowledge', 'context'],
+              ['baseline', 'delivery', 'CI'],
+              ['baseline', 'runtime', 'dependencies'],
+              ['knowledge', 'ui', 'surface'],
+            ],
+          },
+        ]
+
+        let activeView = views[0]
+        let selectedNodeId = activeView.nodes[0].id
+        const ns = 'http://www.w3.org/2000/svg'
+
+        function svgEl(name, attrs = {}) {
+          const el = document.createElementNS(ns, name)
+          Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, String(value)))
+          return el
+        }
+
+        function addText(parent, text, x, y, className) {
+          const el = svgEl('text', { x, y, class: className })
+          el.textContent = text
+          parent.appendChild(el)
+          return el
+        }
+
+        const routeMargin = 18
+        const routeTurnCost = 18
+
+        function nodeObstacle(node) {
+          return {
+            left: node.x - routeMargin,
+            right: node.x + node.w + routeMargin,
+            top: node.y - routeMargin,
+            bottom: node.y + node.h + routeMargin,
+          }
+        }
+
+        function routePorts(node) {
+          const cx = node.x + node.w / 2
+          const cy = node.y + node.h / 2
+          return [
+            {
+              anchor: { x: node.x + node.w, y: cy },
+              outer: { x: node.x + node.w + routeMargin, y: cy },
+              direction: 1,
+            },
+            {
+              anchor: { x: node.x, y: cy },
+              outer: { x: node.x - routeMargin, y: cy },
+              direction: 1,
+            },
+            {
+              anchor: { x: cx, y: node.y + node.h },
+              outer: { x: cx, y: node.y + node.h + routeMargin },
+              direction: 2,
+            },
+            {
+              anchor: { x: cx, y: node.y },
+              outer: { x: cx, y: node.y - routeMargin },
+              direction: 2,
+            },
+          ]
+        }
+
+        function pointInsideObstacle(point, obstacle) {
+          return (
+            point.x > obstacle.left &&
+            point.x < obstacle.right &&
+            point.y > obstacle.top &&
+            point.y < obstacle.bottom
+          )
+        }
+
+        function segmentIsClear(a, b, obstacles) {
+          const epsilon = 0.01
+          if (a.y === b.y) {
+            const left = Math.min(a.x, b.x)
+            const right = Math.max(a.x, b.x)
+            return !obstacles.some(
+              (obstacle) =>
+                a.y > obstacle.top + epsilon &&
+                a.y < obstacle.bottom - epsilon &&
+                right > obstacle.left + epsilon &&
+                left < obstacle.right - epsilon,
+            )
+          }
+          if (a.x === b.x) {
+            const top = Math.min(a.y, b.y)
+            const bottom = Math.max(a.y, b.y)
+            return !obstacles.some(
+              (obstacle) =>
+                a.x > obstacle.left + epsilon &&
+                a.x < obstacle.right - epsilon &&
+                bottom > obstacle.top + epsilon &&
+                top < obstacle.bottom - epsilon,
+            )
+          }
+          return false
+        }
+
+        function simplifyRoute(points) {
+          const deduplicated = points.filter(
+            (point, index) =>
+              index === 0 || point.x !== points[index - 1].x || point.y !== points[index - 1].y,
+          )
+          return deduplicated.filter((point, index) => {
+            if (index === 0 || index === deduplicated.length - 1) return true
+            const previous = deduplicated[index - 1]
+            const next = deduplicated[index + 1]
+            return !(
+              (previous.x === point.x && point.x === next.x) ||
+              (previous.y === point.y && point.y === next.y)
+            )
+          })
+        }
+
+        function pushHeap(heap, item) {
+          heap.push(item)
+          let index = heap.length - 1
+          while (index > 0) {
+            const parent = Math.floor((index - 1) / 2)
+            if (heap[parent].cost <= item.cost) break
+            heap[index] = heap[parent]
+            index = parent
+          }
+          heap[index] = item
+        }
+
+        function popHeap(heap) {
+          if (heap.length === 0) return null
+          const root = heap[0]
+          const tail = heap.pop()
+          if (heap.length === 0) return root
+          let index = 0
+          while (true) {
+            const left = index * 2 + 1
+            const right = left + 1
+            if (left >= heap.length) break
+            const child = right < heap.length && heap[right].cost < heap[left].cost ? right : left
+            if (heap[child].cost >= tail.cost) break
+            heap[index] = heap[child]
+            index = child
+          }
+          heap[index] = tail
+          return root
+        }
+
+        function routeEdge(source, target, nodes, height) {
+          const obstacles = nodes.map(nodeObstacle)
+          const sourcePorts = routePorts(source).filter((port) =>
+            obstacles.every(
+              (obstacle) =>
+                obstacle === obstacles[nodes.indexOf(source)] ||
+                !pointInsideObstacle(port.outer, obstacle),
+            ),
+          )
+          const targetPorts = routePorts(target).filter((port) =>
+            obstacles.every(
+              (obstacle) =>
+                obstacle === obstacles[nodes.indexOf(target)] ||
+                !pointInsideObstacle(port.outer, obstacle),
+            ),
+          )
+          const xValues = new Set([8, 712])
+          const yValues = new Set([54, height - 8])
+          obstacles.forEach((obstacle) => {
+            xValues.add(obstacle.left)
+            xValues.add(obstacle.right)
+            yValues.add(obstacle.top)
+            yValues.add(obstacle.bottom)
+          })
+          ;[...sourcePorts, ...targetPorts].forEach((port) => {
+            xValues.add(port.outer.x)
+            yValues.add(port.outer.y)
+          })
+
+          const points = []
+          const pointIndex = new Map()
+          ;[...xValues]
+            .sort((a, b) => a - b)
+            .forEach((x) => {
+              ;[...yValues]
+                .sort((a, b) => a - b)
+                .forEach((y) => {
+                  const point = { x, y }
+                  if (obstacles.some((obstacle) => pointInsideObstacle(point, obstacle))) return
+                  pointIndex.set(`${x},${y}`, points.length)
+                  points.push(point)
+                })
+            })
+
+          const adjacency = Array.from({ length: points.length }, () => [])
+          const connectLine = (indexes, direction) => {
+            for (let index = 1; index < indexes.length; index += 1) {
+              const from = indexes[index - 1]
+              const to = indexes[index]
+              if (!segmentIsClear(points[from], points[to], obstacles)) continue
+              const distance =
+                Math.abs(points[from].x - points[to].x) + Math.abs(points[from].y - points[to].y)
+              adjacency[from].push({ to, distance, direction })
+              adjacency[to].push({ to: from, distance, direction })
+            }
+          }
+
+          const rows = new Map()
+          const columns = new Map()
+          points.forEach((point, index) => {
+            if (!rows.has(point.y)) rows.set(point.y, [])
+            if (!columns.has(point.x)) columns.set(point.x, [])
+            rows.get(point.y).push(index)
+            columns.get(point.x).push(index)
+          })
+          rows.forEach((indexes) =>
+            connectLine(
+              indexes.sort((a, b) => points[a].x - points[b].x),
+              1,
+            ),
+          )
+          columns.forEach((indexes) =>
+            connectLine(
+              indexes.sort((a, b) => points[a].y - points[b].y),
+              2,
+            ),
+          )
+
+          const stateCount = points.length * 3
+          const distances = new Array(stateCount).fill(Infinity)
+          const previous = new Array(stateCount).fill(-1)
+          const sourceForState = new Array(stateCount).fill(-1)
+          const heap = []
+          sourcePorts.forEach((port, portIndex) => {
+            const index = pointIndex.get(`${port.outer.x},${port.outer.y}`)
+            if (index === undefined) return
+            const state = index * 3 + port.direction
+            distances[state] = routeMargin
+            sourceForState[state] = portIndex
+            pushHeap(heap, { state, cost: routeMargin })
+          })
+
+          while (heap.length > 0) {
+            const current = popHeap(heap)
+            if (!current || current.cost !== distances[current.state]) continue
+            const point = Math.floor(current.state / 3)
+            const direction = current.state % 3
+            adjacency[point].forEach((edge) => {
+              const nextState = edge.to * 3 + edge.direction
+              const turn = direction === edge.direction ? 0 : routeTurnCost
+              const cost = current.cost + edge.distance + turn
+              if (cost >= distances[nextState]) return
+              distances[nextState] = cost
+              previous[nextState] = current.state
+              sourceForState[nextState] = sourceForState[current.state]
+              pushHeap(heap, { state: nextState, cost })
+            })
+          }
+
+          let best = null
+          targetPorts.forEach((port, portIndex) => {
+            const index = pointIndex.get(`${port.outer.x},${port.outer.y}`)
+            if (index === undefined) return
+            ;[1, 2].forEach((direction) => {
+              const state = index * 3 + direction
+              const turn = direction === port.direction ? 0 : routeTurnCost
+              const cost = distances[state] + routeMargin + turn
+              if (!Number.isFinite(cost) || (best && cost >= best.cost)) return
+              best = { state, cost, targetPort: portIndex }
+            })
+          })
+
+          if (!best) {
+            return [
+              { x: source.x + source.w / 2, y: source.y + source.h / 2 },
+              { x: target.x + target.w / 2, y: target.y + target.h / 2 },
+            ]
+          }
+
+          const routed = []
+          let state = best.state
+          const sourcePort = sourcePorts[sourceForState[state]]
+          while (state !== -1) {
+            routed.push(points[Math.floor(state / 3)])
+            state = previous[state]
+          }
+          routed.reverse()
+          return simplifyRoute([sourcePort.anchor, ...routed, targetPorts[best.targetPort].anchor])
+        }
+
+        function rectanglesOverlap(a, b, gap = 0) {
+          return !(
+            a.right + gap <= b.left ||
+            a.left >= b.right + gap ||
+            a.bottom + gap <= b.top ||
+            a.top >= b.bottom + gap
+          )
+        }
+
+        function placeEdgeLabel(points, label, nodes, placedLabels, height) {
+          const width = Math.max(46, label.length * 7.6)
+          const candidates = []
+          for (let index = 1; index < points.length; index += 1) {
+            const a = points[index - 1]
+            const b = points[index]
+            const horizontal = a.y === b.y
+            const length = horizontal ? Math.abs(b.x - a.x) : Math.abs(b.y - a.y)
+            ;[0.5, 0.3, 0.7, 0.16, 0.84].forEach((ratio) => {
+              if (horizontal) {
+                ;[-64, 64, -48, 48, -40, 40, -24, 24, 0].forEach((side) =>
+                  candidates.push({
+                    x: a.x + (b.x - a.x) * ratio,
+                    y: a.y + side,
+                    width,
+                    length,
+                    horizontal: true,
+                  }),
+                )
+              } else {
+                ;[-1, 1].forEach((side) =>
+                  candidates.push({
+                    x: a.x + side * (width / 2 + 7),
+                    y: a.y + (b.y - a.y) * ratio,
+                    width,
+                    length,
+                    horizontal: false,
+                  }),
+                )
+              }
+            })
+          }
+          candidates.sort(
+            (a, b) => Number(b.horizontal) - Number(a.horizontal) || b.length - a.length,
+          )
+          const nodeRects = nodes.map((node) => ({
+            left: node.x,
+            right: node.x + node.w,
+            top: node.y,
+            bottom: node.y + node.h,
+          }))
+          const candidate =
+            candidates.find((item) => {
+              const rect = {
+                left: item.x - width / 2 - 4,
+                right: item.x + width / 2 + 4,
+                top: item.y - 12,
+                bottom: item.y + 8,
+              }
+              return (
+                rect.left >= 4 &&
+                rect.right <= 716 &&
+                rect.top >= 48 &&
+                rect.bottom <= height - 4 &&
+                nodeRects.every((node) => !rectanglesOverlap(rect, node, 3)) &&
+                placedLabels.every((placed) => !rectanglesOverlap(rect, placed, 4))
+              )
+            }) ?? candidates[0]
+          const rect = {
+            left: candidate.x - width / 2 - 4,
+            right: candidate.x + width / 2 + 4,
+            top: candidate.y - 12,
+            bottom: candidate.y + 8,
+          }
+          placedLabels.push(rect)
+          return { x: candidate.x, y: candidate.y, width }
+        }
+
+        function labelPlacementFlex(route) {
+          const longestHorizontal = route.points.reduce((longest, point, index) => {
+            if (index === 0 || point.y !== route.points[index - 1].y) return longest
+            return Math.max(longest, Math.abs(point.x - route.points[index - 1].x))
+          }, 0)
+          return longestHorizontal - Math.max(46, route.label.length * 7.6)
+        }
+
+        const el = (tag, className) => {
+          const node = document.createElement(tag)
+          if (className) node.className = className
+          return node
+        }
+
+        function selectNode(id) {
+          selectedNodeId = id
+          canvas.querySelectorAll('.diagram-node').forEach((group) => {
+            const on = group.dataset.id === id
+            group.classList.toggle('is-selected', on)
+            group.setAttribute('aria-pressed', String(on))
+          })
+          canvas.querySelectorAll('.diagram-edge').forEach((path) => {
+            path.classList.toggle('is-active', path.dataset.from === id || path.dataset.to === id)
+          })
+          picker.querySelectorAll('.arch-pick').forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.id === id)
+          })
+          renderDetail()
+        }
+
+        function renderTabs() {
+          tabs.replaceChildren()
+          views.forEach((view) => {
+            const button = el('button', `arch-tab${view.id === activeView.id ? ' is-active' : ''}`)
+            button.type = 'button'
+            button.textContent = view.label
+            button.setAttribute('aria-pressed', String(view.id === activeView.id))
+            button.addEventListener('click', () => {
+              activeView = view
+              selectedNodeId = view.nodes[0].id
+              renderAll()
+            })
+            tabs.appendChild(button)
+          })
+        }
+
+        function renderDiagram() {
+          canvas.replaceChildren()
+          const svg = svgEl('svg', {
+            viewBox: `0 0 720 ${activeView.height}`,
+            role: 'img',
+            'aria-labelledby': 'arch-svg-title arch-svg-desc',
+          })
+          const titleEl = svgEl('title', { id: 'arch-svg-title' })
+          titleEl.textContent = `${activeView.label} system diagram`
+          const descEl = svgEl('desc', { id: 'arch-svg-desc' })
+          descEl.textContent = activeView.nodes.map((n) => n.title).join(', ')
+          svg.append(titleEl, descEl)
+
+          const defs = svgEl('defs')
+          const marker = svgEl('marker', {
+            id: 'arch-arrow',
+            viewBox: '0 0 10 10',
+            refX: 9,
+            refY: 5,
+            markerWidth: 6,
+            markerHeight: 6,
+            orient: 'auto-start-reverse',
+          })
+          marker.appendChild(svgEl('path', { d: 'M 0 0 L 10 5 L 0 10 z', class: 'edge-arrow' }))
+          defs.appendChild(marker)
+          svg.appendChild(defs)
+
+          activeView.lanes.forEach((lane) => {
+            addText(svg, lane.label, 8, lane.y - 12, 'lane-label')
+            svg.appendChild(
+              svgEl('line', { x1: 8, y1: lane.y, x2: 712, y2: lane.y, class: 'lane-rule' }),
+            )
+          })
+
+          const byNode = new Map(activeView.nodes.map((n) => [n.id, n]))
+          const edgeLayer = svgEl('g')
+          const labelLayer = svgEl('g')
+          const placedLabels = []
+          const routes = activeView.edges.flatMap(([from, to, label, external]) => {
+            const a = byNode.get(from)
+            const b = byNode.get(to)
+            if (!a || !b) return []
+            return [
+              {
+                from,
+                to,
+                label,
+                external,
+                points: routeEdge(a, b, activeView.nodes, activeView.height),
+              },
+            ]
+          })
+
+          // Draw edges connected to the selection last so they sit on top.
+          const isActive = (route) => route.from === selectedNodeId || route.to === selectedNodeId
+          ;[...routes]
+            .sort((a, b) => Number(isActive(a)) - Number(isActive(b)))
+            .forEach((route) => {
+              const path = route.points
+                .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+                .join(' ')
+              edgeLayer.appendChild(
+                svgEl('path', {
+                  d: path,
+                  class: `diagram-edge${route.external ? ' is-external' : ''}${isActive(route) ? ' is-active' : ''}`,
+                  'data-from': route.from,
+                  'data-to': route.to,
+                  'marker-end': 'url(#arch-arrow)',
+                }),
+              )
+            })
+
+          const renderedLabelKeys = new Set()
+          routes
+            .filter((route) => {
+              const key = `${route.from} ${route.label}`
+              if (renderedLabelKeys.has(key)) return false
+              renderedLabelKeys.add(key)
+              return true
+            })
+            .sort((a, b) => labelPlacementFlex(a) - labelPlacementFlex(b))
+            .forEach(({ label, points }) => {
+              const placement = placeEdgeLabel(
+                points,
+                label,
+                activeView.nodes,
+                placedLabels,
+                activeView.height,
+              )
+              labelLayer.appendChild(
+                svgEl('rect', {
+                  x: placement.x - placement.width / 2 - 4,
+                  y: placement.y - 12,
+                  width: placement.width + 8,
+                  height: 20,
+                  rx: 6,
+                  class: 'edge-label-bg',
+                }),
+              )
+              addText(labelLayer, label, placement.x, placement.y + 3, 'edge-label')
+            })
+          svg.append(edgeLayer, labelLayer)
+
+          const labelFits = []
+          activeView.nodes.forEach((node) => {
+            const selected = node.id === selectedNodeId
+            const group = svgEl('g', {
+              class: `diagram-node${selected ? ' is-selected' : ''}`,
+              'data-id': node.id,
+              role: 'button',
+              tabindex: '0',
+              'aria-pressed': String(selected),
+              'aria-label': `${node.title} — ${kinds[node.kind].label}`,
+            })
+            group.style.setProperty('--node-color', kinds[node.kind].color)
+            group.appendChild(
+              svgEl('rect', {
+                x: node.x,
+                y: node.y,
+                width: node.w,
+                height: node.h,
+                rx: 12,
+                class: 'node-box',
+              }),
+            )
+            const cx = node.x + node.w / 2
+            const cy = node.y + node.h / 2
+            const titleText = addText(group, node.title, cx, cy - 5, 'node-title')
+            const subText = addText(group, node.sub, cx, cy + 16, 'node-subtitle')
+            labelFits.push({ maxWidth: node.w - 16, els: [titleText, subText] })
+            group.addEventListener('click', () => selectNode(node.id))
+            group.addEventListener('keydown', (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                selectNode(node.id)
+              }
+            })
+            svg.appendChild(group)
+          })
+          canvas.appendChild(svg)
+
+          // Shrink any label that would overflow its box so text always fits.
+          labelFits.forEach(({ maxWidth, els }) => {
+            els.forEach((textEl) => {
+              const length = textEl.getComputedTextLength()
+              if (length > maxWidth) {
+                const current = parseFloat(getComputedStyle(textEl).fontSize) || 12
+                textEl.style.fontSize = `${Math.max(8, (current * maxWidth) / length)}px`
+              }
+            })
+          })
+        }
+
+        function renderPicker() {
+          picker.replaceChildren()
+          activeView.nodes.forEach((node) => {
+            const button = el(
+              'button',
+              `arch-pick${node.id === selectedNodeId ? ' is-active' : ''}`,
+            )
+            button.type = 'button'
+            button.dataset.id = node.id
+            button.style.setProperty('--dot', kinds[node.kind].color)
+            button.textContent = node.title
+            button.addEventListener('click', () => selectNode(node.id))
+            picker.appendChild(button)
+          })
+        }
+
+        function renderFlow() {
+          const table = el('table')
+          const thead = el('thead')
+          const headRow = el('tr')
+          ;['From', 'Relationship', 'To'].forEach((label) => {
+            const th = el('th')
+            th.scope = 'col'
+            th.textContent = label
+            headRow.appendChild(th)
+          })
+          thead.appendChild(headRow)
+          const tbody = el('tbody')
+          const byNode = new Map(activeView.nodes.map((n) => [n.id, n]))
+          activeView.edges.forEach(([from, to, label]) => {
+            const row = el('tr')
+            ;[byNode.get(from)?.title ?? from, label, byNode.get(to)?.title ?? to].forEach(
+              (value) => {
+                const td = el('td')
+                td.textContent = value
+                row.appendChild(td)
+              },
+            )
+            tbody.appendChild(row)
+          })
+          table.append(thead, tbody)
+          flow.replaceChildren(table)
+        }
+
+        function renderDetail() {
+          const node = activeView.nodes.find((n) => n.id === selectedNodeId) ?? activeView.nodes[0]
+          inspector.style.setProperty('--kind', kinds[node.kind].color)
+          const head = el('div', 'arch-inspector-head')
+          const badge = el('span', 'arch-badge')
+          badge.textContent = kinds[node.kind].label
+          const h3 = el('h3')
+          h3.textContent = node.title
+          head.append(badge, h3)
+          const summary = el('p')
+          summary.textContent = node.summary
+          const files = el('div', 'arch-files')
+          node.files.forEach((path) => {
+            const code = el('code')
+            code.textContent = path
+            files.appendChild(code)
+          })
+          inspector.replaceChildren(head, summary, files)
+        }
+
+        function renderLegend() {
+          legend.replaceChildren()
+          Object.values(kinds).forEach((kind) => {
+            const item = el('span', 'arch-legend-item')
+            const dot = el('span', 'arch-legend-dot')
+            dot.style.setProperty('--dot', kind.color)
+            const label = el('span')
+            label.textContent = kind.label
+            item.append(dot, label)
+            legend.appendChild(item)
+          })
+        }
+
+        function renderAll() {
+          renderTabs()
+          renderDiagram()
+          renderPicker()
+          renderFlow()
+          renderDetail()
+        }
+
+        renderLegend()
+        renderAll()
+      })()
+    </script>
+  </body>
+</html>
