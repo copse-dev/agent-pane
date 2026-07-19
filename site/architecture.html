@@ -516,7 +516,7 @@
 
       <p class="architecture-note">
         Verified against <code class="inline-code">origin/main</code> at
-        <code class="inline-code">cf0a14c2</code>. All 218 cited source paths exist at that
+        <code class="inline-code">cf0a14c2</code>. All 226 cited source paths exist at that
         revision; the Main delta view summarizes the 46 incoming commits.
       </p>
     </main>
@@ -1030,6 +1030,261 @@
               ['controller', 'autosave', 'events'],
               ['controller', 'queue', 'done'],
               ['queue', 'runipc', 'continuation'],
+            ],
+          },
+          {
+            id: 'harness',
+            label: 'Harness',
+            height: 600,
+            lanes: [
+              { y: 44, label: 'Steering — redirect the run' },
+              { y: 258, label: 'The run loop' },
+              { y: 470, label: 'Guardrails — gate and stop' },
+            ],
+            nodes: [
+              {
+                id: 'interject',
+                x: 18,
+                y: 76,
+                w: 118,
+                h: 58,
+                kind: 'person',
+                title: 'Interjections',
+                sub: 'queued input',
+                summary:
+                  'Queued user messages drain at idle and beforeSubmitPrompt hooks can inject context or hold a submit, steering the next turn without stopping the run.',
+                files: [
+                  'src/renderer/controller/message-queue.ts',
+                  'src/main/services/hooks/before-submit-prompt.ts',
+                ],
+              },
+              {
+                id: 'brief',
+                x: 160,
+                y: 76,
+                w: 118,
+                h: 58,
+                kind: 'core',
+                title: 'Brief & todos',
+                sub: 'goal + plan',
+                summary:
+                  'The working brief (parent goal) and todo state shape the run and are pinned into the prompt so the model keeps to the plan.',
+                files: [
+                  'packages/agent/src/working-brief.ts',
+                  'src/shared/todos/todo-logic.ts',
+                  'src/main/services/agent-run-todos.ts',
+                ],
+              },
+              {
+                id: 'turnstart',
+                x: 302,
+                y: 76,
+                w: 118,
+                h: 58,
+                kind: 'core',
+                title: 'Turn-start hooks',
+                sub: 'context assembly',
+                summary:
+                  'turnStart hooks fold todo, commit, and GitHub-link context into the first message each turn as capped system-reminder blocks.',
+                files: [
+                  'packages/agent/src/hooks/turn-start-hooks.ts',
+                  'packages/agent/src/todo-steering.ts',
+                  'packages/agent/src/commit-steering.ts',
+                ],
+              },
+              {
+                id: 'nudge',
+                x: 444,
+                y: 76,
+                w: 118,
+                h: 58,
+                kind: 'core',
+                title: 'Step nudges',
+                sub: 'stuck / loop / continue',
+                summary:
+                  'stepBoundary hooks read conversation pressure and inject nudges — force a text answer, break redundant exploration, or continue a truncated stream — that the loop applies mid-run.',
+                files: [
+                  'packages/agent/src/hooks/step-boundary-hooks.ts',
+                  'packages/agent/src/agent-loop-escalation.ts',
+                  'packages/agent/src/agent-loop-guards.ts',
+                ],
+              },
+              {
+                id: 'advisor',
+                x: 586,
+                y: 76,
+                w: 118,
+                h: 58,
+                kind: 'external',
+                title: 'Advisor',
+                sub: 'strategic guidance',
+                summary:
+                  'A larger advisor model gives the cheaper executor mid-task strategic guidance, exposed as a gated advisor tool.',
+                files: [
+                  'src/main/services/advisor-strategy.ts',
+                  'src/main/services/advisor-runner.ts',
+                  'src/main/tools/advisor-tool.ts',
+                ],
+              },
+              {
+                id: 'runipc',
+                x: 24,
+                y: 290,
+                w: 132,
+                h: 60,
+                kind: 'safety',
+                title: 'agent:run',
+                sub: 'validated entry',
+                summary:
+                  'The agent:run handler asserts the sender frame and validates the payload with zod before invoking the run host; agent:abort trips the controller.',
+                files: [
+                  'src/main/index.ts',
+                  'src/main/ipc/ipc-guards.ts',
+                  'packages/agent/src/parse-agent-run-payload.ts',
+                ],
+              },
+              {
+                id: 'service',
+                x: 196,
+                y: 290,
+                w: 132,
+                h: 60,
+                kind: 'core',
+                title: 'Run host',
+                sub: 'setup + abort',
+                summary:
+                  'runAgent sets up the provider, toolset, abort controller, deadlines, hook recording, and continuation budget, then hands off to the pure loop.',
+                files: ['src/main/services/agent-service.ts'],
+              },
+              {
+                id: 'loop',
+                x: 368,
+                y: 290,
+                w: 132,
+                h: 60,
+                kind: 'core',
+                title: 'Run loop',
+                sub: 'step • stream • tools',
+                summary:
+                  'runAgentLoop steps a turn — build messages, stream the provider, run the tool batch — and repeats until a final answer, maxSteps, or the budget is reached.',
+                files: ['packages/agent/src/run-agent-loop.ts'],
+              },
+              {
+                id: 'continue',
+                x: 540,
+                y: 290,
+                w: 132,
+                h: 60,
+                kind: 'core',
+                title: 'Limits & budget',
+                sub: 'deadlines + grant',
+                summary:
+                  'Sliding-idle and wall-clock deadlines, an LLM-call budget, and a per-turn-tree continuation grant bound how far a run may keep going on its own.',
+                files: [
+                  'packages/agent/src/agent-loop-limits.ts',
+                  'packages/agent/src/hooks/continuation-budget.ts',
+                ],
+              },
+              {
+                id: 'registry',
+                x: 18,
+                y: 502,
+                w: 118,
+                h: 58,
+                kind: 'safety',
+                title: 'Tool registry',
+                sub: 'validate + gate',
+                summary:
+                  'ToolRegistry.execute validates arguments against the tool schema, applies the read-only block, runs the gates, and appends any hook-injected context to the result.',
+                files: [
+                  'src/main/services/tool-registry.ts',
+                  'src/main/services/agent-run-readonly.ts',
+                  'src/shared/tools/readonly-tools.ts',
+                ],
+              },
+              {
+                id: 'permit',
+                x: 160,
+                y: 502,
+                w: 118,
+                h: 58,
+                kind: 'safety',
+                title: 'Permission gate',
+                sub: 'default-allow',
+                summary:
+                  'The default-allow permission gate explicitly gates shell, MCP, custom, web, browser, and GitHub-write tools, requesting human approval when policy demands.',
+                files: [
+                  'src/main/services/security/permission-gate.ts',
+                  'src/main/services/security/permission-policy.ts',
+                  'src/main/services/approval.ts',
+                ],
+              },
+              {
+                id: 'toolgate',
+                x: 302,
+                y: 502,
+                w: 118,
+                h: 58,
+                kind: 'safety',
+                title: 'Tool-gate hooks',
+                sub: 'deny / ask / rewrite',
+                summary:
+                  'toolGate hooks run through the dialect adapters and can only tighten the call — deny, ask, or rewrite input — with sequential rewrites re-running policy host-side.',
+                files: [
+                  'src/main/services/hooks/tool-gate.ts',
+                  'src/main/services/hooks/copse-adapter.ts',
+                ],
+              },
+              {
+                id: 'sandbox',
+                x: 444,
+                y: 502,
+                w: 118,
+                h: 58,
+                kind: 'safety',
+                title: 'Sandbox',
+                sub: 'spawned processes',
+                summary:
+                  'Hook and tool processes spawn inside the project sandbox by default, and sandbox violations are surfaced rather than silently allowed.',
+                files: [
+                  'src/main/services/hooks/hook-spawn.ts',
+                  'src/main/project-sandbox/spawn.ts',
+                  'src/main/services/security/sandbox-failure.ts',
+                ],
+              },
+              {
+                id: 'halt',
+                x: 586,
+                y: 502,
+                w: 118,
+                h: 58,
+                kind: 'safety',
+                title: 'Halt-run',
+                sub: 'abort path',
+                summary:
+                  "A hook's haltRun, or a tripped deadline or runaway limit, routes through the run's AbortController to break the loop cleanly.",
+                files: [
+                  'src/main/services/hooks/halt-run.ts',
+                  'packages/agent/src/agent-loop-limits.ts',
+                ],
+              },
+            ],
+            edges: [
+              ['runipc', 'service', 'runAgent'],
+              ['service', 'loop', 'step'],
+              ['loop', 'continue', 'bounded'],
+              ['interject', 'service', 'queued input'],
+              ['brief', 'turnstart', 'pins'],
+              ['turnstart', 'loop', 'inject context'],
+              ['nudge', 'loop', 'stepBoundary'],
+              ['advisor', 'loop', 'guidance', true],
+              ['loop', 'registry', 'tool call'],
+              ['registry', 'permit', 'permission'],
+              ['permit', 'toolgate', 'hook gate'],
+              ['toolgate', 'sandbox', 'spawn'],
+              ['toolgate', 'halt', 'deny'],
+              ['halt', 'loop', 'abort'],
+              ['continue', 'halt', 'limit hit'],
             ],
           },
           {
