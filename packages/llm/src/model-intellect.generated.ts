@@ -32,16 +32,16 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     {
       value: 44.4,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'minimax-m3', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'minimax-m3', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'claude-fable-5': [
     {
       value: 59.9,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-fable-5', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'claude-fable-5', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'claude-haiku-4-5': [
@@ -64,24 +64,24 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     {
       value: 55.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-8', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'claude-opus-4-8', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'claude-sonnet-4-6': [
     {
       value: 35.9,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'claude-sonnet-5': [
     {
       value: 53.4,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-5', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'claude-sonnet-5', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'deepseek/deepseek-coder-v2-lite': [
@@ -89,56 +89,56 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       value: 3.1,
       indexVersion: 'v4.1',
       source:
-        "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2-lite', fetched 2026-07-18",
-      asOf: '2026-07-18',
+        "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2-lite', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'google/gemma-3-12b': [
     {
       value: 5.5,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gemma-3-12b', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-3-12b', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'google/gemma-4-e4b': [
     {
       value: 12.5,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gemma-4-e4b', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'gemma-4-e4b', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'gpt-4o': [
     {
       value: 11.2,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-4o', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4o', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'gpt-4o-mini': [
     {
       value: 6.9,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-4o-mini', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-4o-mini', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'gpt-5': [
     {
       value: 34.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-5', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'gpt-5-mini': [
     {
       value: 25.3,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'gpt-5-mini', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'gpt-5.5': [
@@ -175,20 +175,28 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       asOf: '2026-07-18',
     },
   ],
+  'grok-4.5': [
+    {
+      value: 53.8,
+      indexVersion: 'v4.1',
+      source: "Artificial Analysis API (index v4.1), model 'grok-4-5', fetched 2026-07-19",
+      asOf: '2026-07-19',
+    },
+  ],
   'microsoft/phi-4': [
     {
       value: 4.9,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'phi-4', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'phi-4', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'mistralai/mistral-small-24b': [
     {
       value: 14.7,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3-1', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'mistral-small-3-1', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'moonshotai/kimi-k2.6': [
@@ -202,16 +210,16 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
     {
       value: 44.2,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-6', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k2-6', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'moonshotai/kimi-k3': [
     {
       value: 57.1,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'kimi-k3', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'kimi-k3', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'qwen/qwen2.5-coder-32b': [
@@ -219,24 +227,24 @@ export const MODEL_INTELLECT_RAW: Record<string, IntellectMeasurement[]> = {
       value: 7.1,
       indexVersion: 'v4.1',
       source:
-        "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-32b-instruct', fetched 2026-07-18",
-      asOf: '2026-07-18',
+        "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-32b-instruct', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'qwen/qwen3.6-35b-a3b': [
     {
       value: 31.6,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
   'zai-org/GLM-5.2': [
     {
       value: 51.1,
       indexVersion: 'v4.1',
-      source: "Artificial Analysis API (index v4.1), model 'glm-5-2', fetched 2026-07-18",
-      asOf: '2026-07-18',
+      source: "Artificial Analysis API (index v4.1), model 'glm-5-2', fetched 2026-07-19",
+      asOf: '2026-07-19',
     },
   ],
 }
@@ -255,6 +263,7 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'claude-opus-4-8-latest': 'claude-opus-4-8',
   'claude-sonnet-4-6-latest': 'claude-sonnet-4-6',
   'claude-sonnet-5-latest': 'claude-sonnet-5',
+  'Cursor Grok 4.5': 'grok-4.5',
   'DeepSeek-Coder V2 Lite': 'deepseek/deepseek-coder-v2-lite',
   'deepseek-coder-v2-lite': 'deepseek/deepseek-coder-v2-lite',
   'deepseek-coder-v2-lite-instruct': 'deepseek/deepseek-coder-v2-lite',
@@ -272,6 +281,9 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'GPT-5.6 Sol': 'gpt-5.6-sol',
   'GPT-5.6 Terra': 'gpt-5.6-terra',
   'GPT-5.6-Terra': 'gpt-5.6-terra',
+  'Grok 4.5': 'grok-4.5',
+  'grok-4-5': 'grok-4.5',
+  'grok-build-0.1': 'grok-4.5',
   'Haiku 4.5': 'claude-haiku-4-5',
   'Kimi K2.6': 'moonshotai/kimi-k2.6',
   'Kimi K3': 'moonshotai/kimi-k3',
@@ -305,6 +317,8 @@ export const INTELLECT_ALIASES: Record<string, string> = {
   'qwen3.6-35b-a3b': 'qwen/qwen3.6-35b-a3b',
   'Sonnet 4.6': 'claude-sonnet-4-6',
   'Sonnet 5': 'claude-sonnet-5',
+  'x-ai/grok-4.5': 'grok-4.5',
+  'xai/grok-4.5': 'grok-4.5',
   'z-ai/glm-5.2': 'zai-org/GLM-5.2',
   'zai/glm-5.2': 'zai-org/GLM-5.2',
 }
