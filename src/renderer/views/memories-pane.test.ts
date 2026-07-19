@@ -1,9 +1,13 @@
 import '../../../tests/setup-dom.ts'
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountMemoriesPane } from './memories-pane.ts'
+import {
+  clickActiveConfirmDialogConfirm,
+  mountConfirmDialog,
+} from './confirm-dialog.ts'
 
 // Minimal KnowledgeNote (Memory) factory; only the fields the pane reads matter.
 function makeNote(id: string, title: string, body: string, tags: string[] = []): unknown {
@@ -84,6 +88,10 @@ function mountHosts(): { list: HTMLElement; viewer: HTMLElement } {
 
 afterEach(() => {
   document.body.replaceChildren()
+})
+
+beforeEach(() => {
+  mountConfirmDialog()
 })
 
 describe('memories pane', () => {
@@ -197,20 +205,19 @@ describe('memories pane', () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'memories' })
     const { api, calls } = makeApi([makeNote('a', 'Doomed', 'bye')])
     const { list, viewer } = mountHosts()
-    const priorConfirm = globalThis.confirm
-    globalThis.confirm = (): boolean => true
     const unmount = mountMemoriesPane(list, viewer, store, api)
     try {
       await flush()
       list.querySelector<HTMLButtonElement>('.memories-row')?.click()
       viewer.querySelector<HTMLButtonElement>('.memories-btn-danger')?.click()
       await flush()
+      clickActiveConfirmDialogConfirm()
+      await flush()
       assert.deepEqual(calls.delete, ['a'])
       assert.equal(list.querySelectorAll('.memories-row').length, 0)
       // With nothing selected, the editor falls back to its empty state.
       assert.equal(viewer.querySelector<HTMLElement>('.memories-empty')?.hidden, false)
     } finally {
-      globalThis.confirm = priorConfirm
       unmount()
     }
   })

@@ -1,10 +1,15 @@
 import '../../../tests/setup-dom.ts'
-import { afterEach, before, describe, it } from 'node:test'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type * as Monaco from 'monaco-editor'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult, SessionBackup } from '@shared/types/git.ts'
+import {
+  clickActiveConfirmDialogCancel,
+  clickActiveConfirmDialogConfirm,
+  mountConfirmDialog,
+} from './confirm-dialog.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
 
 // Coverage for the "Restore pre-session changes" affordance (#699): when Copse
@@ -46,7 +51,8 @@ function makeApi(opts: {
   } as unknown as ApiClient
 }
 
-before(() => {
+beforeEach(() => {
+  mountConfirmDialog()
   if (!('ResizeObserver' in globalThis)) {
     class NoopResizeObserver {
       observe(): void {}
@@ -106,17 +112,13 @@ describe('git changes pane restore affordance (#699)', () => {
       }),
     )
     await settle()
-    const origConfirm = window.confirm
-    window.confirm = (): boolean => true
-    try {
-      const btn = listRoot.querySelector<HTMLButtonElement>('.git-changes-restore-btn')
-      assert.ok(btn)
-      btn.click()
-      await settle()
-      assert.equal(restoreCalls.count, 1, 'restore should be invoked once')
-    } finally {
-      window.confirm = origConfirm
-    }
+    const btn = listRoot.querySelector<HTMLButtonElement>('.git-changes-restore-btn')
+    assert.ok(btn)
+    btn.click()
+    await settle()
+    clickActiveConfirmDialogConfirm()
+    await settle()
+    assert.equal(restoreCalls.count, 1, 'restore should be invoked once')
   })
 
   it('does not restore when the user cancels the confirmation', async () => {
@@ -128,14 +130,10 @@ describe('git changes pane restore affordance (#699)', () => {
       }),
     )
     await settle()
-    const origConfirm = window.confirm
-    window.confirm = (): boolean => false
-    try {
-      listRoot.querySelector<HTMLButtonElement>('.git-changes-restore-btn')?.click()
-      await settle()
-      assert.equal(restoreCalls.count, 0, 'restore must not run when cancelled')
-    } finally {
-      window.confirm = origConfirm
-    }
+    listRoot.querySelector<HTMLButtonElement>('.git-changes-restore-btn')?.click()
+    await settle()
+    clickActiveConfirmDialogCancel()
+    await settle()
+    assert.equal(restoreCalls.count, 0, 'restore must not run when cancelled')
   })
 })

@@ -49,6 +49,7 @@ import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
+import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -178,6 +179,7 @@ async function boot(): Promise<void> {
   mountAskUserDialog(api, store)
   mountSshPromptDialog(api)
   mountUpdatePromptDialog(api)
+  mountConfirmDialog()
   mountFileSearchDialog(store, api)
   mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
@@ -470,7 +472,7 @@ function registerKeyboardShortcuts(): void {
     }
     if (meta && e.key === 'w') {
       e.preventDefault()
-      confirmDeleteThread()
+      void confirmDeleteThread()
     }
     if (e.key === 'Escape') {
       if (isKeyboardShortcutsDialogOpen()) {
@@ -500,17 +502,24 @@ function registerKeyboardShortcuts(): void {
   })
 }
 
-function confirmDeleteThread(): void {
+async function confirmDeleteThread(): Promise<void> {
   const { activeThreadId, threads } = store.getState()
   if (!activeThreadId || threads.length <= 1) return
-  if (confirm('Delete this thread?')) {
-    void api.agent.clearHistory(activeThreadId)
-    const index = threads.findIndex((t) => t.id === activeThreadId)
-    const remaining = threads.filter((t) => t.id !== activeThreadId)
-    const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
-    store.setState({ threads: remaining, activeThreadId: newActive })
-    store.emit('threads_changed')
+  if (
+    !(await showConfirmDialog({
+      message: 'Delete this thread?',
+      confirmLabel: 'Delete',
+      danger: true,
+    }))
+  ) {
+    return
   }
+  void api.agent.clearHistory(activeThreadId)
+  const index = threads.findIndex((t) => t.id === activeThreadId)
+  const remaining = threads.filter((t) => t.id !== activeThreadId)
+  const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
+  store.setState({ threads: remaining, activeThreadId: newActive })
+  store.emit('threads_changed')
 }
 
 function switchToPrevThread(): void {
