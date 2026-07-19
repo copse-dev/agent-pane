@@ -37,9 +37,10 @@ user pack can never smuggle code through its `plugin.json`.
 
 `packManifestFromPluginJson()` maps a discovered `plugin.json` into a
 `PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
-fields fold into the pack slots (`mcpServers` → `tools.mcpServers`). The host
-disk-discovery that feeds it a parsed manifest, and the Settings pack list that
-renders `settings`, land with P3/P4.
+fields fold into the pack slots (`mcpServers` → `tools.mcpServers`). The
+Settings pack list that renders `settings` landed in P3 (see
+[Pack list UI](#pack-list-ui-p3) below); host disk-discovery of user packs
+still lands with the pilot pack in P4.
 
 ## Registry and lifecycle
 
@@ -100,6 +101,50 @@ rendering.
   panels paired with their owning pack id; disabling the pack drops it in one
   action alongside the pack's tools / hooks / prompt / other UI.
 
+## Pack list UI (P3)
+
+Every registered pack — first-party and user — shows up in **Settings → Packs**
+as a row with an enable/disable toggle, an enumeration of what the pack
+contributes (tools / hooks / prompt blocks / UI panels), and any pack-scoped
+settings the manifest declares. This is the `about:addons` of Copse.
+
+- **Shared registry.** The host's `PackService`
+  ([`src/main/services/packs/pack-service.ts`](../src/main/services/packs/pack-service.ts))
+  owns one `PackRegistry` and installs it as the default provider
+  (`setDefaultPackRegistry` in
+  [`packages/agent/src/packs/default-pack-registry.ts`](../packages/agent/src/packs/default-pack-registry.ts))
+  so `createHookRegistry` reads through the same instance the Settings UI
+  toggles. Toggling a pack in Settings flips the shared registry's flag
+  **atomically** (P1 contract) — every one of the pack's contribution kinds
+  drops from the active getters at once.
+- **Persistence.** The disable set is stored as a `readonly string[]` under the
+  `packDisabled` key (same pattern as `mcpDisabledServers`); each pack's
+  settings values live under `pack.<packId>.settings` as a plain record keyed
+  by field id. Writes go through `storageUpdate` so concurrent toggles cannot
+  drop each other's change. Applied to the registry at boot before the
+  provider is installed, so a pack the user turned off stays off across
+  relaunches.
+- **IPC.** `packs:list` / `packs:setEnabled` / `packs:setSetting` (renderer
+  surface: `api.packs.*` in the preload). Values are validated to
+  `boolean` / `number` / `string ≤ 8192` so a compromised renderer cannot
+  stuff arbitrary payloads.
+- **Renderer.** The Settings dialog gains a `Packs` nav section
+  (`src/renderer/views/settings-dialog.ts`). Each row shows the pack's name +
+  version + trust badge, an enable toggle, a description, contribution chips
+  (`Tools × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
+  identifiers in a hover title, and generic form fields for the manifest's
+  `settings` schema. Disabled rows are visually greyed via `pack-row-disabled`
+  so the effect of the toggle is immediately visible; per-pack settings stay
+  editable so a user can configure a disabled pack before re-enabling it.
+- **Projection helper.**
+  [`packages/agent/src/packs/pack-summary.ts`](../packages/agent/src/packs/pack-summary.ts)
+  is the pure `summarizePacks(registry, readSetting)` that projects the shared
+  registry + a per-key reader into the plain-data `PackSummaryOut` snapshots
+  the renderer consumes (mirrored to
+  [`src/shared/types/packs.ts`](../src/shared/types/packs.ts) for the IPC
+  crossing). Values are coerced to the declared kind on projection, falling
+  back to the manifest default when storage is corrupt.
+
 ## Decision 17 — history never consults live registration
 
 **Disabling a pack never breaks history.** Transcript rendering resolves from
@@ -126,9 +171,11 @@ disable is pinned by
   never import them).
 - The generic list/tree panel renderer lives in `src/renderer/views/pack-panel.ts`
   and consumes the Electron-free `PanelData` types across the package boundary.
-- Host disk-discovery of user packs, persisting the enable/disable set + pack
-  storage to `electron-store`, and the Settings pack-list UI are host wiring
-  (`src/main/services/`) that lands with P3/P4.
+- Host persistence of the enable/disable set + pack-scoped settings values
+  (`electron-store` under `packDisabled` and `pack.<packId>.settings`), the
+  shared `PackRegistry` singleton, and the Settings pack list UI landed in P3
+  (`src/main/services/packs/pack-service.ts` + `src/renderer/views/settings-dialog.ts`).
+  Host disk-discovery of user packs still lands with the pilot pack in P4.
 
 ## Related
 
