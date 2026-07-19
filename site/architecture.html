@@ -3038,7 +3038,7 @@
             const cy = node.y + node.h / 2
             const titleText = addText(group, node.title, cx, cy - 5, 'node-title')
             const subText = addText(group, node.sub, cx, cy + 16, 'node-subtitle')
-            labelFits.push({ maxWidth: node.w - 22, els: [titleText, subText], dot, titleText })
+            labelFits.push({ node, cx, dot, titleText, subText })
             group.addEventListener('click', () => selectNode(node.id))
             group.addEventListener('keydown', (event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -3100,21 +3100,36 @@
           svg.appendChild(labelLayer)
           canvas.appendChild(svg)
 
-          // With the SVG laid out: shrink overflowing node text, then seat each
-          // kind dot just left of its (centred) title so it always reads as a pair.
-          labelFits.forEach(({ maxWidth, els, dot, titleText }) => {
-            els.forEach((textEl) => {
-              const length = textEl.getComputedTextLength()
-              if (length > maxWidth) {
-                const current = parseFloat(getComputedStyle(textEl).fontSize) || 12
-                textEl.style.fontSize = `${Math.max(8, (current * maxWidth) / length)}px`
-              }
-            })
-            const bounds = titleText.getBBox()
-            if (bounds.width > 0) {
-              dot.setAttribute('cx', `${bounds.x - 8}`)
-              dot.setAttribute('cy', `${bounds.y + bounds.height / 2}`)
+          // With the SVG laid out: shrink node text to leave room for the dot,
+          // then centre the [dot + text] as one group so the dot keeps a
+          // consistent inset from the box edge regardless of title width.
+          const DOT_R = 3.4
+          const DOT_GAP = 7
+          const NODE_PAD = 11
+          const shrink = (textEl, maxWidth) => {
+            const length = textEl.getComputedTextLength()
+            if (length > maxWidth) {
+              const current = parseFloat(getComputedStyle(textEl).fontSize) || 12
+              textEl.style.fontSize = `${Math.max(8, (current * maxWidth) / length)}px`
             }
+          }
+          labelFits.forEach(({ node, cx, dot, titleText, subText }) => {
+            const textMax = node.w - 2 * NODE_PAD - DOT_R * 2 - DOT_GAP
+            shrink(titleText, textMax)
+            shrink(subText, textMax)
+            const textWidth = Math.max(
+              titleText.getComputedTextLength(),
+              subText.getComputedTextLength(),
+            )
+            const left = cx - (DOT_R * 2 + DOT_GAP + textWidth) / 2
+            const textX = left + DOT_R * 2 + DOT_GAP
+            titleText.style.textAnchor = 'start'
+            titleText.setAttribute('x', `${textX}`)
+            subText.style.textAnchor = 'start'
+            subText.setAttribute('x', `${textX}`)
+            const bounds = titleText.getBBox()
+            dot.setAttribute('cx', `${left + DOT_R}`)
+            if (bounds.width > 0) dot.setAttribute('cy', `${bounds.y + bounds.height / 2}`)
           })
 
           // Reveal an edge's label only while its node (or the edge) is hovered,
