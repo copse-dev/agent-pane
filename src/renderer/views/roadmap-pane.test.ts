@@ -1500,9 +1500,6 @@ describe('roadmap pane', () => {
       releaseSecond = resolve
     })
     const reviewProgress = { secondStarted: false }
-    const secondGate = new Promise<void>((resolve) => {
-      releaseSecond = resolve
-    })
     const baseReviewItem = api.roadmap.reviewItem
     api.roadmap.reviewItem = async (
       id: string,
