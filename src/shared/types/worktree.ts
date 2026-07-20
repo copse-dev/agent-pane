@@ -12,3 +12,18 @@ export interface ThreadWorktree {
   createdAt: number
   seededFromDirtyProject: boolean
 }
+
+export type ThreadCheckoutMode = 'shared' | 'worktree'
+
+/** Non-mutating policy result shown before the first message is sent. */
+export interface ThreadCheckoutPreview {
+  checkoutMode: ThreadCheckoutMode | 'blocked'
+}
+
+/** Main-process result of the first-message checkout transaction. */
+export interface PreparedThreadCheckout {
+  checkoutMode: ThreadCheckoutMode
+  choice: ThreadWorktreeChoice
+  branch: string | null
+  worktree?: ThreadWorktree
+}
