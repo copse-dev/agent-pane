@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { classifyModelForTask, suggestRoleForTask } from './model-classifier.ts'
+import {
+  BAND_CANDIDATES,
+  classifyModelForTask,
+  modelUsdPerMTok,
+  pickCheapestFittingModel,
+  suggestRoleForTask,
+} from './model-classifier.ts'
 
 describe('model-classifier', () => {
   it('routes trivial mechanical edits to the low band', () => {
     const rec = classifyModelForTask({ task: 'Rename the variable foo to bar' })
     assert.equal(rec.band, 'low')
-    assert.equal(rec.model, 'claude-haiku-4-5')
+    assert.equal(rec.model, 'gpt-4o-mini')
+    assert.match(rec.rationale, /cost-aware pick/)
+    assert.ok(rec.usdPerMTok !== null && rec.usdPerMTok > 0)
   })
 
   it('routes design/refactor work to the top band', () => {
@@ -14,18 +22,33 @@ describe('model-classifier', () => {
       task: 'Refactor the architecture of the agent loop to fix a race condition in concurrent tool calls',
     })
     assert.equal(rec.band, 'top')
-    assert.equal(rec.model, 'claude-fable-5')
+    assert.equal(
+      rec.model,
+      pickCheapestFittingModel(BAND_CANDIDATES.top, 0, 'claude-fable-5').model,
+    )
   })
 
   it('defaults to the mid band when there are no strong signals', () => {
     const rec = classifyModelForTask({ task: 'Update the changelog with the new entries listed' })
     assert.equal(rec.band, 'mid')
-    assert.equal(rec.model, 'claude-sonnet-5')
+    assert.equal(
+      rec.model,
+      pickCheapestFittingModel(BAND_CANDIDATES.mid, 0, 'claude-sonnet-5').model,
+    )
   })
 
   it("reports the representative model's intellect from the shared scale", () => {
     const rec = classifyModelForTask({ task: 'Rename the variable foo to bar' })
-    assert.equal(rec.intellect, 4)
+    assert.equal(rec.intellect, 3)
+  })
+
+  it('prefers a wider-context candidate within the same band', () => {
+    const rec = classifyModelForTask({
+      task: 'Rename a symbol across the repo',
+      contextTokensEstimate: 200_000,
+    })
+    assert.equal(rec.band, 'low')
+    assert.equal(rec.model, 'gpt-5-mini')
   })
 
   it('flags when the estimated context exceeds the chosen model window', () => {
@@ -36,6 +59,14 @@ describe('model-classifier', () => {
   it('produces a confidence in [0, 1]', () => {
     const rec = classifyModelForTask({ task: 'Plan the migration and redesign the storage layer' })
     assert.ok(rec.confidence >= 0 && rec.confidence <= 1)
+  })
+})
+
+describe('pickCheapestFittingModel', () => {
+  it('ranks by combined catalog USD/MTok among models that fit', () => {
+    const pick = pickCheapestFittingModel(BAND_CANDIDATES.low, 0, 'claude-haiku-4-5')
+    assert.equal(pick.model, 'gpt-4o-mini')
+    assert.equal(pick.usdPerMTok, modelUsdPerMTok('gpt-4o-mini'))
   })
 })
 

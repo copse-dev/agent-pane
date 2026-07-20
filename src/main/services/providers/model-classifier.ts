@@ -1,6 +1,7 @@
-import { getModelInfo, type TrackedModel } from '@copse/llm/model-catalog.ts'
+import { getModelInfo, TRACKED_MODELS, type TrackedModel } from '@copse/llm/model-catalog.ts'
 import {
   BAND_REPRESENTATIVE_MODEL,
+  intellectBand,
   modelIntellect,
   type IntellectBand,
 } from '@copse/llm/model-intellect.ts'
@@ -26,6 +27,13 @@ import { getAgentRole, type AgentRoleId } from '@copse/llm/agent-roles.ts'
  */
 export const MODEL_CLASSIFIER_ENABLED_SETTING = 'modelClassifierEnabled'
 
+/** Models grouped by the shared, distribution-derived intellect bands. */
+export const BAND_CANDIDATES: Record<IntellectBand, readonly TrackedModel[]> = {
+  low: TRACKED_MODELS.filter((model) => intellectBand(modelIntellect(model) ?? 0) === 'low'),
+  mid: TRACKED_MODELS.filter((model) => intellectBand(modelIntellect(model) ?? 0) === 'mid'),
+  top: TRACKED_MODELS.filter((model) => intellectBand(modelIntellect(model) ?? 0) === 'top'),
+}
+
 export interface ClassifyModelInput {
   /** The task / prompt to route. */
   task: string
@@ -46,6 +54,8 @@ export interface ModelRecommendation {
   confidence: number
   /** Human-readable explanation of why this band was chosen. */
   rationale: string
+  /** Combined catalog input+output USD per million tokens for the pick. */
+  usdPerMTok: number | null
 }
 
 // Signals that a task is hard enough to want a top-of-scale model.
@@ -55,6 +65,42 @@ const TOP_BAND_HINTS =
 // Signals that a task is trivial enough for the low band.
 const LOW_BAND_HINTS =
   /\b(rename|typo|format|lint|comment|docstring|summari[sz]e|classify|extract|translate|one-?liner|trivial|tweak)\b/i
+
+/** Combined input+output USD/MTok — the cost signal used within a band. */
+export function modelUsdPerMTok(model: string): number | null {
+  const info = getModelInfo(model)
+  if (!info) return null
+  return info.inputPricePerMTok + info.outputPricePerMTok
+}
+
+/** Pick the cheapest candidate whose context window covers the estimate. */
+export function pickCheapestFittingModel(
+  candidates: readonly TrackedModel[],
+  contextNeed: number,
+  fallback: TrackedModel,
+): { model: TrackedModel; usdPerMTok: number | null; noCandidateFits: boolean } {
+  const priced = candidates
+    .map((model) => ({ model, info: getModelInfo(model), usdPerMTok: modelUsdPerMTok(model) }))
+    .filter((candidate) => candidate.usdPerMTok !== null)
+  const fitting = priced.filter(
+    (candidate) => candidate.info && candidate.info.contextWindow >= contextNeed,
+  )
+  const pool = fitting.length > 0 ? fitting : priced
+  const picked = pool.toSorted(
+    (left, right) => (left.usdPerMTok ?? Infinity) - (right.usdPerMTok ?? Infinity),
+  )[0]
+  return picked
+    ? {
+        model: picked.model,
+        usdPerMTok: picked.usdPerMTok,
+        noCandidateFits: fitting.length === 0 && contextNeed > 0,
+      }
+    : {
+        model: fallback,
+        usdPerMTok: modelUsdPerMTok(fallback),
+        noCandidateFits: false,
+      }
+}
 
 /**
  * Heuristically place a task's demand on the intellect scale. Pure — no I/O,
@@ -96,9 +142,20 @@ export function classifyModelForTask(input: ClassifyModelInput): ModelRecommenda
   }
 
   const band: IntellectBand = score >= 2 ? 'top' : score <= -2 ? 'low' : 'mid'
-  const model = BAND_REPRESENTATIVE_MODEL[band]
-  // Representatives are annotated by construction (scale-validated in tests).
+  const pick = pickCheapestFittingModel(
+    BAND_CANDIDATES[band],
+    contextNeed,
+    BAND_REPRESENTATIVE_MODEL[band],
+  )
+  const model = pick.model
+  if (pick.usdPerMTok !== null) {
+    reasons.push(`cost-aware pick ${model} (~$${pick.usdPerMTok.toFixed(2)}/MTok in+out)`)
+  }
+  // Candidates are grouped by their shared intellect annotation.
   const intellect = modelIntellect(model) ?? 0
+  if (intellectBand(intellect) !== band) {
+    throw new Error(`Cost-aware candidate ${model} does not belong to the ${band} band`)
+  }
 
   // If the estimated context exceeds the chosen model's window, say so — a real
   // router would escalate to a wider-context model here.
@@ -107,13 +164,15 @@ export function classifyModelForTask(input: ClassifyModelInput): ModelRecommenda
     reasons.push(
       `note: estimated context ${String(contextNeed)} exceeds ${model}'s ${String(info.contextWindow)}-token window`,
     )
+  } else if (pick.noCandidateFits) {
+    reasons.push('no candidate fits the estimated context — picked cheapest in band anyway')
   }
 
   // Confidence grows with how decisively the score clears the band boundaries.
   const confidence = Math.min(0.95, 0.5 + 0.15 * Math.abs(score))
   const rationale = reasons.length ? reasons.join('; ') : 'no strong signals — default mid-band'
 
-  return { band, intellect, model, confidence, rationale }
+  return { band, intellect, model, confidence, rationale, usdPerMTok: pick.usdPerMTok }
 }
 
 // Keyword → pipeline role, most-specific first (first match wins). This is the

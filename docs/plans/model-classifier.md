@@ -24,11 +24,13 @@ rationale }`. Task demand is expressed on the app's shared **model intellect sca
   [`advisor-strategy.md`](./advisor-strategy.md)): bands `low` / `mid` / `top` are
   derived from the annotated distribution, and each band's representative model
   (`BAND_REPRESENTATIVE_MODEL`: `claude-haiku-4-5` / `claude-sonnet-4-6` /
-  `claude-opus-4-8`) is scale-validated in tests so the picks must be revisited when
-  the scale grows. Signals: keyword hints, prompt length, context-window need, and
-  whether the task is agentic.
+  `claude-opus-4-8`) provides a fallback. Candidates in each band are ranked by
+  LiteLLM catalog pricing and filtered by context-window fit, keeping cost as a
+  separate axis from intellect. Signals: keyword hints, prompt length,
+  context-window need, and whether the task is agentic.
 - **Tool** `suggest_model` (`src/main/tools/model-classifier-tool.ts`) — advisory; returns
-  the recommendation. Registered only when the flag is on (`registry-bootstrap.ts`).
+  the recommendation including its estimated catalog rate. Registered only when
+  the flag is on (`registry-bootstrap.ts`).
 - **Tests** `model-classifier.test.ts`.
 
 The tool is advisory only and the classifier is pure — while the flag is off nothing is
@@ -44,7 +46,7 @@ registered and the model in use is never changed.
   on-device-only constraints (cf. #518).
 - **Better classifier** — replace the heuristic with a small local model or a cheap
   model-judge, and add a feedback loop (did the chosen model succeed or need escalation?).
-- Source per-model pricing/latency metadata for cost-aware routing.
+- Add latency metadata alongside pricing for latency-aware routing.
 
 See [`model-roles-and-defaults.md`](./model-roles-and-defaults.md) for a broader proposal
 that generalizes tiers into a full role registry (coder, reviewer, security-auditor, …), a
