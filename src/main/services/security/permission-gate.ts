@@ -1,4 +1,8 @@
 import { getWorkspaceRoot } from '../workspace.ts'
+import {
+  getActiveExecutionTarget,
+  isSshExecutionTarget,
+} from '../ssh-workspace/execution-target.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
 import { runPermissionDecisionHooks } from '../hooks/permission-decision.ts'
@@ -18,6 +22,7 @@ import { getSetting, setSetting } from '../storage/settings.ts'
 import {
   SANDBOX_TOOLS,
   decideShellPermission,
+  decideTerminalPermission,
   decideMcpPermission,
   decideWebFetchPermission,
   decideWebSearchPermission,
@@ -79,6 +84,11 @@ export interface ShellCommandPermissionOptions {
   sandboxEnabled?: boolean
   autoRun?: boolean
   networkScopeAlreadyApplies?: boolean
+}
+
+export interface TerminalPermissionOptions {
+  sandboxEnabled?: boolean
+  remoteTarget?: boolean
 }
 
 /**
@@ -491,11 +501,57 @@ async function checkBackgroundProcessPermission(args: unknown): Promise<boolean>
   return approved
 }
 
-/** Integrated terminal is a direct user UI action; PTY always runs outside seatbelt (#180). */
-// eslint-disable-next-line @typescript-eslint/require-await -- part of the uniformly-async permission-gate API (awaited by the terminal IPC handler)
-export async function ensureTerminalPermitted(): Promise<boolean> {
+/**
+ * The integrated terminal uses the project seatbelt when available. On a
+ * platform without that boundary (or after ASRT initialization failed), opening
+ * it creates a full-host shell and must be an explicit user decision. A new
+ * terminal also prompts while the process-global sandbox network scope is
+ * widened, because it would inherit that temporary egress. (#662, #803)
+ */
+export async function ensureTerminalPermitted(
+  opts: TerminalPermissionOptions = {},
+): Promise<boolean> {
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
-  return true
+  const decision = decideTerminalPermission({
+    sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
+    remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
+    networkScopeActive: isSandboxNetworkScopeActive(),
+  })
+  if (decision.action === 'allow') return true
+
+  if (decision.reason === 'widened-network') {
+    const { approved } = await requestApproval({
+      title: 'Open terminal with widened network access?',
+      body:
+        'The project sandbox network is temporarily widened for another process. ' +
+        'A new integrated terminal would inherit that network access until the scope closes.',
+      type: 'shell',
+      allowRemember: false,
+    })
+    return approved
+  }
+
+  if (decision.reason === 'remote-target') {
+    const { approved } = await requestApproval({
+      title: 'Open remote terminal?',
+      body:
+        'SSH-backed integrated terminals run outside the local project sandbox. ' +
+        'Commands you run can access the configured remote account and network.',
+      type: 'shell',
+      allowRemember: false,
+    })
+    return approved
+  }
+
+  const { approved } = await requestApproval({
+    title: 'Open unsandboxed terminal?',
+    body:
+      'The integrated terminal cannot be confined by the project sandbox on this platform. ' +
+      'Commands you run in it can access your full user account, filesystem, and network.',
+    type: 'shell',
+    allowRemember: false,
+  })
+  return approved
 }
 
 /**

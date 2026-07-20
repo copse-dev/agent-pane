@@ -1,5 +1,6 @@
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const PROJECT_ID = 'e2e-panel-toggle-project'
 
@@ -88,6 +89,8 @@ describe('right panel toggle and shortcuts', () => {
   it('opens terminal mode from the titlebar', async () => {
     const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
     await terminalBtn.click()
+    // Linux CI has no OS sandbox, so the terminal open itself prompts first.
+    await approveUnsandboxedTerminalIfPrompted()
 
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
     await expect(terminalBtn).toHaveElementClass('active')
@@ -122,6 +125,7 @@ describe('right panel toggle and shortcuts', () => {
     await closeRightPanelIfOpen()
     await focusOutsideComposer()
     await pressPanelChord({ ctrl: true, key: '`', code: 'Backquote' })
+    await approveUnsandboxedTerminalIfPrompted()
     await $('#pane-files').waitForDisplayed({ timeout: 5_000 })
     await expect($('.titlebar-btn[aria-label="Open terminal"]')).toHaveElementClass('active')
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
