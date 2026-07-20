@@ -36,14 +36,15 @@ export const DECISION_LOG_MEDIA_TYPE = 'application/vnd.copse.decision-log+jsonl
 export const DECISION_LOG_CONFORMANCE = 'draft-vaughan-machine-readability' as const
 
 /** Who made the decision. */
-export type DecisionActor = 'user' | 'classifier' | 'hook'
+export type DecisionActor = 'user' | 'classifier' | 'hook' | 'system'
 
 /**
  * The outcome. `approved`/`denied` are user verdicts; `allowed`/`blocked`/`ask`
  * are non-interactive policy/hook verdicts; `timeout` is a prompt that expired
  * unanswered (treated as a denial by the caller, recorded distinctly here).
  */
-export type DecisionVerdict = 'approved' | 'denied' | 'allowed' | 'blocked' | 'ask' | 'timeout'
+export type DecisionVerdict =
+  'approved' | 'denied' | 'allowed' | 'blocked' | 'ask' | 'classified' | 'timeout' | 'cancelled'
 
 /** One line of `decisions.jsonl`: a single control-plane decision. */
 export interface DecisionEvent {
@@ -161,14 +162,16 @@ export function serializeDecisionLine(event: DecisionEvent): string {
   return JSON.stringify(event)
 }
 
-const DECISION_ACTORS: ReadonlySet<string> = new Set(['user', 'classifier', 'hook'])
+const DECISION_ACTORS: ReadonlySet<string> = new Set(['user', 'classifier', 'hook', 'system'])
 const DECISION_VERDICTS: ReadonlySet<string> = new Set([
   'approved',
   'denied',
   'allowed',
   'blocked',
   'ask',
+  'classified',
   'timeout',
+  'cancelled',
 ])
 
 function isOptionalString(value: unknown): boolean {

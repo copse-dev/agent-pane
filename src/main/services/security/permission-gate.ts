@@ -400,7 +400,10 @@ export async function ensureShellCommandPermitted(
     recordDecision({
       kind: 'classification',
       actor: 'classifier',
-      verdict: classification.scope === 'sandbox' ? 'allowed' : 'blocked',
+      // This is evidence consumed by the policy, not the authorization result.
+      // Recording it as allowed/blocked would falsely claim the classifier
+      // granted or denied execution on platforms where it never may.
+      verdict: 'classified',
       subject: SHELL_DECISION_SUBJECT,
       scope: classification.scope,
       confidence: classification.confidence,

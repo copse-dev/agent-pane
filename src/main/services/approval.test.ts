@@ -10,6 +10,7 @@ import {
   type ApprovalRequest,
   type DockAttention,
 } from './approval.ts'
+import { readDecisionLog } from './security/decision-log-store.ts'
 
 const req: ApprovalRequest = { title: 'Run shell', body: 'rm -rf build', type: 'shell' }
 
@@ -34,7 +35,15 @@ describe('requestApproval pluggable transport', () => {
 
   it('denies (without hanging) when no handler is registered', async () => {
     setApprovalHandler(null)
-    assert.deepEqual(await requestApproval(req), { approved: false, remember: false })
+    assert.deepEqual(await requestApproval(req), {
+      approved: false,
+      remember: false,
+      resolution: 'unavailable',
+    })
+    const events = await readDecisionLog('_global')
+    assert.equal(events.at(-1)?.actor, 'system')
+    assert.equal(events.at(-1)?.verdict, 'cancelled')
+    assert.equal(events.at(-1)?.source, 'unavailable')
   })
 
   it('routes the request to the registered handler', async () => {
@@ -52,6 +61,30 @@ describe('requestApproval pluggable transport', () => {
     assert.equal((await requestApproval(req)).approved, true)
     setApprovalHandler(null)
     assert.equal((await requestApproval(req)).approved, false)
+  })
+
+  it('distinguishes timeout and window closure from user denial in the audit log', async () => {
+    setApprovalHandler(async () => ({
+      approved: false,
+      remember: false,
+      resolution: 'timeout',
+    }))
+    await requestApproval(req)
+    setApprovalHandler(async () => ({
+      approved: false,
+      remember: false,
+      resolution: 'window-closed',
+    }))
+    await requestApproval(req)
+
+    const events = await readDecisionLog('_global')
+    assert.deepEqual(
+      events.slice(-2).map(({ actor, verdict, source }) => ({ actor, verdict, source })),
+      [
+        { actor: 'system', verdict: 'timeout', source: 'timeout' },
+        { actor: 'system', verdict: 'cancelled', source: 'window-closed' },
+      ],
+    )
   })
 })
 

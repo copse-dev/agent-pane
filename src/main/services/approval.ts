@@ -39,6 +39,8 @@ export interface ApprovalRequest {
 export interface ApprovalResponse {
   approved: boolean
   remember: boolean
+  /** How the prompt settled; omitted by external handlers means a user decision. */
+  resolution?: 'user' | 'timeout' | 'window-closed' | 'unavailable'
   /** User-selected models from the comparison approval pickers. */
   comparisonModels?: ComparisonModelSelection
 }
@@ -62,17 +64,28 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
 }
 
 export async function requestApproval(req: ApprovalRequest): Promise<ApprovalResponse> {
-  const response = handler ? await handler(req) : { approved: false, remember: false }
+  const response = handler
+    ? await handler(req)
+    : { approved: false, remember: false, resolution: 'unavailable' as const }
+  const resolution = response.resolution ?? 'user'
   // Persist every user approval/denial to the durable decision log so "what did
   // I approve, when, at what scope, and did I make it sticky?" survives the
   // session. Best-effort — recordDecision never throws.
   recordDecision({
     kind: req.type,
-    actor: 'user',
-    verdict: response.approved ? 'approved' : 'denied',
+    actor: resolution === 'user' ? 'user' : 'system',
+    verdict:
+      resolution === 'user'
+        ? response.approved
+          ? 'approved'
+          : 'denied'
+        : resolution === 'timeout'
+          ? 'timeout'
+          : 'cancelled',
     subject: req.subject ?? req.title,
     ...(req.scope ? { scope: req.scope } : {}),
     remembered: response.remember,
+    ...(resolution === 'user' ? {} : { source: resolution }),
   })
   return response
 }
@@ -124,6 +137,7 @@ export function initApproval(win: BrowserWindow): void {
       settle(id, {
         approved,
         remember: remember === true,
+        resolution: 'user',
         ...(comparisonModels ? { comparisonModels } : {}),
       })
     } catch (err) {
@@ -134,7 +148,9 @@ export function initApproval(win: BrowserWindow): void {
 
   // If the window goes away, deny everything still pending so callers unblock.
   win.on('closed', () => {
-    for (const [id] of pending) settle(id, { approved: false, remember: false })
+    for (const [id] of pending) {
+      settle(id, { approved: false, remember: false, resolution: 'window-closed' })
+    }
   })
 
   setApprovalHandler(
@@ -153,7 +169,7 @@ export function initApproval(win: BrowserWindow): void {
         // also stop it when the approval settles for any reason.
         const stopDockAttention = startDockAttention(app.dock)
         const timer = setTimeout(() => {
-          settle(id, { approved: false, remember: false })
+          settle(id, { approved: false, remember: false, resolution: 'timeout' })
         }, APPROVAL_TIMEOUT_MS)
         if (typeof timer.unref === 'function') timer.unref()
         pending.set(id, (response) => {

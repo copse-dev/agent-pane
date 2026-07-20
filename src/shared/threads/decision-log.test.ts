@@ -54,7 +54,13 @@ describe('decision-log schema', () => {
 
   it('round-trips through serialize/parse', () => {
     const e = makeDecisionEvent(
-      { ...baseInput, actor: 'classifier', verdict: 'blocked', scope: 'external', confidence: 0.9 },
+      {
+        ...baseInput,
+        actor: 'classifier',
+        verdict: 'classified',
+        scope: 'external',
+        confidence: 0.9,
+      },
       'id-2',
       99,
     )
