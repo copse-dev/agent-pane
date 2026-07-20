@@ -136,6 +136,9 @@ async function spawnShell(
     rows,
     cwd: sessionCwd(),
     env: envForRendererChildProcess(),
+    // User-initiated Shells tabs run outside the project seatbelt; agent shell
+    // confinement stays on run_shell / run_background (#662, #812).
+    unsandboxed: true,
   })
 
   const session: TerminalSession = {

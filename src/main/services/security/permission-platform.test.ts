@@ -37,7 +37,7 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
     assert.equal(d.action, 'allow')
   })
 
-  it('auto-opens a terminal only while the global network scope is inactive', () => {
+  it('auto-opens a user terminal on macOS only while the global network scope is inactive', () => {
     assert.deepEqual(
       decideTerminalPermission({
         sandboxEnabled: true,
