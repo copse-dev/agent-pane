@@ -364,32 +364,45 @@ app
       return messageHistory.get(threadId) ?? []
     }
 
-    ipcMain.handle('agent:retryReview', async (event, threadIdArg: unknown, payload: unknown) => {
-      assertMainFrameSender(event, win)
-      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      await runWithActiveRunIdentity(threadId, () =>
-        retryPostTurnReview(
-          threadId,
-          hydrateHistory(threadId),
-          agentHost,
-          registry,
-          parseRetryPayload(payload),
-        ),
-      )
-    })
+    ipcMain.handle(
+      'agent:retryReview',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
+        if (!executionContext) return
+        await runWithThreadExecutionContext(executionContext, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            retryPostTurnReview(
+              threadId,
+              hydrateHistory(threadId),
+              agentHost,
+              registry,
+              parseRetryPayload(payload),
+            ),
+          ),
+        )
+      },
+    )
 
     ipcMain.handle(
       'agent:retryComparison',
-      async (event, threadIdArg: unknown, payload: unknown) => {
+      async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await runWithActiveRunIdentity(threadId, () =>
-          retryModelComparison(
-            threadId,
-            hydrateHistory(threadId),
-            agentHost,
-            registry,
-            parseRetryPayload(payload),
+        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
+        if (!executionContext) return
+        await runWithThreadExecutionContext(executionContext, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            retryModelComparison(
+              threadId,
+              hydrateHistory(threadId),
+              agentHost,
+              registry,
+              parseRetryPayload(payload),
+            ),
           ),
         )
       },

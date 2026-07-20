@@ -52,10 +52,10 @@ contextBridge.exposeInMainWorld('api', {
     estimateContext: (threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
-    retryReview: (threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retryReview', threadId, payload),
-    retryComparison: (threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retryComparison', threadId, payload),
+    retryReview: (projectId: string, threadId: string, payload: string) =>
+      ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
+    retryComparison: (projectId: string, threadId: string, payload: string) =>
+      ipcRenderer.invoke('agent:retryComparison', projectId, threadId, payload),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refreshModelContext'),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
