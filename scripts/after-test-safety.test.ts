@@ -172,4 +172,48 @@ describe('installDeleteSessionSafety', () => {
     await session.deleteSession()
     assert.equal(calls, 1)
   })
+
+  it('uses overwriteCommand when present (WDIO / @wdio/globals path)', async () => {
+    let killed = 0
+    let overwriteCalls = 0
+    let activeDelete: ((options?: unknown) => Promise<unknown>) | undefined
+
+    const session = {
+      deleteSession: async (): Promise<string> => {
+        throw new Error('raw deleteSession must not be called after overwriteCommand')
+      },
+      overwriteCommand(
+        name: string,
+        fn: (
+          this: unknown,
+          origCommand: (...args: unknown[]) => unknown,
+          ...args: unknown[]
+        ) => unknown,
+      ): void {
+        assert.equal(name, 'deleteSession')
+        overwriteCalls += 1
+        const orig = async (): Promise<string> => {
+          throw new Error(
+            'WebDriverError: Request failed with error code ECONNREFUSED when running DELETE',
+          )
+        }
+        activeDelete = async (options?: unknown): Promise<unknown> =>
+          await fn.call(session, orig, options)
+      },
+    }
+
+    installDeleteSessionSafety(session, {
+      budgetMs: 1_000,
+      kill: () => {
+        killed += 1
+      },
+    })
+    // Second install must not register another overwriteCommand.
+    installDeleteSessionSafety(session, { budgetMs: 1_000, kill: () => undefined })
+
+    assert.equal(overwriteCalls, 1)
+    assert.ok(activeDelete)
+    assert.equal(await activeDelete(), undefined)
+    assert.equal(killed, 1)
+  })
 })

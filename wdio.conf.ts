@@ -71,7 +71,9 @@ export const config: Options.Testrunner = {
   },
   before() {
     // A wedged deleteSession must not flip a green suite red (main tip cdeb3abf
-    // attempt 3 / git-changes-image). Cap + swallow transport deaths.
+    // attempt 3 / git-changes-image; tip 2686950f / shard 4 still FAILED until
+    // overwriteCommand patched the real browser behind @wdio/globals' Proxy).
+    // Cap + swallow transport deaths.
     installDeleteSessionSafety(browser)
   },
   afterTest: async (test, _context, result) => {
