@@ -37,7 +37,11 @@ grinding out large amounts of work before those PRs merge.
   store: a backlog list with per-item status badges plus an inline editor to jot a new
   prompt (with optional notes) and update an item's prompt / notes / status. Backed by
   `roadmap:*` IPC handlers (`register-handlers.ts`) that only touch `Roadmap`-typed
-  notes; the pane can be popped out into its own window like the other panes.
+  notes; the pane can be popped out into its own window like the other panes. Each
+  list row also carries a one-click mark-done toggle (✓ → `done`, shown struck
+  through; ↺ on a done row → `ready`) over a status-only `roadmap:setStatus` IPC that
+  mirrors the tool's `set_status` — no prompt round-trip, so the stored complexity
+  is never re-classified. Archived items keep the editor-only flow.
 - **Issue pinning** — an item can be pinned to the GitHub issue it is meant to solve.
   Stored as a canonical short ref (`#123` / `owner/repo#123`) in the note's `issue`
   frontmatter field (`src/shared/git/issue-ref.ts` parses pasted forms, including full
@@ -52,15 +56,17 @@ grinding out large amounts of work before those PRs merge.
   (`src/main/services/roadmap-issue-import.ts`). Issues already pinned by an item are
   shown but not re-importable.
 - **Complexity on save** — saving a prompt (create, edit, or import) classifies its
-  complexity one-shot as `low` / `medium` / `high` via the small-tasks model, with a 10s
-  timeout and the #557 heuristic classifier as fallback
+  complexity one-shot as `low` / `medium` / `high` via the small-tasks model only
   (`src/main/services/roadmap-complexity.ts`; vocabulary in
-  `src/shared/roadmap/complexity.ts`). The save itself is immediate: the note persists
-  first and the verdict is stamped in the background (`stampRoadmapComplexity`), with a
-  `roadmap:changed` push so the pane picks up the badge when it lands; a stamp whose
-  prompt was re-edited or deleted mid-flight is dropped. Stored in the `complexity`
-  frontmatter field and shown as a badge on the list row. Status/notes-only edits keep
-  the stored stamp — no model call.
+  `src/shared/roadmap/complexity.ts`). The ask spells out per-word anchors and says
+  medium is not a safe default — small models otherwise middle-anchor a bare three-way
+  choice. No keyword or model-routing heuristic fallback: when the model is unavailable
+  or unparseable the item simply stays unstamped (same stance as fit-check). The save
+  itself is immediate: the note persists first and the verdict is stamped in the
+  background (`stampRoadmapComplexity`), with a `roadmap:changed` push so the pane picks
+  up the badge when it lands; a stamp whose prompt was re-edited or deleted mid-flight
+  is dropped. Stored in the `complexity` frontmatter field and shown as a badge on the
+  list row. Status/notes-only edits keep the stored stamp — no model call.
 - **Check fit** — for a pinned item, an on-demand button asks the small-tasks model
   whether executing the prompt would plausibly resolve the pinned issue
   (`src/main/services/roadmap-fit-check.ts`, `getIssue` on the GitHub backend). Verdict

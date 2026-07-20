@@ -120,6 +120,7 @@ import {
   deleteKnowledgeNote,
   getKnowledgeNote,
   loadKnowledgeNotes,
+  setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
 import {
@@ -584,6 +585,18 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       (a) => a.id === attachmentId,
     )
     return att ? readKnowledgeAttachmentDataUrl(id, att) : null
+  })
+
+  // Status-only flip (the pane's row-level mark-done/reopen toggle). Mirrors
+  // the roadmap_plan tool's set_status action: no prompt/notes/issue
+  // round-trip, so the stored complexity is never re-classified.
+  ipcMain.handle('roadmap:setStatus', (event, rawId: unknown, rawStatus: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const status = parseIpcArgs(zRoadmapStatus, [rawStatus])
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return null
+    return setKnowledgeNoteStatus(id, status)
   })
 
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
