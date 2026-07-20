@@ -136,6 +136,22 @@ export function forceKillWedgedE2eSession(): void {
 
 export type SessionDeleter = {
   deleteSession: (options?: unknown) => Promise<unknown>
+  /**
+   * WDIO's supported command override. Required when `session` is the
+   * `@wdio/globals` Proxy — that Proxy has no `set` trap, so assigning
+   * `session.deleteSession = …` only mutates the empty Proxy target and never
+   * reaches `Runner.endSession`'s real browser instance (main tip 2686950f /
+   * e2e shard 4: green-body suites still FAILED on DELETE ECONNREFUSED).
+   */
+  overwriteCommand?: (
+    name: string,
+    // WDIO binds `this` to the real browser; keep it untyped so unit fakes stay simple.
+    fn: (
+      this: unknown,
+      origCommand: (...args: unknown[]) => unknown,
+      ...args: unknown[]
+    ) => unknown,
+  ) => void
 }
 
 const deleteSessionPatched = new WeakSet<object>()
@@ -147,6 +163,10 @@ export const DELETE_SESSION_BUDGET_MS = 5_000
  * Wrap `session.deleteSession` so a wedged Chromedriver teardown cannot mark a
  * passing suite FAILED. On timeout / transport death: force-kill orphans and
  * return. Real deleteSession success is unchanged.
+ *
+ * Prefer {@link SessionDeleter.overwriteCommand} when present (live WDIO
+ * browser / `@wdio/globals` Proxy). Fall back to own-property assignment for
+ * plain unit-test fakes.
  */
 export function installDeleteSessionSafety(
   session: SessionDeleter,
@@ -160,15 +180,32 @@ export function installDeleteSessionSafety(
 
   const budgetMs = options?.budgetMs ?? DELETE_SESSION_BUDGET_MS
   const kill = options?.kill ?? forceKillWedgedE2eSession
-  const original = session.deleteSession.bind(session)
 
-  session.deleteSession = async (deleteOptions?: unknown) => {
+  const runSafeDelete = async (invoke: () => Promise<unknown>): Promise<unknown> => {
     try {
-      return await withTimeout(original(deleteOptions), budgetMs, 'deleteSession')
+      return await withTimeout(invoke(), budgetMs, 'deleteSession')
     } catch (error) {
       kill()
       if (isIgnorableDeleteSessionError(error)) return undefined
       throw error
     }
   }
+
+  if (typeof session.overwriteCommand === 'function') {
+    session.overwriteCommand(
+      'deleteSession',
+      async function overwriteDeleteSession(
+        this: unknown,
+        origDeleteSession: (...args: unknown[]) => unknown,
+        ...args: unknown[]
+      ) {
+        return await runSafeDelete(async () => await origDeleteSession.apply(this, args))
+      },
+    )
+    return
+  }
+
+  const original = session.deleteSession.bind(session)
+  session.deleteSession = async (deleteOptions?: unknown) =>
+    await runSafeDelete(async () => await original(deleteOptions))
 }
