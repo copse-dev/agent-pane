@@ -372,7 +372,10 @@ describe('ensureTerminalPermitted', () => {
       return { approved: false, remember: false }
     })
     try {
-      assert.equal(await ensureTerminalPermitted({ sandboxEnabled: true }), true)
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        true,
+      )
       assert.equal(prompted, false)
     } finally {
       setApprovalHandler(null)
@@ -396,7 +399,10 @@ describe('ensureTerminalPermitted', () => {
       return { approved: false, remember: false }
     })
     try {
-      assert.equal(await ensureTerminalPermitted({ sandboxEnabled: true }), false)
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        false,
+      )
       assert.match(approvalTitle, /widened network access/i)
       assert.match(approvalBody, /temporarily widened/i)
       assert.equal(allowRemember, false)
@@ -421,8 +427,14 @@ describe('ensureTerminalPermitted', () => {
       return { approved: true, remember: true }
     })
     try {
-      assert.equal(await ensureTerminalPermitted({ sandboxEnabled: true }), true)
-      assert.equal(await ensureTerminalPermitted({ sandboxEnabled: true }), true)
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        true,
+      )
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        true,
+      )
       assert.equal(promptCount, 2)
     } finally {
       setApprovalHandler(null)
@@ -439,7 +451,10 @@ describe('ensureTerminalPermitted', () => {
       return { approved: true, remember: false }
     })
     try {
-      assert.equal(await ensureTerminalPermitted({ sandboxEnabled: false }), true)
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        true,
+      )
       assert.match(approvalBody, /full user account, filesystem, and network/i)
     } finally {
       setApprovalHandler(null)
@@ -451,7 +466,32 @@ describe('ensureTerminalPermitted', () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
     setApprovalHandler(async () => ({ approved: false, remember: false }))
     try {
-      assert.equal(await ensureTerminalPermitted({ sandboxEnabled: false }), false)
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        false,
+      )
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('requires approval for an SSH terminal even when the local sandbox is active', async () => {
+    const restore = setWorkspaceRootForTest('/remote/project')
+    let approvalTitle = ''
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalTitle = request.title
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: true }),
+        true,
+      )
+      assert.match(approvalTitle, /remote terminal/i)
+      assert.match(approvalBody, /outside the local project sandbox/i)
     } finally {
       setApprovalHandler(null)
       restore()

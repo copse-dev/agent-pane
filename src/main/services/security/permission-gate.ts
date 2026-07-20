@@ -1,4 +1,8 @@
 import { getWorkspaceRoot } from '../workspace.ts'
+import {
+  getActiveExecutionTarget,
+  isSshExecutionTarget,
+} from '../ssh-workspace/execution-target.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
 import { runPermissionDecisionHooks } from '../hooks/permission-decision.ts'
@@ -84,6 +88,7 @@ export interface ShellCommandPermissionOptions {
 
 export interface TerminalPermissionOptions {
   sandboxEnabled?: boolean
+  remoteTarget?: boolean
 }
 
 /**
@@ -509,6 +514,7 @@ export async function ensureTerminalPermitted(
   if (!getWorkspaceRoot()) throw new Error('No workspace open.')
   const decision = decideTerminalPermission({
     sandboxEnabled: opts.sandboxEnabled ?? isProjectSandboxEnabled(),
+    remoteTarget: opts.remoteTarget ?? isSshExecutionTarget(getActiveExecutionTarget()),
     networkScopeActive: isSandboxNetworkScopeActive(),
   })
   if (decision.action === 'allow') return true
@@ -519,6 +525,18 @@ export async function ensureTerminalPermitted(
       body:
         'The project sandbox network is temporarily widened for another process. ' +
         'A new integrated terminal would inherit that network access until the scope closes.',
+      type: 'shell',
+      allowRemember: false,
+    })
+    return approved
+  }
+
+  if (decision.reason === 'remote-target') {
+    const { approved } = await requestApproval({
+      title: 'Open remote terminal?',
+      body:
+        'SSH-backed integrated terminals run outside the local project sandbox. ' +
+        'Commands you run can access the configured remote account and network.',
       type: 'shell',
       allowRemember: false,
     })

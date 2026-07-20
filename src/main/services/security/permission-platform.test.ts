@@ -39,13 +39,29 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
 
   it('auto-opens a terminal only while the global network scope is inactive', () => {
     assert.deepEqual(
-      decideTerminalPermission({ sandboxEnabled: true, networkScopeActive: false }),
+      decideTerminalPermission({
+        sandboxEnabled: true,
+        remoteTarget: false,
+        networkScopeActive: false,
+      }),
       { action: 'allow' },
     )
-    assert.deepEqual(decideTerminalPermission({ sandboxEnabled: true, networkScopeActive: true }), {
-      action: 'prompt',
-      reason: 'widened-network',
-    })
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxEnabled: true,
+        remoteTarget: false,
+        networkScopeActive: true,
+      }),
+      { action: 'prompt', reason: 'widened-network' },
+    )
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxEnabled: true,
+        remoteTarget: true,
+        networkScopeActive: false,
+      }),
+      { action: 'prompt', reason: 'remote-target' },
+    )
   })
 
   it('runs network commands outside the sandbox after approval', () => {
@@ -117,7 +133,11 @@ for (const platform of ['Linux', 'Windows'] as const) {
 
     it('prompts for a terminal because the OS sandbox is unavailable', () => {
       assert.deepEqual(
-        decideTerminalPermission({ sandboxEnabled: false, networkScopeActive: false }),
+        decideTerminalPermission({
+          sandboxEnabled: false,
+          remoteTarget: false,
+          networkScopeActive: false,
+        }),
         { action: 'prompt', reason: 'sandbox-unavailable' },
       )
     })
