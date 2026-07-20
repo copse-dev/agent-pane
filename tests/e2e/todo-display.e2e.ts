@@ -75,6 +75,43 @@ describe('todo plan display', () => {
     await saveAppScreenshot('todo-inline-panel.png')
   })
 
+  it('applies expected padding to the todo panel card', async () => {
+    const inlinePanel = await $(
+      `.conversation-todos-host .pack-panel[data-pack-id="copse.todos"][data-contribution-id="plan"]`,
+    )
+    await inlinePanel.waitForExist({ timeout: 30_000 })
+
+    const padding = await browser.execute(() => {
+      const panel = document.querySelector(
+        '.conversation-todos-host .pack-panel[data-pack-id="copse.todos"]',
+      )
+      if (!panel) return null
+      const style = getComputedStyle(panel)
+      const row = document.querySelector('.pack-panel-row')
+      const rowStyle = row ? getComputedStyle(row) : null
+      return {
+        panelPaddingTop: style.paddingTop,
+        panelPaddingRight: style.paddingRight,
+        panelPaddingBottom: style.paddingBottom,
+        panelPaddingLeft: style.paddingLeft,
+        rowPaddingTop: rowStyle?.paddingTop ?? null,
+        rowPaddingBottom: rowStyle?.paddingBottom ?? null,
+      }
+    })
+
+    expect(padding).not.toBeNull()
+    // The .pack-panel card should use --spacing-md (≈8px) vertical and
+    // --spacing-lg (≈12px) horizontal, matching review/comparison panels.
+    expect(padding!.panelPaddingTop).toMatch(/^\d+px$/)
+    expect(padding!.panelPaddingBottom).toMatch(/^\d+px$/)
+    expect(parseInt(padding!.panelPaddingTop)).toBeLessThanOrEqual(parseInt(padding!.panelPaddingRight))
+    // Rows should have minimal vertical padding (2px) with none horizontally.
+    expect(padding!.rowPaddingTop).toBe('2px')
+    expect(padding!.rowPaddingBottom).toBe('2px')
+
+    await saveAppScreenshot('todo-inline-panel.png')
+  })
+
   it('hides inline todo panel when every todo is cancelled', async () => {
     await clickThreadByTitle(allCancelledThreadTitle)
     await expect($('.chat-row.selected .chat-title')).toHaveText(allCancelledThreadTitle)

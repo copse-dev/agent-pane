@@ -11,7 +11,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-elevated);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
   margin-bottom: var(--spacing-sm);
   font-size: 13px;
 }
