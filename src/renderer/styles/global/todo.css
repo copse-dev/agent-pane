@@ -11,7 +11,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-elevated);
-  padding: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-lg);
   margin-bottom: var(--spacing-sm);
   font-size: 13px;
 }
@@ -38,8 +38,10 @@
   color: var(--text-muted);
   font-size: 11px;
 }
-.pack-panel-list,
-.pack-panel-tree,
+/* Zero padding on the inner lists only — not `section.pack-panel.pack-panel-list`
+   (createPackPanelEl also puts pack-panel-${kind} on the section). */
+.pack-panel > .pack-panel-list,
+.pack-panel > .pack-panel-tree,
 .pack-panel-tree-children {
   list-style: none;
   margin: 0;
