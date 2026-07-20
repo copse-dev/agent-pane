@@ -56,7 +56,10 @@ docker compose down      # tear down
 ## Scaleway burst hosts
 
 Scaleway is the cheapest/easiest burst path when AWS billing or capacity is in
-the way. It uses the same runner image and labels as the local/AWS flows.
+the way. It uses the same runner image as the local/AWS flows. **Default burst
+registers e2e-only labels** (`copse-e2e`, not `copse-checks`) so check jobs
+routed via `CHECKS_RUNNER` do not compete with the e2e shard matrix; spin up a
+separate checks-only burst when the check tier also queues (below).
 
 Prerequisites:
 
@@ -74,7 +77,7 @@ Prerequisites:
   `GITHUB_URL` (org or repo), and `BUILD_GH_TOKEN` with read access to
   `agent-pane` plus the private `@copse/streaming-markdown` dependency.
 
-Default (`POP2-HC-8C-16G`, two runners per host — omit `--zone` to auto-pick an
+Default (`POP2-HC-8C-16G`, one e2e runner per host — omit `--zone` to auto-pick an
 AZ with quota):
 
 ```bash
@@ -125,8 +128,9 @@ Scaleway sizing guidance:
   `POP2-HC` AZ quota is exhausted; they just pay for RAM the runner won't use.
   Avoid the shared-vCPU `PLAY2` line for the e2e tier — CPU steal reintroduces
   the timeout variance this fleet exists to avoid; it's fine for check-only.
-- For check-only bursts, smaller 2 vCPU / 4 GiB types can be cost-effective, but
-  remove the e2e label: `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
+- Default burst is already e2e-only. For **check-only** bursts, run a separate
+  `up` on a smaller box with checks-only labels, e.g.
+  `--runner-labels self-hosted,linux,x64,docker,copse-checks,burst`.
 - `--ttl-minutes` defaults to 240. On Scaleway the host **self-terminates** via
   the Instance API after that TTL (server + SBS volume + flexible IP), matching
   AWS terminate-on-shutdown — a guest `shutdown` alone would only enter billed
@@ -187,10 +191,9 @@ Cost/packing guidance:
   e2e/check shape; `c7i.2xlarge` with 2 runners is the balanced default because
   it halves duplicated Docker builds and setup while keeping the same per-runner
   CPU/RAM budget. `c7i.4xlarge` with 4 runners is a denser option.
-- 2 vCPU / 4 GiB "medium" shapes can be cheaper for **check-only** bursts, but
-  do not give them the `copse-e2e` label; the current e2e failures look exactly
-  like memory pressure. For check-only, pass something like
-  `--runner-labels self-hosted,linux,x64,docker,copse-checks`.
+- Default burst is e2e-only (`copse-e2e,burst`). For **check-only** bursts, use
+  a separate `up` on a smaller box with checks-only labels — do not add
+  `copse-e2e`; the current e2e failures look exactly like memory pressure.
 - Many `c7i.xlarge` hosts cost about the same per vCPU as fewer larger c7i
   hosts, but duplicate Docker builds, EBS volumes, and setup. One very large
   host has coarser scale-down and larger single-host blast radius. Prefer a few

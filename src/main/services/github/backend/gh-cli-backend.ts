@@ -387,6 +387,7 @@ export const ghCliBackend: GitHubBackend = {
           url: entry.url,
           body: (entry.body ?? '').slice(0, 4000),
           labels: (entry.labels ?? []).filter((name): name is string => typeof name === 'string'),
+          state: 'open',
         }
         if (entry.updatedAt) summary.updatedAt = entry.updatedAt
         return summary
@@ -403,7 +404,7 @@ export const ghCliBackend: GitHubBackend = {
       '--repo',
       `${ref.owner}/${ref.repo}`,
       '--json',
-      'number,title,url,body,labels,updatedAt',
+      'number,title,url,body,labels,updatedAt,state',
     ])
     if (code !== 0) {
       // `gh issue view` exits non-zero for a missing number; treat as absent.
@@ -417,6 +418,7 @@ export const ghCliBackend: GitHubBackend = {
       body?: string
       labels?: Array<{ name?: string }>
       updatedAt?: string
+      state?: string
     }>(stdout.trim())
     if (!entry || typeof entry.number !== 'number' || !entry.title || !entry.url) return null
     const summary: GhIssueSummary = {
@@ -430,8 +432,63 @@ export const ghCliBackend: GitHubBackend = {
         .map((l) => l.name)
         .filter((name): name is string => typeof name === 'string'),
     }
+    if (entry.state === 'OPEN' || entry.state === 'open') summary.state = 'open'
+    else if (entry.state === 'CLOSED' || entry.state === 'closed') summary.state = 'closed'
     if (entry.updatedAt) summary.updatedAt = entry.updatedAt
     return summary
+  },
+
+  async searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
+    const slug = await getGithubRepoSlug()
+    if (!slug || !isGhAvailable()) return []
+    const [owner, repo] = slug.split('/')
+    if (!owner || !repo) return []
+    const trimmed = query.trim()
+    if (!trimmed) return []
+    const { stdout, stderr, code } = await runGh([
+      'search',
+      'issues',
+      trimmed,
+      '--repo',
+      slug,
+      '--limit',
+      String(limit),
+      '--json',
+      'number,title,url,body,labels,updatedAt,state',
+    ])
+    if (code !== 0) throw new Error(formatGhError(stderr, code))
+    const list = safeJsonParse<
+      Array<{
+        number?: number
+        title?: string
+        url?: string
+        body?: string
+        labels?: Array<{ name?: string }>
+        updatedAt?: string
+        state?: string
+      }>
+    >(stdout.trim())
+    if (!Array.isArray(list)) return []
+    return list
+      .map((entry) => {
+        if (typeof entry.number !== 'number' || !entry.title || !entry.url) return null
+        const summary: GhIssueSummary = {
+          owner,
+          repo,
+          number: entry.number,
+          title: entry.title,
+          url: entry.url,
+          body: (entry.body ?? '').slice(0, 4000),
+          labels: (entry.labels ?? [])
+            .map((l) => l.name)
+            .filter((name): name is string => typeof name === 'string'),
+        }
+        if (entry.state === 'OPEN' || entry.state === 'open') summary.state = 'open'
+        else if (entry.state === 'CLOSED' || entry.state === 'closed') summary.state = 'closed'
+        if (entry.updatedAt) summary.updatedAt = entry.updatedAt
+        return summary
+      })
+      .filter((entry): entry is GhIssueSummary => entry != null)
   },
 
   async getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {

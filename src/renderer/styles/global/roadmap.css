@@ -236,6 +236,99 @@
   height: 10px;
 }
 
+/* Review verdict — on-demand resolution judgement across the backlog. */
+.roadmap-review-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.roadmap-review-badge.is-resolved {
+  color: var(--success, #3fb950);
+}
+.roadmap-review-badge.is-likely {
+  color: color-mix(in srgb, var(--success, #3fb950) 70%, var(--warning, #d29922));
+}
+.roadmap-review-badge.is-partial {
+  color: var(--warning, #d29922);
+}
+.roadmap-review-badge.is-open {
+  color: var(--text-muted);
+}
+.roadmap-review-result {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.roadmap-review-result-meta {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs, 11px);
+  text-transform: lowercase;
+}
+.roadmap-review-row-detail {
+  color: var(--text-secondary);
+}
+.roadmap-review-row-detail ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+.roadmap-review-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.roadmap-review-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+}
+.roadmap-review-row.is-applied {
+  opacity: 0.82;
+  border-style: dashed;
+}
+.roadmap-review-row-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.roadmap-review-applied-badge {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--success, #3fb950) 18%, transparent);
+  color: var(--success, #3fb950);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.roadmap-review-row-actions {
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  padding-top: 2px;
+}
+.roadmap-review-actions {
+  flex-wrap: wrap;
+}
+.roadmap-review-row-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 /* Import-from-issues picker (viewer column). */
 .roadmap-import-list {
   flex: 1;

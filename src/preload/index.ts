@@ -608,6 +608,13 @@ contextBridge.exposeInMainWorld('api', {
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
       ipcRenderer.invoke('roadmap:importIssues', issues),
     checkFit: (id: string) => ipcRenderer.invoke('roadmap:checkFit', id),
+    prepareReview: () => ipcRenderer.invoke('roadmap:prepareReview'),
+    lastReviewAt: () => ipcRenderer.invoke('roadmap:lastReviewAt'),
+    reviewItem: (id: string, commits: string, runId?: string) =>
+      ipcRenderer.invoke('roadmap:reviewItem', id, commits, runId),
+    reviewItemDeep: (id: string) => ipcRenderer.invoke('roadmap:reviewItemDeep', id),
+    completeReview: (runId: string) => ipcRenderer.invoke('roadmap:completeReview', runId),
+    abortReview: (runId: string) => ipcRenderer.invoke('roadmap:abortReview', runId),
     // Fired when a background complexity stamp lands on a saved item.
     onChanged: (handler: () => void) => {
       const listener = (): void => {

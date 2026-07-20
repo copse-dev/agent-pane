@@ -90,6 +90,20 @@ grinding out large amounts of work before those PRs merge.
   hydrates thumbnails lazily). "Start thread" carries them into the composer — images
   as image attachments, UTF-8 files as file chips — and the `roadmap_plan` list output
   names each item's attachments.
+- **Review** — the pane's ◎ button reviews every non-archived item for resolution.
+  For each item it checks the pinned GitHub issue (including closed state),
+  cross-linked issues mentioning that pin, commits since the last **acknowledged**
+  bulk review, and asks the small-tasks model for an advisory `resolved` / `likely` /
+  `partial` / `open` verdict (`src/main/services/roadmap-review.ts`). Verdicts stamp
+  `reviewVerdict` / `reviewDetail` / `reviewBulkRun` on the note; status is never
+  auto-changed. The commit checkpoint advances only when the user **Close**s the
+  results panel after a finished run — closing mid-run or abandoning triage without
+  Close does not shrink the next bulk commit window. Opening an item runs a **deep**
+  resolution check automatically when its bulk verdict is stale (older acknowledged
+  pass); **Check resolution** triggers the same deep path manually (full commit
+  history since the item was created). After the run, the results panel offers per-row **Open**, **Mark done**, and
+  **Archive** (for `resolved` / `likely` verdicts) plus bulk mark/archive for
+  the same set — every status change is an explicit click.
 
 While the flag is off the tool is not registered, the pane's titlebar button is hidden,
 and nothing reads or writes the store — the feature is fully inert.
