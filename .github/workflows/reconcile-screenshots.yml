@@ -109,34 +109,36 @@ jobs:
       matrix:
         pr: ${{ fromJSON(needs.list.outputs.prs) }}
     steps:
-      # The list→matrix handoff is not atomic: a PR can merge (and GitHub deletes
-      # its head branch) after `list` emits it and before this job checks out —
-      # same race as commit-screenshots / #1001. Probe first and no-op green;
-      # there is nothing to reconcile onto once the branch is gone.
-      - name: Check head branch still exists
-        id: head
+      # The list→matrix handoff is not atomic: a PR can merge after `list` emits
+      # it and before this job checks out — same race as commit-screenshots /
+      # #1001. Re-fetch the PR and no-op only when GitHub confirms it is closed.
+      # An API error must fail the job instead of being mistaken for a deleted
+      # branch and silently skipping a live conflict.
+      - name: Check pull request is still open
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ matrix.pr.head }}
+          PR_NUMBER: ${{ matrix.pr.number }}
         run: |
-          if gh api "repos/${{ github.repository }}/branches/$BRANCH" --silent 2>/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+          state="$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq .state)"
+          if [ "$state" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::Head branch '$BRANCH' no longer exists (PR #${{ matrix.pr.number }} merged and branch deleted) — skipping reconcile."
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR #$PR_NUMBER is $state — skipping reconcile."
+            echo "open=false" >> "$GITHUB_OUTPUT"
           fi
       # PAT so the resolving push re-triggers the PR's CI (GITHUB_TOKEN pushes are
       # recursion-guarded and wouldn't fire `synchronize`, leaving ci-passed stale
       # on the new head). Falls back to github.token: the conflict still clears,
       # just without the CI re-trigger.
       - uses: actions/checkout@v7.0.0
-        if: steps.head.outputs.exists == 'true'
+        if: steps.pr.outputs.open == 'true'
         with:
           ref: ${{ matrix.pr.head }}
           fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - name: Merge main, auto-resolving screenshot-only conflicts
-        if: steps.head.outputs.exists == 'true'
+        if: steps.pr.outputs.open == 'true'
         id: merge
         env:
           PR_NUMBER: ${{ matrix.pr.number }}
@@ -193,7 +195,7 @@ jobs:
           echo "resolved=true" >> "$GITHUB_OUTPUT"
       - name: Comment when manual resolution is needed
         if: >-
-          steps.head.outputs.exists == 'true' &&
+          steps.pr.outputs.open == 'true' &&
           (steps.merge.outputs.manual == 'true' || steps.merge.outputs.workflow == 'true')
         uses: actions/github-script@v9
         env:
