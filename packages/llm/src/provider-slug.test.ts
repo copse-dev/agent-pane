@@ -41,19 +41,22 @@ describe('providerSlugFromBaseUrl', () => {
 
 describe('uniqueProviderSlug', () => {
   it('returns the base when it is free', () => {
-    assert.equal(uniqueProviderSlug('together'), 'together')
+    assert.equal(uniqueProviderSlug('acme'), 'acme')
   })
 
   it('suffixes when colliding with a reserved built-in slug', () => {
     assert.equal(uniqueProviderSlug('mistral'), 'mistral-2')
+    assert.equal(uniqueProviderSlug('groq'), 'groq-2')
+    assert.equal(uniqueProviderSlug('together'), 'together-2')
+    assert.equal(uniqueProviderSlug('fireworks'), 'fireworks-2')
     for (const reserved of RESERVED_PROVIDER_SLUGS) {
       assert.notEqual(uniqueProviderSlug(reserved), reserved)
     }
   })
 
   it('suffixes past slugs already taken by other customs', () => {
-    assert.equal(uniqueProviderSlug('together', ['together']), 'together-2')
-    assert.equal(uniqueProviderSlug('together', ['together', 'together-2']), 'together-3')
+    assert.equal(uniqueProviderSlug('acme', ['acme']), 'acme-2')
+    assert.equal(uniqueProviderSlug('acme', ['acme', 'acme-2']), 'acme-3')
   })
 
   it('falls back to "provider" for empty/garbage input', () => {
