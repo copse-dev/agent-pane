@@ -364,7 +364,7 @@ describe('run_background permission', () => {
 })
 
 describe('ensureTerminalPermitted', () => {
-  it('auto-allows a sandboxed terminal while the global network scope is inactive', async () => {
+  it('auto-allows a user terminal on macOS while the global network scope is inactive', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
     let prompted = false
     setApprovalHandler(async () => {
@@ -383,7 +383,7 @@ describe('ensureTerminalPermitted', () => {
     }
   })
 
-  it('requires approval for a sandboxed terminal while the global network scope is widened', async () => {
+  it('requires approval for a user terminal while the global network scope is widened', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
     const release = acquireSandboxNetworkScope({
       domains: ['vendor.example'],
