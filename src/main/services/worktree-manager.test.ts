@@ -402,6 +402,50 @@ describe('worktree manager', () => {
     )
   })
 
+  it('retains ignored files during explicit retirement and orphan pruning', async () => {
+    const { repo } = await setup()
+    await writeFile(join(repo, '.gitignore'), 'ignored/\n')
+    git(repo, ['add', '.gitignore'])
+    git(repo, ['commit', '-q', '-m', 'ignore local artifacts'])
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-ignored',
+      projectRoot: repo,
+      prompt: 'Ignored content retention',
+      baseBranch: 'main',
+    })
+    await mkdir(join(worktree.path, 'ignored'))
+    const artifact = join(worktree.path, 'ignored', 'valuable.txt')
+    await writeFile(artifact, 'keep me\n')
+
+    const retired = await retireThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-ignored',
+      projectRoot: repo,
+      worktree,
+    })
+    assert.equal(retired.status, 'blocked-dirty')
+    assert.ok(retired.paths.includes('ignored/'))
+    assert.equal(await readFile(artifact, 'utf-8'), 'keep me\n')
+
+    const report = await pruneSafeOrphans({
+      projectId: 'project-1',
+      projectRoot: repo,
+      knownThreadIds: new Set(),
+      baseBranch: 'main',
+    })
+    assert.deepEqual(report.pruned, [])
+    assert.ok(
+      report.retained.some(
+        (entry) =>
+          entry.threadId === 'thread-ignored' &&
+          entry.reason === 'dirty' &&
+          entry.paths?.includes('ignored/'),
+      ),
+    )
+    assert.equal(await readFile(artifact, 'utf-8'), 'keep me\n')
+  })
+
   it('prunes only clean merged ownerless worktrees and itemizes retained recovery cases', async () => {
     const { repo } = await setup()
     const known = await allocateThreadWorktree({
