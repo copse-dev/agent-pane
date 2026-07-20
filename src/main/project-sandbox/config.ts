@@ -3,7 +3,10 @@ import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { SandboxRuntimeConfig } from '@anthropic-ai/sandbox-runtime'
 import { getSetting } from '../services/storage/settings.ts'
-import { getChatStoreRootSync } from '../services/workspace.ts'
+import {
+  getChatStoreRootSync,
+  getInternalWorkspaceRootRegistration,
+} from '../services/workspace.ts'
 import {
   WEB_ALLOWED_ORIGINS_SETTING,
   sandboxAllowedDomainsFromOrigins,
@@ -355,6 +358,7 @@ export function portBindingSandboxOverlay(workspaceRoot: string): Partial<Sandbo
 
 export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxRuntimeConfig> {
   const root = canonicalizeWorkspaceRoot(workspaceRoot)
+  const internalRoot = getInternalWorkspaceRootRegistration(root)
   const toolchainRead = resolveNodeToolchainAllowRead()
   // A workspace-owned scratch dir so commands writing to $TMPDIR stay on the
   // allow-list instead of hitting the system /tmp deny (issue #481). Created
@@ -369,6 +373,45 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // writes too, matching the workspace-only path guards.
   const chatStore = getChatStoreRootSync()
   const chatStoreRead = chatStore ? [chatStore, `${chatStore}/**`] : []
+  // Linked worktrees keep their index/HEAD in a per-worktree admin directory
+  // and share objects/refs with the parent repository. These paths come only
+  // from a main-process-validated internal-root registration. Do not allow the
+  // common directory wholesale: sibling worktree admin state, hooks, and config
+  // remain outside the writable surface.
+  const gitAdminRead = internalRoot
+    ? [
+        internalRoot.gitDir,
+        `${internalRoot.gitDir}/**`,
+        internalRoot.commonGitDir,
+        join(internalRoot.commonGitDir, 'objects/**'),
+        join(internalRoot.commonGitDir, 'refs/**'),
+        join(internalRoot.commonGitDir, 'logs/**'),
+        join(internalRoot.commonGitDir, 'info/**'),
+        join(internalRoot.commonGitDir, 'worktrees'),
+        join(internalRoot.commonGitDir, 'config'),
+        join(internalRoot.commonGitDir, 'packed-refs'),
+        join(internalRoot.commonGitDir, 'shallow'),
+      ]
+    : []
+  const gitAdminWrite = internalRoot
+    ? [
+        internalRoot.gitDir,
+        `${internalRoot.gitDir}/**`,
+        join(internalRoot.commonGitDir, 'objects/**'),
+        join(internalRoot.commonGitDir, 'refs/**'),
+        join(internalRoot.commonGitDir, 'logs/**'),
+        join(internalRoot.commonGitDir, 'packed-refs'),
+      ]
+    : []
+  const gitAdminDenyWrite = internalRoot
+    ? [
+        join(internalRoot.commonGitDir, 'config'),
+        join(internalRoot.commonGitDir, 'hooks'),
+        join(internalRoot.commonGitDir, 'hooks/**'),
+        join(internalRoot.commonGitDir, 'worktrees/**'),
+        `${internalRoot.gitDir}/hooks/**`,
+      ]
+    : []
   return {
     // Auto-run, sandbox-contained commands get NO network (see
     // containedSandboxNetworkConfig); only user-approved commands run with
@@ -386,9 +429,10 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         ...toolchainRead,
         ...gitConfigReadPaths(),
         ...chatStoreRead,
+        ...gitAdminRead,
       ],
-      allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`],
-      denyWrite: workspaceMandatoryWriteDenyPaths(root),
+      allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`, ...gitAdminWrite],
+      denyWrite: [...workspaceMandatoryWriteDenyPaths(root), ...gitAdminDenyWrite],
       allowGitConfig: true,
     },
   }

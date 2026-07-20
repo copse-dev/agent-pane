@@ -26,7 +26,7 @@ import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
 import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import type {
   DialectAdapter,
   DialectDiscoverOpts,
@@ -346,7 +346,8 @@ export async function claudeToolGateHooks(
         dialect: 'claude' as const,
         command: h.command,
         onFailure: 'open' as const,
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
       }
     })
@@ -377,7 +378,8 @@ export async function claudeSessionStartHooks(
         dialect: 'claude' as const,
         command: h.command,
         onFailure: 'open' as const,
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? CLAUDE_DEFAULT_HOOK_TIMEOUT_MS,
       }
     })
@@ -466,13 +468,13 @@ export const claudeAdapter: DialectAdapter = {
   // unused: Claude's PreToolUse contract has no conversation/generation/model
   // fields — Claude carries an optional `model` on `sessionStart` only (H4 fire
   // site), matching the vendor audit in docs/plans/hooks-and-feature-packs.md.
-  marshalToolGateRequest(_hook, payload, _session) {
+  marshalToolGateRequest(hook, payload, _session) {
     const mapped = claudeToolForTool(payload.toolName, payload.input)
     if (!mapped) return null
     return {
       session_id: '',
       transcript_path: '',
-      cwd: getWorkspaceRoot() ?? '',
+      cwd: hook.executionRoot ?? getAgentExecutionRoot() ?? '',
       permission_mode: 'default',
       hook_event_name: 'PreToolUse',
       tool_name: mapped.toolName,
@@ -507,7 +509,7 @@ export const claudeAdapter: DialectAdapter = {
     return { outcome, failed: false, parseOk, spineEvent, spineDecision: spineDecisionFor(outcome) }
   },
 
-  marshalSessionStartRequest(_hook, _payload, session) {
+  marshalSessionStartRequest(hook, _payload, session) {
     // Claude's SessionStart stdin (vendor docs): `session_id`, `transcript_path`,
     // `cwd`, `hook_event_name`, and `source`. Copse fires on a new conversation,
     // which maps to the `startup` source. B4 readiness: SessionStart is the one
@@ -517,7 +519,7 @@ export const claudeAdapter: DialectAdapter = {
     const req: Record<string, unknown> = {
       session_id: session?.conversationId ?? '',
       transcript_path: '',
-      cwd: getWorkspaceRoot() ?? '',
+      cwd: hook.executionRoot ?? getAgentExecutionRoot() ?? '',
       hook_event_name: 'SessionStart',
       source: 'startup',
     }

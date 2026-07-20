@@ -103,7 +103,7 @@ import {
   setAgentRunTodos,
 } from './agent-run-todos.ts'
 import { getGithubRepoSlug, getGitDiffText, countDiffChangedLines } from './github/git-service.ts'
-import { getWorkspaceRoot } from './workspace.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
 import { isWorkspaceTrusted } from './security/workspace-trust.ts'
 import { runBeforeSubmitPromptHooks } from './hooks/before-submit-prompt.ts'
 import { runStopHooks } from './hooks/stop.ts'
@@ -310,11 +310,13 @@ async function runBeforeSubmitPrompt(
   // beforeSubmitPrompt hooks would spawn on every submit even with the feature
   // off (the default) — a consent-gate bypass and needless per-submit discovery.
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return { blocked: null }
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = getAgentProjectRoot()
+  const executionRoot = getAgentExecutionRoot()
   beginHookRunRecording(threadId)
   try {
     const decision = await runBeforeSubmitPromptHooks(promptTextForSubmit(userPrompt), {
       workspaceRoot,
+      executionRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
       // Real conversation/generation ids + running model on the wire payload (B4).
       agentSession: currentAgentSessionInfo({ conversationId: threadId }),
@@ -382,7 +384,8 @@ function fireStopHook(
   runTurnTreeId?: TurnTreeId,
 ): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = getAgentProjectRoot()
+  const executionRoot = getAgentExecutionRoot()
   // Capture the agent-session identity **by value** now, synchronously — `stop`
   // dispatches detached (decision 3) and the run's recording context is torn
   // down right after, so reading ambient ids at marshal time would come up empty
@@ -402,6 +405,7 @@ function fireStopHook(
     threadId,
     turnTreeId,
     workspaceRoot,
+    executionRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession,
     recordingSnapshot,
@@ -423,7 +427,8 @@ function firePostTurnReviewHook(
   payload: { issuesFound: boolean; summary: string },
 ): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = getAgentProjectRoot()
+  const executionRoot = getAgentExecutionRoot()
   // Snapshot the recording context now, synchronously, like `fireStopHook`:
   // `postTurnReview` fires just before the terminal `done` and the dispatch is
   // detached, so the hook may settle after `endHookRunRecording` (decision 3/6).
@@ -432,6 +437,7 @@ function firePostTurnReviewHook(
     threadId,
     turnTreeId,
     workspaceRoot,
+    executionRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession: currentAgentSessionInfo(),
     recordingSnapshot,
@@ -465,7 +471,8 @@ function fireAfterToolUseHook(args: {
   durationMs: number
 }): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = getAgentProjectRoot()
+  const executionRoot = getAgentExecutionRoot()
   // Capture the agent-session identity by value now — the hook dispatches
   // detached (decision 3) and may marshal after this turn's recording context is
   // torn down (B4).
@@ -492,6 +499,7 @@ function fireAfterToolUseHook(args: {
       threadId: args.threadId,
       turnTreeId: args.turnTreeId,
       workspaceRoot,
+      executionRoot,
       projectTrusted: isWorkspaceTrusted(workspaceRoot),
       agentSession,
       recordingSnapshot,

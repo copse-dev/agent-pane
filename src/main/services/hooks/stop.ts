@@ -107,6 +107,7 @@ export async function runStopHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   // Cursor + Copse (F1) declare a run-end hook; Claude's Stop is Phase D.

@@ -55,6 +55,7 @@ export async function runBeforeSubmitPromptHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   // Cursor + Copse declare a compose-path hook; Claude has none.

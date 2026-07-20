@@ -20,7 +20,6 @@ import {
 } from './git-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import { setGitAvailableForTest } from '../tool-availability.ts'
-import { DEFAULT_GIT_BRANCH } from '@shared/types/git.ts'
 
 describe('parseAheadBehind', () => {
   it('reads the "<behind>\\t<ahead>" left-right count', () => {
@@ -633,12 +632,14 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
     assert.equal(await getDefaultBranch(), 'develop')
   })
 
-  it(`falls back to ${DEFAULT_GIT_BRANCH} when no remote and no configured default`, async () => {
+  it('returns null when no remote or configured default resolves the branch', async () => {
     repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-fallback-'))
     git('init', '-q')
-    git('config', '--unset', 'init.defaultBranch')
+    // Override any machine-level init.defaultBranch with an explicitly empty
+    // local value so this remains deterministic on developer machines.
+    git('config', 'init.defaultBranch', '')
     restore = setWorkspaceRootForTest(repo)
 
-    assert.equal(await getDefaultBranch(), DEFAULT_GIT_BRANCH)
+    assert.equal(await getDefaultBranch(), null)
   })
 })
