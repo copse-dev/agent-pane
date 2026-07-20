@@ -78,9 +78,7 @@
   width: auto;
   flex: 0 0 auto;
   min-width: 0;
-  padding-inline: 6px;
-  padding-block: 2px;
-  font-size: 12px;
+  padding-inline: var(--spacing-sm);
 }
 .roadmap-form .memories-actions .memories-btn-danger {
   margin-left: 0;
