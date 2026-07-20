@@ -1,6 +1,6 @@
 # Long-horizon tasks (within a PR)
 
-Tracking: [#558](https://github.com/jonathanKingston/agent-pane/issues/558)
+Tracking: [#558](https://github.com/copse-dev/agent-pane/issues/558)
 
 Status: **experimental scaffold** — off by default behind the `longHorizonTasksEnabled`
 setting (Settings → Experimental).

@@ -1,6 +1,6 @@
 # Advisor strategy
 
-Tracking: [#566](https://github.com/jonathanKingston/agent-pane/issues/566)
+Tracking: [#566](https://github.com/copse-dev/agent-pane/issues/566)
 
 Status: **experimental scaffold** — off by default behind the `advisorStrategyEnabled`
 setting (Settings → Experimental).

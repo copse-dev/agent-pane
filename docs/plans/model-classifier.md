@@ -1,6 +1,6 @@
 # Model classifier
 
-Tracking: [#557](https://github.com/jonathanKingston/agent-pane/issues/557)
+Tracking: [#557](https://github.com/copse-dev/agent-pane/issues/557)
 
 Status: **experimental scaffold** — off by default behind the `modelClassifierEnabled`
 setting (Settings → Experimental).

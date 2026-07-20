@@ -1,9 +1,9 @@
 # Hooks platform & feature packs
 
-Status: **in progress** — design settled (July 2026); M0.1–M0.3 (registry core,
-turn-start extraction, finalize closeout extraction) and A1 (full canonical event
-catalogue + command executor kind + executor capability split) landed. This
-document is the source of truth for the phased issue breakdown below. It extends
+Status: **Active** — design settled (July 2026). The major hook-platform foundations
+and feature-pack phases P1–P4 are on `main`; P5 is open in
+[#956](https://github.com/copse-dev/agent-pane/pull/956). This document is the
+source of truth for the phased breakdown below. It extends
 [`docs/cursor-hooks.md`](../cursor-hooks.md) (current Cursor-hooks support) and folds in
 PR #879 (Claude `PreToolUse` hooks) and the direction of PR #840 (permission-decision
 audit trail).

@@ -1,11 +1,11 @@
 # SSH support for remote repos
 
-**Status:** exploration / plan. Nothing here is implemented. This document maps
-every moving part required to let Copse work with a repository that lives on a
-**remote host reachable over SSH** (VS Code Remote-SSH-style), plus the smaller
-prerequisite of making **SSH-authenticated git remotes** work properly on local
-checkouts. It is grounded in a code audit of the current `main` — file/line
-references below are from that audit.
+**Status: Resolved core.** The remote workspace stack—connection management,
+execution and PTYs, filesystem, git, search, and UI—shipped in
+[#942](https://github.com/copse-dev/agent-pane/pull/942). Port forwarding remains
+tracked in [#771](https://github.com/copse-dev/agent-pane/issues/771); semantic
+indexing and locally spawned ACP agents are unavailable on SSH workspaces. This
+document is retained as the original design and audit record.
 
 ## Two readings of "SSH support", and why the plan covers both
 

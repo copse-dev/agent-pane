@@ -1,7 +1,8 @@
 # Copse-provisioned cloud workspaces
 
-**Status:** plan / decision record. Nothing here is implemented. This is stage
-two of the direction started in
+**Status: Proposed.** The app-level provision/attach workflow is not implemented.
+Its remote-e2e and SSH-workspace prerequisites have since shipped, but they do not
+provision cloud workspaces from Copse. This is stage two of the direction started in
 [`remote-e2e-dev-loop.md`](remote-e2e-dev-loop.md): once cloud containers are
 part of the _developer's_ loop (offloading e2e), let **Copse itself** spin up
 cloud containers for any workspace — so a thread's execution, tests, and
