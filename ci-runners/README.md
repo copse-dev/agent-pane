@@ -102,8 +102,14 @@ Useful follow-ups (`status`/`down` scan all AZs unless `--zone` is set):
 
 ```bash
 npm run runners:burst:scw -- status
+npm run runners:burst:scw -- drain --instances 1 --yes # gracefully remove newest host
 npm run runners:burst:scw -- down --yes --wait
 ```
+
+Use `down --instances N --yes` to terminate only the newest N hosts immediately,
+or Scaleway's `drain --instances N --yes` to stop those hosts accepting new jobs,
+wait for in-flight jobs, and then terminate them. The partial form must leave at
+least one host; omit `--instances` for the existing explicit whole-fleet teardown.
 
 Scaleway sizing guidance:
 
@@ -209,8 +215,14 @@ Useful follow-ups:
 
 ```bash
 npm run runners:burst -- status --region us-east-1
+npm run runners:burst -- down --region us-east-1 --instances 1 --yes --wait
 npm run runners:burst -- down --region us-east-1 --yes --wait
 ```
+
+`down --instances N` removes only the newest N hosts and refuses to remove the
+entire remaining fleet. Omit `--instances` when a whole-fleet teardown is
+intentional. AWS does not yet support graceful `drain`, so check the Actions
+queue before using partial or full `down` there.
 
 Secrets are read from environment variables (`GITHUB_RUNNER_PAT` and
 `BUILD_GH_TOKEN` by default) rather than command-line flags so they do not appear
