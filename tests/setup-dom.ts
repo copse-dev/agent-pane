@@ -28,6 +28,11 @@ Object.assign(globalThis, {
   CustomEvent: win.CustomEvent,
   ErrorEvent: win.ErrorEvent,
   Element: win.Element,
+  // HTMLElement is what renderer DOM helpers / tip layers return. Expose it so
+  // `instanceof HTMLElement` works under happy-dom the same way Element does —
+  // without this, tests that need `.style` / `.hidden` either throw at runtime
+  // or fail typecheck after narrowing only to Element.
+  HTMLElement: win.HTMLElement,
   // Node carries the nodeType constants (Node.TEXT_NODE, …) that DOM-walking
   // renderer code (e.g. the composer editor's serializer) compares against.
   Node: win.Node,

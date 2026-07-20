@@ -589,9 +589,14 @@ describe('positionFrontierTooltip', () => {
     const content = document.createElement('div')
     content.textContent = 'Wide hover card content that should not wrap into a skinny column'
 
+<<<<<<< HEAD
     // Type-only generic (no runtime HTMLElement global — setup-dom exposes Element).
     const tipEl = container.querySelector<HTMLElement>('.frontier-tooltip')
     assert.ok(tipEl)
+=======
+    const tipEl = container.querySelector('.frontier-tooltip')
+    assert.ok(tipEl instanceof HTMLElement)
+>>>>>>> 48c064bd (fix(test): expose happy-dom HTMLElement for tooltip layer assertions)
     Object.defineProperty(tipEl, 'offsetWidth', { value: 280 })
     Object.defineProperty(tipEl, 'offsetHeight', { value: 64 })
 
