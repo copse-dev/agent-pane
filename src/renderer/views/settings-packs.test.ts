@@ -155,6 +155,23 @@ describe('settings → packs list', () => {
     assert.match(list.textContent, /No packs registered\./)
   })
 
+  it('describes packs without internal design-doc leaks, linking the manifest docs', async () => {
+    await openPacks({ packs: [] }, spy)
+    const section = document.querySelector('.settings-section[data-section="packs"]')
+    assert.ok(section)
+    const desc = section.querySelector('.settings-section-desc')
+    assert.ok(desc)
+    assert.doesNotMatch(desc.textContent, /decision\s*17/i)
+    assert.doesNotMatch(desc.innerHTML, /<code>\s*docs\/packs\.md\s*<\/code>/i)
+    const docsLink = desc.querySelector<HTMLAnchorElement>(
+      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/packs.md"]',
+    )
+    assert.ok(docsLink)
+    assert.equal(docsLink.target, '_blank')
+    assert.match(docsLink.rel, /noopener/)
+    assert.match(docsLink.textContent, /pack manifest docs/i)
+  })
+
   it('renders one row per pack with a toggle, name, version, and trust badge', async () => {
     const list = await openPacks({ packs: [demoPack, disabledUserPack] }, spy)
     const rows = list.querySelectorAll('.pack-row')

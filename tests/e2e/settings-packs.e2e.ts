@@ -25,7 +25,9 @@ function settingsSection(section: string) {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
-describe('settings packs (about:addons)', () => {
+describe('settings packs (about:addons)', function () {
+  this.timeout(60_000)
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
@@ -51,6 +53,18 @@ describe('settings packs (about:addons)', () => {
     const packs = settingsSection('packs')
     await expect(packs).toBeDisplayed()
     await expect(packs.$('legend=Installed packs')).toBeDisplayed()
+
+    // Section copy must stay user-facing: no internal design-doc refs, and the
+    // manifest docs path must be a real link (not a bare <code> path).
+    const desc = packs.$('.settings-section-desc')
+    await expect(desc).toBeDisplayed()
+    const descText = await desc.getText()
+    assert.doesNotMatch(descText, /decision\s*17/i)
+    const docsLink = desc.$(
+      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/packs.md"]',
+    )
+    await expect(docsLink).toBeDisplayed()
+    assert.match(await docsLink.getText(), /pack manifest docs/i)
 
     // The P1 skeleton pack ships as first-party; wait for the async
     // `packs:list` IPC to resolve and render a row for it.
