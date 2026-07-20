@@ -7,6 +7,7 @@ import {
   listStagedDiffEntries,
 } from '../services/diff-queue.ts'
 import { getGitStatus } from '../services/github/git-service.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
 
 const DEFAULT_MAX_CHARS = 24_000
@@ -44,7 +45,7 @@ export const stagedDiffsTool = defineTool({
   async execute() {
     const entries = listStagedDiffEntries()
     const decisions = listRecentStagedDiffDecisions()
-    const gitLines = formatGitChanges(await getGitStatus())
+    const gitLines = formatGitChanges(await getGitStatus(getAgentExecutionRoot()))
     if (entries.length === 0) {
       const recent =
         decisions.length > 0

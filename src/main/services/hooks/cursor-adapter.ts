@@ -31,7 +31,7 @@ import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
 import type { AgentSessionInfo, HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import type {
   DialectAdapter,
   DialectDiscoverOpts,
@@ -498,7 +498,8 @@ export async function cursorToolGateHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -527,7 +528,8 @@ export async function cursorBeforeSubmitPromptHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -581,7 +583,7 @@ export async function cursorAfterFileEditHooks(
     .filter(
       (h) =>
         h.event === 'afterFileEdit' &&
-        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot) &&
+        afterFileEditMatches(h, payload.filePath, opts.executionRoot ?? opts.workspaceRoot) &&
         cursorMatcherMatches(h, {}),
     )
     .map((h) => {
@@ -593,7 +595,8 @@ export async function cursorAfterFileEditHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -624,7 +627,8 @@ export async function cursorStopHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -665,7 +669,8 @@ export async function cursorSubagentStartHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -694,7 +699,8 @@ export async function cursorSubagentStopHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -738,7 +744,8 @@ export async function cursorAfterToolUseHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -771,7 +778,8 @@ export async function cursorSessionStartHooks(
         dialect: 'cursor' as const,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
-        cwd: h.cwd,
+        cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
+        ...(opts.executionRoot ? { executionRoot: opts.executionRoot } : {}),
         timeoutMs: h.timeoutMs ?? cursorHookTimeoutMs,
       }
     })
@@ -896,8 +904,9 @@ function asInputRecord(value: unknown): Record<string, unknown> | null {
 function agentSessionEnvelope(
   event: CursorHookEvent,
   session: AgentSessionInfo | undefined,
+  executionRoot?: string,
 ): Record<string, unknown> {
-  const root = getWorkspaceRoot()
+  const root = executionRoot ?? getAgentExecutionRoot()
   const base: Record<string, unknown> = {
     conversation_id: session?.conversationId ?? '',
     generation_id: session?.generationId ?? '',
@@ -916,15 +925,15 @@ function agentSessionEnvelope(
 export const cursorAdapter: DialectAdapter = {
   dialect: 'cursor',
 
-  marshalToolGateRequest(_hook, payload, session) {
+  marshalToolGateRequest(hook, payload, session) {
     const event = cursorEventForTool(payload.toolName)
     if (!event) return null
-    const base = agentSessionEnvelope(event, session)
+    const base = agentSessionEnvelope(event, session, hook.executionRoot)
     if (event === 'beforeShellExecution') {
       return {
         ...base,
         command: stringField(payload.input, 'command'),
-        cwd: getWorkspaceRoot() ?? '',
+        cwd: hook.executionRoot ?? getAgentExecutionRoot() ?? '',
       }
     }
     if (event === 'beforeMCPExecution') {
@@ -986,12 +995,12 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
-  marshalBeforeSubmitPromptRequest(_hook, payload, session) {
+  marshalBeforeSubmitPromptRequest(hook, payload, session) {
     // Cursor's beforeSubmitPrompt stdin: the composed prompt plus attachments
     // (empty until an attachments payload channel exists) and the standard
     // agent-session envelope (real conversation/generation ids + model — B4).
     return {
-      ...agentSessionEnvelope('beforeSubmitPrompt', session),
+      ...agentSessionEnvelope('beforeSubmitPrompt', session, hook.executionRoot),
       prompt: payload.prompt,
       attachments: [],
     }
@@ -1039,14 +1048,14 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
-  marshalAfterFileEditRequest(_hook, payload, session) {
+  marshalAfterFileEditRequest(hook, payload, session) {
     // Cursor's afterFileEdit stdin: the edited file's absolute path, the edits
     // (old_string/new_string pairs) and the standard agent-session envelope
     // (real conversation/generation ids + model — B4). The canonical payload
     // carries only the path in v1, so `edits` is empty — enough for the common
     // formatter/accounting hook, which keys off file_path.
     return {
-      ...agentSessionEnvelope('afterFileEdit', session),
+      ...agentSessionEnvelope('afterFileEdit', session, hook.executionRoot),
       file_path: payload.filePath,
       edits: [],
     }
@@ -1085,13 +1094,13 @@ export const cursorAdapter: DialectAdapter = {
     return { ...base, failed: false, parseOk: true }
   },
 
-  marshalStopRequest(_hook, payload, session) {
+  marshalStopRequest(hook, payload, session) {
     // Cursor's stop stdin: the terminal `status` plus the standard agent-session
     // envelope (real conversation/generation ids + model — B4). The fire site
     // captures the session by value before dispatching detached, so a slow stop
     // hook still marshals the finished turn's identity (decision 3).
     return {
-      ...agentSessionEnvelope('stop', session),
+      ...agentSessionEnvelope('stop', session, hook.executionRoot),
       status: payload.status,
     }
   },
@@ -1132,13 +1141,13 @@ export const cursorAdapter: DialectAdapter = {
     return { ...base, failed: false, parseOk: true }
   },
 
-  marshalSubagentStartRequest(_hook, payload, session) {
+  marshalSubagentStartRequest(hook, payload, session) {
     // Cursor's subagentStart stdin: the subagent type (the matcher target) and
     // the resolved `subagent_model` (B4 — the model the subagent will run,
     // including a local→cloud fallback), plus the standard agent-session
     // envelope. The host sets `session.model` to the subagent's resolved model,
     // so the envelope `model` and `subagent_model` both report it.
-    const base = agentSessionEnvelope('subagentStart', session)
+    const base = agentSessionEnvelope('subagentStart', session, hook.executionRoot)
     return {
       ...base,
       subagent_type: payload.subagentType,
@@ -1189,12 +1198,12 @@ export const cursorAdapter: DialectAdapter = {
     return { outcome, spineEvent, spineDecision, failed: false, parseOk: true }
   },
 
-  marshalSubagentStopRequest(_hook, payload, session) {
+  marshalSubagentStopRequest(hook, payload, session) {
     // Cursor's subagentStop stdin: the subagent type + terminal status, plus the
     // standard agent-session envelope. The fire site captures the session by
     // value before dispatching detached (decision 3).
     return {
-      ...agentSessionEnvelope('subagentStop', session),
+      ...agentSessionEnvelope('subagentStop', session, hook.executionRoot),
       subagent_type: payload.subagentType,
       status: payload.status,
     }
@@ -1259,7 +1268,7 @@ export const cursorAdapter: DialectAdapter = {
     return { ...base, failed: false, parseOk: true }
   },
 
-  marshalAfterToolUseRequest(_hook, payload, session) {
+  marshalAfterToolUseRequest(hook, payload, session) {
     // Cursor splits the canonical afterToolUse into two payload flavors by tool
     // name (D2): afterShellExecution carries the `command` + captured `output`
     // + `duration`; afterMCPExecution carries `tool_name` + `tool_input` (JSON
@@ -1269,7 +1278,7 @@ export const cursorAdapter: DialectAdapter = {
     // marshaller's final guard past discovery matching).
     const event = cursorAfterEventForTool(payload.toolName)
     if (!event) return null
-    const base = agentSessionEnvelope(event, session)
+    const base = agentSessionEnvelope(event, session, hook.executionRoot)
     const duration = payload.durationMs ?? 0
     if (event === 'afterShellExecution') {
       return {
@@ -1324,14 +1333,14 @@ export const cursorAdapter: DialectAdapter = {
     return { ...base, failed: false, parseOk: true }
   },
 
-  marshalSessionStartRequest(_hook, _payload, session) {
+  marshalSessionStartRequest(hook, _payload, session) {
     // Cursor's sessionStart stdin (vendor docs): `session_id` (== conversation
     // id), `is_background_agent`, `composer_mode`, plus the standard
     // agent-session envelope. Copse has one composer mode (agent) and is not a
     // background agent here; the canonical payload's `firstTurn` maps to the
     // vendor's implicit new-conversation trigger, so it needs no wire field.
     return {
-      ...agentSessionEnvelope('sessionStart', session),
+      ...agentSessionEnvelope('sessionStart', session, hook.executionRoot),
       session_id: session?.conversationId ?? '',
       is_background_agent: false,
       composer_mode: 'agent',

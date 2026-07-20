@@ -90,6 +90,7 @@ export async function runAfterFileEditHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   // Cursor (always blocking) + Copse (F1, split by `async`) declare a post-edit

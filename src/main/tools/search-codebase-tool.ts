@@ -2,11 +2,11 @@ import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { classifySearchQuery, resolveSearchText } from '@copse/agent/search-routing.ts'
 import {
-  getWorkspaceRoot,
-  resolveWorkspacePath,
-  resolveReadablePath,
-  toRelativePath,
+  resolvePathWithinRoot,
+  resolveReadablePathWithinRoot,
+  toRelativePathWithinRoot,
 } from '../services/workspace.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { isActiveSshWorkspace } from '../services/ssh-workspace/execution-target.ts'
 import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
@@ -55,7 +55,7 @@ export const searchCodebaseTool = defineTool({
     { query, pattern, mode, path, file_glob, fixed_string, case_sensitive, max_results },
     signal,
   ) {
-    const root = getWorkspaceRoot()
+    const root = getAgentExecutionRoot()
     if (!root) return 'No workspace open.'
 
     const searchText = resolveSearchText(query, pattern)
@@ -64,7 +64,9 @@ export const searchCodebaseTool = defineTool({
     }
 
     const resolvedMode = mode === 'auto' ? classifySearchQuery(searchText) : mode
-    const filterPath = path ? await toRelativePath(await resolveWorkspacePath(path)) : undefined
+    const filterPath = path
+      ? await toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
+      : undefined
 
     let semanticFallback: 'building' | 'unavailable' | null = null
     if (resolvedMode === 'semantic') {
@@ -96,7 +98,7 @@ export const searchCodebaseTool = defineTool({
 
     // Regex path resolves the read-only chat store too (#644); the semantic index
     // below stays workspace-only (chat-store discovery goes through catalog.jsonl).
-    const searchRoot = path ? await resolveReadablePath(path) : root
+    const searchRoot = path ? await resolveReadablePathWithinRoot(path, root) : root
     const { lines, backend } = await searchCodeContent({
       pattern: searchText,
       searchRoot,
@@ -104,6 +106,7 @@ export const searchCodebaseTool = defineTool({
       caseSensitive: case_sensitive,
       fileGlob: file_glob,
       maxResults: max_results,
+      displayRoot: root,
       signal,
     })
 
@@ -134,7 +137,7 @@ export const semanticSearchTool = defineTool({
     max_results: z.number().int().min(1).max(100).optional().default(20),
   }),
   async execute({ query, pattern, path, max_results }, signal) {
-    const root = getWorkspaceRoot()
+    const root = getAgentExecutionRoot()
     if (!root) return 'No workspace open.'
 
     const searchText = resolveSearchText(query, pattern)
@@ -142,7 +145,9 @@ export const semanticSearchTool = defineTool({
       return 'Provide a query via `query` (its alias `pattern` also works).'
     }
 
-    const filterPath = path ? await toRelativePath(await resolveWorkspacePath(path)) : undefined
+    const filterPath = path
+      ? await toRelativePathWithinRoot(await resolvePathWithinRoot(path, root), root)
+      : undefined
     const semantic = await executeSemanticSearch(
       {
         query: searchText,

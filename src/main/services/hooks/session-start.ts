@@ -34,7 +34,7 @@ import type { TurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { AsyncHookDispatcher } from '@copse/agent/hooks/async-dispatcher.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import { isWorkspaceTrusted } from '../security/workspace-trust.ts'
 import type { DialectDiscoverOpts } from './dialect-adapter.ts'
 import { cursorSessionStartHooks } from './cursor-adapter.ts'
@@ -115,6 +115,7 @@ export async function runSessionStartHooks(
 ): Promise<SessionStartResult> {
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   // Every wired dialect can declare a session-start hook (Cursor's
@@ -166,7 +167,8 @@ export function fireSessionStartHook(
 ): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
   if (!opts.firstTurn) return
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = getAgentProjectRoot()
+  const executionRoot = getAgentExecutionRoot()
   // A fresh session starts with no inherited env; re-collect on this first turn.
   clearSessionEnv(threadId)
   // Capture the agent-session identity by value now — the hook dispatches
@@ -183,6 +185,7 @@ export function fireSessionStartHook(
     threadId,
     turnTreeId: opts.turnTreeId,
     workspaceRoot,
+    executionRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession,
     recordingSnapshot,

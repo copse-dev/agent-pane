@@ -39,7 +39,7 @@ import { withRunDeadlinePaused } from './run-deadline.ts'
 import { getAsyncHookDispatcher } from './async-hook-dispatcher.ts'
 import { hookQueueOutcomeSink } from './hook-queue-channel.ts'
 import { getSetting } from '../storage/settings.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import { isWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { currentAgentSessionInfo } from './agent-session.ts'
 
@@ -67,6 +67,7 @@ export async function runSubagentStartHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   const [cursorHooks, copseHooks] = await Promise.all([
@@ -144,6 +145,7 @@ export async function runSubagentStopHooks(
 ): Promise<SubagentStopResult> {
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   const [cursorHooks, copseHooks] = await Promise.all([
@@ -199,9 +201,11 @@ export function subagentHookCallbacks(opts: {
 
   return {
     onSubagentStart: async (subagentType): Promise<SubagentStartDecision> => {
-      const workspaceRoot = getWorkspaceRoot()
+      const workspaceRoot = getAgentProjectRoot()
+      const executionRoot = getAgentExecutionRoot()
       const decision = await runSubagentStartHooks(subagentType, {
         workspaceRoot,
+        executionRoot,
         projectTrusted: isWorkspaceTrusted(workspaceRoot),
         agentSession: buildSession(),
       })
@@ -212,7 +216,8 @@ export function subagentHookCallbacks(opts: {
       }
     },
     onSubagentStop: (subagentType, status): void => {
-      const workspaceRoot = getWorkspaceRoot()
+      const workspaceRoot = getAgentProjectRoot()
+      const executionRoot = getAgentExecutionRoot()
       const agentSession = buildSession()
       const threadId = agentSession.conversationId || 'subagent'
       // Epoch: the parent run's turn/generation id (the per-submission stand-in),
@@ -229,6 +234,7 @@ export function subagentHookCallbacks(opts: {
           threadId,
           turnTreeId,
           workspaceRoot,
+          executionRoot,
           projectTrusted: isWorkspaceTrusted(workspaceRoot),
           agentSession,
           recordingSnapshot,

@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
-import { resolveWorkspacePath } from '../services/workspace.ts'
+import { resolvePathWithinRoot } from '../services/workspace.ts'
+import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { applyOrStageDiff } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
@@ -15,7 +16,7 @@ export const writeFileTool = defineTool({
     content: z.string().describe('Complete new file content'),
   }),
   async execute({ path, content }) {
-    const absPath = await resolveWorkspacePath(path)
+    const absPath = await resolvePathWithinRoot(path, requireAgentExecutionRoot())
     let before = ''
     try {
       before = await getActiveWorkspaceFs().readFile(absPath, 'utf-8')

@@ -21,8 +21,10 @@ import type { HookSpawnResult } from './hook-spawn.ts'
 
 /** Where hook discovery looks, and whether project-scoped configs may be honoured. */
 export interface DialectDiscoverOpts {
-  /** Absolute workspace root, or null when no workspace is open. */
+  /** Trusted project root used for repo-supplied hook discovery. */
   workspaceRoot: string | null
+  /** Thread checkout root used for matchers, payload cwd, and process execution. */
+  executionRoot?: string | null
   /** Whether the workspace is trusted (gates project-supplied hook configs). */
   projectTrusted: boolean
 }

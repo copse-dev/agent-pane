@@ -59,6 +59,7 @@ export async function runBeforeDiffApplyHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   const hooks = await copseBeforeDiffApplyHooks(payload, discoverOpts)
@@ -130,6 +131,7 @@ export async function runAfterDiffApplyHooks(
 ): Promise<AfterDiffApplyResult> {
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   const hooks = await copseAfterDiffApplyHooks(payload, discoverOpts)
