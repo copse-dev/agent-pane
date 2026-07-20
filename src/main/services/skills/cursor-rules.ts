@@ -243,7 +243,19 @@ export function isRuleMentioned(rule: CursorRuleSource, userText: string): boole
   // Also accept forward-slash and backslash variants of the relative path.
   const slashName = rule.name.replace(/\\/g, '/')
   if (slashName !== rule.name) candidates.push(`@${slashName}`)
-  return candidates.some((c) => userText.includes(c))
+  return candidates.some((candidate) => {
+    let from = 0
+    for (;;) {
+      const index = userText.indexOf(candidate, from)
+      if (index < 0) return false
+      const before = userText[index - 1]
+      const after = userText[index + candidate.length]
+      const isPathCharacter = (char: string | undefined): boolean =>
+        char !== undefined && /[A-Za-z0-9_./\\-]/.test(char)
+      if (!isPathCharacter(before) && !isPathCharacter(after)) return true
+      from = index + 1
+    }
+  })
 }
 
 /** Discover every Cursor project rule (all kinds), without applying context filters. */

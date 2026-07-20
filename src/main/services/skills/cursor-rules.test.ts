@@ -159,6 +159,9 @@ describe('cursor-rules', () => {
     }
     assert.equal(isRuleMentioned(rule, 'see @migration'), true)
     assert.equal(isRuleMentioned(rule, 'see @migration.mdc'), true)
+    assert.equal(isRuleMentioned(rule, 'see @.cursor/rules/migration.mdc, then edit'), true)
+    assert.equal(isRuleMentioned(rule, 'see @migration-extra'), false)
+    assert.equal(isRuleMentioned(rule, 'email dev@migration for help'), false)
     assert.equal(isRuleMentioned(rule, 'unrelated'), false)
   })
 
