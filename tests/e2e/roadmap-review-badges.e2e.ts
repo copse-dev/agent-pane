@@ -26,6 +26,8 @@ function seedRoadmapNote(
     issue?: string
     reviewVerdict?: string
     reviewDetail?: string
+    /** Persist as a deep check so row-open auto-review does not re-judge. */
+    reviewDepth?: string
     createdAt?: string
   },
 ): void {
@@ -49,6 +51,7 @@ function seedRoadmapNote(
   if (input.issue) lines.push(`issue: ${input.issue}`)
   if (input.reviewVerdict) lines.push(`reviewVerdict: ${input.reviewVerdict}`)
   if (input.reviewDetail) lines.push(`reviewDetail: ${input.reviewDetail}`)
+  if (input.reviewDepth) lines.push(`reviewDepth: ${input.reviewDepth}`)
   lines.push('---', '', input.body)
   writeFileSync(join(dir, `${id}.md`), `${lines.join('\n')}\n`, 'utf8')
 }
@@ -70,6 +73,9 @@ describe('roadmap review badges', () => {
       issue: '#41',
       reviewVerdict: 'likely',
       reviewDetail: 'Recent commit mentions theme initialization.',
+      // Deep depth keeps isReviewStale false so selecting the row does not
+      // auto-fire reviewItemDeep against MockLLM (which has no verdict format).
+      reviewDepth: 'deep',
       createdAt: '2026-01-01T00:00:00.000Z',
     })
     seedRoadmapNote(workspaceRoot, {
@@ -78,6 +84,7 @@ describe('roadmap review badges', () => {
       status: 'ready',
       reviewVerdict: 'open',
       reviewDetail: 'No matching commits since last review.',
+      reviewDepth: 'deep',
       createdAt: '2026-01-02T00:00:00.000Z',
     })
     await browser.reloadSession()
