@@ -41,6 +41,7 @@ import {
   setHookRunStep,
   setHookRunToolset,
 } from './hook-run-recorder.ts'
+import { recordStreamCut } from './stream-stats-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
@@ -125,6 +126,7 @@ import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { todosToPanelListData } from '@copse/agent/packs/pack-panel.ts'
 import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
+import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
@@ -602,6 +604,7 @@ export async function runAgent(
       ? {
           advisorModel: resolveAdvisorModelId(),
           executorModel: model,
+          onChunk: sendChunk,
           getTranscript: (): LLMMessage[] => [
             ...priorMessages,
             { role: 'user' as const, content: outboundPrompt },
@@ -794,7 +797,12 @@ export async function runAgent(
     // inline below, not because a chunk is withheld.
     let loopStopReason: string | undefined
 
-    const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills, threadId })
+    const systemPrompt = await buildSystemPrompt({
+      subagentsEnabled,
+      invokedSkills,
+      threadId,
+      userPrompt: outboundPrompt,
+    })
 
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -1034,6 +1042,7 @@ export async function runAgent(
             advisorModel: resolveAdvisorModelId(),
             executorModel: model,
             getTranscript: () => trimmed,
+            onChunk: sendChunk,
           },
           () => registry.executeNormalized(name, args, signal),
         )
@@ -1145,6 +1154,9 @@ export async function runAgent(
           continuationBudget,
           recordHookRun: recordFunctionHookRun,
           onLlmCall: setHookRunStep,
+          recordStreamCut: (record) => {
+            recordStreamCut(record, model)
+          },
           executeTool: executeParentTool,
           signal: controller.signal,
           maxContextTokens: contextWindow,
@@ -1245,8 +1257,14 @@ export async function runAgent(
     // A free / local review model runs on the full diff with no prompt. The
     // host-interactive gate resolution stays here; `runPostTurnReviewCycle` owns
     // the review/remediation *sequencing* + the shared C3 budget (decision 5).
+    // P5: the pack toggle in Settings > Packs is the atomic master switch —
+    // disabling `copse.post-turn-review` drops the review trigger for new turns
+    // in one flag flip (decision 15). The pack registry replaces the standalone
+    // `postTurnReviewEnabled` setting the trigger used to consult; the
+    // fine-grained `postTurnReviewMinChangedLines` threshold stays a top-level
+    // setting (orthogonal to enablement) and is read below.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
-    if (turnChangedFiles && getSetting<boolean>('postTurnReviewEnabled', true)) {
+    if (turnChangedFiles && getDefaultPackRegistry().isEnabled(POST_TURN_REVIEW_PACK_ID)) {
       const reviewRoute = await buildReviewRoute()
       const reviewProvider = reviewRoute?.provider ?? provider
       const reviewUsageModel = reviewRoute?.usageModel ?? model
@@ -1324,6 +1342,10 @@ export async function runAgent(
     // Auto model comparison: when this turn changed files and the harness is set
     // to run on review, compare two models on the working diff (gated by a spend
     // approval for billable models). Usage is folded in via the emitted chunks.
+    // P5: gate on the `copse.model-comparison` pack toggle in addition to the
+    // fine-grained `modelComparisonAutoOnReview` sub-setting — the pack toggle
+    // is the atomic master switch (`isAutoComparisonEnabled()` already reads
+    // both).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mutated inside the runAgentLoop callback above; TS narrows to the `false` initializer
     if (turnChangedFiles && !comparisonRanThisTurn && isAutoComparisonEnabled()) {
       await runModelComparison(

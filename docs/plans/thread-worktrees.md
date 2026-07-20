@@ -1,7 +1,9 @@
 # Per-thread worktrees
 
-Status: implementation plan; no per-thread worktree support is implemented as of
-2026-07-19. Related tracking: #349 and #869.
+Status: **Active implementation.** Tracking issue
+[#869](https://github.com/copse-dev/agent-pane/issues/869) is open. The execution-context
+foundation shipped in [#1029](https://github.com/copse-dev/agent-pane/pull/1029), and the
+worktree stack continues in open PRs #1035, #1037, #1040, #1043, and #1046.
 
 ## Outcome
 

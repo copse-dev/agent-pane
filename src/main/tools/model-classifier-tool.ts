@@ -29,9 +29,14 @@ export const suggestModelTool = defineTool({
     if (!task.trim()) return 'suggest_model requires a non-empty task.'
     const rec = classifyModelForTask({ task, contextTokensEstimate, agentic })
     const roleRec = suggestRoleForTask(task)
+    const costLine =
+      rec.usdPerMTok !== null
+        ? `Estimated catalog rate: ~$${rec.usdPerMTok.toFixed(2)}/MTok (input+output)`
+        : 'Estimated catalog rate: unknown'
     return [
       `Recommended intellect band: ${rec.band} (intellect ${String(rec.intellect)})`,
-      `Representative model: ${rec.model}`,
+      `Cost-aware model: ${rec.model}`,
+      costLine,
       `Suggested role: ${roleRec.role} (${roleRec.label})`,
       `Confidence: ${rec.confidence.toFixed(2)}`,
       `Why: ${rec.rationale}; ${roleRec.rationale}`,

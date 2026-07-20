@@ -398,6 +398,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('threads:delete', projectId, threadId),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
+    listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
   },
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
@@ -600,6 +601,7 @@ contextBridge.exposeInMainWorld('api', {
       ),
     attachmentData: (id: string, attachmentId: string) =>
       ipcRenderer.invoke('roadmap:attachmentData', id, attachmentId),
+    setStatus: (id: string, status: string) => ipcRenderer.invoke('roadmap:setStatus', id, status),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
     openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
@@ -616,6 +618,8 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('roadmap:changed', listener)
       }
     },
+    setThread: (id: string, threadId: string) =>
+      ipcRenderer.invoke('roadmap:setThread', id, threadId),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -636,6 +640,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
+  },
+  cursorRules: {
+    list: () => ipcRenderer.invoke('cursorRules:list'),
   },
   terminal: {
     create: (cols: number, rows: number, meta?: { label?: string; threadId?: string | null }) =>

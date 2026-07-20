@@ -50,6 +50,8 @@ import {
   TRUNCATION_CONTINUE_HOOK_ID,
 } from './hooks/step-boundary-hooks.ts'
 import type { ContinuationGrant } from './hooks/continuation-budget.ts'
+import type { StreamCutRecord } from './stream-cut-record.ts'
+import { truncateStreamCutReasoning } from './stream-cut-record.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -132,6 +134,11 @@ export interface AgentLoopOptions {
    * purely observational, never awaited.
    */
   onLlmCall?: (count: number) => void
+  /**
+   * Called when the per-stream output cap cuts a stream (#489). The host
+   * persists cut reasoning for eval; purely observational, never awaited.
+   */
+  recordStreamCut?: (record: StreamCutRecord) => void
 }
 
 const FINALIZE_NUDGE =
@@ -155,6 +162,25 @@ type LlmCallBudget = {
 function recordRunActivity(budget: LlmCallBudget): void {
   budget.deadline.recordActivity()
   budget.onRunDeadlineActivity?.()
+}
+
+function emitStreamCutRecord(
+  recordStreamCut: ((record: StreamCutRecord) => void) | undefined,
+  fields: Omit<StreamCutRecord, 'reasoningText' | 'reasoningTextTruncated'> & {
+    reasoningText: string
+  },
+): void {
+  if (!recordStreamCut) return
+  const { text, truncated } = truncateStreamCutReasoning(fields.reasoningText)
+  try {
+    recordStreamCut({
+      ...fields,
+      reasoningText: text,
+      reasoningTextTruncated: truncated,
+    })
+  } catch (err) {
+    console.warn('[run-agent-loop] recordStreamCut sink threw:', err)
+  }
 }
 
 function runBudgetExhausted(budget: LlmCallBudget): boolean {
@@ -741,6 +767,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     getOpenTodos,
     recordHookRun,
     onLlmCall,
+    recordStreamCut,
   } = opts
   const deadline = runDeadline ?? new AgentRunDeadline(runTimeoutMs, runHardMaxMs)
   const budget: LlmCallBudget = {
@@ -894,6 +921,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     }
 
     let streamOutputChars = 0
+    let streamReasoningChars = 0
+    let streamReasoningText = ''
     let streamCappedAsRunaway = false
 
     budget.deadline.pause()
@@ -902,6 +931,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         if (signal?.aborted) break
         if (chunk.type === 'reasoning') {
           streamOutputChars += chunk.text.length
+          streamReasoningChars += chunk.text.length
+          streamReasoningText += chunk.text
           onChunk(chunk)
         }
         if (chunk.type === 'text') {
@@ -981,6 +1012,22 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     })
     const truncationNudge = postNudges.truncation
     const reasoningRunawayNudge = postNudges.reasoningRunaway
+
+    if (streamCappedAsRunaway) {
+      emitStreamCutRecord(recordStreamCut, {
+        step: budget.llmCalls,
+        cutReason: 'reasoning_runaway_cap',
+        streamOutputChars,
+        streamReasoningChars,
+        reasoningText: streamReasoningText,
+        hasToolCalls: pendingToolCalls.length > 0,
+        toolCallCount: pendingToolCalls.length,
+        stopReason: stopReason ?? 'max_tokens',
+        streamCappedAsRunaway: true,
+        reasoningRunawayStreak,
+        willInjectReasoningRunawayNudge: reasoningRunawayNudge !== undefined,
+      })
+    }
 
     // Push assistant message to history
     if (pendingToolCalls.length > 0) {

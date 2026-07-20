@@ -46,6 +46,31 @@ export interface ProviderDataPolicy {
   policyUrl: string
 }
 
+const TOGETHER_POLICY: ProviderDataPolicy = {
+  retainsPrompts: false,
+  trainsOnData: false,
+  zdr: 'setting',
+  note: 'Together does not store inputs/outputs by default; training use is opt-in. Confirm the org-level privacy setting answers “No” to storing prompts.',
+  policyUrl: 'https://docs.together.ai/docs/privacy-and-security',
+}
+
+const GROQ_POLICY: ProviderDataPolicy = {
+  retainsPrompts: true,
+  retentionDays: 30,
+  trainsOnData: false,
+  zdr: 'setting',
+  note: 'Groq may temporarily log inference data for reliability and abuse prevention for up to 30 days unless Zero Data Retention is enabled in console Data Controls.',
+  policyUrl: 'https://console.groq.com/docs/your-data',
+}
+
+const FIREWORKS_POLICY: ProviderDataPolicy = {
+  retainsPrompts: false,
+  trainsOnData: false,
+  zdr: 'default',
+  note: 'Fireworks does not log or store prompts/generations for open models without explicit opt-in; data lives only in volatile memory for the request.',
+  policyUrl: 'https://docs.fireworks.ai/guides/security_compliance/data_handling',
+}
+
 // Fixed cloud providers + built-in OpenAI-compatible presets, keyed by slug.
 const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {
   anthropic: {
@@ -108,31 +133,18 @@ const POLICIES_BY_SLUG: Record<string, ProviderDataPolicy> = {
     note: 'Perplexity’s API FAQ says query data is not retained or used for training, but its dedicated zero-retention page currently names Sonar API only and does not explicitly cover Agent API.',
     policyUrl: 'https://docs.perplexity.ai/docs/resources/faq',
   },
+  together: TOGETHER_POLICY,
+  groq: GROQ_POLICY,
+  fireworks: FIREWORKS_POLICY,
 }
 
-// Known-endpoint prefills and user customs, keyed by API hostname.
+// Recognized custom endpoints, keyed by API hostname. The built-in ZDR
+// providers are repeated here so an existing custom slug for the same official
+// endpoint still receives the correct policy badge.
 const POLICIES_BY_HOST: Record<string, ProviderDataPolicy> = {
-  'api.together.xyz': {
-    retainsPrompts: false,
-    trainsOnData: false,
-    zdr: 'setting',
-    note: 'Together does not store inputs/outputs by default; training use is opt-in. Confirm the org-level privacy setting answers “No” to storing prompts.',
-    policyUrl: 'https://docs.together.ai/docs/privacy-and-security',
-  },
-  'api.groq.com': {
-    retainsPrompts: false,
-    trainsOnData: false,
-    zdr: 'setting',
-    note: 'Groq does not retain inference data by default (troubleshooting logs up to 30 days) and offers a Zero Data Retention toggle in console Data Controls.',
-    policyUrl: 'https://console.groq.com/docs/your-data',
-  },
-  'api.fireworks.ai': {
-    retainsPrompts: false,
-    trainsOnData: false,
-    zdr: 'default',
-    note: 'Fireworks does not log or store prompts/generations for open models without explicit opt-in; data lives only in volatile memory for the request.',
-    policyUrl: 'https://docs.fireworks.ai/guides/security_compliance/data_handling',
-  },
+  'api.together.xyz': TOGETHER_POLICY,
+  'api.groq.com': GROQ_POLICY,
+  'api.fireworks.ai': FIREWORKS_POLICY,
   'api.x.ai': {
     retainsPrompts: true,
     retentionDays: 30,

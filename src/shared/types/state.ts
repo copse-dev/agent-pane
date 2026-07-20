@@ -44,6 +44,26 @@ export interface Project {
   name: string
   /** SSH workspace host id (`sshWorkspaceHosts[].id`) when this project is remote. */
   sshHost?: string
+  /**
+   * Set when opening the project's folder failed (moved / unmounted / wedged
+   * main process). The entry is *quarantined*, not deleted — its threads stay on
+   * disk under `~/.copse/workspace/<id>/` and the sidebar offers to relocate it —
+   * so a transient failure never silently discards a project and its history
+   * (issue #997). Cleared once the folder opens successfully again.
+   */
+  missing?: boolean
+}
+
+/**
+ * A thread-store directory under `~/.copse/workspace/<id>/` that has no matching
+ * project entry in config — threads that would otherwise be invisible. Surfaced
+ * so they can be re-attached to a folder rather than recovered by hand (#997).
+ */
+export interface OrphanProjectStore {
+  /** The store directory id (also the project id it would re-attach under). */
+  id: string
+  /** How many thread directories the store holds. */
+  threadCount: number
 }
 
 export interface AppState {

@@ -1,9 +1,10 @@
 # Thread referencing: filesystem-native chat store + `@` past threads
 
-Tracking: [#644](https://github.com/jonathanKingston/agent-pane/issues/644)
+Tracking: [#644](https://github.com/copse-dev/agent-pane/issues/644) (closed)
 
-Status: **in progress** — Phases 0–1 + migration + benchmark landed on
-`claude/thread-referencing-workspace-a31o1b` ([PR #647](https://github.com/jonathanKingston/agent-pane/pull/647), do-not-merge WIP). See Progress below.
+Status: **Resolved core.** The filesystem-native store and `@` thread references
+shipped in [#647](https://github.com/copse-dev/agent-pane/pull/647). Lazy renderer
+loading and streaming partial persistence remain separate follow-ups; see Progress.
 
 ## Goal
 

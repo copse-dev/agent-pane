@@ -34,7 +34,10 @@ html.is-popout .pane-popout-btn {
   display: none;
 }
 
-/* A detached Roadmap window has no chat pane for a new thread to land in. */
-html.is-popout .roadmap-start-btn {
+/* A detached Roadmap window has no chat pane for a thread to land in — hide
+   both starting a new thread and reopening a tracked one. */
+html.is-popout .roadmap-start-btn,
+html.is-popout .roadmap-reopen-btn,
+html.is-popout .roadmap-thread-chip {
   display: none;
 }

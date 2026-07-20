@@ -5,6 +5,7 @@ import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
   GitStatusResult,
@@ -232,6 +233,8 @@ export interface ApiClient {
       projectId: string,
       query?: string,
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
+    /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
+    listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
   }
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>
@@ -462,6 +465,10 @@ export interface ApiClient {
       removeAttachmentIds?: string[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     attachmentData: (id: string, attachmentId: string) => Promise<string | null>
+    setStatus: (
+      id: string,
+      status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{
@@ -477,6 +484,10 @@ export interface ApiClient {
     /** Subscribe to background roadmap changes (e.g. a complexity stamp landing
      * after a save returned). Returns an unsubscribe function. */
     onChanged: (handler: () => void) => () => void
+    setThread: (
+      id: string,
+      threadId: string,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
   }
   skills: {
     list: () => Promise<SkillSummary[]>
@@ -499,6 +510,9 @@ export interface ApiClient {
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
+  }
+  cursorRules: {
+    list: () => Promise<CursorRuleSummary[]>
   }
   terminal: {
     create: (

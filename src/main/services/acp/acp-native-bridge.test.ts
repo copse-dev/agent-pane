@@ -203,11 +203,13 @@ describe('startAcpNativeBridge', () => {
       bridgeA.setAdvisorContext({
         advisorModel: 'advisor-a',
         executorModel: 'executor-a',
+        onChunk: () => {},
         getTranscript: () => [{ role: 'user', content: 'thread a' }],
       })
       bridgeB.setAdvisorContext({
         advisorModel: 'advisor-b',
         executorModel: 'executor-b',
+        onChunk: () => {},
         getTranscript: () => [{ role: 'assistant', content: 'thread b' }],
       })
       for (const init of initialized()) {

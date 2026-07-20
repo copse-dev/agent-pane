@@ -1,7 +1,10 @@
 # Orchestration strategy
 
-Status: **experimental scaffold** — off by default behind the `orchestrationStrategyEnabled`
-setting (Settings → Experimental). Builds on the advisor strategy scaffold
+Status: **Resolved (experimental scaffold shipped)** in
+[#969](https://github.com/copse-dev/agent-pane/pull/969). It remains off by default
+behind the `orchestrationStrategyEnabled` setting (Settings → Experimental). The
+deliberately out-of-scope refinements below are separate follow-ups. Builds on the
+advisor strategy scaffold
 ([advisor-strategy.md](advisor-strategy.md)); the two are complementary and can be enabled
 together.
 

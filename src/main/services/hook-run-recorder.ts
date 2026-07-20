@@ -98,6 +98,11 @@ export function endHookRunRecording(threadId: string): void {
   if (current?.threadId === threadId) current = null
 }
 
+/** Current run attribution for observability sinks (stream stats, etc.). */
+export function getHookRunRecordingContext(): HookRunRecordingSnapshot | null {
+  return current ? { ...current } : null
+}
+
 /** An opaque, by-value copy of the recording context for detached attribution. */
 export type HookRunRecordingSnapshot = HookRunRecordingContext
 

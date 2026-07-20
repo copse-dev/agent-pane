@@ -3,7 +3,7 @@ import type { UsageRecordInput } from '@shared/usage/usage-event.ts'
 
 export const usageRecordSchema = z.object({
   model: z.string().min(1).max(256),
-  source: z.enum(['agent', 'small-tasks', 'safety-classifier']),
+  source: z.enum(['agent', 'small-tasks', 'safety-classifier', 'advisor']),
   inputTokens: z.number().int().min(0),
   outputTokens: z.number().int().min(0),
   cacheReadTokens: z.number().int().min(0).optional(),

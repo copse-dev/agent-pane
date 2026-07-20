@@ -4,6 +4,7 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
+import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const PROJECT_ID = 'e2e-shell-mention'
 
@@ -26,6 +27,8 @@ describe('@shell mention', () => {
 
     const terminalBtn = await $('.titlebar-btn[aria-label="Open terminal"]')
     await terminalBtn.click()
+    // Linux CI has no OS sandbox, so the terminal open itself prompts first.
+    await approveUnsandboxedTerminalIfPrompted()
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
 
     // Focus the composer and open the mention picker on @shell.

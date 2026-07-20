@@ -1,7 +1,9 @@
 # Settings transparency & Claude parity
 
-Status: **in progress** — transparency panel + project-instruction parity landing now;
-the rest tracked as follow-ups (see below).
+Status: **Active.** The Sources panel and project-instruction parity shipped in
+[#635](https://github.com/copse-dev/agent-pane/pull/635), and several follow-ups have
+landed. Claude settings parity remains in open issue
+[#639](https://github.com/copse-dev/agent-pane/issues/639); see below.
 
 ## Why
 
@@ -64,10 +66,12 @@ to the prompt.
 
 ## Follow-ups (not in this change)
 
-- **Cursor rules import** (#636, _partly implemented — stacked on #637_) — reads
-  `.cursor/rules/*.mdc` marked `alwaysApply` and legacy `.cursorrules` as project
-  instructions. Still open: glob/description-scoped (Auto-Attached / Agent-Requested)
-  rules, which need an active-file context to apply.
+- **Cursor rules import** (#636, _implemented — Always + Auto-Attached + Agent-Requested +
+  Manual_) — reads `.cursor/rules/*.mdc` and legacy `.cursorrules`. Always-apply and
+  legacy rules join the system prompt unconditionally; Auto-Attached rules inject when a
+  matching path is in the turn's context (attachments / path tokens); Agent-Requested
+  rules appear in an `<available_cursor_rules>` catalog for `read_file`; Manual rules
+  inject when `@`-mentioned. Sources → Cursor rules lists every rule with its kind.
 - **Global / user instructions** (#637, _implemented — stacked on #635_) — load
   `~/AGENTS.md` / `~/.claude/CLAUDE.md` as a lower-precedence global layer beneath project
   files, with an instruction `scope` surfaced in the Sources panel.

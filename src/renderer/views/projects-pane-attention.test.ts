@@ -24,7 +24,12 @@ function thread(id: string, title: string): Thread {
   }
 }
 
-const apiStub = {} as unknown as ApiClient
+// mountProjectsPane refreshes orphan stores on mount (#997).
+const apiStub = {
+  threads: {
+    listOrphans: async (): Promise<never[]> => [],
+  },
+} as unknown as ApiClient
 
 afterEach(() => {
   document.body.replaceChildren()

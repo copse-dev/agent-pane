@@ -720,6 +720,7 @@ dialog.settings-overlay::backdrop {
   position: absolute;
   z-index: 30;
   pointer-events: none;
+  width: max-content;
   max-width: 360px;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -1050,6 +1051,10 @@ dialog.settings-overlay::backdrop {
   color: var(--error);
   word-break: break-word;
   margin-top: 2px;
+}
+.sources-badge-auto {
+  color: var(--accent, #3b82f6);
+  border-color: var(--accent, #3b82f6);
 }
 .sources-row-detail {
   font-size: 11px;

@@ -33,33 +33,33 @@ describe('extra-providers-store', () => {
   })
 
   it('derives a slug from the base URL when none is given', async () => {
-    await saveExtraProvider({ label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' })
-    const together = getResolvedExtraProvider('together')
-    assert.ok(together)
-    assert.equal(together.builtin, false)
-    assert.equal(together.label, 'Together AI')
-    assert.equal(together.prefix, 'together:')
+    await saveExtraProvider({ label: 'Acme AI', baseUrl: 'https://api.acme.example/v1' })
+    const acme = getResolvedExtraProvider('acme')
+    assert.ok(acme)
+    assert.equal(acme.builtin, false)
+    assert.equal(acme.label, 'Acme AI')
+    assert.equal(acme.prefix, 'acme:')
   })
 
   it('disambiguates a second provider on the same host instead of clobbering', async () => {
-    await saveExtraProvider({ baseUrl: 'https://api.together.xyz/v1' })
-    await saveExtraProvider({ baseUrl: 'https://api.together.xyz/v1' })
-    assert.deepEqual(slugs(), [...PRESETS, 'together', 'together-2'])
+    await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })
+    await saveExtraProvider({ baseUrl: 'https://api.acme.example/v1' })
+    assert.deepEqual(slugs(), [...PRESETS, 'acme', 'acme-2'])
   })
 
   it('treats an explicit slug as an in-place edit (the frozen slug)', async () => {
     await saveExtraProvider({
-      slug: 'together',
-      baseUrl: 'https://api.together.xyz/v1',
+      slug: 'acme',
+      baseUrl: 'https://api.acme.example/v1',
       label: 'A',
     })
     await saveExtraProvider({
-      slug: 'together',
-      baseUrl: 'https://api.together.xyz/v1',
+      slug: 'acme',
+      baseUrl: 'https://api.acme.example/v1',
       label: 'B',
     })
-    assert.equal(slugs().filter((s) => s === 'together').length, 1)
-    assert.equal(getResolvedExtraProvider('together')?.label, 'B')
+    assert.equal(slugs().filter((s) => s === 'acme').length, 1)
+    assert.equal(getResolvedExtraProvider('acme')?.label, 'B')
   })
 
   it('stores a built-in slug as an override, not a fourth provider', async () => {
@@ -74,13 +74,13 @@ describe('extra-providers-store', () => {
   })
 
   it('deletes a custom provider and its stored key', async () => {
-    await saveExtraProvider({ slug: 'together', baseUrl: 'https://api.together.xyz/v1' })
-    setApiKey('together', 'sk-secret')
-    assert.ok(hasApiKey('together'))
+    await saveExtraProvider({ slug: 'acme', baseUrl: 'https://api.acme.example/v1' })
+    setApiKey('acme', 'sk-secret')
+    assert.ok(hasApiKey('acme'))
 
-    await deleteExtraProvider('together')
+    await deleteExtraProvider('acme')
     assert.deepEqual(slugs(), PRESETS)
-    assert.equal(hasApiKey('together'), false)
+    assert.equal(hasApiKey('acme'), false)
   })
 
   it('rejects saving a custom provider when the host is denied', async () => {

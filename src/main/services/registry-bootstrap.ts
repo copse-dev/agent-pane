@@ -54,8 +54,9 @@ import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
 import { delegateStepTool } from '../tools/delegate-step-tool.ts'
-import { MODEL_COMPARISON_ENABLED_SETTING } from './model-comparison.ts'
 import { compareModelsTool } from '../tools/compare-models-tool.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
@@ -149,13 +150,11 @@ export function createRegistry(): ToolRegistry {
   if (getSetting<boolean>(ORCHESTRATION_STRATEGY_ENABLED_SETTING, false)) {
     registry.register(delegateStepTool)
   }
-  // Experimental model comparison harness (off by default). Adds a no-parameter
-  // `compare_models` tool that runs the working-diff review through two models
-  // plus a judge that compares their verdicts. While off, the tool is not
-  // registered (and the auto-on-review trigger is inert).
-  if (getSetting<boolean>(MODEL_COMPARISON_ENABLED_SETTING, false)) {
-    registry.register(compareModelsTool)
-  }
+  // Experimental model comparison harness. P5: gated by the
+  // `copse.model-comparison` first-party pack — the pack toggle in Settings >
+  // Packs is the atomic master switch. Live toggles route through
+  // {@link syncModelComparisonTools} on `packs:setEnabled`.
+  syncModelComparisonTools(registry)
   // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
   // tool that records future-work prompts and tracks their status across
   // sessions so longer-horizon work is captured without being started early.
@@ -219,6 +218,24 @@ export function syncRoadmapPlanTools(registry: ToolRegistry): void {
     if (!registry.has('roadmap_plan')) registry.register(roadmapPlanTool)
   } else {
     registry.unregister('roadmap_plan')
+  }
+}
+
+/**
+ * Register or unregister the experimental `compare_models` tool to match the
+ * current enablement of the `copse.model-comparison` first-party pack (P5).
+ * Called at startup (via createRegistry) and again whenever the pack is toggled
+ * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
+ * the tool appears or disappears live — the atomic pack disable drops the tool
+ * from the model tool list in the same flag flip that (a) skips the
+ * auto-on-review trigger in `agent-service.ts` and (b) drops the pack's
+ * `activeToolNames()` entry from the Settings pack list.
+ */
+export function syncModelComparisonTools(registry: ToolRegistry): void {
+  if (getDefaultPackRegistry().isEnabled(MODEL_COMPARISON_PACK_ID)) {
+    if (!registry.has('compare_models')) registry.register(compareModelsTool)
+  } else {
+    registry.unregister('compare_models')
   }
 }
 
