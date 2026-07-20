@@ -411,8 +411,55 @@ describe('createIntellectFrontierPanel', () => {
     assert.ok(card)
     assert.match(card.textContent, /included in your plan/)
     assert.match(card.textContent, /Claude Max/)
-    assert.match(card.textContent, /cost per Intelligence Index task: \$1\.8/)
+    assert.match(card.textContent, /cost per Intelligence Index task: \$1\.8\/task/)
     card.remove()
+  })
+
+  it('toggles the cost axis between $/MTok and $/task when live task costs exist', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      async () => ({
+        ok: true,
+        indexVersion: '4.1',
+        models: [
+          { id: 'claude-fable-5', intellect: 59.9, costPerTask: 2.4 },
+          { id: 'claude-opus-4-8', intellect: 55.7, costPerTask: 3.1 },
+          {
+            id: 'claude-sonnet-4-6',
+            intellect: 35.9,
+            inputPricePerMTok: 3,
+            outputPricePerMTok: 15,
+            costPerTask: 0.9,
+          },
+        ],
+      }),
+    )
+    await panel.refresh()
+    const taskBtn = panel.root.querySelector<HTMLButtonElement>(
+      'button.frontier-cost-axis-btn[data-cost-axis="perTask"]',
+    )
+    const blendedBtn = panel.root.querySelector<HTMLButtonElement>(
+      'button.frontier-cost-axis-btn[data-cost-axis="blended"]',
+    )
+    assert.ok(taskBtn)
+    assert.ok(blendedBtn)
+    assert.equal(taskBtn.disabled, false)
+    assert.equal(blendedBtn.classList.contains('active'), true)
+    let svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.equal(svg.getAttribute('data-cost-axis'), 'blended')
+    assert.match(svg.textContent || '', /blended price, \$\/MTok/)
+    taskBtn.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.equal(svg.getAttribute('data-cost-axis'), 'perTask')
+    assert.match(svg.textContent || '', /AA cost per Intelligence Index task/)
+    assert.equal(taskBtn.classList.contains('active'), true)
+    blendedBtn.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.equal(svg.getAttribute('data-cost-axis'), 'blended')
   })
 
   it('expands into a larger dialog rendering of the same points and gutters', async () => {

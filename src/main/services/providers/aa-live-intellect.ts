@@ -11,6 +11,9 @@
 import type { LiveAaModel } from '@copse/llm/live-intellect.ts'
 import { getApiKey } from '../storage/settings.ts'
 
+/** Env override for e2e / demos — skips network and the stored AA key. */
+const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
+
 const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
 // AA data moves slowly; refetching each panel open would just burn quota.
 const CACHE_TTL_MS = 6 * 60 * 60_000
@@ -149,6 +152,111 @@ export async function requestLiveIntellectModels(
 }
 
 /**
+ * Deterministic live cohort for e2e: enough canonical anchors to pass the
+ * scale gate, plus `costPerTask` so the value-map $/task axis is exercisable
+ * without an Artificial Analysis API key.
+ */
+function mockLiveIntellectFetch(): LiveIntellectFetch {
+  // Canonical-scale anchors (pass the live gate) plus GPT rows with task costs
+  // so the $/task axis shows non-plan spread under COPSE_PLAN_USAGE_MOCK (Claude
+  // models plot at $0 when their plan window still has headroom).
+  const models: LiveAaModel[] = [
+    {
+      id: 'claude-fable-5',
+      intellect: 59.9,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 2.4,
+    },
+    {
+      id: 'claude-opus-4-8',
+      intellect: 55.7,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 3.1,
+    },
+    {
+      id: 'claude-sonnet-5',
+      intellect: 53.4,
+      inputPricePerMTok: 3,
+      outputPricePerMTok: 15,
+      costPerTask: 1.8,
+    },
+    {
+      id: 'claude-sonnet-4-6',
+      intellect: 35.9,
+      inputPricePerMTok: 3,
+      outputPricePerMTok: 15,
+      costPerTask: 0.9,
+    },
+    {
+      id: 'claude-haiku-4-5',
+      intellect: 24,
+      inputPricePerMTok: 1,
+      outputPricePerMTok: 5,
+      costPerTask: 0.25,
+    },
+    {
+      id: 'gpt-5.6-sol',
+      intellect: 59,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 4.2,
+    },
+    {
+      id: 'gpt-5.5',
+      intellect: 55,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 3.6,
+    },
+    {
+      id: 'gpt-5.6-terra',
+      intellect: 46,
+      inputPricePerMTok: 2,
+      outputPricePerMTok: 10,
+      costPerTask: 1.4,
+    },
+    {
+      id: 'gpt-5',
+      intellect: 34.7,
+      inputPricePerMTok: 2,
+      outputPricePerMTok: 10,
+      costPerTask: 1.1,
+    },
+    {
+      id: 'gpt-5-mini',
+      intellect: 25.3,
+      inputPricePerMTok: 0.4,
+      outputPricePerMTok: 1.6,
+      costPerTask: 0.35,
+    },
+    {
+      id: 'gpt-4o',
+      intellect: 11.2,
+      inputPricePerMTok: 2.5,
+      outputPricePerMTok: 10,
+      costPerTask: 0.55,
+    },
+    {
+      id: 'gpt-4o-mini',
+      intellect: 6.9,
+      inputPricePerMTok: 0.15,
+      outputPricePerMTok: 0.6,
+      costPerTask: 0.12,
+    },
+    {
+      id: 'cheap-smart-oss',
+      intellect: 50,
+      inputPricePerMTok: 0.2,
+      outputPricePerMTok: 0.8,
+      costPerTask: 0.4,
+    },
+  ]
+  return { ok: true, models, indexVersion: '4.1' }
+}
+
+/**
  * The current AA model list, or an empty result when no key is stored (the
  * feature is simply off) or the fetch fails (the panel falls back to curated
  * data). Results are cached — a real cohort for hours, a failure only briefly
@@ -156,6 +264,7 @@ export async function requestLiveIntellectModels(
  * (register-handlers `settings:setKey`).
  */
 export async function fetchLiveIntellectModels(): Promise<LiveIntellectFetch> {
+  if (process.env[MOCK_ENV] === '1') return mockLiveIntellectFetch()
   const key = getApiKey('artificial-analysis')
   if (!key) return { ok: true, models: [] }
   if (cache && Date.now() - cache.at < liveCacheTtlMs(cache.result)) return cache.result
