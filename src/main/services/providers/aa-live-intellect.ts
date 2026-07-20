@@ -1,0 +1,166 @@
+// Live Artificial Analysis Intelligence Index feed, for the model value map.
+// Fetches AA's model list with the device-stored key (slug
+// 'artificial-analysis' — stored like the GitHub token: not an LLM provider,
+// no env fallback, no validation endpoint) and reduces it to the shape the
+// renderer's anchor gate consumes (`@copse/llm/live-intellect.ts` decides
+// whether the feed is on the canonical scale — this service never interprets
+// scores). Cached in-memory with a long TTL: AA republishes at most a few
+// times a week, and their free tier requires attribution, which the UI shows
+// whenever live data renders.
+
+import type { LiveAaModel } from '@copse/llm/live-intellect.ts'
+import { getApiKey } from '../storage/settings.ts'
+
+const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
+// AA data moves slowly; refetching each panel open would just burn quota.
+const CACHE_TTL_MS = 6 * 60 * 60_000
+// Failures (bad key, network, unparseable payload) are cached only briefly, so
+// a user who fixes their key or waits out a blip recovers on the next panel
+// open instead of being stuck behind a stale error for the full success TTL.
+const FAILURE_CACHE_TTL_MS = 60_000
+const FETCH_TIMEOUT_MS = 10_000
+
+export interface LiveIntellectFetch {
+  ok: boolean
+  /** Empty when no key is configured or the fetch failed. */
+  models: LiveAaModel[]
+  /** Index version the feed declared its scores belong to (e.g. "4.1"). */
+  indexVersion?: string | number
+  /** Set when ok is false and there is something actionable to show. */
+  error?: string
+}
+
+interface AaApiModel {
+  id?: string
+  slug?: string
+  name?: string
+  evaluations?: {
+    artificial_analysis_intelligence_index?: number
+    artificial_analysis_intelligence_index_version?: string | number
+  }
+  pricing?: {
+    price_1m_input_tokens?: number
+    price_1m_output_tokens?: number
+    /** AA's cost to run the Intelligence Index once, in USD. */
+    price_per_intelligence_index_task?: number
+    cost_per_task?: number
+  }
+}
+
+/**
+ * The index version the payload declares — the docs place it as a version
+ * field alongside the intelligence index; accept the plausible spellings at
+ * both payload and per-model level, first hit wins.
+ */
+function reportedIndexVersion(
+  payload: Record<string, unknown>,
+  models: readonly AaApiModel[],
+): string | number | undefined {
+  for (const key of [
+    'artificial_analysis_intelligence_index_version',
+    'intelligence_index_version',
+  ]) {
+    const v = payload[key] ?? (payload['metadata'] as Record<string, unknown> | undefined)?.[key]
+    if (typeof v === 'string' || typeof v === 'number') return v
+  }
+  for (const m of models) {
+    const v = m.evaluations?.artificial_analysis_intelligence_index_version
+    if (typeof v === 'string' || typeof v === 'number') return v
+  }
+  return undefined
+}
+
+let cache: { at: number; result: LiveIntellectFetch } | null = null
+
+export function invalidateLiveIntellectCache(): void {
+  cache = null
+}
+
+/**
+ * How long a given result stays cached: a real cohort (successful fetch with
+ * models) for the full TTL, anything else — an error or an empty/unparseable
+ * payload — only briefly, so a transient or now-fixed condition recovers on
+ * the next open rather than sticking for hours.
+ */
+export function liveCacheTtlMs(result: LiveIntellectFetch): number {
+  return result.ok && result.models.length > 0 ? CACHE_TTL_MS : FAILURE_CACHE_TTL_MS
+}
+
+function reduceModel(api: AaApiModel): LiveAaModel | null {
+  const intellect = api.evaluations?.artificial_analysis_intelligence_index
+  if (typeof intellect !== 'number' || !Number.isFinite(intellect)) return null
+  const id = api.slug ?? api.name ?? api.id
+  if (!id) return null
+  const input = api.pricing?.price_1m_input_tokens
+  const output = api.pricing?.price_1m_output_tokens
+  const model: LiveAaModel = { id, intellect }
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    model.inputPricePerMTok = input
+    if (typeof output === 'number' && Number.isFinite(output)) model.outputPricePerMTok = output
+  }
+  const perTask = api.pricing?.price_per_intelligence_index_task ?? api.pricing?.cost_per_task
+  if (typeof perTask === 'number' && Number.isFinite(perTask) && perTask > 0) {
+    model.costPerTask = perTask
+  }
+  return model
+}
+
+/**
+ * One live fetch of the AA model list, with no key lookup and no caching — the
+ * pure HTTP+parse surface, so tests can drive it with a fake fetch.
+ *
+ * `redirect: 'follow'` deliberately matches the proven `sync:intellect
+ * --from-api` path: the earlier `redirect: 'manual'` turned any AA-side
+ * redirect (CDN, WAF, trailing-slash normalisation) into a silent failure here
+ * while the sync script sailed through, which is exactly the "sync works but
+ * the live panel doesn't" shape. The URL is a fixed trusted constant, so
+ * following its redirects is safe.
+ */
+export async function requestLiveIntellectModels(
+  key: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LiveIntellectFetch> {
+  try {
+    const res = await fetchImpl(AA_MODELS_URL, {
+      headers: { 'x-api-key': key },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    })
+    if (!res.ok) {
+      const status = `HTTP ${String(res.status)}${res.statusText ? ` ${res.statusText}` : ''}`
+      const hint =
+        res.status === 401 || res.status === 403
+          ? ' — the key was rejected; check the Artificial Analysis key in Settings'
+          : ''
+      return { ok: false, models: [], error: `Artificial Analysis API: ${status}${hint}` }
+    }
+    const payload = (await res.json()) as Record<string, unknown> & { data?: AaApiModel[] }
+    const apiModels = payload.data ?? []
+    const models = apiModels.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
+    const indexVersion = reportedIndexVersion(payload, apiModels)
+    return { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
+  } catch (err) {
+    return {
+      ok: false,
+      models: [],
+      error: err instanceof Error ? err.message : 'Artificial Analysis API fetch failed',
+    }
+  }
+}
+
+/**
+ * The current AA model list, or an empty result when no key is stored (the
+ * feature is simply off) or the fetch fails (the panel falls back to curated
+ * data). Results are cached — a real cohort for hours, a failure only briefly
+ * (see {@link liveCacheTtlMs}) — and the cache is dropped when the key changes
+ * (register-handlers `settings:setKey`).
+ */
+export async function fetchLiveIntellectModels(): Promise<LiveIntellectFetch> {
+  const key = getApiKey('artificial-analysis')
+  if (!key) return { ok: true, models: [] }
+  if (cache && Date.now() - cache.at < liveCacheTtlMs(cache.result)) return cache.result
+
+  const result = await requestLiveIntellectModels(key)
+  cache = { at: Date.now(), result }
+  return result
+}

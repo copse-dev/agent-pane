@@ -33,7 +33,7 @@ describe('advisor pair assessment hint', () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-advisor-pair-good', {
       model: 'lmstudio:qwen/qwen3.6-35b-a3b',
-      advisorModel: 'claude-opus-4-8',
+      advisorModel: 'claude-fable-5',
     })
     await browser.reloadSession()
     await openExperimentalSection()

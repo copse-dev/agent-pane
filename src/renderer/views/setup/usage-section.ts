@@ -9,6 +9,7 @@ import {
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import { qsRequired } from '../../dom/helpers.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
+import { createIntellectFrontierPanel } from '../intellect-frontier-panel.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 
@@ -290,6 +291,16 @@ export function createUsageSection(
     </div>
   `
 
+  // The model value map earns its place here too: usage is where spend is
+  // visible, and the frontier is the "was that spend worth it" view.
+  const frontierPanel = createIntellectFrontierPanel(
+    () => api.lmStudio.models(),
+    () => api.settings.extraProviders(),
+    () => api.intellect.liveModels(),
+    () => api.usage.getPlanUsage(),
+  )
+  root.append(frontierPanel.root)
+
   const planEl = qsRequired(root, '#usage-plan-section')
   const bodyEl = qsRequired(root, '#usage-period-body')
   const labelEl = qsRequired(root, '#usage-period-label')
@@ -335,6 +346,7 @@ export function createUsageSection(
   async function refresh(): Promise<void> {
     bodyEl.textContent = 'Loading usage…'
     const planPromise = refreshPlan()
+    const frontierPromise = frontierPanel.refresh()
     try {
       cachedSummary = await api.usage.getSummary()
       showPeriod(activePeriod)
@@ -343,6 +355,7 @@ export function createUsageSection(
         err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
     }
     await planPromise
+    await frontierPromise
   }
 
   const unsubUsage = store?.on('usage_updated', () => {
