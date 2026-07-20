@@ -632,6 +632,7 @@ export function mountRoadmapPane(
           {
             class: 'roadmap-done-toggle',
             role: 'button',
+            tabindex: '0',
             title: isDone ? 'Reopen (set ready)' : 'Mark done',
             'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
           },
@@ -639,6 +640,12 @@ export function mountRoadmapPane(
         )
         toggle.addEventListener('click', (e) => {
           // The row itself selects the item; the toggle only flips status.
+          e.stopPropagation()
+          void setStatus(item, isDone ? 'ready' : 'done')
+        })
+        toggle.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
           e.stopPropagation()
           void setStatus(item, isDone ? 'ready' : 'done')
         })
