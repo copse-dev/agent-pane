@@ -234,6 +234,44 @@ describe('runAgentLoop', () => {
     )
   })
 
+  it('records cut reasoning when the per-stream cap fires (#489)', async () => {
+    const reasoningBody = 'Actually, I just realized '.repeat(4000)
+    const flood: ProviderStreamChunk[] = [
+      { type: 'reasoning', text: reasoningBody },
+      ...Array.from({ length: 200 }, () => ({ type: 'reasoning' as const, text: 'x'.repeat(1000) })),
+    ]
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          for (const c of flood) yield c
+          return
+        }
+        yield { type: 'text', text: 'Final answer.' }
+        yield { type: 'done' }
+      },
+    }
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 5,
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(cuts.length, 1)
+    const cut = cuts[0]
+    assert.equal(cut?.cutReason, 'reasoning_runaway_cap')
+    assert.equal(cut?.streamCappedAsRunaway, true)
+    assert.ok((cut?.streamReasoningChars ?? 0) > 0)
+    assert.ok(cut?.reasoningText.includes('Actually, I just realized'))
+    assert.equal(cut?.willInjectReasoningRunawayNudge, true)
+    assert.equal(cut?.reasoningRunawayStreak, 0)
+  })
+
   it('gives up cleanly when reasoning keeps tripping the cap (#489)', async () => {
     // The model ignores the force-answer nudge and loops in reasoning again. Rather
     // than re-prime until the wall-clock deadline, the run ends after the second
