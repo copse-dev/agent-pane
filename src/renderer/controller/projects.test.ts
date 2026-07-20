@@ -64,6 +64,7 @@ function makeApi(handlers: {
       updateMeta: async (): Promise<void> => undefined,
       delete: async (): Promise<void> => undefined,
       catalog: async (): Promise<never[]> => [],
+      listOrphans: async (): Promise<never[]> => [],
     },
     settings: {
       get: handlers.settingsGet ?? (async (): Promise<unknown> => null),
@@ -509,7 +510,7 @@ test('restoreProject quarantines a missing project instead of deleting it (#997)
   assert.equal(lastProjects?.length, 2)
 })
 
-test('restoreProject quarantines an unreachable SSH project and restores the next project', async () => {
+test('restoreProject keeps an SSH project active when connect fails (disconnect banner)', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
     projects: [
@@ -524,6 +525,35 @@ test('restoreProject quarantines an unreachable SSH project and restores the nex
     sshStates: async () => [{ hostId: 'host-a', status: 'disconnected' }],
     sshConnect: async () => {
       throw new Error('host unavailable')
+    },
+    loadProjectThreads: async (projectId) => (projectId === 'local' ? [thread('t-local')] : []),
+  })
+
+  await restoreProject(store, api, 'remote')
+
+  // Do not quarantine on SSH connect failure — the titlebar disconnect banner
+  // needs the project (and its sshHost) to stay active.
+  assert.equal(store.getState().projects.find((p) => p.id === 'remote')?.missing, undefined)
+  assert.equal(store.getState().activeProjectId, 'remote')
+  assert.equal(store.getState().workspaceRoot, null)
+})
+
+test('restoreProject quarantines an SSH project when the remote folder cannot open', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'remote', path: '/gone', name: 'Remote', sshHost: 'host-a' },
+      { id: 'local', path: '/local', name: 'Local' },
+    ],
+    activeProjectId: 'remote',
+    threads: [],
+  })
+  const api = makeApi({
+    settingsGet: async () => true,
+    sshStates: async () => [{ hostId: 'host-a', status: 'connected' }],
+    workspaceSet: async (path) => {
+      if (path === '/gone') throw new Error('remote path missing')
+      return path
     },
     loadProjectThreads: async (projectId) => (projectId === 'local' ? [thread('t-local')] : []),
   })

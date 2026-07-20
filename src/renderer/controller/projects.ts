@@ -513,9 +513,9 @@ export async function restoreProject(store: AppStore, api: ApiClient, id: string
     try {
       await ensureSshConnected(api, proj.sshHost)
     } catch {
-      // Connection failures are the remote equivalent of a missing local
-      // folder: quarantine without deleting history and restore another project.
-      await quarantineAndRestoreNext(store, api, id)
+      // Keep the project active so the SSH disconnect banner (Reconnect) can
+      // surface. A down host is not a missing folder — quarantining here would
+      // clear activeProjectId and hide that recovery path (#997 / ssh-titlebar).
       return
     }
   }
