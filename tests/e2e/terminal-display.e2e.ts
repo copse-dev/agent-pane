@@ -34,8 +34,8 @@ describe('integrated terminal', () => {
     await expect(terminalBtn).toHaveElementClass('active')
 
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
-    // macOS confines the PTY with the project seatbelt. Linux CI has no such
-    // boundary, so it correctly asks the user before opening a host terminal.
+    // User-initiated integrated terminals run outside the project seatbelt on
+    // macOS. Linux CI has no OS sandbox, so it asks before opening a host terminal.
     if (process.platform !== 'darwin') {
       const approval = await $('#approval-dialog')
       await approval.waitForDisplayed({ timeout: 30_000 })
