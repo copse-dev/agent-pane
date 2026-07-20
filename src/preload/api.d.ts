@@ -217,6 +217,8 @@ export interface ApiClient {
       projectId: string,
       query?: string,
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
+    /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
+    listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
   }
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>

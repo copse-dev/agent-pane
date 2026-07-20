@@ -1,16 +1,20 @@
 import { el, clear } from '../dom/helpers.ts'
-import { chevronRightIcon, closeIcon, runningStatusIcon } from '../dom/icons.ts'
+import { chevronRightIcon, closeIcon, runningStatusIcon, warningIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import type { OrphanProjectStore, Project } from '@shared/types'
 import { openNewThread, deleteThread } from '@shared/store/thread-helpers.ts'
 import {
   addProject,
   addRemoteProject,
   getSidebarThreads,
   isProjectSwitchInFlight,
+  listOrphanProjects,
   paginateSidebarThreads,
   projectDisplayName,
   removeProject,
+  recoverOrphanProject,
+  relocateProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
   switchProjectThread,
@@ -177,13 +181,93 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   store.on('settings_changed', syncRemoteOpenVisibility)
 
   const visibleThreadCounts = new Map<string, number>()
+  let orphans: OrphanProjectStore[] = []
+
+  // The quarantine notice shown when a project's folder could not be opened
+  // (#997). Its threads are still on disk under ~/.copse/workspace/<id>/; the
+  // action re-points the project at a folder (local) or retries the open (SSH).
+  function renderMissingNotice(project: Project): HTMLElement {
+    const wrap = el('div', { class: 'project-missing-notice' })
+    wrap.append(
+      el(
+        'div',
+        { class: 'project-missing-text' },
+        'This folder could not be opened. Its threads are safe — ' +
+          (project.sshHost
+            ? 'retry once the host is reachable.'
+            : 'relocate the project to restore them.'),
+      ),
+    )
+    const action = project.sshHost
+      ? el('button', { type: 'button', class: 'project-missing-btn' }, 'Retry')
+      : el('button', { type: 'button', class: 'project-missing-btn' }, 'Relocate…')
+    action.addEventListener('click', () => {
+      if (project.sshHost) {
+        switchProject(store, api, project.id)
+        return
+      }
+      void relocateProject(store, api, project.id).catch((err: unknown) => {
+        showErrorToast('Could not relocate project', err)
+      })
+    })
+    wrap.append(action)
+    return wrap
+  }
+
+  // Orphaned thread stores (dirs with threads but no project entry) surfaced so
+  // they can be re-attached instead of recovered by hand (#997).
+  function renderOrphansSection(): HTMLElement {
+    const section = el('div', { class: 'orphans-section' })
+    section.append(
+      el(
+        'div',
+        { class: 'orphans-heading' },
+        warningIcon('ui-icon ui-icon-sm'),
+        el('span', {}, 'Recoverable threads'),
+      ),
+    )
+    for (const orphan of orphans) {
+      const count = orphan.threadCount
+      const row = el(
+        'div',
+        { class: 'orphan-row', title: `Store ${orphan.id}` },
+        el('span', { class: 'orphan-name' }, `${String(count)} thread${count === 1 ? '' : 's'}`),
+      )
+      const recoverBtn = el('button', { type: 'button', class: 'orphan-recover-btn' }, 'Recover…')
+      recoverBtn.addEventListener('click', () => {
+        void recoverOrphanProject(store, api, orphan.id).catch((err: unknown) => {
+          showErrorToast('Could not recover threads', err)
+        })
+      })
+      row.append(recoverBtn)
+      section.append(row)
+    }
+    return section
+  }
+
+  function refreshOrphans(): void {
+    void listOrphanProjects(api)
+      .then((next) => {
+        const changed =
+          next.length !== orphans.length ||
+          next.some((o, i) => {
+            const prev = orphans[i]
+            return !prev || o.id !== prev.id || o.threadCount !== prev.threadCount
+          })
+        orphans = next
+        if (changed) render()
+      })
+      .catch((err: unknown) => {
+        showErrorToast('Could not scan recoverable threads', err)
+      })
+  }
 
   function render(): void {
     clear(list)
     const { projects, activeProjectId, expandedProjectId, activeThreadId } = store.getState()
     const expandedId = expandedProjectId ?? activeProjectId
 
-    if (projects.length === 0) {
+    if (projects.length === 0 && orphans.length === 0) {
       list.append(el('div', { class: 'sidebar-empty' }, 'No projects yet. Click "+ Open".'))
       return
     }
@@ -192,7 +276,10 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       const isExpanded = project.id === expandedId
       const projectRow = el(
         'button',
-        { class: `project-row${isExpanded ? ' active' : ''}`, title: project.path },
+        {
+          class: `project-row${isExpanded ? ' active' : ''}${project.missing ? ' missing' : ''}`,
+          title: project.missing ? `${project.path} — folder missing` : project.path,
+        },
         el(
           'span',
           { class: `project-twisty${isExpanded ? ' expanded' : ''}` },
@@ -200,16 +287,27 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         ),
         el('span', { class: 'project-name' }, projectDisplayName(project)),
       )
-      // A collapsed project hides its thread rows, so surface any thread of its
-      // own that is waiting on the user right on the project row (expanded
-      // projects show the per-thread bells below instead).
-      if (
+      // Flag a quarantined project whose folder could not be opened (#997); its
+      // threads are preserved on disk and recoverable via the notice below.
+      if (project.missing) {
+        projectRow.append(warningIcon('ui-icon ui-icon-sm project-missing-icon'))
+      } else if (
+        // A collapsed project hides its thread rows, so surface any thread of its
+        // own that is waiting on the user right on the project row (expanded
+        // projects show the per-thread bells below instead).
         !isExpanded &&
         getSidebarThreads(store, project.id).some((t) => isThreadAwaitingAttention(t.id))
       ) {
         projectRow.append(attentionBell('A thread in this project needs your attention'))
       }
       projectRow.addEventListener('click', () => {
+        // A missing project can't be activated (its folder is gone), so clicking
+        // just expands it to reveal the relocate notice rather than re-failing.
+        if (project.missing) {
+          store.setState({ expandedProjectId: isExpanded ? null : project.id })
+          store.emit('projects_changed')
+          return
+        }
         switchProject(store, api, project.id)
       })
       projectRow.addEventListener('contextmenu', (e) => {
@@ -219,6 +317,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           void removeProject(store, api, project.id)
         })
       })
+
+      if (isExpanded && project.missing) {
+        list.append(projectRow)
+        list.append(renderMissingNotice(project))
+        continue
+      }
 
       if (isExpanded) {
         const projectLine = el('div', { class: 'project-line' })
@@ -319,6 +423,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
       list.append(chats)
     }
+
+    if (orphans.length > 0) list.append(renderOrphansSection())
   }
 
   const unsubs = [
@@ -329,9 +435,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     store.on('thread_status_changed', render),
     store.on('workspace_changed', render),
     store.on('attention_changed', render),
+    // Recovering an orphan or relocating a project changes the project set, which
+    // in turn changes which store dirs count as orphaned — re-scan on that.
+    store.on('projects_changed', refreshOrphans),
   ]
 
   render()
+  refreshOrphans()
   return () => {
     dismissProjectContextMenu?.()
     unsubs.forEach((u) => {

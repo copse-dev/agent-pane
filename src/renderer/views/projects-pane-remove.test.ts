@@ -4,7 +4,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
-import type { Thread } from '@shared/types'
+import type { OrphanProjectStore, Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
@@ -34,7 +34,7 @@ describe('projects pane remove-from-sidebar (component)', () => {
     return host
   }
 
-  function makeApi(): ApiClient {
+  function makeApi(orphans: OrphanProjectStore[] = []): ApiClient {
     return {
       workspace: {
         set: async (path: string): Promise<string> => path,
@@ -51,6 +51,7 @@ describe('projects pane remove-from-sidebar (component)', () => {
         updateMeta: async (): Promise<void> => undefined,
         delete: async (): Promise<void> => undefined,
         catalog: async (): Promise<never[]> => [],
+        listOrphans: async (): Promise<OrphanProjectStore[]> => orphans,
       },
     } as unknown as ApiClient
   }
@@ -131,5 +132,36 @@ describe('projects pane remove-from-sidebar (component)', () => {
     assert.equal(document.querySelector('.context-menu'), null, 'menu dismisses after click')
     const names = Array.from(document.querySelectorAll('.project-name')).map((n) => n.textContent)
     assert.deepEqual(names, ['Alpha'])
+  })
+
+  it('renders a quarantined project notice and recoverable orphan stores', async () => {
+    const store = createStore({
+      projects: [
+        { id: 'a', path: '/a', name: 'Alpha' },
+        { id: 'missing', path: '/gone', name: 'Moved project', missing: true },
+      ],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t-a', 'Thread A')],
+      activeThreadId: 't-a',
+    })
+    mount(store, makeApi([{ id: 'orphan', threadCount: 2 }]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const missingRow = document.querySelector<HTMLButtonElement>('.project-row.missing')
+    assert.ok(missingRow)
+    assert.match(missingRow.title, /folder missing/i)
+    assert.ok(missingRow.querySelector('.project-missing-icon'))
+    missingRow.click()
+
+    assert.match(
+      document.querySelector('.project-missing-text')?.textContent ?? '',
+      /threads are safe.*relocate/i,
+    )
+    assert.equal(document.querySelector('.project-missing-btn')?.textContent, 'Relocate…')
+    assert.equal(document.querySelector('.orphans-heading')?.textContent, 'Recoverable threads')
+    assert.equal(document.querySelector('.orphan-name')?.textContent, '2 threads')
+    assert.equal(document.querySelector('.orphan-recover-btn')?.textContent, 'Recover…')
   })
 })

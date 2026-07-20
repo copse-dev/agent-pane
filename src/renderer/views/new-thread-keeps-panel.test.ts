@@ -31,9 +31,12 @@ function seededThread(): Thread {
   }
 }
 
-// The new-thread click path (project active + workspace set → openNewThread)
-// never touches the api, so a bare stub is enough.
-const apiStub = {} as unknown as ApiClient
+// new-thread click never hits the api; listOrphans is called on pane mount (#997).
+const apiStub = {
+  threads: {
+    listOrphans: async (): Promise<never[]> => [],
+  },
+} as unknown as ApiClient
 
 afterEach(() => {
   document.body.replaceChildren()
