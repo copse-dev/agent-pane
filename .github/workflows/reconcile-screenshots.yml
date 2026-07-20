@@ -60,7 +60,17 @@ jobs:
             const out = [];
             for (const pr of open) {
               if (pr.head.repo?.full_name !== self) continue; // fork — can't push
-              let state = pr.mergeable_state;
+              // Always re-fetch: the paginated list is a snapshot, and a PR can
+              // merge while we poll later ones. Using the stale list's
+              // mergeable_state alone would enqueue an already-merged PR (seen on
+              // #941: listed open, merged mid-list, still emitted at list end).
+              const { data: latest } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+              });
+              if (latest.state !== 'open') continue;
+              let state = latest.mergeable_state;
               // The list payload omits a freshly-computed state; re-fetch and let
               // `unknown` settle (GitHub computes mergeability on demand).
               for (let i = 0; i < 4 && (state === 'unknown' || state == null); i++) {
@@ -70,12 +80,16 @@ jobs:
                   repo: context.repo.repo,
                   pull_number: pr.number,
                 });
+                if (data.state !== 'open') {
+                  state = null;
+                  break;
+                }
                 state = data.mergeable_state;
               }
               // `dirty` == conflicting. Treat a stuck `unknown` as a maybe: the
               // merge step is the real source of truth and no-ops when clean.
               if (state === 'dirty' || state === 'unknown') {
-                out.push({ number: pr.number, head: pr.head.ref });
+                out.push({ number: pr.number, head: latest.head.ref });
               }
             }
             console.log(`Conflicting PR(s): ${JSON.stringify(out)}`);
@@ -95,16 +109,36 @@ jobs:
       matrix:
         pr: ${{ fromJSON(needs.list.outputs.prs) }}
     steps:
+      # The list→matrix handoff is not atomic: a PR can merge after `list` emits
+      # it and before this job checks out — same race as commit-screenshots /
+      # #1001. Re-fetch the PR and no-op only when GitHub confirms it is closed.
+      # An API error must fail the job instead of being mistaken for a deleted
+      # branch and silently skipping a live conflict.
+      - name: Check pull request is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ matrix.pr.number }}
+        run: |
+          state="$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" --jq .state)"
+          if [ "$state" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::PR #$PR_NUMBER is $state — skipping reconcile."
+            echo "open=false" >> "$GITHUB_OUTPUT"
+          fi
       # PAT so the resolving push re-triggers the PR's CI (GITHUB_TOKEN pushes are
       # recursion-guarded and wouldn't fire `synchronize`, leaving ci-passed stale
       # on the new head). Falls back to github.token: the conflict still clears,
       # just without the CI re-trigger.
       - uses: actions/checkout@v7.0.0
+        if: steps.pr.outputs.open == 'true'
         with:
           ref: ${{ matrix.pr.head }}
           fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
       - name: Merge main, auto-resolving screenshot-only conflicts
+        if: steps.pr.outputs.open == 'true'
         id: merge
         env:
           PR_NUMBER: ${{ matrix.pr.number }}
@@ -160,7 +194,9 @@ jobs:
           git push
           echo "resolved=true" >> "$GITHUB_OUTPUT"
       - name: Comment when manual resolution is needed
-        if: steps.merge.outputs.manual == 'true' || steps.merge.outputs.workflow == 'true'
+        if: >-
+          steps.pr.outputs.open == 'true' &&
+          (steps.merge.outputs.manual == 'true' || steps.merge.outputs.workflow == 'true')
         uses: actions/github-script@v9
         env:
           PR_NUMBER: ${{ matrix.pr.number }}
