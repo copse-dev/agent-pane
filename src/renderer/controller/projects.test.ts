@@ -387,12 +387,12 @@ test('removeProject drops an inactive project without changing the workspace', a
   assert.ok(saved.some((e) => e.key === 'activeProjectId' && e.value === 'a'))
 })
 
-test('removeProject switches to another project when the active one is removed', async () => {
+test('removeProject switches to another project with its connection when the active one is removed', async () => {
   resetProjectSwitchStateForTest()
   const store = createStore({
     projects: [
       { id: 'a', path: '/a', name: 'A' },
-      { id: 'b', path: '/b', name: 'B' },
+      { id: 'b', path: '/b', name: 'B', sshHost: 'remote-b' },
     ],
     activeProjectId: 'a',
     expandedProjectId: 'a',
@@ -401,10 +401,26 @@ test('removeProject switches to another project when the active one is removed',
     activeThreadId: 't-a',
   })
 
+  const workspaceCalls: Array<{ path: string; sshHost: string | undefined }> = []
   const api = makeApi({
+    workspaceSet: async (path, sshHost) => {
+      workspaceCalls.push({ path, sshHost })
+      return path
+    },
     loadProjectThreads: async (projectId) => {
       if (projectId === 'b') return [thread('t-b')]
       return []
+    },
+  })
+  Object.assign(api, {
+    settings: {
+      get: async (key: string): Promise<unknown> => (key === 'sshWorkspaceEnabled' ? true : null),
+    },
+    sshWorkspace: {
+      getStates: async () => [
+        { hostId: 'remote-b', status: 'connected', label: 'B', target: 'remote-b' },
+      ],
+      connect: async (): Promise<void> => undefined,
     },
   })
 
@@ -417,6 +433,7 @@ test('removeProject switches to another project when the active one is removed',
   )
   assert.equal(store.getState().workspaceRoot, '/b')
   assert.equal(store.getState().activeThreadId, 't-b')
+  assert.deepEqual(workspaceCalls, [{ path: '/b', sshHost: 'remote-b' }])
 })
 
 test('removeProject clears the workspace when the last project is removed', async () => {

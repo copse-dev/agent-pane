@@ -232,7 +232,7 @@ export async function removeProject(store: AppStore, api: ApiClient, id: string)
   // flushes the outgoing active project's threads as part of the switch).
   store.setState({ projects })
   store.emit('projects_changed')
-  await activateAndWait(store, api, next.id, next.path)
+  await activateAndWait(store, api, next.id, next.path, next.sshHost)
 }
 
 function setExpandedProject(store: AppStore, id: string): void {
