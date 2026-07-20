@@ -69,8 +69,8 @@ function abortOnFirstChunk(controller: AbortController, into: StreamChunk[]): Ac
 }
 
 describe('acp stop button', () => {
-  afterEach(() => {
-    disposeAllAcpSessions()
+  afterEach(async () => {
+    await disposeAllAcpSessions()
   })
 
   it('a compliant agent honors session/cancel: the turn settles and the session stays warm', async () => {

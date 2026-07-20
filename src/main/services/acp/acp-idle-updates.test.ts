@@ -72,8 +72,8 @@ function whenAborted(signal: AbortSignal): Promise<void> {
 }
 
 describe('acp between-turn updates (issue #588)', () => {
-  afterEach(() => {
-    disposeAllAcpSessions()
+  afterEach(async () => {
+    await disposeAllAcpSessions()
   })
 
   it('surfaces updates that arrive after the turn settled, without a new prompt', async () => {

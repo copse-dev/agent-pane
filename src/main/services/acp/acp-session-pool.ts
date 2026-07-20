@@ -36,7 +36,7 @@ export interface PooledAcpSession {
   bridge: AcpNativeBridge | null
   fingerprint: string
   lastUsedAt: number
-  dispose: () => void
+  dispose: () => Promise<void>
 }
 
 export interface AcquireAcpSessionOptions {
@@ -76,7 +76,7 @@ export function acpSessionFingerprint(config: AcpAgentSpawnConfig): string {
 function ensureReaper(): void {
   if (reaper) return
   reaper = setInterval(() => {
-    reapIdleAcpSessions()
+    void reapIdleAcpSessions()
   }, REAP_INTERVAL_MS)
   reaper.unref()
 }
@@ -99,7 +99,7 @@ function rememberResumeCandidate(threadId: string, entry: PooledAcpSession): voi
 }
 
 /** Evict sessions idle past `idleMs`. Exported with injectable `now` for tests. */
-export function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): string[] {
+export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): Promise<string[]> {
   const reaped: string[] = []
   for (const [threadId, entry] of pool) {
     if (now - entry.lastUsedAt >= idleMs) {
@@ -107,8 +107,8 @@ export function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): string[
       // agent can resume — the next acquire spawns a fresh transport and calls
       // `session/resume` instead of replaying the transcript (#830).
       rememberResumeCandidate(threadId, entry)
-      entry.dispose()
       pool.delete(threadId)
+      await entry.dispose()
       reaped.push(threadId)
     }
   }
@@ -137,8 +137,8 @@ export async function acquireAcpSession(
     } else {
       resumeCandidates.delete(opts.threadId)
     }
-    existing.dispose()
     pool.delete(opts.threadId)
+    await existing.dispose()
   }
   const candidate = resumeCandidates.get(opts.threadId)
   if (candidate?.fingerprint === fingerprint) {
@@ -169,15 +169,18 @@ export async function acquireAcpSession(
   }
   resumeCandidates.delete(opts.threadId)
 
+  let disposal: Promise<void> | null = null
   const entry: PooledAcpSession = {
     open,
     bridge,
     fingerprint,
     lastUsedAt: Date.now(),
     dispose: () => {
+      if (disposal) return disposal
       open.dispose()
       bridgeAbort.abort()
-      if (bridge) void bridge.close()
+      disposal = bridge?.close() ?? Promise.resolve()
+      return disposal
     },
   }
   pool.set(opts.threadId, entry)
@@ -185,33 +188,35 @@ export async function acquireAcpSession(
 }
 
 /** Evict and tear down one thread's session (e.g. after a broken turn). */
-export function disposeAcpSession(
+export async function disposeAcpSession(
   threadId: string,
   options: { preserveForResume?: boolean } = {},
-): void {
+): Promise<boolean> {
   const entry = pool.get(threadId)
   if (!entry) {
     if (!options.preserveForResume) resumeCandidates.delete(threadId)
-    return
+    return false
   }
   if (options.preserveForResume) {
     rememberResumeCandidate(threadId, entry)
   } else {
     resumeCandidates.delete(threadId)
   }
-  entry.dispose()
   pool.delete(threadId)
+  await entry.dispose()
+  return true
 }
 
 /** Tear down every pooled session (app shutdown). */
-export function disposeAllAcpSessions(): void {
-  for (const entry of pool.values()) entry.dispose()
+export async function disposeAllAcpSessions(): Promise<void> {
+  const entries = [...pool.values()]
   pool.clear()
   resumeCandidates.clear()
   if (reaper) {
     clearInterval(reaper)
     reaper = null
   }
+  await Promise.all(entries.map((entry) => entry.dispose()))
 }
 
 /** Test/introspection helper. */

@@ -243,6 +243,17 @@ export function hasTerminalSessions(threadId?: string | null): boolean {
 }
 
 /**
+ * Dispose every terminal owned by one thread. This explicit async boundary is
+ * used by ordered thread/worktree retirement; unrelated and unscoped terminals
+ * remain alive.
+ */
+export function destroyTerminalSessionsForThread(threadId: string): Promise<string[]> {
+  const owned = [...sessions.values()].filter((session) => session.threadId === threadId)
+  for (const session of owned) disposeSession(session, session.id)
+  return Promise.resolve(owned.map((session) => session.id))
+}
+
+/**
  * Test-only: insert a session without spawning a PTY. Not used by production code.
  */
 export function __testInjectTerminalSession(opts: {

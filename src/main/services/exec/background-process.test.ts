@@ -1,4 +1,4 @@
-import { describe, it, after, beforeEach, afterEach } from 'node:test'
+import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setSetting } from '../storage/settings.ts'
 import { storageSet } from '../storage/storage.ts'
@@ -10,8 +10,30 @@ import {
   listBackgroundProcesses,
   getBackgroundProcessLogs,
   stopBackgroundProcess,
+  stopBackgroundProcessesForThread,
   stopAllBackgroundProcesses,
 } from './background-process.ts'
+import {
+  runWithThreadExecutionContext,
+  type ThreadExecutionContext,
+} from '../thread-execution-context.ts'
+
+const OWNER = { projectId: 'project-a', threadId: 'thread-a' }
+const OTHER_OWNER = { projectId: 'project-b', threadId: 'thread-b' }
+const CONTEXT: ThreadExecutionContext = {
+  ...OWNER,
+  projectRoot: process.cwd(),
+  root: process.cwd(),
+  checkoutMode: 'shared',
+  branch: null,
+}
+const OTHER_CONTEXT: ThreadExecutionContext = {
+  ...OTHER_OWNER,
+  projectRoot: process.cwd(),
+  root: process.cwd(),
+  checkoutMode: 'shared',
+  branch: null,
+}
 
 describe('detectServerUrl', () => {
   it('reads a vite-style Local URL', () => {
@@ -43,7 +65,7 @@ describe('detectServerUrl', () => {
 })
 
 describe('background process manager', () => {
-  after(() => {
+  afterEach(() => {
     stopAllBackgroundProcesses()
   })
 
@@ -53,20 +75,21 @@ describe('background process manager', () => {
       cwd: process.cwd(),
       allowPortBinding: true,
       waitMs: 4000,
+      owner: OWNER,
     })
     assert.equal(info.running, true)
     assert.equal(info.url, 'http://localhost:4321')
     assert.equal(info.urlRemote, false)
 
-    assert.ok(listBackgroundProcesses().some((p) => p.id === info.id))
-    assert.match(getBackgroundProcessLogs(info.id) ?? '', /http:\/\/localhost:4321/)
+    assert.ok(listBackgroundProcesses(OWNER).some((p) => p.id === info.id))
+    assert.match(getBackgroundProcessLogs(info.id, OWNER) ?? '', /http:\/\/localhost:4321/)
 
-    assert.equal(stopBackgroundProcess(info.id), true)
+    assert.equal(stopBackgroundProcess(info.id, OWNER), true)
     assert.equal(
-      listBackgroundProcesses().some((p) => p.id === info.id),
+      listBackgroundProcesses(OWNER).some((p) => p.id === info.id),
       false,
     )
-    assert.equal(stopBackgroundProcess(info.id), false)
+    assert.equal(stopBackgroundProcess(info.id, OWNER), false)
   })
 
   it('reports a command that exits immediately as not running', async () => {
@@ -74,6 +97,7 @@ describe('background process manager', () => {
       command: 'echo boom; exit 3',
       cwd: process.cwd(),
       waitMs: 4000,
+      owner: OWNER,
     })
     assert.equal(info.running, false)
     assert.equal(info.exitCode, 3)
@@ -85,17 +109,52 @@ describe('background process manager', () => {
       command: "printf 'Local:   http://localhost:4321/\\n'; sleep 30",
       cwd: process.cwd(),
       waitMs: 400,
+      owner: OWNER,
     })
     assert.equal(info.running, true)
     assert.equal(info.url, null, 'URL detection is gated behind allowPortBinding')
-    stopBackgroundProcess(info.id)
+    stopBackgroundProcess(info.id, OWNER)
   })
 
   it('rejects an empty command', async () => {
     await assert.rejects(
-      () => startBackgroundProcess({ command: '   ', cwd: process.cwd() }),
+      () => startBackgroundProcess({ command: '   ', cwd: process.cwd(), owner: OWNER }),
       /command is required/,
     )
+  })
+
+  it('isolates list/log/stop access and awaits cleanup by thread owner', async () => {
+    const [first, second] = await Promise.all([
+      runWithThreadExecutionContext(CONTEXT, () =>
+        startBackgroundProcess({ command: 'sleep 30', cwd: process.cwd(), waitMs: 10 }),
+      ),
+      runWithThreadExecutionContext(OTHER_CONTEXT, () =>
+        startBackgroundProcess({ command: 'sleep 30', cwd: process.cwd(), waitMs: 10 }),
+      ),
+    ])
+
+    assert.deepEqual(
+      runWithThreadExecutionContext(CONTEXT, () => listBackgroundProcesses()).map(
+        (entry) => entry.id,
+      ),
+      [first.id],
+    )
+    assert.deepEqual({ projectId: first.projectId, threadId: first.threadId }, OWNER)
+    assert.equal(
+      runWithThreadExecutionContext(CONTEXT, () => getBackgroundProcessLogs(second.id)),
+      null,
+    )
+    assert.equal(
+      runWithThreadExecutionContext(CONTEXT, () => stopBackgroundProcess(second.id)),
+      false,
+    )
+
+    assert.deepEqual(await stopBackgroundProcessesForThread(OWNER), [first.id])
+    assert.deepEqual(
+      listBackgroundProcesses(OTHER_OWNER).map((entry) => entry.id),
+      [second.id],
+    )
+    stopBackgroundProcess(second.id, OTHER_OWNER)
   })
 })
 
