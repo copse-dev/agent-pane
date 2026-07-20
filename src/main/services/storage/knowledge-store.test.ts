@@ -174,6 +174,28 @@ describe('knowledge-store', () => {
     assert.equal(loadKnowledgeNotes().length, 2)
   })
 
+  it('heals multiple orphan files in deterministic (createdAt, id) order', () => {
+    // readdirSync returns files in a filesystem-dependent order, so healing must
+    // impose its own stable order or the render order (Roadmap pane) flakes.
+    const dir = join(knowledgeDir(), 'roadmap')
+    mkdirSync(dir, { recursive: true })
+    const orphan = (id: string, createdAt: string): string =>
+      `---\ntype: Roadmap\nid: ${id}\ntitle: "${id}"\ntags: []\nstatus: ready\ncreatedAt: ${createdAt}\nupdatedAt: ${createdAt}\n---\n\nbody\n`
+    // Write newest-first on disk to prove the load re-sorts by createdAt.
+    writeFileSync(join(dir, 'zzz.md'), orphan('zzz', '2026-03-01T00:00:00.000Z'), 'utf8')
+    writeFileSync(join(dir, 'aaa.md'), orphan('aaa', '2026-01-01T00:00:00.000Z'), 'utf8')
+    writeFileSync(join(dir, 'mmm.md'), orphan('mmm', '2026-02-01T00:00:00.000Z'), 'utf8')
+    assert.deepEqual(
+      loadKnowledgeNotes('Roadmap').map((n) => n.id),
+      ['aaa', 'mmm', 'zzz'],
+    )
+    // Order is persisted into the index, so it survives a second load.
+    assert.deepEqual(
+      loadKnowledgeNotes('Roadmap').map((n) => n.id),
+      ['aaa', 'mmm', 'zzz'],
+    )
+  })
+
   it('heals a hand-added note when loading with a type filter (slugified dir)', () => {
     // The on-disk dir is the *slugified* type (`Roadmap` → `roadmap/`), so the
     // typed orphan scan must compare against the slug, not the raw type name.

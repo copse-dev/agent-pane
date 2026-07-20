@@ -73,12 +73,13 @@ const DEFAULT_RUNNER_GROUP = 'default'
 // failures, diagnosed per runner_name). Dropping to one e2e runner gives that
 // single 6 GiB suite the whole 16 GiB box (~10 GiB headroom), so no co-tenant
 // e2e suite can trigger the host OOM-killer. Scale e2e WIDTH with --instances
-// (more hosts), never more runners per host. Check jobs still land here when no
-// e2e is queued (unified labels); for a dedicated checks tier, run a second `up`
-// with a small box and checks-only --runner-labels (see usage()) — the shared
-// fleet tag means status/down cover both. The `burst` marker label stays: it is
-// what made the failure clustering diagnosable per runner_name.
-const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,copse-checks,burst'
+// (more hosts), never more runners per host. Default burst labels are e2e-only
+// (no copse-checks): when CHECKS_RUNNER=copse-checks, check jobs on burst boxes
+// steal capacity from the 8-shard e2e matrix. For check-tier overflow, run a
+// second `up` with checks-only --runner-labels (see usage()) — the shared fleet
+// tag means status/down cover both. The `burst` marker label stays: it is what
+// made the failure clustering diagnosable per runner_name.
+const DEFAULT_RUNNER_LABELS = 'self-hosted,linux,x64,docker,copse-e2e,burst'
 const DEFAULT_RUNNER_CHECKS_LABELS = 'self-hosted,linux,x64,docker,copse-checks,burst'
 // One e2e runner per host — two Electron suites on one 16 GiB box oversubscribe
 // it (see above). Add hosts (--instances), not runners, to widen the e2e tier.
