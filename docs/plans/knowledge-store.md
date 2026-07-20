@@ -20,6 +20,32 @@ It is the editable, authored companion to the read-only chat store in
 files under `~/.copse`, but this store is **mutated in place** (statuses change, notes are
 edited) whereas the chat store is an **immutable transcript** the agent only reads.
 
+## Boundary: project knowledge is not active-task memory
+
+The current thread already contains the authoritative short-horizon task state: the user
+objective and working brief, todos, messages, tool calls and results, changed-file evidence,
+failures, validation output, and stop/recovery history. Its `events.jsonl`, OKF message files,
+and blobs should be projected and searched directly rather than copied into `Memory` notes.
+Duplicating that material in the knowledge store would introduce two sources of truth and make
+stale task summaries look durable.
+
+`Memory` remains for curated facts that should survive beyond the thread: project conventions,
+decisions, environment constraints, and reusable gotchas. Active-task surfacing belongs to the
+thread/agent layer. A follow-on may expose small-model-friendly, thread-native interfaces such
+as:
+
+- a compact task-state read derived from the working brief, todos, thread events, tool results,
+  and current diff;
+- scoped search over the current thread's OKF messages and tool-result blobs;
+- an append-only task annotation for information that cannot be derived reliably, limited to
+  structured hypotheses, dead ends, and decisions.
+
+These are projections or thread-owned events, not another memory store. Any annotation write
+must go through the serialized thread-store API so full-save round trips preserve it; the agent
+must not write directly into the read-only chat-store mount. Automatic surfacing at turn start,
+resume, or compaction is an agent-loop feature and should ship only if the benchmark harness
+shows a measurable solve-rate or efficiency gain over ordinary thread history.
+
 ## Why (the path here)
 
 Three separate scaffolds grew up around "durable project state," each with its own JSON
