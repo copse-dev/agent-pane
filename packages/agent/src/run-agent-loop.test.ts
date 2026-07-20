@@ -267,12 +267,13 @@ describe('runAgentLoop', () => {
     })
     assert.equal(cuts.length, 1)
     const cut = cuts[0]
-    assert.equal(cut?.cutReason, 'reasoning_runaway_cap')
-    assert.equal(cut?.streamCappedAsRunaway, true)
-    assert.ok((cut?.streamReasoningChars ?? 0) > 0)
-    assert.ok(cut?.reasoningText.includes('Actually, I just realized'))
-    assert.equal(cut?.willInjectReasoningRunawayNudge, true)
-    assert.equal(cut?.reasoningRunawayStreak, 0)
+    assert.ok(cut)
+    assert.equal(cut.cutReason, 'reasoning_runaway_cap')
+    assert.equal(cut.streamCappedAsRunaway, true)
+    assert.ok(cut.streamReasoningChars > 0)
+    assert.ok(cut.reasoningText.includes('Actually, I just realized'))
+    assert.equal(cut.willInjectReasoningRunawayNudge, true)
+    assert.equal(cut.reasoningRunawayStreak, 0)
   })
 
   it('gives up cleanly when reasoning keeps tripping the cap (#489)', async () => {
