@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { getCopseUserDataDir } from './helpers.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
-import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
-describe('settings usage panel', () => {
+describe('settings usage panel', function () {
+  this.timeout(60_000)
+
   before(async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-usage-panel')
@@ -91,5 +97,57 @@ describe('settings usage panel', () => {
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-limits.png')
+  })
+
+  it('keeps the right-edge value-map hover card wide and inside the panel', async () => {
+    const fieldset = $('.frontier-fieldset')
+    await expect(fieldset).toBeDisplayed()
+    await fieldset.scrollIntoView({ block: 'start', inline: 'nearest' })
+    await prepareE2eScreenshot()
+
+    const hits = await $$('.frontier-chart circle.frontier-hit')
+    assert.ok(hits.length > 0, 'expected value-map points to render')
+    let rightmost = hits[0]
+    let rightmostCx = Number(await rightmost.getAttribute('cx'))
+    for (const hit of hits.slice(1)) {
+      const cx = Number(await hit.getAttribute('cx'))
+      if (cx > rightmostCx) {
+        rightmost = hit
+        rightmostCx = cx
+      }
+    }
+
+    await rightmost.moveTo()
+    const tooltip = $('.frontier-tooltip:not([hidden])')
+    await expect(tooltip).toBeDisplayed()
+
+    const geometry = await browser.execute(() => {
+      const tip = document.querySelector('.frontier-tooltip:not([hidden])')
+      const field = document.querySelector('.frontier-fieldset')
+      const points = [...document.querySelectorAll('.frontier-chart circle.frontier-hit')]
+      const point = points.reduce<Element | null>((rightmostPoint, candidate) => {
+        if (!rightmostPoint) return candidate
+        return candidate.getBoundingClientRect().x > rightmostPoint.getBoundingClientRect().x
+          ? candidate
+          : rightmostPoint
+      }, null)
+      if (!tip || !field || !point) return null
+      const rect = (element: Element) => {
+        const { x, y, width, height } = element.getBoundingClientRect()
+        return { x, y, width, height }
+      }
+      return { tip: rect(tip), point: rect(point), field: rect(field) }
+    })
+    assert.ok(geometry, 'expected hover-card geometry')
+    const { tip: tipRect, point: pointRect, field: fieldRect } = geometry
+    const pointCenterX = pointRect.x + pointRect.width / 2
+    assert.ok(tipRect.width >= 220, `expected a wide hover card, got ${String(tipRect.width)}px`)
+    assert.ok(
+      tipRect.x + tipRect.width <= fieldRect.x + fieldRect.width + 1,
+      'hover card must stay inside the value-map fieldset',
+    )
+    assert.ok(tipRect.x + tipRect.width < pointCenterX, 'right-edge hover card must flip left')
+
+    await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'settings-usage-frontier-tooltip.png'))
   })
 })
