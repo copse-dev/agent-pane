@@ -112,7 +112,7 @@
   },
   "overrides": {
     "adm-zip": "^0.6.0",
-    "dompurify": "^3.4.11",
+    "dompurify": "$dompurify",
     "serialize-javascript": "^7.0.7",
     "tar": "^7.5.19"
   },
@@ -126,7 +126,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "ddg-search": "^2026.2.16",
-    "dompurify": "^3.4.11",
+    "dompurify": "^3.4.12",
     "electron-store": "^11.0.2",
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
