@@ -69,7 +69,8 @@ function makeApi(handlers: {
       get: handlers.settingsGet ?? (async (): Promise<unknown> => null),
     },
     sshWorkspace: {
-      getStates: handlers.sshStates ?? (async () => []),
+      getStates:
+        handlers.sshStates ?? (async (): Promise<Array<{ hostId: string; status: string }>> => []),
       connect: handlers.sshConnect ?? (async (): Promise<void> => undefined),
     },
   } as unknown as ApiClient
@@ -504,8 +505,7 @@ test('restoreProject quarantines a missing project instead of deleting it (#997)
   assert.equal(store.getState().activeProjectId, 'b')
   assert.equal(store.getState().workspaceRoot, '/b')
   const lastProjects = [...persisted].reverse().find((p) => p.key === 'projects')?.value as
-    | Array<{ id: string }>
-    | undefined
+    Array<{ id: string }> | undefined
   assert.equal(lastProjects?.length, 2)
 })
 

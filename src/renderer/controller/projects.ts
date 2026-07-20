@@ -6,6 +6,7 @@ import { loadThreads, flushProjectThreads, saveProjects } from './persistence.ts
 import { resumePendingQueues } from './message-queue.ts'
 import {
   captureProjectViewState,
+  forgetProjectViewState,
   recordProjectViewState,
   resolveProjectViewState,
   type ProjectViewStateRegistry,
