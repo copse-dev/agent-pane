@@ -100,13 +100,11 @@ describe('todo plan display', () => {
     })
 
     expect(padding).not.toBeNull()
-    // The .pack-panel card should use --spacing-md (≈8px) vertical and
-    // --spacing-lg (≈12px) horizontal, matching review/comparison panels.
-    expect(padding!.panelPaddingTop).toMatch(/^\d+px$/)
-    expect(padding!.panelPaddingBottom).toMatch(/^\d+px$/)
-    expect(parseInt(padding!.panelPaddingTop)).toBeLessThanOrEqual(
-      parseInt(padding!.panelPaddingRight),
-    )
+    // Match .review-panel / .comparison-panel: --spacing-sm / --spacing-lg (8px / 16px).
+    expect(padding!.panelPaddingTop).toBe('8px')
+    expect(padding!.panelPaddingBottom).toBe('8px')
+    expect(padding!.panelPaddingLeft).toBe('16px')
+    expect(padding!.panelPaddingRight).toBe('16px')
     // Rows should have minimal vertical padding (2px) with none horizontally.
     expect(padding!.rowPaddingTop).toBe('2px')
     expect(padding!.rowPaddingBottom).toBe('2px')
