@@ -53,6 +53,29 @@ provider, remote-agent, or ACP path receives it. It is off by default, fails ope
 if the redactor cannot load, and does not cover repository files or tool output.
 See [pii-redaction.md](pii-redaction.md).
 
+## Remote execution boundaries
+
+Copse has more than one remote execution model, and they do not have equivalent
+security properties:
+
+- **SSH workspaces** keep the UI, approval policy, model loop, and thread store local,
+  but file and process operations run with the configured remote account's authority.
+  The local macOS seatbelt does not protect the SSH host.
+- **Managed remote agents** hand work to Cursor or Anthropic infrastructure. Copse
+  records the provider session and returned events, but the provider owns guest
+  isolation, egress, credential handling, retention, and teardown. The current
+  Anthropic managed-agent adapter requests an unrestricted-network cloud environment.
+- **Remote e2e** is developer tooling that runs a source snapshot in a fresh container;
+  it is not the product's remote-agent runtime.
+- **Copse-provisioned cloud workspaces** are proposed, not shipped. Their target is a
+  Copse-controlled loop and policy engine attached to disposable remote compute with
+  fail-closed egress, mediated credentials, explicit lifecycle, and TTL/reconciliation
+  safeguards.
+
+The current and target guarantees are tracked in [threat-model.md](threat-model.md) and
+the implementation plan in
+[plans/execution-runtime-security.md](plans/execution-runtime-security.md).
+
 ## Credentials
 
 Keys entered in Settings are stored in `settings.json` under the Electron

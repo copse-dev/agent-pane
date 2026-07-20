@@ -113,8 +113,11 @@ shipped. The tier vision remains valid as future work.
 
 ### Remaining follow-ups
 
-- A real `container` backend (Linux: bubblewrap/nsjail/Docker; macOS: Apple
-  `container`/microVM), then reintroduce the tier with validated semantics.
+- A real cross-platform runtime backend, then reintroduce the `container` tier with
+  validated semantics. Capability reporting, network/credential mediation, and local /
+  cloud sequencing are owned by
+  [`execution-runtime-security.md`](execution-runtime-security.md); do not freeze a
+  persisted tier until an enforcing backend and conformance suite exist.
 - A read-only overlay tier once write-capability detection is modelled in
   `shell-scope.ts` (shared by the analyzer and the tier), with a sandboxed
   (not unsandboxed) failure fallback.
