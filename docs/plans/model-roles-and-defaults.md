@@ -243,12 +243,13 @@ per-role axes can't provide. Pieces:
   `claude-opus-4-8 — intellect 56 · $9/MTok · frontier`) and the settings
 "Model value map" scatter (`intellect-frontier-panel.ts`), whose tooltips
   carry the full derivation.
-- **Follow-ups**: AA cost-per-task and latency/throughput columns; per-axis
-  benchmark sync for cloud models (lets the composite stand alone and be
-  calibrated to the index); deriving the classifier's (#557) tier table from
-  frontier data; the agent-level accuracy-vs-cost frontier (issue #752's
-  measured solve-rate/cost-per-solve) as the harness-side sibling of this
-  model-side frontier.
+- **Follow-ups**: latency/throughput columns; per-axis benchmark sync for cloud
+  models (lets the composite stand alone and be calibrated to the index);
+  deriving the classifier's (#557) tier table from frontier data; the
+  agent-level accuracy-vs-cost frontier (issue #752's measured
+  solve-rate/cost-per-solve) as the harness-side sibling of this model-side
+  frontier. _(Landed: value-map X-axis toggle between blended $/MTok and AA
+  cost-per-Intelligence-Index-task.)_
 
 ## Phasing
 

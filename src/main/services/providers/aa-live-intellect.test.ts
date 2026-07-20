@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { liveCacheTtlMs, requestLiveIntellectModels } from './aa-live-intellect.ts'
+import {
+  fetchLiveIntellectModels,
+  liveCacheTtlMs,
+  requestLiveIntellectModels,
+} from './aa-live-intellect.ts'
 
 /** A fake fetch that records the request init and returns a canned response. */
 function fakeFetch(response: {
@@ -99,5 +103,22 @@ describe('liveCacheTtlMs', () => {
     // An empty/unparseable success is treated like a failure so it doesn't stick.
     assert.equal(empty, failure)
     assert.ok(failure <= 60_000)
+  })
+})
+
+describe('fetchLiveIntellectModels mock', () => {
+  it('returns the e2e cohort when COPSE_AA_INTELLECT_MOCK=1', async () => {
+    const prev = process.env['COPSE_AA_INTELLECT_MOCK']
+    process.env['COPSE_AA_INTELLECT_MOCK'] = '1'
+    try {
+      const result = await fetchLiveIntellectModels()
+      assert.equal(result.ok, true)
+      assert.equal(result.indexVersion, '4.1')
+      assert.ok(result.models.length >= 4)
+      assert.ok(result.models.every((m) => typeof m.costPerTask === 'number' && m.costPerTask > 0))
+    } finally {
+      if (prev === undefined) delete process.env['COPSE_AA_INTELLECT_MOCK']
+      else process.env['COPSE_AA_INTELLECT_MOCK'] = prev
+    }
   })
 })

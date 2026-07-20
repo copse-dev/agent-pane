@@ -766,6 +766,31 @@ dialog.settings-overlay::backdrop {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+.frontier-btn.active {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.frontier-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.frontier-cost-axis {
+  display: inline-flex;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.frontier-cost-axis .frontier-btn {
+  margin-left: 0;
+  border-radius: 0;
+}
+.frontier-cost-axis .frontier-btn:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.frontier-cost-axis .frontier-btn:last-child {
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-left: -1px;
+}
 .frontier-expand-dialog {
   /* position:relative makes the dialog the containing block for the hover
      tooltip layer appended inside it — without it the absolutely-positioned
