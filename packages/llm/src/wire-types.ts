@@ -125,6 +125,11 @@ export type ProviderStreamChunk =
       cacheCreationTokens?: number
       /** Token counts are a local ~4 chars/token estimate, not agent-reported. */
       estimated?: boolean
+      /**
+       * When set, the usage ledger records this source instead of `'agent'`.
+       * Used for the dedicated advisor cost line (issue #566).
+       */
+      usageSource?: 'advisor'
     }
   | { type: 'done'; stopReason?: string }
 

@@ -69,7 +69,7 @@ export function recordAgentUsageChunk(
   const projectId = storageGet('activeProjectId')
   recordUsageEvent({
     model: chunk.model,
-    source: 'agent',
+    source: chunk.usageSource === 'advisor' ? 'advisor' : 'agent',
     inputTokens: chunk.inputTokens,
     outputTokens: chunk.outputTokens,
     threadId,
