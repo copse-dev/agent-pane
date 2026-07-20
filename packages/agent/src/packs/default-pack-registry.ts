@@ -3,10 +3,10 @@
 // `createHookRegistry` folds a `PackRegistry` into the hook registry every turn
 // (P1: a pack's function hooks register through the same registry the loop
 // uses, so disabling a pack removes them from new work atomically). In P1 this
-// was a fresh `createFirstPartyPackRegistry()` per call — fine while the
-// skeleton pack contributes nothing, but the moment a pack actually
-// contributes hooks or has a user-persisted disable state, the loop needs to
-// consult the **same** registry the Settings UI toggles.
+// was a fresh `createFirstPartyPackRegistry()` per call — fine while P1's
+// original skeleton pack contributed nothing, but once a pack contributes
+// hooks or has a user-persisted disable state, the loop needs to consult the
+// **same** registry the Settings UI toggles.
 //
 // P3 fixes that with a module-level provider: the host boots, builds a shared
 // registry (first-party packs registered + persisted `disabledIds` applied),

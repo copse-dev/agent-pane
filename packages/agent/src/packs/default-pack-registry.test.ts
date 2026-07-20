@@ -14,7 +14,8 @@ import { PackRegistry } from './pack-registry.ts'
 import { definePack, type RegisteredPack } from './pack-manifest.ts'
 import type { BlockingHook } from '../hooks/canonical-events.ts'
 import { createHookRegistry } from '../hooks/hook-registry.ts'
-import { FIRST_PARTY_PACKS, noopPack } from './first-party-packs.ts'
+import { FIRST_PARTY_PACKS } from './first-party-packs.ts'
+import { TODOS_PACK_ID } from './todos-pack.ts'
 
 const packHook: BlockingHook<'turnStart'> = {
   id: 'shared-pack-hook',
@@ -42,9 +43,9 @@ describe('default pack registry provider (P3)', () => {
       registry.all().map((p) => p.id),
       FIRST_PARTY_PACKS.map((p) => p.id),
     )
-    // The skeleton `copse.noop` pack ships as the seed — the fallback is not
-    // an empty registry, so unwired callers see the same tools/hooks P1 wired.
-    assert.ok(registry.has(noopPack.id))
+    // The fallback carries the same real first-party packs as the host-wired
+    // registry, so unwired callers still see shipped tools and hooks.
+    assert.ok(registry.has(TODOS_PACK_ID))
 
     // Two consecutive fallback reads return two *different* registry instances
     // (a fresh seed each call). This is the tell that the fallback is not a
