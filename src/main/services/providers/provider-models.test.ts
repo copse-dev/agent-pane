@@ -186,7 +186,7 @@ describe('fetchOpenAiCompatibleModelsForSettings', () => {
       status: 200,
       json: async (): Promise<unknown> => ({ data: [{ id: 'm1' }] }),
     }))
-    const res = await fetchOpenAiCompatibleModelsForSettings('https://api.groq.com/openai/v1')
+    const res = await fetchOpenAiCompatibleModelsForSettings('https://api.acme.example/v1')
     assert.equal(prompted, true)
     assert.equal(res.ok, true)
     assert.deepEqual(res.models, [{ id: 'm1', contextLength: null }])

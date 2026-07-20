@@ -21,6 +21,8 @@ describe('envForRendererChildProcess', () => {
       PATH: '/usr/bin',
       GEMINI_API_KEY: 'g',
       GROQ_API_KEY: 'q',
+      TOGETHER_API_KEY: 't',
+      FIREWORKS_API_KEY: 'f',
       MISTRAL_API_KEY: 'm',
       OPENROUTER_API_KEY: 'o',
       ANTHROPIC_AUTH_TOKEN: 'a', // caught by the provider pattern, not the list
@@ -28,6 +30,8 @@ describe('envForRendererChildProcess', () => {
     assert.equal(env['PATH'], '/usr/bin')
     assert.equal(env['GEMINI_API_KEY'], undefined)
     assert.equal(env['GROQ_API_KEY'], undefined)
+    assert.equal(env['TOGETHER_API_KEY'], undefined)
+    assert.equal(env['FIREWORKS_API_KEY'], undefined)
     assert.equal(env['MISTRAL_API_KEY'], undefined)
     assert.equal(env['OPENROUTER_API_KEY'], undefined)
     assert.equal(env['ANTHROPIC_AUTH_TOKEN'], undefined)
