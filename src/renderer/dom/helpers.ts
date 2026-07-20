@@ -17,6 +17,17 @@ export function clear(node: Element): void {
   while (node.firstChild) node.firstChild.remove()
 }
 
+/** Scroll `element` only when it is not fully visible inside `container`. */
+export function scrollIntoViewIfNeeded(element: Element, container: HTMLElement): void {
+  const elRect = element.getBoundingClientRect()
+  const containerRect = container.getBoundingClientRect()
+  const fullyVisible =
+    elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom
+  if (!fullyVisible) {
+    element.scrollIntoView({ block: 'nearest' })
+  }
+}
+
 /**
  * Typed `querySelector` returning `E | null`. Prefer this over
  * `root.querySelector(sel) as E`: the generic types the result without an
