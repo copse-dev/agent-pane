@@ -25,7 +25,9 @@ function settingsSection(section: string) {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
-describe('settings packs (about:addons)', () => {
+describe('settings packs (about:addons)', function () {
+  this.timeout(60_000)
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
@@ -51,6 +53,18 @@ describe('settings packs (about:addons)', () => {
     const packs = settingsSection('packs')
     await expect(packs).toBeDisplayed()
     await expect(packs.$('legend=Installed packs')).toBeDisplayed()
+
+    const description = packs.$('.settings-section-desc')
+    await expect(description).toBeDisplayed()
+    assert.doesNotMatch(await description.getText(), /decision 17|docs\/packs\.md/)
+    const manifestDocs = description.$('a=the pack manifest docs')
+    await expect(manifestDocs).toBeDisplayed()
+    assert.equal(
+      await manifestDocs.getAttribute('href'),
+      'https://github.com/copse-dev/agent-pane/blob/main/docs/packs.md',
+    )
+    assert.equal(await manifestDocs.getAttribute('target'), '_blank')
+    assert.match((await manifestDocs.getAttribute('rel')) ?? '', /noopener/)
 
     // The P1 skeleton pack ships as first-party; wait for the async
     // `packs:list` IPC to resolve and render a row for it.
