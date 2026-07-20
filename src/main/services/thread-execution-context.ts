@@ -17,6 +17,8 @@ export interface ThreadExecutionContext {
   readonly branch: string | null
 }
 
+export type ThreadExecutionOwner = Pick<ThreadExecutionContext, 'projectId' | 'threadId'>
+
 export interface ThreadExecutionContextDependencies {
   getProjectRoot: (projectId: string) => string | null
   getThreadMeta: (projectId: string, threadId: string) => Promise<{ readonly id: string } | null>
@@ -90,4 +92,10 @@ export function requireThreadExecutionContext(): ThreadExecutionContext {
   const context = storage.getStore()
   if (!context) throw new Error('No thread execution context is active')
   return context
+}
+
+/** Resolve the stable owner of run-scoped state without exposing its filesystem root. */
+export function requireThreadExecutionOwner(): ThreadExecutionOwner {
+  const { projectId, threadId } = requireThreadExecutionContext()
+  return { projectId, threadId }
 }

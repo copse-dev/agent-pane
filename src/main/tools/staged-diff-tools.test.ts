@@ -1,5 +1,6 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import { ownedIt } from '../services/thread-execution-context.test-support.ts'
 import { normalizeToolExecuteResult } from '@shared/types'
 import { clearStagedDiffsForTest, stageDiff } from '../services/diff-queue.ts'
 import { readStagedDiffTool, stagedDiffsTool } from './staged-diff-tools.ts'
@@ -13,7 +14,7 @@ describe('staged diff inspection tools', () => {
     clearStagedDiffsForTest()
   })
 
-  it('lists pending proposed diffs', async () => {
+  ownedIt('lists pending proposed diffs', async () => {
     await stageDiff('index.html', 'old\n', 'new\n', 'html')
     const out = normalizeToolExecuteResult(
       await stagedDiffsTool.execute({}, new AbortController().signal),
@@ -23,7 +24,7 @@ describe('staged diff inspection tools', () => {
     assert.match(out, /not written to disk/)
   })
 
-  it('reads proposed after content for a pending diff', async () => {
+  ownedIt('reads proposed after content for a pending diff', async () => {
     await stageDiff('index.html', 'old\n', 'new\n', 'html')
     const out = normalizeToolExecuteResult(
       await readStagedDiffTool.execute(

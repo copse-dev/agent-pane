@@ -5,6 +5,10 @@ import {
   pruneWorktreeBackups,
   restoreWorktreeBackup,
 } from './github/git-service.ts'
+import {
+  requireThreadExecutionOwner,
+  type ThreadExecutionOwner,
+} from './thread-execution-context.ts'
 
 export type { SessionBackup }
 
@@ -15,8 +19,35 @@ export type { SessionBackup }
  */
 const BACKUP_RETENTION = 10
 
-let current: SessionBackup | null = null
-let inFlight: Promise<SessionBackup | null> | null = null
+interface SessionBackupState {
+  current: SessionBackup | null
+  inFlight: Promise<SessionBackup | null> | null
+}
+
+const statesByProject = new Map<string, Map<string, SessionBackupState>>()
+
+function stateFor(owner: ThreadExecutionOwner = requireThreadExecutionOwner()): SessionBackupState {
+  let projectStates = statesByProject.get(owner.projectId)
+  if (!projectStates) {
+    projectStates = new Map()
+    statesByProject.set(owner.projectId, projectStates)
+  }
+  let state = projectStates.get(owner.threadId)
+  if (!state) {
+    state = { current: null, inFlight: null }
+    projectStates.set(owner.threadId, state)
+  }
+  return state
+}
+
+function replaceState(owner: ThreadExecutionOwner, state: SessionBackupState): void {
+  let projectStates = statesByProject.get(owner.projectId)
+  if (!projectStates) {
+    projectStates = new Map()
+    statesByProject.set(owner.projectId, projectStates)
+  }
+  projectStates.set(owner.threadId, state)
+}
 
 /**
  * Ensure a durable restore point exists before Copse auto-applies edits over a
@@ -31,9 +62,10 @@ let inFlight: Promise<SessionBackup | null> | null = null
  * no safety net.
  */
 export async function ensureSessionBackup(): Promise<SessionBackup | null> {
-  if (current) return current
-  if (inFlight) return inFlight
-  inFlight = (async (): Promise<SessionBackup | null> => {
+  const state = stateFor()
+  if (state.current) return state.current
+  if (state.inFlight) return state.inFlight
+  state.inFlight = (async (): Promise<SessionBackup | null> => {
     const status = await getGitStatus()
     if (!status) return null
     const paths = [...new Set([...status.staged, ...status.unstaged].map((c) => c.path))]
@@ -43,13 +75,13 @@ export async function ensureSessionBackup(): Promise<SessionBackup | null> {
     // Prune older snapshots now that a fresh one exists so refs don't accumulate
     // unboundedly; failure to prune must never sink the backup itself.
     await pruneWorktreeBackups(BACKUP_RETENTION).catch(() => {})
-    current = { ref, createdAt: Date.now(), paths }
-    return current
+    state.current = { ref, createdAt: Date.now(), paths }
+    return state.current
   })()
   try {
-    return await inFlight
+    return await state.inFlight
   } finally {
-    inFlight = null
+    state.inFlight = null
   }
 }
 
@@ -64,7 +96,8 @@ export async function ensureSessionBackup(): Promise<SessionBackup | null> {
  * with "backup failed"; callers gating auto-approval need the two kept apart.
  */
 export async function ensureWorktreeRecoverable(): Promise<boolean> {
-  if (current) return true
+  const state = stateFor()
+  if (state.current) return true
   const status = await getGitStatus()
   if (!status) return false
   const dirty = status.staged.length > 0 || status.unstaged.length > 0
@@ -73,8 +106,8 @@ export async function ensureWorktreeRecoverable(): Promise<boolean> {
 }
 
 /** The backup taken this turn, if any. */
-export function getSessionBackup(): SessionBackup | null {
-  return current
+export function getSessionBackup(owner?: ThreadExecutionOwner): SessionBackup | null {
+  return stateFor(owner).current
 }
 
 /**
@@ -84,8 +117,8 @@ export function getSessionBackup(): SessionBackup | null {
  * undoable via git, then restores the at-risk paths. Returns false when there is
  * no backup to restore from or the restore could not complete.
  */
-export async function restoreSessionBackup(): Promise<boolean> {
-  const backup = current
+export async function restoreSessionBackup(owner?: ThreadExecutionOwner): Promise<boolean> {
+  const backup = stateFor(owner).current
   if (!backup) return false
   // A pre-restore snapshot makes this destructive step reversible: the agent's
   // version of the reverted paths stays recoverable from git even after restore.
@@ -99,12 +132,23 @@ export async function restoreSessionBackup(): Promise<boolean> {
  * thing worth protecting, and re-snapshotting per turn keeps the restore point
  * aligned with any manual edits the user made between turns.
  */
-export function resetSessionBackup(): void {
-  current = null
+export function resetSessionBackup(owner?: ThreadExecutionOwner): void {
+  const resolvedOwner = owner ?? requireThreadExecutionOwner()
+  // Replace the whole turn state so a backup already in flight for the prior
+  // turn can finish for its caller without publishing into the new turn.
+  replaceState(resolvedOwner, { current: null, inFlight: null })
 }
 
 /** @internal test helper */
-export function setSessionBackupForTest(backup: SessionBackup | null): void {
-  current = backup
-  inFlight = null
+export function setSessionBackupForTest(
+  backup: SessionBackup | null,
+  owner?: ThreadExecutionOwner,
+): void {
+  const resolvedOwner = owner ?? requireThreadExecutionOwner()
+  replaceState(resolvedOwner, { current: backup, inFlight: null })
+}
+
+/** @internal test helper */
+export function clearSessionBackupsForTest(): void {
+  statesByProject.clear()
 }
