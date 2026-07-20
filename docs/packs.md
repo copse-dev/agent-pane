@@ -61,12 +61,13 @@ groups every pack's contributions by pack id and owns the lifecycle:
 
 First-party packs are the static list in
 [`packages/agent/src/packs/first-party-packs.ts`](../packages/agent/src/packs/first-party-packs.ts).
-P1 ships only a skeleton `copse.noop` pack (empty contributions) to prove the
-lifecycle end-to-end; the pilot **todos** pack lands in P4. The pack seam is
-wired into `createHookRegistry` — a pack's hooks register through the same
-registry the loop uses — so a disabled pack removes them from new work without
-touching loop code. In P1 the skeleton contributes no hooks, so the wiring is
-byte-identical to the M0 behavior.
+P1 originally shipped a skeleton `copse.noop` pack (empty contributions) to
+prove the lifecycle end-to-end before the pilot **todos** pack landed in P4.
+Once real first-party packs exercised the same lifecycle, the skeleton was
+removed from the shipped list. The pack seam is wired into
+`createHookRegistry` — a pack's hooks register through the same registry the
+loop uses — so a disabled pack removes them from new work without touching loop
+code.
 
 ## Level-2 declarative panels (P2)
 

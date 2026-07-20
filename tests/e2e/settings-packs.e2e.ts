@@ -11,15 +11,13 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 // contributes, and any pack-scoped settings the manifest declares. This spec
 // asserts:
 //  - the Packs nav button + section render;
-//  - the shipped first-party pack (`copse.noop`, the P1 skeleton) shows up in
+//  - the shipped first-party todos pack shows up in
 //    the list with a first-party trust badge and an enable toggle;
 //  - toggling persists (round-trips through the electron-store) and the row
 //    marks itself disabled;
 //  - a full-section screenshot lands in tests/e2e/screenshots for visual review.
 //
-// The visible pack set widens with P4 (todos pack contributes tools/hooks/UI);
-// this spec is written to hold across that change — it asserts the noop pack
-// is present, not that it is the only pack.
+// The removed P1 `copse.noop` skeleton must not leak into the user-facing list.
 
 function settingsSection(section: string) {
   return $(`.settings-section[data-section="${section}"]`)
@@ -66,37 +64,38 @@ describe('settings packs (about:addons)', function () {
     await expect(docsLink).toBeDisplayed()
     assert.match(await docsLink.getText(), /pack manifest docs/i)
 
-    // The P1 skeleton pack ships as first-party; wait for the async
-    // `packs:list` IPC to resolve and render a row for it.
-    const noopRow = packs.$('.pack-row[data-pack-id="copse.noop"]')
-    await noopRow.waitForExist({ timeout: 15_000 })
-    await expect(noopRow.$('.pack-name')).toBeDisplayed()
-    const nameText = await noopRow.$('.pack-name').getText()
-    assert.equal(nameText, 'copse.noop')
+    // Wait for the async `packs:list` IPC to resolve and render a real
+    // first-party pack. The old skeleton was a development fixture and should
+    // no longer appear as an installed user-facing pack.
+    const todosRow = packs.$('.pack-row[data-pack-id="copse.todos"]')
+    await todosRow.waitForExist({ timeout: 15_000 })
+    await expect(todosRow.$('.pack-name')).toBeDisplayed()
+    assert.equal(await todosRow.$('.pack-name').getText(), 'copse.todos')
+    assert.equal(await packs.$('.pack-row[data-pack-id="copse.noop"]').isExisting(), false)
 
     // Trust tier badge is shown.
-    await expect(noopRow.$('.pack-badge-first-party')).toBeDisplayed()
+    await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
 
-    // The toggle is a checkbox and starts enabled — the P1 default.
-    const toggle = noopRow.$('input.pack-toggle-input')
+    // The toggle is a checkbox and starts enabled.
+    const toggle = todosRow.$('input.pack-toggle-input')
     await expect(toggle).toBeExisting()
     assert.equal(await toggle.isSelected(), true)
-    assert.equal(await noopRow.getAttribute('data-enabled'), 'true')
+    assert.equal(await todosRow.getAttribute('data-enabled'), 'true')
 
     // The checkbox is visually hidden behind the slider track — click the
     // wrapper label (the interactive element) to fire the change event, the
     // same pattern the MCP list uses.
-    const toggleLabel = noopRow.$('label.pack-toggle')
+    const toggleLabel = todosRow.$('label.pack-toggle')
     await toggleLabel.click()
 
     // Disabling flips the row's data-enabled and adds the greyed-out class
     // (the P1 atomic-flag contract, surfaced to the user).
-    await browser.waitUntil(async () => (await noopRow.getAttribute('data-enabled')) === 'false', {
+    await browser.waitUntil(async () => (await todosRow.getAttribute('data-enabled')) === 'false', {
       timeout: 5_000,
       timeoutMsg: 'expected pack row to reflect disabled state',
     })
     assert.equal(await toggle.isSelected(), false)
-    const cls = (await noopRow.getAttribute('class')) ?? ''
+    const cls = (await todosRow.getAttribute('class')) ?? ''
     assert.ok(cls.includes('pack-row-disabled'), 'disabled row must be visually greyed')
 
     await saveElementScreenshot('#settings-dialog', 'settings-packs.png')
