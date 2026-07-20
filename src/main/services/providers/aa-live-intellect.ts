@@ -41,10 +41,20 @@ interface AaApiModel {
     artificial_analysis_intelligence_index?: number
     artificial_analysis_intelligence_index_version?: string | number
   }
+  /**
+   * Documented AA Data API shape for Intelligence Index cost-per-task (USD).
+   * Free tier exposes `total_cost` plus nested `cost_per_task.total_cost`.
+   */
+  artificial_analysis_intelligence_index_cost?: {
+    total_cost?: number
+    cost_per_task?: {
+      total_cost?: number
+    }
+  }
   pricing?: {
     price_1m_input_tokens?: number
     price_1m_output_tokens?: number
-    /** AA's cost to run the Intelligence Index once, in USD. */
+    /** Legacy / alternate spellings — prefer the model-level cost object above. */
     price_per_intelligence_index_task?: number
     cost_per_task?: number
   }
@@ -101,7 +111,12 @@ function reduceModel(api: AaApiModel): LiveAaModel | null {
     model.inputPricePerMTok = input
     if (typeof output === 'number' && Number.isFinite(output)) model.outputPricePerMTok = output
   }
-  const perTask = api.pricing?.price_per_intelligence_index_task ?? api.pricing?.cost_per_task
+  // Docs: model-level `artificial_analysis_intelligence_index_cost.cost_per_task.total_cost`.
+  // Keep legacy `pricing.*` keys as fallback only — they are not on the free-tier payload.
+  const perTask =
+    api.artificial_analysis_intelligence_index_cost?.cost_per_task?.total_cost ??
+    api.pricing?.price_per_intelligence_index_task ??
+    api.pricing?.cost_per_task
   if (typeof perTask === 'number' && Number.isFinite(perTask) && perTask > 0) {
     model.costPerTask = perTask
   }
