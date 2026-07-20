@@ -467,6 +467,11 @@ export function getThreadMeta(projectId: string, threadId: string): Promise<Thre
   return runSerialized(queueKey(projectId), () => readMeta(threadDir(projectId, threadId)))
 }
 
+/** A fully folded thread, serialized with writes for an authoritative blank-thread check. */
+export function getProjectThread(projectId: string, threadId: string): Promise<Thread | null> {
+  return runSerialized(queueKey(projectId), () => readThread(projectId, threadId))
+}
+
 /**
  * Record the launch link on a thread, replacing any prior one — a fresh launch
  * supersedes the previous run, so its stale reverse-index entries are dropped
@@ -673,6 +678,22 @@ export function updateMeta(
     // updateMeta only patches an existing thread; `createThread` writes the
     // initial meta.json, so a missing base means there is nothing to patch.
     if (current === null) return
+    const merged: ThreadMeta = { ...current, ...patch, id: threadId }
+    writeFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
+    refreshCatalogLine(projectId, threadId)
+  })
+}
+
+/** Patch metadata, failing if the renderer has not persisted the thread yet. */
+export function updateMetaOrThrow(
+  projectId: string,
+  threadId: string,
+  patch: Partial<ThreadMeta>,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    const current = readMeta(dir)
+    if (current === null) throw new Error('Thread is not persisted yet; retry sending the message')
     const merged: ThreadMeta = { ...current, ...patch, id: threadId }
     writeFileSync(join(dir, META_FILE), `${JSON.stringify(merged)}\n`)
     refreshCatalogLine(projectId, threadId)

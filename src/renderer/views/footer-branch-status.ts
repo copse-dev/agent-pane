@@ -92,7 +92,9 @@ export function mountFooterBranchStatus(
       return
     }
 
-    const mismatch = threadGitBranchMismatch(threadBranch, currentBranch)
+    const mismatch = threadGitBranchMismatch(threadBranch, currentBranch, {
+      isolatedWorktree: Boolean(getActiveThread()?.worktree),
+    })
     // `mismatch` is only true when threadBranch is a non-empty string, but that
     // implication can't survive into the branches below — capture the message
     // here while threadBranch is narrowed to a defined value.
