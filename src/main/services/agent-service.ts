@@ -41,6 +41,7 @@ import {
   setHookRunStep,
   setHookRunToolset,
 } from './hook-run-recorder.ts'
+import { recordStreamCut } from './stream-stats-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
@@ -1145,6 +1146,9 @@ export async function runAgent(
           continuationBudget,
           recordHookRun: recordFunctionHookRun,
           onLlmCall: setHookRunStep,
+          recordStreamCut: (record) => {
+            recordStreamCut(record, model)
+          },
           executeTool: executeParentTool,
           signal: controller.signal,
           maxContextTokens: contextWindow,
