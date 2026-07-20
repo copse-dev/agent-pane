@@ -637,7 +637,8 @@ export function appendStreamStat(projectId: string, line: unknown): Promise<void
     const path = streamStatsPath(projectId)
     mkdirSync(dirname(path), { recursive: true })
     const existingRaw = safeRead(path) ?? ''
-    const prefix = existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
     writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
   })
 }

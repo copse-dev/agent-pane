@@ -238,7 +238,10 @@ describe('runAgentLoop', () => {
     const reasoningBody = 'Actually, I just realized '.repeat(4000)
     const flood: ProviderStreamChunk[] = [
       { type: 'reasoning', text: reasoningBody },
-      ...Array.from({ length: 200 }, () => ({ type: 'reasoning' as const, text: 'x'.repeat(1000) })),
+      ...Array.from({ length: 200 }, () => ({
+        type: 'reasoning' as const,
+        text: 'x'.repeat(1000),
+      })),
     ]
     let streamCalls = 0
     const provider: LLMProvider = {

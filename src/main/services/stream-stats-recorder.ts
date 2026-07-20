@@ -1,9 +1,6 @@
 import type { StreamCutRecord } from '@copse/agent/stream-cut-record.ts'
 import { appendStreamStat } from './thread-store.ts'
-import {
-  getHookRunRecordingContext,
-  type HookRunRecordingSnapshot,
-} from './hook-run-recorder.ts'
+import { getHookRunRecordingContext, type HookRunRecordingSnapshot } from './hook-run-recorder.ts'
 
 const STREAM_STATS_SCHEMA_VERSION = 1
 

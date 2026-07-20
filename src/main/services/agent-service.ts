@@ -1140,7 +1140,9 @@ export async function runAgent(
           continuationBudget,
           recordHookRun: recordFunctionHookRun,
           onLlmCall: setHookRunStep,
-          recordStreamCut: (record) => recordStreamCut(record, model),
+          recordStreamCut: (record) => {
+            recordStreamCut(record, model)
+          },
           executeTool: executeParentTool,
           signal: controller.signal,
           maxContextTokens: contextWindow,

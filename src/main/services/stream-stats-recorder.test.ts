@@ -3,10 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import {
-  beginHookRunRecording,
-  endHookRunRecording,
-} from './hook-run-recorder.ts'
+import { beginHookRunRecording, endHookRunRecording } from './hook-run-recorder.ts'
 import { getThreadMeta } from './thread-store.ts'
 import { recordStreamCut } from './stream-stats-recorder.ts'
 import type { StreamCutRecord } from '@copse/agent/stream-cut-record.ts'
