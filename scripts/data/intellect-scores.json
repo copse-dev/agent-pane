@@ -1,0 +1,269 @@
+{
+  "$comment": "Curated intelligence-index measurements, the reviewed source of truth for scripts/sync-intellect.mts. RULES: (1) values are cited facts — every entry needs a real source and asOf date, never a guess; (2) canonicalVersion is the permanent display scale — it only changes as a deliberate, breaking re-baseline; (3) a model may have one entry per indexVersion (that overlap is what makes it an equating anchor); (4) fitted equating maps are crystallised here by the sync script at first fit and are then reused verbatim — pass --refit to deliberately refit after adding anchors; (5) aliases are alternate id/label forms the same weights appear under across providers (OpenRouter ids, ACP picker labels) — lookup keys only, they never create a second measurement; (6) record only DIRECT measurements of the configuration the index reports — never derive a value by arithmetic from statements about other configurations (a derived Sonnet 4.6 = 53−6 = 47 mixed reasoning efforts and broke the live-feed anchor gate until corrected to the measured 35.9). VERSION NOTE: v4.0 is the pre-renormalisation scale of June 2026 (the cohort where Opus 4.8 = 61, GPT-5.5 = 60); v4.1 is the July 2026 renormalisation (AA article 'Artificial Analysis Intelligence Index v4.1: a shift toward agentic workloads') where the same Opus 4.8 checkpoint reads 55.7. Never compare raw values across the two.",
+  "canonicalVersion": "v4.1",
+  "attribution": "Intelligence Index data from Artificial Analysis (https://artificialanalysis.ai)",
+  "scores": [
+    {
+      "modelId": "claude-fable-5",
+      "value": 59.9,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'claude-fable-5', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["Fable 5", "Claude Fable 5", "anthropic/claude-fable-5", "claude-fable-5-latest"]
+    },
+    {
+      "modelId": "gpt-5.6-sol",
+      "value": 59,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis Intelligence Index v4.1 chart (@ArtificialAnlys), chart label 'GPT-5.6' (AA's frontier GPT-5.6 Sol entry), via Latent Space AINews Kimi K3 coverage, 2026-07-16",
+      "asOf": "2026-07-16",
+      "aliases": ["GPT-5.6 Sol", "openai/gpt-5.6-sol"]
+    },
+    {
+      "modelId": "claude-opus-4-8",
+      "value": 55.7,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'claude-opus-4-8', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["Opus 4.8", "anthropic/claude-opus-4-8", "claude-opus-4-8-latest"]
+    },
+    {
+      "modelId": "claude-opus-4-8",
+      "value": 61,
+      "indexVersion": "v4.0",
+      "source": "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): 'Claude Opus 4.8 currently leads the index at 61, followed by GPT-5.5 at 60', https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18"
+    },
+    {
+      "modelId": "gpt-5.5",
+      "value": 55,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis Intelligence Index v4.1 (July 2026 leaderboard): Fable 5 = 60, GPT-5.6 Sol = 59, Opus 4.8 = 56, GPT-5.5 = 55; see https://artificialanalysis.ai/articles/artificial-analysis-intelligence-index-v4-1",
+      "asOf": "2026-07-18",
+      "aliases": ["GPT-5.5", "openai/gpt-5.5"]
+    },
+    {
+      "modelId": "gpt-5.5",
+      "value": 60,
+      "indexVersion": "v4.0",
+      "source": "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): 'Claude Opus 4.8 currently leads the index at 61, followed by GPT-5.5 at 60', https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18"
+    },
+    {
+      "modelId": "gpt-5.6-terra",
+      "value": 46,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis comparison page: 'GPT-5.6 Terra (medium) scores 46 on the Artificial Analysis Intelligence Index', https://artificialanalysis.ai/models/comparisons/gpt-5-6-terra-medium-vs-claude-sonnet-5, retrieved 2026-07-18",
+      "asOf": "2026-07-18",
+      "aliases": ["GPT-5.6 Terra", "GPT-5.6-Terra", "openai/gpt-5.6-terra"]
+    },
+    {
+      "modelId": "zai-org/GLM-5.2",
+      "value": 51.1,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'glm-5-2', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["GLM-5.2", "glm-5.2", "zai/glm-5.2", "z-ai/glm-5.2", "glm-5-2"]
+    },
+    {
+      "modelId": "claude-sonnet-5",
+      "value": 53.4,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'claude-sonnet-5', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": [
+        "Sonnet 5",
+        "Claude Sonnet 5",
+        "anthropic/claude-sonnet-5",
+        "claude-sonnet-5-latest"
+      ]
+    },
+    {
+      "modelId": "claude-sonnet-4-6",
+      "value": 35.9,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'claude-sonnet-4-6', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["Sonnet 4.6", "anthropic/claude-sonnet-4-6", "claude-sonnet-4-6-latest"]
+    },
+    {
+      "modelId": "claude-haiku-4-5",
+      "value": 24,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis model page for Claude 4.5 Haiku (non-reasoning variant), https://artificialanalysis.ai/models/claude-4-5-haiku, retrieved 2026-07-18",
+      "asOf": "2026-07-18",
+      "aliases": ["Haiku 4.5", "anthropic/claude-haiku-4-5", "claude-haiku-4-5-latest"]
+    },
+    {
+      "modelId": "moonshotai/kimi-k3",
+      "value": 57.1,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'kimi-k3', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["Kimi K3", "moonshot/kimi-k3", "kimi-k3"]
+    },
+    {
+      "modelId": "moonshotai/kimi-k2.6",
+      "value": 54,
+      "indexVersion": "v4.0",
+      "source": "Artificial Analysis MiniMax-M3 coverage (June 2026 index cohort): M3 at 55 'edging ahead of Kimi K2.6 and MiMo-V2.5-Pro, both sitting at 54', https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18",
+      "aliases": ["Kimi K2.6", "moonshotai/kimi-k2-6", "moonshot/kimi-k2.6", "kimi-k2.6"]
+    },
+    {
+      "modelId": "MiniMaxAI/MiniMax-M3",
+      "value": 55,
+      "indexVersion": "v4.0",
+      "source": "@ArtificialAnlys: 'MiniMax-M3 scores 55 on the Artificial Analysis Intelligence Index' (June 2026 index cohort, Opus 4.8 = 61), https://artificialanalysis.ai/articles/minimax-m3",
+      "asOf": "2026-06-18",
+      "aliases": ["MiniMax-M3", "minimax/minimax-m3", "minimax-m3"]
+    },
+    {
+      "modelId": "google/gemma-4-e4b",
+      "value": 12.5,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'gemma-4-e4b', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["gemma-4-e4b", "gemma-4-e4b-it", "Gemma 4 E4B"]
+    },
+    {
+      "modelId": "microsoft/phi-4",
+      "value": 4.9,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'phi-4', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["phi-4", "Phi-4"]
+    },
+    {
+      "modelId": "MiniMaxAI/MiniMax-M3",
+      "value": 44.4,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'minimax-m3', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["MiniMax-M3", "minimax/minimax-m3", "minimax-m3"]
+    },
+    {
+      "modelId": "moonshotai/kimi-k2.6",
+      "value": 44.2,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'kimi-k2-6', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["Kimi K2.6", "moonshotai/kimi-k2-6", "moonshot/kimi-k2.6", "kimi-k2.6"]
+    },
+    {
+      "modelId": "qwen/qwen3.6-35b-a3b",
+      "value": 31.6,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'qwen3-6-35b-a3b', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["qwen3-6-35b-a3b", "qwen3.6-35b-a3b", "Qwen3.6 35B A3B"]
+    },
+    {
+      "modelId": "gpt-4o",
+      "value": 11.2,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'gpt-4o', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["openai/gpt-4o"]
+    },
+    {
+      "modelId": "gpt-4o-mini",
+      "value": 6.9,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'gpt-4o-mini', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["openai/gpt-4o-mini"]
+    },
+    {
+      "modelId": "gpt-5",
+      "value": 34.7,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'gpt-5', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["openai/gpt-5"]
+    },
+    {
+      "modelId": "gpt-5-mini",
+      "value": 25.3,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'gpt-5-mini', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["openai/gpt-5-mini"]
+    },
+    {
+      "modelId": "google/gemma-3-12b",
+      "value": 5.5,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'gemma-3-12b', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["gemma-3-12b", "gemma-3-12b-it", "Gemma 3 12B"]
+    },
+    {
+      "modelId": "mistralai/mistral-small-24b",
+      "value": 14.7,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'mistral-small-3-1', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["mistral-small-3", "mistral-small-24b", "mistral-small-3-1", "Mistral Small 24B"]
+    },
+    {
+      "modelId": "deepseek/deepseek-coder-v2-lite",
+      "value": 3.1,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'deepseek-coder-v2-lite', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": [
+        "deepseek-coder-v2-lite",
+        "deepseek-coder-v2-lite-instruct",
+        "DeepSeek-Coder V2 Lite"
+      ]
+    },
+    {
+      "modelId": "qwen/qwen2.5-coder-32b",
+      "value": 7.1,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'qwen2-5-coder-32b-instruct', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": ["qwen2-5-coder-32b-instruct", "qwen2.5-coder-32b-instruct", "Qwen2.5-Coder 32B"]
+    },
+    {
+      "modelId": "grok-4.5",
+      "value": 53.8,
+      "indexVersion": "v4.1",
+      "source": "Artificial Analysis API (index v4.1), model 'grok-4-5', fetched 2026-07-19",
+      "asOf": "2026-07-19",
+      "aliases": [
+        "grok-4-5",
+        "Grok 4.5",
+        "x-ai/grok-4.5",
+        "xai/grok-4.5",
+        "Cursor Grok 4.5",
+        "grok-build-0.1"
+      ]
+    }
+  ],
+  "wanted": [
+    {
+      "modelId": "qwen/qwen3-4b-2507",
+      "aliases": ["qwen3-4b-2507", "qwen3-4b-instruct-2507", "Qwen3 4B"]
+    }
+  ],
+  "equatingPairs": [
+    {
+      "from": "v4.0",
+      "to": "v4.1"
+    }
+  ],
+  "equating": [
+    {
+      "from": "v4.0",
+      "to": "v4.1",
+      "a": 1,
+      "b": -5,
+      "anchorCount": 2,
+      "anchorMin": 60,
+      "anchorMax": 61,
+      "fittedAsOf": "2026-07-18"
+    }
+  ]
+}

@@ -18,6 +18,7 @@
 
 import { AGENT_ROLES, type AgentRoleId } from './agent-roles.ts'
 import { LOCAL_MODEL_BENCHMARKS } from './local-model-benchmarks.generated.ts'
+import { getIntellectScore } from './model-intellect.ts'
 import { estimateQuantizedScore } from './quant-penalty.ts'
 
 /** Benchmark axes we track. Keys are referenced by `AgentRole.wants`. */
@@ -32,6 +33,7 @@ export type Benchmark =
   | 'mmlu-pro' // MMLU-Pro — harder MMLU
   | 'tau-bench' // τ-bench — agentic tool use
   | 'arena' // Arena / user-preference ranking
+  | 'aa-intelligence' // Artificial Analysis Intelligence Index — composite scalar (canonical scale)
 
 export const BENCHMARKS: readonly Benchmark[] = [
   'swe-bench',
@@ -44,6 +46,7 @@ export const BENCHMARKS: readonly Benchmark[] = [
   'mmlu-pro',
   'tau-bench',
   'arena',
+  'aa-intelligence',
 ]
 
 export interface BenchmarkScore {
@@ -178,13 +181,25 @@ const BASE_CATALOG: readonly LocalModelCapability[] = [
 
 /**
  * The catalog, with measured benchmark scores from `sync:local-models` merged
- * over the inline editorial entries. Synced scores win where both exist.
+ * over the inline editorial entries (synced scores win where both exist), plus
+ * the composite intellect axis from `sync:intellect` where a local id has a
+ * sourced Intelligence Index measurement. Intellect rides the same `benchmarks`
+ * record so {@link localBenchmarkScore} quant-adjusts it like any other
+ * full-precision measurement.
  */
 export const LOCAL_MODEL_CATALOG: readonly LocalModelCapability[] = BASE_CATALOG.map((m) => {
   const synced = LOCAL_MODEL_BENCHMARKS[m.id] as
     Partial<Record<Benchmark, BenchmarkScore>> | undefined
-  if (!synced) return m
-  return { ...m, benchmarks: { ...m.benchmarks, ...synced } }
+  const intellect = getIntellectScore(m.id)
+  if (!synced && !intellect) return m
+  return {
+    ...m,
+    benchmarks: {
+      ...m.benchmarks,
+      ...synced,
+      ...(intellect ? { 'aa-intelligence': intellect } : {}),
+    },
+  }
 })
 
 const MODEL_BY_ID: ReadonlyMap<string, LocalModelCapability> = new Map(

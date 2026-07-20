@@ -200,6 +200,54 @@ user can benchmark _their_ loaded local models on _their_ hardware and populate 
 escalation?). Keep them light: enough to rank candidates for a role, not a
 research benchmark.
 
+### 2.5 The intellect axis and the cost frontier
+
+_Landed._ Alongside the per-benchmark axes (which stay authoritative for
+role-specific ranking), the catalog carries one composite scalar — the
+**Artificial Analysis Intelligence Index** — as the `aa-intelligence` benchmark
+axis for cloud AND local ids, enabling the intellect-vs-price analysis the
+per-role axes can't provide. Pieces:
+
+- **Measurements** (`packages/llm/src/model-intellect.ts`, synced by
+  `npm run sync:intellect` from the reviewed `scripts/data/intellect-scores.json`):
+  cited facts with `source` + `asOf` + `indexVersion`; absent = "—", never a
+  guess. `explainIntellectScore()` returns the full derivation (measurement →
+  citation → adjustments) — the one explanation path the picker tooltip, the
+  frontier panel, and tests share.
+- **A permanent canonical scale** (`CANONICAL_INTELLECT_VERSION`). The index
+  renormalises across versions (v3 vs v4 values are not comparable), so scores
+  from other versions are translated onto the canonical scale via
+  **cross-version equating** (`intellect-equating.ts`): linear fits over anchor
+  models measured under both versions, crystallised into the data file at first
+  fit and reused verbatim (`--refit` to deliberately refit). Once a number is
+  shown it never silently changes; a new model on a newer, harder index must
+  genuinely clear the old bar to outrank an old model. Translated values are
+  always `estimated` with the fit (and any extrapolation beyond the anchor
+  range) named in `basis`.
+- **Quant blend**: intellect measurements carry `measuredBitsPerWeight: 16`
+  (AA measures served full-precision endpoints), so `localBenchmarkScore()`
+  quant-adjusts a local model's intellect exactly like any other axis — the UI
+  shows the on-device number, flagged as an estimate.
+- **Composite fallback** (`composite-intellect.ts`, `copse-intellect-v1`): local
+  models with no index measurement but ≥3 sourced pass-rate axes get a
+  fixed-weight composite on its **own 0–100 scale** — deliberately never mixed
+  with the canonical scale (mixing would fake a comparison). Weights only change
+  with a version bump. Calibrating composite→canonical needs a model measured on
+  both; until then the scales stay apart.
+- **Pareto frontier** (`pareto-frontier.ts`): dominance over
+  (canonical intellect, blended $/MTok at the 80/20 input:output mix — the
+  blend that reproduces AA's published $9/MTok for Opus 4.8). Local models sit
+  at $0 flagged `local`. Surfaced as picker hints (`intellect-hints.ts` — e.g.
+  `claude-opus-4-8 — intellect 56 · $9/MTok · frontier`) and the settings
+"Model value map" scatter (`intellect-frontier-panel.ts`), whose tooltips
+  carry the full derivation.
+- **Follow-ups**: AA cost-per-task and latency/throughput columns; per-axis
+  benchmark sync for cloud models (lets the composite stand alone and be
+  calibrated to the index); deriving the classifier's (#557) tier table from
+  frontier data; the agent-level accuracy-vs-cost frontier (issue #752's
+  measured solve-rate/cost-per-solve) as the harness-side sibling of this
+  model-side frontier.
+
 ## Phasing
 
 - **Phase 0 — data foundation (no behaviour change): _done._** `agent-roles.ts`
@@ -237,6 +285,19 @@ research benchmark.
   _Remaining:_ a "download the recommended set" action in onboarding/settings.
 - **Phase 4 — light evals:** per-role rubric tasks, "measured" catalog column,
   feedback into the classifier.
+
+  **Status upgrade (2026-07): necessary, not optional.** A live probe of every
+  named public source found the leaderboard ecosystem stale for the current
+  local-model generation: Aider's boards stop at the gpt-5 / DeepSeek-V3.2 era,
+  EvalPlus predates even Phi-4, SWE-bench restricted submissions to academic
+  teams in late 2025, and LiveCodeBench / LMArena have no fetchable export.
+  None of them will ever carry Qwen3.6 / Gemma 4 / community fine-tunes. For
+  current local weights the only data channels are (a) the Artificial Analysis
+  API for the big open weights AA measures (`sync:intellect --from-api`), and
+  (b) self-measured per-role evals — this phase. The good news: the axes,
+  sourcing rules, quant adjustment, composite, and the value-map strip are all
+  already wired, so measured numbers light everything up with no further
+  plumbing.
 
 ## Answers to the specific questions
 

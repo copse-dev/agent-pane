@@ -198,6 +198,10 @@ import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-led
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
 import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
 import {
+  fetchLiveIntellectModels,
+  invalidateLiveIntellectCache,
+} from '../services/providers/aa-live-intellect.ts'
+import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
 } from '../services/remote/remote-agent-client.ts'
@@ -715,6 +719,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
   })
+  // Live Artificial Analysis feed for the model value map. Key-gated (empty
+  // result without a stored 'artificial-analysis' key); the renderer's anchor
+  // gate decides whether the returned cohort is on the canonical scale.
+  ipcMain.handle('intellect:live-models', (event) => {
+    assertMainFrameSender(event, win)
+    return fetchLiveIntellectModels()
+  })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
   // plaintext-at-rest condition instead of leaving it to a console.warn.
@@ -734,6 +745,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     if (p === 'cursor') invalidateCursorCloudModelsCache()
+    // The live Intelligence Index feed caches its result (successes AND failures)
+    // for hours, so a stored 403/empty would otherwise survive the user fixing
+    // their key. Drop it here so the next value-map open re-fetches with the new
+    // key.
+    if (p === 'artificial-analysis') invalidateLiveIntellectCache()
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
