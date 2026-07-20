@@ -6,6 +6,7 @@ import {
   addMessage,
   setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
+  applyPreparedThreadCheckout,
   getThreadById,
   getActiveThread,
   setThreadDraftPrompt,
@@ -57,6 +58,7 @@ import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
 import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
+import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 
 interface MountInputBarOptions {
   /**
@@ -137,6 +139,26 @@ export function mountInputBar(
   )
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
+  const checkoutHost = el('div', { class: 'footer-checkout-host' })
+  const checkoutBtn = el('button', {
+    type: 'button',
+    class: 'footer-checkout-btn',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+  })
+  const checkoutMenu = el('div', { class: 'footer-checkout-menu', role: 'menu', hidden: '' })
+  const sharedCheckoutBtn = el(
+    'button',
+    { type: 'button', role: 'menuitem', 'data-checkout-choice': 'shared' },
+    'Shared checkout',
+  )
+  const isolatedCheckoutBtn = el(
+    'button',
+    { type: 'button', role: 'menuitem', 'data-checkout-choice': 'worktree' },
+    'Isolated worktree',
+  )
+  checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
+  checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
   const exportBtn = el(
     'button',
@@ -156,7 +178,7 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
-  footer.append(modelHost, branchHost, exportBtn)
+  footer.append(modelHost, checkoutHost, branchHost, exportBtn)
   const footerOverflow = mountFooterOverflow(footer, [
     {
       label: 'Export',
@@ -202,6 +224,7 @@ export function mountInputBar(
       // The context window depends on the model, so re-estimate the footer wheel
       // against the newly selected model rather than waiting for the next keystroke.
       void runContextEstimate()
+      void refreshAutomaticCheckoutPreview()
     },
     {
       isSshWorkspace: (): boolean => {
@@ -219,9 +242,11 @@ export function mountInputBar(
   // the project changes so ACP options hide/show with SSH workspaces.
   store.on('threads_changed', () => {
     modelPicker.refresh()
+    void refreshAutomaticCheckoutPreview()
   })
   store.on('projects_changed', () => {
     modelPicker.refresh()
+    void refreshAutomaticCheckoutPreview()
   })
   const branchControl = mountFooterBranchStatus(branchHost, store, api)
 
@@ -239,7 +264,19 @@ export function mountInputBar(
     updateFooter()
   })
 
-  root.append(chips, branchWarning, inputRow, footer)
+  const checkoutErrorText = el('span', { class: 'composer-checkout-error-text' })
+  const checkoutRetryBtn = el(
+    'button',
+    { type: 'button', class: 'composer-checkout-retry-btn' },
+    'Retry',
+  )
+  const checkoutError = el(
+    'div',
+    { class: 'composer-checkout-error', role: 'alert', hidden: '' },
+    checkoutErrorText,
+    checkoutRetryBtn,
+  )
+  root.append(chips, branchWarning, checkoutError, inputRow, footer)
   const portraitPanelHost = opts.portraitPanelHost ?? root
   portraitPanelHost.append(portraitPanelControls.element)
 
@@ -258,6 +295,82 @@ export function mountInputBar(
   let attachedThreads: AttachedThreadRef[] = []
   // `@shell` snapshots: scrollback inlined like a paste/file block.
   let attachedShells: AttachedShellRef[] = []
+  const checkoutChoices = new Map<string, ThreadWorktreeChoice>()
+  let checkoutPreparationInProgress = false
+  let automaticCheckoutMode: 'shared' | 'worktree' = 'shared'
+  let automaticCheckoutPreviewSeq = 0
+
+  function checkoutChoice(threadId: string): ThreadWorktreeChoice {
+    return checkoutChoices.get(threadId) ?? 'automatic'
+  }
+
+  function checkoutLabel(choice: ThreadWorktreeChoice): string {
+    if (choice === 'worktree') return 'Isolated worktree'
+    if (choice === 'shared') return 'Shared checkout'
+    return automaticCheckoutMode === 'worktree' ? 'Isolated worktree' : 'Shared checkout'
+  }
+
+  async function refreshAutomaticCheckoutPreview(): Promise<void> {
+    const seq = ++automaticCheckoutPreviewSeq
+    const { activeProjectId, settings } = store.getState()
+    const thread = getActiveThread(store)
+    const model = thread?.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL
+    let next: 'shared' | 'worktree' = 'shared'
+    if (activeProjectId) {
+      try {
+        const preview = await api.agent.previewCheckout(activeProjectId, 'automatic', model)
+        next = preview.checkoutMode === 'worktree' ? 'worktree' : 'shared'
+      } catch {
+        // Main performs the authoritative check. Preview degrades to shared
+        // when Git cannot be inspected rather than promising isolation.
+      }
+    }
+    if (seq !== automaticCheckoutPreviewSeq) return
+    automaticCheckoutMode = next
+    updateCheckoutControl()
+  }
+
+  function updateCheckoutControl(): void {
+    const thread = getActiveThread(store)
+    if (!thread) {
+      checkoutHost.hidden = true
+      checkoutMenu.hidden = true
+      checkoutBtn.setAttribute('aria-expanded', 'false')
+      return
+    }
+    const hidden = thread.messages.length > 0 || Boolean(thread.worktreeChoice)
+    checkoutHost.hidden = hidden
+    if (hidden) {
+      checkoutMenu.hidden = true
+      checkoutBtn.setAttribute('aria-expanded', 'false')
+      return
+    }
+    checkoutBtn.disabled = checkoutPreparationInProgress
+    checkoutBtn.textContent = checkoutPreparationInProgress
+      ? 'Preparing checkout…'
+      : checkoutLabel(checkoutChoice(thread.id))
+  }
+
+  function hideCheckoutError(): void {
+    checkoutError.hidden = true
+    checkoutErrorText.textContent = ''
+  }
+
+  function checkoutErrorMessage(error: unknown): string {
+    const message = error instanceof Error ? error.message : 'Could not prepare the checkout'
+    return message.replace(/^Error invoking remote method 'agent:prepareCheckout': Error:\s*/, '')
+  }
+
+  function selectCheckout(choice: ThreadWorktreeChoice): void {
+    const id = getActiveThreadId()
+    if (!id) return
+    checkoutChoices.set(id, choice)
+    checkoutMenu.hidden = true
+    checkoutBtn.setAttribute('aria-expanded', 'false')
+    hideCheckoutError()
+    updateCheckoutControl()
+    composer.focus()
+  }
 
   const currentThreadRefs = (): ThreadRefAttachment[] =>
     attachedThreads.map((t) => ({
@@ -320,6 +433,7 @@ export function mountInputBar(
     const thread = getThreadById(store, id)
     composer.value = thread?.draftPrompt ?? ''
     activeComposerThreadId = id
+    hideCheckoutError()
     // New thread → drop the prior thread's estimate and recompute for this one.
     lastBreakdown = null
     scheduleContextEstimate(0)
@@ -473,6 +587,7 @@ export function mountInputBar(
     }
     exportBtn.hidden = !threadHasExportableContent(thread)
     footerOverflow.update()
+    updateCheckoutControl()
     updateState()
     updateQueueIndicator()
   }
@@ -547,6 +662,27 @@ export function mountInputBar(
   submitBtn.addEventListener('click', () => {
     void submit()
   })
+
+  checkoutBtn.addEventListener('click', () => {
+    if (checkoutPreparationInProgress) return
+    checkoutMenu.hidden = !checkoutMenu.hidden
+    checkoutBtn.setAttribute('aria-expanded', String(!checkoutMenu.hidden))
+  })
+  sharedCheckoutBtn.addEventListener('click', () => {
+    selectCheckout('shared')
+  })
+  isolatedCheckoutBtn.addEventListener('click', () => {
+    selectCheckout('worktree')
+  })
+  checkoutRetryBtn.addEventListener('click', () => {
+    void submit()
+  })
+  const closeCheckoutMenu = (event: MouseEvent): void => {
+    if (checkoutMenu.hidden || checkoutHost.contains(event.target as Node)) return
+    checkoutMenu.hidden = true
+    checkoutBtn.setAttribute('aria-expanded', 'false')
+  }
+  document.addEventListener('click', closeCheckoutMenu)
 
   stopBtn.addEventListener('click', () => {
     const id = getActiveThreadId()
@@ -661,7 +797,13 @@ export function mountInputBar(
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
-    if (threadBranch && threadGitBranchMismatch(threadBranch, currentBranch)) {
+    const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
+    // Worktree threads keep the project checkout on its original branch; the
+    // bound `gitBranch` names the isolated checkout, not a required HEAD move.
+    if (
+      threadBranch &&
+      threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })
+    ) {
       showBranchMismatch(threadBranch)
       return
     }
@@ -718,6 +860,37 @@ export function mountInputBar(
       fullContent = buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
         threadRefs: currentThreadRefs(),
       })
+    }
+
+    // Blank threads commit their checkout decision in main before the renderer
+    // records or clears the first message. Allocation/persistence failures are
+    // therefore retryable without losing or accidentally dispatching the prompt.
+    if (thread && thread.messages.length === 0 && !thread.worktreeChoice) {
+      const projectId = store.getState().activeProjectId
+      if (!projectId) return
+      hideCheckoutError()
+      checkoutPreparationInProgress = true
+      updateCheckoutControl()
+      try {
+        const prepared = await api.agent.prepareCheckout(
+          projectId,
+          id,
+          rawText,
+          checkoutChoice(id),
+          thread.model ?? store.getState().settings?.model,
+        )
+        applyPreparedThreadCheckout(store, id, prepared)
+        // The user may switch threads while Git is preparing the checkout. The
+        // decision remains durable, but their prompt must stay with its composer.
+        if (getActiveThreadId() !== id) return
+      } catch (error) {
+        checkoutErrorText.textContent = checkoutErrorMessage(error)
+        checkoutError.hidden = false
+        return
+      } finally {
+        checkoutPreparationInProgress = false
+        updateCheckoutControl()
+      }
     }
 
     const priorTodos = thread?.todos ?? []
@@ -1026,9 +1199,11 @@ export function mountInputBar(
     }),
     store.on('workspace_changed', () => {
       branchControl.refresh()
+      void refreshAutomaticCheckoutPreview()
     }),
     store.on('git_branch_changed', () => {
       branchControl.refresh()
+      void refreshAutomaticCheckoutPreview()
     }),
   ]
 
@@ -1039,6 +1214,7 @@ export function mountInputBar(
   observer.observe(followUps.root, { attributes: true, attributeFilter: ['hidden'] })
 
   updateFooter()
+  void refreshAutomaticCheckoutPreview()
   refreshExtraPricing()
   syncComposerThread()
   scheduleContextEstimate(0)
@@ -1058,6 +1234,7 @@ export function mountInputBar(
       unsubWorkspace()
       window.removeEventListener('copse:skills-changed', onSkillsChanged)
       document.removeEventListener('paste', onPaste)
+      document.removeEventListener('click', closeCheckoutMenu)
       observer.disconnect()
       followUps.destroy()
       unbindDrop()

@@ -17,6 +17,13 @@ describe('threadGitBranchMismatch', () => {
   it('is true when branches differ', () => {
     assert.equal(threadGitBranchMismatch('feature', 'main'), true)
   })
+
+  it('is false for isolated worktree threads even when HEAD differs', () => {
+    assert.equal(
+      threadGitBranchMismatch('copse/task-thread1', 'main', { isolatedWorktree: true }),
+      false,
+    )
+  })
 })
 
 describe('threadGitBranchMismatchMessage', () => {

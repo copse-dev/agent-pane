@@ -86,6 +86,10 @@ import {
   runWithThreadExecutionContext,
 } from './services/thread-execution-context.ts'
 import { runWithActiveRunIdentity } from './services/thread-models.ts'
+import {
+  prepareThreadCheckout,
+  previewThreadCheckout,
+} from './services/thread-checkout-transaction.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -253,6 +257,57 @@ app
     // concurrently and fires a context estimate on first paint, never races a
     // missing handler. The registry these close over is populated lazily below.
     const messageHistory = new Map<string, LLMMessage[]>()
+
+    ipcMain.handle(
+      'agent:previewCheckout',
+      async (event, projectIdArg: unknown, choiceArg: unknown, modelArg?: unknown) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        if (choiceArg !== 'automatic' && choiceArg !== 'shared' && choiceArg !== 'worktree') {
+          throw new Error('Invalid checkout choice')
+        }
+        if (modelArg !== undefined && typeof modelArg !== 'string') {
+          throw new Error('Invalid checkout model')
+        }
+        return previewThreadCheckout({
+          projectId,
+          choice: choiceArg,
+          ...(modelArg !== undefined ? { model: modelArg } : {}),
+        })
+      },
+    )
+
+    ipcMain.handle(
+      'agent:prepareCheckout',
+      async (
+        event,
+        projectIdArg: unknown,
+        threadIdArg: unknown,
+        promptArg: unknown,
+        choiceArg: unknown,
+        modelArg?: unknown,
+      ) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        if (typeof promptArg !== 'string' || promptArg.length > 1_000_000) {
+          throw new Error('Invalid checkout prompt')
+        }
+        if (choiceArg !== 'automatic' && choiceArg !== 'shared' && choiceArg !== 'worktree') {
+          throw new Error('Invalid checkout choice')
+        }
+        if (modelArg !== undefined && typeof modelArg !== 'string') {
+          throw new Error('Invalid checkout model')
+        }
+        return prepareThreadCheckout({
+          projectId,
+          threadId,
+          prompt: promptArg,
+          choice: choiceArg,
+          ...(modelArg !== undefined ? { model: modelArg } : {}),
+        })
+      },
+    )
 
     ipcMain.handle(
       'agent:run',

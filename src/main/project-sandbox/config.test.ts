@@ -222,17 +222,24 @@ describe('workspaceSandboxOverlay', () => {
       git(repo, ['commit', '--allow-empty', '-m', 'initial'])
       git(repo, ['worktree', 'add', '-q', '-b', 'thread-a', worktree])
       git(repo, ['worktree', 'add', '-q', '-b', 'thread-b', sibling])
+      const executionRoot = join(worktree, 'packages', 'app')
+      mkdirSync(executionRoot, { recursive: true })
 
-      const registration = await registerInternalWorkspaceRoot(worktree)
+      const registration = await registerInternalWorkspaceRoot(worktree, executionRoot)
       const siblingGitDir = realpathSync.native(
         join(registration.commonGitDir, 'worktrees', 'sibling'),
       )
-      const overlay = workspaceSandboxOverlay(worktree)
+      const overlay = workspaceSandboxOverlay(executionRoot)
       const allowRead = overlay.filesystem?.allowRead ?? []
       const allowWrite = overlay.filesystem?.allowWrite ?? []
+      const denyRead = overlay.filesystem?.denyRead ?? []
       const denyWrite = overlay.filesystem?.denyWrite ?? []
 
       assert.ok(allowRead.includes(registration.gitDir))
+      assert.ok(allowRead.includes(join(registration.checkoutRoot, '.git')))
+      assert.ok(allowRead.includes(worktree))
+      assert.ok(allowRead.includes(join(worktree, 'packages')))
+      assert.ok(!allowRead.includes(`${worktree}/**`))
       assert.ok(allowWrite.includes(`${registration.gitDir}/**`))
       assert.ok(allowRead.includes(join(registration.commonGitDir, 'config')))
       assert.ok(allowWrite.includes(join(registration.commonGitDir, 'objects/**')))
@@ -243,11 +250,20 @@ describe('workspaceSandboxOverlay', () => {
       )
       assert.ok(!allowWrite.includes(join(registration.commonGitDir, 'config')))
       assert.ok(!allowWrite.includes(join(registration.commonGitDir, 'hooks/**')))
+      assert.ok(denyRead.includes(sibling))
+      assert.ok(denyRead.includes(`${sibling}/**`))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'config')))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'hooks/**')))
+      await assert.rejects(
+        registerInternalWorkspaceRoot(worktree, sibling),
+        /outside its linked Git worktree/,
+      )
 
       // Internal roots are deliberately not renderer-selectable project roots.
-      await assert.rejects(assertAllowedWorkspaceRoot(worktree), /not an allowed project folder/)
+      await assert.rejects(
+        assertAllowedWorkspaceRoot(executionRoot),
+        /not an allowed project folder/,
+      )
     } finally {
       clearAllowedWorkspaceRootsForTest()
       rmSync(tmpRoot, { recursive: true, force: true })

@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
+import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -46,11 +47,23 @@ function createApi(options: {
   onAbort?: () => Promise<void>
   onRun?: () => Promise<void>
   onCheckoutBranch?: (branch: string) => Promise<void>
+  onPrepareCheckout?: () => Promise<PreparedThreadCheckout>
+  onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
 }): ApiClient {
   return {
     agent: {
       abort: options.onAbort ?? (async (): Promise<void> => {}),
       run: options.onRun ?? (async (): Promise<void> => {}),
+      prepareCheckout:
+        options.onPrepareCheckout ??
+        (async (): Promise<PreparedThreadCheckout> => ({
+          checkoutMode: 'shared',
+          choice: 'automatic',
+          branch: options.currentBranch,
+        })),
+      previewCheckout:
+        options.onPreviewCheckout ??
+        (async (): Promise<ThreadCheckoutPreview> => ({ checkoutMode: 'shared' })),
       suggestFollowUps: async () => [],
       refreshModelContext: async () => {},
       onRefreshContextEstimate: () => () => {},
@@ -100,7 +113,213 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
+describe('input bar first-message checkout', () => {
+  it('shows the shared default and lets the user opt into an isolated worktree', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const choice = host.querySelector<HTMLButtonElement>('.footer-checkout-btn')
+    assert.ok(choice)
+    assert.equal(choice.textContent, 'Shared checkout')
+    choice.click()
+    const isolated = host.querySelector<HTMLButtonElement>('[data-checkout-choice="worktree"]')
+    assert.ok(isolated)
+    assert.equal(isolated.hidden, false)
+    isolated.click()
+    assert.equal(choice.textContent, 'Isolated worktree')
+  })
+
+  it('previews an automatic project opt-in only when Git supports it', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo', worktreeMode: 'always' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPreviewCheckout: async () => ({ checkoutMode: 'worktree' }),
+      }),
+    )
+    await settle()
+
+    const choice = host.querySelector<HTMLButtonElement>('.footer-checkout-btn')
+    assert.ok(choice)
+    assert.equal(choice.textContent, 'Isolated worktree')
+  })
+
+  it('keeps the prompt and sends nothing when checkout preparation fails', async () => {
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: async () => {
+          throw new Error(
+            "Error invoking remote method 'agent:prepareCheckout': Error: worktree allocation failed",
+          )
+        },
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submit)
+    composer.textContent = 'Keep this prompt'
+    submit.click()
+    await flush()
+
+    assert.equal(composer.textContent, 'Keep this prompt')
+    assert.equal(runs, 0)
+    assert.equal(store.getState().threads[0]?.messages.length, 0)
+    const error = host.querySelector<HTMLElement>('.composer-checkout-error')
+    assert.ok(error)
+    assert.equal(error.hidden, false)
+    assert.match(error.textContent, /worktree allocation failed/)
+    assert.doesNotMatch(error.textContent, /invoking remote method/)
+    assert.match(error.textContent, /Retry/)
+  })
+
+  it('persists checkout state before recording and dispatching the first prompt', async () => {
+    const order: string[] = []
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onPrepareCheckout: async () => {
+          order.push('prepare')
+          return {
+            checkoutMode: 'worktree',
+            choice: 'worktree',
+            branch: 'copse/first-message',
+            worktree: {
+              path: '/worktrees/thread-1',
+              branch: 'copse/first-message',
+              baseBranch: 'main',
+              baseCommit: 'a'.repeat(40),
+              createdAt: 2,
+              seededFromDirtyProject: false,
+            },
+          }
+        },
+        onRun: async () => {
+          order.push('run')
+        },
+      }),
+    )
+    const choice = host.querySelector<HTMLButtonElement>('.footer-checkout-btn')
+    const isolated = host.querySelector<HTMLButtonElement>('[data-checkout-choice="worktree"]')
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submit = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(choice)
+    assert.ok(isolated)
+    assert.ok(composer)
+    assert.ok(submit)
+    choice.click()
+    isolated.click()
+    composer.textContent = 'Start in isolation'
+    submit.click()
+    await flush()
+
+    assert.deepEqual(order, ['prepare', 'run'])
+    const prepared = store.getState().threads[0]
+    assert.ok(prepared)
+    assert.equal(prepared.worktreeChoice, 'worktree')
+    assert.equal(prepared.gitBranch, 'copse/first-message')
+    assert.equal(prepared.messages[0]?.content, 'Start in isolation')
+    assert.equal(composer.textContent, '')
+  })
+})
+
 describe('input bar branch mismatch warning', () => {
+  it('does not block submit when an isolated worktree binds a different branch', async () => {
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [
+        {
+          ...thread('copse/first-message'),
+          worktreeChoice: 'worktree',
+          worktree: {
+            path: '/worktrees/thread-1',
+            branch: 'copse/first-message',
+            baseBranch: 'main',
+            baseCommit: 'a'.repeat(40),
+            createdAt: 2,
+            seededFromDirtyProject: false,
+          },
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submitBtn = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submitBtn)
+    composer.textContent = 'Follow up in the worktree'
+    submitBtn.click()
+    await settle()
+
+    assert.equal(runs, 1)
+    const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+  })
+
   it('shows an inline checkout action instead of native validation', async () => {
     let checkedOutBranch: string | null = null
     let branchRefreshes = 0
