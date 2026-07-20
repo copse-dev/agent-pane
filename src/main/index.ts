@@ -453,7 +453,7 @@ let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
-  disposeAllAcpSessions()
+  await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
   disposeTerminal?.()
