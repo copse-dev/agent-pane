@@ -1,13 +1,14 @@
 import { app, type BrowserWindow } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
+import { getAutoUpdatePolicy } from '../../shared/release-channel.mts'
 import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
 
 // Auto-update for the direct-download (Developer ID + notarized) macOS build.
 //
 // electron-builder embeds an `app-update.yml` pointing at this repo's GitHub
-// Releases (see package.json `build.publish`) and publishes a `latest-mac.yml`
-// feed next to each release zip. electron-updater reads that feed, downloads a
-// newer *signed* build, and swaps it in on relaunch (Squirrel.Mac).
+// Releases (see package.json `build.publish`) and publishes channel-specific
+// update metadata next to each release zip. electron-updater reads that feed,
+// downloads a newer *signed* build, and swaps it in on relaunch (Squirrel.Mac).
 //
 // Updates are never silent: a coding tool shouldn't replace its own binary
 // mid-session without consent, so the user confirms the download, then again
@@ -22,10 +23,28 @@ let wired = false
  */
 export function initAutoUpdate(win: BrowserWindow): void {
   if (!app.isPackaged || process.platform !== 'darwin' || wired) return
-  wired = true
 
+  let updatePolicy: ReturnType<typeof getAutoUpdatePolicy>
+  try {
+    updatePolicy = getAutoUpdatePolicy(app.getVersion())
+  } catch (error) {
+    console.warn(
+      '[auto-update] disabled for unsupported release version:',
+      error instanceof Error ? error.message : error,
+    )
+    return
+  }
+
+  wired = true
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
+  // GitHub does not infer update channels from the version. Stable clients
+  // follow only normal releases; beta clients follow beta and may advance to a
+  // newer stable release. Both channel and allowPrerelease can enable downgrade
+  // inside electron-updater, so restore the forward-fix-only invariant last.
+  autoUpdater.channel = updatePolicy.channel
+  autoUpdater.allowPrerelease = updatePolicy.allowPrerelease
+  autoUpdater.allowDowngrade = updatePolicy.allowDowngrade
 
   autoUpdater.on('update-available', (info: UpdateInfo): void => {
     void promptDownload(win, info.version)
