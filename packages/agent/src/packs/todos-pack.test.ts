@@ -104,9 +104,11 @@ describe('copse.todos pack (P4)', () => {
 
   it('disabling the pack atomically drops tool + hooks + prompt + panel', () => {
     // Pinned end-to-end: from the shipped seed, one flag flip must clear
-    // every one of the todos pack's contribution kinds while the noop
-    // skeleton's zero contributions stay unaffected (`activeToolNames` on the
-    // seed is exactly the todos-pack tool list; disabling drops it to []).
+    // every one of the todos pack's contribution kinds. P5 added two more
+    // first-party packs (`copse.post-turn-review` and `copse.model-comparison`)
+    // that ship enabled — so this test asserts specifically that the *todos*
+    // pack's own contributions leave the active set on disable, not that the
+    // whole registry drops to zero. The sibling packs' state is unaffected.
     const registry = createFirstPartyPackRegistry()
     assert.ok(registry.activeToolNames().includes(TODOS_TOOL_NAME))
     assert.ok(registry.activeBlockingHooks().some((hook) => hook.id === 'todo-steering'))
@@ -122,16 +124,22 @@ describe('copse.todos pack (P4)', () => {
 
     registry.disable(TODOS_PACK_ID)
 
-    assert.deepEqual(registry.activeToolNames(), [])
-    assert.deepEqual(
-      registry.activeBlockingHooks().map((hook) => hook.id),
-      [],
+    assert.ok(
+      !registry.activeToolNames().includes(TODOS_TOOL_NAME),
+      'todos tool must leave activeToolNames() atomically on pack disable',
     )
-    assert.deepEqual(
-      registry.activePromptBlocks().map((block) => block.id),
-      [],
+    assert.ok(
+      !registry.activeBlockingHooks().some((hook) => hook.id === 'todo-steering'),
+      'todo-steering hook must leave activeBlockingHooks() atomically on pack disable',
     )
-    assert.deepEqual(registry.activePanelContributions(), [])
+    assert.ok(
+      !registry.activePromptBlocks().some((block) => block.id === 'todo-steering-block'),
+      'todo steering prompt block must leave activePromptBlocks() atomically on pack disable',
+    )
+    assert.ok(
+      !registry.activePanelContributions().some(({ packId }) => packId === TODOS_PACK_ID),
+      'plan panel contribution must leave activePanelContributions() atomically on pack disable',
+    )
 
     // Pack storage survives the disable (decision 17); use it and confirm it
     // is intact after re-enabling.

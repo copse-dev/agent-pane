@@ -8,7 +8,11 @@ import { getModelComparisonRunner } from '../services/model-comparison-runner.ts
  * and a judge that compares their verdicts, then returns the judge's comparison.
  * The full side-by-side is also rendered as a card in the conversation. If a
  * billable model is involved it first asks the user to approve the spend.
- * Registered only when `modelComparisonEnabled` is on.
+ *
+ * P5: registered only while the `copse.model-comparison` first-party pack is
+ * enabled — the tool registration in `registry-bootstrap.ts` reads the pack
+ * registry via `syncModelComparisonTools`, and the `packs:setEnabled` IPC
+ * handler re-syncs on toggle so the atomic pack disable drops the tool live.
  */
 export const compareModelsTool = defineTool({
   name: 'compare_models',

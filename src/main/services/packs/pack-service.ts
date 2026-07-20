@@ -29,11 +29,16 @@ import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-summary.ts'
-import { storageGet, storageUpdate } from '../storage/storage.ts'
+import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
+import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
+import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
 /** Storage key holding the ids of packs the user disabled. */
 const PACK_DISABLED_KEY = 'packDisabled'
+
+/** One-time bridge from P5's retired standalone enablement settings. */
+const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -43,6 +48,34 @@ function packSettingsKey(packId: string): string {
 /** Read the persisted disable set. */
 function readDisabledIds(): Set<string> {
   return new Set(parseStringList(storageGet(PACK_DISABLED_KEY)))
+}
+
+/**
+ * Preserve the enablement users had before post-turn review and model
+ * comparison became packs. This must run synchronously before the shared
+ * registry is created: `createRegistry()` immediately consults it to decide
+ * whether `compare_models` belongs in the model's tool list.
+ *
+ * The old defaults were asymmetric — post-turn review on, model comparison
+ * off. In particular, an absent `modelComparisonEnabled` value must disable
+ * the new pack or P5 would expose an experimental, previously opt-in tool to
+ * every existing user after upgrade.
+ */
+function migrateP5Enablement(): void {
+  if (storageGet(P5_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const postTurnReviewEnabled = storageGet('postTurnReviewEnabled')
+  const modelComparisonEnabled = storageGet('modelComparisonEnabled')
+
+  if (postTurnReviewEnabled === false) disabled.add(POST_TURN_REVIEW_PACK_ID)
+  else if (postTurnReviewEnabled === true) disabled.delete(POST_TURN_REVIEW_PACK_ID)
+
+  if (modelComparisonEnabled === true) disabled.delete(MODEL_COMPARISON_PACK_ID)
+  else disabled.add(MODEL_COMPARISON_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -135,6 +168,7 @@ export function createPackService(registry: PackRegistry): PackService {
  */
 export function getPackService(): PackService {
   if (singleton) return singleton
+  migrateP5Enablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

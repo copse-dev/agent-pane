@@ -15,9 +15,19 @@
 //    the pack-scoped steering setting. Disabling it removes all four in one
 //    atomic flag flip (P1 atomicity, pinned by
 //    `enable-disable-atomicity.test.ts`).
+//  - `postTurnReviewPack` — the P5 first-party pack for post-turn review.
+//    Declarative-only (no typed contributions); the pack toggle is the atomic
+//    master switch consulted by the trigger site in `agent-service.ts`.
+//  - `modelComparisonPack` — the P5 first-party pack for the experimental
+//    two-model + judge diff comparison. Declares the `compare_models` tool;
+//    the pack toggle atomically drops the tool from the model tool list
+//    (`registry-bootstrap.ts` reads the pack registry) and skips the
+//    auto-on-review trigger in `agent-service.ts`.
 import { definePack, type RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
+import { postTurnReviewPack } from './post-turn-review-pack.ts'
+import { modelComparisonPack } from './model-comparison-pack.ts'
 
 /**
  * The P1 skeleton first-party pack. Contributes nothing (empty contributions),
@@ -36,9 +46,15 @@ export const noopPack: RegisteredPack = definePack({
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
  * enumeration order (P3); the noop skeleton stays first so it is a stable
- * anchor for the settings e2e, and the pilot todos pack follows.
+ * anchor for the settings e2e, then the pilot todos pack, and P5's two
+ * newly-extracted feature packs (post-turn review + model comparison).
  */
-export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [noopPack, todosPack]
+export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
+  noopPack,
+  todosPack,
+  postTurnReviewPack,
+  modelComparisonPack,
+]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */
 export function createFirstPartyPackRegistry(): PackRegistry {

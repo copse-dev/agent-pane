@@ -153,7 +153,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   openRouterFreeMode: z.boolean(),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
-  postTurnReviewEnabled: z.boolean(),
+  // P5: the former top-level `postTurnReviewEnabled` boolean is retired —
+  // the `copse.post-turn-review` first-party pack toggle in Settings > Packs
+  // is the atomic master switch consulted by the trigger site in
+  // `agent-service.ts`. The threshold below stays a top-level setting.
+  //
   // Skip the post-turn review when the working diff has fewer changed lines than
   // this threshold (#584). Default 1 skips only an empty diff (nothing to review);
   // a larger value also skips trivial edits; 0 always reviews. Separately, billable
@@ -208,7 +212,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   orchestrationWorkerModel: z.string().max(256),
   // Experimental model comparison harness: run the working-diff review through
   // two models plus a judge that compares their verdicts. See model-comparison.ts.
-  modelComparisonEnabled: z.boolean(),
+  // P5: the former top-level `modelComparisonEnabled` boolean is retired —
+  // the `copse.model-comparison` first-party pack toggle in Settings > Packs
+  // is the atomic master switch. The sub-toggle below is still top-level.
   modelComparisonAutoOnReview: z.boolean(),
   comparisonModelA: z.string().max(256),
   comparisonModelB: z.string().max(256),
