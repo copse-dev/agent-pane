@@ -21,8 +21,7 @@ export function clear(node: Element): void {
 export function scrollIntoViewIfNeeded(element: Element, container: HTMLElement): void {
   const elRect = element.getBoundingClientRect()
   const containerRect = container.getBoundingClientRect()
-  const fullyVisible =
-    elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom
+  const fullyVisible = elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom
   if (!fullyVisible) {
     element.scrollIntoView({ block: 'nearest' })
   }
