@@ -514,11 +514,13 @@ async function checkBackgroundProcessPermission(args: unknown): Promise<boolean>
 }
 
 /**
- * The integrated terminal uses the project seatbelt when available. On a
- * platform without that boundary (or after ASRT initialization failed), opening
- * it creates a full-host shell and must be an explicit user decision. A new
- * terminal also prompts while the process-global sandbox network scope is
- * widened, because it would inherit that temporary egress. (#662, #803)
+ * User-initiated integrated terminals always spawn outside the project seatbelt
+ * (see terminal-service.ts). On platforms without an OS sandbox boundary, or
+ * when an SSH-backed PTY necessarily runs outside the local seatbelt, opening
+ * one is an explicit user decision. A new terminal also prompts while the
+ * process-global sandbox network scope is widened, because an unsandboxed PTY
+ * would inherit that temporary egress. Agent shell confinement stays on
+ * run_shell / run_background. (#662, #803, #812)
  */
 export async function ensureTerminalPermitted(
   opts: TerminalPermissionOptions = {},
