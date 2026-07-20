@@ -37,6 +37,20 @@ export interface IpcInvokeMap {
     args: [projectId: string, threadId: string, prompt: string]
     result: undefined
   }
+  'agent:prepareCheckout': {
+    args: [
+      projectId: string,
+      threadId: string,
+      prompt: string,
+      choice: import('./worktree.ts').ThreadWorktreeChoice,
+      model?: string,
+    ]
+    result: import('./worktree.ts').PreparedThreadCheckout
+  }
+  'agent:previewCheckout': {
+    args: [projectId: string, choice: import('./worktree.ts').ThreadWorktreeChoice, model?: string]
+    result: import('./worktree.ts').ThreadCheckoutPreview
+  }
   'agent:abort': { args: [threadId: string]; result: undefined }
   'agent:clearHistory': { args: [threadId: string]; result: undefined }
   'agent:refreshModelContext': { args: []; result: undefined }

@@ -31,6 +31,11 @@ import type {
 import type { DetectedAcpAgent } from '@shared/acp-known-agents.ts'
 import type { AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
+import type {
+  PreparedThreadCheckout,
+  ThreadCheckoutPreview,
+  ThreadWorktreeChoice,
+} from '@shared/types/worktree.ts'
 
 export type { DetectedAcpAgent }
 
@@ -78,6 +83,18 @@ export interface ApiClient {
   }
   agent: {
     run: (projectId: string, threadId: string, prompt: string) => Promise<void>
+    prepareCheckout: (
+      projectId: string,
+      threadId: string,
+      prompt: string,
+      choice: ThreadWorktreeChoice,
+      model?: string,
+    ) => Promise<PreparedThreadCheckout>
+    previewCheckout: (
+      projectId: string,
+      choice: ThreadWorktreeChoice,
+      model?: string,
+    ) => Promise<ThreadCheckoutPreview>
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>

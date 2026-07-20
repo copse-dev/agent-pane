@@ -49,6 +49,18 @@ contextBridge.exposeInMainWorld('api', {
   agent: {
     run: (projectId: string, threadId: string, prompt: string) =>
       ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
+    prepareCheckout: (
+      projectId: string,
+      threadId: string,
+      prompt: string,
+      choice: 'automatic' | 'shared' | 'worktree',
+      model?: string,
+    ) => ipcRenderer.invoke('agent:prepareCheckout', projectId, threadId, prompt, choice, model),
+    previewCheckout: (
+      projectId: string,
+      choice: 'automatic' | 'shared' | 'worktree',
+      model?: string,
+    ) => ipcRenderer.invoke('agent:previewCheckout', projectId, choice, model),
     estimateContext: (threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
