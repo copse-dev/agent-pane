@@ -10,11 +10,13 @@ describe('model comparison approval', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    // P5: the `compare_models` tool ships enabled by default through the
-    // `copse.model-comparison` first-party pack; no per-test seed needed.
+    // P5: `migrateP5Enablement()` keeps the experimental `compare_models` tool
+    // off by default (it was previously opt-in), so this flow must seed the
+    // legacy opt-in to enable the `copse.model-comparison` pack.
     seedEmptyProject(process.cwd(), 'e2e-model-compare-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
+      modelComparisonEnabled: true,
     })
     await browser.reloadSession()
   })
