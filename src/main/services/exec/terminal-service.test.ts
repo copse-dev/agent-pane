@@ -2,8 +2,11 @@ import { describe, it, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   createTerminalSession,
+  __testInjectTerminalSession,
   destroyAllTerminalSessions,
+  destroyTerminalSessionsForThread,
   destroyTerminalSession,
+  listTerminalSessions,
   resizeTerminalSession,
   writeTerminalSession,
 } from './terminal-service.ts'
@@ -146,5 +149,34 @@ describe('terminal-service', () => {
       if (sessionId) destroyTerminalSession(sessionId, OWNER)
       restore()
     }
+  })
+
+  it('disposes only sessions owned by the requested thread', async () => {
+    const first = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'First',
+      threadId: 'thread-a',
+      outputText: '',
+    })
+    const second = __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Second',
+      threadId: 'thread-b',
+      outputText: '',
+    })
+    __testInjectTerminalSession({
+      ownerId: OWNER,
+      label: 'Unscoped',
+      threadId: null,
+      outputText: '',
+    })
+
+    assert.deepEqual(await destroyTerminalSessionsForThread('thread-a'), [first])
+    assert.equal(listTerminalSessions('thread-a').length, 0)
+    assert.deepEqual(
+      listTerminalSessions('thread-b').map((session) => session.id),
+      [second],
+    )
+    assert.equal(listTerminalSessions(null).length, 1)
   })
 })

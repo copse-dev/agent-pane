@@ -85,8 +85,8 @@ function sink(into: StreamChunk[]): AcpClientHandlers {
 const CONFIG = { command: 'unused-in-tests', cwd: '/tmp/pool-test' }
 
 describe('acp-session-pool', () => {
-  afterEach(() => {
-    disposeAllAcpSessions()
+  afterEach(async () => {
+    await disposeAllAcpSessions()
   })
 
   it('reuses one agent process and one session across turns', async () => {
@@ -147,15 +147,15 @@ describe('acp-session-pool', () => {
     const createTransport = makeTransportFactory(log)
 
     await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
-    disposeAcpSession('t1')
+    await disposeAcpSession('t1')
     assert.equal(acpSessionPoolSize(), 0)
 
     const reacquired = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     assert.equal(reacquired.fresh, true)
 
     // Idle reaping: nothing at now, evicted once past the idle window.
-    assert.deepEqual(reapIdleAcpSessions(Date.now(), 60_000), [])
-    const reaped = reapIdleAcpSessions(Date.now() + 61_000, 60_000)
+    assert.deepEqual(await reapIdleAcpSessions(Date.now(), 60_000), [])
+    const reaped = await reapIdleAcpSessions(Date.now() + 61_000, 60_000)
     assert.deepEqual(reaped, ['t1'])
     assert.equal(acpSessionPoolSize(), 0)
 
@@ -175,7 +175,7 @@ describe('acp-session-pool', () => {
 
     // Idle reaper tears down the live process but keeps the opaque session ID
     // so the next turn can resume without Copse replaying the transcript.
-    assert.deepEqual(reapIdleAcpSessions(Date.now() + 61_000, 60_000), ['t1'])
+    assert.deepEqual(await reapIdleAcpSessions(Date.now() + 61_000, 60_000), ['t1'])
     assert.equal(acpSessionPoolSize(), 0)
 
     const resumed = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
@@ -198,7 +198,7 @@ describe('acp-session-pool', () => {
 
     // This mirrors a connection-closed turn: preserve the agent's opaque
     // session ID while replacing its dead stdio transport.
-    disposeAcpSession('t1', { preserveForResume: true })
+    await disposeAcpSession('t1', { preserveForResume: true })
     const resumed = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
 
     assert.equal(resumed.fresh, false)
@@ -214,7 +214,7 @@ describe('acp-session-pool', () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const createTransport = makeTransportFactory(log)
     const { entry } = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
-    entry.dispose()
+    await entry.dispose()
     assert.equal(entry.open.isClosed(), true)
     const next = await acquireAcpSession({ threadId: 't1', config: CONFIG, createTransport })
     assert.equal(next.fresh, true)
