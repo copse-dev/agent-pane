@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedProjectSwitchFixture } from './helpers/seed-config.ts'
+import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -9,19 +10,6 @@ async function clickProject(name: string): Promise<void> {
   const row = await $(`.project-row*=${name}`)
   await row.waitForExist({ timeout: 10_000 })
   await row.click()
-}
-
-async function approveUnsandboxedTerminalIfPrompted(): Promise<void> {
-  const dialog = await $('#approval-dialog')
-  const approvalShown = await dialog
-    .waitForDisplayed({ timeout: process.platform === 'darwin' ? 1_000 : 10_000 })
-    .then(() => true)
-    .catch(() => false)
-  if (!approvalShown) return
-
-  await expect(dialog.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
-  await dialog.$('.approval-approve').click()
-  await dialog.waitForDisplayed({ reverse: true, timeout: 10_000 })
 }
 
 async function openTerminalPane(): Promise<void> {
