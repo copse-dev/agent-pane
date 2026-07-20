@@ -72,7 +72,7 @@ export function mountInputBar(
   store: AppStore,
   api: ApiClient,
   opts: MountInputBarOptions = {},
-): () => void {
+): { handleStopShortcut: (key: 'Escape' | 'Enter') => boolean; unmount: () => void } {
   const chips = el('div', { class: 'attachment-chips' })
   const composer = mountComposerEditor()
   composer.setPlaceholder('Message…')
@@ -337,11 +337,42 @@ export function mountInputBar(
     draftAutosave.schedule()
   })
 
+  let stopPendingThreadId: string | null = null
+
+  function clearStopPending(): void {
+    stopPendingThreadId = null
+    stopBtn.classList.remove('stop-pending')
+  }
+
   function updateState(): void {
     const running = isRunning()
     stopBtn.hidden = !running
     submitBtn.classList.toggle('with-stop', running)
     composer.el.classList.toggle('with-stop', running)
+    if (!running || stopPendingThreadId !== getActiveThreadId()) clearStopPending()
+  }
+
+  const handleStopShortcut = (key: 'Escape' | 'Enter'): boolean => {
+    const id = getActiveThreadId()
+    const thread = getActiveThread(store)
+    if (!id || thread?.status !== 'running') {
+      clearStopPending()
+      return false
+    }
+
+    if (stopPendingThreadId === id) {
+      clearStopPending()
+      void api.agent.abort(id)
+      return true
+    }
+
+    if (key === 'Escape') {
+      stopPendingThreadId = id
+      stopBtn.classList.add('stop-pending')
+      return true
+    }
+
+    return false
   }
 
   function showBranchMismatch(branch: string): void {
@@ -566,6 +597,21 @@ export function mountInputBar(
   function isAutocompletePickerOpen(): boolean {
     return root.querySelector('.mention-picker:not([hidden])') !== null
   }
+
+  // Complete a pending stop before the composer sees Enter. The first Escape
+  // continues to the document shortcut handler, which gives dialogs priority.
+  root.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.isComposing || stopPendingThreadId === null) return
+      if (e.key !== 'Escape' && e.key !== 'Enter') return
+      if (handleStopShortcut(e.key)) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    },
+    true,
+  )
 
   composer.el.addEventListener('keydown', (e) => {
     if (e.isComposing) return
@@ -997,29 +1043,32 @@ export function mountInputBar(
   syncComposerThread()
   scheduleContextEstimate(0)
   window.addEventListener('beforeunload', stopContextEstimates)
-  return () => {
-    window.removeEventListener('beforeunload', stopContextEstimates)
-    stopContextEstimates()
-    draftAutosave.cancel()
-    if (activeComposerThreadId) {
-      setThreadDraftPrompt(store, activeComposerThreadId, composer.expandedValue())
-    }
-    unsubs.forEach((u) => {
-      u()
-    })
-    unsubWorkspace()
-    window.removeEventListener('copse:skills-changed', onSkillsChanged)
-    document.removeEventListener('paste', onPaste)
-    observer.disconnect()
-    followUps.destroy()
-    unbindDrop()
-    unregisterAttachments()
-    modelPicker.destroy()
-    footerOverflow.destroy()
-    footerCompact.destroy()
-    portraitPanelControls.destroy()
-    branchControl.destroy()
-    indexStatusChip.destroy()
-    skillPicker()
+  return {
+    handleStopShortcut,
+    unmount(): void {
+      window.removeEventListener('beforeunload', stopContextEstimates)
+      stopContextEstimates()
+      draftAutosave.cancel()
+      if (activeComposerThreadId) {
+        setThreadDraftPrompt(store, activeComposerThreadId, composer.expandedValue())
+      }
+      unsubs.forEach((u) => {
+        u()
+      })
+      unsubWorkspace()
+      window.removeEventListener('copse:skills-changed', onSkillsChanged)
+      document.removeEventListener('paste', onPaste)
+      observer.disconnect()
+      followUps.destroy()
+      unbindDrop()
+      unregisterAttachments()
+      modelPicker.destroy()
+      footerOverflow.destroy()
+      footerCompact.destroy()
+      portraitPanelControls.destroy()
+      branchControl.destroy()
+      indexStatusChip.destroy()
+      skillPicker()
+    },
   }
 }

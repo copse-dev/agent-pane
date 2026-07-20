@@ -9,7 +9,7 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { openNewThread, switchThread, getActiveThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -166,6 +166,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
+let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
   // Sanitizer and highlighter backends must be in place before any markdown sink
@@ -364,9 +365,10 @@ function mountFullLayout(): void {
   const monacoReady = loadMonaco()
   mountProjectsPane(requireElement('pane-projects'), store, api)
   const inputRoot = requireElement('input-bar')
-  mountInputBar(inputRoot, store, api, {
+  const inputBar = mountInputBar(inputRoot, store, api, {
     portraitPanelHost: requireElement('pane-chat'),
   })
+  handleStopShortcut = inputBar.handleStopShortcut
   const conversationRoot = requireElement('conversation')
   mountConversation(conversationRoot, store, api, inputRoot)
   mountConversationSearch(conversationRoot)
@@ -491,11 +493,10 @@ function registerKeyboardShortcuts(): void {
         closeSettingsDialog()
         return
       }
-      const thread = getActiveThread(store)
-      if (thread?.status === 'running') {
-        const id = store.getState().activeThreadId
-        if (id) void api.agent.abort(id)
-      }
+      if (handleStopShortcut?.('Escape')) e.preventDefault()
+    }
+    if (e.key === 'Enter' && handleStopShortcut?.('Enter')) {
+      e.preventDefault()
     }
     if (e.altKey && e.key === 'ArrowLeft') switchToPrevThread()
     if (e.altKey && e.key === 'ArrowRight') switchToNextThread()
