@@ -654,6 +654,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
   })
 
+  // Track the chat thread started from an item ("Start thread" in the pane) in
+  // a `thread` frontmatter field, so the pane can offer reopening it later.
+  // Restamping is deliberate: starting a fresh thread from the same item points
+  // the field at the newest one. An empty threadId clears the tracking.
+  ipcMain.handle('roadmap:setThread', (event, rawId: unknown, rawThreadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const threadId = parseIpcArgs(z.string().max(128).optional(), [rawThreadId])?.trim() ?? ''
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return null
+    const { thread: _thread, ...rest } = existing.fields
+    return updateKnowledgeNote(id, {
+      fields: { ...rest, ...(threadId ? { thread: threadId } : {}) },
+    })
+  })
+
   // Advisory fit check of an item's prompt against its pinned issue,
   // explicitly triggered from the pane (see roadmap-fit-check.ts).
   ipcMain.handle('roadmap:checkFit', (event, rawId: unknown) => {
