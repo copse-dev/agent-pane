@@ -691,9 +691,10 @@ describe('roadmap pane', () => {
       await flush()
       const chip = list.querySelector<HTMLElement>('.roadmap-thread-chip')
       assert.ok(chip)
-      chip.click()
+      assert.equal(chip.tabIndex, 0, 'the nested row link must be keyboard focusable')
+      chip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
       assert.equal(store.getState().activeThreadId, 't1')
-      // The chip click must not select the row into the editor.
+      // Activating the chip must not select the row into the editor.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
     } finally {
       unmount()

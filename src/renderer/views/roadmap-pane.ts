@@ -650,12 +650,20 @@ export function mountRoadmapPane(
           {
             class: 'roadmap-thread-chip',
             role: 'link',
+            tabindex: '0',
             title: `Reopen thread "${trackedThread.title}"`,
           },
           'thread',
         )
         threadChip.addEventListener('click', (e) => {
           // The row itself selects the item; the chip only reopens the thread.
+          e.stopPropagation()
+          switchThread(store, trackedThread.id)
+          getPromptAttachmentHandlers()?.focusComposer?.()
+        })
+        threadChip.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
           e.stopPropagation()
           switchThread(store, trackedThread.id)
           getPromptAttachmentHandlers()?.focusComposer?.()
