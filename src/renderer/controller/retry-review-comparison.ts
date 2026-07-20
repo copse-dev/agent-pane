@@ -30,10 +30,12 @@ export function retryReview(
   // feedback; main re-emits the same `running` chunk when it starts. The re-run
   // reviews the current working diff, so its verdict lands on the same message
   // the failed card is anchored to (main's chunk targets that turn's message).
+  const projectId = store.getState().activeProjectId
+  if (!projectId) return
   setMessageReview(store, threadId, messageId, { status: 'running', summary: '' })
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
-  void api.agent.retryReview(threadId, retryPayload(store, threadId))
+  void api.agent.retryReview(projectId, threadId, retryPayload(store, threadId))
 }
 
 /**
@@ -47,6 +49,8 @@ export function dismissComparison(store: AppStore, threadId: string): void {
 
 /** Re-run the two-model comparison for a thread whose comparison card failed. */
 export function retryComparison(store: AppStore, api: ApiClient, threadId: string): void {
+  const projectId = store.getState().activeProjectId
+  if (!projectId) return
   const thread = store.getState().threads.find((t) => t.id === threadId)
   const comparison = thread?.comparison
   if (comparison) {
@@ -54,5 +58,5 @@ export function retryComparison(store: AppStore, api: ApiClient, threadId: strin
   }
   setThreadStatus(store, threadId, 'running')
   syncAgentActivity(store, threadId, false)
-  void api.agent.retryComparison(threadId, retryPayload(store, threadId))
+  void api.agent.retryComparison(projectId, threadId, retryPayload(store, threadId))
 }
