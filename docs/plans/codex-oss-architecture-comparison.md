@@ -253,9 +253,11 @@ Adopting a stronger runtime spine must not flatten Copse into a Codex clone. Pre
 
 ### P0: Make the architecture document executable
 
-The architecture page proposed in #1032 is a useful visual index, but a 133 KB inline
-HTML snapshot with hundreds of source references will drift unless the repository can
-verify it. Before treating it as canonical system design:
+The architecture page from #1032 (now merged as `site/architecture.html`) is a useful
+visual index, but a 133 KB inline HTML snapshot with hundreds of source references will
+drift unless the repository can verify it. It shipped without a validation path, so it
+should not yet be treated as canonical system design. The following follow-up work would
+make it maintainable:
 
 - move nodes, edges, source paths, statuses, and guarantees into a reviewable data
   model;
@@ -334,13 +336,13 @@ parent process, and a headless run produces the same canonical events as the des
 
 ## Implications for #1032
 
-The proposed architecture page should merge as a **dated visual snapshot** if its goal
-is orientation. It should not yet be described as the canonical, source-verified system
-design. Its strengths are broad source coverage, multiple views, source inspection,
-responsive presentation, and accessibility affordances. The changes above would turn
-those strengths into a maintainable architecture artifact.
+#1032 merged the architecture page as an undated snapshot without a validation path.
+That is fine for orientation, but the page should not yet be described as the canonical,
+source-verified system design. Its strengths are broad source coverage, multiple views,
+source inspection, responsive presentation, and accessibility affordances. The changes
+above would turn those strengths into a maintainable architecture artifact.
 
-At minimum, the PR should:
+At minimum, follow-up work on `site/architecture.html` should:
 
 1. identify the inspected commit and label the diagram as a snapshot;
 2. distinguish shipped behavior from plans, especially thread worktrees and platform
