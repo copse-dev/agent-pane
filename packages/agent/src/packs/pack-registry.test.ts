@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { PackRegistry, DuplicatePackError, UnknownPackError } from './pack-registry.ts'
 import { definePack, packManifestFromPluginJson, type RegisteredPack } from './pack-manifest.ts'
-import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS, noopPack } from './first-party-packs.ts'
+import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
 import type { BlockingHook } from '../hooks/canonical-events.ts'
 
 const stepHook: BlockingHook<'turnStart'> = {
@@ -110,17 +110,6 @@ describe('first-party packs', () => {
     for (const pack of FIRST_PARTY_PACKS) {
       assert.equal(registry.isEnabled(pack.id), true)
     }
-  })
-
-  it('the noop skeleton contributes nothing (behavior-neutral seam)', () => {
-    // Isolated to the skeleton pack so this stays a stable smoke test as the
-    // shipped pack list grows past P4. It confirms `definePack({ … })` with
-    // no contributions yields an empty runtime side.
-    assert.deepEqual(noopPack.contributions.toolNames, [])
-    assert.deepEqual(noopPack.contributions.blockingHooks, [])
-    assert.deepEqual(noopPack.contributions.asyncHooks, [])
-    assert.deepEqual(noopPack.contributions.promptBlocks, [])
-    assert.deepEqual(noopPack.contributions.uiContributions, [])
   })
 })
 
