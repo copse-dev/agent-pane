@@ -1,8 +1,8 @@
 name: Release (macOS)
 
-# Publish only a tag that has passed the full CI aggregate at the exact tagged
-# commit. Packaging and promotion are deliberately separate jobs: the publisher
-# downloads the already signed, notarized, smoke-tested files and never rebuilds.
+# Publish a stable or beta tag only after the full CI aggregate passes at the
+# exact tagged commit. Packaging and promotion are deliberately separate jobs:
+# the publisher downloads signed, notarized, smoke-tested files and never rebuilds.
 on:
   workflow_dispatch:
     inputs:
@@ -28,7 +28,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_sha: ${{ steps.release.outputs.release_sha }}
+      release_type: ${{ steps.release.outputs.release_type }}
       tag: ${{ steps.release.outputs.tag }}
+      update_channel: ${{ steps.release.outputs.update_channel }}
     steps:
       - uses: actions/checkout@v7.0.0
         with:
@@ -56,6 +58,8 @@ jobs:
             echo "Tag $tag does not match package.json version $version"
             exit 1
           fi
+          release_type="$(node scripts/release-channel.mts --release-type "$version")"
+          update_channel="$(node scripts/release-channel.mts --channel "$version")"
           # For a manual dispatch GITHUB_SHA is the workflow's default-branch
           # revision, not necessarily the requested tag. Checkout above has
           # already resolved that tag, so HEAD is the only trustworthy source.
@@ -66,7 +70,9 @@ jobs:
             exit 1
           fi
           echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "release_type=$release_type" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "update_channel=$update_channel" >> "$GITHUB_OUTPUT"
 
           # A tag push starts CI and this workflow together. Wait for CI's
           # aggregate status on precisely the commit we resolved above; do not
@@ -141,13 +147,17 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
         run: |
           set -euo pipefail
           npm run build:release
-          npx electron-builder --mac -c.mac.notarize=true --publish never
+          npx electron-builder --mac -c.mac.notarize=true -c.publish.channel="$UPDATE_CHANNEL" --publish never
+          node scripts/finalize-release-metadata.mts
       - name: Verify signatures, notarization, metadata, and packaged runtime
         env:
           COPSE_WORKSPACE_DIR: ${{ runner.temp }}/copse-release-smoke-workspace
+          RELEASE_TYPE: ${{ needs.preflight.outputs.release_type }}
+          UPDATE_CHANNEL: ${{ needs.preflight.outputs.update_channel }}
         run: |
           set -euo pipefail
           apps=()
@@ -173,16 +183,36 @@ jobs:
             grep -q '^provider: github$' "$app/Contents/Resources/app-update.yml"
             grep -q '^owner: copse-dev$' "$app/Contents/Resources/app-update.yml"
             grep -q '^repo: agent-pane$' "$app/Contents/Resources/app-update.yml"
+            grep -q "^channel: $UPDATE_CHANNEL$" "$app/Contents/Resources/app-update.yml"
+            minimum_system_version="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")"
+            if [ "$minimum_system_version" != '26.0' ]; then
+              echo "Expected LSMinimumSystemVersion 26.0, found $minimum_system_version"
+              exit 1
+            fi
             "$app/Contents/MacOS/Copse" --release-smoke-test
           done
-          test -s release/latest-mac.yml
+          test -s "release/$UPDATE_CHANNEL-mac.yml"
+          # Beta clients follow the beta feed but are allowed to advance to a
+          # newer stable version, so stable builds must update both feeds.
+          if [ "$RELEASE_TYPE" = 'release' ]; then
+            test -s release/latest-mac.yml
+            test -s release/beta-mac.yml
+          fi
           test -n "$(find release -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$(find release -maxdepth 1 -name '*.zip' -print -quit)"
           test -n "$(find release -maxdepth 1 -name '*.blockmap' -print -quit)"
-          for zip in release/*.zip; do
-            grep -Fq "$(basename "$zip")" release/latest-mac.yml
+          update_metadata=()
+          while IFS= read -r metadata; do update_metadata+=("$metadata"); done < <(find release -maxdepth 1 -name '*-mac.yml' -print)
+          if [ "${#update_metadata[@]}" -eq 0 ]; then
+            echo 'No macOS update metadata was generated'
+            exit 1
+          fi
+          for metadata in "${update_metadata[@]}"; do
+            for zip in release/*.zip; do
+              grep -Fq "$(basename "$zip")" "$metadata"
+            done
           done
-          shasum -a 256 release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml > release/SHA256SUMS
+          shasum -a 256 release/*.dmg release/*.zip release/*.blockmap "${update_metadata[@]}" > release/SHA256SUMS
       - name: Attest tested release artifacts
         uses: actions/attest@v4
         with:
@@ -190,7 +220,7 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.blockmap
-            release/latest-mac.yml
+            release/*-mac.yml
             release/SHA256SUMS
       - uses: actions/upload-artifact@v7
         with:
@@ -199,7 +229,7 @@ jobs:
             release/*.dmg
             release/*.zip
             release/*.blockmap
-            release/latest-mac.yml
+            release/*-mac.yml
             release/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
@@ -217,6 +247,7 @@ jobs:
       - name: Promote the exact tested artifact
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TYPE: ${{ needs.preflight.outputs.release_type }}
           TAG: ${{ needs.preflight.outputs.tag }}
           TARGET: ${{ needs.preflight.outputs.release_sha }}
         run: |
@@ -225,5 +256,11 @@ jobs:
             echo "A release already exists for $TAG; refusing to replace it"
             exit 1
           fi
-          gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/latest-mac.yml release/SHA256SUMS \
-            --target "$TARGET" --title "$TAG" --prerelease
+          release_flags=()
+          if [ "$RELEASE_TYPE" = 'prerelease' ]; then
+            release_flags+=(--prerelease)
+          else
+            release_flags+=(--latest)
+          fi
+          gh release create "$TAG" release/*.dmg release/*.zip release/*.blockmap release/*-mac.yml release/SHA256SUMS \
+            --target "$TARGET" --title "$TAG" "${release_flags[@]}"
