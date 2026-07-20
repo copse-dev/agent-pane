@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import {
   blendedPricePerMTok,
   computeParetoFrontier,
+  costOnAxis,
   frontierForKnownModels,
+  projectOntoCostAxis,
   type FrontierCandidate,
 } from './pareto-frontier.ts'
 import { getModelInfo } from './model-catalog.ts'
@@ -78,6 +80,60 @@ describe('computeParetoFrontier', () => {
     const a = computeParetoFrontier(candidates)
     const b = computeParetoFrontier([...candidates].reverse())
     assert.deepEqual(a, b)
+  })
+})
+
+describe('costOnAxis / projectOntoCostAxis', () => {
+  it('keeps blended costs on the blended axis', () => {
+    const c: FrontierCandidate = { id: 'm', intellect: 40, costPerMTok: 9, costPerTask: 1.5 }
+    assert.equal(costOnAxis(c, 'blended'), 9)
+    const { plotted, missingAxisCost } = projectOntoCostAxis([c], 'blended')
+    assert.equal(plotted.length, 1)
+    const [blendedPoint] = plotted
+    assert.ok(blendedPoint)
+    assert.equal(blendedPoint.costPerMTok, 9)
+    assert.equal(missingAxisCost.length, 0)
+  })
+
+  it('plots per-task cost and preserves blended list price for tooltips', () => {
+    const c: FrontierCandidate = { id: 'm', intellect: 40, costPerMTok: 9, costPerTask: 1.5 }
+    assert.equal(costOnAxis(c, 'perTask'), 1.5)
+    const { plotted, missingAxisCost } = projectOntoCostAxis([c], 'perTask')
+    assert.equal(missingAxisCost.length, 0)
+    const [taskPoint] = plotted
+    assert.ok(taskPoint)
+    assert.equal(taskPoint.costPerMTok, 1.5)
+    assert.equal(taskPoint.blendedCostPerMTok, 9)
+    assert.equal(taskPoint.costPerTask, 1.5)
+  })
+
+  it('keeps local and plan-included models at $0 on the task axis', () => {
+    assert.equal(costOnAxis({ costPerMTok: 0, local: true }, 'perTask'), 0)
+    assert.equal(costOnAxis({ costPerMTok: 0, plan: 'Max' }, 'perTask'), 0)
+  })
+
+  it('excludes models that lack task cost on the per-task axis', () => {
+    const c: FrontierCandidate = { id: 'm', intellect: 40, costPerMTok: 9 }
+    assert.equal(costOnAxis(c, 'perTask'), null)
+    const { plotted, missingAxisCost } = projectOntoCostAxis([c], 'perTask')
+    assert.equal(plotted.length, 0)
+    assert.equal(missingAxisCost[0]?.id, 'm')
+  })
+
+  it('recomputes dominance on the remapped task-cost axis', () => {
+    const points = computeParetoFrontier(
+      projectOntoCostAxis(
+        [
+          { id: 'verbose-cheap-tokens', intellect: 50, costPerMTok: 2, costPerTask: 4 },
+          { id: 'terse-pricey-tokens', intellect: 50, costPerMTok: 8, costPerTask: 1 },
+        ],
+        'perTask',
+      ).plotted,
+    )
+    const byId = new Map(points.map((p) => [p.id, p]))
+    assert.equal(byId.get('terse-pricey-tokens')?.onFrontier, true)
+    assert.equal(byId.get('verbose-cheap-tokens')?.onFrontier, false)
+    assert.equal(byId.get('verbose-cheap-tokens')?.dominatedBy, 'terse-pricey-tokens')
   })
 })
 

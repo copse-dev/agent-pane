@@ -11,6 +11,9 @@
 import type { LiveAaModel } from '@copse/llm/live-intellect.ts'
 import { getApiKey } from '../storage/settings.ts'
 
+/** Env override for e2e / demos — skips network and the stored AA key. */
+const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
+
 const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
 // AA data moves slowly; refetching each panel open would just burn quota.
 const CACHE_TTL_MS = 6 * 60 * 60_000
@@ -149,6 +152,52 @@ export async function requestLiveIntellectModels(
 }
 
 /**
+ * Deterministic live cohort for e2e: enough canonical anchors to pass the
+ * scale gate, plus `costPerTask` so the value-map $/task axis is exercisable
+ * without an Artificial Analysis API key.
+ */
+function mockLiveIntellectFetch(): LiveIntellectFetch {
+  const models: LiveAaModel[] = [
+    {
+      id: 'claude-fable-5',
+      intellect: 59.9,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 2.4,
+    },
+    {
+      id: 'claude-opus-4-8',
+      intellect: 55.7,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 3.1,
+    },
+    {
+      id: 'claude-sonnet-4-6',
+      intellect: 35.9,
+      inputPricePerMTok: 3,
+      outputPricePerMTok: 15,
+      costPerTask: 0.9,
+    },
+    {
+      id: 'claude-haiku-4-5',
+      intellect: 24,
+      inputPricePerMTok: 1,
+      outputPricePerMTok: 5,
+      costPerTask: 0.25,
+    },
+    {
+      id: 'cheap-smart-oss',
+      intellect: 50,
+      inputPricePerMTok: 0.2,
+      outputPricePerMTok: 0.8,
+      costPerTask: 0.4,
+    },
+  ]
+  return { ok: true, models, indexVersion: '4.1' }
+}
+
+/**
  * The current AA model list, or an empty result when no key is stored (the
  * feature is simply off) or the fetch fails (the panel falls back to curated
  * data). Results are cached — a real cohort for hours, a failure only briefly
@@ -156,6 +205,7 @@ export async function requestLiveIntellectModels(
  * (register-handlers `settings:setKey`).
  */
 export async function fetchLiveIntellectModels(): Promise<LiveIntellectFetch> {
+  if (process.env[MOCK_ENV] === '1') return mockLiveIntellectFetch()
   const key = getApiKey('artificial-analysis')
   if (!key) return { ok: true, models: [] }
   if (cache && Date.now() - cache.at < liveCacheTtlMs(cache.result)) return cache.result

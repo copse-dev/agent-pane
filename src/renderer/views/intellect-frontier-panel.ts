@@ -1,10 +1,12 @@
 // The "model value map": a small scatter of every intellect-scored model on
-// intellect (y, canonical Intelligence Index scale) vs blended price (x,
-// $/MTok at the 80/20 mix), with the Pareto frontier drawn through the
-// undominated points. Answers "which models are worth their price" at a
-// glance; each point's native tooltip carries the full derivation
-// (measurement, citation, any equating/quant adjustment) from
-// `explainIntellectScore` so no number is unexplained.
+// intellect (y, canonical Intelligence Index scale) vs cost (x), with the
+// Pareto frontier drawn through the undominated points. Cost defaults to
+// blended $/MTok at the 80/20 mix; a toggle switches X to Artificial
+// Analysis cost-per-Intelligence-Index-task (verbosity-aware). Answers
+// "which models are worth their price" at a glance; each point's native
+// tooltip carries the full derivation (measurement, citation, any
+// equating/quant adjustment) from `explainIntellectScore` so no number is
+// unexplained.
 //
 // Composite-scored local models (copse-intellect scale) are deliberately NOT
 // plotted — their scale is not the canonical index scale, and mixing scales
@@ -18,8 +20,11 @@
 import {
   blendedPricePerMTok,
   blendedRate,
+  computeParetoFrontier,
   frontierForKnownModels,
+  projectOntoCostAxis,
   type FrontierCandidate,
+  type FrontierCostAxis,
   type FrontierPoint,
 } from '@copse/llm/pareto-frontier.ts'
 import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
@@ -237,6 +242,13 @@ function ttRow(cls: string, ...children: (Node | string)[]): HTMLElement {
 }
 
 const formatPrice = (v: number): string => `$${String(Number(v.toFixed(2)))}/MTok`
+const formatTaskPrice = (v: number): string => `$${String(Number(v.toFixed(2)))}/task`
+
+/** Drop frontier annotations so a point can be re-projected onto another cost axis. */
+function asFrontierCandidate(p: FrontierPoint): FrontierCandidate {
+  const { onFrontier: _onFrontier, dominatedBy: _dominatedBy, ...candidate } = p
+  return candidate
+}
 
 /** ", resets Tue" from an ISO reset time, or '' when unknown/unparseable. */
 function formatReset(resetsAt: string | null): string {
@@ -250,7 +262,10 @@ function formatReset(resetsAt: string | null): string {
  * Rich hover card for a plotted point: bold identity, the score's full
  * derivation, every known price for the same weights, and frontier status.
  */
-export function pointTooltipContent(p: FrontierPoint): HTMLElement {
+export function pointTooltipContent(
+  p: FrontierPoint,
+  costAxis: FrontierCostAxis = 'blended',
+): HTMLElement {
   const root = el('div', { class: 'frontier-tooltip-content' })
   const label = displayModelLabel(p.id)
   root.append(ttRow('tt-title', el('strong', {}, label)))
@@ -288,27 +303,40 @@ export function pointTooltipContent(p: FrontierPoint): HTMLElement {
   }
 
   root.append(ttRow('tt-section', p.prices?.length ? 'Prices' : 'Price'))
+  const blended =
+    p.blendedCostPerMTok ??
+    (p.planDetail !== undefined ? p.planDetail.apiPricePerMTok : p.costPerMTok)
   const priceLine = p.plan
     ? el(
         'span',
         {},
         el('strong', {}, 'included in your plan'),
-        ` (${p.plan}) — ~$0 marginal token cost`,
+        costAxis === 'perTask'
+          ? ` (${p.plan}) — ~$0 marginal task cost`
+          : ` (${p.plan}) — ~$0 marginal token cost`,
       )
     : p.local
       ? el('span', {}, 'free (runs on-device)')
-      : el(
-          'span',
-          {},
-          `${formatPrice(p.costPerMTok)} blended (80% in / 20% out)`,
-          ...(p.prices?.length ? [' — best offer, plotted'] : []),
-        )
+      : costAxis === 'perTask'
+        ? el('span', {}, `${formatTaskPrice(p.costPerMTok)} AA Intelligence Index task (plotted)`)
+        : el(
+            'span',
+            {},
+            `${formatPrice(p.costPerMTok)} blended (80% in / 20% out)`,
+            ...(p.prices?.length ? [' — best offer, plotted'] : []),
+          )
   root.append(ttRow('tt-line', priceLine))
-  if (typeof p.costPerTask === 'number') {
+  if (costAxis === 'perTask') {
+    if (!p.local && !p.plan) {
+      root.append(
+        ttRow('tt-muted', `${formatPrice(blended)} blended list price (80% in / 20% out).`),
+      )
+    }
+  } else if (typeof p.costPerTask === 'number') {
     root.append(
       ttRow(
         'tt-muted',
-        `Artificial Analysis cost per Intelligence Index task: $${String(Number(p.costPerTask.toFixed(2)))} (reflects verbosity, not just token price).`,
+        `Artificial Analysis cost per Intelligence Index task: ${formatTaskPrice(p.costPerTask)} (reflects verbosity, not just token price).`,
       ),
     )
   }
@@ -445,7 +473,7 @@ function wireTooltip(
   })
 }
 
-function tooltipFor(point: FrontierPoint): string {
+function tooltipFor(point: FrontierPoint, costAxis: FrontierCostAxis = 'blended'): string {
   const lines: string[] = [point.id]
   const explanation = explainIntellectScore(point.id)
   if (explanation) {
@@ -457,7 +485,11 @@ function tooltipFor(point: FrontierPoint): string {
   lines.push(
     point.local
       ? 'cost: free (runs on-device)'
-      : `cost: $${String(point.costPerMTok)}/MTok blended (80% input / 20% output)`,
+      : point.plan
+        ? `cost: included in plan (${point.plan})`
+        : costAxis === 'perTask'
+          ? `cost: $${String(point.costPerMTok)}/task AA Intelligence Index`
+          : `cost: $${String(point.costPerMTok)}/MTok blended (80% input / 20% output)`,
   )
   lines.push(
     point.onFrontier ? 'On the value frontier' : `Dominated by ${point.dominatedBy ?? '?'}`,
@@ -498,9 +530,13 @@ export function renderFrontierSvg(
   size: { width?: number; height?: number } = {},
   gutters: FrontierGutters = {},
   tooltip?: FrontierTooltip,
+  costAxis: FrontierCostAxis = 'blended',
 ): SVGSVGElement {
   const unpriced = gutters.unpriced ?? []
-  const unscored = gutters.unscored ?? []
+  // Bottom gutter (priced, no intellect) only applies on the blended axis — on
+  // the task axis those models also lack a task-cost coordinate, so they stay
+  // in the disclosure list rather than claiming a false X position.
+  const unscored = costAxis === 'blended' ? (gutters.unscored ?? []) : []
   const gutterW = unpriced.length > 0 ? UNPRICED_GUTTER_W : 0
   const baseHeight = size.height ?? HEIGHT
   const width = (size.width ?? WIDTH) + gutterW
@@ -547,10 +583,20 @@ export function renderFrontierSvg(
   const bottomGutterH = unscoredRowCount > 0 ? 12 + unscoredRowCount * 12 : 0
   const height = baseHeight + bottomGutterH
 
+  const xAxisLabel =
+    costAxis === 'perTask'
+      ? 'AA cost per Intelligence Index task ($) — local/plan models plot at $0'
+      : 'blended price, $/MTok (80% in / 20% out) — local models plot at $0'
+  const ariaLabel =
+    costAxis === 'perTask'
+      ? 'Model intellect versus AA cost per Intelligence Index task, with the Pareto frontier'
+      : 'Model intellect versus blended price, with the Pareto frontier'
+
   const svg = svgEl('svg', {
     viewBox: `0 0 ${String(width)} ${String(height)}`,
     role: 'img',
-    'aria-label': 'Model intellect versus blended price, with the Pareto frontier',
+    'aria-label': ariaLabel,
+    'data-cost-axis': costAxis,
     style: 'width:100%;height:auto;display:block',
   }) as SVGSVGElement
 
@@ -614,8 +660,9 @@ export function renderFrontierSvg(
         'text-anchor': 'middle',
         'font-size': '9',
         fill: 'var(--text-secondary)',
+        class: 'frontier-x-axis-label',
       },
-      'blended price, $/MTok (80% in / 20% out) — local models plot at $0',
+      xAxisLabel,
     ),
     svgEl(
       'text',
@@ -772,8 +819,8 @@ export function renderFrontierSvg(
       )
     }
     const hit = svgEl('circle', { cx, cy, r: '11', fill: 'transparent', class: 'frontier-hit' })
-    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p))
-    else hit.append(svgEl('title', {}, tooltipFor(p)))
+    if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis))
+    else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
     const text = labelText.get(p.id)
     if (text !== undefined) {
       svg.append(
@@ -1116,10 +1163,11 @@ function renderChart(
   gutters: FrontierGutters,
   tooltip: FrontierTooltip | undefined,
   size: { width?: number; height?: number } = {},
+  costAxis: FrontierCostAxis = 'blended',
 ): SVGSVGElement | HTMLElement {
   try {
     return points.length > 0
-      ? renderFrontierSvg(points, size, gutters, tooltip)
+      ? renderFrontierSvg(points, size, gutters, tooltip, costAxis)
       : el('p', { class: 'field-hint' }, 'No models with a sourced intellect score yet.')
   } catch (err) {
     return el(
@@ -1210,6 +1258,7 @@ export function createIntellectFrontierPanel(
   } | null = null
   let discover = false
   let showUnpriced = false
+  let costAxis: FrontierCostAxis = 'blended'
   // The full lists behind the chart, cached so the pop-out can show the same
   // "below the chart" content the inline panel does.
   let lastUnpriced: readonly CanonicalScoredModel[] = []
@@ -1221,6 +1270,7 @@ export function createIntellectFrontierPanel(
   let expandTooltip: FrontierTooltip | null = null
   let expandDiscoverBtn: HTMLButtonElement | null = null
   let expandUnpricedBtn: HTMLButtonElement | null = null
+  let expandCostAxisGroup: HTMLElement | null = null
 
   function toggleDiscover(): void {
     discover = !discover
@@ -1229,6 +1279,45 @@ export function createIntellectFrontierPanel(
   function toggleUnpriced(): void {
     showUnpriced = !showUnpriced
     render()
+  }
+  function setCostAxis(next: FrontierCostAxis): void {
+    if (costAxis === next) return
+    costAxis = next
+    render()
+  }
+
+  function makeCostAxisGroup(): HTMLElement {
+    const group = el('span', {
+      class: 'frontier-cost-axis',
+      role: 'group',
+      'aria-label': 'Cost axis',
+    })
+    const blendedBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'frontier-btn frontier-cost-axis-btn',
+        'data-cost-axis': 'blended',
+      },
+      '$/MTok',
+    )
+    const taskBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'frontier-btn frontier-cost-axis-btn',
+        'data-cost-axis': 'perTask',
+      },
+      '$/task',
+    )
+    blendedBtn.addEventListener('click', () => {
+      setCostAxis('blended')
+    })
+    taskBtn.addEventListener('click', () => {
+      setCostAxis('perTask')
+    })
+    group.append(blendedBtn, taskBtn)
+    return group
   }
 
   const discoverBtn = el('button', {
@@ -1241,6 +1330,7 @@ export function createIntellectFrontierPanel(
     class: 'frontier-btn frontier-unpriced-toggle',
   })
   unpricedBtn.addEventListener('click', toggleUnpriced)
+  const costAxisGroup = makeCostAxisGroup()
   const expandBtn = el(
     'button',
     { type: 'button', class: 'frontier-btn frontier-expand' },
@@ -1260,6 +1350,7 @@ export function createIntellectFrontierPanel(
       class: 'frontier-btn frontier-unpriced-toggle',
     })
     expandUnpricedBtn.addEventListener('click', toggleUnpriced)
+    expandCostAxisGroup = makeCostAxisGroup()
     const bigChart = el('div', { class: 'frontier-chart frontier-expand-chart' })
     expandChartHost = bigChart
     expandTooltip = createTooltipLayer(dialog)
@@ -1268,13 +1359,21 @@ export function createIntellectFrontierPanel(
       expandTooltip = null
       expandDiscoverBtn = null
       expandUnpricedBtn = null
+      expandCostAxisGroup = null
       dialog.remove()
     }
     close.addEventListener('click', closeDialog)
     // Esc on a modal dialog fires `cancel`, not a click on Close.
     dialog.addEventListener('cancel', closeDialog)
     dialog.append(
-      el('div', { class: 'frontier-expand-controls' }, expandDiscoverBtn, expandUnpricedBtn, close),
+      el(
+        'div',
+        { class: 'frontier-expand-controls' },
+        expandCostAxisGroup,
+        expandDiscoverBtn,
+        expandUnpricedBtn,
+        close,
+      ),
       bigChart,
     )
     fieldset.append(dialog)
@@ -1292,6 +1391,8 @@ export function createIntellectFrontierPanel(
       'p',
       { class: 'settings-fieldset-desc' },
       'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived. ',
+      costAxisGroup,
+      ' ',
       discoverBtn,
       ' ',
       unpricedBtn,
@@ -1348,12 +1449,36 @@ export function createIntellectFrontierPanel(
   function paintExpanded(): void {
     if (!expandChartHost) return
     expandChartHost.replaceChildren(
-      renderChart(lastPoints, lastGutters, expandTooltip ?? undefined, {
-        width: 1200,
-        height: 680,
-      }),
+      renderChart(
+        lastPoints,
+        lastGutters,
+        expandTooltip ?? undefined,
+        {
+          width: 1200,
+          height: 680,
+        },
+        costAxis,
+      ),
       ...buildAuxLists(lastUnpriced, lastUnscored),
     )
+  }
+
+  function syncCostAxisGroup(group: HTMLElement | null, taskCostAvailable: boolean): void {
+    if (!group) return
+    group.querySelectorAll<HTMLButtonElement>('button.frontier-cost-axis-btn').forEach((btn) => {
+      const axis = btn.dataset['costAxis'] === 'perTask' ? 'perTask' : 'blended'
+      btn.classList.toggle('active', axis === costAxis)
+      btn.setAttribute('aria-pressed', axis === costAxis ? 'true' : 'false')
+      if (axis === 'perTask') {
+        btn.disabled = !taskCostAvailable
+        btn.title = taskCostAvailable
+          ? 'Plot Artificial Analysis cost per Intelligence Index task'
+          : 'Needs Artificial Analysis live data with cost-per-task'
+      } else {
+        btn.disabled = false
+        btn.title = 'Plot blended $/MTok (80% input / 20% output)'
+      }
+    })
   }
 
   function render(): void {
@@ -1452,14 +1577,47 @@ export function createIntellectFrontierPanel(
     // the Discover toggle is on — so by default the map shows what the user can
     // actually route to, and the toggle overlays what they could set up.
     const discoveryCandidates = discover ? live.candidates : []
+    // Live AA cost-per-task attaches to curated catalog models too (the feed
+    // otherwise only prices models missing from the catalog).
+    const costPerTaskById = new Map<string, number>()
+    for (const m of liveFetch.models) {
+      if (typeof m.costPerTask !== 'number' || !(m.costPerTask > 0)) continue
+      const key = resolveIntellectModelId(m.id) ?? m.id
+      if (!costPerTaskById.has(key)) costPerTaskById.set(key, m.costPerTask)
+    }
+    const enrichTaskCost = (c: FrontierCandidate): FrontierCandidate => {
+      if (typeof c.costPerTask === 'number' && c.costPerTask > 0) return c
+      const key = resolveIntellectModelId(c.id) ?? c.id
+      const task = costPerTaskById.get(key)
+      return typeof task === 'number' ? { ...c, costPerTask: task } : c
+    }
     // Re-price each model against the live plan snapshot: a plan-covered model
     // drops to $0 (best price → wins the frontier) with a plan badge; a model
     // whose plan window is spent keeps its real price and carries a
     // limit-reached note. Applied per grouped identity inside the frontier.
-    const allPoints = frontierForKnownModels(
+    const blendedPoints = frontierForKnownModels(
       [...baseCandidates, ...livePricedCurated, ...discoveryCandidates],
-      (c) => applyPlanCoverage(c, planUsage),
+      (c) => applyPlanCoverage(enrichTaskCost(c), planUsage),
     )
+    const taskCostAvailable = blendedPoints.some(
+      (p) => typeof p.costPerTask === 'number' && p.costPerTask > 0,
+    )
+    // If the task axis has no data, fall back so the chart never goes blank.
+    if (costAxis === 'perTask' && !taskCostAvailable) costAxis = 'blended'
+    syncCostAxisGroup(costAxisGroup, taskCostAvailable)
+    syncCostAxisGroup(expandCostAxisGroup, taskCostAvailable)
+    let allPoints: FrontierPoint[]
+    let missingTaskCost = 0
+    if (costAxis === 'perTask') {
+      const { plotted, missingAxisCost } = projectOntoCostAxis(
+        blendedPoints.map(asFrontierCandidate),
+        'perTask',
+      )
+      allPoints = computeParetoFrontier(plotted)
+      missingTaskCost = missingAxisCost.length
+    } else {
+      allPoints = blendedPoints
+    }
     // A verified feed can carry a hundred-plus priced models; the map's job is
     // the frontier, so dominated LIVE points collapse into a disclosure rather
     // than each claiming a labelled dot. Curated/local/provider points always
@@ -1495,6 +1653,15 @@ export function createIntellectFrontierPanel(
         ),
       )
     }
+    if (costAxis === 'perTask' && missingTaskCost > 0) {
+      liveNoteParts.push(
+        el(
+          'span',
+          {},
+          `${String(missingTaskCost)} model${missingTaskCost === 1 ? '' : 's'} lack AA task-cost data and are hidden on this axis. `,
+        ),
+      )
+    }
     if (discover && dominatedLive.length > 0) {
       liveNoteParts.push(
         el(
@@ -1523,7 +1690,7 @@ export function createIntellectFrontierPanel(
     lastUnpriced = unpricedList
     lastUnscored = unscoredList
     chartHost.replaceChildren(
-      renderChart(points, lastGutters, panelTooltip),
+      renderChart(points, lastGutters, panelTooltip, {}, costAxis),
       ...buildAuxLists(unpricedList, unscoredList),
     )
     // Repaint the pop-out from the same freshly computed data (no-op if closed).
