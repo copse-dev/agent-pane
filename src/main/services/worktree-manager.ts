@@ -509,7 +509,10 @@ export async function retireThreadWorktree(
   input: ValidateWorktreeInput,
 ): Promise<RetireWorktreeResult> {
   const validated = await validateThreadWorktree(input)
-  const status = await git(validated.path, ['status', '--porcelain=v1', '-z'])
+  // `git worktree remove` deletes ignored files without `--force`. Include
+  // ignored entries so build output or other local-only content is never
+  // silently discarded merely because ordinary `git status` calls it clean.
+  const status = await git(validated.path, ['status', '--porcelain=v1', '-z', '--ignored=matching'])
   if (status.code !== 0) throw commandFailure('Cannot inspect thread worktree', status)
   if (status.stdout) return { status: 'blocked-dirty', paths: changedPaths(status.stdout) }
 
@@ -570,7 +573,12 @@ export async function pruneSafeOrphans(
         continue
       }
 
-      const status = await git(record.path, ['status', '--porcelain=v1', '-z']).catch(() => null)
+      const status = await git(record.path, [
+        'status',
+        '--porcelain=v1',
+        '-z',
+        '--ignored=matching',
+      ]).catch(() => null)
       if (!status || status.code !== 0) {
         report.retained.push({
           threadId,
