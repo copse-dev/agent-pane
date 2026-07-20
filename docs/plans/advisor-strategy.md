@@ -180,9 +180,11 @@ model that drives the surrounding conversation. Covered by the component test
   block + `advisor-tool-2026-03-01` beta header in `AnthropicProvider`, parse
   `server_tool_use` / `advisor_tool_result` stream blocks, and handle `pause_turn`
   resumption. Should slot in behind the same internal contract with no behavioural change.
-- **Dedicated advisor cost line.** Advisor tokens currently fold into the run's aux-model
+- ~~**Dedicated advisor cost line.** Advisor tokens currently fold into the run's aux-model
   usage (via `addSubagentUsage`). Split them onto their own line, mirroring the native
-  `usage.iterations[].advisor_message`, billed at the advisor model's rate.
+  `usage.iterations[].advisor_message`, billed at the advisor model's rate.~~ Done: advisor
+  usage now emits its own `usage` chunk on the advisor model (`usageSource: 'advisor'`,
+  see `advisor-usage.ts`).
 - ~~**Model picker UI** for the advisor (today a text field) and pair-validation
   surfacing.~~ Done: picker in #572; annotation-driven pair assessment surfaced live in
   settings (see above).

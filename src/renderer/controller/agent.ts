@@ -222,6 +222,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           ...(chunk.cacheCreationTokens !== undefined
             ? { cacheCreationTokens: chunk.cacheCreationTokens }
             : {}),
+          ...(chunk.usageSource !== undefined ? { usageSource: chunk.usageSource } : {}),
         }
         recordUsageToLedger(api, store, threadId, delta)
         addUsageDelta(store, threadId, delta)

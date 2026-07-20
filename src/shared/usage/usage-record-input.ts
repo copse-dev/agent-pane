@@ -6,13 +6,18 @@ export function usageRecordFromAgentDelta(
   threadId: string,
   delta: Pick<
     UsageDelta,
-    'model' | 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheCreationTokens'
+    | 'model'
+    | 'inputTokens'
+    | 'outputTokens'
+    | 'cacheReadTokens'
+    | 'cacheCreationTokens'
+    | 'usageSource'
   >,
   projectId: string | null | undefined,
 ): UsageRecordInput {
   return {
     model: delta.model,
-    source: 'agent',
+    source: delta.usageSource === 'advisor' ? 'advisor' : 'agent',
     inputTokens: delta.inputTokens,
     outputTokens: delta.outputTokens,
     threadId,

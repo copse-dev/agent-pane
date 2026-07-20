@@ -594,6 +594,7 @@ export async function runAgent(
       ? {
           advisorModel: resolveAdvisorModelId(),
           executorModel: model,
+          onChunk: sendChunk,
           getTranscript: (): LLMMessage[] => [
             ...priorMessages,
             { role: 'user' as const, content: outboundPrompt },
@@ -1026,6 +1027,7 @@ export async function runAgent(
             advisorModel: resolveAdvisorModelId(),
             executorModel: model,
             getTranscript: () => trimmed,
+            onChunk: sendChunk,
           },
           () => registry.executeNormalized(name, args, signal),
         )

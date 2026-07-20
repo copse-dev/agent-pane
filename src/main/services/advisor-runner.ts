@@ -5,7 +5,7 @@ import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { routedModelSetting } from './providers/role-models.ts'
 import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
 import { buildAdvisorRepoState, buildAdvisorWorkingDiff } from './advisor-context.ts'
-import { addSubagentUsage } from './subagent-usage.ts'
+import { emitAdvisorUsage } from './advisor-usage.ts'
 import { getAdvisorContext } from './advisor-runner-context.ts'
 import {
   ADVISOR_MODEL_SETTING,
@@ -94,10 +94,10 @@ export function getAdvisorRunner(): AdvisorRunner | null {
       const provider = await buildProvider(ctx.advisorModel)
       ;({ text, usage } = await completeTextWithUsage(provider, prompt, ADVISOR_TIMEOUT_MS))
     }
-    // Advisor tokens are billed at the advisor model's rate. For now they fold
-    // into the run's aux-model usage; a dedicated advisor cost line (mirroring
-    // the native `usage.iterations[].advisor_message`) is a tracked follow-up.
-    addSubagentUsage(usage)
+    // Advisor tokens are billed at the advisor model's rate on a dedicated
+    // usage line (usageSource: 'advisor'), mirroring the native
+    // `usage.iterations[].advisor_message` — see advisor-usage.ts (#566).
+    emitAdvisorUsage(ctx.onChunk, ctx.advisorModel, usage)
     if (!text.trim()) return 'Advisor returned no guidance.'
     // Attribute the advice to the advisor model so the tool card shows whose
     // output it is (the advisor's, distinct from the executor's conversation).
