@@ -14,6 +14,7 @@ import type {
 } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { HookCard, ModelComparison, Thread, ThreadReview } from '@shared/types'
+import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
 
 export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
@@ -588,4 +589,26 @@ export function bindThreadGitBranchIfUnset(
   const thread = getThreadById(store, threadId)
   if (!thread || thread.gitBranch) return
   setThreadGitBranch(store, threadId, branch)
+}
+
+/** Mirror the main-process first-message transaction into renderer state. */
+export function applyPreparedThreadCheckout(
+  store: AppStore,
+  threadId: string,
+  prepared: PreparedThreadCheckout,
+): void {
+  const { threads } = store.getState()
+  const updated = threads.map((thread) => {
+    if (thread.id !== threadId) return thread
+    return {
+      ...thread,
+      worktreeChoice: prepared.choice,
+      ...(prepared.branch ? { gitBranch: prepared.branch } : {}),
+      ...(prepared.worktree ? { worktree: prepared.worktree } : {}),
+      updatedAt: Date.now(),
+    }
+  })
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+  store.emit('git_branch_changed')
 }

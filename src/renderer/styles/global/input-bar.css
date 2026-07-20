@@ -68,6 +68,33 @@
 .composer-branch-warning[hidden] {
   display: none;
 }
+.composer-checkout-error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--border);
+  padding: 8px var(--spacing-md);
+  background: color-mix(in srgb, var(--danger) 10%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.composer-checkout-error[hidden] {
+  display: none;
+}
+.composer-checkout-error-text {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.composer-checkout-retry-btn {
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
 .composer-branch-warning-icon {
   display: inline-flex;
   align-items: center;
@@ -442,6 +469,61 @@
   min-width: 0;
   flex-shrink: 1;
   max-width: min(200px, 30vw);
+}
+.footer-checkout-host {
+  position: relative;
+  flex: 0 0 auto;
+}
+.footer-checkout-host[hidden] {
+  display: none;
+}
+.footer-checkout-btn {
+  border: 0;
+  border-radius: var(--radius);
+  padding: 1px 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.footer-checkout-btn:hover,
+.footer-checkout-btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.footer-checkout-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+.footer-checkout-menu {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  bottom: calc(100% + var(--spacing-xs));
+  display: grid;
+  min-width: 154px;
+  padding: var(--spacing-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+}
+.footer-checkout-menu[hidden] {
+  display: none;
+}
+.footer-checkout-menu button {
+  border: 0;
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.footer-checkout-menu button:hover {
+  background: var(--bg-hover);
 }
 .footer-branch-status,
 .branch-picker-trigger.footer-branch-status {

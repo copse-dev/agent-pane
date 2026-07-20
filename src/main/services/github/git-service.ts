@@ -724,6 +724,21 @@ export async function getDefaultBranch(
   return null
 }
 
+/** Whether the repository declares submodules, which isolated checkout seeding cannot preserve. */
+export async function repositoryHasSubmodules(
+  root: string | null = getAgentExecutionRoot(),
+): Promise<boolean> {
+  if (!root) return false
+  const { stdout, code } = await runGit(['rev-parse', '--show-toplevel'], root)
+  if (code !== 0 || !stdout.trim()) return false
+  try {
+    await fsp.access(join(stdout.trim(), '.gitmodules'))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function getGitFileDiff(
   path: string,
   staged: boolean,
