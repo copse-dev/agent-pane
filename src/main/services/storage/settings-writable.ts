@@ -147,6 +147,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // (drops data_collection:"deny"). Default OFF; independent of the ZDR
   // toggle so relaxing retention never silently re-admits trainers.
   openRouterAllowTraining: z.boolean(),
+  // When true, the OpenRouter picker shows only free, tool-capable models.
+  // When false (default), it shows every tool-capable text model regardless of
+  // price — letting the user pick a paid model from the live catalog.
+  openRouterFreeMode: z.boolean(),
   localSubagentsEnabled: z.boolean(),
   localTodoItemsEnabled: z.boolean(),
   postTurnReviewEnabled: z.boolean(),

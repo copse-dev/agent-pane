@@ -2,6 +2,11 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
 import { localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
+  cloudModelIntellectHint,
+  localModelIntellectHint,
+  modelIntellectHint,
+} from '@copse/llm/intellect-hints.ts'
+import {
   isOpenRouterModel,
   openRouterDisplayLabel,
   openRouterModelId,
@@ -79,8 +84,15 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
     if (models.length > 0) {
       // The agent exposes a model selector: list only its models (the bare
       // "agent default" entry is dropped — it's redundant and confusing).
+      // ACP agents expose no token pricing, so the hint is intellect-only —
+      // resolved via the measurement alias map (agent labels like "Opus 4.8").
       for (const model of models) {
-        options.push({ value: acpModelValue(agent.id, model.value), label: model.label, group })
+        const hint = modelIntellectHint(model.value) ?? modelIntellectHint(model.label)
+        options.push({
+          value: acpModelValue(agent.id, model.value),
+          label: hint ? `${model.label} — ${hint}` : model.label,
+          group,
+        })
       }
     } else {
       // No discovered models (never detected, or the agent has a fixed model):
@@ -91,8 +103,9 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
   return options
 }
 
-// OpenRouter's free, tool-capable models fetched live from its catalog, plus any
-// custom id the user saved (or currently has selected — which may be a paid id).
+// OpenRouter tool-capable models fetched live from its catalog (free-only when
+// openRouterFreeMode is on), plus any custom id the user saved (or currently
+// has selected — which may be a paid id).
 // When no key is configured we contribute nothing (the provider is hidden from
 // the picker rather than shown as a disabled "add a key" row).
 async function openRouterOptions(
@@ -134,7 +147,10 @@ async function openRouterOptions(
     const value = toOpenRouterModel(id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    entries.push({ value, label, group })
+    // Intellect-only hint (no catalog pricing for OpenRouter ids), matched via
+    // the measurement alias map. `group` carries the ZDR/retention annotation.
+    const hint = modelIntellectHint(id)
+    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
   for (const model of liveModels) add(model.id, model.name || model.id)
@@ -142,10 +158,16 @@ async function openRouterOptions(
   if (isOpenRouterModel(current)) add(openRouterModelId(current), modelDisplayLabel(current))
 
   if (entries.length === 0) {
+    let freeOnly = false
+    try {
+      freeOnly = (await api.settings.get('openRouterFreeMode')) === true
+    } catch {
+      /* default: show all models */
+    }
     return [
       {
         value: '',
-        label: 'No free tool-capable models found',
+        label: freeOnly ? 'No free tool-capable models found' : 'No tool-capable models found',
         group,
         disabled: true,
       },
@@ -178,7 +200,11 @@ function extraProviderOptions(
     const value = toExtraProviderModel(provider.id, id)
     if (!id || seen.has(value)) return
     seen.add(value)
-    entries.push({ value, label, group })
+    // Intellect-only hint (extra-provider ids carry no catalog pricing),
+    // matched via the measurement alias map. `group` carries the data-policy
+    // annotation (may-train / retention-varies).
+    const hint = modelIntellectHint(id)
+    entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
   for (const model of provider.models) add(model.id, model.label ?? model.id)
@@ -215,7 +241,14 @@ async function remoteAgentOptions(
     // is configured, even when the live catalog is empty.
     add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR), 'Default')
     for (const model of liveModels) {
-      add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id), model.label || model.id)
+      const label = model.label || model.id
+      // Intellect-only hint (remote agents are subscription-billed, no token
+      // price), matched via the measurement alias map on id or label.
+      const hint = modelIntellectHint(model.id) ?? modelIntellectHint(label)
+      add(
+        remoteAgentModelValue(REMOTE_AGENT_PROVIDER_CURSOR, model.id),
+        hint ? `${label} — ${hint}` : label,
+      )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
     if (
@@ -286,7 +319,9 @@ export async function fetchModelOptions(
   // other section (otherwise they'd be the only headingless block at the top).
   const cloudGroup = 'Cloud models'
   for (const [value, label, provider] of CLOUD_MODELS) {
-    if (isAvailable(provider)) options.push({ value, label, group: cloudGroup })
+    if (!isAvailable(provider)) continue
+    const hint = cloudModelIntellectHint(value)
+    options.push({ value, label: hint ? `${label} — ${hint}` : label, group: cloudGroup })
   }
 
   options.push(...(await openRouterOptions(api, isAvailable('openrouter'), current)))
@@ -319,7 +354,9 @@ export async function fetchModelOptions(
     models = []
   }
   for (const id of models) {
-    const hint = localModelRoleHint(id)
+    const hint = [localModelRoleHint(id), localModelIntellectHint(id)]
+      .filter((part): part is string => part !== null)
+      .join(' · ')
     options.push({ value: `lmstudio:${id}`, label: hint ? `${id} — ${hint}` : id, group: lmGroup })
   }
 

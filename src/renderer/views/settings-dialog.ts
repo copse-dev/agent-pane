@@ -50,7 +50,15 @@ import {
 } from '@shared/command-routing.ts'
 
 export type SettingsSection =
-  'general' | 'usage' | 'local-models' | 'mcp' | 'sources' | 'appearance' | 'ssh' | 'experimental'
+  | 'general'
+  | 'usage'
+  | 'local-models'
+  | 'mcp'
+  | 'sources'
+  | 'packs'
+  | 'appearance'
+  | 'ssh'
+  | 'experimental'
 
 /**
  * Whole-app tint (Appearance ▸ Interface tint). The hue is mixed into every
@@ -324,6 +332,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="local-models">Local models</button>
           <button type="button" class="settings-nav-btn" data-section="mcp">MCP servers</button>
           <button type="button" class="settings-nav-btn" data-section="sources">Sources</button>
+          <button type="button" class="settings-nav-btn" data-section="packs">Packs</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
@@ -548,6 +557,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               Anthropic prompt-cache rates when cache tokens are reported.
             </p>
             <div id="settings-usage-host" class="settings-mount"></div>
+            <div id="settings-aa-key-host" class="settings-mount"></div>
           </section>
 
           <section class="settings-section" data-section="local-models">
@@ -793,6 +803,28 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </p>
               <div id="sources-plugins-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
+              </div>
+            </fieldset>
+          </section>
+
+          <section class="settings-section" data-section="packs">
+            <h3>Packs</h3>
+            <p class="settings-section-desc">
+              Feature packs installed in Copse — the tools, hooks, prompt blocks, and panels each
+              contributes. Turning a pack off drops all of its contributions from new work in one
+              action; its stored data is left in place so re-enabling it picks up where it stopped.
+              Old conversations still render a disabled pack's history (decision 17). See
+              <code>docs/packs.md</code> for the manifest shape.
+            </p>
+            <div class="lmstudio-test-row">
+              <button type="button" id="packs-reload-btn">Reload</button>
+              <span class="lmstudio-test-status" id="packs-reload-status"></span>
+            </div>
+
+            <fieldset>
+              <legend>Installed packs</legend>
+              <div id="packs-list" class="packs-group">
+                <span class="packs-empty">Loading…</span>
               </div>
             </fieldset>
           </section>
@@ -1191,6 +1223,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   })
   qsRequired(overlay, '#settings-claude-agent-key-host').append(claudeAgentKeySection.root)
 
+  // Metadata-service key (not an LLM provider): live Intelligence Index data
+  // for the model value map on the Usage page. No validation endpoint.
+  const aaKeySection = createApiKeysSection(api, {
+    legend: 'Model intelligence data',
+    providers: ['artificial-analysis'],
+    validateOnInput: false,
+  })
+  qsRequired(overlay, '#settings-aa-key-host').append(aaKeySection.root)
+
   // Provider tabs for the Remote agents section: a chip selects one provider and
   // shows just its auth panel (mirrors the Providers chip row). The common run
   // options below the panels apply to whichever remote agent is run.
@@ -1361,6 +1402,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         if (id === 'experimental') void acpAgentsSection.refresh()
         if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
+        if (id === 'packs') void refreshPacks()
       }
     })
   })
@@ -1644,6 +1686,258 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  /**
+   * Render one pack row for the Settings → Packs list (P3 of
+   * docs/plans/hooks-and-feature-packs.md). Each row shows the pack's name and
+   * version, its trust tier, an enable/disable toggle, an enumeration of what
+   * the pack contributes (tools / hooks / prompt blocks / panels), and any
+   * pack-scoped settings fields declared by its manifest. Toggling `enabled`
+   * calls `packs:setEnabled`, which flips the shared `PackRegistry` flag
+   * atomically (P1 contract) and persists to `electron-store`.
+   */
+  function makePackRow(pack: import('@shared/types/packs.ts').PackSummary): HTMLElement {
+    const row = document.createElement('div')
+    row.className = 'pack-row'
+    row.dataset['packId'] = pack.id
+    row.dataset['enabled'] = pack.enabled ? 'true' : 'false'
+
+    const header = document.createElement('div')
+    header.className = 'pack-row-header'
+
+    const toggleLabel = document.createElement('label')
+    toggleLabel.className = 'toggle-switch pack-toggle'
+    toggleLabel.title = pack.enabled ? 'Turn off this pack' : 'Turn on this pack'
+    const toggle = document.createElement('input')
+    toggle.type = 'checkbox'
+    toggle.checked = pack.enabled
+    toggle.className = 'pack-toggle-input'
+    toggle.setAttribute('aria-label', `${pack.name} pack enabled`)
+    const track = document.createElement('span')
+    track.className = 'toggle-switch-track'
+    track.setAttribute('aria-hidden', 'true')
+    toggle.addEventListener('change', () => {
+      toggle.disabled = true
+      void api.packs
+        .setEnabled(pack.id, toggle.checked)
+        .then(() => refreshPacks())
+        .catch(() => {
+          toggle.checked = !toggle.checked
+        })
+        .finally(() => {
+          toggle.disabled = false
+        })
+    })
+    toggleLabel.append(toggle, track)
+
+    const title = document.createElement('div')
+    title.className = 'pack-row-title'
+    const nameEl = document.createElement('span')
+    nameEl.className = 'pack-name'
+    nameEl.textContent = pack.name
+    title.append(nameEl)
+    if (pack.version) {
+      const versionEl = document.createElement('span')
+      versionEl.className = 'pack-version'
+      versionEl.textContent = pack.version
+      title.append(versionEl)
+    }
+    const trustBadge = document.createElement('span')
+    trustBadge.className =
+      pack.trust === 'first-party'
+        ? 'pack-badge pack-badge-first-party'
+        : 'pack-badge pack-badge-user'
+    trustBadge.textContent = pack.trust === 'first-party' ? 'first-party' : 'user'
+    title.append(trustBadge)
+
+    header.append(toggleLabel, title)
+    row.append(header)
+
+    if (pack.description) {
+      const desc = document.createElement('div')
+      desc.className = 'pack-row-desc'
+      desc.textContent = pack.description
+      row.append(desc)
+    }
+
+    // Contribution enumeration — the "about:addons" surface: users see exactly
+    // what flipping the toggle takes out of new work.
+    const contributions = pack.contributions
+    const chips: { label: string; count: number; title?: string }[] = []
+    if (contributions.toolNames.length > 0) {
+      chips.push({
+        label: 'Tools',
+        count: contributions.toolNames.length,
+        title: contributions.toolNames.join(', '),
+      })
+    }
+    if (contributions.mcpServersPath) {
+      chips.push({ label: 'MCP config', count: 1, title: contributions.mcpServersPath })
+    }
+    const hookCount = contributions.blockingHooks.length + contributions.asyncHooks.length
+    if (hookCount > 0) {
+      const eventList = [
+        ...contributions.blockingHooks.map((h) => `${h.id} (${h.event})`),
+        ...contributions.asyncHooks.map((h) => `${h.id} (${h.event}, async)`),
+      ]
+      chips.push({ label: 'Hooks', count: hookCount, title: eventList.join(', ') })
+    }
+    if (contributions.commandHooks.length > 0) {
+      chips.push({
+        label: 'Command hooks',
+        count: contributions.commandHooks.length,
+        title: contributions.commandHooks.map((h) => `${h.event}: ${h.command}`).join(', '),
+      })
+    }
+    if (contributions.promptBlocks.length > 0) {
+      chips.push({
+        label: 'Prompt blocks',
+        count: contributions.promptBlocks.length,
+        title: contributions.promptBlocks.map((b) => `${b.id} (${b.trust})`).join(', '),
+      })
+    }
+    if (contributions.ui.length > 0) {
+      chips.push({
+        label: 'UI',
+        count: contributions.ui.length,
+        title: contributions.ui
+          .map(
+            (u) =>
+              `L${String(u.level)} ${u.title ?? u.id}${u.panelKind ? ` (${u.panelKind})` : ''}`,
+          )
+          .join(', '),
+      })
+    }
+    if (chips.length > 0) {
+      const chipRow = document.createElement('div')
+      chipRow.className = 'pack-chips'
+      for (const chip of chips) {
+        const el = document.createElement('span')
+        el.className = 'pack-chip'
+        el.textContent = `${chip.label} × ${String(chip.count)}`
+        if (chip.title) el.title = chip.title
+        chipRow.append(el)
+      }
+      row.append(chipRow)
+    } else {
+      const emptyChips = document.createElement('div')
+      emptyChips.className = 'pack-chips-empty'
+      emptyChips.textContent = 'Contributes nothing yet (skeleton pack).'
+      row.append(emptyChips)
+    }
+
+    // Generic pack-scoped settings fields (rendered from the manifest schema).
+    if (pack.settings.length > 0) {
+      const settingsBox = document.createElement('div')
+      settingsBox.className = 'pack-settings'
+      const heading = document.createElement('div')
+      heading.className = 'pack-settings-heading'
+      heading.textContent = 'Settings'
+      settingsBox.append(heading)
+      for (const field of pack.settings) {
+        settingsBox.append(makePackSettingField(pack.id, field))
+      }
+      row.append(settingsBox)
+    }
+
+    // Disabling greys the whole row so the effect of the toggle is immediately
+    // visible; individual pack-scoped settings stay editable so users can
+    // configure a disabled pack before re-enabling it.
+    if (!pack.enabled) row.classList.add('pack-row-disabled')
+
+    return row
+  }
+
+  function makePackSettingField(
+    packId: string,
+    field: import('@shared/types/packs.ts').PackSettingFieldSummary,
+  ): HTMLElement {
+    const label = document.createElement('label')
+    label.className = 'pack-setting-field'
+    const title = document.createElement('span')
+    title.className = 'pack-setting-title'
+    title.textContent = field.title
+    label.append(title)
+
+    let input: HTMLInputElement | HTMLSelectElement
+    if (field.kind === 'boolean') {
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.checked = field.value === true
+      checkbox.className = 'pack-setting-input pack-setting-boolean'
+      input = checkbox
+    } else if (field.kind === 'enum') {
+      const select = document.createElement('select')
+      select.className = 'pack-setting-input pack-setting-enum'
+      for (const option of field.options ?? []) {
+        const opt = document.createElement('option')
+        opt.value = option
+        opt.textContent = option
+        if (option === field.value) opt.selected = true
+        select.append(opt)
+      }
+      input = select
+    } else if (field.kind === 'number') {
+      const number = document.createElement('input')
+      number.type = 'number'
+      number.value = String(field.value)
+      number.className = 'pack-setting-input pack-setting-number'
+      input = number
+    } else {
+      const text = document.createElement('input')
+      text.type = 'text'
+      text.value = typeof field.value === 'string' ? field.value : String(field.value)
+      text.className = 'pack-setting-input pack-setting-string'
+      input = text
+    }
+    input.dataset['packId'] = packId
+    input.dataset['settingKey'] = field.id
+
+    // Persist on change so the manifest schema is the source of truth — no
+    // Save-button plumbing needed, mirroring the MCP per-server toggle.
+    input.addEventListener('change', () => {
+      const value: unknown =
+        field.kind === 'boolean'
+          ? (input as HTMLInputElement).checked
+          : field.kind === 'number'
+            ? Number((input as HTMLInputElement).value)
+            : input.value
+      void api.packs.setSetting(packId, field.id, value).catch(() => {
+        // Best-effort: on failure the on-screen value stays; next reload
+        // resyncs to storage.
+      })
+    })
+
+    label.append(input)
+    if (field.description) {
+      const hint = document.createElement('span')
+      hint.className = 'pack-setting-desc'
+      hint.textContent = field.description
+      label.append(hint)
+    }
+    return label
+  }
+
+  async function refreshPacks(): Promise<void> {
+    const listEl = qsRequired(overlay, '#packs-list')
+    const statusEl = qsRequired(overlay, '#packs-reload-status')
+    statusEl.textContent = 'Loading…'
+    try {
+      const result = await api.packs.list()
+      listEl.innerHTML = ''
+      if (result.packs.length === 0) {
+        const empty = document.createElement('span')
+        empty.className = 'packs-empty'
+        empty.textContent = 'No packs registered.'
+        listEl.append(empty)
+      } else {
+        for (const pack of result.packs) listEl.append(makePackRow(pack))
+      }
+      statusEl.textContent = ''
+    } catch {
+      statusEl.textContent = 'Failed to load packs.'
+    }
+  }
+
   function renderMcpServers(allStatuses: import('@shared/types/mcp.ts').McpServerStatus[]): void {
     const listEl = qsRequired(overlay, '#mcp-server-list')
     // Curated ("Copse reviewed") servers have their own section below.
@@ -1678,6 +1972,34 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       })
       banner.append(text, trustBtn)
       listEl.append(banner)
+      // Decision 7 / F3: the `sandbox: false` escape is surfaced at the consent
+      // moment. If this (untrusted) workspace's .copse/hooks.json declares hooks
+      // that opt out of the project sandbox, say so *before* the user trusts —
+      // trusting is what lets those repo-supplied scripts run unsandboxed.
+      void api.workspace
+        .unsandboxedProjectHooks()
+        .then((unsandboxed) => {
+          if (unsandboxed.length === 0) return
+          const warn = document.createElement('div')
+          warn.className = 'mcp-trust-banner trust-unsandboxed-hooks-warning'
+          const label = document.createElement('span')
+          const plural = unsandboxed.length === 1 ? 'hook' : 'hooks'
+          label.textContent =
+            `⚠ This workspace declares ${String(unsandboxed.length)} ${plural} with ` +
+            `"sandbox": false in .copse/hooks.json. Trusting this workspace allows ` +
+            `${unsandboxed.length === 1 ? 'it' : 'them'} to run OUTSIDE the project sandbox:`
+          const list = document.createElement('ul')
+          for (const h of unsandboxed) {
+            const li = document.createElement('li')
+            li.textContent = `${h.event}: ${h.command}`
+            list.append(li)
+          }
+          warn.append(label, list)
+          banner.after(warn)
+        })
+        .catch(() => {
+          /* display-only; a parse error never blocks the trust flow */
+        })
     }
 
     for (const s of statuses) {
@@ -1886,6 +2208,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshSources()
   })
 
+  qsRequired(overlay, '#packs-reload-btn').addEventListener('click', () => {
+    void refreshPacks()
+  })
+
   // Live advisor-pair assessment (docs/plans/advisor-strategy.md): grade the
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
@@ -1925,6 +2251,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void (async (): Promise<void> => {
       await cursorKeySection.refreshKeyStatus()
       await claudeAgentKeySection.refreshKeyStatus()
+      await aaKeySection.refreshKeyStatus()
       await customProvidersSection.refresh()
       await envKeyDetectSection.refresh()
       await localProvidersSection.refresh()
@@ -2053,6 +2380,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       await cursorKeySection.saveKeys()
       await claudeAgentKeySection.saveKeys()
+      await aaKeySection.saveKeys()
       await customProvidersSection.saveKeys()
       await localProvidersSection.saveKeys()
       await lmStudioSection.saveConnection()

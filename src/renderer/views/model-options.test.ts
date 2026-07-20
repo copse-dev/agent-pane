@@ -24,6 +24,7 @@ const ALL_UNCONFIGURED = {
   openai: false,
   cursor: false,
   openrouter: false,
+  perplexity: false,
   mistral: false,
   gemini: false,
   deepseek: false,
@@ -51,6 +52,25 @@ function mockApi(opts: MockOpts = {}): ApiClient {
 }
 
 describe('fetchModelOptions visibility', () => {
+  it('lists fetched Perplexity models only when its key is configured', async () => {
+    const providers = resolveExtraProviders([
+      { slug: 'perplexity', models: [{ id: 'openai/gpt-live' }] },
+    ])
+    const hidden = await fetchModelOptions(mockApi({ extraProviders: providers }), '')
+    assert.ok(!hidden.some((option) => option.group?.startsWith('Perplexity')))
+
+    const configured = await fetchModelOptions(
+      mockApi({ available: { perplexity: true }, extraProviders: providers }),
+      '',
+    )
+    assert.deepEqual(
+      configured
+        .filter((option) => option.group === 'Perplexity — retention varies by provider')
+        .map((option) => option.value),
+      ['perplexity:openai/gpt-live'],
+    )
+  })
+
   it('shows a single guiding message when nothing is configured', async () => {
     const options = await fetchModelOptions(mockApi(), '')
     assert.equal(options.length, 1)
@@ -200,7 +220,9 @@ describe('fetchModelOptions visibility', () => {
       acp.map((o) => ({ value: o.value, label: o.label })),
       [
         { value: 'acp:cursor#auto', label: 'Auto' },
-        { value: 'acp:cursor#opus[]', label: 'Opus 4.8' },
+        // The agent's "Opus 4.8" label aliases to the sourced measurement, so
+        // the row earns an intellect-only hint (ACP has no token pricing).
+        { value: 'acp:cursor#opus[]', label: 'Opus 4.8 — intellect 55.7' },
       ],
     )
     // The bare "acp:cursor" (agent default) entry is intentionally omitted.
@@ -238,6 +260,20 @@ describe('fetchModelOptions visibility', () => {
     assert.match(current.label, /no valid key/)
   })
 
+  it('adds an intellect hint to a remote-agent model that resolves to a measurement', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { cursor: true },
+        // A Cursor Cloud model whose label aliases to a curated measurement.
+        cursorCloudModels: [{ id: 'opus-4-8', label: 'Opus 4.8' }],
+      }),
+      '',
+    )
+    const row = options.find((o) => o.group === 'Cursor Cloud Agent' && /Opus 4\.8/.test(o.label))
+    assert.ok(row)
+    assert.match(row.label, /Opus 4\.8 — intellect 55\.7/)
+  })
+
   it('groups hosted cloud models under a heading', async () => {
     const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
     const cloud = options.filter((o) => o.group === 'Cloud models')
@@ -255,9 +291,33 @@ describe('fetchModelOptions visibility', () => {
     const known = options.find((o) => o.value === 'lmstudio:qwen/qwen2.5-coder-32b')
     assert.ok(known)
     assert.match(known.label, /qwen\/qwen2\.5-coder-32b — coder/)
+    // It now carries a sourced AA measurement, shown quant-adjusted (~) for the
+    // running quant rather than the composite fallback.
+    assert.match(known.label, /intellect ~[\d.]+/)
     const unknown = options.find((o) => o.value === 'lmstudio:some-unknown-local')
     assert.ok(unknown)
     assert.equal(unknown.label, 'some-unknown-local')
+  })
+
+  it('annotates scored cloud models with intellect, blended price, and frontier', async () => {
+    const options = await fetchModelOptions(
+      mockApi({ available: { anthropic: true, openai: true } }),
+      '',
+    )
+    const opus = options.find((o) => o.value === 'claude-opus-4-8')
+    assert.ok(opus)
+    assert.equal(opus.label, 'claude-opus-4-8 — intellect 55.7 · $9/MTok · frontier')
+    const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
+    assert.ok(haiku)
+    // Haiku is dominated on the re-baselined frontier (a cheaper model reaches
+    // its intellect), so it shows intellect and price without the frontier tag.
+    assert.equal(haiku.label, 'claude-haiku-4-5 — intellect 24 · $1.80/MTok')
+    // gpt-4o is scored (11.2) but dominated, so it shows intellect and price
+    // without the frontier tag.
+    const gpt4o = options.find((o) => o.value === 'gpt-4o')
+    assert.ok(gpt4o)
+    assert.match(gpt4o.label, /intellect 11\.2 · \$[\d.]+\/MTok/)
+    assert.doesNotMatch(gpt4o.label, /frontier/)
   })
 
   it('keeps the current selection selectable even with no key', async () => {

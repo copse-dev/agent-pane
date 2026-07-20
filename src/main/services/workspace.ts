@@ -140,20 +140,24 @@ export function getActiveProjectId(): string | null {
   return typeof id === 'string' && id.length > 0 ? id : null
 }
 
+/** Resolve a persisted project's root without consulting renderer-selected workspace state. */
+export function getProjectRoot(projectId: string): string | null {
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return null
+
+  const project = projects.find((candidate): candidate is { id: string; path: string } => {
+    if (!candidate || typeof candidate !== 'object') return false
+    const value = candidate as { id?: unknown; path?: unknown }
+    return value.id === projectId && typeof value.path === 'string'
+  })
+
+  return project?.path ?? null
+}
+
 export function getActiveProjectRoot(): string | null {
   const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)
   if (typeof activeProjectId !== 'string') return workspaceRoot
-
-  const projects = storageGet(PROJECTS_KEY)
-  if (!Array.isArray(projects)) return workspaceRoot
-
-  const activeProject = projects.find((project): project is { id: string; path: string } => {
-    if (!project || typeof project !== 'object') return false
-    const candidate = project as { id?: unknown; path?: unknown }
-    return candidate.id === activeProjectId && typeof candidate.path === 'string'
-  })
-
-  return activeProject?.path ?? workspaceRoot
+  return getProjectRoot(activeProjectId) ?? workspaceRoot
 }
 
 /** SSH host id (`sshWorkspaceHosts[].id`) for the active project, if any. */

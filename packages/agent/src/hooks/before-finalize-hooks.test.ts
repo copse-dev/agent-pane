@@ -17,14 +17,16 @@ const openTodos: TodoItem[] = [
 const closedTodos: TodoItem[] = [{ id: 't1', content: 'Step one', status: 'completed' }]
 
 describe('BEFORE_FINALIZE_HOOKS registration', () => {
-  it('lists the named closeout hook and is part of FIRST_PARTY_HOOKS', () => {
-    assert.deepEqual(
-      BEFORE_FINALIZE_HOOKS.map((h) => h.id),
-      ['todo-finalize-closeout'],
-    )
+  it('is empty after P4 (todo-finalize-closeout moved to copse.todos)', () => {
+    // `todoFinalizeCloseoutHook` used to be the only entry here; it is now
+    // contributed by the `copse.todos` pack via `createHookRegistry`'s pack
+    // fold, so the *static* list is empty. The emit-side behavior is
+    // unchanged when the pack is enabled — pinned by the `createHookRegistry`
+    // tests below.
+    assert.deepEqual(BEFORE_FINALIZE_HOOKS, [])
     assert.deepEqual(
       FIRST_PARTY_HOOKS.filter((h) => h.event === 'beforeFinalize').map((h) => h.id),
-      BEFORE_FINALIZE_HOOKS.map((h) => h.id),
+      [],
     )
   })
 })

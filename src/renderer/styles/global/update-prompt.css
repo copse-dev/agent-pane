@@ -1,0 +1,32 @@
+#update-prompt-dialog {
+  max-width: 480px;
+}
+.update-prompt-message {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-md);
+}
+.update-prompt-detail {
+  margin: 0 0 var(--spacing-lg);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.update-prompt-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+}
+.update-prompt-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.update-prompt-primary {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  cursor: pointer;
+}

@@ -127,6 +127,36 @@
   color: var(--text-primary);
   font-weight: 600;
 }
+/* Fixed-position menu opened by right-clicking a project row. Shares the
+   browser overflow-menu look (elevated surface, compact items) but is pinned
+   to the pointer instead of an anchor button. */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  padding: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md, 0 6px 20px rgb(0 0 0 / 25%));
+}
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 6px 8px;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  border-radius: var(--radius);
+  text-align: left;
+  white-space: nowrap;
+}
+.context-menu-item:hover {
+  background: var(--bg-hover);
+}
 .project-twisty {
   width: 12px;
   height: 12px;
@@ -482,7 +512,8 @@
   flex-direction: column;
   overflow: hidden;
   min-width: 0;
-  border-top: 1px solid var(--border-subtle);
+  /* The tree resizer is the seam; a top border here framed the xterm in an L
+     with the sidebar divider and read as an inset box around the terminal. */
 }
 .git-changes-host {
   flex: 1;
@@ -967,7 +998,6 @@
 }
 .terminal-container {
   flex: 1;
-  padding: var(--spacing-xs);
   overflow: hidden;
   -webkit-app-region: no-drag;
 }

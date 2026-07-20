@@ -14,13 +14,13 @@ describe('model-classifier', () => {
       task: 'Refactor the architecture of the agent loop to fix a race condition in concurrent tool calls',
     })
     assert.equal(rec.band, 'top')
-    assert.equal(rec.model, 'claude-opus-4-8')
+    assert.equal(rec.model, 'claude-fable-5')
   })
 
   it('defaults to the mid band when there are no strong signals', () => {
     const rec = classifyModelForTask({ task: 'Update the changelog with the new entries listed' })
     assert.equal(rec.band, 'mid')
-    assert.equal(rec.model, 'claude-sonnet-4-6')
+    assert.equal(rec.model, 'claude-sonnet-5')
   })
 
   it("reports the representative model's intellect from the shared scale", () => {

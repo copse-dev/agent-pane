@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { serveAcpAgentOverStdio, type AcpTurnRunner } from './acp-agent-server.ts'
 import { checkToolAvailability } from '../tool-availability.ts'
 import { createRegistry, registerSkillTools } from '../registry-bootstrap.ts'
+import { getPackService } from '../packs/pack-service.ts'
 import { initSkillsRegistry } from '../skills/skills-registry.ts'
 import { loadMcpServers } from '../mcp/mcp-registry.ts'
 import { runAgent, abortAgent } from '../agent-service.ts'
@@ -9,6 +10,7 @@ import { setApprovalHandler, type ApprovalRequest } from '../approval.ts'
 import { setStagedDiffResolver } from '../diff-queue.ts'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
+import { runWithActiveRunIdentity } from '../thread-models.ts'
 
 /**
  * Headless entry for `copse --acp`: expose the Copse agent loop to an ACP
@@ -30,6 +32,9 @@ export async function runAcpAgentMode(): Promise<void> {
   // Mirror the GUI bootstrap: gh/git probes must run before createRegistry()
   // gates read-only GitHub tools on isGhAvailable() (#523).
   await checkToolAvailability()
+  // P3 mirror: the pack service must be up before createRegistry() so pack
+  // consumers read the persisted packDisabled state (not a fresh fallback).
+  getPackService()
   const registry = createRegistry()
   await initSkillsRegistry()
   registerSkillTools(registry)
@@ -66,7 +71,9 @@ export async function runAcpAgentMode(): Promise<void> {
     ctx.signal.addEventListener('abort', onAbort, { once: true })
 
     try {
-      const result = await runAgent(ctx.sessionId, ctx.prompt, history, host, registry)
+      const result = await runWithActiveRunIdentity(ctx.sessionId, () =>
+        runAgent(ctx.sessionId, ctx.prompt, history, host, registry),
+      )
       history.length = 0
       history.push(...result.messages)
       return { stopReason: 'end_turn' }

@@ -1,0 +1,103 @@
+/**
+ * Shared pack summary types for Settings → Packs and the `packs:*` IPCs
+ * (P3 of docs/plans/hooks-and-feature-packs.md).
+ *
+ * The Settings pack list is the `about:addons` surface of Copse: one entry per
+ * registered pack (first-party + user), with an enable/disable toggle, an
+ * enumeration of what the pack contributes (tools / hooks / prompt / panels),
+ * and any pack-scoped settings the manifest declares. Enable/disable is atomic
+ * (P1 contract): the toggle drops every contribution kind from the active set
+ * in one flag flip on the host `PackRegistry`.
+ *
+ * These types intentionally mirror the (Electron-free) `PackManifest` /
+ * `PackContributions` shapes from `packages/agent/src/packs/`, but as
+ * IPC-crossable summaries — no functions, no live registry references. The
+ * renderer never sees a `RegisteredPack` directly; it renders these summaries.
+ */
+
+/** Trust tier of a pack (first-party = shipped by Copse; user = disk-loaded). */
+export type PackTrustLevel = 'first-party' | 'user'
+
+/** UI contribution levels from the plan (1 = card, 2 = named panel, 3 = real view). */
+export type PackUiLevel = 1 | 2 | 3
+
+/** Kind of value a pack-scoped setting field carries (rendered generically). */
+export type PackSettingKind = 'boolean' | 'string' | 'number' | 'enum'
+
+/** One pack-scoped setting field, mirrors `PackSettingField` on the agent side. */
+export interface PackSettingFieldSummary {
+  /** Stable id of the setting, keyed under the pack's namespace. */
+  id: string
+  kind: PackSettingKind
+  title: string
+  description?: string
+  /** Default value used when nothing is persisted for this pack + key. */
+  default?: boolean | string | number
+  /** Options for an `enum` field (`kind: 'enum'` only). */
+  options?: readonly string[]
+  /** The current persisted value, or the default when nothing is stored yet. */
+  value: boolean | string | number
+}
+
+/** One UI contribution enumerated in Settings so the user sees what a pack adds. */
+export interface PackUiContributionSummary {
+  id: string
+  level: PackUiLevel
+  /** Named host slot (level 2 / 3). Absent for level-1 declarative cards. */
+  slot?: string
+  /** Human title (Settings enumeration). */
+  title?: string
+  /** For level-2 declarative panels: `list` or `tree` (P2). */
+  panelKind?: 'list' | 'tree'
+}
+
+/** One prompt / steering block a pack contributes (trust framing preserved). */
+export interface PackPromptBlockSummary {
+  id: string
+  trust: 'trusted' | 'untrusted'
+}
+
+/**
+ * Everything a pack contributes, enumerated for the Settings pack list. Both
+ * first-party and user packs surface here (decision 15). Function hooks and
+ * native tool wiring stay on the host side — the renderer only sees ids and
+ * event names it can render.
+ */
+export interface PackContributionsSummary {
+  /** Native tool names contributed to the model tool list (first-party). */
+  toolNames: readonly string[]
+  /** MCP config path a user pack pulls its tools from (mirrors `plugin.json`). */
+  mcpServersPath?: string
+  /** Blocking (in-loop) function hooks the pack registers, by canonical event. */
+  blockingHooks: readonly { id: string; event: string }[]
+  /** Async (detached) function hooks the pack registers. */
+  asyncHooks: readonly { id: string; event: string }[]
+  /** Command-hook declarations from the manifest (user packs). */
+  commandHooks: readonly { event: string; command: string }[]
+  promptBlocks: readonly PackPromptBlockSummary[]
+  ui: readonly PackUiContributionSummary[]
+  /** Namespaced storage bag the pack owns (survives disable — decision 17). */
+  storageNamespace?: string
+}
+
+/**
+ * One pack row for the Settings list. `enabled` reflects the shared host
+ * registry's current flag; toggling it in the UI calls `packs:setEnabled`,
+ * which flips the flag atomically and persists to `electron-store`.
+ */
+export interface PackSummary {
+  id: string
+  trust: PackTrustLevel
+  name: string
+  version?: string
+  description?: string
+  enabled: boolean
+  contributions: PackContributionsSummary
+  /** Pack-scoped settings the manifest declares, each carrying its current value. */
+  settings: readonly PackSettingFieldSummary[]
+}
+
+/** `packs:list` payload. */
+export interface PacksListResult {
+  packs: readonly PackSummary[]
+}

@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { setSetting } from '../services/storage/settings.ts'
-import { setActiveRunThread, clearActiveRunThread } from '../services/thread-models.ts'
+import { runWithActiveRunIdentity, setActiveRunThread } from '../services/thread-models.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import {
   redactUserContent,
@@ -42,11 +42,9 @@ describe('reveal_pii tool', () => {
     setRampartLoaderForTest(() => Promise.resolve(fakeModule))
     await setSetting(PII_REDACTION_ENABLED_SETTING, true)
     await redactUserContent('thread-1', 'email john@example.com')
-    setActiveRunThread('thread-1')
   })
 
   afterEach(async () => {
-    clearActiveRunThread('thread-1')
     setApprovalHandler(null)
     setRampartLoaderForTest(null)
     await setSetting(PII_REDACTION_ENABLED_SETTING, false)
@@ -58,7 +56,10 @@ describe('reveal_pii tool', () => {
       seen.push(req)
       return Promise.resolve({ approved: true, remember: false })
     })
-    const out = await runReveal('[PII_1]')
+    const out = await runWithActiveRunIdentity('thread-1', () => {
+      setActiveRunThread('thread-1')
+      return runReveal('[PII_1]')
+    })
     assert.equal(out, '[PII_1] = john@example.com')
     assert.equal(seen.length, 1)
     assert.equal(seen[0]?.type, 'pii')
@@ -66,7 +67,10 @@ describe('reveal_pii tool', () => {
 
   it('does not reveal when the user declines', async () => {
     setApprovalHandler(() => Promise.resolve({ approved: false, remember: false }))
-    const out = await runReveal('[PII_1]')
+    const out = await runWithActiveRunIdentity('thread-1', () => {
+      setActiveRunThread('thread-1')
+      return runReveal('[PII_1]')
+    })
     assert.match(out, /declined/)
     assert.doesNotMatch(out, /john@example\.com/)
   })
@@ -77,7 +81,10 @@ describe('reveal_pii tool', () => {
       prompted = true
       return Promise.resolve({ approved: true, remember: false })
     })
-    const out = await runReveal('[PII_9]')
+    const out = await runWithActiveRunIdentity('thread-1', () => {
+      setActiveRunThread('thread-1')
+      return runReveal('[PII_9]')
+    })
     assert.match(out, /not a known/)
     assert.equal(prompted, false)
   })

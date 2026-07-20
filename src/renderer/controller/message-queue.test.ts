@@ -35,6 +35,12 @@ import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
 
+function createProjectStore(): ReturnType<typeof createStore> {
+  const store = createStore()
+  store.setState({ activeProjectId: 'project-1' })
+  return store
+}
+
 /** Set the thread's current turn-tree epoch (decision 16 reference point). */
 function setCurrentEpoch(
   store: ReturnType<typeof createStore>,
@@ -48,14 +54,21 @@ function setCurrentEpoch(
   })
 }
 
-function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[] } {
+function fakeApi(): ApiClient & {
+  runs: Array<[string, string]>
+  projectIds: string[]
+  aborts: string[]
+} {
   const runs: Array<[string, string]> = []
+  const projectIds: string[] = []
   const aborts: string[] = []
   return {
     runs,
+    projectIds,
     aborts,
     agent: {
-      run: (threadId: string, payload: string) => {
+      run: (projectId: string, threadId: string, payload: string) => {
+        projectIds.push(projectId)
         runs.push([threadId, payload])
         return Promise.resolve()
       },
@@ -64,7 +77,11 @@ function fakeApi(): ApiClient & { runs: Array<[string, string]>; aborts: string[
         return Promise.resolve()
       },
     },
-  } as unknown as ApiClient & { runs: Array<[string, string]>; aborts: string[] }
+  } as unknown as ApiClient & {
+    runs: Array<[string, string]>
+    projectIds: string[]
+    aborts: string[]
+  }
 }
 
 function getThread(store: ReturnType<typeof createStore>, threadId: string): Thread {
@@ -80,7 +97,7 @@ function firstRun(api: { runs: Array<[string, string]> }): [string, string] {
 }
 
 test('enqueueUserMessage appends to thread.pendingMessages and emits message_queued', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   const queued: string[] = []
@@ -101,7 +118,7 @@ test('enqueueUserMessage appends to thread.pendingMessages and emits message_que
 })
 
 test('drainMessageQueue dispatches the next payload when idle', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   enqueueUserMessage(store, threadId, {
@@ -122,7 +139,7 @@ test('drainMessageQueue dispatches the next payload when idle', () => {
 })
 
 test('drainMessageQueue moves pending user messages after the completed turn', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   const firstMessageId = addMessage(store, threadId, 'user', 'first prompt')
@@ -166,7 +183,7 @@ test('movePendingUserMessagesToEnd preserves queued FIFO order', () => {
 })
 
 test('drainMessageQueue refreshes priorTodos from the live thread state', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   enqueueUserMessage(store, threadId, {
@@ -184,6 +201,7 @@ test('drainMessageQueue refreshes priorTodos from the live thread state', () => 
 
 test('dispatchAgentRun sends the per-thread model so the run honours the picker', () => {
   const store = createStore({ settings: { model: 'claude-opus-4-8' } })
+  store.setState({ activeProjectId: 'project-1' })
   const api = fakeApi()
   const threadId = createThread(store) // seeds thread.model from the global default
 
@@ -194,7 +212,7 @@ test('dispatchAgentRun sends the per-thread model so the run honours the picker'
 })
 
 test('dispatchAgentRun omits model when the thread has none, so main uses the global default', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store) // no global default → thread.model absent
 
@@ -205,7 +223,7 @@ test('dispatchAgentRun omits model when the thread has none, so main uses the gl
 })
 
 test('drainMessageQueue does nothing while the thread is running', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
@@ -222,7 +240,7 @@ test('drainMessageQueue does nothing while the thread is running', () => {
 })
 
 test('dispatchAgentRun marks the thread running and sends payload', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
 
@@ -233,7 +251,7 @@ test('dispatchAgentRun marks the thread running and sends payload', () => {
 })
 
 test('resumePendingQueues drains idle threads with pending messages', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   enqueueUserMessage(store, threadId, {
@@ -272,7 +290,7 @@ test('queuedPayloadText extracts text from string and array payloads', () => {
 })
 
 test('drainMessageQueue does nothing while the queue is paused', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   enqueueUserMessage(store, threadId, {
@@ -289,7 +307,7 @@ test('drainMessageQueue does nothing while the queue is paused', () => {
 })
 
 test('updateQueuedMessageText edits the payload text and the displayed bubble', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'user', 'original')
   enqueueUserMessage(store, threadId, {
@@ -306,7 +324,7 @@ test('updateQueuedMessageText edits the payload text and the displayed bubble', 
 })
 
 test('removeQueuedMessage drops the pending entry and user bubble', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   const firstMessageId = addMessage(store, threadId, 'user', 'first prompt')
   const queuedMessageId = addMessage(store, threadId, 'user', 'queued follow up')
@@ -327,7 +345,7 @@ test('removeQueuedMessage drops the pending entry and user bubble', () => {
 })
 
 test('removeQueuedMessage is a no-op for a message that is not queued', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'user', 'sent prompt')
 
@@ -339,7 +357,7 @@ test('removeQueuedMessage is a no-op for a message that is not queued', () => {
 })
 
 test('removeQueuedMessage keeps remaining queued messages in order', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   const firstQueuedId = addMessage(store, threadId, 'user', 'first queued')
   const secondQueuedId = addMessage(store, threadId, 'user', 'second queued')
@@ -372,7 +390,7 @@ test('removeQueuedMessage keeps remaining queued messages in order', () => {
 })
 
 test('updateQueuedMessageText preserves images when editing an array payload', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'user', 'original')
   enqueueUserMessage(store, threadId, {
@@ -396,7 +414,7 @@ test('updateQueuedMessageText preserves images when editing an array payload', (
 })
 
 test('sendQueuedMessageNow reorders to the front and aborts the running thread', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
@@ -452,7 +470,7 @@ test('sendQueuedMessageNow reorders but does not abort a running remote agent', 
 })
 
 test('sendQueuedMessageNow lifts pause and drains immediately when idle', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   enqueueUserMessage(store, threadId, {
@@ -468,11 +486,12 @@ test('sendQueuedMessageNow lifts pause and drains immediately when idle', () => 
   assert.equal(thread.queuePaused, undefined)
   assert.equal(thread.status, 'running')
   assert.equal(api.runs.length, 1)
+  assert.deepEqual(api.projectIds, ['project-1'])
   assert.match(firstRun(api)[1], /go now/)
 })
 
 test('resumePendingQueues clears a stale pause then drains', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   enqueueUserMessage(store, threadId, {
@@ -490,7 +509,7 @@ test('resumePendingQueues clears a stale pause then drains', () => {
 })
 
 test('resumePendingQueues resets a stale running status when the queue is empty', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
@@ -507,7 +526,7 @@ test('resumePendingQueues resets a stale running status when the queue is empty'
 // permission-platform.test.ts. See docs/plans/hooks-and-feature-packs.md.
 
 test('held-items-never-drain (decision 5): drainMessageQueue skips a held item at idle', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'user', 'held follow-up')
@@ -530,7 +549,7 @@ test('held-items-never-drain (decision 5): drainMessageQueue skips a held item a
 })
 
 test('held-items-never-drain (decision 5): drain skips the held head and dispatches the next plain item', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   const heldId = addMessage(store, threadId, 'user', 'held')
@@ -562,7 +581,7 @@ test('held-items-never-drain (decision 5): drain skips the held head and dispatc
 })
 
 test('stale-epoch-never-aborts (decision 16): a stale hook send-now downgrades to held, no abort', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
@@ -591,7 +610,7 @@ test('stale-epoch-never-aborts (decision 16): a stale hook send-now downgrades t
 })
 
 test('stale-epoch-never-aborts (decision 16): a current-epoch hook send-now takes the abort path', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
@@ -620,7 +639,7 @@ test('isStaleEpoch: no current epoch (no newer turn tree) is never stale; a diff
 })
 
 test('enqueueHookMessage: origin attribution lands on the queued message (decision 10)', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
@@ -640,7 +659,7 @@ test('enqueueHookMessage: origin attribution lands on the queued message (decisi
 })
 
 test('updateQueuedMessageText: editing a hook message keeps origin + sets editedByUser (decision 10)', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setThreadStatus(store, threadId, 'running')
@@ -661,7 +680,7 @@ test('updateQueuedMessageText: editing a hook message keeps origin + sets edited
 })
 
 test('updateQueuedMessageText: editing a human message does not set editedByUser', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'user', 'original')
   enqueueUserMessage(store, threadId, {
@@ -678,7 +697,7 @@ test('updateQueuedMessageText: editing a human message does not set editedByUser
 })
 
 test('releaseHeldMessage: un-holds, starts a fresh turn tree, and dispatches at idle', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setCurrentEpoch(store, threadId, 'epoch-stale')
@@ -702,7 +721,7 @@ test('releaseHeldMessage: un-holds, starts a fresh turn tree, and dispatches at 
 })
 
 test('startHumanTurnTree: records a fresh current epoch on the thread (decision 16)', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   assert.equal(getThread(store, threadId).currentEpoch, undefined)
 
@@ -730,7 +749,7 @@ function setContinuationUsed(
 }
 
 test('budget-ledger increments (decision 5): a machine-originated drain consumes one budget unit', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   const messageId = addMessage(store, threadId, 'user', 'hook follow-up')
@@ -749,7 +768,7 @@ test('budget-ledger increments (decision 5): a machine-originated drain consumes
 })
 
 test('budget-ledger increments (decision 5): drain seeds the run payload with the spent count', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setContinuationUsed(store, threadId, 2)
@@ -774,7 +793,7 @@ test('budget-ledger increments (decision 5): drain seeds the run payload with th
 })
 
 test('held-on-exhaustion (decision 5): a machine follow-up over budget flips to held + a visible note', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET) // budget exhausted
@@ -801,7 +820,7 @@ test('held-on-exhaustion (decision 5): a machine follow-up over budget flips to 
 })
 
 test('held-on-exhaustion (decision 5): a human item behind an over-budget machine item still drains', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
@@ -834,7 +853,7 @@ test('held-on-exhaustion (decision 5): a human item behind an over-budget machin
 })
 
 test('budget (decision 5): a human-authored queued message never consumes budget', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setContinuationUsed(store, threadId, 3)
@@ -856,7 +875,7 @@ test('budget (decision 5): a human-authored queued message never consumes budget
 })
 
 test('budget reset (decision 5): startHumanTurnTree resets continuationUsed to 0', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
 
@@ -866,7 +885,7 @@ test('budget reset (decision 5): startHumanTurnTree resets continuationUsed to 0
 })
 
 test('budget reset (decision 5): releaseHeldMessage resets the budget for the fresh turn tree', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const api = fakeApi()
   const threadId = createThread(store)
   setContinuationUsed(store, threadId, DEFAULT_CONTINUATION_BUDGET)
@@ -891,7 +910,7 @@ test('budget reset (decision 5): releaseHeldMessage resets the budget for the fr
 })
 
 test('run→drain fold-back (decision 5 / E3): folds the run in-run spend onto the same turn tree', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   setCurrentEpoch(store, threadId, 'tree-1')
   setContinuationUsed(store, threadId, 1) // the renderer seeded 1 drain-time continuation
@@ -903,7 +922,7 @@ test('run→drain fold-back (decision 5 / E3): folds the run in-run spend onto t
 })
 
 test('run→drain fold-back is monotonic within a turn tree (never lowers the counter)', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   setCurrentEpoch(store, threadId, 'tree-1')
   setContinuationUsed(store, threadId, 4)
@@ -914,7 +933,7 @@ test('run→drain fold-back is monotonic within a turn tree (never lowers the co
 })
 
 test('run→drain fold-back is dropped for a stale turn tree (decision 16)', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   // A human action since the run started minted a new epoch + reset the budget.
   setCurrentEpoch(store, threadId, 'tree-2')
@@ -930,7 +949,7 @@ test('run→drain fold-back is dropped for a stale turn tree (decision 16)', () 
 })
 
 test('run→drain fold-back applies via the thread-id fallback when no epoch was minted', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   // No currentEpoch: the run keyed its ledger by the thread id (main-process
   // fallback), so a fold-back carrying that key is this thread's own spend.
@@ -942,7 +961,7 @@ test('run→drain fold-back applies via the thread-id fallback when no epoch was
 })
 
 test('run→drain fold-back with a foreign key is dropped when no epoch was minted', () => {
-  const store = createStore()
+  const store = createProjectStore()
   const threadId = createThread(store)
   setContinuationUsed(store, threadId, 0)
 

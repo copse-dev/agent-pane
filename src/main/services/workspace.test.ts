@@ -17,6 +17,7 @@ import {
   assertWorkspaceWriteTarget,
   clearAllowedWorkspaceRootsForTest,
   getChatStoreRoot,
+  getProjectRoot,
   isResolvedPathInsideWorkspace,
   registerAllowedWorkspaceRoot,
   resolveReadablePath,
@@ -336,5 +337,15 @@ describe('allowed workspace roots', () => {
     assert.equal(resolveSshHostForWorkspaceRoot('/etc/ddg', 'explicit-host'), 'explicit-host')
     assert.equal(resolveSshHostForWorkspaceRoot('/etc/ddg'), 'euw-serp-dev-testing16')
     assert.equal(resolveSshHostForWorkspaceRoot('/etc/other'), undefined)
+  })
+
+  it('resolves a project root by persisted id without falling back to the active workspace', () => {
+    storageSet('projects', [
+      { id: 'p1', path: '/projects/one', name: 'one' },
+      { id: 'p2', path: '/projects/two', name: 'two' },
+    ])
+
+    assert.equal(getProjectRoot('p2'), '/projects/two')
+    assert.equal(getProjectRoot('missing'), null)
   })
 })

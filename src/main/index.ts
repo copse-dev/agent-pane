@@ -10,8 +10,10 @@ import type { LLMMessage, StreamChunk } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
+import { initUpdatePrompt } from './services/update-prompt.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
 import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
+import { getPackService } from './services/packs/pack-service.ts'
 import {
   loadMcpServers,
   shutdownMcpServers,
@@ -74,10 +76,16 @@ import {
   lmStudioDownloadStatusSchema,
   lmStudioTestSchema,
   parseIpcArgs,
+  zProjectId,
   zThreadId,
 } from './ipc/ipc-guards.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import {
+  prepareThreadExecutionContext,
+  runWithThreadExecutionContext,
+} from './services/thread-execution-context.ts'
+import { runWithActiveRunIdentity } from './services/thread-models.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -90,13 +98,18 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 const agentEval = process.env['COPSE_AGENT_EVAL'] === '1'
+// Used only by the release workflow against the final signed app bundle. It
+// avoids renderer/WebDriver dependencies while still exercising Electron boot,
+// node-pty, and the filesystem-native thread store from the packaged artifact.
+const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // `copse --acp` drives the agent over stdio for an ACP client; it must not take
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')
-const gotSingleInstanceLock = agentEval || acpMode ? true : app.requestSingleInstanceLock()
+const gotSingleInstanceLock =
+  agentEval || acpMode || releaseSmokeTest ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
-} else if (!agentEval && !acpMode) {
+} else if (!agentEval && !acpMode && !releaseSmokeTest) {
   app.on('second-instance', () => {
     const win = getMainWindow()
     if (win) {
@@ -114,6 +127,20 @@ app
       // Headless ACP agent over stdio: bootstrap tools/provider, no window.
       const { runAcpAgentMode } = await import('./services/acp/acp-app-entry.ts')
       await runAcpAgentMode()
+      return
+    }
+
+    if (releaseSmokeTest) {
+      const { runReleaseSmokeTest } = await import('./release-smoke.ts')
+      try {
+        await initProjectSandbox()
+        await runReleaseSmokeTest()
+        console.log('[release-smoke] packaged app checks passed')
+        app.exit(0)
+      } catch (err) {
+        console.error('[release-smoke] packaged app checks failed:', err)
+        app.exit(1)
+      }
       return
     }
 
@@ -139,8 +166,14 @@ app
     const win = createMainWindow()
     applyAppIcon([win])
     buildAppMenu(win)
+    initUpdatePrompt(win)
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
+    // P3: boot the pack service before `createRegistry()` so the persisted
+    // `packDisabled` state installs the shared pack registry first — otherwise
+    // every consumer up to the first Settings→Packs open would see the fallback
+    // fresh registry (all packs enabled) and a disable would not survive relaunch.
+    getPackService()
     const registry = createRegistry()
     // The only Electron-specific seam the agent run needs: forward stream chunks
     // to the renderer. Injecting it as an AgentHost keeps runAgent free of BrowserWindow.
@@ -220,39 +253,49 @@ app
     // missing handler. The registry these close over is populated lazily below.
     const messageHistory = new Map<string, LLMMessage[]>()
 
-    ipcMain.handle('agent:run', async (event, threadIdArg: unknown, rawPrompt: string) => {
-      assertMainFrameSender(event, win)
-      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      const {
-        userContent,
-        invokedSkills,
-        priorTodos,
-        workingBrief,
-        model,
-        turnTreeId,
-        continuationBudgetUsed,
-      } = parseAgentRunPayload(rawPrompt)
+    ipcMain.handle(
+      'agent:run',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, rawPrompt: string) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        const {
+          userContent,
+          invokedSkills,
+          priorTodos,
+          workingBrief,
+          model,
+          turnTreeId,
+          continuationBudgetUsed,
+        } = parseAgentRunPayload(rawPrompt)
 
-      // Hydrate from persisted storage on first use after a restart
-      if (!messageHistory.has(threadId)) {
-        const stored = storageGet(`llm-history:${threadId}`)
-        if (Array.isArray(stored)) {
-          messageHistory.set(threadId, stored as LLMMessage[])
+        // Hydrate from persisted storage on first use after a restart
+        if (!messageHistory.has(threadId)) {
+          const stored = storageGet(`llm-history:${threadId}`)
+          if (Array.isArray(stored)) {
+            messageHistory.set(threadId, stored as LLMMessage[])
+          }
         }
-      }
 
-      const priorMessages = messageHistory.get(threadId) ?? []
-      const result = await runAgent(threadId, userContent, priorMessages, agentHost, registry, {
-        invokedSkills,
-        priorTodos,
-        ...(workingBrief !== undefined ? { workingBrief } : {}),
-        ...(model !== undefined ? { model } : {}),
-        ...(turnTreeId !== undefined ? { turnTreeId } : {}),
-        ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
-      })
-      messageHistory.set(threadId, result.messages)
-      storageSet(`llm-history:${threadId}`, result.messages)
-    })
+        const priorMessages = messageHistory.get(threadId) ?? []
+        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
+        if (!executionContext) return
+        const result = await runWithThreadExecutionContext(executionContext, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            runAgent(threadId, userContent, priorMessages, agentHost, registry, {
+              invokedSkills,
+              priorTodos,
+              ...(workingBrief !== undefined ? { workingBrief } : {}),
+              ...(model !== undefined ? { model } : {}),
+              ...(turnTreeId !== undefined ? { turnTreeId } : {}),
+              ...(continuationBudgetUsed !== undefined ? { continuationBudgetUsed } : {}),
+            }),
+          ),
+        )
+        messageHistory.set(threadId, result.messages)
+        storageSet(`llm-history:${threadId}`, result.messages)
+      },
+    )
 
     ipcMain.handle(
       'agent:estimateContext',
@@ -343,12 +386,14 @@ app
     ipcMain.handle('agent:retryReview', async (event, threadIdArg: unknown, payload: unknown) => {
       assertMainFrameSender(event, win)
       const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      await retryPostTurnReview(
-        threadId,
-        hydrateHistory(threadId),
-        agentHost,
-        registry,
-        parseRetryPayload(payload),
+      await runWithActiveRunIdentity(threadId, () =>
+        retryPostTurnReview(
+          threadId,
+          hydrateHistory(threadId),
+          agentHost,
+          registry,
+          parseRetryPayload(payload),
+        ),
       )
     })
 
@@ -357,12 +402,14 @@ app
       async (event, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await retryModelComparison(
-          threadId,
-          hydrateHistory(threadId),
-          agentHost,
-          registry,
-          parseRetryPayload(payload),
+        await runWithActiveRunIdentity(threadId, () =>
+          retryModelComparison(
+            threadId,
+            hydrateHistory(threadId),
+            agentHost,
+            registry,
+            parseRetryPayload(payload),
+          ),
         )
       },
     )

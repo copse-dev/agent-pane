@@ -78,7 +78,7 @@ export async function draftRoadmapPrompt(issue: RoadmapImportIssue): Promise<str
 export async function importIssuesAsRoadmapItems(
   issues: RoadmapImportIssue[],
   draft: (issue: RoadmapImportIssue) => Promise<string> = draftRoadmapPrompt,
-  classify: (prompt: string) => Promise<RoadmapComplexity> = classifyRoadmapComplexity,
+  classify: (prompt: string) => Promise<RoadmapComplexity | null> = classifyRoadmapComplexity,
   onStamped?: () => void,
 ): Promise<KnowledgeNote[]> {
   const created: KnowledgeNote[] = []

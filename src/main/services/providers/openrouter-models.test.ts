@@ -101,10 +101,22 @@ describe('listFreeOpenRouterModels', () => {
     restore = undefined
     invalidateOpenRouterModelsCache()
     await setSetting('openRouterZdrOnly', true)
+    await setSetting('openRouterFreeMode', false)
   })
 
-  it('returns only free, tool-capable models (fail-open when the ZDR list is empty)', async () => {
+  it('includes paid, tool-capable models by default when openRouterFreeMode is unset', async () => {
     invalidateOpenRouterModelsCache()
+    restore = stubFetch(SAMPLE)
+    const models = await listFreeOpenRouterModels()
+    assert.deepEqual(
+      models.map((m) => m.id).sort(),
+      ['anthropic/claude-3.5-sonnet', 'qwen/qwen3-235b-a22b:free'].sort(),
+    )
+  })
+
+  it('returns only free, tool-capable models when openRouterFreeMode is true', async () => {
+    invalidateOpenRouterModelsCache()
+    await setSetting('openRouterFreeMode', true)
     restore = stubFetch(SAMPLE)
     const models = await listFreeOpenRouterModels()
     assert.deepEqual(
@@ -140,8 +152,19 @@ describe('listFreeOpenRouterModels', () => {
     })
     const models = await listFreeOpenRouterModels()
     assert.deepEqual(
-      models.map((m) => m.id),
-      ['qwen/qwen3-235b-a22b:free'],
+      models.map((m) => m.id).sort(),
+      ['anthropic/claude-3.5-sonnet', 'qwen/qwen3-235b-a22b:free'].sort(),
+    )
+  })
+
+  it('includes paid, tool-capable models when openRouterFreeMode is false', async () => {
+    invalidateOpenRouterModelsCache()
+    await setSetting('openRouterFreeMode', false)
+    restore = stubFetch(SAMPLE)
+    const models = await listFreeOpenRouterModels()
+    assert.deepEqual(
+      models.map((m) => m.id).sort(),
+      ['anthropic/claude-3.5-sonnet', 'qwen/qwen3-235b-a22b:free'].sort(),
     )
   })
 

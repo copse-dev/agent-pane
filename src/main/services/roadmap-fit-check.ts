@@ -15,8 +15,8 @@ import { getGithubRepoSlug } from './github/git-service.ts'
  * On-demand fit check (issue #556 follow-up): would executing a roadmap
  * item's prompt plausibly resolve its pinned GitHub issue? Judged by the
  * small-tasks model — advisory only, triggered by an explicit pane action,
- * never on save. Unlike complexity there is no heuristic fallback: a keyword
- * match cannot judge fit, so without a model the check reports why instead.
+ * never on save. No heuristic fallback (same as complexity): a keyword match
+ * cannot judge fit, so without a model the check reports why instead.
  *
  * The verdict is stamped into the note's `fit` frontmatter field and the
  * reasoning into `fitDetail` (bullets flattened to one bounded line —

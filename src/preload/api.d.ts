@@ -3,6 +3,7 @@ import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
+import type { PacksListResult } from '@shared/types/packs.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type {
   GitFileDiff,
@@ -59,6 +60,7 @@ export interface ApiClient {
     set: (root: string, sshHost?: string) => Promise<string>
     isTrusted: () => Promise<boolean>
     setTrusted: (trusted: boolean) => Promise<McpServerStatus[]>
+    unsandboxedProjectHooks: () => Promise<{ event: string; command: string }[]>
     onOpened: (handler: (root: string) => void) => () => void
   }
   browser: {
@@ -74,7 +76,7 @@ export interface ApiClient {
     onChanged: (handler: (path: string, content: string | null) => void) => () => void
   }
   agent: {
-    run: (threadId: string, prompt: string) => Promise<void>
+    run: (projectId: string, threadId: string, prompt: string) => Promise<void>
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
     retryReview: (threadId: string, payload: string) => Promise<void>
@@ -146,6 +148,20 @@ export interface ApiClient {
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
     ) => () => void
   }
+  updatePrompt: {
+    respond: (id: string, buttonIndex: number) => Promise<void>
+    onRequest: (
+      handler: (req: {
+        id: string
+        message: string
+        detail?: string
+        buttons: string[]
+        defaultIndex?: number
+        cancelIndex?: number
+      }) => void,
+    ) => () => void
+    onDevNotice: (handler: () => void) => () => void
+  }
   sshWorkspace: {
     listHosts: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
     listConfigAliases: () => Promise<import('@shared/types/ssh-workspace.ts').SshWorkspaceHost[]>
@@ -211,6 +227,20 @@ export interface ApiClient {
       hasDecentChatDefault: boolean
       minimum: number
       bestAvailableContext: number | null
+    }>
+  }
+  intellect: {
+    /** Live Artificial Analysis model feed; empty models when no key stored. */
+    liveModels: () => Promise<{
+      ok: boolean
+      models: Array<{
+        id: string
+        intellect: number
+        inputPricePerMTok?: number
+        outputPricePerMTok?: number
+      }>
+      indexVersion?: string | number
+      error?: string
     }>
   }
   lmStudio: {
@@ -465,6 +495,14 @@ export interface ApiClient {
     list: () => Promise<HooksListResult>
     /** Dry-run one discovered hook against a synthetic payload for its event (G2). */
     test: (req: HookTestRequest) => Promise<HookTestResult>
+  }
+  packs: {
+    /** Enumerate every registered pack with contributions + enablement + settings values (P3). */
+    list: () => Promise<PacksListResult>
+    /** Atomic enable/disable (P1 contract) — persists and flips the shared registry flag. */
+    setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
+    /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
+    setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

@@ -1,5 +1,6 @@
-import { app, dialog, type BrowserWindow } from 'electron'
+import { app, type BrowserWindow } from 'electron'
 import { autoUpdater, type UpdateInfo } from 'electron-updater'
+import { notifyUpdateDevOnly, requestUpdatePrompt } from './update-prompt.ts'
 
 // Auto-update for the direct-download (Developer ID + notarized) macOS build.
 //
@@ -49,11 +50,7 @@ export function initAutoUpdate(win: BrowserWindow): void {
  */
 export function checkForUpdatesManually(win: BrowserWindow): void {
   if (!app.isPackaged || process.platform !== 'darwin') {
-    void dialog.showMessageBox(win, {
-      type: 'info',
-      message: 'Updates apply to the packaged app',
-      detail: 'Automatic updates are available in the signed, downloaded build of Copse.',
-    })
+    notifyUpdateDevOnly(win)
     return
   }
   // initAutoUpdate ran at startup, so the result listeners are already attached.
@@ -62,14 +59,13 @@ export function checkForUpdatesManually(win: BrowserWindow): void {
   })
 }
 
-async function promptDownload(win: BrowserWindow, version: string): Promise<void> {
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'info',
-    buttons: ['Download', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
+async function promptDownload(_win: BrowserWindow, version: string): Promise<void> {
+  const response = await requestUpdatePrompt({
     message: `Copse ${version} is available`,
     detail: 'Download the update now? You can install it immediately once downloaded.',
+    buttons: ['Download', 'Later'],
+    defaultIndex: 0,
+    cancelIndex: 1,
   })
   if (response === 0) {
     autoUpdater.downloadUpdate().catch(() => {
@@ -78,14 +74,13 @@ async function promptDownload(win: BrowserWindow, version: string): Promise<void
   }
 }
 
-async function promptInstall(win: BrowserWindow, version: string): Promise<void> {
-  const { response } = await dialog.showMessageBox(win, {
-    type: 'info',
-    buttons: ['Restart now', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
+async function promptInstall(_win: BrowserWindow, version: string): Promise<void> {
+  const response = await requestUpdatePrompt({
     message: `Copse ${version} is ready to install`,
     detail: 'Restart Copse to apply the update, or it will install the next time you quit.',
+    buttons: ['Restart now', 'Later'],
+    defaultIndex: 0,
+    cancelIndex: 1,
   })
   if (response === 0) {
     // Defer so the dialog closes before Squirrel relaunches the app.

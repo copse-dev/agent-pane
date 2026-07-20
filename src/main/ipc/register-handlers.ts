@@ -88,8 +88,12 @@ import { listSkills, initSkillsRegistry } from '../services/skills/skills-regist
 import { listCursorPlugins } from '../services/skills/cursor-plugins.ts'
 import { listCursorHooksForSources } from '../services/hooks/cursor-adapter.ts'
 import { listClaudeHooks } from '../services/hooks/claude-adapter.ts'
-import { listCopseHooksForSources } from '../services/hooks/copse-adapter.ts'
+import {
+  listCopseHooksForSources,
+  listUnsandboxedProjectHooks,
+} from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
+import { getPackService } from '../services/packs/pack-service.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -202,6 +206,10 @@ import {
 import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
 import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
+import {
+  fetchLiveIntellectModels,
+  invalidateLiveIntellectCache,
+} from '../services/providers/aa-live-intellect.ts'
 import {
   fetchRemoteArtifactImageDataUrl,
   resolveRemoteArtifactDownloadUrl,
@@ -590,8 +598,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return att ? readKnowledgeAttachmentDataUrl(id, att) : null
   })
 
-  // Review triage changes status only. Re-reading in the store avoids
-  // overwriting a prompt/notes edit made while the model review was running.
+  // Status-only flip (row-level mark-done/reopen, and review triage). Mirrors
+  // the roadmap_plan tool's set_status action: no prompt/notes/issue
+  // round-trip, so complexity is never re-classified. Re-reading the store
+  // avoids overwriting a prompt/notes edit made while a model review ran.
   ipcMain.handle('roadmap:setStatus', (event, rawId: unknown, rawStatus: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zRoadmapId, [rawId])
@@ -782,6 +792,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const p = parseIpcArgs(keyProviderSchema, [provider])
     return hasApiKey(p)
   })
+  // Live Artificial Analysis feed for the model value map. Key-gated (empty
+  // result without a stored 'artificial-analysis' key); the renderer's anchor
+  // gate decides whether the returned cohort is on the canonical scale.
+  ipcMain.handle('intellect:live-models', (event) => {
+    assertMainFrameSender(event, win)
+    return fetchLiveIntellectModels()
+  })
   // At-rest state for a provider's stored key: true = OS-encrypted, false = base64
   // plaintext fallback, null = no key stored. Lets the Settings UI flag the
   // plaintext-at-rest condition instead of leaving it to a console.warn.
@@ -801,6 +818,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (!result.ok) return result
     invalidateProviderKeyStatus(p)
     if (p === 'cursor') invalidateCursorCloudModelsCache()
+    // The live Intelligence Index feed caches its result (successes AND failures)
+    // for hours, so a stored 403/empty would otherwise survive the user fixing
+    // their key. Drop it here so the next value-map open re-fetches with the new
+    // key.
+    if (p === 'artificial-analysis') invalidateLiveIntellectCache()
     // Saving an HF token auto-populates its priced, provider-pinned model list so
     // the picker and cost estimate work without a manual fetch (fire-and-forget).
     if (p === HUGGINGFACE_SLUG && apiKey.trim()) {
@@ -1000,6 +1022,47 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       scope: parsed.scope,
       ...(parsed.sandbox !== undefined ? { sandbox: parsed.sandbox } : {}),
     })
+  })
+  // Pack registry list (P3 of docs/plans/hooks-and-feature-packs.md). The
+  // Settings pack list ("about:addons") calls these to enumerate every
+  // registered pack, toggle enablement atomically (P1 contract), and read /
+  // write pack-scoped settings values under the manifest's declared schema.
+  ipcMain.handle('packs:list', (event) => {
+    assertMainFrameSender(event, win)
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+    const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
+    await getPackService().setEnabled(id, enabled)
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle(
+    'packs:setSetting',
+    async (event, rawId: unknown, rawKey: unknown, rawValue: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+      const key = parseIpcArgs(zNonEmptyString.max(128), [rawKey])
+      // Pack-scoped setting values are declaratively-shaped by the manifest;
+      // the renderer sends the primitive it read from the form. Cap to a sane
+      // upper bound so a compromised renderer can't stuff arbitrary payloads.
+      const value = parseIpcArgs(
+        z.union([z.boolean(), z.number(), z.string().max(8192), z.null()]),
+        [rawValue],
+      )
+      await getPackService().setSetting(id, key, value)
+      return { packs: getPackService().list() }
+    },
+  )
+
+  // Decision 7 / F3: the workspace-trust prompt surfaces project hooks that
+  // declare `sandbox: false` at the consent moment. Read-only display parsing —
+  // trust-independent by design (the whole point is showing this BEFORE trust).
+  ipcMain.handle('hooks:unsandboxedProjectHooks', async () => {
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    return listUnsandboxedProjectHooks(root)
   })
   ipcMain.handle('instructions:list', async () =>
     (await loadProjectInstructionSources()).map(({ path, name, scope, content }) => ({

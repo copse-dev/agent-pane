@@ -33,7 +33,10 @@ export interface IpcInvokeMap {
   'fs:unwatch': { args: [path: string]; result: undefined }
 
   // Agent
-  'agent:run': { args: [threadId: string, prompt: string]; result: undefined }
+  'agent:run': {
+    args: [projectId: string, threadId: string, prompt: string]
+    result: undefined
+  }
   'agent:abort': { args: [threadId: string]; result: undefined }
   'agent:clearHistory': { args: [threadId: string]; result: undefined }
   'agent:refreshModelContext': { args: []; result: undefined }
@@ -332,6 +335,17 @@ export interface IpcEventMap {
       kind: 'confirm' | 'secret'
     },
   ]
+  'update:prompt_request': [
+    {
+      id: string
+      message: string
+      detail?: string
+      buttons: string[]
+      defaultIndex?: number
+      cancelIndex?: number
+    },
+  ]
+  'update:dev_notice': []
   'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]

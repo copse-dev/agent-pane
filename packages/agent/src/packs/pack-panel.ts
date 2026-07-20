@@ -10,9 +10,10 @@
 // **Data-model seed.** The plan calls out `todo_update` ↔ ACP `plan` as the
 // motivating consumer and data-model seed. A list panel is the same shape ACP
 // `plan` uses (an ordered array of entries with `content` + `status`), which is
-// why {@link todosToPanelListRows} maps a `TodoItem[]` straight into
-// {@link PanelListData} without any information loss for the fields the panel
-// renders. That mapping is the concrete evidence that "pack panels are one
+// why {@link todosToPanelListRows} maps the active entries in a `TodoItem[]`
+// straight into {@link PanelListData} without losing any field the panel
+// renders. Cancelled todos are intentionally omitted, matching the shipped
+// todo-panel behavior. That mapping is the concrete evidence that "pack panels are one
 // adapter away from rendering in other ACP clients" (plan: level-2 description);
 // wiring it into `session-update-adapter.ts` lands with P4, once the todos pack
 // actually emits `panel_update` instead of the app-level `todo_update`.
@@ -129,27 +130,30 @@ export function panelListSummary(rows: readonly PanelEntry[]): string {
 
 /**
  * The data-model seed the plan calls out: turn a `TodoItem[]` into a
- * {@link PanelListData}. The mapping is intentionally lossless for the fields a
- * level-2 renderer draws — `id`, `content` → `label`, `status`, and `local` /
- * `check` → badges — so a future todos pack can emit `panel_update` with this
+ * {@link PanelListData}. Active entries map losslessly for the fields a level-2
+ * renderer draws — `id`, `content` → `label`, `status`, and `local` / `check` →
+ * badges — while cancelled entries are omitted to preserve the existing todo
+ * panel's semantics. A future todos pack can emit `panel_update` with this
  * payload and get the same UI the current `createTodoListEl` renders today. The
  * inverse (ACP `plan` → panel data) is one line in `session-update-adapter.ts`
  * and lands with P4, when todos becomes the pilot pack that actually emits
  * `panel_update` instead of the app-level `todo_update`.
  */
 export function todosToPanelListRows(todos: readonly TodoItem[]): PanelEntry[] {
-  return todos.map((todo): PanelEntry => {
-    const badges: PanelBadge[] = []
-    if (todo.assignedModel === 'local') badges.push({ kind: 'assigned-model', label: 'local' })
-    if (todo.check) badges.push({ kind: 'check', label: todo.check.kind })
-    const entry: PanelEntry = {
-      id: todo.id,
-      label: todo.content,
-      status: todo.status,
-    }
-    if (badges.length > 0) entry.badges = badges
-    return entry
-  })
+  return todos
+    .filter((todo) => todo.status !== 'cancelled')
+    .map((todo): PanelEntry => {
+      const badges: PanelBadge[] = []
+      if (todo.assignedModel === 'local') badges.push({ kind: 'assigned-model', label: 'local' })
+      if (todo.check) badges.push({ kind: 'check', label: todo.check.kind })
+      const entry: PanelEntry = {
+        id: todo.id,
+        label: todo.content,
+        status: todo.status,
+      }
+      if (badges.length > 0) entry.badges = badges
+      return entry
+    })
 }
 
 /**

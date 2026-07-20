@@ -60,6 +60,7 @@ describe('collectDetectedKeys', () => {
           ANTHROPIC_API_KEY: 'sk-ant-abcdefgh',
           OPENAI_API_KEY: 'sk-openai-1234',
           HF_TOKEN: 'hf_abcdefghij',
+          PERPLEXITY_API_KEY: 'pplx-test-abcdefgh',
           UNRELATED_VAR: 'ignore-me',
         },
       },
@@ -70,6 +71,7 @@ describe('collectDetectedKeys', () => {
     assert.equal(byProvider.get('openai')?.value, 'sk-openai-1234')
     assert.equal(byProvider.get('huggingface')?.envVar, 'HF_TOKEN')
     assert.equal(byProvider.get('huggingface')?.provider, 'huggingface')
+    assert.equal(byProvider.get('perplexity')?.envVar, 'PERPLEXITY_API_KEY')
     assert.equal(
       detected.find((d) => d.provider === 'mistral'),
       undefined,

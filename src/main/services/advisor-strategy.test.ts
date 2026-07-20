@@ -118,7 +118,7 @@ describe('validateAdvisorPair', () => {
   })
 
   it('recommends a local executor with a frontier cloud advisor (the flagship pairing)', () => {
-    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-opus-4-8')
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-fable-5')
     assert.equal(a.ok, true)
     assert.equal(a.native, false)
     assert.equal(a.level, 'good')
@@ -133,7 +133,7 @@ describe('validateAdvisorPair', () => {
   })
 
   it('marks a mid-band cloud advisor for a local executor as info, not warn', () => {
-    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'gpt-4o')
+    const a = validateAdvisorPair('lmstudio:qwen/qwen2.5-coder-32b', 'claude-opus-4-8')
     assert.equal(a.level, 'info')
     assert.match(a.reason, /stronger advisor gives more lift/i)
   })

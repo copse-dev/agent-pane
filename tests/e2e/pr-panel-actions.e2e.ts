@@ -56,6 +56,13 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     )
   }
 
+  async function clickPrAction(label: string): Promise<void> {
+    await $(`button.pr-action-btn*=${label}`).click()
+    const confirm = await $('#confirm-dialog .confirm-dialog-confirm')
+    await confirm.waitForDisplayed({ timeout: 10_000 })
+    await confirm.click()
+  }
+
   it('runs each PR lifecycle action against the mock backend', async function () {
     this.timeout(120_000)
 
@@ -63,11 +70,6 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     // The linked PR (#42) auto-selects; under the actions fixture it is a draft.
     await waitForViewer('Add GitHub PR panel tab')
     await expect(await $('.pr-badge-draft')).toBeDisplayed()
-
-    // Auto-approve the confirm() guard so the flow runs unattended.
-    await browser.execute(() => {
-      window.confirm = () => true
-    })
 
     // All four action buttons are present for an open PR.
     await expect(await $('button.pr-action-btn*=Rerun CI')).toBeDisplayed()
@@ -77,7 +79,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await saveElementScreenshot('#pane-files', 'pr-actions-initial.png')
 
     // Approve → outcome message + Approved badge.
-    await $('button.pr-action-btn*=Approve').click()
+    await clickPrAction('Approve')
     await browser.waitUntil(async () => (await $('.pr-badge-approved')).isExisting(), {
       timeout: 15_000,
       timeoutMsg: 'expected Approved badge after approving',
@@ -86,7 +88,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await saveElementScreenshot('#pane-files', 'pr-actions-approved.png')
 
     // Enable auto-merge → Auto-merge badge + strategy in the message.
-    await $('button.pr-action-btn*=Enable auto-merge').click()
+    await clickPrAction('Enable auto-merge')
     await browser.waitUntil(async () => (await $('.pr-badge-automerge')).isExisting(), {
       timeout: 15_000,
       timeoutMsg: 'expected Auto-merge badge after enabling',
@@ -97,7 +99,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     await saveElementScreenshot('#pane-files', 'pr-actions-automerge.png')
 
     // Mark ready → the Draft badge disappears.
-    await $('button.pr-action-btn*=Mark ready').click()
+    await clickPrAction('Mark ready')
     await browser.waitUntil(async () => !(await $('.pr-badge-draft').isExisting()), {
       timeout: 15_000,
       timeoutMsg: 'expected Draft badge to clear after marking ready',
@@ -110,7 +112,7 @@ describe('PR panel lifecycle actions (mock gh)', () => {
     // Switch to the failing workspace PR (#88) and re-run its failed CI.
     await $('.pr-list-title*=Tidy up workspace status polling').click()
     await waitForViewer('Tidy up workspace status polling')
-    await $('button.pr-action-btn*=Rerun CI').click()
+    await clickPrAction('Rerun CI')
     await browser.waitUntil(
       async () => /re-ran 1 failed run/i.test(await $('.pr-action-status').getText()),
       { timeout: 15_000, timeoutMsg: 'expected rerun outcome message' },

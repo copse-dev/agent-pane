@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
     set: (root: string, sshHost?: string) => ipcRenderer.invoke('workspace:set', root, sshHost),
     isTrusted: () => ipcRenderer.invoke('workspace:isTrusted'),
     setTrusted: (trusted: boolean) => ipcRenderer.invoke('workspace:setTrusted', trusted),
+    unsandboxedProjectHooks: () => ipcRenderer.invoke('hooks:unsandboxedProjectHooks'),
     onOpened: (handler: (root: string) => void) => {
       const listener = (_e: Electron.IpcRendererEvent, root: string): void => {
         handler(root)
@@ -46,7 +47,8 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   agent: {
-    run: (threadId: string, prompt: string) => ipcRenderer.invoke('agent:run', threadId, prompt),
+    run: (projectId: string, threadId: string, prompt: string) =>
+      ipcRenderer.invoke('agent:run', projectId, threadId, prompt),
     estimateContext: (threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
@@ -246,6 +248,47 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  updatePrompt: {
+    respond: (id: string, buttonIndex: number) =>
+      ipcRenderer.invoke('update-prompt:respond', id, buttonIndex),
+    onRequest: (
+      handler: (req: {
+        id: string
+        message: string
+        detail?: string
+        buttons: string[]
+        defaultIndex?: number
+        cancelIndex?: number
+      }) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        req: {
+          id: string
+          message: string
+          detail?: string
+          buttons: string[]
+          defaultIndex?: number
+          cancelIndex?: number
+        },
+      ): void => {
+        handler(req)
+      }
+      ipcRenderer.on('update:prompt_request', listener)
+      return (): void => {
+        ipcRenderer.off('update:prompt_request', listener)
+      }
+    },
+    onDevNotice: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('update:dev_notice', listener)
+      return (): void => {
+        ipcRenderer.off('update:dev_notice', listener)
+      }
+    },
+  },
   sshWorkspace: {
     listHosts: () => ipcRenderer.invoke('ssh-workspace:listHosts'),
     listConfigAliases: () => ipcRenderer.invoke('ssh-workspace:listConfigAliases'),
@@ -326,6 +369,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('threads:delete', projectId, threadId),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
+  },
+  intellect: {
+    liveModels: () => ipcRenderer.invoke('intellect:live-models'),
   },
   lmStudio: {
     test: (url: string, apiKey?: string) => ipcRenderer.invoke('lmstudio:test', url, apiKey),
@@ -559,6 +605,13 @@ contextBridge.exposeInMainWorld('api', {
   hooks: {
     list: () => ipcRenderer.invoke('hooks:list'),
     test: (req: unknown) => ipcRenderer.invoke('hooks:test', req),
+  },
+  packs: {
+    list: () => ipcRenderer.invoke('packs:list'),
+    setEnabled: (id: string, enabled: boolean) =>
+      ipcRenderer.invoke('packs:setEnabled', id, enabled),
+    setSetting: (id: string, key: string, value: unknown) =>
+      ipcRenderer.invoke('packs:setSetting', id, key, value),
   },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),

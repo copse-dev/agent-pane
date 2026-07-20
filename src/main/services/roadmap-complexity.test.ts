@@ -93,4 +93,17 @@ describe('stampRoadmapComplexity', () => {
     assert.equal(getKnowledgeNote(note.id), null)
     assert.equal(stamped, 0)
   })
+
+  it('skips the stamp when the model returns no verdict', async () => {
+    const note = seedItem('Unclassified prompt')
+    let stamped = 0
+    await stampRoadmapComplexity(
+      note.id,
+      'Unclassified prompt',
+      () => stamped++,
+      () => Promise.resolve(null),
+    )
+    assert.equal(getKnowledgeNote(note.id)?.fields['complexity'], undefined)
+    assert.equal(stamped, 0)
+  })
 })

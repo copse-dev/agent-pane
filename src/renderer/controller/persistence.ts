@@ -30,8 +30,20 @@ export function serializedSet(api: ApiClient, key: string, value: unknown): Prom
 }
 
 function serializedWrite(key: string, write: () => Promise<void>): Promise<void> {
-  const prev = writeChains.get(key) ?? Promise.resolve()
-  const next = prev.catch(() => undefined).then(write)
+  const prev = writeChains.get(key)
+  let next: Promise<void>
+  if (prev) {
+    next = prev.catch(() => undefined).then(write)
+  } else {
+    try {
+      // Start the first IPC write synchronously. In particular, a new thread's
+      // create must be sent before its immediately-following agent:run so main
+      // can validate the project/thread pair without racing renderer autosave.
+      next = write()
+    } catch (error) {
+      next = Promise.reject(error instanceof Error ? error : new Error(String(error)))
+    }
+  }
   writeChains.set(key, next)
   void next.finally(() => {
     if (writeChains.get(key) === next) writeChains.delete(key)

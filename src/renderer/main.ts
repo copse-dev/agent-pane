@@ -9,7 +9,7 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { openNewThread, switchThread, getActiveThread } from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -48,6 +48,8 @@ import { mountSshStatusBanner } from './views/ssh-status-banner.ts'
 import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
+import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
+import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -164,6 +166,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
+let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
   // Sanitizer and highlighter backends must be in place before any markdown sink
@@ -176,6 +179,8 @@ async function boot(): Promise<void> {
   mountApprovalDialog(api, store)
   mountAskUserDialog(api, store)
   mountSshPromptDialog(api)
+  mountUpdatePromptDialog(api)
+  mountConfirmDialog()
   mountFileSearchDialog(store, api)
   mountKeyboardShortcutsDialog()
   // Mounted after settings (it subscribes to the settings-close event to re-check).
@@ -360,9 +365,10 @@ function mountFullLayout(): void {
   const monacoReady = loadMonaco()
   mountProjectsPane(requireElement('pane-projects'), store, api)
   const inputRoot = requireElement('input-bar')
-  mountInputBar(inputRoot, store, api, {
+  const inputBar = mountInputBar(inputRoot, store, api, {
     portraitPanelHost: requireElement('pane-chat'),
   })
+  handleStopShortcut = inputBar.handleStopShortcut
   const conversationRoot = requireElement('conversation')
   mountConversation(conversationRoot, store, api, inputRoot)
   mountConversationSearch(conversationRoot)
@@ -468,7 +474,7 @@ function registerKeyboardShortcuts(): void {
     }
     if (meta && e.key === 'w') {
       e.preventDefault()
-      confirmDeleteThread()
+      void confirmDeleteThread()
     }
     if (e.key === 'Escape') {
       if (isKeyboardShortcutsDialogOpen()) {
@@ -487,28 +493,34 @@ function registerKeyboardShortcuts(): void {
         closeSettingsDialog()
         return
       }
-      const thread = getActiveThread(store)
-      if (thread?.status === 'running') {
-        const id = store.getState().activeThreadId
-        if (id) void api.agent.abort(id)
-      }
+      if (handleStopShortcut?.('Escape')) e.preventDefault()
+    }
+    if (e.key === 'Enter' && handleStopShortcut?.('Enter')) {
+      e.preventDefault()
     }
     if (e.altKey && e.key === 'ArrowLeft') switchToPrevThread()
     if (e.altKey && e.key === 'ArrowRight') switchToNextThread()
   })
 }
 
-function confirmDeleteThread(): void {
+async function confirmDeleteThread(): Promise<void> {
   const { activeThreadId, threads } = store.getState()
   if (!activeThreadId || threads.length <= 1) return
-  if (confirm('Delete this thread?')) {
-    void api.agent.clearHistory(activeThreadId)
-    const index = threads.findIndex((t) => t.id === activeThreadId)
-    const remaining = threads.filter((t) => t.id !== activeThreadId)
-    const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
-    store.setState({ threads: remaining, activeThreadId: newActive })
-    store.emit('threads_changed')
+  if (
+    !(await showConfirmDialog({
+      message: 'Delete this thread?',
+      confirmLabel: 'Delete',
+      danger: true,
+    }))
+  ) {
+    return
   }
+  void api.agent.clearHistory(activeThreadId)
+  const index = threads.findIndex((t) => t.id === activeThreadId)
+  const remaining = threads.filter((t) => t.id !== activeThreadId)
+  const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
+  store.setState({ threads: remaining, activeThreadId: newActive })
+  store.emit('threads_changed')
 }
 
 function switchToPrevThread(): void {
