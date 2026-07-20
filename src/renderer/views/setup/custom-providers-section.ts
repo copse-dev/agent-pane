@@ -282,7 +282,7 @@ export function createCustomProvidersSection(
       { class: 'settings-fieldset-desc' },
       isLocal
         ? 'Connect OpenAI-compatible local servers — LM Studio, Ollama, llama.cpp, Jan, and vLLM ship built in. They run on your machine and need no API key; pick one, set its URL or Fetch models, and Save — or choose “Other” to add another local endpoint.'
-        : 'Pick a provider to add or edit its API key. Zero-retention providers Groq, Together AI, and Fireworks AI ship built in alongside Mistral, Gemini, and DeepSeek. OpenAI-compatible providers also let you set models and options; choose “Other” to add your own.',
+        : 'Pick a provider to add or edit its API key. Privacy-forward providers Groq, Together AI, and Fireworks AI ship built in alongside Mistral, Gemini, and DeepSeek. OpenAI-compatible providers also let you set models and options; choose “Other” to add your own.',
     ),
     chipRow,
     formHost,

@@ -19,7 +19,7 @@ every published entry.
   an actionable message instead of being retried. Direct OpenAI requests
   send `store: false`. Settings → Providers badges each provider's default
   retention/training policy and the model picker flags providers that may
-  train on inputs. Default-ZDR hosted endpoints (Groq, Together AI, and
+  train on inputs. Privacy-forward hosted endpoints (Groq, Together AI, and
   Fireworks AI) are available directly as provider presets instead of being
   hidden under Other. See docs/provider-data-policies.md.
 

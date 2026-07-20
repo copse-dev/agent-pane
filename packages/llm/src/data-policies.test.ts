@@ -87,12 +87,20 @@ describe('policy defaults match the researched provider behavior', () => {
     assert.match(policy.note, /Sonar API only/)
   })
 
-  it('marks every promoted hosted privacy preset as zero retention', () => {
-    for (const id of ['groq', 'together', 'fireworks']) {
+  it('marks default-ZDR hosted privacy presets as zero retention', () => {
+    for (const id of ['together', 'fireworks']) {
       const provider = BUILTIN_EXTRA_PROVIDERS.find((candidate) => candidate.id === id)
       assert.ok(provider, `'${id}' should be a built-in provider preset`)
       assert.equal(privacyBadge(dataPolicyForProvider(provider)).kind, 'zdr')
     }
+  })
+
+  it('does not label Groq as ZDR until its account setting is enabled', () => {
+    const provider = BUILTIN_EXTRA_PROVIDERS.find((candidate) => candidate.id === 'groq')
+    assert.ok(provider)
+    const badge = privacyBadge(dataPolicyForProvider(provider))
+    assert.equal(badge.kind, 'no-training')
+    assert.match(badge.label, /30 days/)
   })
 })
 

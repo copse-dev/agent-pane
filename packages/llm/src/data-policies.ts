@@ -55,10 +55,11 @@ const TOGETHER_POLICY: ProviderDataPolicy = {
 }
 
 const GROQ_POLICY: ProviderDataPolicy = {
-  retainsPrompts: false,
+  retainsPrompts: true,
+  retentionDays: 30,
   trainsOnData: false,
   zdr: 'setting',
-  note: 'Groq does not retain inference data by default (troubleshooting logs up to 30 days) and offers a Zero Data Retention toggle in console Data Controls.',
+  note: 'Groq may temporarily log inference data for reliability and abuse prevention for up to 30 days unless Zero Data Retention is enabled in console Data Controls.',
   policyUrl: 'https://console.groq.com/docs/your-data',
 }
 

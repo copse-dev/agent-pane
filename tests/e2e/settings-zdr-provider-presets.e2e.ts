@@ -16,7 +16,7 @@ describe('ZDR provider presets', () => {
     resetUserData()
   })
 
-  it('promotes every default-ZDR endpoint and shows Groq privacy details', async () => {
+  it('promotes privacy-forward endpoints and shows accurate Groq privacy details', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
@@ -60,9 +60,9 @@ describe('ZDR provider presets', () => {
     })
 
     assert.match(details.title, /^Groq/)
-    assert.equal(details.badge, 'Zero data retention')
-    assert.equal(details.badgeKind, true)
-    assert.match(details.policyHint, /does not retain inference data by default/i)
+    assert.equal(details.badge, 'No training — retained ≤30 days')
+    assert.equal(details.badgeKind, false)
+    assert.match(details.policyHint, /temporarily log inference data/i)
     assert.equal(details.baseUrl, 'https://api.groq.com/openai/v1')
 
     await saveElementScreenshot('#settings-dialog', 'settings-zdr-provider-presets.png')

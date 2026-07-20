@@ -124,11 +124,10 @@ const GEMINI_CONTEXT = 1_048_576
 const DEEPSEEK_CONTEXT = 65_536
 
 export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
-  // Hosted providers whose standard inference path is zero-retention and
-  // non-training are first-class presets rather than being buried under the
-  // custom-provider form. Their catalogs move quickly, so users import the
-  // current tool-capable models with "Fetch models" instead of relying on a
-  // stale shipped shortlist.
+  // Privacy-forward hosted providers are first-class presets rather than
+  // being buried under the custom-provider form. Their catalogs move quickly,
+  // so users import the current tool-capable models with "Fetch models"
+  // instead of relying on a stale shipped shortlist.
   {
     id: 'together',
     label: 'Together AI',
@@ -156,7 +155,7 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     keyLabel: 'Groq API key',
     keyPlaceholder: 'gsk_…',
     keyHint:
-      'For Groq inference models. Inference data is not retained by default; enable Zero Data Retention in Groq Data Controls for the strictest setting, then Fetch models.',
+      'For Groq inference models. Groq may temporarily log inference data for up to 30 days; enable Zero Data Retention in Groq Data Controls to prevent that, then Fetch models.',
     keyPrefix: 'gsk_',
     fallbackContextWindow: DEFAULT_EXTRA_PROVIDER_CONTEXT,
     includeUsage: true,
