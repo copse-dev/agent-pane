@@ -26,9 +26,14 @@ function seedRoadmapNote(
     issue?: string
     reviewVerdict?: string
     reviewDetail?: string
+    createdAt?: string
   },
 ): void {
   const id = randomUUID()
+  // Orphan notes (seeded as bare files with no index entry) are healed in
+  // (createdAt, id) order, so distinct createdAt values keep the row order
+  // deterministic regardless of readdir order. Callers pass ordered timestamps.
+  const createdAt = input.createdAt ?? new Date().toISOString()
   const now = new Date().toISOString()
   const dir = join(homedir(), '.copse', 'knowledge', knowledgeNamespace(workspaceRoot), 'roadmap')
   mkdirSync(dir, { recursive: true })
@@ -38,7 +43,7 @@ function seedRoadmapNote(
     `id: ${id}`,
     `title: ${input.title}`,
     `status: ${input.status ?? 'ready'}`,
-    `createdAt: ${now}`,
+    `createdAt: ${createdAt}`,
     `updatedAt: ${now}`,
   ]
   if (input.issue) lines.push(`issue: ${input.issue}`)
@@ -65,6 +70,7 @@ describe('roadmap review badges', () => {
       issue: '#41',
       reviewVerdict: 'likely',
       reviewDetail: 'Recent commit mentions theme initialization.',
+      createdAt: '2026-01-01T00:00:00.000Z',
     })
     seedRoadmapNote(workspaceRoot, {
       title: 'Terminal shortcut',
@@ -72,6 +78,7 @@ describe('roadmap review badges', () => {
       status: 'ready',
       reviewVerdict: 'open',
       reviewDetail: 'No matching commits since last review.',
+      createdAt: '2026-01-02T00:00:00.000Z',
     })
     await browser.reloadSession()
   })
