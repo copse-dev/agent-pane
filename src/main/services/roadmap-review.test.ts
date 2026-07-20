@@ -73,6 +73,14 @@ describe('roadmap review service', () => {
     assert.ok(getRoadmapLastReviewAt())
   })
 
+  it('does not advance the checkpoint for a stale or fabricated run id', async () => {
+    const prepared = await prepareRoadmapReview()
+    assert.equal(completeRoadmapReview('00000000-0000-4000-8000-000000000000'), false)
+    assert.equal(getRoadmapLastReviewAt(), null)
+    assert.equal(completeRoadmapReview(prepared.runId), true)
+    assert.ok(getRoadmapLastReviewAt())
+  })
+
   it('marks done items resolved without calling a model', async () => {
     const note = addKnowledgeNote({
       type: 'Roadmap',

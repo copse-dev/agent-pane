@@ -24,6 +24,13 @@ describe('isReviewStale', () => {
     assert.equal(isReviewStale({ reviewVerdict: 'likely' }, 'ready', checkpoint), true)
   })
 
+  it('keeps a deep review fresh without a bulk run id', () => {
+    assert.equal(
+      isReviewStale({ reviewVerdict: 'partial', reviewDepth: 'deep' }, 'ready', checkpoint),
+      false,
+    )
+  })
+
   it('is false when the item matches the acknowledged bulk run', () => {
     assert.equal(
       isReviewStale({ reviewVerdict: 'likely', reviewBulkRun: 'run-1' }, 'ready', checkpoint),

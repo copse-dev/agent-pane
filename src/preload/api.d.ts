@@ -417,6 +417,10 @@ export interface ApiClient {
       removeAttachmentIds?: string[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     attachmentData: (id: string, attachmentId: string) => Promise<string | null>
+    setStatus: (
+      id: string,
+      status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{
@@ -445,8 +449,8 @@ export interface ApiClient {
     reviewItemDeep: (
       id: string,
     ) => Promise<import('../main/services/roadmap-review.ts').RoadmapReviewItemResult>
-    completeReview: (runId: string) => Promise<void>
-    abortReview: () => Promise<void>
+    completeReview: (runId: string) => Promise<boolean>
+    abortReview: (runId: string) => Promise<boolean>
     /** Subscribe to background roadmap changes (e.g. a complexity stamp landing
      * after a save returned). Returns an unsubscribe function. */
     onChanged: (handler: () => void) => () => void
