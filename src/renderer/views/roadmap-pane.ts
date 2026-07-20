@@ -10,6 +10,12 @@ import {
   parseKnowledgeAttachments,
   type KnowledgeAttachment,
 } from '@shared/knowledge/attachments.ts'
+import {
+  isRoadmapReviewVerdict,
+  isReviewStale,
+  reviewDetailMarkdown,
+} from '@shared/roadmap/review.ts'
+import { renderMarkdown } from '@copse/streaming-markdown'
 import { knowledgeDate } from './knowledge-date.ts'
 import { createThread, getThreadById, switchThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
@@ -22,6 +28,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 type RoadmapItem = Awaited<ReturnType<ApiClient['roadmap']['list']>>[number]
 type RoadmapStatus = Parameters<ApiClient['roadmap']['update']>[3]
 type OpenIssue = Awaited<ReturnType<ApiClient['roadmap']['openIssues']>>['issues'][number]
+type ReviewItemResult = Awaited<ReturnType<ApiClient['roadmap']['reviewItem']>>
 
 // The lifecycle the roadmap_plan tool maintains; the IPC layer re-validates, so
 // a drifted entry here fails loudly rather than corrupting a note.
@@ -130,10 +137,31 @@ export function mountRoadmapPane(
   // Import-from-issues mode: the viewer column shows the open-issue picker
   // instead of the editor until the user imports or cancels.
   let importing = false
+  // Review mode: model-judged resolution status for each active item.
+  let reviewing = false
+  let reviewResults: ReviewItemResult[] = []
+  /** Status the user applied from the review triage panel (id → new status). */
+  const reviewApplied = new Map<string, RoadmapStatus>()
+  /** True after a bulk ◎ run finishes — Close advances the commit checkpoint. */
+  let bulkReviewFinished = false
+  let bulkRunId: string | null = null
+  let reviewRunToken = 0
+  let cachedCheckpoint:
+    | {
+        lastReviewAt: string | null
+        lastAcknowledgedBulkRun: string | null
+        pendingBulkRun: string | null
+      }
+    | undefined
   let openIssues: OpenIssue[] = []
   // While a fit check runs, its progress/error text owns the fit box and
   // renderEditor must not overwrite it from the store.
   let fitCheckInFlight = false
+  // While a deep resolution check runs, the review result box is owned in-flight
+  // for that item only — switching selection clears the spinner immediately.
+  let resolutionCheckInFlight = false
+  let resolutionCheckItemId: string | null = null
+  let resolutionCheckToken = 0
   let loadToken = 0
   // Search/filter query entered in the list header.
   let searchQuery = ''
@@ -167,6 +195,16 @@ export function mountRoadmapPane(
     },
     '⇩',
   )
+  const reviewBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-review-btn',
+      'aria-label': 'Review roadmap resolution',
+      title: 'Review whether roadmap items have been resolved',
+    },
+    '◎',
+  )
   const refreshBtn = el(
     'button',
     {
@@ -177,7 +215,7 @@ export function mountRoadmapPane(
     },
     '↻',
   )
-  actionButtons.append(newBtn, importBtn, refreshBtn)
+  actionButtons.append(newBtn, importBtn, reviewBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
@@ -258,6 +296,12 @@ export function mountRoadmapPane(
   const metaLine = el('div', { class: 'memories-meta' })
   const errorLine = el('div', { class: 'memories-error', hidden: true })
   const fitResult = el('div', { class: 'roadmap-fit-result', hidden: true })
+  const reviewResult = el('div', { class: 'roadmap-review-result', hidden: true })
+  const reviewResultMeta = el('div', { class: 'roadmap-review-result-meta' })
+  const reviewResultBody = el('div', {
+    class: 'roadmap-review-result-body message-text streaming-markdown',
+  })
+  reviewResult.append(reviewResultMeta, reviewResultBody)
 
   const saveBtn = el(
     'button',
@@ -299,6 +343,15 @@ export function mountRoadmapPane(
     },
     'Check fit',
   )
+  const resolutionBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-resolution-btn',
+      title: 'Deep resolution check — full commit history since this item was created',
+    },
+    'Check resolution',
+  )
   const deleteBtn = el(
     'button',
     { type: 'button', class: 'memories-btn memories-btn-danger roadmap-delete-btn' },
@@ -316,6 +369,7 @@ export function mountRoadmapPane(
     startBtn,
     reopenBtn,
     fitBtn,
+    resolutionBtn,
     deleteBtn,
     cancelBtn,
   )
@@ -335,6 +389,7 @@ export function mountRoadmapPane(
     metaLine,
     errorLine,
     fitResult,
+    reviewResult,
     actions,
   )
   // --- import-from-issues picker (shown in the viewer column while importing) --
@@ -359,7 +414,47 @@ export function mountRoadmapPane(
     el('div', { class: 'memories-actions' }, importConfirmBtn, importCancelBtn),
   )
 
-  viewerRoot.append(emptyState, form, importView)
+  const reviewStatus = el('div', { class: 'memories-meta roadmap-review-status' })
+  const reviewList = el('div', { class: 'roadmap-review-list' })
+  const reviewCloseBtn = el(
+    'button',
+    { type: 'button', class: 'memories-btn roadmap-review-close' },
+    'Close',
+  )
+  const reviewMarkResolvedBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn memories-btn-primary roadmap-review-mark-resolved',
+      title: 'Mark every resolved/likely item as done',
+    },
+    'Mark resolved done',
+  )
+  const reviewArchiveResolvedBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-review-archive-resolved',
+      title: 'Archive every resolved/likely item',
+    },
+    'Archive resolved',
+  )
+  const reviewView = el(
+    'div',
+    { class: 'memories-form roadmap-review', hidden: true },
+    el('label', { class: 'memories-label' }, 'Review results'),
+    reviewStatus,
+    reviewList,
+    el(
+      'div',
+      { class: 'memories-actions roadmap-review-actions' },
+      reviewMarkResolvedBtn,
+      reviewArchiveResolvedBtn,
+      reviewCloseBtn,
+    ),
+  )
+
+  viewerRoot.append(emptyState, form, importView, reviewView)
 
   function showError(message: string): void {
     errorLine.textContent = message
@@ -476,15 +571,23 @@ export function mountRoadmapPane(
     renderAttachments()
   }
 
+  /** Keep the viewer column aligned with import/review overlays vs the editor. */
+  function syncViewerMode(): void {
+    importView.hidden = !importing
+    reviewView.hidden = !reviewing
+    if (importing || reviewing) {
+      form.hidden = true
+      emptyState.hidden = true
+    }
+  }
+
   // `preserveDirty` is set by background refreshes (store events) so an in-progress
   // edit or new-item draft is not silently overwritten with the persisted values.
   // Explicit navigation (selecting an item, New, Cancel) passes it unset to load fresh.
   function renderEditor(opts?: { preserveDirty?: boolean }): void {
     errorLine.hidden = true
-    importView.hidden = !importing
-    if (importing) {
-      form.hidden = true
-      emptyState.hidden = true
+    syncViewerMode()
+    if (importing || reviewing) {
       return
     }
     const item = selectedId ? items.find((m) => m.id === selectedId) : null
@@ -492,7 +595,9 @@ export function mountRoadmapPane(
     const dirty = editing && (creating || isEditorDirty(item))
     if (!item && !creating) {
       // Keep an in-progress draft visible rather than collapsing to the empty
-      // state when a refresh fires while the user is typing.
+      // state when a refresh fires while the user is typing. Never bail out
+      // while an overlay owns the viewer — that would leave the item form visible
+      // on top of (or instead of) the review/import panel.
       if (opts?.preserveDirty && dirty) return
       form.hidden = true
       emptyState.hidden = false
@@ -515,6 +620,7 @@ export function mountRoadmapPane(
     // leaves the field pointing at nothing, and Start thread restamps it.
     reopenBtn.hidden = !item || !getThreadById(store, itemThreadId(item))
     fitBtn.hidden = !item || !itemIssue(item)
+    resolutionBtn.hidden = !item || item.status === 'done' || item.status === 'archived'
     deleteBtn.hidden = !item
     // The stored verdict + reasoning render whenever the item is shown, so a
     // past check survives closing the pane. While a check is in flight,
@@ -529,6 +635,40 @@ export function mountRoadmapPane(
         fitResult.hidden = true
         fitResult.textContent = ''
       }
+    }
+    const review = item ? item.fields['reviewVerdict'] : undefined
+    const showingResolutionCheck =
+      resolutionCheckInFlight && item != null && resolutionCheckItemId === item.id
+    if (showingResolutionCheck) {
+      reviewResult.hidden = false
+      reviewResultMeta.textContent = 'Deep resolution check…'
+      reviewResultBody.hidden = true
+      reviewResultBody.replaceChildren()
+    } else if (item && isRoadmapReviewVerdict(review)) {
+      reviewResult.hidden = false
+      const detail = item.fields['reviewDetail']
+      const at = item.fields['reviewAt']
+      const depth = item.fields['reviewDepth']
+      const when = at ? ` (${knowledgeDate(at)})` : ''
+      const depthLabel = depth === 'deep' ? ' · deep check' : ''
+      void ensureCheckpoint().then((checkpoint) => {
+        if (selectedId !== item.id || resolutionCheckItemId === item.id) return
+        const stale = isReviewStale(item.fields, item.status, checkpoint)
+        const staleLabel = stale ? ' · stale — re-check recommended' : ''
+        reviewResultMeta.textContent = `review: ${review}${when}${depthLabel}${staleLabel}`
+      })
+      if (detail) {
+        reviewResultBody.hidden = false
+        reviewResultBody.innerHTML = renderMarkdown(reviewDetailMarkdown(detail))
+      } else {
+        reviewResultBody.hidden = true
+        reviewResultBody.replaceChildren()
+      }
+    } else {
+      reviewResult.hidden = true
+      reviewResultMeta.textContent = ''
+      reviewResultBody.replaceChildren()
+      reviewResultBody.hidden = true
     }
     if (item?.updatedAt) {
       metaLine.hidden = false
@@ -602,6 +742,19 @@ export function mountRoadmapPane(
               title: 'Model verdict: would this prompt resolve the pinned issue?',
             },
             `fit: ${fit}`,
+          ),
+        )
+      }
+      const review = item.fields['reviewVerdict']
+      if (isRoadmapReviewVerdict(review)) {
+        meta.append(
+          el(
+            'span',
+            {
+              class: `roadmap-review-badge is-${review}`,
+              title: 'Model verdict: has this roadmap item been resolved?',
+            },
+            `review: ${review}`,
           ),
         )
       }
@@ -707,11 +860,13 @@ export function mountRoadmapPane(
       )
       row.append(main)
       row.addEventListener('click', () => {
+        if (reviewing || importing) return
+        if (item.id !== selectedId) cancelResolutionCheckUi()
         selectedId = item.id
         creating = false
-        importing = false
         renderList()
         renderEditor()
+        void maybeAutoCheckResolution(item)
       })
       listBody.append(row)
     }
@@ -736,15 +891,24 @@ export function mountRoadmapPane(
     if (token !== loadToken) return
     items = next
     // Drop a selection whose item vanished (deleted elsewhere), but keep an
-    // in-progress new-item form open.
-    if (selectedId && !items.some((m) => m.id === selectedId) && !creating) {
+    // in-progress new-item form open. During review/import the viewer column
+    // is owned by the overlay — don't restore a list selection on top of it.
+    if (
+      !reviewing &&
+      !importing &&
+      selectedId &&
+      !items.some((m) => m.id === selectedId) &&
+      !creating
+    ) {
       selectedId = null
     }
     renderList()
+    if (reviewing) renderReviewResults()
     renderEditor(opts)
   }
 
   function startNew(): void {
+    cancelResolutionCheckUi()
     selectedId = null
     creating = true
     importing = false
@@ -830,10 +994,20 @@ export function mountRoadmapPane(
   }
 
   function cancel(): void {
+    cancelResolutionCheckUi()
     creating = false
     selectedId = null
     renderList()
     renderEditor()
+  }
+
+  /** Drop in-flight deep-check UI when navigating away from the item under check. */
+  function cancelResolutionCheckUi(): void {
+    if (!resolutionCheckInFlight) return
+    resolutionCheckToken++
+    resolutionCheckInFlight = false
+    resolutionCheckItemId = null
+    resolutionBtn.disabled = false
   }
 
   // Row-level status flip (✓ / ↺). Status-only IPC — never re-classifies the
@@ -867,6 +1041,57 @@ export function mountRoadmapPane(
       fitCheckInFlight = false
       fitBtn.disabled = false
     }
+  }
+
+  async function ensureCheckpoint(): Promise<{
+    lastReviewAt: string | null
+    lastAcknowledgedBulkRun: string | null
+    pendingBulkRun: string | null
+  }> {
+    if (cachedCheckpoint !== undefined) return cachedCheckpoint
+    cachedCheckpoint = await api.roadmap.lastReviewAt()
+    return cachedCheckpoint
+  }
+
+  async function checkResolution(): Promise<void> {
+    if (!selectedId) return
+    const token = ++resolutionCheckToken
+    const itemId = selectedId
+    resolutionCheckItemId = itemId
+    resolutionBtn.disabled = true
+    resolutionCheckInFlight = true
+    reviewResult.hidden = false
+    reviewResultMeta.textContent = 'Deep resolution check…'
+    reviewResultBody.hidden = true
+    reviewResultBody.replaceChildren()
+    try {
+      await api.roadmap.reviewItemDeep(itemId)
+      if (token !== resolutionCheckToken) return
+      resolutionCheckInFlight = false
+      resolutionCheckItemId = null
+      await refresh({ preserveDirty: true })
+    } catch (err) {
+      if (token !== resolutionCheckToken) return
+      reviewResultMeta.textContent = ipcErrorMessage(err, 'Resolution check failed.')
+      reviewResultBody.hidden = true
+      reviewResultBody.replaceChildren()
+    } finally {
+      if (token === resolutionCheckToken) {
+        resolutionCheckInFlight = false
+        resolutionCheckItemId = null
+        resolutionBtn.disabled = false
+      }
+    }
+  }
+
+  /** Auto deep-check when opening an item whose bulk verdict is stale. */
+  async function maybeAutoCheckResolution(item: RoadmapItem): Promise<void> {
+    if (reviewing || resolutionCheckInFlight) return
+    if (item.status === 'done' || item.status === 'archived') return
+    const checkpoint = await ensureCheckpoint()
+    if (!isReviewStale(item.fields, item.status, checkpoint)) return
+    if (selectedId !== item.id) return
+    await checkResolution()
   }
 
   // Open a fresh thread pre-filled with the item's prompt (plus its notes as a
@@ -962,7 +1187,9 @@ export function mountRoadmapPane(
   }
 
   function startImport(): void {
+    cancelResolutionCheckUi()
     importing = true
+    reviewing = false
     creating = false
     selectedId = null
     openIssues = []
@@ -1026,7 +1253,215 @@ export function mountRoadmapPane(
     renderEditor()
   }
 
+  function reviewSuggestArchive(verdict: ReviewItemResult['verdict']): boolean {
+    return verdict === 'resolved' || verdict === 'likely'
+  }
+
+  async function setItemStatusFromReview(id: string, status: RoadmapStatus): Promise<boolean> {
+    try {
+      const updated = await api.roadmap.setStatus(id, status)
+      if (!updated) return false
+      reviewApplied.set(id, status)
+      await refresh({ preserveDirty: true })
+      renderReviewResults()
+      return true
+    } catch (err) {
+      reviewStatus.textContent = ipcErrorMessage(err, 'Could not update roadmap item.')
+      return false
+    }
+  }
+
+  function openReviewItem(id: string): void {
+    cancelResolutionCheckUi()
+    selectedId = id
+    creating = false
+    reviewing = false
+    renderList()
+    renderEditor()
+  }
+
+  function renderReviewResults(): void {
+    clear(reviewList)
+    let pendingResolved = 0
+    for (const result of reviewResults) {
+      const item = items.find((i) => i.id === result.id)
+      const title = item?.title || '(untitled)'
+      const applied = reviewApplied.get(result.id)
+      const row = el('div', {
+        class: `roadmap-review-row${applied ? ' is-applied' : ''}`,
+      })
+      const header = el('div', { class: 'roadmap-review-row-header' })
+      header.append(
+        el('div', { class: 'roadmap-review-row-title' }, title),
+        el(
+          'span',
+          { class: `roadmap-review-badge is-${result.verdict}` },
+          `review: ${result.verdict}`,
+        ),
+      )
+      if (applied) {
+        header.append(el('span', { class: 'roadmap-review-applied-badge' }, `status: ${applied}`))
+      }
+      row.append(header)
+      if (result.detail) {
+        const detailEl = el('div', {
+          class: 'roadmap-review-row-detail message-text streaming-markdown',
+        })
+        detailEl.innerHTML = renderMarkdown(reviewDetailMarkdown(result.detail))
+        row.append(detailEl)
+      }
+      const evidence: string[] = []
+      if (result.pinnedIssue) {
+        evidence.push(
+          `Pinned ${result.pinnedIssue.ref} [${result.pinnedIssue.state}]: ${result.pinnedIssue.title}`,
+        )
+      }
+      for (const linked of result.linkedIssues) {
+        evidence.push(`Linked #${String(linked.number)} [${linked.state}]: ${linked.title}`)
+      }
+      if (evidence.length > 0) {
+        row.append(
+          el('div', { class: 'memories-meta roadmap-review-evidence' }, evidence.join(' · ')),
+        )
+      }
+      const actions = el('div', { class: 'memories-actions roadmap-review-row-actions' })
+      const openBtn = el(
+        'button',
+        { type: 'button', class: 'memories-btn roadmap-review-open' },
+        'Open',
+      )
+      openBtn.addEventListener('click', () => {
+        openReviewItem(result.id)
+      })
+      actions.append(openBtn)
+      if (!applied && reviewSuggestArchive(result.verdict)) {
+        pendingResolved++
+        const doneBtn = el(
+          'button',
+          { type: 'button', class: 'memories-btn memories-btn-primary roadmap-review-mark-done' },
+          'Mark done',
+        )
+        doneBtn.addEventListener('click', () => {
+          void setItemStatusFromReview(result.id, 'done')
+        })
+        const archiveBtn = el(
+          'button',
+          { type: 'button', class: 'memories-btn roadmap-review-archive' },
+          'Archive',
+        )
+        archiveBtn.addEventListener('click', () => {
+          void setItemStatusFromReview(result.id, 'archived')
+        })
+        actions.append(doneBtn, archiveBtn)
+      }
+      row.append(actions)
+      reviewList.append(row)
+    }
+    const hasBulk = pendingResolved > 0
+    reviewMarkResolvedBtn.hidden = !hasBulk
+    reviewArchiveResolvedBtn.hidden = !hasBulk
+    reviewMarkResolvedBtn.disabled = !hasBulk
+    reviewArchiveResolvedBtn.disabled = !hasBulk
+  }
+
+  async function applyReviewBulkStatus(status: 'done' | 'archived'): Promise<void> {
+    const label = status === 'done' ? 'mark done' : 'archive'
+    const targets = reviewResults.filter(
+      (r) => reviewSuggestArchive(r.verdict) && !reviewApplied.has(r.id),
+    )
+    if (targets.length === 0) {
+      reviewStatus.textContent = `Nothing left to ${label}.`
+      return
+    }
+    if (
+      !confirm(
+        `${status === 'done' ? 'Mark' : 'Archive'} ${String(targets.length)} item(s) judged resolved or likely?`,
+      )
+    ) {
+      return
+    }
+    reviewMarkResolvedBtn.disabled = true
+    reviewArchiveResolvedBtn.disabled = true
+    let applied = 0
+    for (const [index, result] of targets.entries()) {
+      reviewStatus.textContent = `${status === 'done' ? 'Marking done' : 'Archiving'} ${String(index + 1)} of ${String(targets.length)}…`
+      if (await setItemStatusFromReview(result.id, status)) applied++
+    }
+    reviewStatus.textContent = `Updated ${String(applied)} item(s).`
+    reviewMarkResolvedBtn.disabled = false
+    reviewArchiveResolvedBtn.disabled = false
+  }
+
+  async function startReview(): Promise<void> {
+    cancelResolutionCheckUi()
+    const runToken = ++reviewRunToken
+    reviewing = true
+    bulkReviewFinished = false
+    bulkRunId = null
+    importing = false
+    creating = false
+    selectedId = null
+    reviewResults = []
+    reviewApplied.clear()
+    clear(reviewList)
+    reviewStatus.textContent = 'Preparing review…'
+    reviewBtn.disabled = true
+    renderList()
+    renderEditor()
+    try {
+      const prepared = await api.roadmap.prepareReview()
+      if (runToken !== reviewRunToken) {
+        void api.roadmap.abortReview(prepared.runId)
+        return
+      }
+      bulkRunId = prepared.runId
+      if (prepared.items.length === 0) {
+        reviewStatus.textContent = 'No active roadmap items to review.'
+        return
+      }
+      const sinceLabel = prepared.since
+        ? `since ${knowledgeDate(prepared.since)}`
+        : 'first review (recent commits)'
+      reviewStatus.textContent = `Reviewing ${String(prepared.items.length)} item(s); commits ${sinceLabel}.`
+      for (const [index, item] of prepared.items.entries()) {
+        reviewStatus.textContent = `Reviewing ${String(index + 1)} of ${String(prepared.items.length)}: ${item.title}…`
+        const result = await api.roadmap.reviewItem(item.id, prepared.commits, prepared.runId)
+        if (runToken !== reviewRunToken) return
+        reviewResults.push(result)
+        renderReviewResults()
+        await refresh({ preserveDirty: true })
+      }
+      bulkReviewFinished = true
+      reviewStatus.textContent = `Review complete — ${String(reviewResults.length)} item(s) judged. Use the row actions to mark done, archive, or open an item. Close when finished to advance the commit checkpoint.`
+    } catch (err) {
+      reviewStatus.textContent = ipcErrorMessage(err, 'Roadmap review failed.')
+    } finally {
+      reviewBtn.disabled = false
+    }
+  }
+
+  function closeReview(): void {
+    reviewRunToken++
+    if (bulkReviewFinished && bulkRunId) {
+      void api.roadmap.completeReview(bulkRunId).then(() => {
+        cachedCheckpoint = undefined
+      })
+    } else if (bulkRunId) {
+      void api.roadmap.abortReview(bulkRunId).then(() => {
+        cachedCheckpoint = undefined
+      })
+    }
+    reviewing = false
+    bulkReviewFinished = false
+    bulkRunId = null
+    renderEditor()
+  }
+
   importBtn.addEventListener('click', startImport)
+  reviewBtn.addEventListener('click', () => void startReview())
+  reviewCloseBtn.addEventListener('click', closeReview)
+  reviewMarkResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('done'))
+  reviewArchiveResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('archived'))
   importConfirmBtn.addEventListener('click', () => void confirmImport())
   importCancelBtn.addEventListener('click', cancelImport)
 
@@ -1095,6 +1530,7 @@ export function mountRoadmapPane(
   })
   reopenBtn.addEventListener('click', reopenThread)
   fitBtn.addEventListener('click', () => void checkFit())
+  resolutionBtn.addEventListener('click', () => void checkResolution())
   deleteBtn.addEventListener('click', () => void remove())
   cancelBtn.addEventListener('click', cancel)
 
@@ -1127,9 +1563,11 @@ export function mountRoadmapPane(
     }),
     store.on('workspace_changed', () => {
       // The roadmap is per-project; drop the previous workspace's selection.
+      cancelResolutionCheckUi()
       selectedId = null
       creating = false
       importing = false
+      reviewing = false
       items = []
       resetAttachmentEdits()
       attachmentDataCache.clear()

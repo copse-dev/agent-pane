@@ -42,6 +42,7 @@ const MOCK_OPEN_ISSUES: GhIssueSummary[] = [
     body: 'On launch the window paints light for ~200ms before the persisted dark theme applies.',
     labels: ['bug', 'ui'],
     updatedAt: '2026-07-01T10:00:00Z',
+    state: 'open',
   },
   {
     owner: 'copse-mock',
@@ -52,6 +53,7 @@ const MOCK_OPEN_ISSUES: GhIssueSummary[] = [
     body: '',
     labels: ['enhancement'],
     updatedAt: '2026-07-05T10:00:00Z',
+    state: 'open',
   },
 ]
 
@@ -123,6 +125,21 @@ export const mockGitHubBackend: GitHubBackend = {
     const status = mockGhCliStatus()
     if (!status.authenticated) return Promise.resolve(null)
     return Promise.resolve(MOCK_OPEN_ISSUES.find((i) => i.number === ref.number) ?? null)
+  },
+
+  searchWorkspaceIssues(query: string, limit: number): Promise<GhIssueSummary[]> {
+    const status = mockGhCliStatus()
+    if (!status.authenticated) return Promise.resolve([])
+    const needle = query.trim().toLowerCase()
+    if (!needle) return Promise.resolve([])
+    return Promise.resolve(
+      MOCK_OPEN_ISSUES.filter(
+        (issue) =>
+          issue.title.toLowerCase().includes(needle) ||
+          issue.body.toLowerCase().includes(needle) ||
+          `#${String(issue.number)}`.includes(needle),
+      ).slice(0, limit),
+    )
   },
 
   getPrDetails(ref: PrRef): Promise<GhPrDetails | null> {

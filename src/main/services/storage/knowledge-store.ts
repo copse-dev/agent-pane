@@ -505,6 +505,11 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
   }
   let order = maxOrder + 1
 
+  // `scanNoteFiles` returns files in `readdirSync` order, which is
+  // filesystem-dependent and unstable. Collect the valid orphans first and heal
+  // them in a deterministic order (createdAt, then id) so the assigned `order` —
+  // and therefore the render order — is reproducible across machines.
+  const orphans: { rel: string; note: KnowledgeNote }[] = []
   for (const rel of orphanFiles) {
     if (indexedFiles.has(rel)) continue // already indexed — no double-read
     const abs = join(knowledgeDirPath, rel)
@@ -525,6 +530,18 @@ export function loadKnowledgeNotes(type?: string): KnowledgeNote[] {
     const note = parseNoteFile(raw, abs)
     if (!note) continue
 
+    seen.add(note.id) // guard against duplicate ids across orphan files
+    orphans.push({ rel, note })
+  }
+
+  orphans.sort((a, b) => {
+    if (a.note.createdAt !== b.note.createdAt) {
+      return a.note.createdAt < b.note.createdAt ? -1 : 1
+    }
+    return a.note.id < b.note.id ? -1 : a.note.id > b.note.id ? 1 : 0
+  })
+
+  for (const { rel, note } of orphans) {
     appendIndex({
       id: note.id,
       type: note.type,
