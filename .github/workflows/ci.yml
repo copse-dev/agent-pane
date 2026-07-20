@@ -743,7 +743,7 @@ jobs:
       # offer them for manual review. Needs Node + pixelmatch/pngjs only — install
       # just those two into node_modules (an isolated, scripts-off install, ~0.3s)
       # rather than a full `npm ci`; this job otherwise needs no dependency tree.
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         if: steps.head.outputs.exists == 'true'
         with:
           node-version: '22'

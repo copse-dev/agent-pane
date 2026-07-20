@@ -71,7 +71,7 @@ runs:
     # On a miss, `npm ci` simply repopulates ~/.npm from the network and the
     # node_modules cache hits next time. So this layer is pure waste on the hit path
     # and redundant on the miss path.
-    - uses: actions/setup-node@v6
+    - uses: actions/setup-node@v7
       with: { node-version-file: '.nvmrc' }
     # ripgrep backs the app's code-search services at runtime; the unit suite
     # and the e2e app both exercise them. GitHub-hosted runners have passwordless
