@@ -270,6 +270,56 @@ describe('input bar first-message checkout', () => {
 })
 
 describe('input bar branch mismatch warning', () => {
+  it('does not block submit when an isolated worktree binds a different branch', async () => {
+    let runs = 0
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [
+        {
+          ...thread('copse/first-message'),
+          worktreeChoice: 'worktree',
+          worktree: {
+            path: '/worktrees/thread-1',
+            branch: 'copse/first-message',
+            baseBranch: 'main',
+            baseCommit: 'a'.repeat(40),
+            createdAt: 2,
+            seededFromDirtyProject: false,
+          },
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await settle()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submitBtn = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submitBtn)
+    composer.textContent = 'Follow up in the worktree'
+    submitBtn.click()
+    await settle()
+
+    assert.equal(runs, 1)
+    const warning = host.querySelector<HTMLElement>('.composer-branch-warning')
+    assert.ok(warning)
+    assert.equal(warning.hidden, true)
+  })
+
   it('shows an inline checkout action instead of native validation', async () => {
     let checkedOutBranch: string | null = null
     let branchRefreshes = 0

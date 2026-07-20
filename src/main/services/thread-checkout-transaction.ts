@@ -1,3 +1,5 @@
+import { realpath } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import type { Project } from '@shared/types/state.ts'
 import type { Thread } from '@shared/types/thread.ts'
 import type {
@@ -13,6 +15,8 @@ import { runSerialized } from './storage/write-queue.ts'
 import { getProjectThread, updateMetaOrThrow } from './thread-store.ts'
 import {
   allocateThreadWorktree,
+  expectedThreadWorktreePath,
+  listProjectWorktrees,
   retireThreadWorktree,
   validateThreadWorktree,
 } from './worktree-manager.ts'
@@ -62,6 +66,17 @@ export interface ThreadCheckoutTransactionDependencies {
     prompt: string
     baseBranch: string
   }) => Promise<ThreadWorktree>
+  /**
+   * Reclaim a linked checkout left behind when allocate succeeded but
+   * metadata persistence failed (especially dirty-seeded worktrees that
+   * refuse retirement).
+   */
+  recoverUnpersisted: (input: {
+    projectId: string
+    threadId: string
+    projectRoot: string
+    baseBranch: string
+  }) => Promise<ThreadWorktree | null>
   validate: (input: {
     projectId: string
     threadId: string
@@ -121,12 +136,37 @@ async function inspectProject(project: Project, isLocal: boolean): Promise<Check
   }
 }
 
+async function recoverUnpersistedWorktree(input: {
+  projectId: string
+  threadId: string
+  projectRoot: string
+  baseBranch: string
+}): Promise<ThreadWorktree | null> {
+  const target = expectedThreadWorktreePath(input.projectId, input.threadId)
+  const records = await listProjectWorktrees(input.projectRoot)
+  const existing = records.find((record) => resolve(record.path) === resolve(target))
+  if (!existing?.branch || !existing.head) return null
+  const canonicalPath = await realpath(existing.path).catch(() => null)
+  if (!canonicalPath) return null
+  return {
+    path: canonicalPath,
+    branch: existing.branch,
+    baseBranch: input.baseBranch,
+    baseCommit: existing.head,
+    createdAt: Date.now(),
+    // Conservative: a reclaim path is only needed when retirement was refused
+    // (dirty seed / dirty worktree). Marking true preserves that retention.
+    seededFromDirtyProject: true,
+  }
+}
+
 const defaultDependencies: ThreadCheckoutTransactionDependencies = {
   getProject: projectById,
   getThread: getProjectThread,
   updateMeta: updateMetaOrThrow,
   inspect: inspectProject,
   allocate: allocateThreadWorktree,
+  recoverUnpersisted: recoverUnpersistedWorktree,
   validate: validateThreadWorktree,
   retire: retireThreadWorktree,
   serialize: runSerialized,
@@ -208,13 +248,32 @@ export function createThreadCheckoutTransaction(
 
       if (!inspection.currentBranch)
         throw new Error('Cannot create a worktree from a detached HEAD')
-      const worktree = await dependencies.allocate({
+      // A prior allocate may have succeeded while meta persistence failed. Prefer
+      // reclaiming that registration over a second allocate that would throw
+      // "already registered" and strand the thread.
+      const recovered = await dependencies.recoverUnpersisted({
         projectId: input.projectId,
         threadId: input.threadId,
         projectRoot: project.path,
-        prompt: input.prompt,
         baseBranch: inspection.currentBranch,
       })
+      const worktree =
+        recovered ??
+        (await dependencies.allocate({
+          projectId: input.projectId,
+          threadId: input.threadId,
+          projectRoot: project.path,
+          prompt: input.prompt,
+          baseBranch: inspection.currentBranch,
+        }))
+      if (recovered) {
+        await dependencies.validate({
+          projectId: input.projectId,
+          threadId: input.threadId,
+          projectRoot: project.path,
+          worktree,
+        })
+      }
       try {
         await dependencies.updateMeta(input.projectId, input.threadId, {
           worktreeChoice: input.choice,
@@ -223,15 +282,17 @@ export function createThreadCheckoutTransaction(
         })
       } catch (error) {
         // A pristine just-created checkout is safe to retire. Dirty seeded state
-        // is deliberately retained by the manager for recovery.
-        await dependencies
-          .retire({
-            projectId: input.projectId,
-            threadId: input.threadId,
-            projectRoot: project.path,
-            worktree,
-          })
-          .catch(() => undefined)
+        // (and any reclaim candidate) is deliberately retained for the next retry.
+        if (!worktree.seededFromDirtyProject) {
+          await dependencies
+            .retire({
+              projectId: input.projectId,
+              threadId: input.threadId,
+              projectRoot: project.path,
+              worktree,
+            })
+            .catch(() => undefined)
+        }
         throw error
       }
       return {

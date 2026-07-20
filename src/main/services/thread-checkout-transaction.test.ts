@@ -61,6 +61,7 @@ function fixture(overrides: Partial<ThreadCheckoutTransactionDependencies> = {})
     allocate: async () => {
       throw new Error('unexpected allocation')
     },
+    recoverUnpersisted: async () => null,
     validate: async ({ worktree }) => ({ branch: worktree.branch }),
     retire: async () => undefined,
     serialize: serial(),
@@ -175,6 +176,85 @@ describe('first-message checkout transaction', () => {
       /not git/,
     )
     assert.equal(patches.length, 0)
+  })
+
+  it('reclaims an unpersisted dirty worktree when meta write failed earlier', async () => {
+    const recovered: ThreadWorktree = {
+      path: '/worktrees/thread-1',
+      branch: 'copse/task-thread1',
+      baseBranch: 'main',
+      baseCommit: 'b'.repeat(40),
+      createdAt: 3,
+      seededFromDirtyProject: true,
+    }
+    let allocations = 0
+    let retireCalls = 0
+    const { prepare, getThread } = fixture({
+      inspect: async () => ({
+        isGitRepository: true,
+        currentBranch: 'main',
+        defaultBranch: 'main',
+        isDirty: true,
+        hasSubmodules: false,
+      }),
+      allocate: async () => {
+        allocations += 1
+        throw new Error('Thread worktree is already registered: /worktrees/thread-1')
+      },
+      recoverUnpersisted: async () => recovered,
+      retire: async () => {
+        retireCalls += 1
+        return { status: 'blocked-dirty', paths: ['scratch.txt'] }
+      },
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Retry after meta failure',
+      choice: 'worktree',
+    })
+
+    assert.equal(allocations, 0)
+    assert.equal(retireCalls, 0)
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.deepEqual(result.worktree, recovered)
+    assert.equal(getThread().worktreeChoice, 'worktree')
+    assert.equal(getThread().gitBranch, recovered.branch)
+    assert.deepEqual(getThread().worktree, recovered)
+  })
+
+  it('retains a dirty-seeded worktree when metadata persistence fails', async () => {
+    const worktree: ThreadWorktree = {
+      path: '/worktrees/thread-1',
+      branch: 'copse/task-thread1',
+      baseBranch: 'main',
+      baseCommit: 'c'.repeat(40),
+      createdAt: 4,
+      seededFromDirtyProject: true,
+    }
+    let retireCalls = 0
+    const { prepare } = fixture({
+      allocate: async () => worktree,
+      updateMeta: async () => {
+        throw new Error('disk full')
+      },
+      retire: async () => {
+        retireCalls += 1
+        return { status: 'blocked-dirty', paths: ['scratch.txt'] }
+      },
+    })
+
+    await assert.rejects(
+      prepare({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        prompt: 'Persist please',
+        choice: 'worktree',
+      }),
+      /disk full/,
+    )
+    assert.equal(retireCalls, 0, 'dirty-seeded checkouts must stay registered for reclaim')
   })
 
   it('keeps legacy conversations on their existing shared checkout', async () => {
