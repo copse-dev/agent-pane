@@ -4,9 +4,11 @@ import assert from 'node:assert/strict'
 import {
   compositeScoredLocalModels,
   createIntellectFrontierPanel,
+  createTooltipLayer,
   extraProviderFrontierCandidates,
   localFrontierCandidates,
   pointTooltipContent,
+  positionFrontierTooltip,
   renderCompositeStrip,
   renderFrontierSvg,
 } from './intellect-frontier-panel.ts'
@@ -538,5 +540,64 @@ describe('plan coverage on the map', () => {
     const card = pointTooltipContent(p)
     assert.match(card.textContent, /Weekly Fable plan limit reached/)
     assert.match(card.textContent, /plotted at its off-plan price/)
+  })
+})
+
+describe('positionFrontierTooltip', () => {
+  it('flips to the left of the cursor near the right edge', () => {
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 400,
+          height: 300,
+          right: 400,
+          bottom: 300,
+        }) as DOMRect,
+    })
+    document.body.append(container)
+
+    const tip = document.createElement('div')
+    Object.defineProperty(tip, 'offsetWidth', { value: 200 })
+    Object.defineProperty(tip, 'offsetHeight', { value: 80 })
+    container.append(tip)
+
+    positionFrontierTooltip(tip, container, { clientX: 390, clientY: 120 })
+    assert.equal(tip.style.left, '178px')
+
+    container.remove()
+  })
+
+  it('positions via createTooltipLayer without squeezing width', () => {
+    const container = document.createElement('div')
+    Object.defineProperty(container, 'getBoundingClientRect', {
+      value: () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 400,
+          height: 300,
+          right: 400,
+          bottom: 300,
+        }) as DOMRect,
+    })
+    document.body.append(container)
+
+    const tooltip = createTooltipLayer(container)
+    const content = document.createElement('div')
+    content.textContent = 'Wide hover card content that should not wrap into a skinny column'
+
+    const tipEl = container.querySelector('.frontier-tooltip')
+    assert.ok(tipEl instanceof HTMLElement)
+    Object.defineProperty(tipEl, 'offsetWidth', { value: 280 })
+    Object.defineProperty(tipEl, 'offsetHeight', { value: 64 })
+
+    tooltip.show(content, { clientX: 390, clientY: 120 } as MouseEvent)
+    assert.equal(tipEl.hidden, false)
+    assert.equal(tipEl.style.left, '98px')
+
+    container.remove()
   })
 })
