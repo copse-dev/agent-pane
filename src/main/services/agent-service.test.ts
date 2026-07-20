@@ -8,6 +8,7 @@ import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
 import type { ToolRegistry } from './tool-registry.ts'
 import { runWithActiveRunIdentity } from './thread-models.ts'
+import { runWithThreadExecutionContext } from './thread-execution-context.ts'
 
 // agent-service is now an orchestrator that re-exports the public surface from the
 // focused modules it composes. These tests pin that public surface so IPC callers
@@ -50,8 +51,19 @@ describe('runAgent AgentHost decoupling', () => {
     const registry = { toLLMTools: () => [] } as unknown as ToolRegistry
 
     try {
-      await runWithActiveRunIdentity('thread-1', () =>
-        agentService.runAgent('thread-1', 'hello', [], host, registry),
+      await runWithThreadExecutionContext(
+        {
+          projectId: 'project-1',
+          threadId: 'thread-1',
+          projectRoot: '/workspace',
+          root: '/workspace',
+          checkoutMode: 'shared',
+          branch: null,
+        },
+        () =>
+          runWithActiveRunIdentity('thread-1', () =>
+            agentService.runAgent('thread-1', 'hello', [], host, registry),
+          ),
       )
 
       assert.ok(received.length >= 1, 'expected the agent run to emit at least one chunk')

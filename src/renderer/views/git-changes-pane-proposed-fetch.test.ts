@@ -118,7 +118,22 @@ function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Mona
   } as unknown as typeof Monaco
 }
 
-function makeApi(stagedContent: Record<string, ActiveDiff>, contentCalls: string[]): ApiClient {
+interface DiffListeners {
+  showDiff?: (
+    projectId: string,
+    threadId: string,
+    path: string,
+    before: string,
+    after: string,
+    language: string,
+  ) => void
+}
+
+function makeApi(
+  stagedContent: Record<string, ActiveDiff>,
+  contentCalls: string[],
+  listeners?: DiffListeners,
+): ApiClient {
   const noopUnsub = (): (() => void) => () => {}
   return {
     git: {
@@ -132,11 +147,14 @@ function makeApi(stagedContent: Record<string, ActiveDiff>, contentCalls: string
       reject: async () => {},
       approveAll: async () => {},
       rejectAll: async () => {},
-      content: async (path: string) => {
+      content: async (_projectId: string, _threadId: string, path: string) => {
         contentCalls.push(path)
         return stagedContent[path] ?? null
       },
-      onShowDiff: noopUnsub(),
+      onShowDiff: (handler: NonNullable<DiffListeners['showDiff']>) => {
+        if (listeners) listeners.showDiff = handler
+        return noopUnsub()
+      },
       onQueued: noopUnsub(),
       onConflict: noopUnsub(),
     },
@@ -187,7 +205,12 @@ async function waitForReveal(capture: { editor: StubDiffEditor | null }): Promis
 
 describe('git changes pane fetches proposed diff content on cache miss', () => {
   it('renders a proposed diff whose show_diff push was never received', async () => {
-    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'changes' })
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
     store.setState({ stagedDiffs: [{ path: 'x.ts', language: 'typescript' }] })
 
     const contentCalls: string[] = []
@@ -219,7 +242,12 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
   })
 
   it('clears the viewer when the queue entry has no retrievable content', async () => {
-    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'changes' })
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
     store.setState({ stagedDiffs: [{ path: 'gone.ts', language: 'typescript' }] })
 
     const contentCalls: string[] = []
@@ -237,5 +265,57 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
 
     assert.deepEqual(contentCalls, ['gone.ts'], 'should attempt the fetch once')
     assert.equal(capture.editor?.models ?? null, null, 'no model set when content is unavailable')
+  })
+
+  it('keeps same-path content isolated when switching between threads', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-a',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    store.setState({ stagedDiffs: [{ path: 'same.ts', language: 'typescript' }] })
+
+    const listeners: DiffListeners = {}
+    const capture: { editor: StubDiffEditor | null } = { editor: null }
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    forceVisible(viewerRoot)
+    document.body.append(listRoot, viewerRoot)
+
+    mountGitChangesPane(
+      listRoot,
+      viewerRoot,
+      store,
+      makeApi({}, [], listeners),
+      makeMonacoStub(capture),
+    )
+    listeners.showDiff?.(
+      'project-1',
+      'thread-a',
+      'same.ts',
+      'a-before\n',
+      'a-after\n',
+      'typescript',
+    )
+    await settle()
+
+    store.setState({ activeThreadId: 'thread-b', activeDiff: null })
+    listeners.showDiff?.(
+      'project-1',
+      'thread-b',
+      'same.ts',
+      'b-before\n',
+      'b-after\n',
+      'typescript',
+    )
+    await settle()
+    assert.equal(capture.editor?.models?.modified.value, 'b-after\n')
+
+    store.setState({ activeThreadId: 'thread-a', activeDiff: null })
+    store.emit('staged_diffs_changed')
+    await settle()
+    assert.equal(capture.editor.models.original.value, 'a-before\n')
+    assert.equal(capture.editor.models.modified.value, 'a-after\n')
   })
 })

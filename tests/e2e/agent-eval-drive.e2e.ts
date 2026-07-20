@@ -106,19 +106,12 @@ async function approvePendingApprovalDialogs(): Promise<void> {
 }
 
 async function approvePendingDiffs(): Promise<void> {
-  const approved = await browser.execute(async () => {
-    const queuedCount = document.querySelectorAll('.diff-file-btn').length
-    if (queuedCount === 0) return 0
-    const api = (
-      window as unknown as {
-        api?: { diff?: { approveAll?: () => Promise<void> } }
-      }
-    ).api
-    if (!api?.diff?.approveAll) throw new Error('window.api.diff.approveAll unavailable')
-    await api.diff.approveAll()
-    return queuedCount
-  })
-  if (approved > 0) await browser.pause(200)
+  const queuedCount = await browser.execute(
+    () => document.querySelectorAll('.diff-file-btn').length,
+  )
+  if (queuedCount === 0) return
+  await $('button*=Accept all').click()
+  await browser.pause(200)
 }
 
 async function waitForEvalAgentIdle(timeoutMs: number): Promise<void> {
