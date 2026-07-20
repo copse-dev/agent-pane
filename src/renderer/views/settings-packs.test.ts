@@ -161,7 +161,7 @@ describe('settings → packs list', () => {
     assert.ok(section)
     const desc = section.querySelector('.settings-section-desc')
     assert.ok(desc)
-    assert.doesNotMatch(desc.textContent ?? '', /decision\s*17/i)
+    assert.doesNotMatch(desc.textContent, /decision\s*17/i)
     assert.doesNotMatch(desc.innerHTML, /<code>\s*docs\/packs\.md\s*<\/code>/i)
     const docsLink = desc.querySelector<HTMLAnchorElement>(
       'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/packs.md"]',
@@ -169,7 +169,7 @@ describe('settings → packs list', () => {
     assert.ok(docsLink)
     assert.equal(docsLink.target, '_blank')
     assert.match(docsLink.rel, /noopener/)
-    assert.match(docsLink.textContent ?? '', /pack manifest docs/i)
+    assert.match(docsLink.textContent, /pack manifest docs/i)
   })
 
   it('renders one row per pack with a toggle, name, version, and trust badge', async () => {
