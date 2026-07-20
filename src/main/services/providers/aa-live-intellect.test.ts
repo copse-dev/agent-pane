@@ -94,9 +94,11 @@ describe('requestLiveIntellectModels', () => {
     const result = await requestLiveIntellectModels('key', fetch)
     assert.equal(result.ok, true)
     assert.equal(result.models.length, 1)
-    assert.equal(result.models[0]?.id, 'gpt-5')
-    assert.equal(result.models[0].costPerTask, 1.84)
-    assert.equal(result.models[0].inputPricePerMTok, 1.25)
+    const model = result.models[0]
+    assert.ok(model)
+    assert.equal(model.id, 'gpt-5')
+    assert.equal(model.costPerTask, 1.84)
+    assert.equal(model.inputPricePerMTok, 1.25)
   })
 
   it('surfaces a rejected key (403) with an actionable message', async () => {
