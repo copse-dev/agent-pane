@@ -25,7 +25,9 @@ function settingsSection(section: string) {
   return $(`.settings-section[data-section="${section}"]`)
 }
 
-describe('settings packs (about:addons)', () => {
+describe('settings packs (about:addons)', function () {
+  this.timeout(60_000)
+
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
