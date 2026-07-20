@@ -157,6 +157,9 @@ export async function requestLiveIntellectModels(
  * without an Artificial Analysis API key.
  */
 function mockLiveIntellectFetch(): LiveIntellectFetch {
+  // Canonical-scale anchors (pass the live gate) plus GPT rows with task costs
+  // so the $/task axis shows non-plan spread under COPSE_PLAN_USAGE_MOCK (Claude
+  // models plot at $0 when their plan window still has headroom).
   const models: LiveAaModel[] = [
     {
       id: 'claude-fable-5',
@@ -173,6 +176,13 @@ function mockLiveIntellectFetch(): LiveIntellectFetch {
       costPerTask: 3.1,
     },
     {
+      id: 'claude-sonnet-5',
+      intellect: 53.4,
+      inputPricePerMTok: 3,
+      outputPricePerMTok: 15,
+      costPerTask: 1.8,
+    },
+    {
       id: 'claude-sonnet-4-6',
       intellect: 35.9,
       inputPricePerMTok: 3,
@@ -185,6 +195,55 @@ function mockLiveIntellectFetch(): LiveIntellectFetch {
       inputPricePerMTok: 1,
       outputPricePerMTok: 5,
       costPerTask: 0.25,
+    },
+    {
+      id: 'gpt-5.6-sol',
+      intellect: 59,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 4.2,
+    },
+    {
+      id: 'gpt-5.5',
+      intellect: 55,
+      inputPricePerMTok: 5,
+      outputPricePerMTok: 25,
+      costPerTask: 3.6,
+    },
+    {
+      id: 'gpt-5.6-terra',
+      intellect: 46,
+      inputPricePerMTok: 2,
+      outputPricePerMTok: 10,
+      costPerTask: 1.4,
+    },
+    {
+      id: 'gpt-5',
+      intellect: 34.7,
+      inputPricePerMTok: 2,
+      outputPricePerMTok: 10,
+      costPerTask: 1.1,
+    },
+    {
+      id: 'gpt-5-mini',
+      intellect: 25.3,
+      inputPricePerMTok: 0.4,
+      outputPricePerMTok: 1.6,
+      costPerTask: 0.35,
+    },
+    {
+      id: 'gpt-4o',
+      intellect: 11.2,
+      inputPricePerMTok: 2.5,
+      outputPricePerMTok: 10,
+      costPerTask: 0.55,
+    },
+    {
+      id: 'gpt-4o-mini',
+      intellect: 6.9,
+      inputPricePerMTok: 0.15,
+      outputPricePerMTok: 0.6,
+      costPerTask: 0.12,
     },
     {
       id: 'cheap-smart-oss',

@@ -40,7 +40,11 @@ describe('settings usage model value map cost axis', () => {
       async () => (await chart.getAttribute('data-cost-axis')) === 'perTask',
       { timeout: 5000, timeoutMsg: 'value map did not switch to $/task axis' },
     )
-    assert.match(await chart.getText(), /AA cost per Intelligence Index task/)
+    const taskChartText = await chart.getText()
+    assert.match(taskChartText, /AA cost per Intelligence Index task/)
+    // Non-plan models (GPT) must spread across the task-cost axis — not collapse
+    // to the $0 plan column alone.
+    assert.match(taskChartText, /gpt-5\.6-sol|gpt-5\.5|gpt-5-mini/)
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
 
     await prepareE2eScreenshot()
