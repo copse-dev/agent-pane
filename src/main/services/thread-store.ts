@@ -234,6 +234,24 @@ function readProjectThreads(projectId: string): Thread[] {
   return sortThreadsNewestFirst(threads)
 }
 
+/** Store dir ids directly under the workspace root (each is a project's thread store). */
+function listProjectStoreIds(): string[] {
+  const root = workspaceRoot()
+  if (!existsSync(root)) return []
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+}
+
+/** How many thread dirs (a subdir holding a `meta.json`) a store id contains. */
+function countThreadDirs(projectId: string): number {
+  let count = 0
+  for (const threadId of listThreadIds(projectId)) {
+    if (existsSync(join(threadDir(projectId, threadId), META_FILE))) count += 1
+  }
+  return count
+}
+
 // --- Catalog (fast cross-thread index; derived, rebuildable) ----------------
 
 export type CatalogEntry = ThreadCatalogEntry
@@ -681,6 +699,27 @@ export function loadProjectCatalog(projectId: string, query?: string): Promise<T
       ...e,
       spinePath: join(threadDir(projectId, e.path), EVENTS_FILE),
     }))
+  })
+}
+
+/**
+ * Store directories with threads but no matching project entry — the invisible
+ * orphans from issue #997. `knownProjectIds` are the ids currently in config; a
+ * store id not among them (and holding at least one thread) is surfaced so it
+ * can be re-attached. Empty stores are skipped (nothing to recover).
+ */
+export function listOrphanProjectStores(
+  knownProjectIds: string[],
+): Promise<import('@shared/types').OrphanProjectStore[]> {
+  const known = new Set(knownProjectIds)
+  return runSerialized('thread-store:orphans', () => {
+    const orphans: import('@shared/types').OrphanProjectStore[] = []
+    for (const id of listProjectStoreIds()) {
+      if (known.has(id)) continue
+      const threadCount = countThreadDirs(id)
+      if (threadCount > 0) orphans.push({ id, threadCount })
+    }
+    return orphans
   })
 }
 

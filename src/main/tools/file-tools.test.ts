@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -7,6 +7,7 @@ import { ToolRegistry, setPermissionGateForTests } from '../services/tool-regist
 import { readFileTool, listDirTool, LIST_DIR_MAX_ENTRIES } from './file-tools.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { runWithAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
+import { ownedIt as it } from '../services/thread-execution-context.test-support.ts'
 
 import { normalizeToolExecuteResult, type ToolExecuteResult } from '@shared/types'
 

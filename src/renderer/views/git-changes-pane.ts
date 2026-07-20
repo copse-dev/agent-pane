@@ -175,17 +175,42 @@ export function mountGitChangesPane(
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
-  const proposedDiffCache = new Map<string, ActiveDiff>()
+  const proposedDiffCachesByOwner = new Map<string, Map<string, ActiveDiff>>()
   let pendingNavigate: string | null = null
   // Path of a freshly proposed diff the pane should jump to on the next sync,
   // even if an earlier (still-valid) selection would otherwise be preserved.
   let pendingProposedNavigate: string | null = null
 
-  acceptAllBtn.addEventListener('click', () => void api.diff.approveAll())
-  rejectAllBtn.addEventListener('click', () => void api.diff.rejectAll())
+  function activeOwner(): { projectId: string; threadId: string } | null {
+    const { activeProjectId, activeThreadId } = store.getState()
+    return activeProjectId && activeThreadId
+      ? { projectId: activeProjectId, threadId: activeThreadId }
+      : null
+  }
 
-  api.diff.onShowDiff((path, before, after, language) => {
-    proposedDiffCache.set(path, { path, before, after, language })
+  function proposedDiffCacheFor(projectId: string, threadId: string): Map<string, ActiveDiff> {
+    const key = JSON.stringify([projectId, threadId])
+    let cache = proposedDiffCachesByOwner.get(key)
+    if (!cache) {
+      cache = new Map()
+      proposedDiffCachesByOwner.set(key, cache)
+    }
+    return cache
+  }
+
+  acceptAllBtn.addEventListener('click', () => {
+    const owner = activeOwner()
+    if (owner) void api.diff.approveAll(owner.projectId, owner.threadId)
+  })
+  rejectAllBtn.addEventListener('click', () => {
+    const owner = activeOwner()
+    if (owner) void api.diff.rejectAll(owner.projectId, owner.threadId)
+  })
+
+  api.diff.onShowDiff((projectId, threadId, path, before, after, language) => {
+    proposedDiffCacheFor(projectId, threadId).set(path, { path, before, after, language })
+    const owner = activeOwner()
+    if (!owner || owner.projectId !== projectId || owner.threadId !== threadId) return
     // A just-proposed change is the file the agent is now waiting on; jump to it
     // even when a stale-but-valid selection would otherwise stick (#484).
     pendingProposedNavigate = path
@@ -331,7 +356,9 @@ export function mountGitChangesPane(
     restoreInFlight = true
     renderRestoreBanner()
     try {
-      const ok = await api.git.restoreBackup()
+      const owner = activeOwner()
+      if (!owner) return
+      const ok = await api.git.restoreBackup(owner.projectId, owner.threadId)
       if (ok) {
         showToast(
           count === 1
@@ -361,8 +388,14 @@ export function mountGitChangesPane(
     pendingSelect = { kind: 'proposed', path: view.path }
     acceptBtn.hidden = false
     rejectBtn.hidden = false
-    acceptBtn.onclick = (): void => void api.diff.approve(view.path)
-    rejectBtn.onclick = (): void => void api.diff.reject(view.path)
+    acceptBtn.onclick = (): void => {
+      const owner = activeOwner()
+      if (owner) void api.diff.approve(owner.projectId, owner.threadId, view.path)
+    }
+    rejectBtn.onclick = (): void => {
+      const owner = activeOwner()
+      if (owner) void api.diff.reject(owner.projectId, owner.threadId, view.path)
+    }
 
     // Unhide the wrap *before* creating/laying out Monaco — creating the editor
     // while `diffWrap` is still `hidden` (zero size) races layout and leaves the
@@ -385,6 +418,12 @@ export function mountGitChangesPane(
 
   async function selectProposed(path: string): Promise<void> {
     const { stagedDiffs, activeDiff } = store.getState()
+    const owner = activeOwner()
+    if (!owner) {
+      clearViewer()
+      return
+    }
+    const proposedDiffCache = proposedDiffCacheFor(owner.projectId, owner.threadId)
     const queue = stagedDiffs
     pruneStagedDiffCache(proposedDiffCache, queue)
     if (activeDiff) proposedDiffCache.set(activeDiff.path, activeDiff)
@@ -397,7 +436,7 @@ export function mountGitChangesPane(
       // replays it. Pull the content the main-process queue still holds so the
       // diff renders instead of clearing to an empty pane.
       const requestId = ++selectRequestId
-      const fetched = await api.diff.content(path)
+      const fetched = await api.diff.content(owner.projectId, owner.threadId, path)
       if (requestId !== selectRequestId) return
       if (fetched) {
         proposedDiffCache.set(path, fetched)
@@ -555,7 +594,8 @@ export function mountGitChangesPane(
       return
     }
     status = await api.git.status()
-    sessionBackup = await api.git.sessionBackup()
+    const owner = activeOwner()
+    sessionBackup = owner ? await api.git.sessionBackup(owner.projectId, owner.threadId) : null
     renderRestoreBanner()
     renderList()
     await syncSelection()
@@ -576,7 +616,9 @@ export function mountGitChangesPane(
 
   const stopObservingLayout = observeDiffHostLayout(viewerRoot, () => diffEditor)
 
-  const unsubDiffConflict = api.diff.onConflict((paths) => {
+  const unsubDiffConflict = api.diff.onConflict((projectId, threadId, paths) => {
+    const owner = activeOwner()
+    if (!owner || owner.projectId !== projectId || owner.threadId !== threadId) return
     conflictBanner.hidden = false
     conflictBanner.textContent =
       paths.length === 1

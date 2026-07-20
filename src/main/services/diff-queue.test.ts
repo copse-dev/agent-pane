@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, afterEach } from 'node:test'
+import { describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import { mkdtemp, readFile, writeFile, rm, mkdir } from 'node:fs/promises'
@@ -24,6 +24,7 @@ import {
 import { setGitAvailableForTest } from './tool-availability.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
+import { ownedIt, TEST_THREAD_OWNER } from './thread-execution-context.test-support.ts'
 
 function git(cwd: string, args: string[]): void {
   execFileSync('git', args, {
@@ -58,33 +59,39 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('writes the after content when on-disk content still matches the staged before', async () => {
-    await writeFile(join(tempRoot, 'a.txt'), 'original\n', 'utf-8')
-    const result = await applyDiffEntry({
-      path: 'a.txt',
-      before: 'original\n',
-      after: 'updated\n',
-      language: 'plaintext',
-    })
-    assert.deepEqual(result, { status: 'written' })
-    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'updated\n')
-  })
+  ownedIt(
+    'writes the after content when on-disk content still matches the staged before',
+    async () => {
+      await writeFile(join(tempRoot, 'a.txt'), 'original\n', 'utf-8')
+      const result = await applyDiffEntry({
+        path: 'a.txt',
+        before: 'original\n',
+        after: 'updated\n',
+        language: 'plaintext',
+      })
+      assert.deepEqual(result, { status: 'written' })
+      assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'updated\n')
+    },
+  )
 
-  it('refuses to overwrite when the file changed since staging, preserving the intervening change', async () => {
-    // Staged against 'original', but something else wrote 'formatted' to disk.
-    await writeFile(join(tempRoot, 'a.txt'), 'formatted\n', 'utf-8')
-    const result = await applyDiffEntry({
-      path: 'a.txt',
-      before: 'original\n',
-      after: 'updated\n',
-      language: 'plaintext',
-    })
-    assert.deepEqual(result, { status: 'conflict', current: 'formatted\n' })
-    // The intervening change must NOT be discarded.
-    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'formatted\n')
-  })
+  ownedIt(
+    'refuses to overwrite when the file changed since staging, preserving the intervening change',
+    async () => {
+      // Staged against 'original', but something else wrote 'formatted' to disk.
+      await writeFile(join(tempRoot, 'a.txt'), 'formatted\n', 'utf-8')
+      const result = await applyDiffEntry({
+        path: 'a.txt',
+        before: 'original\n',
+        after: 'updated\n',
+        language: 'plaintext',
+      })
+      assert.deepEqual(result, { status: 'conflict', current: 'formatted\n' })
+      // The intervening change must NOT be discarded.
+      assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'formatted\n')
+    },
+  )
 
-  it('writes a brand new file when none existed at staging or approval', async () => {
+  ownedIt('writes a brand new file when none existed at staging or approval', async () => {
     const result = await applyDiffEntry({
       path: 'new.txt',
       before: '',
@@ -95,7 +102,7 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'hello\n')
   })
 
-  it('reports a conflict when a file was created between staging and approval', async () => {
+  ownedIt('reports a conflict when a file was created between staging and approval', async () => {
     // Staged as a new file (before ''), but another writer created it first.
     await writeFile(join(tempRoot, 'new.txt'), 'someone else\n', 'utf-8')
     const result = await applyDiffEntry({
@@ -108,7 +115,7 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     assert.equal(await readFile(join(tempRoot, 'new.txt'), 'utf-8'), 'someone else\n')
   })
 
-  it('creates missing parent directories for a new nested path (#120)', async () => {
+  ownedIt('creates missing parent directories for a new nested path (#120)', async () => {
     const result = await applyDiffEntry({
       path: 'src/feature/new/index.ts',
       before: '',
@@ -122,7 +129,7 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     )
   })
 
-  it('reports an error result instead of throwing when the write fails (#118)', async () => {
+  ownedIt('reports an error result instead of throwing when the write fails (#118)', async () => {
     // A directory occupies the target path, so writeFile fails (EISDIR).
     await mkdir(join(tempRoot, 'busy'), { recursive: true })
     const result = await applyDiffEntry({
@@ -136,7 +143,7 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     assert.match(result.error, /EISDIR|illegal|directory/i)
   })
 
-  it('deletes a file whose on-disk content still matches the staged before', async () => {
+  ownedIt('deletes a file whose on-disk content still matches the staged before', async () => {
     await writeFile(join(tempRoot, 'gone.txt'), 'bye\n', 'utf-8')
     const result = await applyDiffEntry({
       path: 'gone.txt',
@@ -149,7 +156,7 @@ describe('applyDiffEntry (stale-overwrite TOCTOU guard)', () => {
     await assert.rejects(readFile(join(tempRoot, 'gone.txt'), 'utf-8'))
   })
 
-  it('treats a delete of an already-absent file as success, not an error (#504)', async () => {
+  ownedIt('treats a delete of an already-absent file as success, not an error (#504)', async () => {
     // The file was staged for deletion but is no longer on disk at approval
     // time. The desired end state (gone) already holds, so accept-all must not
     // fail on it.
@@ -171,7 +178,7 @@ describe('applyOrStageDiff direct-apply policy', () => {
 
   beforeEach(async () => {
     clearDiffQueueForTest()
-    resetSessionBackup()
+    resetSessionBackup(TEST_THREAD_OWNER)
     setGitAvailableForTest(true)
     tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-diff-direct-'))
     workspaceRoot = join(tempRoot, 'packages/app')
@@ -182,13 +189,13 @@ describe('applyOrStageDiff direct-apply policy', () => {
 
   afterEach(async () => {
     clearDiffQueueForTest()
-    resetSessionBackup()
+    resetSessionBackup(TEST_THREAD_OWNER)
     setGitAvailableForTest(null)
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('continues applying directly when the workspace is below the git root', async () => {
+  ownedIt('continues applying directly when the workspace is below the git root', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
     git(tempRoot, ['add', 'packages/app/a.txt'])
     git(tempRoot, ['commit', '-m', 'add workspace file'])
@@ -202,57 +209,66 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
-  it('backs up unowned changes and applies directly instead of staging for approval', async () => {
-    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
-    git(tempRoot, ['add', 'packages/app/a.txt'])
-    git(tempRoot, ['commit', '-m', 'add workspace file'])
-    // The user has uncommitted work Copse did not make this turn.
-    await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
+  ownedIt(
+    'backs up unowned changes and applies directly instead of staging for approval',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+      git(tempRoot, ['add', 'packages/app/a.txt'])
+      git(tempRoot, ['commit', '-m', 'add workspace file'])
+      // The user has uncommitted work Copse did not make this turn.
+      await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
 
-    const result = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
-    // No longer prompts: the worktree is snapshotted and the edit applies.
-    assert.match(result, /Applied edit directly/)
-    assert.match(result, /backed up to refs\/copse\/backups\//)
-    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'two\n')
-    assert.equal(getDiffQueueForTest().length, 0)
-    // The user's uncommitted file is untouched on disk and recoverable from the ref.
-    assert.equal(await readFile(join(workspaceRoot, 'dirty.txt'), 'utf-8'), 'dirty\n')
-  })
+      const result = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+      // No longer prompts: the worktree is snapshotted and the edit applies.
+      assert.match(result, /Applied edit directly/)
+      assert.match(result, /backed up to refs\/copse\/backups\//)
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'two\n')
+      assert.equal(getDiffQueueForTest().length, 0)
+      // The user's uncommitted file is untouched on disk and recoverable from the ref.
+      assert.equal(await readFile(join(workspaceRoot, 'dirty.txt'), 'utf-8'), 'dirty\n')
+    },
+  )
 
-  it('stages for approval when unowned changes cannot be backed up (no safety net)', async () => {
-    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
-    git(tempRoot, ['add', 'packages/app/a.txt'])
-    git(tempRoot, ['commit', '-m', 'add workspace file'])
-    await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
-    // Git reports unavailable, so the worktree state can't be verified or backed
-    // up — with no safety net, fall back to prompting.
-    setGitAvailableForTest(false)
+  ownedIt(
+    'stages for approval when unowned changes cannot be backed up (no safety net)',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+      git(tempRoot, ['add', 'packages/app/a.txt'])
+      git(tempRoot, ['commit', '-m', 'add workspace file'])
+      await writeFile(join(workspaceRoot, 'dirty.txt'), 'dirty\n', 'utf-8')
+      // Git reports unavailable, so the worktree state can't be verified or backed
+      // up — with no safety net, fall back to prompting.
+      setGitAvailableForTest(false)
 
-    const result = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
-    assert.match(result, /approval is required/)
-    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'one\n')
-    assert.equal(getStagedDiffEntry('a.txt')?.after, 'two\n')
-  })
+      const result = await applyOrStageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+      assert.match(result, /approval is required/)
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'one\n')
+      assert.equal(getStagedDiffEntry('a.txt')?.after, 'two\n')
+    },
+  )
 
-  it('keeps editing directly after a staged diff is approved (approval records ownership)', async () => {
-    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
-    git(tempRoot, ['add', 'packages/app/a.txt'])
-    git(tempRoot, ['commit', '-m', 'add workspace file'])
+  ownedIt(
+    'keeps editing directly after a staged diff is approved (approval records ownership)',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+      git(tempRoot, ['add', 'packages/app/a.txt'])
+      git(tempRoot, ['commit', '-m', 'add workspace file'])
 
-    // First edit goes through the approval queue, then the user approves it.
-    await stageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
-    await approveAllStagedDiffs()
-    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'two\n')
+      // First edit goes through the approval queue, then the user approves it.
+      await stageDiff('a.txt', 'one\n', 'two\n', 'plaintext')
+      await approveAllStagedDiffs()
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'two\n')
 
-    // The next turn must continue applying directly rather than re-proposing the
-    // now-approved file as if it were an unowned external change.
-    const next = await applyOrStageDiff('a.txt', 'two\n', 'three\n', 'plaintext')
-    assert.match(next, /Applied edit directly/)
-    assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'three\n')
-    assert.equal(getDiffQueueForTest().length, 0)
-  })
+      // The next turn must continue applying directly rather than re-proposing the
+      // now-approved file as if it were an unowned external change.
+      const next = await applyOrStageDiff('a.txt', 'two\n', 'three\n', 'plaintext')
+      assert.match(next, /Applied edit directly/)
+      assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'three\n')
+      assert.equal(getDiffQueueForTest().length, 0)
+    },
+  )
 
-  it('treats ./path and path as the same owned file across turns', async () => {
+  ownedIt('treats ./path and path as the same owned file across turns', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
     git(tempRoot, ['add', 'packages/app/a.txt'])
     git(tempRoot, ['commit', '-m', 'add workspace file'])
@@ -268,7 +284,7 @@ describe('applyOrStageDiff direct-apply policy', () => {
     assert.equal(getDiffQueueForTest().length, 0)
   })
 
-  it('records a conflict decision when direct apply sees stale content', async () => {
+  ownedIt('records a conflict decision when direct apply sees stale content', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'current\n', 'utf-8')
     git(tempRoot, ['add', 'packages/app/a.txt'])
     git(tempRoot, ['commit', '-m', 'add workspace file'])
@@ -288,7 +304,7 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
 
   beforeEach(async () => {
     clearDiffQueueForTest()
-    resetSessionBackup()
+    resetSessionBackup(TEST_THREAD_OWNER)
     setGitAvailableForTest(true)
     tempRoot = await mkdtemp(join(tmpdir(), 'agent-pane-adopt-'))
     workspaceRoot = join(tempRoot, 'packages/app')
@@ -299,13 +315,13 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
 
   afterEach(async () => {
     clearDiffQueueForTest()
-    resetSessionBackup()
+    resetSessionBackup(TEST_THREAD_OWNER)
     setGitAvailableForTest(null)
     restoreWorkspace?.()
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('adopts a file a command reformatted so the next edit applies directly', async () => {
+  ownedIt('adopts a file a command reformatted so the next edit applies directly', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
     git(tempRoot, ['add', 'packages/app/a.txt'])
     git(tempRoot, ['commit', '-m', 'add workspace file'])
@@ -325,7 +341,7 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     assert.equal(await readFile(join(workspaceRoot, 'a.txt'), 'utf-8'), 'three\n')
   })
 
-  it('does not adopt a pre-existing dirty file the command left untouched', async () => {
+  ownedIt('does not adopt a pre-existing dirty file the command left untouched', async () => {
     await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
     await writeFile(join(workspaceRoot, 'manual.txt'), 'base\n', 'utf-8')
     git(tempRoot, ['add', '.'])
@@ -351,48 +367,54 @@ describe('adoptWorktreeChangesSince (agent-triggered shell edits)', () => {
     assert.equal(await readFile(join(workspaceRoot, 'manual.txt'), 'utf-8'), 'user edit\n')
   })
 
-  it('listWorktreeChangesSince reports changed paths without adopting them (ACP audit)', async () => {
-    await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
-    git(tempRoot, ['add', 'packages/app/a.txt'])
-    git(tempRoot, ['commit', '-m', 'add workspace file'])
+  ownedIt(
+    'listWorktreeChangesSince reports changed paths without adopting them (ACP audit)',
+    async () => {
+      await writeFile(join(workspaceRoot, 'a.txt'), 'one\n', 'utf-8')
+      git(tempRoot, ['add', 'packages/app/a.txt'])
+      git(tempRoot, ['commit', '-m', 'add workspace file'])
 
-    // An external ACP agent's shell rewrites a tracked file and drops a new one.
-    const baseline = await captureWorktreeBaseline()
-    await writeFile(join(workspaceRoot, 'a.txt'), 'shell edit\n', 'utf-8')
-    await writeFile(join(workspaceRoot, 'new.txt'), 'created\n', 'utf-8')
+      // An external ACP agent's shell rewrites a tracked file and drops a new one.
+      const baseline = await captureWorktreeBaseline()
+      await writeFile(join(workspaceRoot, 'a.txt'), 'shell edit\n', 'utf-8')
+      await writeFile(join(workspaceRoot, 'new.txt'), 'created\n', 'utf-8')
 
-    const changed = await listWorktreeChangesSince(baseline)
-    assert.deepEqual(changed.sort(), ['a.txt', 'new.txt'])
+      const changed = await listWorktreeChangesSince(baseline)
+      assert.deepEqual(changed.sort(), ['a.txt', 'new.txt'])
 
-    // Unlike adoption, listing leaves the paths unowned: a later Copse edit to
-    // the shell-touched file backs up the worktree first (the unowned-change
-    // path) rather than treating it as a silently-owned edit.
-    const result = await applyOrStageDiff('a.txt', 'shell edit\n', 'next\n', 'plaintext')
-    assert.match(result, /Applied edit directly/)
-    assert.match(result, /backed up to refs\/copse\/backups\//)
-  })
+      // Unlike adoption, listing leaves the paths unowned: a later Copse edit to
+      // the shell-touched file backs up the worktree first (the unowned-change
+      // path) rather than treating it as a silently-owned edit.
+      const result = await applyOrStageDiff('a.txt', 'shell edit\n', 'next\n', 'plaintext')
+      assert.match(result, /Applied edit directly/)
+      assert.match(result, /backed up to refs\/copse\/backups\//)
+    },
+  )
 })
 
 describe('upsertStagedDiffEntry', () => {
-  it('replaces after content for the same path while preserving the original before snapshot', () => {
-    const queue = [{ path: 'index.html', before: 'v1', after: 'v2', language: 'html' }]
-    upsertStagedDiffEntry(queue, {
-      path: 'index.html',
-      before: 'v1',
-      after: 'v3',
-      language: 'html',
-    })
-    assert.equal(queue.length, 1)
-    assert.deepEqual(queue[0], {
-      path: 'index.html',
-      before: 'v1',
-      after: 'v3',
-      language: 'html',
-      op: 'write',
-    })
-  })
+  ownedIt(
+    'replaces after content for the same path while preserving the original before snapshot',
+    () => {
+      const queue = [{ path: 'index.html', before: 'v1', after: 'v2', language: 'html' }]
+      upsertStagedDiffEntry(queue, {
+        path: 'index.html',
+        before: 'v1',
+        after: 'v3',
+        language: 'html',
+      })
+      assert.equal(queue.length, 1)
+      assert.deepEqual(queue[0], {
+        path: 'index.html',
+        before: 'v1',
+        after: 'v3',
+        language: 'html',
+        op: 'write',
+      })
+    },
+  )
 
-  it('appends when the path is new', () => {
+  ownedIt('appends when the path is new', () => {
     const queue = [{ path: 'a.ts', before: '', after: 'a', language: 'typescript' }]
     upsertStagedDiffEntry(queue, {
       path: 'b.ts',
@@ -412,18 +434,21 @@ describe('stageDiff same-path coalescing (#118)', () => {
     clearDiffQueueForTest()
   })
 
-  it('keeps a single queue entry for a path and preserves the original before snapshot', async () => {
-    await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
-    await stageDiff('a.txt', 'v1\n', 'v2\n', 'plaintext')
-    const queue = getDiffQueueForTest()
-    const entries = queue.filter((e) => e.path === 'a.txt')
-    assert.equal(entries.length, 1, 'duplicate same-path entries must be coalesced')
-    // Baseline stays the first staged `before`; content is the latest proposal.
-    assert.equal(at(entries, 0).before, 'orig\n')
-    assert.equal(at(entries, 0).after, 'v2\n')
-  })
+  ownedIt(
+    'keeps a single queue entry for a path and preserves the original before snapshot',
+    async () => {
+      await stageDiff('a.txt', 'orig\n', 'v1\n', 'plaintext')
+      await stageDiff('a.txt', 'v1\n', 'v2\n', 'plaintext')
+      const queue = getDiffQueueForTest()
+      const entries = queue.filter((e) => e.path === 'a.txt')
+      assert.equal(entries.length, 1, 'duplicate same-path entries must be coalesced')
+      // Baseline stays the first staged `before`; content is the latest proposal.
+      assert.equal(at(entries, 0).before, 'orig\n')
+      assert.equal(at(entries, 0).after, 'v2\n')
+    },
+  )
 
-  it('keeps distinct entries for distinct paths', async () => {
+  ownedIt('keeps distinct entries for distinct paths', async () => {
     await stageDiff('a.txt', '', 'a\n', 'plaintext')
     await stageDiff('b.txt', '', 'b\n', 'plaintext')
     const queue = getDiffQueueForTest()
@@ -447,45 +472,51 @@ describe('approveAllStagedDiffs', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('removes only applied entries and leaves a conflicting one queued for retry', async () => {
-    await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
-    // b.txt was changed on disk after staging, so applying it will conflict.
-    await writeFile(join(tempRoot, 'b.txt'), 'formatted\n', 'utf-8')
-    await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
-    await stageDiff('b.txt', 'orig\n', 'newB\n', 'plaintext')
+  ownedIt(
+    'removes only applied entries and leaves a conflicting one queued for retry',
+    async () => {
+      await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
+      // b.txt was changed on disk after staging, so applying it will conflict.
+      await writeFile(join(tempRoot, 'b.txt'), 'formatted\n', 'utf-8')
+      await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
+      await stageDiff('b.txt', 'orig\n', 'newB\n', 'plaintext')
 
-    await approveAllStagedDiffs()
+      await approveAllStagedDiffs()
 
-    // a.txt applied and gone; b.txt kept, re-staged against its real on-disk content.
-    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'newA\n')
-    const queue = getDiffQueueForTest()
-    assert.equal(queue.length, 1)
-    assert.equal(at(queue, 0).path, 'b.txt')
-    assert.equal(
-      at(queue, 0).before,
-      'formatted\n',
-      'conflict re-stages against current disk content',
-    )
-    assert.equal(await readFile(join(tempRoot, 'b.txt'), 'utf-8'), 'formatted\n')
-  })
+      // a.txt applied and gone; b.txt kept, re-staged against its real on-disk content.
+      assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'newA\n')
+      const queue = getDiffQueueForTest()
+      assert.equal(queue.length, 1)
+      assert.equal(at(queue, 0).path, 'b.txt')
+      assert.equal(
+        at(queue, 0).before,
+        'formatted\n',
+        'conflict re-stages against current disk content',
+      )
+      assert.equal(await readFile(join(tempRoot, 'b.txt'), 'utf-8'), 'formatted\n')
+    },
+  )
 
-  it('preserves an entry staged for a new path after the apply snapshot was taken', async () => {
-    await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
-    await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
+  ownedIt(
+    'preserves an entry staged for a new path after the apply snapshot was taken',
+    async () => {
+      await writeFile(join(tempRoot, 'a.txt'), 'orig\n', 'utf-8')
+      await stageDiff('a.txt', 'orig\n', 'newA\n', 'plaintext')
 
-    // Stage a new diff while approveAll is in flight; it must survive because
-    // approveAll only removes entries it successfully applied by identity.
-    const apply = approveAllStagedDiffs()
-    await stageDiff('c.txt', '', 'newC\n', 'plaintext')
-    await apply
+      // Stage a new diff while approveAll is in flight; it must survive because
+      // approveAll only removes entries it successfully applied by identity.
+      const apply = approveAllStagedDiffs()
+      await stageDiff('c.txt', '', 'newC\n', 'plaintext')
+      await apply
 
-    const queue = getDiffQueueForTest()
-    assert.deepEqual(
-      queue.map((e) => e.path),
-      ['c.txt'],
-      'a concurrently staged entry must survive approveAll',
-    )
-  })
+      const queue = getDiffQueueForTest()
+      assert.deepEqual(
+        queue.map((e) => e.path),
+        ['c.txt'],
+        'a concurrently staged entry must survive approveAll',
+      )
+    },
+  )
 })
 
 describe('staged-diff resolver (headless host, e.g. ACP)', () => {
@@ -504,7 +535,7 @@ describe('staged-diff resolver (headless host, e.g. ACP)', () => {
     if (tempRoot) await rm(tempRoot, { recursive: true, force: true })
   })
 
-  it('applies a staged write inline when the resolver approves', async () => {
+  ownedIt('applies a staged write inline when the resolver approves', async () => {
     await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
     setStagedDiffResolver(async () => true)
 
@@ -515,26 +546,32 @@ describe('staged-diff resolver (headless host, e.g. ACP)', () => {
     assert.equal(getDiffQueueForTest().length, 0, 'the entry should not linger once resolved')
   })
 
-  it('drops a staged write and leaves the file untouched when the resolver rejects', async () => {
-    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
-    setStagedDiffResolver(async () => false)
+  ownedIt(
+    'drops a staged write and leaves the file untouched when the resolver rejects',
+    async () => {
+      await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+      setStagedDiffResolver(async () => false)
 
-    const message = await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
+      const message = await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
 
-    assert.match(message, /rejected/)
-    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'old\n')
-    assert.equal(getDiffQueueForTest().length, 0)
-  })
+      assert.match(message, /rejected/)
+      assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'old\n')
+      assert.equal(getDiffQueueForTest().length, 0)
+    },
+  )
 
-  it('without a resolver, keeps the staged entry pending (GUI behaviour unchanged)', async () => {
-    await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
+  ownedIt(
+    'without a resolver, keeps the staged entry pending (GUI behaviour unchanged)',
+    async () => {
+      await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
 
-    const message = await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
+      const message = await stageDiff('a.txt', 'old\n', 'new\n', 'plaintext')
 
-    assert.match(message, /NOT changed until/)
-    assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'old\n')
-    assert.equal(getDiffQueueForTest().length, 1, 'the entry waits for renderer approval')
-  })
+      assert.match(message, /NOT changed until/)
+      assert.equal(await readFile(join(tempRoot, 'a.txt'), 'utf-8'), 'old\n')
+      assert.equal(getDiffQueueForTest().length, 1, 'the entry waits for renderer approval')
+    },
+  )
 })
 
 describe('awaitStagedDiffDecision (ACP client write blocking)', () => {
@@ -555,7 +592,7 @@ describe('awaitStagedDiffDecision (ACP client write blocking)', () => {
 
   // The resolver settles the decision the same way a renderer approve/reject
   // does (both funnel through recordDecision), so it stands in for the GUI here.
-  it('resolves "approved" once the staged write is accepted', async () => {
+  ownedIt('resolves "approved" once the staged write is accepted', async () => {
     await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
     setStagedDiffResolver(async () => true)
 
@@ -565,7 +602,7 @@ describe('awaitStagedDiffDecision (ACP client write blocking)', () => {
     assert.equal(await decision, 'approved')
   })
 
-  it('resolves "rejected" when the staged write is declined', async () => {
+  ownedIt('resolves "rejected" when the staged write is declined', async () => {
     await writeFile(join(tempRoot, 'a.txt'), 'old\n', 'utf-8')
     setStagedDiffResolver(async () => false)
 

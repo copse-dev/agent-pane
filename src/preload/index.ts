@@ -52,10 +52,10 @@ contextBridge.exposeInMainWorld('api', {
     estimateContext: (threadId: string, payload: string) =>
       ipcRenderer.invoke('agent:estimateContext', threadId, payload),
     abort: (threadId: string) => ipcRenderer.invoke('agent:abort', threadId),
-    retryReview: (threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retryReview', threadId, payload),
-    retryComparison: (threadId: string, payload: string) =>
-      ipcRenderer.invoke('agent:retryComparison', threadId, payload),
+    retryReview: (projectId: string, threadId: string, payload: string) =>
+      ipcRenderer.invoke('agent:retryReview', projectId, threadId, payload),
+    retryComparison: (projectId: string, threadId: string, payload: string) =>
+      ipcRenderer.invoke('agent:retryComparison', projectId, threadId, payload),
     clearHistory: (threadId: string) => ipcRenderer.invoke('agent:clearHistory', threadId),
     refreshModelContext: () => ipcRenderer.invoke('agent:refreshModelContext'),
     suggestTitle: (text: string) => ipcRenderer.invoke('agent:suggestTitle', text),
@@ -178,41 +178,70 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
   diff: {
-    approve: (path: string) => ipcRenderer.invoke('diff:approve', path),
-    reject: (path: string) => ipcRenderer.invoke('diff:reject', path),
-    approveAll: () => ipcRenderer.invoke('diff:approveAll'),
-    rejectAll: () => ipcRenderer.invoke('diff:rejectAll'),
-    content: (path: string) => ipcRenderer.invoke('diff:content', path),
-    onShowDiff: (handler: (path: string, before: string, after: string, lang: string) => void) => {
+    approve: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('diff:approve', projectId, threadId, path),
+    reject: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('diff:reject', projectId, threadId, path),
+    approveAll: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('diff:approveAll', projectId, threadId),
+    rejectAll: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('diff:rejectAll', projectId, threadId),
+    content: (projectId: string, threadId: string, path: string) =>
+      ipcRenderer.invoke('diff:content', projectId, threadId, path),
+    onShowDiff: (
+      handler: (
+        projectId: string,
+        threadId: string,
+        path: string,
+        before: string,
+        after: string,
+        lang: string,
+      ) => void,
+    ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
         p: string,
         b: string,
         a: string,
         l: string,
       ): void => {
-        handler(p, b, a, l)
+        handler(projectId, threadId, p, b, a, l)
       }
       ipcRenderer.on('agent:show_diff', listener)
       return (): void => {
         ipcRenderer.off('agent:show_diff', listener)
       }
     },
-    onQueued: (handler: (entries: { path: string; language: string }[]) => void) => {
+    onQueued: (
+      handler: (
+        projectId: string,
+        threadId: string,
+        entries: { path: string; language: string }[],
+      ) => void,
+    ) => {
       const listener = (
         _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
         entries: { path: string; language: string }[],
       ): void => {
-        handler(entries)
+        handler(projectId, threadId, entries)
       }
       ipcRenderer.on('diff:queued', listener)
       return (): void => {
         ipcRenderer.off('diff:queued', listener)
       }
     },
-    onConflict: (handler: (paths: string[]) => void) => {
-      const listener = (_e: Electron.IpcRendererEvent, paths: string[]): void => {
-        handler(paths)
+    onConflict: (handler: (projectId: string, threadId: string, paths: string[]) => void) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        projectId: string,
+        threadId: string,
+        paths: string[],
+      ): void => {
+        handler(projectId, threadId, paths)
       }
       ipcRenderer.on('diff:conflict', listener)
       return (): void => {
@@ -369,6 +398,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('threads:delete', projectId, threadId),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
+    listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
   },
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
@@ -595,6 +625,8 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('roadmap:changed', listener)
       }
     },
+    setThread: (id: string, threadId: string) =>
+      ipcRenderer.invoke('roadmap:setThread', id, threadId),
   },
   skills: {
     list: () => ipcRenderer.invoke('skills:list'),
@@ -615,6 +647,9 @@ contextBridge.exposeInMainWorld('api', {
   },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
+  },
+  cursorRules: {
+    list: () => ipcRenderer.invoke('cursorRules:list'),
   },
   terminal: {
     create: (cols: number, rows: number, meta?: { label?: string; threadId?: string | null }) =>
@@ -656,8 +691,10 @@ contextBridge.exposeInMainWorld('api', {
     checkoutBranch: (branch: string) => ipcRenderer.invoke('git:checkoutBranch', branch),
     listBranches: () => ipcRenderer.invoke('git:listBranches'),
     getDefaultBranch: () => ipcRenderer.invoke('git:getDefaultBranch'),
-    sessionBackup: () => ipcRenderer.invoke('git:sessionBackup'),
-    restoreBackup: () => ipcRenderer.invoke('git:restoreBackup'),
+    sessionBackup: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:sessionBackup', projectId, threadId),
+    restoreBackup: (projectId: string, threadId: string) =>
+      ipcRenderer.invoke('git:restoreBackup', projectId, threadId),
   },
   gh: {
     status: () => ipcRenderer.invoke('gh:status'),

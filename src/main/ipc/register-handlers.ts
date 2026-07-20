@@ -70,6 +70,7 @@ import {
   updateMeta,
   deleteProjectThread,
   loadProjectCatalog,
+  listOrphanProjectStores,
 } from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
@@ -94,14 +95,17 @@ import {
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
+import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
+  syncModelComparisonTools,
   syncOkfMemoryTools,
   syncPiiTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
 } from '../services/registry-bootstrap.ts'
+import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import {
@@ -662,6 +666,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
   })
 
+  // Track the chat thread started from an item ("Start thread" in the pane) in
+  // a `thread` frontmatter field, so the pane can offer reopening it later.
+  // Restamping is deliberate: starting a fresh thread from the same item points
+  // the field at the newest one. An empty threadId clears the tracking.
+  ipcMain.handle('roadmap:setThread', (event, rawId: unknown, rawThreadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const threadId = parseIpcArgs(z.string().max(128).optional(), [rawThreadId])?.trim() ?? ''
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return null
+    const { thread: _thread, ...rest } = existing.fields
+    return updateKnowledgeNote(id, {
+      fields: { ...rest, ...(threadId ? { thread: threadId } : {}) },
+    })
+  })
+
   // Advisory fit check of an item's prompt against its pinned issue,
   // explicitly triggered from the pane (see roadmap-fit-check.ts).
   ipcMain.handle('roadmap:checkFit', (event, rawId: unknown) => {
@@ -988,6 +1008,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     return loadProjectCatalog(pid, q)
   })
+  ipcMain.handle('threads:listOrphans', (event) => {
+    assertMainFrameSender(event, win)
+    const projects =
+      (storageGet('projects') as Array<{ id?: unknown }> | null)?.filter(
+        (p): p is { id: string } => typeof p.id === 'string' && p.id.length > 0,
+      ) ?? []
+    return listOrphanProjectStores(projects.map((p) => p.id))
+  })
 
   ipcMain.handle('skills:list', () => listSkills())
   ipcMain.handle('plugins:list', () => listCursorPlugins())
@@ -1036,6 +1064,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
     const enabled = parseIpcArgs(z.boolean(), [rawEnabled])
     await getPackService().setEnabled(id, enabled)
+    // P5: toggling the model-comparison pack adds/removes its `compare_models`
+    // tool on the live registry so the atomic pack-disable also drops the tool
+    // from the model tool list without an app restart (mirrors the setting
+    // toggles above for the other syncable tools).
+    if (id === MODEL_COMPARISON_PACK_ID) {
+      syncModelComparisonTools(registry)
+    }
     return { packs: getPackService().list() }
   })
   ipcMain.handle(
@@ -1072,6 +1107,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       bytes: Buffer.byteLength(content, 'utf-8'),
     })),
   )
+  ipcMain.handle('cursorRules:list', async () => {
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    return toCursorRuleSummaries(await discoverCursorRules(root))
+  })
 
   ipcMain.handle(
     'git:isAvailable',
@@ -1113,11 +1153,21 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
   ipcMain.handle('git:listBranches', () => getBranches())
   ipcMain.handle('git:getDefaultBranch', () => getDefaultBranch())
-  ipcMain.handle('git:sessionBackup', () => getSessionBackup())
-  ipcMain.handle('git:restoreBackup', async (event) => {
+  ipcMain.handle('git:sessionBackup', (event, projectIdArg: unknown, threadIdArg: unknown) => {
     assertMainFrameSender(event, win)
-    return restoreSessionBackup()
+    const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+    const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+    return getSessionBackup({ projectId, threadId })
   })
+  ipcMain.handle(
+    'git:restoreBackup',
+    async (event, projectIdArg: unknown, threadIdArg: unknown) => {
+      assertMainFrameSender(event, win)
+      const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+      return restoreSessionBackup({ projectId, threadId })
+    },
+  )
 
   ipcMain.handle('gh:status', () => getGhCliStatus())
   ipcMain.handle('gh:listMyOpenPrs', () => listMyOpenPrs())

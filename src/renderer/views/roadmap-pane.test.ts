@@ -2,6 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
@@ -51,6 +52,19 @@ interface MockAttachmentAdd {
   dataUrl: string
 }
 
+/** Minimal persisted thread the pane's reopen path can resolve by id. */
+function makeThread(id: string, title: string): Thread {
+  return {
+    id,
+    title,
+    status: 'idle',
+    messages: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+}
+
 interface RoadmapCalls {
   list: number
   // `attachments` / `addAttachments` / `removeAttachmentIds` are recorded only
@@ -85,6 +99,7 @@ interface RoadmapCalls {
   lastReviewAt: number
   completeReview: string[]
   abortReview: string[]
+  setThread: { id: string; threadId: string }[]
 }
 
 interface MockOpenIssue {
@@ -139,6 +154,7 @@ function makeApi(
     lastReviewAt: 0,
     completeReview: [],
     abortReview: [],
+    setThread: [],
   }
   const api = {
     panes: { popout: async (): Promise<void> => {} },
@@ -303,6 +319,14 @@ function makeApi(
       abortReview: async (runId: string) => {
         calls.abortReview.push(runId)
         return true
+      },
+      setThread: async (id: string, threadId: string) => {
+        calls.setThread.push({ id, threadId })
+        const item = items.find((i) => i.id === id)
+        if (!item) return null
+        const { thread: _thread, ...rest } = item.fields
+        item.fields = { ...rest, ...(threadId ? { thread: threadId } : {}) }
+        return { ...item }
       },
       importIssues: async (selected: { number: number; title: string; body: string }[]) => {
         calls.importIssues.push(selected)
@@ -743,6 +767,107 @@ describe('roadmap pane', () => {
       assert.equal(opened, 1, 'opens a new thread')
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       assert.equal(thread?.draftPrompt, 'Ship the thing\n\nNotes: after #99 merges')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('records the started thread on the item and then offers Reopen', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Ship the thing')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const reopenBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')
+      assert.ok(reopenBtn)
+      assert.equal(reopenBtn.hidden, true, 'nothing to reopen before a thread starts')
+      viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.click()
+      await flush()
+      const threadId = store.getState().activeThreadId
+      assert.ok(threadId)
+      assert.deepEqual(calls.setThread, [{ id: 'a', threadId }], 'stamps the new thread id')
+      assert.equal(reopenBtn.hidden, false, 'the tracked thread can now be reopened')
+      assert.ok(list.querySelector('.roadmap-thread-chip'), 'the row shows a thread chip')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('reopens the tracked thread instead of creating a new one', async () => {
+    const tracked = makeThread('t1', 'Ship the thing')
+    const other = makeThread('t2', 'Something else')
+    // A blank idle thread is pruned on switch-away; a draft keeps it alive so
+    // the thread count stays comparable.
+    other.draftPrompt = 'wip draft'
+    const store = createStore({
+      filesPaneOpen: true,
+      rightPanelMode: 'roadmap',
+      threads: [tracked, other],
+      activeThreadId: 't2',
+    })
+    const seeded = makeItem('a', 'Ship the thing')
+    seeded.fields['thread'] = 't1'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const reopenBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')
+      assert.ok(reopenBtn)
+      assert.equal(reopenBtn.hidden, false)
+      let opened = 0
+      store.on('new_thread_opened', () => opened++)
+      reopenBtn.click()
+      assert.equal(store.getState().activeThreadId, 't1', 'switches to the tracked thread')
+      assert.equal(opened, 0, 'does not open a new thread')
+      assert.equal(store.getState().threads.length, 2, 'no thread was created')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('hides Reopen and the row chip when the tracked thread no longer exists', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const seeded = makeItem('a', 'Ship the thing')
+    seeded.fields['thread'] = 'deleted-thread'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(list.querySelector('.roadmap-thread-chip'), null)
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('reopens the tracked thread from the row chip without selecting the item', async () => {
+    const tracked = makeThread('t1', 'Ship the thing')
+    const store = createStore({
+      filesPaneOpen: true,
+      rightPanelMode: 'roadmap',
+      threads: [tracked, makeThread('t2', 'Current')],
+      activeThreadId: 't2',
+    })
+    const seeded = makeItem('a', 'Ship the thing')
+    seeded.fields['thread'] = 't1'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const chip = list.querySelector<HTMLElement>('.roadmap-thread-chip')
+      assert.ok(chip)
+      assert.equal(chip.tabIndex, 0, 'the nested row link must be keyboard focusable')
+      chip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      assert.equal(store.getState().activeThreadId, 't1')
+      // Activating the chip must not select the row into the editor.
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
     } finally {
       unmount()
     }

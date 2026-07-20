@@ -229,7 +229,6 @@ export function seedEmptyProject(
     subagentsEnabled?: boolean
     mockFollowUps?: boolean
     model?: string
-    modelComparisonEnabled?: boolean
     advisorModel?: string
     localServerUrl?: string
     localDefaultModel?: string
@@ -243,6 +242,23 @@ export function seedEmptyProject(
     windowBounds?: { width: number; height: number }
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
+    /**
+     * Pack ids to force-disable at boot. Written to the `packDisabled` list the
+     * host pack service reads (P3). Use this to opt out of packs that ship
+     * enabled by default (e.g. drop the `copse.model-comparison` pack for a test
+     * that must not surface the `compare_models` tool).
+     */
+    packDisabled?: readonly string[]
+    /**
+     * Opt into the `copse.model-comparison` pack (and its `compare_models`
+     * tool). P5's one-time `migrateP5Enablement()` treats an absent legacy
+     * `modelComparisonEnabled` as "keep the experimental tool off" and disables
+     * the pack on first boot — so a test exercising the comparison approval flow
+     * must seed the legacy opt-in. Written to `config.json` (the unvalidated
+     * `electron-store` the migration reads via `storageGet`), not `settings.json`
+     * (whose writable schema retired the flag), mirroring pack-service.test.ts.
+     */
+    modelComparisonEnabled?: boolean
   },
 ): void {
   mkdirSync(USER_DATA, { recursive: true })
@@ -252,11 +268,18 @@ export function seedEmptyProject(
     name: 'workspace',
   }
   if (options?.sshHost) project.sshHost = options.sshHost
-  writeSeedConfig({
+  const seedConfig: Record<string, unknown> = {
     projects: [project],
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
-  })
+  }
+  // Seed the legacy opt-in into `config.json` (the store `migrateP5Enablement`
+  // reads) so the migration keeps `copse.model-comparison` enabled instead of
+  // disabling it as a previously opt-in tool.
+  if (options?.modelComparisonEnabled) {
+    seedConfig.modelComparisonEnabled = true
+  }
+  writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
     settings.subagentsEnabled = options.subagentsEnabled
@@ -267,8 +290,8 @@ export function seedEmptyProject(
   if (options?.model) {
     settings.model = options.model
   }
-  if (options?.modelComparisonEnabled !== undefined) {
-    settings.modelComparisonEnabled = options.modelComparisonEnabled
+  if (options?.packDisabled !== undefined) {
+    settings.packDisabled = [...options.packDisabled]
   }
   if (options?.advisorModel) {
     settings.advisorModel = options.advisorModel

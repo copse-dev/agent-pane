@@ -68,7 +68,12 @@ afterEach(() => {
 })
 
 function mount(api: ApiClient): HTMLElement {
-  const store = createStore({ filesPaneOpen: true, rightPanelMode: 'changes' })
+  const store = createStore({
+    activeProjectId: 'project-1',
+    activeThreadId: 'thread-1',
+    filesPaneOpen: true,
+    rightPanelMode: 'changes',
+  })
   const listRoot = document.createElement('div')
   const viewerRoot = document.createElement('div')
   document.body.append(listRoot, viewerRoot)

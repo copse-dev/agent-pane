@@ -66,6 +66,20 @@
   width: auto;
   align-self: flex-start;
 }
+/* The roadmap has two thread actions (Start + Reopen) in addition to
+   Save/Delete/Cancel. A compact three-column grid keeps every action inside
+   the fixed-width editor column instead of clipping the trailing button. */
+.roadmap-form .memories-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.roadmap-form .memories-actions .memories-btn {
+  min-width: 0;
+  padding-inline: var(--spacing-sm);
+}
+.roadmap-form .memories-actions .memories-btn-danger {
+  margin-left: 0;
+}
 .roadmap-row-meta {
   display: flex;
   flex-wrap: wrap;
@@ -82,6 +96,20 @@
   cursor: pointer;
 }
 .roadmap-issue-chip:hover {
+  text-decoration: underline;
+}
+/* Started-thread chip — shown while the thread tracked on the item still
+   exists; clicking it reopens that thread. */
+.roadmap-thread-chip {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--accent);
+  cursor: pointer;
+}
+.roadmap-thread-chip:hover {
   text-decoration: underline;
 }
 

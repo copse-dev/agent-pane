@@ -13,8 +13,8 @@ import { setInlineStatus } from '../../dom/inline-status.ts'
 
 // Unified "Providers" panel: a chip row selects one provider and shows its form.
 // Fixed cloud providers (OpenAI / Anthropic / OpenRouter) expose just a key
-// field; OpenAI-compatible providers (the Mistral/Gemini/DeepSeek presets plus
-// user customs) add a base URL, a structured model list, and advanced options.
+// field; OpenAI-compatible provider presets and user customs add a base URL, a
+// structured model list, and advanced options.
 // "Other" is the add-a-provider form. One slug per provider drives both the
 // `model:` prefix and the `apiKey.<slug>` lookup.
 
@@ -40,7 +40,7 @@ export interface NativeProvider {
   refresh?: () => void | Promise<void>
 }
 
-// Fixed cloud providers with bespoke key validation (not OpenAI-compatible customs).
+// Fixed cloud providers with bespoke key validation (not OpenAI-compatible presets).
 interface FixedProvider {
   id: string
   label: string
@@ -72,6 +72,9 @@ const FIXED_PROVIDERS: readonly FixedProvider[] = [
 const CHIP_ORDER: readonly string[] = [
   'openai',
   'perplexity',
+  'groq',
+  'together',
+  'fireworks',
   'gemini',
   'mistral',
   'deepseek',
@@ -92,9 +95,6 @@ interface KnownEndpoint {
 
 // Well-known OpenAI-compatible cloud endpoints offered as add-form prefills.
 const CLOUD_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
-  { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
-  { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
-  { label: 'Fireworks AI', baseUrl: 'https://api.fireworks.ai/inference/v1' },
   { label: 'xAI (Grok)', baseUrl: 'https://api.x.ai/v1' },
 ]
 
@@ -282,7 +282,7 @@ export function createCustomProvidersSection(
       { class: 'settings-fieldset-desc' },
       isLocal
         ? 'Connect OpenAI-compatible local servers — LM Studio, Ollama, llama.cpp, Jan, and vLLM ship built in. They run on your machine and need no API key; pick one, set its URL or Fetch models, and Save — or choose “Other” to add another local endpoint.'
-        : 'Pick a provider to add or edit its API key. OpenAI-compatible endpoints (Mistral, Gemini, DeepSeek ship built in) also let you set models and options; choose “Other” to add your own.',
+        : 'Pick a provider to add or edit its API key. Privacy-forward providers Groq, Together AI, and Fireworks AI ship built in alongside Mistral, Gemini, and DeepSeek. OpenAI-compatible providers also let you set models and options; choose “Other” to add your own.',
     ),
     chipRow,
     formHost,

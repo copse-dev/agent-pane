@@ -48,10 +48,16 @@ export interface IpcInvokeMap {
   }
 
   // Diff approval
-  'diff:approve': { args: [path: string]; result: undefined }
-  'diff:reject': { args: [path: string]; result: undefined }
-  'diff:approveAll': { args: []; result: undefined }
-  'diff:rejectAll': { args: []; result: undefined }
+  'diff:approve': {
+    args: [projectId: string, threadId: string, path: string]
+    result: undefined
+  }
+  'diff:reject': {
+    args: [projectId: string, threadId: string, path: string]
+    result: undefined
+  }
+  'diff:approveAll': { args: [projectId: string, threadId: string]; result: undefined }
+  'diff:rejectAll': { args: [projectId: string, threadId: string]; result: undefined }
 
   // Approval gate (shell / MCP)
   'approval:respond': {
@@ -194,6 +200,10 @@ export interface IpcInvokeMap {
     args: [projectId: string, query?: string]
     result: import('./thread.ts').ThreadCatalogHit[]
   }
+  'threads:listOrphans': {
+    args: []
+    result: import('./state.ts').OrphanProjectStore[]
+  }
 
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
@@ -304,7 +314,14 @@ export interface IpcEventMap {
   'workspace:opened': [root: string]
   'agent:chunk': [threadId: string, chunk: StreamChunk]
   'agent:usage': [threadId: string, usage: UsageDelta]
-  'agent:show_diff': [path: string, before: string, after: string, language: string]
+  'agent:show_diff': [
+    projectId: string,
+    threadId: string,
+    path: string,
+    before: string,
+    after: string,
+    language: string,
+  ]
   'agent:shell_output': [data: string, toolCallId: string | null]
   'agent:approval_request': [
     {
@@ -349,8 +366,12 @@ export interface IpcEventMap {
   'ssh:connection_changed': [states: import('./ssh-workspace.ts').SshConnectionState[]]
   'mcp:status_changed': [statuses: McpServerStatus[]]
   'index:status_changed': [status: import('./index-status.ts').WorkspaceIndexStatus]
-  'diff:queued': [entries: { path: string; language: string }[]]
-  'diff:conflict': [paths: string[]]
+  'diff:queued': [
+    projectId: string,
+    threadId: string,
+    entries: { path: string; language: string }[],
+  ]
+  'diff:conflict': [projectId: string, threadId: string, paths: string[]]
   'fs:changed': [path: string, content: string | null]
   'menu:settings': []
   'menu:newThread': []

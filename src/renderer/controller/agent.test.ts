@@ -48,9 +48,35 @@ function setup(
   messageDone: string[]
   messages: (id?: string) => Message[]
   gitBranchChanged: number[]
+  showDiff: (
+    projectId: string,
+    threadId: string,
+    path: string,
+    before: string,
+    after: string,
+    language: string,
+  ) => void
+  queueDiffs: (
+    projectId: string,
+    threadId: string,
+    entries: { path: string; language: string }[],
+  ) => void
 } {
-  const store = createStore({ threads: initial, activeThreadId })
+  const store = createStore({ activeProjectId: 'project-1', threads: initial, activeThreadId })
   let chunkHandler: ((threadId: string, chunk: StreamChunk) => void) | null = null
+  let showDiffHandler:
+    | ((
+        projectId: string,
+        threadId: string,
+        path: string,
+        before: string,
+        after: string,
+        language: string,
+      ) => void)
+    | null = null
+  let queuedHandler:
+    | ((projectId: string, threadId: string, entries: { path: string; language: string }[]) => void)
+    | null = null
   const titleCalls: string[] = []
   const messageDone: string[] = []
   const gitBranchChanged: number[] = []
@@ -71,8 +97,14 @@ function setup(
       },
     },
     diff: {
-      onShowDiff: () => (): void => {},
-      onQueued: () => (): void => {},
+      onShowDiff: (handler: NonNullable<typeof showDiffHandler>) => {
+        showDiffHandler = handler
+        return (): void => {}
+      },
+      onQueued: (handler: NonNullable<typeof queuedHandler>) => {
+        queuedHandler = handler
+        return (): void => {}
+      },
     },
     git: {
       branchStatus: async () => ({
@@ -138,8 +170,51 @@ function setup(
     chunkHandler(threadId, chunk)
   }
   const messages = (id = 't1'): Message[] => requireThread(store, id).messages
-  return { store, send, unsub, titleCalls, messageDone, messages, gitBranchChanged }
+  const showDiff = (...args: Parameters<NonNullable<typeof showDiffHandler>>): void => {
+    if (!showDiffHandler) throw new Error('startAgentController did not register a diff handler')
+    showDiffHandler(...args)
+  }
+  const queueDiffs = (...args: Parameters<NonNullable<typeof queuedHandler>>): void => {
+    if (!queuedHandler) throw new Error('startAgentController did not register a queue handler')
+    queuedHandler(...args)
+  }
+  return {
+    store,
+    send,
+    unsub,
+    titleCalls,
+    messageDone,
+    messages,
+    gitBranchChanged,
+    showDiff,
+    queueDiffs,
+  }
 }
+
+test('diff events stay scoped to their owning project and thread', () => {
+  const { store, showDiff, queueDiffs } = setup([thread('t1'), thread('t2')], 't1')
+
+  queueDiffs('project-1', 't2', [{ path: 'same.ts', language: 'typescript' }])
+  assert.deepEqual(store.getState().stagedDiffs, [])
+
+  queueDiffs('project-1', 't1', [{ path: 'first.ts', language: 'typescript' }])
+  assert.deepEqual(store.getState().stagedDiffs, [{ path: 'first.ts', language: 'typescript' }])
+
+  store.setState({ activeThreadId: 't2' })
+  store.emit('threads_changed')
+  assert.deepEqual(store.getState().stagedDiffs, [{ path: 'same.ts', language: 'typescript' }])
+
+  showDiff('project-1', 't1', 'same.ts', 'one', 'two', 'typescript')
+  assert.equal(store.getState().activeDiff, null)
+
+  showDiff('project-1', 't2', 'same.ts', 'before', 'after', 'typescript')
+  assert.deepEqual(store.getState().activeDiff, {
+    path: 'same.ts',
+    before: 'before',
+    after: 'after',
+    language: 'typescript',
+  })
+})
 
 test('text chunks create one assistant message and accumulate tokens', () => {
   const { send, messages } = setup()

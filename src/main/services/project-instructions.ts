@@ -2,7 +2,12 @@ import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { InstructionScope } from '@shared/types/instructions.ts'
-import { loadCursorRuleSources } from './skills/cursor-rules.ts'
+import {
+  buildAgentRequestedRulesCatalog,
+  discoverCursorRules,
+  loadCursorRuleSources,
+  type CursorRuleContext,
+} from './skills/cursor-rules.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 
 /**
@@ -43,12 +48,23 @@ async function readTrimmed(path: string): Promise<string | null> {
   }
 }
 
+export interface ProjectInstructionOptions {
+  /** Turn context for Auto-Attached / Manual Cursor rules (issue #636). */
+  cursorRuleContext?: CursorRuleContext
+}
+
 /**
  * Discover the instruction files feeding the system prompt, global layer first then
  * project. Identical content is loaded once (across both layers), so a repo whose
  * `AGENTS.md` matches the user's global file is not injected twice.
+ *
+ * Cursor rules: Always + legacy always; Auto-Attached when `cursorRuleContext`
+ * paths match; Manual when `@`-mentioned. Agent-Requested rules are catalogued
+ * separately via {@link loadAgentRequestedRulesCatalog}.
  */
-export async function loadProjectInstructionSources(): Promise<ProjectInstructionSource[]> {
+export async function loadProjectInstructionSources(
+  opts: ProjectInstructionOptions = {},
+): Promise<ProjectInstructionSource[]> {
   const home = homedir()
   const resolved: ProjectInstructionSource[] = []
 
@@ -67,7 +83,7 @@ export async function loadProjectInstructionSources(): Promise<ProjectInstructio
     }
     // Cursor project rules (`.cursor/rules/*.mdc` + legacy `.cursorrules`) — project text,
     // applied after the top-level instruction files.
-    for (const rule of await loadCursorRuleSources(root)) {
+    for (const rule of await loadCursorRuleSources(root, opts.cursorRuleContext ?? {})) {
       resolved.push({ path: rule.path, name: rule.name, scope: 'project', content: rule.content })
     }
   }
@@ -85,7 +101,17 @@ export async function loadProjectInstructionSources(): Promise<ProjectInstructio
 }
 
 /** Combined instructions appended to the system prompt (global layer first, then project). */
-export async function loadProjectInstructions(): Promise<string> {
-  const sources = await loadProjectInstructionSources()
+export async function loadProjectInstructions(
+  opts: ProjectInstructionOptions = {},
+): Promise<string> {
+  const sources = await loadProjectInstructionSources(opts)
   return sources.map((s) => s.content).join('\n\n')
+}
+
+/** Agent-requested Cursor rules catalog for the system prompt (empty when none). */
+export async function loadAgentRequestedRulesCatalog(): Promise<string> {
+  const root = getWorkspaceRoot()
+  if (!root) return ''
+  const rules = await discoverCursorRules(root)
+  return buildAgentRequestedRulesCatalog(rules)
 }

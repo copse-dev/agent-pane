@@ -5,6 +5,7 @@ import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
+import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
   GitFileDiff,
   GitStatusResult,
@@ -79,8 +80,8 @@ export interface ApiClient {
     run: (projectId: string, threadId: string, prompt: string) => Promise<void>
     estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
-    retryReview: (threadId: string, payload: string) => Promise<void>
-    retryComparison: (threadId: string, payload: string) => Promise<void>
+    retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
+    retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
     clearHistory: (threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
@@ -120,16 +121,31 @@ export interface ApiClient {
     ) => () => void
   }
   diff: {
-    approve: (path: string) => Promise<void>
-    reject: (path: string) => Promise<void>
-    approveAll: () => Promise<void>
-    rejectAll: () => Promise<void>
-    content: (path: string) => Promise<ActiveDiff | null>
+    approve: (projectId: string, threadId: string, path: string) => Promise<void>
+    reject: (projectId: string, threadId: string, path: string) => Promise<void>
+    approveAll: (projectId: string, threadId: string) => Promise<void>
+    rejectAll: (projectId: string, threadId: string) => Promise<void>
+    content: (projectId: string, threadId: string, path: string) => Promise<ActiveDiff | null>
     onShowDiff: (
-      handler: (path: string, before: string, after: string, lang: string) => void,
+      handler: (
+        projectId: string,
+        threadId: string,
+        path: string,
+        before: string,
+        after: string,
+        lang: string,
+      ) => void,
     ) => () => void
-    onQueued: (handler: (entries: { path: string; language: string }[]) => void) => () => void
-    onConflict: (handler: (paths: string[]) => void) => () => void
+    onQueued: (
+      handler: (
+        projectId: string,
+        threadId: string,
+        entries: { path: string; language: string }[],
+      ) => void,
+    ) => () => void
+    onConflict: (
+      handler: (projectId: string, threadId: string, paths: string[]) => void,
+    ) => () => void
   }
   approval: {
     respond: (
@@ -217,6 +233,8 @@ export interface ApiClient {
       projectId: string,
       query?: string,
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
+    /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
+    listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
   }
   openRouter: {
     models: () => Promise<Array<{ id: string; name: string }>>
@@ -484,6 +502,10 @@ export interface ApiClient {
     /** Subscribe to background roadmap changes (e.g. a complexity stamp landing
      * after a save returned). Returns an unsubscribe function. */
     onChanged: (handler: () => void) => () => void
+    setThread: (
+      id: string,
+      threadId: string,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
   }
   skills: {
     list: () => Promise<SkillSummary[]>
@@ -506,6 +528,9 @@ export interface ApiClient {
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
+  }
+  cursorRules: {
+    list: () => Promise<CursorRuleSummary[]>
   }
   terminal: {
     create: (
@@ -537,9 +562,9 @@ export interface ApiClient {
     listBranches: () => Promise<GitBranchInfo[]>
     getDefaultBranch: () => Promise<string | null>
     /** The pre-session worktree backup taken this session, or null when none. */
-    sessionBackup: () => Promise<SessionBackup | null>
+    sessionBackup: (projectId: string, threadId: string) => Promise<SessionBackup | null>
     /** Revert the session backup's captured paths to their pre-session content. */
-    restoreBackup: () => Promise<boolean>
+    restoreBackup: (projectId: string, threadId: string) => Promise<boolean>
   }
   gh: {
     status: () => Promise<GhCliStatus>

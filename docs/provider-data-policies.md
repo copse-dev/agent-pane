@@ -59,9 +59,9 @@ models under the tier Copse's preset advertises, before any opt-out.
 | DeepSeek (`deepseek`)               | Yes — indefinitely, stored in the PRC  | **Yes** (service improvement)       | Opt-out by request (privacy@deepseek.com); no documented ZDR                            |
 | Hugging Face router (`huggingface`) | HF: no bodies (30-day debug logs only) | **Partner-dependent**               | None — HF explicitly delegates to each routed partner's policy                          |
 | Perplexity Agent API (`perplexity`) | **Unclear for Agent API**              | **Unclear for Agent API**           | General API FAQ says no query retention/training; dedicated ZDR page names Sonar only   |
-| Together AI (custom prefill)        | No (org privacy setting)               | No (opt-in)                         | Confirm org setting answers "No" to storing prompts                                     |
-| Groq (custom prefill)               | No (≤30-day troubleshooting logs)      | No                                  | Console Data Controls → Zero Data Retention toggle                                      |
-| Fireworks AI (custom prefill)       | No (volatile memory only)              | No (opt-in)                         | ZDR is the default                                                                      |
+| Together AI (`together`)            | No (org privacy setting)               | No (opt-in)                         | Confirm org setting answers "No" to storing prompts                                     |
+| Groq (`groq`)                       | Yes (≤30-day troubleshooting logs)     | No                                  | Console Data Controls → Zero Data Retention toggle                                      |
+| Fireworks AI (`fireworks`)          | No (volatile memory only)              | No (opt-in)                         | ZDR is the default                                                                      |
 | xAI (custom prefill)                | 30 days, encrypted                     | No                                  | Team Settings → Zero Data Retention (responses carry an `x-zero-data-retention` header) |
 | Local (LM Studio, Ollama, …)        | n/a — data stays on the machine        | n/a                                 | n/a                                                                                     |
 

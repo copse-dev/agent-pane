@@ -169,10 +169,11 @@ app
     initUpdatePrompt(win)
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
-    // P3: boot the pack service before `createRegistry()` so the persisted
-    // `packDisabled` state installs the shared pack registry first — otherwise
-    // every consumer up to the first Settings→Packs open would see the fallback
-    // fresh registry (all packs enabled) and a disable would not survive relaunch.
+    // P5: boot the pack service before `createRegistry()` so persisted
+    // `packDisabled` state is applied to the shared registry before
+    // `syncModelComparisonTools` reads it — otherwise the fallback fresh
+    // first-party registry (all packs enabled) would register the tool for a
+    // pack the user turned off in a previous session.
     getPackService()
     const registry = createRegistry()
     // The only Electron-specific seam the agent run needs: forward stream chunks
@@ -383,32 +384,45 @@ app
       return messageHistory.get(threadId) ?? []
     }
 
-    ipcMain.handle('agent:retryReview', async (event, threadIdArg: unknown, payload: unknown) => {
-      assertMainFrameSender(event, win)
-      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      await runWithActiveRunIdentity(threadId, () =>
-        retryPostTurnReview(
-          threadId,
-          hydrateHistory(threadId),
-          agentHost,
-          registry,
-          parseRetryPayload(payload),
-        ),
-      )
-    })
+    ipcMain.handle(
+      'agent:retryReview',
+      async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
+        if (!executionContext) return
+        await runWithThreadExecutionContext(executionContext, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            retryPostTurnReview(
+              threadId,
+              hydrateHistory(threadId),
+              agentHost,
+              registry,
+              parseRetryPayload(payload),
+            ),
+          ),
+        )
+      },
+    )
 
     ipcMain.handle(
       'agent:retryComparison',
-      async (event, threadIdArg: unknown, payload: unknown) => {
+      async (event, projectIdArg: unknown, threadIdArg: unknown, payload: unknown) => {
         assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-        await runWithActiveRunIdentity(threadId, () =>
-          retryModelComparison(
-            threadId,
-            hydrateHistory(threadId),
-            agentHost,
-            registry,
-            parseRetryPayload(payload),
+        const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
+        if (!executionContext) return
+        await runWithThreadExecutionContext(executionContext, () =>
+          runWithActiveRunIdentity(threadId, () =>
+            retryModelComparison(
+              threadId,
+              hydrateHistory(threadId),
+              agentHost,
+              registry,
+              parseRetryPayload(payload),
+            ),
           ),
         )
       },

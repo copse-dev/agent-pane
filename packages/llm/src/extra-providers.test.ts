@@ -176,14 +176,33 @@ describe('resolveExtraProviders', () => {
 
   it('appends a valid user custom and defaults its context window', () => {
     const providers = resolveExtraProviders([
-      { slug: 'together', label: 'Together AI', baseUrl: 'https://api.together.xyz/v1' },
+      { slug: 'acme', label: 'Acme AI', baseUrl: 'https://api.acme.example/v1' },
     ])
-    const together = providers.find((p) => p.id === 'together')
-    assert.ok(together)
-    assert.equal(together.builtin, false)
-    assert.equal(together.prefix, 'together:')
-    assert.equal(together.fallbackContextWindow, DEFAULT_EXTRA_PROVIDER_CONTEXT)
-    assert.equal(together.envVar, undefined)
+    const acme = providers.find((p) => p.id === 'acme')
+    assert.ok(acme)
+    assert.equal(acme.builtin, false)
+    assert.equal(acme.prefix, 'acme:')
+    assert.equal(acme.fallbackContextWindow, DEFAULT_EXTRA_PROVIDER_CONTEXT)
+    assert.equal(acme.envVar, undefined)
+  })
+
+  it('promotes a formerly custom ZDR endpoint without losing its editable overrides', () => {
+    const providers = resolveExtraProviders([
+      {
+        slug: 'groq',
+        label: 'Groq custom',
+        baseUrl: 'https://api.groq.com/openai/v1',
+        models: [{ id: 'llama-custom' }],
+        fallbackContextWindow: 32_768,
+      },
+    ])
+    const groq = providers.find((p) => p.id === 'groq')
+    assert.ok(groq)
+    assert.equal(groq.builtin, true)
+    assert.equal(groq.label, 'Groq')
+    assert.equal(groq.baseUrl, 'https://api.groq.com/openai/v1')
+    assert.deepEqual(groq.models, [{ id: 'llama-custom' }])
+    assert.equal(groq.fallbackContextWindow, 32_768)
   })
 
   it('skips malformed customs (missing baseUrl, bad slug, dup of a preset)', () => {

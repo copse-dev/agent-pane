@@ -17,7 +17,7 @@ import {
 } from '@shared/roadmap/review.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { knowledgeDate } from './knowledge-date.ts'
-import { createThread } from '@shared/store/thread-helpers.ts'
+import { createThread, getThreadById, switchThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -96,6 +96,11 @@ function attachmentName(file: File): string {
   if (file.name) return file.name
   const ext = file.type.split('/')[1]
   return `pasted.${ext || 'bin'}`
+}
+
+/** Id of the thread last started from this item ("Start thread"), if tracked. */
+function itemThreadId(item: RoadmapItem): string {
+  return item.fields['thread'] ?? ''
 }
 
 // Electron prefixes errors thrown by ipcMain.handle with
@@ -315,6 +320,18 @@ export function mountRoadmapPane(
     },
     'Start thread',
   )
+  // Switches back to the thread previously started from this item (tracked in
+  // the note's `thread` field). Offered only while that thread still exists;
+  // hidden in pop-out windows alongside Start thread (popout.css).
+  const reopenBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-reopen-btn',
+      title: 'Switch to the thread previously started from this item',
+    },
+    'Reopen thread',
+  )
   // Advisory: asks the small-tasks model whether executing the prompt would
   // plausibly resolve the pinned issue. Only offered while an issue is pinned.
   const fitBtn = el(
@@ -350,6 +367,7 @@ export function mountRoadmapPane(
     { class: 'memories-actions' },
     saveBtn,
     startBtn,
+    reopenBtn,
     fitBtn,
     resolutionBtn,
     deleteBtn,
@@ -598,6 +616,9 @@ export function mountRoadmapPane(
     statusLabel.hidden = !item
     statusSelect.hidden = !item
     startBtn.hidden = !item
+    // Reopen only while the tracked thread still exists — a deleted thread
+    // leaves the field pointing at nothing, and Start thread restamps it.
+    reopenBtn.hidden = !item || !getThreadById(store, itemThreadId(item))
     fitBtn.hidden = !item || !itemIssue(item)
     resolutionBtn.hidden = !item || item.status === 'done' || item.status === 'archived'
     deleteBtn.hidden = !item
@@ -772,6 +793,35 @@ export function mountRoadmapPane(
             String(attachmentCount),
           ),
         )
+      }
+      // Items whose started thread is still around get a chip that jumps
+      // straight back to it (tracked via the `thread` field on Start thread).
+      const trackedThread = getThreadById(store, itemThreadId(item))
+      if (trackedThread) {
+        const threadChip = el(
+          'span',
+          {
+            class: 'roadmap-thread-chip',
+            role: 'link',
+            tabindex: '0',
+            title: `Reopen thread "${trackedThread.title}"`,
+          },
+          'thread',
+        )
+        threadChip.addEventListener('click', (e) => {
+          // The row itself selects the item; the chip only reopens the thread.
+          e.stopPropagation()
+          switchThread(store, trackedThread.id)
+          getPromptAttachmentHandlers()?.focusComposer?.()
+        })
+        threadChip.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          e.stopPropagation()
+          switchThread(store, trackedThread.id)
+          getPromptAttachmentHandlers()?.focusComposer?.()
+        })
+        meta.append(threadChip)
       }
 
       // One-click status flip without opening the editor: ✓ marks a live item
@@ -1070,7 +1120,7 @@ export function mountRoadmapPane(
     payloads.push(...pendingAttachments)
     // Persist whatever is in the chat composer to its thread before switching.
     store.emit('composer_draft_flush')
-    createThread(store, draft)
+    const threadId = createThread(store, draft)
     const handlers = getPromptAttachmentHandlers()
     if (handlers) {
       for (const payload of payloads) {
@@ -1082,7 +1132,30 @@ export function mountRoadmapPane(
         }
       }
     }
+    // Track the started thread on the item so it can be reopened from here
+    // later. Best-effort: a failed stamp only costs the Reopen shortcut.
+    if (selectedId) {
+      void api.roadmap
+        .setThread(selectedId, threadId)
+        .then(() => refresh({ preserveDirty: true }))
+        .catch(() => {})
+    }
     handlers?.focusComposer?.()
+  }
+
+  // Switch back to the thread tracked on the selected item. The button only
+  // shows while that thread exists, but the store can change between render
+  // and click — fall back to an explanatory error rather than a dead click.
+  function reopenThread(): void {
+    const item = selectedId ? items.find((m) => m.id === selectedId) : null
+    const threadId = item ? itemThreadId(item) : ''
+    if (!threadId || !getThreadById(store, threadId)) {
+      renderEditor({ preserveDirty: true })
+      showError('That thread no longer exists — use Start thread to open a new one.')
+      return
+    }
+    switchThread(store, threadId)
+    getPromptAttachmentHandlers()?.focusComposer?.()
   }
 
   // --- import-from-issues flow -----------------------------------------------
@@ -1455,6 +1528,7 @@ export function mountRoadmapPane(
     attachFileInput.value = ''
     if (files.length > 0) void addAttachmentFiles(files)
   })
+  reopenBtn.addEventListener('click', reopenThread)
   fitBtn.addEventListener('click', () => void checkFit())
   resolutionBtn.addEventListener('click', () => void checkResolution())
   deleteBtn.addEventListener('click', () => void remove())
@@ -1479,6 +1553,13 @@ export function mountRoadmapPane(
       creating = false
       importing = false
       void refresh()
+    }),
+    // Thread create/delete changes whether a tracked thread can be reopened;
+    // re-render from the already-loaded items (no IPC round-trip needed).
+    store.on('threads_changed', () => {
+      if (!roadmapModeActive(store)) return
+      renderList()
+      renderEditor({ preserveDirty: true })
     }),
     store.on('workspace_changed', () => {
       // The roadmap is per-project; drop the previous workspace's selection.
