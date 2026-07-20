@@ -35,6 +35,24 @@ describe('integrated terminal', () => {
 
     await $('.terminal-container .xterm').waitForExist({ timeout: 30_000 })
 
+    const chrome = await browser.execute(() => {
+      const viewer = document.querySelector('.terminals-viewer-host')
+      const container = document.querySelector('.terminal-container')
+      if (!viewer || !container) return null
+      const viewerStyle = getComputedStyle(viewer)
+      const containerStyle = getComputedStyle(container)
+      return {
+        viewerBorderTopWidth: viewerStyle.borderTopWidth,
+        containerPaddingTop: containerStyle.paddingTop,
+        containerPaddingLeft: containerStyle.paddingLeft,
+      }
+    })
+    expect(chrome).toEqual({
+      viewerBorderTopWidth: '0px',
+      containerPaddingTop: '0px',
+      containerPaddingLeft: '0px',
+    })
+
     await browser.waitUntil(
       async () => {
         const text = await xtermText()

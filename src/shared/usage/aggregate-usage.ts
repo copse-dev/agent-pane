@@ -208,7 +208,8 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
     if (
       rec.source !== 'agent' &&
       rec.source !== 'small-tasks' &&
-      rec.source !== 'safety-classifier'
+      rec.source !== 'safety-classifier' &&
+      rec.source !== 'advisor'
     ) {
       continue
     }

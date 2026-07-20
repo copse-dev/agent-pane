@@ -31,9 +31,9 @@ describe('approved-provider-hosts', () => {
       prompted = true
       return { approved: true, remember: true }
     })
-    await ensureProviderHostApproved('https://api.groq.com/openai/v1')
+    await ensureProviderHostApproved('https://api.acme.example/v1')
     assert.equal(prompted, true)
-    assert.ok(getApprovedProviderHosts().includes('api.groq.com'))
+    assert.ok(getApprovedProviderHosts().includes('api.acme.example'))
   })
 
   it('hard-denies when user approval is disabled', async () => {

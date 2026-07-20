@@ -101,22 +101,26 @@ describe('PackRegistry storage', () => {
 })
 
 describe('first-party packs', () => {
-  it('seeds a registry with the shipped skeleton noop pack, enabled', () => {
+  it('seeds a registry with the shipped first-party packs, all enabled', () => {
     const registry = createFirstPartyPackRegistry()
     assert.deepEqual(
       registry.all().map((p) => p.id),
       FIRST_PARTY_PACKS.map((p) => p.id),
     )
-    assert.equal(registry.isEnabled(noopPack.id), true)
+    for (const pack of FIRST_PARTY_PACKS) {
+      assert.equal(registry.isEnabled(pack.id), true)
+    }
   })
 
-  it('the P1 skeleton contributes nothing (behavior-neutral seam)', () => {
-    const registry = createFirstPartyPackRegistry()
-    assert.deepEqual(registry.activeToolNames(), [])
-    assert.deepEqual(registry.activeBlockingHooks(), [])
-    assert.deepEqual(registry.activeAsyncHooks(), [])
-    assert.deepEqual(registry.activePromptBlocks(), [])
-    assert.deepEqual(registry.activeUiContributions(), [])
+  it('the noop skeleton contributes nothing (behavior-neutral seam)', () => {
+    // Isolated to the skeleton pack so this stays a stable smoke test as the
+    // shipped pack list grows past P4. It confirms `definePack({ … })` with
+    // no contributions yields an empty runtime side.
+    assert.deepEqual(noopPack.contributions.toolNames, [])
+    assert.deepEqual(noopPack.contributions.blockingHooks, [])
+    assert.deepEqual(noopPack.contributions.asyncHooks, [])
+    assert.deepEqual(noopPack.contributions.promptBlocks, [])
+    assert.deepEqual(noopPack.contributions.uiContributions, [])
   })
 })
 

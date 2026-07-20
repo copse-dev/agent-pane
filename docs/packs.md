@@ -93,7 +93,8 @@ rendering.
   `todosToPanelListData()` projects a `TodoItem[]` into `PanelListData` with the
   same header + rows + `"N/M done"` summary the current todo panel shows, so
   the P4 todos pack can switch from `todo_update` to `panel_update` with no
-  visible regression.
+  visible regression. Cancelled todos remain in durable thread state but are
+  omitted from the projection; an all-cancelled plan therefore stays hidden.
 - Registration enforces the invariant: a `level: 2` contribution _must_ declare
   its `panel` shape. `PackRegistry.register` throws
   `InvalidPanelContributionError` on a missing decl (mechanical, not "please

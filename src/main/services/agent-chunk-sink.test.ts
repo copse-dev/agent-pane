@@ -5,7 +5,7 @@ import type { StreamChunk } from '@shared/types'
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { getThreadModels } from './thread-models.ts'
 import { getUsageEventCount } from './storage/usage-ledger.ts'
-import { storageSet } from './storage/storage.ts'
+import { storageSet, storageGet } from './storage/storage.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
 
 describe('createAgentChunkSink', () => {
@@ -35,5 +35,26 @@ describe('createAgentChunkSink', () => {
       },
       { type: 'text', text: 'hi' },
     ])
+  })
+
+  it('records advisor usageSource on the ledger for dedicated advisor cost lines', () => {
+    storageSet(USAGE_EVENTS_STORAGE_KEY, [])
+    storageSet('activeProjectId', 'proj-1')
+    const host: AgentHost<StreamChunk> = { emit: () => undefined }
+    const sink = createAgentChunkSink('thread-adv', host)
+
+    sink({
+      type: 'usage',
+      model: 'claude-opus-4-8',
+      inputTokens: 900,
+      outputTokens: 40,
+      usageSource: 'advisor',
+    })
+
+    assert.equal(getUsageEventCount(), 1)
+    const events = storageGet(USAGE_EVENTS_STORAGE_KEY)
+    assert.ok(Array.isArray(events))
+    assert.equal((events as { source: string }[])[0]?.source, 'advisor')
+    assert.equal((events as { model: string }[])[0]?.model, 'claude-opus-4-8')
   })
 })

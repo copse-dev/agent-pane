@@ -229,6 +229,20 @@ export interface ApiClient {
       bestAvailableContext: number | null
     }>
   }
+  intellect: {
+    /** Live Artificial Analysis model feed; empty models when no key stored. */
+    liveModels: () => Promise<{
+      ok: boolean
+      models: Array<{
+        id: string
+        intellect: number
+        inputPricePerMTok?: number
+        outputPricePerMTok?: number
+      }>
+      indexVersion?: string | number
+      error?: string
+    }>
+  }
   lmStudio: {
     test: (
       url: string,
@@ -433,6 +447,10 @@ export interface ApiClient {
       removeAttachmentIds?: string[],
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     attachmentData: (id: string, attachmentId: string) => Promise<string | null>
+    setStatus: (
+      id: string,
+      status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
+    ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{

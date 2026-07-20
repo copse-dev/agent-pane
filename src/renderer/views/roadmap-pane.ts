@@ -670,6 +670,37 @@ export function mountRoadmapPane(
         })
         meta.append(threadChip)
       }
+
+      // One-click status flip without opening the editor: ✓ marks a live item
+      // done, ↺ reopens a done one. Archived items keep the editor-only flow.
+      // A span with role=button, like the issue chip — rows are <button>s and
+      // buttons cannot nest.
+      if (status !== 'archived') {
+        const isDone = status === 'done'
+        const toggle = el(
+          'span',
+          {
+            class: 'roadmap-done-toggle',
+            role: 'button',
+            tabindex: '0',
+            title: isDone ? 'Reopen (set ready)' : 'Mark done',
+            'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
+          },
+          isDone ? '↺' : '✓',
+        )
+        toggle.addEventListener('click', (e) => {
+          // The row itself selects the item; the toggle only flips status.
+          e.stopPropagation()
+          void setStatus(item, isDone ? 'ready' : 'done')
+        })
+        toggle.addEventListener('keydown', (e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return
+          e.preventDefault()
+          e.stopPropagation()
+          void setStatus(item, isDone ? 'ready' : 'done')
+        })
+        meta.append(toggle)
+      }
       main.append(
         el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
         meta,
@@ -683,6 +714,11 @@ export function mountRoadmapPane(
         renderEditor()
       })
       listBody.append(row)
+    }
+    // Scroll the selected row into view so it's visible after re-render.
+    const selectedRow = listBody.querySelector('.is-selected')
+    if (selectedRow) {
+      selectedRow.scrollIntoView({ block: 'nearest' })
     }
   }
 
@@ -715,6 +751,8 @@ export function mountRoadmapPane(
     renderList()
     renderEditor()
     promptInput.focus()
+    // Scroll the new-item form into view so it's visible immediately.
+    promptInput.scrollIntoView({ block: 'nearest' })
   }
 
   async function save(): Promise<void> {
@@ -796,6 +834,19 @@ export function mountRoadmapPane(
     selectedId = null
     renderList()
     renderEditor()
+  }
+
+  // Row-level status flip (✓ / ↺). Status-only IPC — never re-classifies the
+  // prompt. If the flipped item is open in the editor, sync its status select
+  // first so the dirty check passes and a later Save can't quietly revert it.
+  async function setStatus(item: RoadmapItem, status: RoadmapStatus): Promise<void> {
+    try {
+      const updated = await api.roadmap.setStatus(item.id, status)
+      if (updated && selectedId === item.id) statusSelect.value = status
+      await refresh({ preserveDirty: true })
+    } catch (err) {
+      showError(ipcErrorMessage(err, 'Could not update the roadmap item status.'))
+    }
   }
 
   async function checkFit(): Promise<void> {
@@ -984,6 +1035,13 @@ export function mountRoadmapPane(
   form.addEventListener('submit', (e) => {
     e.preventDefault()
     void save()
+  })
+  // Cmd/Ctrl+Enter to save from any input field.
+  form.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      void save()
+    }
   })
   startBtn.addEventListener('click', () => void startThread())
 

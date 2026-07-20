@@ -123,6 +123,9 @@ import {
 } from '@shared/todos/todo-logic.ts'
 import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
+import { todosToPanelListData } from '@copse/agent/packs/pack-panel.ts'
+import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -591,6 +594,7 @@ export async function runAgent(
       ? {
           advisorModel: resolveAdvisorModelId(),
           executorModel: model,
+          onChunk: sendChunk,
           getTranscript: (): LLMMessage[] => [
             ...priorMessages,
             { role: 'user' as const, content: outboundPrompt },
@@ -866,10 +870,32 @@ export async function runAgent(
 
     resetSubagentUsage()
 
+    // P4: the todos pack owns the plan panel. When the `copse.todos` pack is
+    // enabled we emit a level-2 `panel_update` (the pack-panel data model, P2)
+    // alongside the legacy `todo_update` chunk. `todo_update` continues to
+    // populate `thread.todos` so historical rendering + `compactAtTodoBoundary`
+    // keep working unchanged; new content additionally hydrates the pack panel
+    // slot the renderer mounts from `activePanelContributions()`. Disabling the
+    // pack skips the panel emission (the pack slot leaves the active set in
+    // one atomic flag flip; the renderer stops mounting for new content, and
+    // history renders from spine data / `thread.todos` regardless — decision
+    // 17). The shared registry is read every emit so a live toggle from
+    // Settings takes effect on the next turn's updates.
+    const emitTodoPanelUpdate = (todos: TodoItem[]): void => {
+      if (!getDefaultPackRegistry().isEnabled(TODOS_PACK_ID)) return
+      sendChunk({
+        type: 'panel_update',
+        packId: TODOS_PACK_ID,
+        contributionId: TODOS_PANEL_CONTRIBUTION_ID,
+        data: todosToPanelListData(todos),
+      })
+    }
+
     setAgentRunTodoContext({
       initial: priorTodos,
       onUpdate: (todos) => {
         sendChunk({ type: 'todo_update', todos })
+        emitTodoPanelUpdate(todos)
       },
     })
 
@@ -919,6 +945,7 @@ export async function runAgent(
             t.id === localItem.id ? { ...t, status: passed ? 'completed' : 'in_progress' } : t,
           )
           sendChunk({ type: 'todo_update', todos })
+          emitTodoPanelUpdate(todos)
           sendChunk({
             type: 'todo_worker_done',
             todoId: localItem.id,
@@ -1000,6 +1027,7 @@ export async function runAgent(
             advisorModel: resolveAdvisorModelId(),
             executorModel: model,
             getTranscript: () => trimmed,
+            onChunk: sendChunk,
           },
           () => registry.executeNormalized(name, args, signal),
         )

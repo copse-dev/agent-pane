@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { LLMMessage } from '@shared/types'
+import type { LLMMessage, StreamChunk } from '@shared/types'
 
 /**
  * Context needed by the client-side advisor tool for one executor call.
@@ -10,6 +10,8 @@ export interface AdvisorRunnerContext {
   advisorModel: string
   executorModel: string
   getTranscript: () => LLMMessage[]
+  /** Emits the advisor's dedicated usage line on the run's chunk stream (#566). */
+  onChunk: (chunk: StreamChunk) => void
 }
 
 const advisorContext = new AsyncLocalStorage<AdvisorRunnerContext>()

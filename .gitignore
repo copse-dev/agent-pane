@@ -29,6 +29,7 @@ tests/fixtures/git-changes-repo/.git/
 .wdio-eval-chrome-*/
 tests/e2e/electron-shell/.eval-env.json
 tests/e2e/artifacts/
+e2e-failure-artifacts/
 
 # Internal build/dev notes — not published for now
 DEVELOPMENT-NOTES.md

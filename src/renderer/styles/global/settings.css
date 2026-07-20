@@ -687,6 +687,128 @@ dialog.settings-overlay::backdrop {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Model value map (usage page) */
+.frontier-fieldset {
+  position: relative;
+}
+.frontier-banded {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+.frontier-band-row {
+  display: grid;
+  grid-template-columns: 52px 28px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.frontier-band-key {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.frontier-band-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  text-align: right;
+}
+.frontier-band-models {
+  color: var(--text-muted);
+}
+.frontier-tooltip {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  max-width: 360px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  box-shadow: var(--shadow-md);
+}
+.frontier-tooltip[hidden] {
+  display: none;
+}
+.frontier-tooltip .tt-title {
+  font-size: var(--font-size-sm);
+}
+.frontier-tooltip .tt-section {
+  margin-top: 6px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+.frontier-tooltip .tt-muted {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.frontier-tooltip .tt-status {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+.frontier-btn {
+  padding: 2px 10px;
+  margin-left: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.frontier-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.frontier-expand-dialog {
+  /* position:relative makes the dialog the containing block for the hover
+     tooltip layer appended inside it — without it the absolutely-positioned
+     tooltip resolves against an ancestor behind the modal and never shows. */
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  padding: 16px;
+  width: min(1400px, 96vw);
+  /* The controls must stay reachable however tall the chart gets. */
+  max-height: 90vh;
+  overflow: auto;
+}
+.frontier-expand-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+/* The controls stay put while the (tall) chart scrolls under them. */
+.frontier-expand-controls {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-base);
+  padding-bottom: 6px;
+}
+.frontier-expand-chart {
+  min-height: 0;
+}
+.frontier-expand-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.frontier-expand-dialog button {
+  margin-top: 8px;
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
 .usage-period-btn {
   padding: 6px 12px;
   border-radius: var(--radius);

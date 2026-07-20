@@ -40,9 +40,27 @@
   background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
   color: var(--danger, #f14c4c);
 }
-/* done keeps the neutral chip; archived fades the whole row. */
+/* done keeps the neutral chip but strikes the title; archived fades the row. */
+.roadmap-row:has(.roadmap-status-badge.is-done) .roadmap-row-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
 .roadmap-row:has(.roadmap-status-badge.is-archived) .roadmap-row-title {
   color: var(--text-muted);
+}
+/* Row-level mark-done/reopen toggle — a chip-sized span (rows are <button>s,
+   so no nested button), matching the issue chip beside it. */
+.roadmap-done-toggle {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.roadmap-done-toggle:hover {
+  color: var(--success, #3fb950);
 }
 .roadmap-status-select {
   width: auto;
