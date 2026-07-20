@@ -1125,16 +1125,8 @@ export function mountRoadmapPane(
   }
 
   async function setItemStatusFromReview(id: string, status: RoadmapStatus): Promise<boolean> {
-    const item = items.find((i) => i.id === id)
-    if (!item) return false
     try {
-      const updated = await api.roadmap.update(
-        id,
-        item.body,
-        itemNotes(item) || undefined,
-        status,
-        itemIssue(item) || undefined,
-      )
+      const updated = await api.roadmap.setStatus(id, status)
       if (!updated) return false
       reviewApplied.set(id, status)
       await refresh({ preserveDirty: true })
@@ -1285,7 +1277,10 @@ export function mountRoadmapPane(
     renderEditor()
     try {
       const prepared = await api.roadmap.prepareReview()
-      if (runToken !== reviewRunToken) return
+      if (runToken !== reviewRunToken) {
+        void api.roadmap.abortReview(prepared.runId)
+        return
+      }
       bulkRunId = prepared.runId
       if (prepared.items.length === 0) {
         reviewStatus.textContent = 'No active roadmap items to review.'
@@ -1318,8 +1313,8 @@ export function mountRoadmapPane(
       void api.roadmap.completeReview(bulkRunId).then(() => {
         cachedCheckpoint = undefined
       })
-    } else {
-      void api.roadmap.abortReview().then(() => {
+    } else if (bulkRunId) {
+      void api.roadmap.abortReview(bulkRunId).then(() => {
         cachedCheckpoint = undefined
       })
     }

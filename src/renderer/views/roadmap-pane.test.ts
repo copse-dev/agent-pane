@@ -71,6 +71,7 @@ interface RoadmapCalls {
     removeAttachmentIds?: string[]
   }[]
   attachmentData: string[]
+  setStatus: { id: string; status: string }[]
   delete: string[]
   issueUrl: string[]
   openExternal: string[]
@@ -82,7 +83,7 @@ interface RoadmapCalls {
   reviewItemDeep: string[]
   lastReviewAt: number
   completeReview: string[]
-  abortReview: number
+  abortReview: string[]
 }
 
 interface MockOpenIssue {
@@ -124,6 +125,7 @@ function makeApi(
     create: [],
     update: [],
     attachmentData: [],
+    setStatus: [],
     delete: [],
     issueUrl: [],
     openExternal: [],
@@ -135,7 +137,7 @@ function makeApi(
     reviewItemDeep: [],
     lastReviewAt: 0,
     completeReview: [],
-    abortReview: 0,
+    abortReview: [],
   }
   const api = {
     panes: { popout: async (): Promise<void> => {} },
@@ -199,6 +201,13 @@ function makeApi(
       attachmentData: async (id: string, attachmentId: string) => {
         calls.attachmentData.push(`${id}/${attachmentId}`)
         return 'data:image/png;base64,QUJD'
+      },
+      setStatus: async (id: string, status: string) => {
+        calls.setStatus.push({ id, status })
+        const item = items.find((i) => i.id === id)
+        if (!item) return null
+        item.status = status
+        return { ...item }
       },
       delete: async (id: string) => {
         calls.delete.push(id)
@@ -288,9 +297,11 @@ function makeApi(
       },
       completeReview: async (runId: string) => {
         calls.completeReview.push(runId)
+        return true
       },
-      abortReview: async () => {
-        calls.abortReview++
+      abortReview: async (runId: string) => {
+        calls.abortReview.push(runId)
+        return true
       },
       importIssues: async (selected: { number: number; title: string; body: string }[]) => {
         calls.importIssues.push(selected)
@@ -1214,20 +1225,23 @@ describe('roadmap pane', () => {
 
   it('marks a likely review row done from triage actions', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
-    const { api, calls } = makeApi([makeItem('a', 'Fix startup flash', 'ready', 'notes', '#41')])
+    const { api, calls, items } = makeApi([
+      makeItem('a', 'Fix startup flash', 'ready', 'notes', '#41'),
+    ])
     const { list, viewer } = mountHosts()
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
       await flush()
       list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
       await flush()
+      const first = items[0]
+      assert.ok(first)
+      first.body = 'Prompt edited in another pane'
       viewer.querySelector<HTMLButtonElement>('.roadmap-review-mark-done')?.click()
       await flush()
-      assert.equal(calls.update.length, 1)
-      const update = calls.update[0]
-      assert.ok(update)
-      assert.equal(update.status, 'done')
-      assert.equal(update.prompt, 'Fix startup flash')
+      assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'done' }])
+      assert.equal(calls.update.length, 0, 'status triage must not replay stale prompt fields')
+      assert.equal(items[0]?.body, 'Prompt edited in another pane')
       assert.ok(viewer.querySelector('.roadmap-review-applied-badge'))
     } finally {
       unmount()

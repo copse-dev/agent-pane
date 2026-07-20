@@ -160,13 +160,13 @@ export function readRoadmapReviewCheckpointForRenderer(): RoadmapReviewCheckpoin
  * Advance the bulk-review checkpoint. Called when the user closes the backlog
  * review panel after a finished run — not when deep single-item checks run.
  */
-export function completeRoadmapReview(runId: string): void {
-  acknowledgeBulkRun(runId)
+export function completeRoadmapReview(runId: string): boolean {
+  return acknowledgeBulkRun(runId)
 }
 
 /** Clear an in-progress bulk run without advancing the commit checkpoint. */
-export function abortRoadmapReview(): void {
-  clearPendingBulkRun()
+export function abortRoadmapReview(runId: string): boolean {
+  return clearPendingBulkRun(runId)
 }
 
 async function gatherIssueEvidence(
@@ -232,19 +232,9 @@ export async function reviewRoadmapItem(
     }
   }
 
-  if (pinned?.state === 'closed') {
-    const detail = `Pinned issue ${issueRef} is closed on GitHub.`
-    stampReview(id, note, 'resolved', detail, depth, bulkRunId)
-    return {
-      id,
-      verdict: 'resolved',
-      detail,
-      depth,
-      pinnedIssue: pinnedEvidence,
-      linkedIssues: linked,
-    }
-  }
-
+  // A closed GitHub issue is evidence, not proof of implementation: issues can
+  // be closed as duplicates, not planned, or invalid. Keep the state in the
+  // model prompt instead of enabling bulk mark/archive from that signal alone.
   const provider = await resolveSmallTasksProvider()
   if (!provider) {
     throw new Error('No model available for the roadmap review — configure a small-tasks model.')

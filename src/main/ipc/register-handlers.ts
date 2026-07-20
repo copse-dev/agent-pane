@@ -116,6 +116,7 @@ import {
   deleteKnowledgeNote,
   getKnowledgeNote,
   loadKnowledgeNotes,
+  setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
 import {
@@ -589,6 +590,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return att ? readKnowledgeAttachmentDataUrl(id, att) : null
   })
 
+  // Review triage changes status only. Re-reading in the store avoids
+  // overwriting a prompt/notes edit made while the model review was running.
+  ipcMain.handle('roadmap:setStatus', (event, rawId: unknown, rawStatus: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zRoadmapId, [rawId])
+    const status = parseIpcArgs(zRoadmapStatus, [rawStatus])
+    const existing = getKnowledgeNote(id)
+    if (!existing || existing.type !== ROADMAP_TYPE) return null
+    return setKnowledgeNoteStatus(id, status)
+  })
+
   // Resolve a stored issue ref to a URL at click time, so short `#123` refs
   // always follow the workspace's *current* origin remote.
   ipcMain.handle('roadmap:issueUrl', async (event, rawRef: unknown) => {
@@ -683,14 +695,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('roadmap:completeReview', (event, rawRunId: unknown) => {
     assertMainFrameSender(event, win)
     const runId = parseIpcArgs(z.uuid(), [rawRunId])
-    completeRoadmapReview(runId)
+    const completed = completeRoadmapReview(runId)
     notifyRoadmapChanged()
+    return completed
   })
 
-  ipcMain.handle('roadmap:abortReview', (event) => {
+  ipcMain.handle('roadmap:abortReview', (event, rawRunId: unknown) => {
     assertMainFrameSender(event, win)
-    abortRoadmapReview()
+    const runId = parseIpcArgs(z.uuid(), [rawRunId])
+    const aborted = abortRoadmapReview(runId)
     notifyRoadmapChanged()
+    return aborted
   })
 
   ipcMain.handle('roadmap:delete', (event, rawId: unknown) => {

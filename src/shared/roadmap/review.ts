@@ -34,6 +34,9 @@ export function isReviewStale(
 ): boolean {
   if (status === 'done' || status === 'archived') return false
   if (!isRoadmapReviewVerdict(fields['reviewVerdict'])) return true
+  // A deep check uses the item's full commit lifetime and is invalidated when
+  // prompt/issue edits clear the review fields. It does not need a bulk run id.
+  if (fields['reviewDepth'] === 'deep') return false
   const bulkRun = fields['reviewBulkRun']
   if (!bulkRun) return true
   if (bulkRun === checkpoint.pendingBulkRun) return false

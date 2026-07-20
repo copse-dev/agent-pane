@@ -90,18 +90,22 @@ export function setPendingBulkRun(runId: string): void {
   writeState({ ...state, pendingBulkRun: runId })
 }
 
-export function clearPendingBulkRun(): void {
+export function clearPendingBulkRun(runId: string): boolean {
   const state = readState()
-  if (!state.pendingBulkRun) return
+  if (state.pendingBulkRun !== runId) return false
   writeState({ ...state, pendingBulkRun: null })
+  return true
 }
 
-export function acknowledgeBulkRun(runId: string): void {
+export function acknowledgeBulkRun(runId: string): boolean {
+  const state = readState()
+  if (state.pendingBulkRun !== runId) return false
   writeState({
     lastReviewAt: new Date().toISOString(),
     lastAcknowledgedBulkRun: runId,
     pendingBulkRun: null,
   })
+  return true
 }
 
 /** @internal tests — direct timestamp write for legacy scenarios. */
