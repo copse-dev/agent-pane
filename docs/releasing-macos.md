@@ -1,172 +1,148 @@
 # Releasing Copse for macOS
 
-How to cut a signed, notarized macOS build of Copse and ship it to pre-release
-testers, with automatic updates via `electron-updater`.
+How to publish signed, notarized macOS builds through Copse's public stable and
+beta channels. Run the [general release checklist](release-checklist.md) for
+every release; this document covers channel policy and macOS packaging.
 
-The supported GA target is macOS 26 or newer on Apple Silicon (`arm64`) and Intel
-(`x64`). Run the [general release checklist](release-checklist.md) for every
-published release; this file covers the macOS packaging mechanics.
+The supported target is macOS 26 or newer on Apple Silicon (`arm64`) and Intel
+(`x64`). Copse cannot use the Mac App Store or TestFlight because its shell and
+PTY functionality is incompatible with the App Sandbox. Distribution is a
+Developer ID-signed, Apple-notarized direct download with updates from GitHub
+Releases.
 
-Because Copse runs arbitrary shell commands and spawns `node-pty`, it is **not
-distributed through the Mac App Store / TestFlight** (the App Sandbox those
-require forbids that). Instead we ship a **Developer ID-signed, Apple-notarized**
-build as a direct download, and auto-update it from GitHub Releases.
+## Channel contract
+
+The package version is the sole source of truth. The release workflow rejects
+every other prerelease shape instead of guessing:
+
+| Package/tag shape             | Copse channel | Update feed      | GitHub release |
+| ----------------------------- | ------------- | ---------------- | -------------- |
+| `X.Y.Z` / `vX.Y.Z`            | Stable        | `latest-mac.yml` | Normal/latest  |
+| `X.Y.Z-beta.N` / matching tag | Beta          | `beta-mac.yml`   | Prerelease     |
+
+Stable users receive only stable releases. Beta users receive newer beta
+releases and may advance to a newer stable release. Neither channel permits a
+downgrade. The shared classifier in
+[`src/shared/release-channel.mts`](../src/shared/release-channel.mts) drives both
+the packaged app and the release workflow so their routing cannot drift.
+
+GitHub release assets must be anonymously reachable. Before a public beta or
+stable launch, make this repository public or move `build.publish` to a public
+download endpoint and verify the feed from a signed-out browser. A GitHub
+Release in a private repository is not public distribution.
 
 ## What the build produces
 
-`electron-builder` (config in `package.json` → `build`) emits, per architecture
-(`arm64`, `x64`), into `release/`:
+`electron-builder` emits the following files into `release/` for each
+architecture:
 
-| Artifact                                 | Purpose                                                        |
-| ---------------------------------------- | -------------------------------------------------------------- |
-| `Copse-<ver>-<arch>.dmg`                 | First install — the disk image testers download and open.      |
-| `Copse-<ver>-<arch>.zip` (+ `.blockmap`) | The payload `electron-updater` downloads for updates.          |
-| `latest-mac.yml`                         | The update feed `electron-updater` reads to detect new builds. |
+| Artifact                                 | Purpose                                      |
+| ---------------------------------------- | -------------------------------------------- |
+| `Copse-<ver>-<arch>.dmg`                 | First-install disk image.                    |
+| `Copse-<ver>-<arch>.zip` (+ `.blockmap`) | Payload and differential-update metadata.    |
+| `latest-mac.yml` or `beta-mac.yml`       | Channel feed consumed by `electron-updater`. |
+| `SHA256SUMS`                             | Checksums for every promoted artifact.       |
 
-`<arch>` is `arm64` (Apple Silicon) or `x64` (Intel).
+A stable build also mirrors its tested latest metadata into the beta feed so an
+installed beta can advance to that stable version. The workflow publishes every
+finalized macOS metadata file with the exact zip files it references.
 
-The app is signed with the **hardened runtime** and the entitlements in
-[`build/entitlements.mac.plist`](../build/entitlements.mac.plist) (JIT / unsigned
-executable memory / library-validation-disabled / dyld env vars — required for
-Electron + native modules + spawned helpers).
+The app embeds `LSMinimumSystemVersion=26.0`, uses the hardened runtime, and
+applies the entitlements in
+[`build/entitlements.mac.plist`](../build/entitlements.mac.plist). CI verifies
+the deployment target, signatures, notarization ticket, bundled-helper
+architecture, update configuration, and packaged runtime before publication.
 
-## Prerequisites
+## Required credentials
 
-1. **Apple Developer Program** membership (the Team ID).
-2. A **Developer ID Application** certificate, exported from Keychain Access as a
-   password-protected `.p12` (includes its private key).
-3. **Notary credentials** — an Apple ID, an
-   [app-specific password](https://support.apple.com/en-us/102654), and the Team
-   ID. (An App Store Connect API key works too; adjust the env vars accordingly.)
-4. Node ≥ 22.18 and a macOS machine (signing/notarization can't run on Linux).
+The repository needs these Actions secrets:
 
-## Required CI secrets
+| Secret                        | Purpose                                         |
+| ----------------------------- | ----------------------------------------------- |
+| `MAC_CSC_LINK`                | Base64-encoded Developer ID Application `.p12`. |
+| `MAC_CSC_KEY_PASSWORD`        | Password used when exporting the `.p12`.        |
+| `APPLE_ID`                    | Apple ID used for notarization.                 |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID.        |
+| `APPLE_TEAM_ID`               | Apple Developer Team ID.                        |
 
-Set these on the repo (Settings → Secrets and variables → Actions). They feed the
-[`Release (macOS)`](../.github/workflows/release-mac.yml) workflow:
+`GITHUB_TOKEN` is provided automatically for publishing. The release workflow
+fails before packaging if a required signing or notarization credential is
+missing.
 
-| Secret                        | What it is                                                      |
-| ----------------------------- | --------------------------------------------------------------- |
-| `MAC_CSC_LINK`                | The Developer ID `.p12`, base64-encoded (`base64 -i cert.p12`). |
-| `MAC_CSC_KEY_PASSWORD`        | The `.p12` export password.                                     |
-| `APPLE_ID`                    | Apple ID email used for notarization.                           |
-| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID.                        |
-| `APPLE_TEAM_ID`               | Your Apple Developer Team ID.                                   |
+## Publishing through CI
 
-`GITHUB_TOKEN` (auto-provided) handles the GitHub Release upload — no extra
-secret needed.
+Only [the `Release (macOS)` workflow](../.github/workflows/release-mac.yml)
+publishes releases. Local commands are deliberately non-publishing so the
+signed, notarized, smoke-tested artifacts cannot be replaced by a separate
+local build.
 
-## Releasing via CI (recommended)
+1. Complete [the release checklist](release-checklist.md), including security
+   review and GA-blocker handling.
+2. Set `package.json` to the next supported version, such as `0.1.0-beta.2` or
+   `0.1.0`.
+3. Merge that version to `main`, then create and push the exact matching tag.
+   For example: `git tag v0.1.0-beta.2 && git push origin v0.1.0-beta.2`.
+4. Wait for the tagged commit's exact `CI Passed` check. The release workflow
+   will not accept a branch-tip, merge-ref, or unrelated successful run.
+5. The workflow builds, signs, notarizes, staples, verifies, smoke-tests, and
+   attests the package. A separate publisher job promotes those exact files as
+   a prerelease for beta or a normal/latest release for stable.
+6. Review and update the generated GitHub Release notes before announcing the
+   release.
 
-### Release checklist
+A manual workflow dispatch accepts only an existing matching tag reachable
+from `main`; it does not provide a bypass around those gates.
 
-Before creating a release tag:
+## Local validation
 
-1. Update the review date and exact release-candidate SHA in
-   [`security-review-ga.md`](./security-review-ga.md).
-2. Reverify every open/accepted finding against current source, tests, issues,
-   and pull requests. Open-PR code does not count as remediated.
-3. Confirm every fixed finding still links to its landed change and regression
-   coverage, and add any new security findings discovered since the prior review.
-4. Resolve every `ga-blocker`, or record an explicit bounded waiver in the
-   ledger with finding/issue, approver, date, affected release, expiry/re-review
-   trigger, rationale, and compensating controls.
-5. Record the human security reviewer and release-owner GA sign-off. Do not cut
-   a GA tag while either sign-off is pending.
-6. Run the normal release validation (`npm run check`, build/e2e as required by
-   the changed surfaces, and the signed-build checks below).
+Both local distribution commands build `arm64` and `x64`, choose the feed from
+`package.json`, and never publish:
 
-Then publish:
+| Command               | Signs | Notarizes | Publishes | Purpose                                  |
+| --------------------- | :---: | :-------: | :-------: | ---------------------------------------- |
+| `npm run dist:mac`    |  ✓\*  |           |           | Fast packaging and feed-generation check |
+| `npm run release:dry` |   ✓   |     ✓     |           | Full signing/notarization rehearsal      |
 
-1. Bump `version` in `package.json` (e.g. `0.1.0-beta.2`).
-2. Push a matching tag: `git tag v0.1.0-beta.2 && git push origin v0.1.0-beta.2`.
-   A manual run of **Release (macOS)** instead takes an existing matching tag.
-3. The tag must point at a commit reachable from `main`, and its exact commit
-   must first receive a successful **CI Passed** check. The workflow then builds,
-   signs, notarizes, staples, verifies, and smoke-tests the package.
-4. Only after those checks does a separate job publish that same tested DMG, zip,
-   update metadata, checksums, and provenance as a GitHub **prerelease**. It
-   never rebuilds during publication.
+\* `dist:mac` signs only when a Developer ID identity is available in the
+Keychain. `release:dry` reads signing/notarization values from the environment;
+it does not upload. `npm run pack:mac` creates a quick unsigned `.app` directory
+for development and is not distributable.
 
-The workflow fails before packaging when any signing or notarization secret is
-missing. Use `npm run dist:mac` or `npm run release:dry` locally for a non-publish
-packaging check.
-
-## Releasing locally
-
-Put your Apple credentials in a `.env` at the repo root (gitignored) — `release`
-and `release:dry` auto-load it, so a real release is a single command:
+Validate a signed app bundle rather than the enclosing DMG:
 
 ```bash
-# .env
-APPLE_ID=you@example.com
-APPLE_APP_SPECIFIC_PASSWORD=abcd-efgh-ijkl-mnop
-APPLE_TEAM_ID=VRQQV62MK3
-GH_TOKEN=ghp_…            # only needed to publish (npm run release)
-```
-
-```bash
-npm run release          # auto-loads .env, then signs + notarizes + publishes
-```
-
-Pick a command — each builds arm64 + x64:
-
-| Command               | Loads `.env` | Signs | Notarizes | Publishes | Use for                                  |
-| --------------------- | :----------: | :---: | :-------: | :-------: | ---------------------------------------- |
-| `npm run dist:mac`    |              |  ✓\*  |           |           | Fast packaging check                     |
-| `npm run release:dry` |      ✓       |   ✓   |     ✓     |           | Verify signing + notarization, no upload |
-| `npm run release`     |      ✓       |   ✓   |     ✓     |     ✓     | Cut the actual GitHub prerelease         |
-
-\* `dist:mac` signs only if a Developer ID identity is in your Keychain. Signing
-auto-discovers that identity from the Keychain; only notarization/publish need
-`.env`. (`release:mac` is the same as `release` but without the `.env` auto-load —
-it's what CI calls, injecting the secrets as env vars itself.)
-
-`npm run pack:mac` produces a quick **unsigned** `.app` (`--mac dir`) for local
-poking; it isn't a distributable.
-
-### Verifying a signed build
-
-The notarization ticket is stapled to the **`.app`** (then wrapped in the DMG), so
-validate the app, not the DMG:
-
-```bash
-spctl -a -vvv -t install "release/mac-arm64/Copse.app"   # → "accepted, source=Notarized Developer ID"
+spctl -a -vvv -t install "release/mac-arm64/Copse.app"
 codesign --verify --deep --strict --verbose=2 "release/mac-arm64/Copse.app"
-stapler validate "release/mac-arm64/Copse.app"
+xcrun stapler validate "release/mac-arm64/Copse.app"
 ```
 
-Artifacts are named with their architecture — `Copse-<ver>-arm64.dmg` (Apple
-Silicon) and `Copse-<ver>-x64.dmg` (Intel) — so testers don't grab the wrong one.
+## Install and update behavior
 
-## How testers install & update
+New users download the architecture-appropriate DMG from the public GitHub
+Release and drag Copse to Applications. On launch, and through **Copse ▸ Check
+for Updates…**, the packaged app checks its selected channel. It prompts before
+downloading and prompts again before restarting to install; updates are never
+applied silently.
 
-1. Download the DMG from the GitHub prerelease, open it, drag **Copse** to
-   Applications. (The repo is private, so testers need read access to the repo,
-   or share the asset link with them.)
-2. On launch — and via **Copse ▸ Check for Updates…** — the app checks the feed.
-   When a newer prerelease is published, it prompts to download, then prompts to
-   restart and install. Updates are never applied silently.
+Before announcing either channel, exercise the real transition with installed
+signed builds:
 
-Auto-update wiring lives in [`src/main/services/auto-update.ts`](../src/main/services/auto-update.ts);
-it is active only in the packaged macOS build.
+- Stable old → stable new succeeds; stable old does not see a beta-only release.
+- Beta old → beta new succeeds.
+- Beta old → newer stable succeeds.
+- A lower version is never offered, even if its release was published later.
 
-## Known limitations / follow-ups
+Auto-update wiring lives in
+[`src/main/services/auto-update.ts`](../src/main/services/auto-update.ts) and is
+active only in packaged macOS builds.
 
-- **gortex binary signing.** The bundled `vendor/gortex` binary is
-  `asarUnpack`ed so electron-builder signs it under the hardened runtime. Verify
-  semantic search works in a notarized build; if Gatekeeper blocks it, the app
-  falls back to a system `gortex`/`vera` on `PATH`, and plain search still
-  works.
-- **Private-repo distribution.** GitHub Releases on a private repo require
-  testers to have repo access. If that's friction, switch `build.publish` /
-  hosting to a public static endpoint (see issue #507).
-- **Windows/Linux** packaging and updates are not set up yet. The first general
-  availability release is therefore explicitly macOS-only; Linux and Windows are
-  not distributed GA targets until they have an equivalent command-execution
-  containment boundary.
-- **Forward recovery only.** Downgrades are not supported. Follow
-  [recovery.md](recovery.md) for backup, migration, and corrective-release
-  guidance.
-- **CI cost.** The release runs on a GitHub-hosted `macos-14` runner; a
-  self-hosted Mac is also available (the e2e runners) if minutes become a concern.
+## Recovery and current scope
+
+- Releases are forward-fix only. Preserve affected data and publish a newer
+  corrective version; do not direct users to downgrade. See
+  [recovery.md](recovery.md).
+- Windows and Linux packages do not yet have an equivalent command-execution
+  containment boundary and are not public distribution targets.
+- The bundled `gortex` helper is `asarUnpack`ed and signed with the app. Verify
+  semantic search in the notarized rehearsal; Copse can fall back to a system
+  `gortex`/`vera` or plain search if the helper is unavailable.
