@@ -194,6 +194,10 @@ export interface IpcInvokeMap {
     args: [projectId: string, query?: string]
     result: import('./thread.ts').ThreadCatalogHit[]
   }
+  'threads:listOrphans': {
+    args: []
+    result: import('./state.ts').OrphanProjectStore[]
+  }
 
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
