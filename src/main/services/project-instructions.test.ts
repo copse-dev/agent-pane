@@ -124,6 +124,21 @@ describe('project-instructions', () => {
     assert.equal(await loadProjectInstructions(), 'Top-level.\n\nCursor rule text.')
   })
 
+  it('auto-attaches glob-scoped Cursor rules when context paths match', async () => {
+    await mkdir(join(projectRoot, '.cursor', 'rules'), { recursive: true })
+    await writeFile(
+      join(projectRoot, '.cursor', 'rules', 'ts.mdc'),
+      '---\nglobs: ["**/*.ts"]\nalwaysApply: false\n---\nTS rule.',
+    )
+    assert.equal(await loadProjectInstructions(), '')
+    assert.equal(
+      await loadProjectInstructions({
+        cursorRuleContext: { contextPaths: ['src/foo.ts'], userText: 'edit src/foo.ts' },
+      }),
+      'TS rule.',
+    )
+  })
+
   it('loads global files even with no workspace open', async () => {
     restoreWorkspace?.()
     restoreWorkspace = setWorkspaceRootForTest(null)

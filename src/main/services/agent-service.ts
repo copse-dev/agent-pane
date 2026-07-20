@@ -787,7 +787,12 @@ export async function runAgent(
     // inline below, not because a chunk is withheld.
     let loopStopReason: string | undefined
 
-    const systemPrompt = await buildSystemPrompt({ subagentsEnabled, invokedSkills, threadId })
+    const systemPrompt = await buildSystemPrompt({
+      subagentsEnabled,
+      invokedSkills,
+      threadId,
+      userPrompt: outboundPrompt,
+    })
 
     const messages: LLMMessage[] = [
       { role: 'system', content: systemPrompt },

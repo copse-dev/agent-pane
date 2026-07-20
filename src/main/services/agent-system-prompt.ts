@@ -1,4 +1,4 @@
-import { loadProjectInstructions } from './project-instructions.ts'
+import { loadAgentRequestedRulesCatalog, loadProjectInstructions } from './project-instructions.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
 import { getWorkspaceRoot } from './workspace.ts'
 import {
@@ -10,6 +10,7 @@ import {
   buildSkillsCatalogBlock,
   buildSkillsToolsPromptLine,
 } from './skills/skill-prompt.ts'
+import { extractContextPathsFromText, type CursorRuleContext } from './skills/cursor-rules.ts'
 import {
   BASE_SYSTEM_PROMPT,
   BASE_SYSTEM_PROMPT_DIRECT_READS,
@@ -28,16 +29,26 @@ import {
 } from '@shared/terminal/read-terminal.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
 import { isProjectSandboxActive } from '../project-sandbox/state.ts'
+import type { UserContent } from '@shared/types'
+import { userContentToText } from '@shared/remote-agent-stream.ts'
 
 /** Assemble the system prompt for a run from base prompt + skills + instructions. */
 export async function buildSystemPrompt(opts: {
   subagentsEnabled: boolean
   invokedSkills: string[]
   threadId?: string
+  /** Current user turn — drives Auto-Attached / Manual Cursor rule selection (#636). */
+  userPrompt?: UserContent
 }): Promise<string> {
   const { subagentsEnabled, invokedSkills, threadId } = opts
   const skillsToolsLine = buildSkillsToolsPromptLine()
-  const projectInstructions = await loadProjectInstructions()
+  const userText = opts.userPrompt != null ? userContentToText(opts.userPrompt) : ''
+  const cursorRuleContext: CursorRuleContext = {
+    contextPaths: extractContextPathsFromText(userText),
+    userText,
+  }
+  const projectInstructions = await loadProjectInstructions({ cursorRuleContext })
+  const agentRulesCatalog = await loadAgentRequestedRulesCatalog()
 
   const basePrompt = subagentsEnabled ? BASE_SYSTEM_PROMPT : BASE_SYSTEM_PROMPT_DIRECT_READS
   const externalApiSafety = getSetting<boolean>('externalApiSafety', false)
@@ -62,6 +73,7 @@ export async function buildSystemPrompt(opts: {
     (piiRedactionEnabled ? PII_REDACTION_BLOCK : '') +
     buildSkillsCatalogBlock() +
     (await buildInvokedSkillsBlock(invokedSkills, { sandboxActive: isProjectSandboxActive() })) +
+    agentRulesCatalog +
     buildSemanticSearchPromptBlock() +
     (customInstructions ? `\n\n---\n\n## Custom instructions\n\n${customInstructions}` : '') +
     (projectInstructions ? `\n\n---\n\n## Project instructions\n\n${projectInstructions}` : '')

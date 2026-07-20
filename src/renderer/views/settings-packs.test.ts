@@ -28,6 +28,7 @@ function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
   })
   const overrides: Record<string, unknown> = {
     instructions: { list: () => Promise.resolve([]) },
+    cursorRules: { list: () => Promise.resolve([]) },
     skills: { list: () => Promise.resolve([]) },
     plugins: { list: () => Promise.resolve([]) },
     hooks: { list: () => Promise.resolve({ hooks: [], warnings: [] }) },

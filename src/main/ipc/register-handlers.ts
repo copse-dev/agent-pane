@@ -95,6 +95,7 @@ import {
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
+import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
@@ -1021,6 +1022,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       bytes: Buffer.byteLength(content, 'utf-8'),
     })),
   )
+  ipcMain.handle('cursorRules:list', async () => {
+    const root = getWorkspaceRoot()
+    if (!root) return []
+    return toCursorRuleSummaries(await discoverCursorRules(root))
+  })
 
   ipcMain.handle(
     'git:isAvailable',
