@@ -1,6 +1,7 @@
 # Demo links: a browser-hosted renderer build
 
-**Status:** exploring (this doc is the plan; nothing has landed).
+**Status: Active.** Nothing is on `main` yet; the technical spike is in draft
+PR [#989](https://github.com/copse-dev/agent-pane/pull/989).
 
 Build the renderer as a static web page backed by a mock API, so a UI change
 can be reviewed as a **shareable demo link** — interactive, both themes, live

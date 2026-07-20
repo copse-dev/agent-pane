@@ -8,6 +8,8 @@ import { getResolvedExtraProviders } from './providers/extra-providers-store.ts'
 import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
 import { estimateUsageCost } from '@copse/llm/estimate-cost.ts'
 import { getSetting, getSettingTrimmed } from './storage/settings.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { requestApproval } from './approval.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import {
@@ -247,10 +249,18 @@ export function getModelComparisonRunner(): ModelComparisonRunner | null {
   }
 }
 
-/** Whether the auto-on-review comparison should fire this turn. */
+/**
+ * Whether the auto-on-review comparison should fire this turn. P5: the pack
+ * toggle (`copse.model-comparison`) is the atomic master switch — disabling
+ * the pack drops both the manual `compare_models` tool and this auto trigger
+ * in one flag flip (decision 15). The `modelComparisonAutoOnReview`
+ * sub-setting is the fine-grained "and _also_ run automatically" opt-in and
+ * defaults off, so enabling the pack alone still only exposes the on-demand
+ * tool — the auto trigger stays opt-in.
+ */
 export function isAutoComparisonEnabled(): boolean {
   return (
-    getSetting<boolean>('modelComparisonEnabled', false) &&
+    getDefaultPackRegistry().isEnabled(MODEL_COMPARISON_PACK_ID) &&
     getSetting<boolean>('modelComparisonAutoOnReview', false)
   )
 }

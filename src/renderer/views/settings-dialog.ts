@@ -145,7 +145,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
     save: true,
   },
   { name: 'localTodoItemsEnabled', kind: 'checkbox', default: true, save: true },
-  { name: 'postTurnReviewEnabled', kind: 'checkbox', default: true, save: true },
+  // P5: the master post-turn-review toggle moved to Settings > Packs
+  // (`copse.post-turn-review`); the threshold below stays a top-level setting.
   { name: 'postTurnReviewMinChangedLines', kind: 'number', default: 1, save: true },
   { name: 'bundledCursorSkillsEnabled', kind: 'checkbox', default: true, save: true },
   { name: 'skillExternalLinkWarnings', kind: 'checkbox', default: true, save: true },
@@ -168,7 +169,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'modelComparisonEnabled', kind: 'checkbox', default: false, save: true },
+  // P5: the master model-comparison toggle moved to Settings > Packs
+  // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
@@ -588,12 +590,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 <input type="checkbox" name="localTodoItemsEnabled" />
                 Use local models for todo items tagged local (requires acceptance check)
               </label>
-              <label class="checkbox-label">
-                <input type="checkbox" name="postTurnReviewEnabled" />
-                Review the diff with a subagent after each editing turn
-              </label>
+              <p class="field-hint">
+                Post-turn review is bundled as the <code>copse.post-turn-review</code>
+                pack — toggle it from <strong>Settings &rsaquo; Packs</strong>. The
+                threshold below still applies when the pack is on.
+              </p>
               <label>
-                Skip that review below this many changed lines (1 = only skip an empty
+                Skip the review below this many changed lines (1 = only skip an empty
                 diff, 0 = always review)
                 <input
                   type="number"
@@ -752,11 +755,25 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Files appended to the system prompt, in precedence order. Global steering
                 (<code>~/AGENTS.md</code>, <code>~/.claude/CLAUDE.md</code>) loads first, then
                 project <code>AGENT.md</code>/<code>AGENTS.md</code> (cross-tool),
-                <code>CLAUDE.md</code> (Claude Code), and Cursor rules
-                (<code>.cursor/rules/*.mdc</code> marked <code>alwaysApply</code>, plus
-                <code>.cursorrules</code>) when present.
+                <code>CLAUDE.md</code> (Claude Code), and always-applied Cursor rules
+                (<code>.cursor/rules/*.mdc</code> with <code>alwaysApply: true</code>, plus
+                <code>.cursorrules</code>). Auto-attached and manually <code>@</code>-mentioned
+                rules also join this list for the turn that activates them.
               </p>
               <div id="sources-instructions-list" class="sources-group">
+                <span class="sources-empty">Loading…</span>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Cursor rules</legend>
+              <p class="settings-fieldset-desc">
+                Project rules under <code>.cursor/rules/*.mdc</code> (and legacy
+                <code>.cursorrules</code>), classified by activation: always, auto (globs),
+                agent (description — catalogued for <code>read_file</code>), or manual
+                (<code>@</code>-mention).
+              </p>
+              <div id="sources-cursor-rules-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
               </div>
             </fieldset>
@@ -1059,16 +1076,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <fieldset>
               <legend>Model comparison</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="modelComparisonEnabled" />
-                Compare two models on the working diff
-              </label>
               <p class="field-hint">
-                Adds a <code>compare_models</code> tool that reviews the current diff through two
-                models independently, then a judge model compares their verdicts (agreements,
-                disagreements, and what each caught that the other missed). Since a run makes up to
-                three model calls, it asks for approval before spending on any paid model (you can
-                choose to remember the choice for the session). While off, the tool is not registered.
+                Model comparison is bundled as the <code>copse.model-comparison</code>
+                pack — toggle it from <strong>Settings &rsaquo; Packs</strong>. When on, it
+                adds a <code>compare_models</code> tool that reviews the current diff
+                through two models independently and a judge model compares their
+                verdicts. Since a run makes up to three model calls, it asks for approval
+                before spending on any paid model.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelComparisonAutoOnReview" />
@@ -1633,8 +1647,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const statusEl = qsRequired(overlay, '#sources-reload-status')
     statusEl.textContent = 'Loading…'
     try {
-      const [instructions, skills, hooks, plugins] = await Promise.all([
+      const [instructions, cursorRules, skills, hooks, plugins] = await Promise.all([
         api.instructions.list(),
+        api.cursorRules.list(),
         api.skills.list(),
         api.hooks.list(),
         api.plugins.list(),
@@ -1648,6 +1663,31 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           }),
         ),
         'No instruction files (add AGENT.md, AGENTS.md, or CLAUDE.md to the workspace root, or ~/AGENTS.md globally).',
+      )
+
+      const kindLabel: Record<string, string> = {
+        always: 'always',
+        auto: 'auto',
+        agent: 'agent',
+        manual: 'manual',
+      }
+      fillSourceList(
+        '#sources-cursor-rules-list',
+        cursorRules.map((r) => {
+          const bits = [`${String(r.bytes)} B`]
+          if (r.globs?.length) bits.push(`globs: ${r.globs.join(', ')}`)
+          if (r.description) bits.push(r.description)
+          bits.push(r.path)
+          return makeSourceRow(r.name, kindLabel[r.kind] ?? r.kind, bits.join(' · '), {
+            badgeClass:
+              r.kind === 'always'
+                ? 'sources-badge-project'
+                : r.kind === 'auto'
+                  ? 'sources-badge-auto'
+                  : undefined,
+          })
+        }),
+        'No Cursor rules (add .cursor/rules/*.mdc or a legacy .cursorrules file).',
       )
 
       fillSourceList(

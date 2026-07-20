@@ -18,6 +18,9 @@ export const RESERVED_PROVIDER_SLUGS: readonly string[] = [
   'gemini',
   'deepseek',
   'huggingface',
+  'together',
+  'groq',
+  'fireworks',
   // Built-in local-server presets (see BUILTIN_EXTRA_PROVIDERS).
   'ollama',
   'llamacpp',

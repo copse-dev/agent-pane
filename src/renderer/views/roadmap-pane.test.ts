@@ -2,6 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
@@ -51,6 +52,19 @@ interface MockAttachmentAdd {
   dataUrl: string
 }
 
+/** Minimal persisted thread the pane's reopen path can resolve by id. */
+function makeThread(id: string, title: string): Thread {
+  return {
+    id,
+    title,
+    status: 'idle',
+    messages: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+}
+
 interface RoadmapCalls {
   list: number
   // `attachments` / `addAttachments` / `removeAttachmentIds` are recorded only
@@ -72,12 +86,14 @@ interface RoadmapCalls {
     removeAttachmentIds?: string[]
   }[]
   attachmentData: string[]
+  setStatus: { id: string; status: string }[]
   delete: string[]
   issueUrl: string[]
   openExternal: string[]
   openIssues: number
   importIssues: { number: number; title: string; body: string }[][]
   checkFit: string[]
+  setThread: { id: string; threadId: string }[]
 }
 
 interface MockOpenIssue {
@@ -119,12 +135,14 @@ function makeApi(
     create: [],
     update: [],
     attachmentData: [],
+    setStatus: [],
     delete: [],
     issueUrl: [],
     openExternal: [],
     openIssues: 0,
     importIssues: [],
     checkFit: [],
+    setThread: [],
   }
   const api = {
     panes: { popout: async (): Promise<void> => {} },
@@ -189,6 +207,13 @@ function makeApi(
         calls.attachmentData.push(`${id}/${attachmentId}`)
         return 'data:image/png;base64,QUJD'
       },
+      setStatus: async (id: string, status: string) => {
+        calls.setStatus.push({ id, status })
+        const item = items.find((i) => i.id === id)
+        if (!item) return null
+        item.status = status
+        return { ...item }
+      },
       delete: async (id: string) => {
         calls.delete.push(id)
         const i = items.findIndex((n) => n.id === id)
@@ -214,6 +239,14 @@ function makeApi(
           }
         }
         return { verdict: 'partial', detail: '- prompt does not mention the startup flash' }
+      },
+      setThread: async (id: string, threadId: string) => {
+        calls.setThread.push({ id, threadId })
+        const item = items.find((i) => i.id === id)
+        if (!item) return null
+        const { thread: _thread, ...rest } = item.fields
+        item.fields = { ...rest, ...(threadId ? { thread: threadId } : {}) }
+        return { ...item }
       },
       importIssues: async (selected: { number: number; title: string; body: string }[]) => {
         calls.importIssues.push(selected)
@@ -449,6 +482,89 @@ describe('roadmap pane', () => {
     }
   })
 
+  it('marks an item done from the list row without selecting it', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Ship the thing', 'ready')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const toggle = list.querySelector<HTMLElement>('.roadmap-done-toggle')
+      assert.ok(toggle)
+      assert.equal(toggle.title, 'Mark done')
+      assert.equal(toggle.tabIndex, 0, 'the non-nested row action must be keyboard focusable')
+      toggle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await flush()
+      assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'done' }])
+      assert.equal(calls.update.length, 0, 'status-only IPC, not a full update')
+      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
+      assert.deepEqual(badges, ['done'])
+      // The toggle click must not select the row into the editor.
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
+      // The re-rendered row now offers reopen instead.
+      assert.equal(
+        list.querySelector<HTMLElement>('.roadmap-done-toggle')?.title,
+        'Reopen (set ready)',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('reopens a done item from the list row', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Shipped already', 'done')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
+      await flush()
+      assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'ready' }])
+      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
+      assert.deepEqual(badges, ['ready'])
+    } finally {
+      unmount()
+    }
+  })
+
+  it('offers no row toggle for archived items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Old idea', 'archived')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(list.querySelector('.roadmap-done-toggle'), null)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('syncs the open editor status select when its item is marked done', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Ship the thing', 'ready')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLSelectElement>('.roadmap-status-select')?.value,
+        'done',
+        'a later Save must not quietly revert the flip',
+      )
+      // Saving now keeps the flipped status.
+      viewer.querySelector('.roadmap-form')?.dispatchEvent(new Event('submit'))
+      await flush()
+      assert.equal(calls.update[0]?.status, 'done')
+    } finally {
+      unmount()
+    }
+  })
+
   it('deletes the selected item after confirmation', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls } = makeApi([makeItem('a', 'Doomed')])
@@ -571,6 +687,107 @@ describe('roadmap pane', () => {
       assert.equal(opened, 1, 'opens a new thread')
       const thread = store.getState().threads.find((t) => t.id === store.getState().activeThreadId)
       assert.equal(thread?.draftPrompt, 'Ship the thing\n\nNotes: after #99 merges')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('records the started thread on the item and then offers Reopen', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Ship the thing')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const reopenBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')
+      assert.ok(reopenBtn)
+      assert.equal(reopenBtn.hidden, true, 'nothing to reopen before a thread starts')
+      viewer.querySelector<HTMLButtonElement>('.roadmap-start-btn')?.click()
+      await flush()
+      const threadId = store.getState().activeThreadId
+      assert.ok(threadId)
+      assert.deepEqual(calls.setThread, [{ id: 'a', threadId }], 'stamps the new thread id')
+      assert.equal(reopenBtn.hidden, false, 'the tracked thread can now be reopened')
+      assert.ok(list.querySelector('.roadmap-thread-chip'), 'the row shows a thread chip')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('reopens the tracked thread instead of creating a new one', async () => {
+    const tracked = makeThread('t1', 'Ship the thing')
+    const other = makeThread('t2', 'Something else')
+    // A blank idle thread is pruned on switch-away; a draft keeps it alive so
+    // the thread count stays comparable.
+    other.draftPrompt = 'wip draft'
+    const store = createStore({
+      filesPaneOpen: true,
+      rightPanelMode: 'roadmap',
+      threads: [tracked, other],
+      activeThreadId: 't2',
+    })
+    const seeded = makeItem('a', 'Ship the thing')
+    seeded.fields['thread'] = 't1'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      const reopenBtn = viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')
+      assert.ok(reopenBtn)
+      assert.equal(reopenBtn.hidden, false)
+      let opened = 0
+      store.on('new_thread_opened', () => opened++)
+      reopenBtn.click()
+      assert.equal(store.getState().activeThreadId, 't1', 'switches to the tracked thread')
+      assert.equal(opened, 0, 'does not open a new thread')
+      assert.equal(store.getState().threads.length, 2, 'no thread was created')
+    } finally {
+      unmount()
+    }
+  })
+
+  it('hides Reopen and the row chip when the tracked thread no longer exists', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const seeded = makeItem('a', 'Ship the thing')
+    seeded.fields['thread'] = 'deleted-thread'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      assert.equal(list.querySelector('.roadmap-thread-chip'), null)
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')?.hidden, true)
+    } finally {
+      unmount()
+    }
+  })
+
+  it('reopens the tracked thread from the row chip without selecting the item', async () => {
+    const tracked = makeThread('t1', 'Ship the thing')
+    const store = createStore({
+      filesPaneOpen: true,
+      rightPanelMode: 'roadmap',
+      threads: [tracked, makeThread('t2', 'Current')],
+      activeThreadId: 't2',
+    })
+    const seeded = makeItem('a', 'Ship the thing')
+    seeded.fields['thread'] = 't1'
+    const { api } = makeApi([seeded])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const chip = list.querySelector<HTMLElement>('.roadmap-thread-chip')
+      assert.ok(chip)
+      assert.equal(chip.tabIndex, 0, 'the nested row link must be keyboard focusable')
+      chip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      assert.equal(store.getState().activeThreadId, 't1')
+      // Activating the chip must not select the row into the editor.
+      assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
     } finally {
       unmount()
     }

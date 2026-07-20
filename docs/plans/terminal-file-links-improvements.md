@@ -1,5 +1,9 @@
 # Terminal file links — follow-up improvements
 
+**Status: Partial / deferred.** File links and line/column navigation shipped in
+[#415](https://github.com/copse-dev/agent-pane/pull/415). Cwd-aware resolution remains
+deferred.
+
 This documents two improvements layered on top of the initial terminal
 file-link feature (cmd/ctrl-click a file path in a shell to open it in the
 viewer). The first — `:line:col` navigation — **ships with the initial

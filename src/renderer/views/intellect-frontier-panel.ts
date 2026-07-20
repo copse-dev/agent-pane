@@ -378,6 +378,40 @@ export function unscoredTooltipContent(u: { id: string; costPerMTok: number }): 
   return root
 }
 
+const TOOLTIP_OFFSET_PX = 12
+
+/**
+ * Place a hover card beside the cursor without squeezing it into a tall column.
+ * Near the right edge, shrink-to-fit width uses only the remaining horizontal
+ * room — the same failure mode the chart labels avoid by flipping anchor.
+ */
+export function positionFrontierTooltip(
+  tip: HTMLElement,
+  container: HTMLElement,
+  evt: Pick<MouseEvent, 'clientX' | 'clientY'>,
+): void {
+  const rect = container.getBoundingClientRect()
+  const tipWidth = tip.offsetWidth
+  const tipHeight = tip.offsetHeight
+  const cursorX = evt.clientX - rect.left
+  const cursorY = evt.clientY - rect.top
+
+  let left = cursorX + TOOLTIP_OFFSET_PX
+  if (left + tipWidth > rect.width) {
+    left = cursorX - tipWidth - TOOLTIP_OFFSET_PX
+  }
+  left = Math.max(0, Math.min(left, Math.max(0, rect.width - tipWidth)))
+
+  let top = cursorY + TOOLTIP_OFFSET_PX
+  if (top + tipHeight > rect.height) {
+    top = cursorY - tipHeight - TOOLTIP_OFFSET_PX
+  }
+  top = Math.max(0, Math.min(top, Math.max(0, rect.height - tipHeight)))
+
+  tip.style.left = `${String(left)}px`
+  tip.style.top = `${String(top)}px`
+}
+
 /** A positioned hover layer inside `container` (which must be a positioning context). */
 export function createTooltipLayer(container: HTMLElement): FrontierTooltip {
   const tip = el('div', { class: 'frontier-tooltip', hidden: true })
@@ -386,9 +420,7 @@ export function createTooltipLayer(container: HTMLElement): FrontierTooltip {
     show(content, evt): void {
       tip.replaceChildren(content)
       tip.hidden = false
-      const rect = container.getBoundingClientRect()
-      tip.style.left = `${String(Math.max(0, evt.clientX - rect.left + 12))}px`
-      tip.style.top = `${String(Math.max(0, evt.clientY - rect.top + 12))}px`
+      positionFrontierTooltip(tip, container, evt)
     },
     hide(): void {
       tip.hidden = true

@@ -1,6 +1,7 @@
 # Command sandboxing routing
 
-**Status:** shipped as a **trusted-command allow-list** (the safe core). The
+**Status: Resolved (safe core shipped).** The trusted-command allow-list landed in
+[#700](https://github.com/copse-dev/agent-pane/pull/700). The
 richer read/write/container tier model below is designed but deferred — see
 "Why the tiers were deferred".
 

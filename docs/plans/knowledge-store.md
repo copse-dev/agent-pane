@@ -1,10 +1,11 @@
 # Knowledge store
 
-Tracking: [#645](https://github.com/jonathanKingston/agent-pane/issues/645)
+Tracking: [#645](https://github.com/copse-dev/agent-pane/issues/645)
 
-Status: **experimental scaffold** — the store and its first consumer (roadmap) are
-opt-in behind existing experimental settings; nothing reads or writes the store while
-those flags are off.
+Status: **Active experimental feature** — the store, roadmap migration, and memories
+migration are on `main`; knowledge surfacing remains tracked in the open issue. The
+consumers are opt-in behind existing experimental settings, and nothing reads or writes
+the store while those flags are off.
 
 ## What this is
 

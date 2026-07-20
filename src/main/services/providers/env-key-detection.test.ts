@@ -61,6 +61,9 @@ describe('collectDetectedKeys', () => {
           OPENAI_API_KEY: 'sk-openai-1234',
           HF_TOKEN: 'hf_abcdefghij',
           PERPLEXITY_API_KEY: 'pplx-test-abcdefgh',
+          GROQ_API_KEY: 'gsk_abcdefghij',
+          TOGETHER_API_KEY: 'together-abcdefgh',
+          FIREWORKS_API_KEY: 'fireworks-abcdefgh',
           UNRELATED_VAR: 'ignore-me',
         },
       },
@@ -72,6 +75,9 @@ describe('collectDetectedKeys', () => {
     assert.equal(byProvider.get('huggingface')?.envVar, 'HF_TOKEN')
     assert.equal(byProvider.get('huggingface')?.provider, 'huggingface')
     assert.equal(byProvider.get('perplexity')?.envVar, 'PERPLEXITY_API_KEY')
+    assert.equal(byProvider.get('groq')?.envVar, 'GROQ_API_KEY')
+    assert.equal(byProvider.get('together')?.envVar, 'TOGETHER_API_KEY')
+    assert.equal(byProvider.get('fireworks')?.envVar, 'FIREWORKS_API_KEY')
     assert.equal(
       detected.find((d) => d.provider === 'mistral'),
       undefined,

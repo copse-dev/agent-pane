@@ -14,10 +14,13 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { definePack } from '@copse/agent/packs/pack-manifest.ts'
-import { storageGet, storageSet } from '../storage/storage.ts'
+import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
+import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
+import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
+const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -49,6 +52,9 @@ function makeRegistry(): PackRegistry {
 
 function clearStorage(): void {
   storageSet(PACK_DISABLED_KEY, [])
+  storageDelete(P5_ENABLEMENT_MIGRATION_KEY)
+  storageDelete('postTurnReviewEnabled')
+  storageDelete('modelComparisonEnabled')
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -147,5 +153,38 @@ describe('PackService', () => {
     // Second call returns the same singleton — critical so the IPC layer + the
     // hook-registry provider read through the same instance.
     assert.equal(getPackService(), service)
+  })
+
+  it('migrates P5 defaults without enabling the previously opt-in comparison tool', () => {
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), true)
+    assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), false)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [MODEL_COMPARISON_PACK_ID])
+    assert.equal(storageGet(P5_ENABLEMENT_MIGRATION_KEY), true)
+  })
+
+  it('preserves explicit legacy P5 enablement choices', () => {
+    storageSet('postTurnReviewEnabled', false)
+    storageSet('modelComparisonEnabled', true)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), false)
+    assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [POST_TURN_REVIEW_PACK_ID])
+  })
+
+  it('does not overwrite pack choices after the P5 migration has run', () => {
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PACK_DISABLED_KEY, [POST_TURN_REVIEW_PACK_ID])
+    storageSet('postTurnReviewEnabled', true)
+    storageSet('modelComparisonEnabled', false)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), false)
+    assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [POST_TURN_REVIEW_PACK_ID])
   })
 })

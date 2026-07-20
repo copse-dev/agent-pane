@@ -237,10 +237,10 @@ describe('createLocalOpenAIProvider', () => {
 
 describe('createExtraCloudProvider host allowlist', () => {
   const custom: ExtraProvider = {
-    id: 'together',
-    label: 'Together',
-    prefix: 'together:',
-    baseUrl: 'https://api.together.xyz/v1',
+    id: 'acme',
+    label: 'Acme',
+    prefix: 'acme:',
+    baseUrl: 'https://api.acme.example/v1',
     builtin: false,
     local: false,
     keyLabel: 'Key',
@@ -251,7 +251,7 @@ describe('createExtraCloudProvider host allowlist', () => {
   }
 
   it('constructs when the custom host is approved', () => {
-    const provider = createExtraCloudProvider(custom, 'model', 'sk-test', ['api.together.xyz'])
+    const provider = createExtraCloudProvider(custom, 'model', 'sk-test', ['api.acme.example'])
     assert.ok(provider instanceof OpenAIProvider)
   })
 
@@ -265,10 +265,10 @@ describe('createExtraCloudProvider host allowlist', () => {
     assert.throws(
       () =>
         createExtraCloudProvider(
-          { ...custom, baseUrl: 'http://api.together.xyz/v1' },
+          { ...custom, baseUrl: 'http://api.acme.example/v1' },
           'model',
           'sk-test',
-          ['api.together.xyz'],
+          ['api.acme.example'],
         ),
       /only use http: for loopback hosts/,
     )

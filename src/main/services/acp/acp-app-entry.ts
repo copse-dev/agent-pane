@@ -35,10 +35,10 @@ import {
  */
 export async function runAcpAgentMode(): Promise<void> {
   // Mirror the GUI bootstrap: gh/git probes must run before createRegistry()
-  // gates read-only GitHub tools on isGhAvailable() (#523).
+  // gates read-only GitHub tools on isGhAvailable() (#523). P5 mirror: the
+  // pack service must be up before createRegistry() so `syncModelComparisonTools`
+  // reads the persisted `packDisabled` state (not a fresh fallback).
   await checkToolAvailability()
-  // P3 mirror: the pack service must be up before createRegistry() so pack
-  // consumers read the persisted packDisabled state (not a fresh fallback).
   getPackService()
   const registry = createRegistry()
   await initSkillsRegistry()

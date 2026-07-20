@@ -1,6 +1,6 @@
 # Remote e2e for the local dev loop
 
-**Status:** implemented (M0–M4). M0 landed as the `scripts/lib/cloud-hosts.mts`
+**Status: Resolved** (M0–M4 implemented). M0 landed as the `scripts/lib/cloud-hosts.mts`
 extraction; the CLI (`scripts/remote-e2e.mts`, `npm run e2e:remote`) and the
 one-shot container runner (`ci-runners/exec-run.sh`) landed together — usage in
 [`ci-runners/README.md`](../../ci-runners/README.md#remote-e2e-dev-hosts-npm-run-e2eremote).

@@ -19,6 +19,7 @@ import {
   lookupThreadByPrUrl,
   rebuildAgentPrIndex,
   listAgentPrLinks,
+  listOrphanProjectStores,
 } from './thread-store.ts'
 import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 
@@ -68,6 +69,25 @@ describe('thread-store', () => {
     if (previousRoot === undefined) delete process.env['COPSE_WORKSPACE_DIR']
     else process.env['COPSE_WORKSPACE_DIR'] = previousRoot
     rmSync(root, { recursive: true, force: true })
+  })
+
+  it('lists orphaned thread stores, excluding known project ids (#997)', async () => {
+    await saveProjectThread('known', thread('t1'))
+    await saveProjectThread('orphan', thread('t2', { title: 'lost' }))
+    await saveProjectThread('orphan', thread('t3'))
+
+    const orphans = await listOrphanProjectStores(['known'])
+    assert.equal(orphans.length, 1)
+    const [first] = orphans
+    assert.ok(first)
+    assert.equal(first.id, 'orphan')
+    assert.equal(first.threadCount, 2)
+  })
+
+  it('reports no orphans when every store has a project entry (#997)', async () => {
+    await saveProjectThread('p1', thread('t1'))
+    await saveProjectThread('p2', thread('t2'))
+    assert.deepEqual(await listOrphanProjectStores(['p1', 'p2']), [])
   })
 
   it('round-trips a thread with messages, tool results, and metadata', async () => {

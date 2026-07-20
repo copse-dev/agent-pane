@@ -62,6 +62,7 @@ const EVENTS_FILE = 'events.jsonl'
 const META_FILE = 'meta.json'
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
+const STREAM_STATS_FILE = 'stream-stats.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
@@ -87,6 +88,10 @@ function catalogPath(projectId: string): string {
 
 function agentPrIndexPath(projectId: string): string {
   return join(projectDir(projectId), AGENT_PR_INDEX_FILE)
+}
+
+function streamStatsPath(projectId: string): string {
+  return join(projectDir(projectId), STREAM_STATS_FILE)
 }
 
 function metaOf(thread: Thread): ThreadMeta {
@@ -232,6 +237,24 @@ function readProjectThreads(projectId: string): Thread[] {
     if (thread) threads.push(thread)
   }
   return sortThreadsNewestFirst(threads)
+}
+
+/** Store dir ids directly under the workspace root (each is a project's thread store). */
+function listProjectStoreIds(): string[] {
+  const root = workspaceRoot()
+  if (!existsSync(root)) return []
+  return readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+}
+
+/** How many thread dirs (a subdir holding a `meta.json`) a store id contains. */
+function countThreadDirs(projectId: string): number {
+  let count = 0
+  for (const threadId of listThreadIds(projectId)) {
+    if (existsSync(join(threadDir(projectId, threadId), META_FILE))) count += 1
+  }
+  return count
 }
 
 // --- Catalog (fast cross-thread index; derived, rebuildable) ----------------
@@ -626,6 +649,18 @@ export function appendHookRun(
   })
 }
 
+/** Append one stream-cut observability record (project-level eval source). */
+export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const path = streamStatsPath(projectId)
+    mkdirSync(dirname(path), { recursive: true })
+    const existingRaw = safeRead(path) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
+  })
+}
+
 /** Patch a thread's mutable metadata in place and refresh its catalog line. */
 export function updateMeta(
   projectId: string,
@@ -681,6 +716,27 @@ export function loadProjectCatalog(projectId: string, query?: string): Promise<T
       ...e,
       spinePath: join(threadDir(projectId, e.path), EVENTS_FILE),
     }))
+  })
+}
+
+/**
+ * Store directories with threads but no matching project entry — the invisible
+ * orphans from issue #997. `knownProjectIds` are the ids currently in config; a
+ * store id not among them (and holding at least one thread) is surfaced so it
+ * can be re-attached. Empty stores are skipped (nothing to recover).
+ */
+export function listOrphanProjectStores(
+  knownProjectIds: string[],
+): Promise<import('@shared/types').OrphanProjectStore[]> {
+  const known = new Set(knownProjectIds)
+  return runSerialized('thread-store:orphans', () => {
+    const orphans: import('@shared/types').OrphanProjectStore[] = []
+    for (const id of listProjectStoreIds()) {
+      if (known.has(id)) continue
+      const threadCount = countThreadDirs(id)
+      if (threadCount > 0) orphans.push({ id, threadCount })
+    }
+    return orphans
   })
 }
 
