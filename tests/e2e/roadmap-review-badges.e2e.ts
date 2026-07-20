@@ -30,7 +30,7 @@ function seedRoadmapNote(
 ): void {
   const id = randomUUID()
   const now = new Date().toISOString()
-  const dir = join(homedir(), '.copse', 'knowledge', knowledgeNamespace(workspaceRoot), 'Roadmap')
+  const dir = join(homedir(), '.copse', 'knowledge', knowledgeNamespace(workspaceRoot), 'roadmap')
   mkdirSync(dir, { recursive: true })
   const lines = [
     '---',
