@@ -393,7 +393,9 @@ export async function runAcpAgentFromSettings(
     try {
       return await runAcpSessionPrompt(entry.open, promptBlocks, model, options.signal)
     } catch (err) {
-      disposeAcpSession(options.threadId, { preserveForResume: isAcpConnectionDropped(err) })
+      await disposeAcpSession(options.threadId, {
+        preserveForResume: isAcpConnectionDropped(err),
+      })
       throw err
     } finally {
       entry.bridge?.setAdvisorContext(null)

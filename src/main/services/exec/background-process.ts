@@ -4,12 +4,16 @@ import { spawnBackgroundProcess } from '../../project-sandbox/index.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
-import { terminateProcessTree } from './subprocess-kill.ts'
+import { SUBPROCESS_KILL_GRACE_MS, terminateProcessTree } from './subprocess-kill.ts'
 import {
   CappedOutputAccumulator,
   COMMAND_OUTPUT_MAX_BYTES,
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
+import {
+  requireThreadExecutionOwner,
+  type ThreadExecutionOwner,
+} from '../thread-execution-context.ts'
 
 /** Experimental gate (off by default, issue #691) for the `run_background` tool. */
 export const BACKGROUND_TASKS_ENABLED_SETTING = 'backgroundTasksEnabled'
@@ -37,6 +41,7 @@ interface BackgroundProcess {
   urlRemote: boolean
   exited: boolean
   exitCode: number | null
+  owner: ThreadExecutionOwner
 }
 
 /** Public, serialisable view of a background process. */
@@ -50,6 +55,8 @@ export interface BackgroundProcessInfo {
   urlRemote: boolean
   running: boolean
   exitCode: number | null
+  projectId: string
+  threadId: string
 }
 
 const processes = new Map<string, BackgroundProcess>()
@@ -104,7 +111,21 @@ function toInfo(entry: BackgroundProcess): BackgroundProcessInfo {
     urlRemote: entry.urlRemote,
     running: !entry.exited,
     exitCode: entry.exitCode,
+    projectId: entry.owner.projectId,
+    threadId: entry.owner.threadId,
   }
+}
+
+function sameOwner(left: ThreadExecutionOwner, right: ThreadExecutionOwner): boolean {
+  return left.projectId === right.projectId && left.threadId === right.threadId
+}
+
+function ownedProcess(
+  id: string,
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): BackgroundProcess | null {
+  const entry = processes.get(id)
+  return entry && sameOwner(entry.owner, owner) ? entry : null
 }
 
 function onOutput(entry: BackgroundProcess, chunk: Buffer): void {
@@ -127,6 +148,8 @@ export interface StartBackgroundProcessOptions {
   allowPortBinding?: boolean
   /** Wait up to this long (ms) for a URL or early exit before resolving. */
   waitMs?: number
+  /** Explicit owner for non-agent callers and tests; agent tools use the run context. */
+  owner?: ThreadExecutionOwner
 }
 
 /**
@@ -143,6 +166,7 @@ export async function startBackgroundProcess(
   const cwd = opts.cwd ?? getWorkspaceRoot()
   if (!cwd) throw new Error('No workspace open.')
   const portBinding = opts.allowPortBinding === true
+  const owner = opts.owner ?? requireThreadExecutionOwner()
 
   const proc = await spawnBackgroundProcess(command, {
     cwd,
@@ -162,6 +186,7 @@ export async function startBackgroundProcess(
     urlRemote: false,
     exited: false,
     exitCode: null,
+    owner,
   }
   processes.set(entry.id, entry)
 
@@ -198,23 +223,67 @@ export async function startBackgroundProcess(
   return toInfo(entry)
 }
 
-export function listBackgroundProcesses(): BackgroundProcessInfo[] {
-  return [...processes.values()].map(toInfo)
+export function listBackgroundProcesses(
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): BackgroundProcessInfo[] {
+  return [...processes.values()].filter((entry) => sameOwner(entry.owner, owner)).map(toInfo)
 }
 
 /** Recent output for a process (head + tail, capped), or null when unknown. */
-export function getBackgroundProcessLogs(id: string): string | null {
-  const entry = processes.get(id)
+export function getBackgroundProcessLogs(
+  id: string,
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): string | null {
+  const entry = ownedProcess(id, owner)
   return entry ? entry.output.toString() : null
 }
 
 /** Kill a process and forget it. Returns false when the id is unknown. */
-export function stopBackgroundProcess(id: string): boolean {
-  const entry = processes.get(id)
+export function stopBackgroundProcess(
+  id: string,
+  owner: ThreadExecutionOwner = requireThreadExecutionOwner(),
+): boolean {
+  const entry = ownedProcess(id, owner)
   if (!entry) return false
   terminateProcessTree(entry.proc)
   processes.delete(id)
   return true
+}
+
+/**
+ * Stop and forget every process owned by one thread. The returned promise
+ * settles only after each child exits or the bounded SIGKILL grace elapses, so
+ * worktree retirement can await resource cleanup without touching another
+ * thread's tasks.
+ */
+export async function stopBackgroundProcessesForThread(
+  owner: ThreadExecutionOwner,
+): Promise<string[]> {
+  const entries = [...processes.values()].filter((entry) => sameOwner(entry.owner, owner))
+  await Promise.all(
+    entries.map(
+      (entry) =>
+        new Promise<void>((resolve) => {
+          let settled = false
+          let cancelEscalation = (): void => {}
+          const finish = (): void => {
+            if (settled) return
+            settled = true
+            cancelEscalation()
+            clearTimeout(timeout)
+            resolve()
+          }
+          entry.proc.once('exit', finish)
+          entry.proc.once('close', finish)
+          cancelEscalation = terminateProcessTree(entry.proc)
+          const timeout = setTimeout(finish, SUBPROCESS_KILL_GRACE_MS + 250)
+          processes.delete(entry.id)
+          if (entry.exited || entry.proc.exitCode !== null || entry.proc.signalCode !== null)
+            finish()
+        }),
+    ),
+  )
+  return entries.map((entry) => entry.id)
 }
 
 /** Kill every tracked process — called on app shutdown. */
