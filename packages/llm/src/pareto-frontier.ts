@@ -68,6 +68,68 @@ export interface FrontierCandidate {
   planLimitReached?: { label: string; resetsAt: string | null }
   /** AA's own cost-per-Intelligence-Index-task in USD, when the feed carries it. */
   costPerTask?: number
+  /**
+   * Blended $/MTok when {@link costPerMTok} has been remapped onto another cost
+   * axis (e.g. cost-per-task). Tooltips still disclose list price from this.
+   */
+  blendedCostPerMTok?: number
+}
+
+/** X-axis for the intellect-vs-cost value map. */
+export type FrontierCostAxis = 'blended' | 'perTask'
+
+/**
+ * Cost coordinate for the chosen X axis. Null when the candidate cannot be
+ * placed on that axis (per-task mode without a positive `costPerTask`, and not
+ * free via local/plan).
+ */
+export function costOnAxis(
+  c: Pick<FrontierCandidate, 'costPerMTok' | 'costPerTask' | 'local' | 'plan'>,
+  axis: FrontierCostAxis,
+): number | null {
+  if (axis === 'blended') return c.costPerMTok
+  // Free-on-axis: local and plan-included still sit at $0 on the task axis.
+  if (c.local || c.plan) return 0
+  if (typeof c.costPerTask === 'number' && Number.isFinite(c.costPerTask) && c.costPerTask > 0) {
+    return c.costPerTask
+  }
+  return null
+}
+
+/**
+ * Remap candidates so `costPerMTok` is the plot cost for `axis`. When remapping
+ * to per-task, the prior blended list price is preserved on `blendedCostPerMTok`
+ * for tooltips. Candidates that cannot sit on the axis are returned separately.
+ */
+export function projectOntoCostAxis(
+  candidates: readonly FrontierCandidate[],
+  axis: FrontierCostAxis,
+): { plotted: FrontierCandidate[]; missingAxisCost: FrontierCandidate[] } {
+  if (axis === 'blended') {
+    return { plotted: [...candidates], missingAxisCost: [] }
+  }
+  const plotted: FrontierCandidate[] = []
+  const missingAxisCost: FrontierCandidate[] = []
+  for (const c of candidates) {
+    const cost = costOnAxis(c, axis)
+    if (cost === null) {
+      missingAxisCost.push(c)
+      continue
+    }
+    const priorBlended =
+      c.blendedCostPerMTok ??
+      (c.planDetail !== undefined ? c.planDetail.apiPricePerMTok : c.costPerMTok)
+    const next: FrontierCandidate = {
+      ...c,
+      costPerMTok: cost,
+    }
+    // Only stash blended when the plot cost left the list-price axis.
+    if (cost !== priorBlended || c.plan || c.local) {
+      next.blendedCostPerMTok = priorBlended
+    }
+    plotted.push(next)
+  }
+  return { plotted, missingAxisCost }
 }
 
 export interface FrontierPoint extends FrontierCandidate {
