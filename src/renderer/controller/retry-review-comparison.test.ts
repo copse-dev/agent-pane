@@ -57,16 +57,20 @@ test('retryReview sends the active projectId ahead of the threadId', () => {
   const { store, api, calls } = setup('project-1')
   retryReview(store, api, 't1', 'm1')
   assert.equal(calls.review.length, 1)
-  assert.equal(calls.review[0]?.[0], 'project-1')
-  assert.equal(calls.review[0]?.[1], 't1')
+  const [call] = calls.review
+  assert.ok(call)
+  assert.equal(call[0], 'project-1')
+  assert.equal(call[1], 't1')
 })
 
 test('retryComparison sends the active projectId ahead of the threadId', () => {
   const { store, api, calls } = setup('project-1')
   retryComparison(store, api, 't1')
   assert.equal(calls.comparison.length, 1)
-  assert.equal(calls.comparison[0]?.[0], 'project-1')
-  assert.equal(calls.comparison[0]?.[1], 't1')
+  const [call] = calls.comparison
+  assert.ok(call)
+  assert.equal(call[0], 'project-1')
+  assert.equal(call[1], 't1')
 })
 
 test('retry actions no-op when no project is active rather than send an unresolvable request', () => {
