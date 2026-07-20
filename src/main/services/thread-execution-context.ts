@@ -4,6 +4,8 @@ import type { StreamChunk } from '@shared/types'
 import { classifyAgentError } from './agent-errors.ts'
 import { getThreadMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
+import { validateThreadWorktree, type ValidatedThreadWorktree } from './worktree-manager.ts'
+import type { ThreadWorktree } from '@shared/types/worktree.ts'
 
 export type ThreadCheckoutMode = 'shared' | 'worktree'
 
@@ -21,7 +23,20 @@ export type ThreadExecutionOwner = Pick<ThreadExecutionContext, 'projectId' | 't
 
 export interface ThreadExecutionContextDependencies {
   getProjectRoot: (projectId: string) => string | null
-  getThreadMeta: (projectId: string, threadId: string) => Promise<{ readonly id: string } | null>
+  getThreadMeta: (
+    projectId: string,
+    threadId: string,
+  ) => Promise<{
+    readonly id: string
+    readonly gitBranch?: string
+    readonly worktree?: ThreadWorktree
+  } | null>
+  validateWorktree?: (input: {
+    projectId: string
+    threadId: string
+    projectRoot: string
+    worktree: ThreadWorktree
+  }) => Promise<ValidatedThreadWorktree>
 }
 
 const storage = new AsyncLocalStorage<ThreadExecutionContext>()
@@ -29,13 +44,15 @@ const storage = new AsyncLocalStorage<ThreadExecutionContext>()
 const defaultDependencies: ThreadExecutionContextDependencies = {
   getProjectRoot,
   getThreadMeta,
+  validateWorktree: validateThreadWorktree,
 }
 
 /**
- * Resolve the initial shared-checkout context from trusted persisted state.
+ * Resolve a shared or isolated context from trusted persisted state.
  * The renderer supplies identity, never a filesystem root; main validates both
  * the persisted project and the thread's membership before deriving that root.
- * Worktree-aware resolution will extend this boundary once checkout metadata exists.
+ * Persisted worktree paths are diagnostic only: the manager reconstructs and
+ * validates the registered checkout before its root can enter the run context.
  */
 export async function resolveThreadExecutionContext(
   projectId: string,
@@ -50,13 +67,31 @@ export async function resolveThreadExecutionContext(
     throw new Error(`Thread "${threadId}" does not belong to project "${projectId}"`)
   }
 
+  if (threadMeta.worktree) {
+    const validate = dependencies.validateWorktree ?? validateThreadWorktree
+    const worktree = await validate({
+      projectId,
+      threadId,
+      projectRoot,
+      worktree: threadMeta.worktree,
+    })
+    return Object.freeze({
+      projectId,
+      threadId,
+      projectRoot,
+      root: worktree.root,
+      checkoutMode: 'worktree',
+      branch: worktree.branch,
+    })
+  }
+
   return Object.freeze({
     projectId,
     threadId,
     projectRoot,
     root: projectRoot,
     checkoutMode: 'shared',
-    branch: null,
+    branch: threadMeta.gitBranch ?? null,
   })
 }
 

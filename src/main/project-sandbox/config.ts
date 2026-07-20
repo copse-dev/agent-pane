@@ -373,6 +373,18 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // writes too, matching the workspace-only path guards.
   const chatStore = getChatStoreRootSync()
   const chatStoreRead = chatStore ? [chatStore, `${chatStore}/**`] : []
+  // Git discovers a repository by probing `.git` while walking from cwd toward
+  // the checkout top-level. A project may itself be a monorepo subdirectory, so
+  // allow metadata reads on each ancestor directory without recursively exposing
+  // sibling project content.
+  const worktreeDiscoveryRead: string[] = []
+  if (internalRoot) {
+    let cursor = internalRoot.root
+    while (cursor !== internalRoot.checkoutRoot) {
+      cursor = dirname(cursor)
+      worktreeDiscoveryRead.push(cursor)
+    }
+  }
   // Linked worktrees keep their index/HEAD in a per-worktree admin directory
   // and share objects/refs with the parent repository. These paths come only
   // from a main-process-validated internal-root registration. Do not allow the
@@ -380,6 +392,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   // remain outside the writable surface.
   const gitAdminRead = internalRoot
     ? [
+        join(internalRoot.checkoutRoot, '.git'),
         internalRoot.gitDir,
         `${internalRoot.gitDir}/**`,
         internalRoot.commonGitDir,
@@ -403,12 +416,14 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         join(internalRoot.commonGitDir, 'packed-refs'),
       ]
     : []
+  const siblingDeny = internalRoot
+    ? internalRoot.siblingRoots.flatMap((siblingRoot) => [siblingRoot, `${siblingRoot}/**`])
+    : []
   const gitAdminDenyWrite = internalRoot
     ? [
         join(internalRoot.commonGitDir, 'config'),
         join(internalRoot.commonGitDir, 'hooks'),
         join(internalRoot.commonGitDir, 'hooks/**'),
-        join(internalRoot.commonGitDir, 'worktrees/**'),
         `${internalRoot.gitDir}/hooks/**`,
       ]
     : []
@@ -420,7 +435,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir()],
+      denyRead: [homedir(), ...siblingDeny],
       allowRead: [
         root,
         `${root}/**`,
@@ -429,10 +444,11 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
         ...toolchainRead,
         ...gitConfigReadPaths(),
         ...chatStoreRead,
+        ...worktreeDiscoveryRead,
         ...gitAdminRead,
       ],
       allowWrite: [root, `${root}/**`, tmpDir, `${tmpDir}/**`, ...gitAdminWrite],
-      denyWrite: [...workspaceMandatoryWriteDenyPaths(root), ...gitAdminDenyWrite],
+      denyWrite: [...workspaceMandatoryWriteDenyPaths(root), ...siblingDeny, ...gitAdminDenyWrite],
       allowGitConfig: true,
     },
   }

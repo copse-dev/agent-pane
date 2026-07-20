@@ -2,6 +2,7 @@ import type { AgentRunPayload } from './skills.ts'
 import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
+import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree.ts'
 export type { HookCard } from '../hooks/hook-card.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
@@ -142,6 +143,10 @@ export interface Thread {
   workingBrief?: string
   /** Git branch this thread was started on; set on first message and persisted. */
   gitBranch?: string
+  /** Validated linked checkout owned by this thread; absence means shared mode. */
+  worktree?: ThreadWorktree
+  /** Checkout decision captured once when the thread sends its first message. */
+  worktreeChoice?: ThreadWorktreeChoice
   /**
    * Durable link to the cloud-agent run + PR this thread launched (issue #690).
    * Recorded by the remote-agent clients at launch and completion, not the

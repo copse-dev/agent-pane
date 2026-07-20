@@ -1,5 +1,6 @@
 import type { Thread } from './thread.ts'
 import type { LayoutState } from './layout.ts'
+import type { ProjectWorktreeMode } from './worktree.ts'
 
 export type PanelTab = 'file' | 'diff'
 export type RightPanelMode =
@@ -52,6 +53,8 @@ export interface Project {
    * (issue #997). Cleared once the folder opens successfully again.
    */
   missing?: boolean
+  /** Per-thread checkout policy. Defaults to `never` until rollout is complete. */
+  worktreeMode?: ProjectWorktreeMode
 }
 
 /**
