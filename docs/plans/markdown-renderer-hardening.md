@@ -1,5 +1,12 @@
 # Markdown renderer: streaming-parser alternatives & XSS hardening
 
+**Status: Superseded / resolved.** The renderer was extracted to
+[`@copse/streaming-markdown`](https://github.com/copse-dev/streaming-markdown) in
+[#689](https://github.com/copse-dev/agent-pane/pull/689), and Agent Pane now consumes
+its v1.0.0 release. Sanitization, delimiter-stack emphasis across soft line breaks,
+streaming convergence fuzzing, and CommonMark/GFM conformance are implemented and owned
+upstream. The analysis below is retained as the historical decision record.
+
 The custom regex markdown renderer (`src/renderer/markdown/renderer.ts`) is the
 largest residual XSS surface. It escapes prose first and validates link hrefs, so
 it is careful, but hand-rolled HTML assembly by string concatenation is inherently

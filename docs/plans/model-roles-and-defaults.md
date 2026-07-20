@@ -1,8 +1,10 @@
 # Model roles, defaults, and light evals
 
-Status: **proposal** — scopes an evolution of the existing model-routing and
-model-classifier work (see [`model-classifier.md`](./model-classifier.md), issue
-[#557](https://github.com/jonathanKingston/agent-pane/issues/557)).
+Status: **Active / partially implemented.** Phases 0–2 and the Phase-3 backend
+foundation are on `main`; generalized download UI and Phase-4 light evals remain.
+This scopes an evolution of the existing model-routing and model-classifier work
+(see [`model-classifier.md`](./model-classifier.md), issue
+[#557](https://github.com/copse-dev/agent-pane/issues/557)).
 
 ## The core idea: two axes, not one
 

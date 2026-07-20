@@ -1,5 +1,7 @@
 # ACP Client Support Plan
 
+Tracking: [#264](https://github.com/copse-dev/agent-pane/issues/264)
+
 Status: **In progress.** The protocol core and the first app-wiring slice (model
 routing `acp:<id>`, settings-backed agent registry, picker entries, text
 streaming, `session/request_permission` → approval, `fs/read_text_file` and

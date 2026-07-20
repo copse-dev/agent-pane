@@ -1,7 +1,9 @@
 # Settings transparency & Claude parity
 
-Status: **in progress** — transparency panel + project-instruction parity landing now;
-the rest tracked as follow-ups (see below).
+Status: **Active.** The Sources panel and project-instruction parity shipped in
+[#635](https://github.com/copse-dev/agent-pane/pull/635), and several follow-ups have
+landed. Claude settings parity remains in open issue
+[#639](https://github.com/copse-dev/agent-pane/issues/639); see below.
 
 ## Why
 
