@@ -688,13 +688,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.head_ref }}
+          # Self-hosted CHECKS_RUNNER images ship curl+jq but not the gh CLI
+          # (ci-runners/Dockerfile). Prefer the REST API over `gh api`.
+          GITHUB_API_URL: ${{ github.api_url }}
         run: |
-          if gh api "repos/${{ github.repository }}/branches/$BRANCH" --silent 2>/dev/null; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Head branch '$BRANCH' no longer exists (PR merged and branch deleted) — skipping screenshot commit."
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
+          ENC_BRANCH=$(printf '%s' "$BRANCH" | jq -sRr @uri)
+          HTTP_STATUS=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${{ github.repository }}/branches/${ENC_BRANCH}") || {
+              echo "::error::Could not query head branch '$BRANCH'; refusing to treat a transport failure as branch deletion."
+              exit 1
+            }
+          case "$HTTP_STATUS" in
+            200) echo "exists=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "::notice::Head branch '$BRANCH' no longer exists (PR merged and branch deleted) — skipping screenshot commit."
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::Head branch lookup returned HTTP $HTTP_STATUS; refusing to skip screenshot reconciliation."
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v7.0.0
         if: steps.head.outputs.exists == 'true'
         with:
@@ -1065,7 +1082,21 @@ jobs:
           RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           CURRENT_RUN_ID: ${{ github.run_id }}
+          # Self-hosted CHECKS_RUNNER images ship curl+jq but not the gh CLI
+          # (ci-runners/Dockerfile). #1017 moved this gate back onto that fleet,
+          # so tip/supersession lookups must use the REST API — `gh api` fails
+          # with `gh: command not found` and the gate fail-closes on every
+          # concurrency cancel (false red on main).
+          GITHUB_API_URL: ${{ github.api_url }}
         run: |
+          # Thin REST helper — curl+jq are on both hosted and self-hosted images.
+          api_get() {
+            curl -fsS \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${GITHUB_API_URL}/$1"
+          }
           FORK_PR=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           if $FORK_PR; then
             if [ "${{ needs.precheck.result }}" != "success" ]; then
@@ -1102,13 +1133,14 @@ jobs:
           if $ANY_CANCELLED; then
             # Fail closed if we cannot resolve tip — a tip cancel must stay red.
             if [ -n "$PR_NUMBER" ]; then
-              TIP_SHA=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq .head.sha) || {
+              TIP_SHA=$(api_get "repos/${REPOSITORY}/pulls/${PR_NUMBER}" | jq -er .head.sha) || {
                 echo "Could not resolve PR tip SHA; treating cancel as failure."
                 echo '${{ toJSON(needs) }}'
                 exit 1
               }
             else
-              TIP_SHA=$(gh api "repos/${REPOSITORY}/commits/${REF_NAME}" --jq .sha) || {
+              ENC_REF=$(printf '%s' "$REF_NAME" | jq -sRr @uri)
+              TIP_SHA=$(api_get "repos/${REPOSITORY}/commits/${ENC_REF}" | jq -er .sha) || {
                 echo "Could not resolve branch tip SHA; treating cancel as failure."
                 echo '${{ toJSON(needs) }}'
                 exit 1
@@ -1121,9 +1153,9 @@ jobs:
             fi
             # Same tip, but a newer CI run on this SHA may have taken the
             # concurrency slot (delayed schedule, re-run, workflow_dispatch).
-            NEWER_RUN_ID=$(gh api \
+            NEWER_RUN_ID=$(api_get \
               "repos/${REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${RUN_HEAD_SHA}&per_page=20" \
-              --jq "[.workflow_runs[] | select(.id > ${CURRENT_RUN_ID}) | .id][0] // empty") || {
+              | jq -r "[.workflow_runs[] | select(.id > ${CURRENT_RUN_ID}) | .id][0] // empty") || {
               echo "Could not resolve newer workflow runs; treating cancel as failure."
               echo '${{ toJSON(needs) }}'
               exit 1
