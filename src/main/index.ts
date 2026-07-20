@@ -98,13 +98,18 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 const agentEval = process.env['COPSE_AGENT_EVAL'] === '1'
+// Used only by the release workflow against the final signed app bundle. It
+// avoids renderer/WebDriver dependencies while still exercising Electron boot,
+// node-pty, and the filesystem-native thread store from the packaged artifact.
+const releaseSmokeTest = process.argv.includes('--release-smoke-test')
 // `copse --acp` drives the agent over stdio for an ACP client; it must not take
 // the single-instance lock (each client spawns its own) or open a window.
 const acpMode = process.argv.includes('--acp')
-const gotSingleInstanceLock = agentEval || acpMode ? true : app.requestSingleInstanceLock()
+const gotSingleInstanceLock =
+  agentEval || acpMode || releaseSmokeTest ? true : app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
-} else if (!agentEval && !acpMode) {
+} else if (!agentEval && !acpMode && !releaseSmokeTest) {
   app.on('second-instance', () => {
     const win = getMainWindow()
     if (win) {
@@ -122,6 +127,20 @@ app
       // Headless ACP agent over stdio: bootstrap tools/provider, no window.
       const { runAcpAgentMode } = await import('./services/acp/acp-app-entry.ts')
       await runAcpAgentMode()
+      return
+    }
+
+    if (releaseSmokeTest) {
+      const { runReleaseSmokeTest } = await import('./release-smoke.ts')
+      try {
+        await initProjectSandbox()
+        await runReleaseSmokeTest()
+        console.log('[release-smoke] packaged app checks passed')
+        app.exit(0)
+      } catch (err) {
+        console.error('[release-smoke] packaged app checks failed:', err)
+        app.exit(1)
+      }
       return
     }
 
