@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -34,16 +35,7 @@ describe('agent tasks in terminal tab', () => {
     // Opening the integrated terminal itself requires a separate approval on
     // platforms without an OS sandbox. Resolve that prompt before submitting
     // the agent's run_shell call, which has its own approval below.
-    const terminalApproval = await $('#approval-dialog')
-    const terminalApprovalShown = await terminalApproval
-      .waitForDisplayed({ timeout: process.platform === 'darwin' ? 1_000 : 10_000 })
-      .then(() => true)
-      .catch(() => false)
-    if (terminalApprovalShown) {
-      await expect(terminalApproval.$('.approval-heading')).toHaveText('Open unsandboxed terminal?')
-      await terminalApproval.$('.approval-approve').click()
-      await terminalApproval.waitForDisplayed({ reverse: true, timeout: 10_000 })
-    }
+    await approveUnsandboxedTerminalIfPrompted()
     await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
 
     await setComposerValue('[[mcp:run_shell {"command":"echo agent-task-hello"}]]')
