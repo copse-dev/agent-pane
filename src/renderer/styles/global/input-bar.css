@@ -172,6 +172,11 @@
 .stop-btn:hover {
   color: var(--text-primary);
 }
+.stop-btn.stop-pending {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 15%, var(--bg-hover));
+  outline: 1px solid var(--danger);
+}
 .submit-btn {
   position: absolute;
   right: var(--spacing-md);

@@ -43,12 +43,14 @@ function thread(branch?: string): Thread {
 
 function createApi(options: {
   currentBranch: string
+  onAbort?: () => Promise<void>
+  onRun?: () => Promise<void>
   onCheckoutBranch?: (branch: string) => Promise<void>
 }): ApiClient {
   return {
     agent: {
-      abort: async () => {},
-      run: async () => {},
+      abort: options.onAbort ?? (async (): Promise<void> => {}),
+      run: options.onRun ?? (async (): Promise<void> => {}),
       suggestFollowUps: async () => [],
       refreshModelContext: async () => {},
       onRefreshContextEstimate: () => () => {},
@@ -202,5 +204,52 @@ describe('input bar browse button', () => {
     const label = chip.querySelector<HTMLElement>('.attachment-chip-label')
     assert.ok(label, 'the chip renders its name in the clipped label span')
     assert.match(label.textContent, /notes\.txt/)
+  })
+})
+
+describe('input bar two-step stop', () => {
+  it('arms on Escape and aborts on Enter without submitting the composer', async () => {
+    let aborts = 0
+    let runs = 0
+    const runningThread = { ...thread(), status: 'running' as const }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      activeThreadId: runningThread.id,
+      threads: [runningThread],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const inputBar = mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        onAbort: async () => {
+          aborts += 1
+        },
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await settle()
+
+    const stopBtn = host.querySelector<HTMLButtonElement>('.stop-btn')
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(stopBtn)
+    assert.ok(composer)
+
+    assert.equal(inputBar.handleStopShortcut('Escape'), true)
+    assert.equal(stopBtn.classList.contains('stop-pending'), true)
+    assert.equal(aborts, 0)
+
+    composer.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+    await settle()
+
+    assert.equal(aborts, 1)
+    assert.equal(runs, 0)
+    assert.equal(stopBtn.classList.contains('stop-pending'), false)
   })
 })
