@@ -69,6 +69,36 @@ describe('requestLiveIntellectModels', () => {
     assert.equal(result.models[0].inputPricePerMTok, 5)
   })
 
+  it('extracts costPerTask from artificial_analysis_intelligence_index_cost (documented AA shape)', async () => {
+    // Shape from AA Data API docs / free-tier models payload — not the mock env path.
+    // pricing holds token prices only; cost-per-task lives on the model-level cost object.
+    const { fetch } = fakeFetch({
+      body: {
+        artificial_analysis_intelligence_index_version: '4.1',
+        data: [
+          {
+            slug: 'gpt-5',
+            evaluations: { artificial_analysis_intelligence_index: 72.4 },
+            pricing: {
+              price_1m_input_tokens: 1.25,
+              price_1m_output_tokens: 10,
+            },
+            artificial_analysis_intelligence_index_cost: {
+              total_cost: 1.84,
+              cost_per_task: { total_cost: 1.84 },
+            },
+          },
+        ],
+      },
+    })
+    const result = await requestLiveIntellectModels('key', fetch)
+    assert.equal(result.ok, true)
+    assert.equal(result.models.length, 1)
+    assert.equal(result.models[0]?.id, 'gpt-5')
+    assert.equal(result.models[0].costPerTask, 1.84)
+    assert.equal(result.models[0].inputPricePerMTok, 1.25)
+  })
+
   it('surfaces a rejected key (403) with an actionable message', async () => {
     const { fetch } = fakeFetch({ status: 403, statusText: 'Forbidden' })
     const result = await requestLiveIntellectModels('bad-key', fetch)
