@@ -18,7 +18,7 @@ import { mountSettingsDialog } from './settings-dialog.ts'
 let lastTestRequest: unknown
 
 /**
- * Recursive never-settling stub (as in settings-dialog.test.ts) with the four
+ * Recursive never-settling stub (as in settings-dialog.test.ts) with the five
  * Sources list endpoints overridden so `refreshSources` can actually complete.
  * `hooks.test` (G2 dry-run) resolves to `testResult` and records its request.
  */
@@ -29,6 +29,7 @@ function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): Api
   })
   const overrides: Record<string, unknown> = {
     instructions: { list: () => Promise.resolve([]) },
+    cursorRules: { list: () => Promise.resolve([]) },
     skills: { list: () => Promise.resolve([]) },
     plugins: { list: () => Promise.resolve([]) },
     hooks: {
@@ -104,7 +105,7 @@ async function openSources(
   )
   assert.ok(sourcesBtn)
   sourcesBtn.click()
-  // refreshSources awaits the four list promises; let the microtask queue drain.
+  // refreshSources awaits the five list promises; let the microtask queue drain.
   await new Promise((resolve) => setTimeout(resolve, 0))
   const list = document.getElementById('sources-hooks-list')
   assert.ok(list)
