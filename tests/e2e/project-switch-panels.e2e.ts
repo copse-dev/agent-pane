@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedProjectSwitchFixture } from './helpers/seed-config.ts'
+import { approveUnsandboxedTerminalIfPrompted } from './helpers/terminal-approval.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -16,8 +17,14 @@ async function openTerminalPane(): Promise<void> {
   // under the composer with the same aria-label.
   const terminalBtn = await $('#titlebar .titlebar-btn[aria-label="Open terminal"]')
   await terminalBtn.click()
+  await approveUnsandboxedTerminalIfPrompted()
   await $('#pane-files').waitForDisplayed({ timeout: 10_000 })
   await expect(terminalBtn).toHaveElementClass('active')
+}
+
+async function createTerminal(): Promise<void> {
+  await $('.terminals-new-btn').click()
+  await approveUnsandboxedTerminalIfPrompted()
 }
 
 async function terminalModeActive(): Promise<boolean> {
@@ -54,7 +61,7 @@ describe('project switch panel and terminal scoping', () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
     await openTerminalPane()
-    await $('.terminals-new-btn').click()
+    await createTerminal()
     await browser.waitUntil(async () => (await visibleTerminalTabCount()) >= 1, {
       timeout: 10_000,
       timeoutMsg: 'expected a terminal tab on project A',
@@ -72,7 +79,7 @@ describe('project switch panel and terminal scoping', () => {
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'project-switch-b.png'))
 
     await openTerminalPane()
-    await $('.terminals-new-btn').click()
+    await createTerminal()
     await browser.waitUntil(async () => (await visibleTerminalTabCount()) >= 1, {
       timeout: 10_000,
       timeoutMsg: 'expected a terminal tab on project B',

@@ -14,6 +14,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   decideShellPermission,
+  decideTerminalPermission,
   shellExpectedBlockEscalation,
   shellRequiresOutsideSandbox,
 } from './permission-policy.ts'
@@ -34,6 +35,33 @@ describe('shell permissions: macOS with ASRT sandbox active', () => {
   it('auto-runs sandbox-contained commands without consulting a classifier', () => {
     const d = decideShellPermission(SANDBOXED, { ...opts, classification: null })
     assert.equal(d.action, 'allow')
+  })
+
+  it('auto-opens a terminal only while the global network scope is inactive', () => {
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxEnabled: true,
+        remoteTarget: false,
+        networkScopeActive: false,
+      }),
+      { action: 'allow' },
+    )
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxEnabled: true,
+        remoteTarget: false,
+        networkScopeActive: true,
+      }),
+      { action: 'prompt', reason: 'widened-network' },
+    )
+    assert.deepEqual(
+      decideTerminalPermission({
+        sandboxEnabled: true,
+        remoteTarget: true,
+        networkScopeActive: false,
+      }),
+      { action: 'prompt', reason: 'remote-target' },
+    )
   })
 
   it('runs network commands outside the sandbox after approval', () => {
@@ -101,6 +129,17 @@ for (const platform of ['Linux', 'Windows'] as const) {
 
     it('never claims a command needs to run "outside the sandbox" when there is no sandbox', () => {
       assert.equal(shellRequiresOutsideSandbox(EXTERNAL, root, false), false)
+    })
+
+    it('prompts for a terminal because the OS sandbox is unavailable', () => {
+      assert.deepEqual(
+        decideTerminalPermission({
+          sandboxEnabled: false,
+          remoteTarget: false,
+          networkScopeActive: false,
+        }),
+        { action: 'prompt', reason: 'sandbox-unavailable' },
+      )
     })
   })
 }

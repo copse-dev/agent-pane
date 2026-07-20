@@ -364,11 +364,136 @@ describe('run_background permission', () => {
 })
 
 describe('ensureTerminalPermitted', () => {
-  it('allows integrated terminal without shell approval when workspace is open', async () => {
+  it('auto-allows a sandboxed terminal while the global network scope is inactive', async () => {
     const restore = setWorkspaceRootForTest('/tmp/project')
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
     try {
-      assert.equal(await ensureTerminalPermitted(), true)
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        true,
+      )
+      assert.equal(prompted, false)
     } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('requires approval for a sandboxed terminal while the global network scope is widened', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+    })
+    let approvalTitle = ''
+    let approvalBody = ''
+    let allowRemember: boolean | undefined
+    setApprovalHandler(async (request) => {
+      approvalTitle = request.title
+      approvalBody = request.body
+      allowRemember = request.allowRemember
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        false,
+      )
+      assert.match(approvalTitle, /widened network access/i)
+      assert.match(approvalBody, /temporarily widened/i)
+      assert.equal(allowRemember, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('does not remember or launder approval while the network scope stays widened', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+    })
+    let promptCount = 0
+    setApprovalHandler(async (request) => {
+      promptCount++
+      assert.equal(request.allowRemember, false)
+      // Even a misbehaving transport returning remember=true cannot create a grant.
+      return { approved: true, remember: true }
+    })
+    try {
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        true,
+      )
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: false }),
+        true,
+      )
+      assert.equal(promptCount, 2)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('requires approval when no project sandbox is active', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        true,
+      )
+      assert.match(approvalBody, /full user account, filesystem, and network/i)
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('blocks terminal creation when the unsandboxed-terminal prompt is declined', async () => {
+    const restore = setWorkspaceRootForTest('/tmp/project')
+    setApprovalHandler(async () => ({ approved: false, remember: false }))
+    try {
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: false, remoteTarget: false }),
+        false,
+      )
+    } finally {
+      setApprovalHandler(null)
+      restore()
+    }
+  })
+
+  it('requires approval for an SSH terminal even when the local sandbox is active', async () => {
+    const restore = setWorkspaceRootForTest('/remote/project')
+    let approvalTitle = ''
+    let approvalBody = ''
+    setApprovalHandler(async (request) => {
+      approvalTitle = request.title
+      approvalBody = request.body
+      return { approved: true, remember: false }
+    })
+    try {
+      assert.equal(
+        await ensureTerminalPermitted({ sandboxEnabled: true, remoteTarget: true }),
+        true,
+      )
+      assert.match(approvalTitle, /remote terminal/i)
+      assert.match(approvalBody, /outside the local project sandbox/i)
+    } finally {
+      setApprovalHandler(null)
       restore()
     }
   })

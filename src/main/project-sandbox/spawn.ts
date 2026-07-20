@@ -348,7 +348,7 @@ export interface SpawnPtyOptions {
   cols: number
   rows: number
   env?: NodeJS.ProcessEnv
-  /** Integrated terminals are user-controlled; default is outside the project sandbox. */
+  /** Escape the project sandbox for an explicitly approved exceptional PTY. */
   unsandboxed?: boolean
   executionTarget?: ExecutionTarget
 }
