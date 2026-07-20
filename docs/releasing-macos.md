@@ -79,14 +79,18 @@ Before creating a release tag:
 Then publish:
 
 1. Bump `version` in `package.json` (e.g. `0.1.0-beta.2`).
-2. Push a matching tag: `git tag v0.1.0-beta.2 && git push origin v0.1.0-beta.2`
-   — or run the **Release (macOS)** workflow manually (Actions → Run workflow).
-3. The workflow builds, signs, notarizes, staples, and publishes a GitHub
-   **prerelease** with the DMG, zip, and `latest-mac.yml` attached.
+2. Push a matching tag: `git tag v0.1.0-beta.2 && git push origin v0.1.0-beta.2`.
+   A manual run of **Release (macOS)** instead takes an existing matching tag.
+3. The tag must point at a commit reachable from `main`, and its exact commit
+   must first receive a successful **CI Passed** check. The workflow then builds,
+   signs, notarizes, staples, verifies, and smoke-tests the package.
+4. Only after those checks does a separate job publish that same tested DMG, zip,
+   update metadata, checksums, and provenance as a GitHub **prerelease**. It
+   never rebuilds during publication.
 
-A manual run with **publish = false** does an unsigned dry-run build and uploads
-the artifacts to the run (no Release, no notarization) — handy for smoke-testing
-packaging changes.
+The workflow fails before packaging when any signing or notarization secret is
+missing. Use `npm run dist:mac` or `npm run release:dry` locally for a non-publish
+packaging check.
 
 ## Releasing locally
 

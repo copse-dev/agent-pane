@@ -53,10 +53,11 @@
     "sync:local-models": "node scripts/sync-local-models.mts",
     "sync:intellect": "node scripts/sync-intellect.mts",
     "sync:cursor-skills": "node scripts/fetch-bundled-cursor-skills.mts",
+    "prepare:gortex:mac": "node scripts/prepare-macos-gortex.mts",
     "pack:mac": "npm run build:release && npm run icons:mac && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir",
-    "dist:mac": "npm run build:release && electron-builder --mac",
-    "release:mac": "npm run build:release && electron-builder --mac -c.mac.notarize=true --publish always",
-    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; npm run build:release && electron-builder --mac -c.mac.notarize=true --publish never",
+    "dist:mac": "npm run prepare:gortex:mac && npm run build:release && electron-builder --mac",
+    "release:mac": "npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.mac.notarize=true --publish always",
+    "release:dry": "set -a; [ -f .env ] && . ./.env; set +a; npm run prepare:gortex:mac && npm run build:release && electron-builder --mac -c.mac.notarize=true --publish never",
     "release": "set -a; [ -f .env ] && . ./.env; set +a; npm run release:mac",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run check:dead-code && npm run check:oracle && npm test"
   },
@@ -76,10 +77,11 @@
       "**/node_modules/@anthropic-ai/sandbox-runtime/**/*",
       "dist/resources/gortex/**"
     ],
+    "afterPack": "scripts/after-pack.cjs",
     "publish": [
       {
         "provider": "github",
-        "owner": "jonathanKingston",
+        "owner": "copse-dev",
         "repo": "agent-pane",
         "releaseType": "prerelease"
       }
