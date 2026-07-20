@@ -156,6 +156,7 @@ function abortProjectActivation(
 
 async function dropMissingProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
   forgetProjectViewState(projectViewState, id)
+  threadCache.delete(id)
   const projects = store.getState().projects.filter((p) => p.id !== id)
   const nextActiveId = projects[0]?.id ?? null
   await saveProjects(api, projects, nextActiveId)
@@ -174,6 +175,64 @@ async function dropMissingProject(store: AppStore, api: ApiClient, id: string): 
   store.emit('threads_changed')
   store.emit('panel_changed')
   store.emit('files_pane_changed')
+}
+
+/**
+ * Remove a project from the sidebar / config only. Does not delete workspace
+ * files on disk or the project's thread-store directory under ~/.copse.
+ */
+export async function removeProject(store: AppStore, api: ApiClient, id: string): Promise<void> {
+  const state = store.getState()
+  if (!state.projects.some((p) => p.id === id)) return
+
+  forgetProjectViewState(projectViewState, id)
+  threadCache.delete(id)
+
+  const projects = state.projects.filter((p) => p.id !== id)
+  const wasActive = state.activeProjectId === id
+  const wasExpanded = (state.expandedProjectId ?? state.activeProjectId) === id
+
+  if (!wasActive) {
+    // Cancel an in-flight switch that was targeting this project.
+    if (wasExpanded) switchGeneration += 1
+    await saveProjects(api, projects, state.activeProjectId)
+    store.setState({
+      projects,
+      expandedProjectId: wasExpanded ? state.activeProjectId : state.expandedProjectId,
+    })
+    store.emit('projects_changed')
+    return
+  }
+
+  // Active project removed — switch to another, or clear the workspace UI.
+  switchGeneration += 1
+  const next = projects[0] ?? null
+  await saveProjects(api, projects, next?.id ?? null)
+
+  if (!next) {
+    store.setState({
+      projects: [],
+      activeProjectId: null,
+      expandedProjectId: null,
+      workspaceRoot: null,
+      threads: [],
+      activeThreadId: null,
+      openFile: null,
+      filesPaneOpen: false,
+    })
+    store.emit('projects_changed')
+    store.emit('workspace_changed')
+    store.emit('threads_changed')
+    store.emit('panel_changed')
+    store.emit('files_pane_changed')
+    return
+  }
+
+  // Persist the trimmed list first, then activate the next project (which
+  // flushes the outgoing active project's threads as part of the switch).
+  store.setState({ projects })
+  store.emit('projects_changed')
+  await activateAndWait(store, api, next.id, next.path)
 }
 
 function setExpandedProject(store: AppStore, id: string): void {

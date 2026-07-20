@@ -658,6 +658,11 @@ export function mountRoadmapPane(
       })
       listBody.append(row)
     }
+    // Scroll the selected row into view so it's visible after re-render.
+    const selectedRow = listBody.querySelector('.is-selected')
+    if (selectedRow) {
+      selectedRow.scrollIntoView({ block: 'nearest' })
+    }
   }
 
   // `preserveDirty` is passed only by background store-event refreshes so an
@@ -689,6 +694,8 @@ export function mountRoadmapPane(
     renderList()
     renderEditor()
     promptInput.focus()
+    // Scroll the new-item form into view so it's visible immediately.
+    promptInput.scrollIntoView({ block: 'nearest' })
   }
 
   async function save(): Promise<void> {
@@ -948,6 +955,13 @@ export function mountRoadmapPane(
   form.addEventListener('submit', (e) => {
     e.preventDefault()
     void save()
+  })
+  // Cmd/Ctrl+Enter to save from any input field.
+  form.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      void save()
+    }
   })
   startBtn.addEventListener('click', () => void startThread())
 

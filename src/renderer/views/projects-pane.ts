@@ -10,6 +10,7 @@ import {
   isProjectSwitchInFlight,
   paginateSidebarThreads,
   projectDisplayName,
+  removeProject,
   SIDEBAR_THREADS_PAGE_SIZE,
   switchProject,
   switchProjectThread,
@@ -75,6 +76,61 @@ function settingsIcon(): SVGSVGElement {
   )
   svg.append(path)
   return svg
+}
+
+/** Dismiss any open project-row context menu (and its dismiss listeners). */
+let dismissProjectContextMenu: (() => void) | null = null
+
+function showProjectContextMenu(clientX: number, clientY: number, onRemove: () => void): void {
+  dismissProjectContextMenu?.()
+
+  const item = el(
+    'button',
+    { type: 'button', class: 'context-menu-item', role: 'menuitem' },
+    'Remove from sidebar',
+  )
+  const menu = el('div', { class: 'context-menu', role: 'menu' }, item)
+  menu.style.left = `${String(clientX)}px`
+  menu.style.top = `${String(clientY)}px`
+
+  const dismiss = (): void => {
+    menu.remove()
+    document.removeEventListener('pointerdown', onPointerDown, true)
+    document.removeEventListener('keydown', onKeyDown, true)
+    window.removeEventListener('blur', dismiss)
+    if (dismissProjectContextMenu === dismiss) dismissProjectContextMenu = null
+  }
+  const onPointerDown = (e: PointerEvent): void => {
+    if (menu.contains(e.target as Node)) return
+    dismiss()
+  }
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') dismiss()
+  }
+
+  item.addEventListener('click', (e) => {
+    e.stopPropagation()
+    dismiss()
+    onRemove()
+  })
+
+  document.body.append(menu)
+  dismissProjectContextMenu = dismiss
+  document.addEventListener('pointerdown', onPointerDown, true)
+  document.addEventListener('keydown', onKeyDown, true)
+  window.addEventListener('blur', dismiss)
+
+  // Keep the menu inside the viewport when opened near an edge.
+  const rect = menu.getBoundingClientRect()
+  const pad = 4
+  let left = clientX
+  let top = clientY
+  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad
+  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad
+  if (left < pad) left = pad
+  if (top < pad) top = pad
+  menu.style.left = `${String(left)}px`
+  menu.style.top = `${String(top)}px`
 }
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
@@ -155,6 +211,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       projectRow.addEventListener('click', () => {
         switchProject(store, api, project.id)
+      })
+      projectRow.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        showProjectContextMenu(e.clientX, e.clientY, () => {
+          void removeProject(store, api, project.id)
+        })
       })
 
       if (isExpanded) {
@@ -270,6 +333,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   render()
   return () => {
+    dismissProjectContextMenu?.()
     unsubs.forEach((u) => {
       u()
     })

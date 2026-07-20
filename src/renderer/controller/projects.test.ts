@@ -8,6 +8,7 @@ import {
   getSidebarThreads,
   isProjectSwitchInFlight,
   paginateSidebarThreads,
+  removeProject,
   resetProjectSwitchStateForTest,
   restoreProject,
   setThreadCacheForTest,
@@ -348,6 +349,98 @@ test('panel visibility persists per project across switches', async () => {
   await waitUntil(() => store.getState().activeProjectId === 'b')
   assert.equal(store.getState().filesPaneOpen, true)
   assert.equal(store.getState().rightPanelMode, 'changes')
+})
+
+test('removeProject drops an inactive project without changing the workspace', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+  setThreadCacheForTest('b', [thread('cached-b')])
+
+  const saved: Array<{ key: string; value: unknown }> = []
+  const api = makeApi({
+    storageSet: async (key, value) => {
+      saved.push({ key, value })
+    },
+  })
+
+  await removeProject(store, api, 'b')
+
+  assert.deepEqual(
+    store.getState().projects.map((p) => p.id),
+    ['a'],
+  )
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().workspaceRoot, '/a')
+  assert.equal(store.getState().activeThreadId, 't-a')
+  assert.deepEqual(getSidebarThreads(store, 'b'), [])
+  assert.ok(saved.some((e) => e.key === 'projects'))
+  assert.ok(saved.some((e) => e.key === 'activeProjectId' && e.value === 'a'))
+})
+
+test('removeProject switches to another project when the active one is removed', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+
+  const api = makeApi({
+    loadProjectThreads: async (projectId) => {
+      if (projectId === 'b') return [thread('t-b')]
+      return []
+    },
+  })
+
+  await removeProject(store, api, 'a')
+  await waitUntil(() => store.getState().activeProjectId === 'b')
+
+  assert.deepEqual(
+    store.getState().projects.map((p) => p.id),
+    ['b'],
+  )
+  assert.equal(store.getState().workspaceRoot, '/b')
+  assert.equal(store.getState().activeThreadId, 't-b')
+})
+
+test('removeProject clears the workspace when the last project is removed', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/a', name: 'A' }],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+    filesPaneOpen: true,
+  })
+
+  const api = makeApi({})
+  await removeProject(store, api, 'a')
+
+  assert.deepEqual(store.getState().projects, [])
+  assert.equal(store.getState().activeProjectId, null)
+  assert.equal(store.getState().expandedProjectId, null)
+  assert.equal(store.getState().workspaceRoot, null)
+  assert.deepEqual(store.getState().threads, [])
+  assert.equal(store.getState().activeThreadId, null)
+  assert.equal(store.getState().filesPaneOpen, false)
 })
 
 test('paginateSidebarThreads shows the first page by default', () => {
