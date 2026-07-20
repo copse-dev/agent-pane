@@ -23,7 +23,11 @@ interface RetryCalls {
   comparison: unknown[][]
 }
 
-function setup(activeProjectId: string | null): { store: AppStore; api: ApiClient; calls: RetryCalls } {
+function setup(activeProjectId: string | null): {
+  store: AppStore
+  api: ApiClient
+  calls: RetryCalls
+} {
   const store = createStore({
     activeProjectId,
     activeThreadId: 't1',
