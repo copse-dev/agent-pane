@@ -369,6 +369,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('threads:delete', projectId, threadId),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
+    listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
   },
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),

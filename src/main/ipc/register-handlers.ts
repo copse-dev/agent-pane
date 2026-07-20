@@ -70,6 +70,7 @@ import {
   updateMeta,
   deleteProjectThread,
   loadProjectCatalog,
+  listOrphanProjectStores,
 } from '../services/thread-store.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
@@ -914,6 +915,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       query,
     ])
     return loadProjectCatalog(pid, q)
+  })
+  ipcMain.handle('threads:listOrphans', (event) => {
+    assertMainFrameSender(event, win)
+    const projects =
+      (storageGet('projects') as Array<{ id?: unknown }> | null)?.filter(
+        (p): p is { id: string } => typeof p.id === 'string' && p.id.length > 0,
+      ) ?? []
+    return listOrphanProjectStores(projects.map((p) => p.id))
   })
 
   ipcMain.handle('skills:list', () => listSkills())

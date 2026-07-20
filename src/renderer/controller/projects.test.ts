@@ -9,6 +9,7 @@ import {
   isProjectSwitchInFlight,
   paginateSidebarThreads,
   removeProject,
+  relocateProject,
   resetProjectSwitchStateForTest,
   restoreProject,
   setThreadCacheForTest,
@@ -38,13 +39,18 @@ function thread(id: string, title = id): Thread {
 }
 
 function makeApi(handlers: {
+  workspaceOpen?: () => Promise<string | null>
   workspaceSet?: (path: string, sshHost?: string) => Promise<string>
   storageGet?: (key: string) => Promise<unknown>
   storageSet?: (key: string, value: unknown) => Promise<void>
   loadProjectThreads?: (projectId: string) => Promise<Thread[]>
+  settingsGet?: (key: string) => Promise<unknown>
+  sshStates?: () => Promise<Array<{ hostId: string; status: string }>>
+  sshConnect?: (hostId: string) => Promise<void>
 }): ApiClient {
   return {
     workspace: {
+      open: handlers.workspaceOpen ?? (async (): Promise<string | null> => null),
       set: handlers.workspaceSet ?? (async (path): Promise<string> => path),
     },
     storage: {
@@ -58,6 +64,13 @@ function makeApi(handlers: {
       updateMeta: async (): Promise<void> => undefined,
       delete: async (): Promise<void> => undefined,
       catalog: async (): Promise<never[]> => [],
+    },
+    settings: {
+      get: handlers.settingsGet ?? (async (): Promise<unknown> => null),
+    },
+    sshWorkspace: {
+      getStates: handlers.sshStates ?? (async () => []),
+      connect: handlers.sshConnect ?? (async (): Promise<void> => undefined),
     },
   } as unknown as ApiClient
 }
@@ -458,6 +471,142 @@ test('removeProject clears the workspace when the last project is removed', asyn
   assert.deepEqual(store.getState().threads, [])
   assert.equal(store.getState().activeThreadId, null)
   assert.equal(store.getState().filesPaneOpen, false)
+})
+
+test('restoreProject quarantines a missing project instead of deleting it (#997)', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/b', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    threads: [],
+  })
+
+  const persisted: Array<{ key: string; value: unknown }> = []
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      if (path === '/a') throw new Error('folder moved')
+      return path
+    },
+    storageSet: async (key, value) => {
+      persisted.push({ key, value })
+    },
+    loadProjectThreads: async (projectId) => (projectId === 'b' ? [thread('t-b')] : []),
+  })
+
+  await restoreProject(store, api, 'a')
+
+  const projects = store.getState().projects
+  assert.equal(projects.length, 2)
+  assert.equal(projects.find((p) => p.id === 'a')?.missing, true)
+  assert.equal(store.getState().activeProjectId, 'b')
+  assert.equal(store.getState().workspaceRoot, '/b')
+  const lastProjects = [...persisted].reverse().find((p) => p.key === 'projects')?.value as
+    | Array<{ id: string }>
+    | undefined
+  assert.equal(lastProjects?.length, 2)
+})
+
+test('restoreProject quarantines an unreachable SSH project and restores the next project', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'remote', path: '/work', name: 'Remote', sshHost: 'host-a' },
+      { id: 'local', path: '/local', name: 'Local' },
+    ],
+    activeProjectId: 'remote',
+    threads: [],
+  })
+  const api = makeApi({
+    settingsGet: async () => true,
+    sshStates: async () => [{ hostId: 'host-a', status: 'disconnected' }],
+    sshConnect: async () => {
+      throw new Error('host unavailable')
+    },
+    loadProjectThreads: async (projectId) => (projectId === 'local' ? [thread('t-local')] : []),
+  })
+
+  await restoreProject(store, api, 'remote')
+
+  assert.equal(store.getState().projects.find((p) => p.id === 'remote')?.missing, true)
+  assert.equal(store.getState().activeProjectId, 'local')
+  assert.equal(store.getState().workspaceRoot, '/local')
+  assert.equal(store.getState().activeThreadId, 't-local')
+})
+
+test('switchProject quarantines on activation failure and stays put (#997)', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [
+      { id: 'a', path: '/a', name: 'A' },
+      { id: 'b', path: '/gone', name: 'B' },
+    ],
+    activeProjectId: 'a',
+    expandedProjectId: 'a',
+    workspaceRoot: '/a',
+    threads: [thread('t-a')],
+    activeThreadId: 't-a',
+  })
+
+  const api = makeApi({
+    workspaceSet: async (path) => {
+      if (path === '/gone') throw new Error('folder moved')
+      return path
+    },
+  })
+
+  switchProject(store, api, 'b')
+  await waitUntil(() => store.getState().projects.find((p) => p.id === 'b')?.missing === true)
+
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().workspaceRoot, '/a')
+  assert.equal(store.getState().projects.length, 2)
+  assert.equal(store.getState().threads.length, 1)
+})
+
+test('relocateProject re-points a missing project and clears the flag (#997)', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/old', name: 'A', missing: true }],
+    activeProjectId: null,
+    threads: [],
+  })
+
+  const api = makeApi({
+    workspaceOpen: async () => '/new',
+    workspaceSet: async (path) => path,
+    loadProjectThreads: async () => [thread('t-a')],
+  })
+
+  const ok = await relocateProject(store, api, 'a')
+  assert.equal(ok, true)
+
+  const project = store.getState().projects.find((p) => p.id === 'a')
+  assert.ok(project)
+  assert.equal(project.path, '/new')
+  assert.equal(project.missing, undefined)
+  assert.equal(store.getState().activeProjectId, 'a')
+  assert.equal(store.getState().workspaceRoot, '/new')
+  assert.equal(store.getState().threads.length, 1)
+})
+
+test('relocateProject is a no-op when the folder picker is cancelled', async () => {
+  resetProjectSwitchStateForTest()
+  const store = createStore({
+    projects: [{ id: 'a', path: '/old', name: 'A', missing: true }],
+    activeProjectId: null,
+    threads: [],
+  })
+  const api = makeApi({ workspaceOpen: async () => null })
+
+  const ok = await relocateProject(store, api, 'a')
+  assert.equal(ok, false)
+  const project = store.getState().projects.find((p) => p.id === 'a')
+  assert.ok(project)
+  assert.equal(project.path, '/old')
+  assert.equal(project.missing, true)
 })
 
 test('paginateSidebarThreads shows the first page by default', () => {
