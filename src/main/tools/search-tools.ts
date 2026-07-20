@@ -2,7 +2,8 @@ import { z } from 'zod'
 import micromatch from 'micromatch'
 import { defineTool } from '@shared/types'
 import { resolveSearchText } from '@copse/agent/search-routing.ts'
-import { resolveReadablePath, getWorkspaceRoot } from '../services/workspace.ts'
+import { resolveReadablePathWithinRoot } from '../services/workspace.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { isRgAvailableForTarget } from '../services/tool-availability.ts'
 import { getIndex, whenFileIndexReady } from '../services/search/file-index.ts'
 import { formatCodeSearchResults, searchCodeContent } from '../services/search/indexed-grep.ts'
@@ -37,13 +38,13 @@ export const searchCodeTool = defineTool({
     { pattern, query, path, file_glob, fixed_string, case_sensitive, max_results, context_lines },
     signal,
   ) {
-    const root = getWorkspaceRoot()
+    const root = getAgentExecutionRoot()
     if (!root) return 'No workspace open.'
     const searchPattern = resolveSearchText(pattern, query)
     if (searchPattern === undefined) {
       return 'Provide a search pattern via `pattern` (its alias `query` also works).'
     }
-    const searchRoot = path ? await resolveReadablePath(path) : root
+    const searchRoot = path ? await resolveReadablePathWithinRoot(path, root) : root
 
     if (!(await isRgAvailableForTarget()) && !isActiveSshWorkspace()) {
       return slowCodeSearch({
@@ -64,6 +65,7 @@ export const searchCodeTool = defineTool({
       fileGlob: file_glob,
       maxResults: max_results,
       contextLines: context_lines,
+      displayRoot: root,
       signal,
     })
 

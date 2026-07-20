@@ -42,7 +42,7 @@ import type { CommandHook, CommandHookFailureMode } from '@copse/agent/hooks/com
 import type { BlockingHookOutcome, HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { HookScope, HooksListResult, HookSummary } from '@shared/types/hooks.ts'
 import type { SpineHookRunDecision } from '@shared/threads/spine-schema.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import type {
   DialectAdapter,
   DialectDiscoverOpts,
@@ -517,6 +517,7 @@ function afterFileEditMatches(
 function toCommandHook<E extends HookEventName>(
   hook: DiscoveredCopseHook,
   event: E,
+  executionRoot?: string | null,
 ): CommandHook<E> {
   return {
     id: hook.command,
@@ -525,7 +526,8 @@ function toCommandHook<E extends HookEventName>(
     dialect: 'copse',
     command: hook.command,
     onFailure: hook.onFailure,
-    cwd: hook.cwd,
+    cwd: hook.scope === 'project' ? (executionRoot ?? hook.cwd) : hook.cwd,
+    ...(executionRoot ? { executionRoot } : {}),
     sandbox: hook.sandbox,
     async: hook.async,
     timeoutMs: hook.timeoutMs ?? copseHookTimeoutMs,
@@ -547,7 +549,7 @@ export async function copseToolGateHooks(
     .filter((h) => h.event === 'toolGate' && copseMatcherMatches(h, payload.toolName))
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'toolGate')
+      return toCommandHook(h, 'toolGate', opts.executionRoot)
     })
 }
 
@@ -560,7 +562,7 @@ export async function copseBeforeSubmitPromptHooks(
     .filter((h) => h.event === 'beforeSubmitPrompt')
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'beforeSubmitPrompt')
+      return toCommandHook(h, 'beforeSubmitPrompt', opts.executionRoot)
     })
 }
 
@@ -580,13 +582,14 @@ export async function copseAfterFileEditHooks(
   const { hooks } = await discoverCopseHooksDetailed(opts)
   const matched = hooks.filter(
     (h) =>
-      h.event === 'afterFileEdit' && afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+      h.event === 'afterFileEdit' &&
+      afterFileEditMatches(h, payload.filePath, opts.executionRoot ?? opts.workspaceRoot),
   )
   const blocking: CommandHook<'afterFileEdit'>[] = []
   const asyncHooks: CommandHook<'afterFileEdit'>[] = []
   for (const h of matched) {
     auditProjectHook(h)
-    const cmd = toCommandHook(h, 'afterFileEdit')
+    const cmd = toCommandHook(h, 'afterFileEdit', opts.executionRoot)
     if (h.async) asyncHooks.push(cmd)
     else blocking.push(cmd)
   }
@@ -602,7 +605,7 @@ export async function copseStopHooks(
     .filter((h) => h.event === 'stop')
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'stop')
+      return toCommandHook(h, 'stop', opts.executionRoot)
     })
 }
 
@@ -615,7 +618,7 @@ export async function copseSubagentStartHooks(
     .filter((h) => h.event === 'subagentStart' && copseMatcherMatches(h, payload.subagentType))
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'subagentStart')
+      return toCommandHook(h, 'subagentStart', opts.executionRoot)
     })
 }
 
@@ -628,7 +631,7 @@ export async function copseSubagentStopHooks(
     .filter((h) => h.event === 'subagentStop' && copseMatcherMatches(h, payload.subagentType))
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'subagentStop')
+      return toCommandHook(h, 'subagentStop', opts.executionRoot)
     })
 }
 
@@ -641,7 +644,7 @@ export async function copseAfterToolUseHooks(
     .filter((h) => h.event === 'afterToolUse' && copseMatcherMatches(h, payload.toolName))
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'afterToolUse')
+      return toCommandHook(h, 'afterToolUse', opts.executionRoot)
     })
 }
 
@@ -654,7 +657,7 @@ export async function copseSessionStartHooks(
     .filter((h) => h.event === 'sessionStart')
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'sessionStart')
+      return toCommandHook(h, 'sessionStart', opts.executionRoot)
     })
 }
 
@@ -673,11 +676,11 @@ export async function copseBeforeDiffApplyHooks(
     .filter(
       (h) =>
         h.event === 'beforeDiffApply' &&
-        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+        afterFileEditMatches(h, payload.filePath, opts.executionRoot ?? opts.workspaceRoot),
     )
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'beforeDiffApply')
+      return toCommandHook(h, 'beforeDiffApply', opts.executionRoot)
     })
 }
 
@@ -695,11 +698,11 @@ export async function copseAfterDiffApplyHooks(
     .filter(
       (h) =>
         h.event === 'afterDiffApply' &&
-        afterFileEditMatches(h, payload.filePath, opts.workspaceRoot),
+        afterFileEditMatches(h, payload.filePath, opts.executionRoot ?? opts.workspaceRoot),
     )
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'afterDiffApply')
+      return toCommandHook(h, 'afterDiffApply', opts.executionRoot)
     })
 }
 
@@ -718,7 +721,7 @@ export async function copsePermissionDecisionHooks(
     .filter((h) => h.event === 'permissionDecision' && copseMatcherMatches(h, payload.toolName))
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'permissionDecision')
+      return toCommandHook(h, 'permissionDecision', opts.executionRoot)
     })
 }
 
@@ -737,7 +740,7 @@ export async function copsePostTurnReviewHooks(
     .filter((h) => h.event === 'postTurnReview')
     .map((h) => {
       auditProjectHook(h)
-      return toCommandHook(h, 'postTurnReview')
+      return toCommandHook(h, 'postTurnReview', opts.executionRoot)
     })
 }
 
@@ -752,8 +755,9 @@ export async function copsePostTurnReviewHooks(
 function copseEnvelope(
   event: HookEventName,
   session: AgentSessionInfo | undefined,
+  executionRoot?: string,
 ): Record<string, unknown> {
-  const root = getWorkspaceRoot()
+  const root = executionRoot ?? getAgentExecutionRoot()
   const base: Record<string, unknown> = {
     hook_event_name: event,
     conversation_id: session?.conversationId ?? '',
@@ -928,9 +932,9 @@ function interpretPrelude(
 export const copseAdapter: DialectAdapter = {
   dialect: 'copse',
 
-  marshalToolGateRequest(_hook, payload, session) {
+  marshalToolGateRequest(hook, payload, session) {
     return {
-      ...copseEnvelope('toolGate', session),
+      ...copseEnvelope('toolGate', session, hook.executionRoot),
       tool_name: payload.toolName,
       input: payload.input,
       ...(payload.fileContent !== undefined ? { file_content: payload.fileContent } : {}),
@@ -944,8 +948,11 @@ export const copseAdapter: DialectAdapter = {
     return { outcome, spineEvent: 'toolGate', spineDecision, failed: false, parseOk: true }
   },
 
-  marshalBeforeSubmitPromptRequest(_hook, payload, session) {
-    return { ...copseEnvelope('beforeSubmitPrompt', session), prompt: payload.prompt }
+  marshalBeforeSubmitPromptRequest(hook, payload, session) {
+    return {
+      ...copseEnvelope('beforeSubmitPrompt', session, hook.executionRoot),
+      prompt: payload.prompt,
+    }
   },
 
   interpretBeforeSubmitPrompt(spawn, _payload) {
@@ -965,8 +972,11 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalAfterFileEditRequest(_hook, payload, session) {
-    return { ...copseEnvelope('afterFileEdit', session), file_path: payload.filePath }
+  marshalAfterFileEditRequest(hook, payload, session) {
+    return {
+      ...copseEnvelope('afterFileEdit', session, hook.executionRoot),
+      file_path: payload.filePath,
+    }
   },
 
   interpretAfterFileEdit(spawn, _payload) {
@@ -986,8 +996,8 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalStopRequest(_hook, payload, session) {
-    return { ...copseEnvelope('stop', session), status: payload.status }
+  marshalStopRequest(hook, payload, session) {
+    return { ...copseEnvelope('stop', session, hook.executionRoot), status: payload.status }
   },
 
   interpretStop(spawn, _payload) {
@@ -1006,8 +1016,8 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalSubagentStartRequest(_hook, payload, session) {
-    const base = copseEnvelope('subagentStart', session)
+  marshalSubagentStartRequest(hook, payload, session) {
+    const base = copseEnvelope('subagentStart', session, hook.executionRoot)
     return {
       ...base,
       subagent_type: payload.subagentType,
@@ -1028,9 +1038,9 @@ export const copseAdapter: DialectAdapter = {
     return { outcome, spineEvent: 'subagentStart', spineDecision, failed: false, parseOk: true }
   },
 
-  marshalSubagentStopRequest(_hook, payload, session) {
+  marshalSubagentStopRequest(hook, payload, session) {
     return {
-      ...copseEnvelope('subagentStop', session),
+      ...copseEnvelope('subagentStop', session, hook.executionRoot),
       subagent_type: payload.subagentType,
       status: payload.status,
     }
@@ -1060,9 +1070,9 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalAfterToolUseRequest(_hook, payload, session) {
+  marshalAfterToolUseRequest(hook, payload, session) {
     return {
-      ...copseEnvelope('afterToolUse', session),
+      ...copseEnvelope('afterToolUse', session, hook.executionRoot),
       tool_name: payload.toolName,
       tool_call_id: payload.toolCallId,
       is_error: payload.isError,
@@ -1088,9 +1098,9 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalSessionStartRequest(_hook, payload, session) {
+  marshalSessionStartRequest(hook, payload, session) {
     return {
-      ...copseEnvelope('sessionStart', session),
+      ...copseEnvelope('sessionStart', session, hook.executionRoot),
       first_turn: payload.firstTurn,
       session_id: session?.conversationId ?? '',
     }
@@ -1112,8 +1122,11 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalBeforeDiffApplyRequest(_hook, payload, session) {
-    return { ...copseEnvelope('beforeDiffApply', session), file_path: payload.filePath }
+  marshalBeforeDiffApplyRequest(hook, payload, session) {
+    return {
+      ...copseEnvelope('beforeDiffApply', session, hook.executionRoot),
+      file_path: payload.filePath,
+    }
   },
 
   interpretBeforeDiffApply(spawn, _payload) {
@@ -1131,9 +1144,9 @@ export const copseAdapter: DialectAdapter = {
     return { outcome, spineEvent: 'beforeDiffApply', spineDecision, failed: false, parseOk: true }
   },
 
-  marshalAfterDiffApplyRequest(_hook, payload, session) {
+  marshalAfterDiffApplyRequest(hook, payload, session) {
     return {
-      ...copseEnvelope('afterDiffApply', session),
+      ...copseEnvelope('afterDiffApply', session, hook.executionRoot),
       file_path: payload.filePath,
       applied: payload.applied,
     }
@@ -1156,9 +1169,9 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalPermissionDecisionRequest(_hook, payload, session) {
+  marshalPermissionDecisionRequest(hook, payload, session) {
     return {
-      ...copseEnvelope('permissionDecision', session),
+      ...copseEnvelope('permissionDecision', session, hook.executionRoot),
       tool_name: payload.toolName,
       decision: payload.decision,
     }
@@ -1181,9 +1194,9 @@ export const copseAdapter: DialectAdapter = {
     }
   },
 
-  marshalPostTurnReviewRequest(_hook, payload, session) {
+  marshalPostTurnReviewRequest(hook, payload, session) {
     return {
-      ...copseEnvelope('postTurnReview', session),
+      ...copseEnvelope('postTurnReview', session, hook.executionRoot),
       issues_found: payload.issuesFound,
       summary: payload.summary,
     }

@@ -61,6 +61,12 @@ export interface CommandHook<E extends HookEventName = HookEventName> {
    */
   cwd?: string
   /**
+   * Trusted thread checkout root captured at discovery. Unlike `cwd`, this is
+   * the workspace identity placed on vendor wire payloads even for user hooks
+   * whose process cwd is their user config directory.
+   */
+  executionRoot?: string
+  /**
    * Per-hook timeout in milliseconds (decision 13; vendor defaults live in the
    * adapter). A dialect-agnostic spawn attribute the host runner enforces.
    * Absent = the runner's default.

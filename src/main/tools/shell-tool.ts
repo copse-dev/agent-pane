@@ -1,7 +1,7 @@
 import { errorMessage } from '@shared/errors.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { getWorkspaceRoot } from '../services/workspace.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { getMainWindow } from '../windows/create-main-window.ts'
 import {
   afterSandboxedCommand,
@@ -260,7 +260,7 @@ export const runShellTool = defineTool({
       ),
   }),
   async execute({ command, timeout_ms, expects_sandbox_block }, signal) {
-    const cwd = getWorkspaceRoot()
+    const cwd = getAgentExecutionRoot()
     if (!cwd) return 'No workspace open.'
 
     const prepared = await prepareCommand(command, signal)

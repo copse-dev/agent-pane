@@ -4,7 +4,7 @@ import {
   isSshExecutionTarget,
   getActiveExecutionTarget,
 } from '../ssh-workspace/execution-target.ts'
-import { toRelativePath } from '../workspace.ts'
+import { toRelativePath, toRelativePathWithinRoot } from '../workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 
 export type IndexedGrepBackend = 'ig' | 'trigrep' | 'instant-grep' | 'rg' | 'grep'
@@ -20,6 +20,8 @@ export interface CodeContentSearchOptions {
   maxResults: number
   /** Lines of surrounding context to show around each match (rg -C). */
   contextLines?: number
+  /** Root used to format absolute matcher paths back to agent-visible relative paths. */
+  displayRoot?: string
   signal?: AbortSignal
 }
 
@@ -95,7 +97,7 @@ async function searchWithIndexedCli(
 ): Promise<string[]> {
   const args = buildIndexedCliArgs(backend, opts)
   const { stdout } = await runCommand(backend, args, opts.signal ? { signal: opts.signal } : {})
-  return await parseGrepStdout(stdout, opts.maxResults)
+  return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
 
 function buildIndexedCliArgs(backend: IndexedCliBackend, opts: CodeContentSearchOptions): string[] {
@@ -158,7 +160,7 @@ async function searchWithRipgrep(opts: CodeContentSearchOptions): Promise<string
   ]
 
   const { stdout } = await runCommand('rg', args, opts.signal ? { signal: opts.signal } : {})
-  return await parseRipgrepJson(stdout, opts.maxResults)
+  return await parseRipgrepJson(stdout, opts.maxResults, opts.displayRoot)
 }
 
 async function searchWithGrepRecursive(opts: CodeContentSearchOptions): Promise<string[]> {
@@ -174,10 +176,14 @@ async function searchWithGrepRecursive(opts: CodeContentSearchOptions): Promise<
     opts.searchRoot,
   ]
   const { stdout } = await runCommand('grep', args, opts.signal ? { signal: opts.signal } : {})
-  return await parseGrepStdout(stdout, opts.maxResults)
+  return await parseGrepStdout(stdout, opts.maxResults, opts.displayRoot)
 }
 
-export async function parseRipgrepJson(stdout: string, maxResults: number): Promise<string[]> {
+export async function parseRipgrepJson(
+  stdout: string,
+  maxResults: number,
+  displayRoot?: string,
+): Promise<string[]> {
   const entries = stdout
     .split('\n')
     .filter(Boolean)
@@ -202,11 +208,11 @@ export async function parseRipgrepJson(stdout: string, maxResults: number): Prom
       if (matchCount >= maxResults) break
       matchCount++
       out.push(
-        `${await toRelativePath(data.path.text)}:${String(data.line_number)}: ${data.lines.text.trimEnd()}`,
+        `${await relativeDisplayPath(data.path.text, displayRoot)}:${String(data.line_number)}: ${data.lines.text.trimEnd()}`,
       )
     } else {
       out.push(
-        `${await toRelativePath(data.path.text)}-${String(data.line_number)}- ${data.lines.text.trimEnd()}`,
+        `${await relativeDisplayPath(data.path.text, displayRoot)}-${String(data.line_number)}- ${data.lines.text.trimEnd()}`,
       )
     }
   }
@@ -214,24 +220,32 @@ export async function parseRipgrepJson(stdout: string, maxResults: number): Prom
   return out
 }
 
-export async function parseGrepStdout(stdout: string, maxResults: number): Promise<string[]> {
+export async function parseGrepStdout(
+  stdout: string,
+  maxResults: number,
+  displayRoot?: string,
+): Promise<string[]> {
   const lines: string[] = []
   for (const raw of stdout.split('\n')) {
     const line = raw.trimEnd()
     if (!line) continue
-    const normalized = await normalizeGrepLine(line)
+    const normalized = await normalizeGrepLine(line, displayRoot)
     if (normalized) lines.push(normalized)
     if (lines.length >= maxResults) break
   }
   return lines
 }
 
-async function normalizeGrepLine(line: string): Promise<string | null> {
+async function relativeDisplayPath(path: string, root?: string): Promise<string> {
+  return root ? toRelativePathWithinRoot(path, root) : toRelativePath(path)
+}
+
+async function normalizeGrepLine(line: string, displayRoot?: string): Promise<string | null> {
   const match = line.match(/^(.+?):(\d+)(?::\d+)?:\s?(.*)$/)
   if (!match) return null
   const [, file, lineNo, content] = match
   if (!file || !lineNo) return null
-  return `${await toRelativePath(file)}:${lineNo}: ${content ?? ''}`
+  return `${await relativeDisplayPath(file, displayRoot)}:${lineNo}: ${content ?? ''}`
 }
 
 export function formatCodeSearchResults(

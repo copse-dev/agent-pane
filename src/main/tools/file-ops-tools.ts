@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { computeLineDiffStats } from '@shared/diff/line-stats.ts'
-import { resolveWorkspacePath } from '../services/workspace.ts'
+import { resolvePathWithinRoot } from '../services/workspace.ts'
+import { requireAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveWorkspaceFs } from '../services/workspace-fs/get-workspace-fs.ts'
 import { stageFileOp } from '../services/diff-queue.ts'
 import { detectLanguage } from '../services/language.ts'
@@ -14,7 +15,8 @@ export const deleteFileTool = defineTool({
     path: z.string().describe('File path relative to workspace root'),
   }),
   async execute({ path }) {
-    const absPath = await resolveWorkspacePath(path)
+    const root = requireAgentExecutionRoot()
+    const absPath = await resolvePathWithinRoot(path, root)
     let before: string
     try {
       before = await getActiveWorkspaceFs().readFile(absPath, 'utf-8')
@@ -45,9 +47,10 @@ export const renameFileTool = defineTool({
   }),
   async execute({ from, to }) {
     if (from === to) return 'Source and destination are the same path.'
-    const fromAbs = await resolveWorkspacePath(from)
+    const root = requireAgentExecutionRoot()
+    const fromAbs = await resolvePathWithinRoot(from, root)
     // Validate destination resolves inside the workspace before staging.
-    await resolveWorkspacePath(to)
+    await resolvePathWithinRoot(to, root)
     let before: string
     try {
       before = await getActiveWorkspaceFs().readFile(fromAbs, 'utf-8')
@@ -55,7 +58,7 @@ export const renameFileTool = defineTool({
       return `File not found: ${from}`
     }
     try {
-      await getActiveWorkspaceFs().access(await resolveWorkspacePath(to))
+      await getActiveWorkspaceFs().access(await resolvePathWithinRoot(to, root))
       return `Destination already exists: ${to}`
     } catch {
       /* destination is free */
@@ -79,7 +82,7 @@ export const makeDirectoryTool = defineTool({
     path: z.string().describe('Directory path relative to workspace root'),
   }),
   async execute({ path }) {
-    const absPath = await resolveWorkspacePath(path)
+    const absPath = await resolvePathWithinRoot(path, requireAgentExecutionRoot())
     try {
       const stat = await getActiveWorkspaceFs().stat(absPath)
       if (stat.isDirectory()) return `Directory already exists: ${path}`

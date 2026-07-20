@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
 import { spawnBackgroundProcess } from '../../project-sandbox/index.ts'
-import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
 import { SUBPROCESS_KILL_GRACE_MS, terminateProcessTree } from './subprocess-kill.ts'
@@ -163,7 +163,7 @@ export async function startBackgroundProcess(
 ): Promise<BackgroundProcessInfo> {
   const command = opts.command.trim()
   if (!command) throw new Error('A command is required to start a background process.')
-  const cwd = opts.cwd ?? getWorkspaceRoot()
+  const cwd = opts.cwd ?? getAgentExecutionRoot()
   if (!cwd) throw new Error('No workspace open.')
   const portBinding = opts.allowPortBinding === true
   const owner = opts.owner ?? requireThreadExecutionOwner()

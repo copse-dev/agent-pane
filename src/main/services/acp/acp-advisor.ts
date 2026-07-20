@@ -8,7 +8,7 @@ import {
 } from './acp-client.ts'
 import { getAcpAgent, resolveAcpSandbox } from './acp-agent-registry.ts'
 import { acpTurnUsage, permissionResponseFor } from './acp-agent-service.ts'
-import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot } from '../execution-root.ts'
 
 /**
  * Advisor consultations routed through an external ACP agent (`acp:<id>` picked
@@ -86,7 +86,7 @@ export async function runAcpAdvisorPrompt(options: {
       `ACP advisor agent "${options.agentId}" is not configured or is disabled. Add it in Settings → ACP agents.`,
     )
   }
-  const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
+  const cwd = getAgentExecutionRoot()
   if (!cwd) {
     throw new Error('Open a folder before consulting an ACP advisor.')
   }

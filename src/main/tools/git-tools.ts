@@ -8,16 +8,18 @@ import {
   getGitShowText,
   getGitStatusText,
 } from '../services/github/git-service.ts'
-import { resolveWorkspacePath } from '../services/workspace.ts'
+import { resolvePathWithinRoot } from '../services/workspace.ts'
+import { getAgentExecutionRoot } from '../services/execution-root.ts'
 import { getActiveRunThread, getThreadModels } from '../services/thread-models.ts'
 
 /** Reject paths that escape the workspace (absolute, `..`, symlink-out) before handing them to git. */
 async function validateGitPath(
   path: string | undefined,
+  root: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (path === undefined) return { ok: true }
   try {
-    await resolveWorkspacePath(path)
+    await resolvePathWithinRoot(path, root)
     return { ok: true }
   } catch (err) {
     return { ok: false, error: errorMessage(err) }
@@ -28,7 +30,7 @@ export const gitStatusTool = defineTool({
   name: 'git_status',
   description: 'Show working tree status: staged, unstaged, and untracked files.',
   parameters: z.object({}),
-  execute: async () => getGitStatusText(),
+  execute: async () => getGitStatusText(getAgentExecutionRoot()),
 })
 
 export const gitDiffTool = defineTool({
@@ -46,9 +48,11 @@ export const gitDiffTool = defineTool({
       .describe('Show staged (cached) diff instead of unstaged.'),
   }),
   execute: async ({ path, staged }) => {
-    const valid = await validateGitPath(path)
+    const root = getAgentExecutionRoot()
+    if (!root) return 'No workspace open.'
+    const valid = await validateGitPath(path, root)
     if (!valid.ok) return valid.error
-    return getGitDiffText(path, staged)
+    return getGitDiffText(path, staged, root)
   },
 })
 
@@ -74,7 +78,7 @@ export const gitCommitTool = defineTool({
   execute: async ({ message, stage_all }) => {
     const threadId = getActiveRunThread()
     const models = threadId ? getThreadModels(threadId) : []
-    return commitWithAttribution(message, models, stage_all)
+    return commitWithAttribution(message, models, stage_all, getAgentExecutionRoot())
   },
 })
 
@@ -95,9 +99,11 @@ export const gitShowTool = defineTool({
       ),
   }),
   execute: async ({ ref, path }) => {
-    const valid = await validateGitPath(path)
+    const root = getAgentExecutionRoot()
+    if (!root) return 'No workspace open.'
+    const valid = await validateGitPath(path, root)
     if (!valid.ok) return valid.error
-    return getGitShowText(ref, path)
+    return getGitShowText(ref, path, root)
   },
 })
 
@@ -109,8 +115,10 @@ export const gitLogTool = defineTool({
     path: z.string().optional().describe('Limit to commits touching this file.'),
   }),
   execute: async ({ max_count, path }) => {
-    const valid = await validateGitPath(path)
+    const root = getAgentExecutionRoot()
+    if (!root) return 'No workspace open.'
+    const valid = await validateGitPath(path, root)
     if (!valid.ok) return valid.error
-    return getGitLogText(max_count, path)
+    return getGitLogText(max_count, path, root)
   },
 })

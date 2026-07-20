@@ -60,9 +60,10 @@ import { detectLanguage } from '../language.ts'
 import {
   getActiveProjectRoot,
   getWorkspaceRoot,
-  resolveWorkspacePath,
-  toRelativePath,
+  resolvePathWithinRoot,
+  toRelativePathWithinRoot,
 } from '../workspace.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 
 /**
  * Run a turn against an external ACP agent selected as `acp:<id>` in the model
@@ -277,10 +278,11 @@ export async function runAcpAgentFromSettings(
     )
   }
 
-  const cwd = getActiveProjectRoot() ?? getWorkspaceRoot()
+  const cwd = getAgentExecutionRoot()
   if (!cwd) {
     throw new Error('Open a folder before running an ACP agent so it has a workspace to act in.')
   }
+  const projectRoot = getAgentProjectRoot()
 
   const sandbox = resolveAcpSandbox(agent)
   const sandboxed = willSandboxAcpAgent(sandbox)
@@ -334,9 +336,9 @@ export async function runAcpAgentFromSettings(
   const handlers: AcpClientHandlers = {
     onChunk,
     requestPermission: (req) =>
-      respondToPermission({ id: agent.id, title: agent.title, sandboxed }, req),
-    readTextFile,
-    writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites),
+      respondToPermission({ id: agent.id, title: agent.title, sandboxed }, req, cwd, projectRoot),
+    readTextFile: (req) => readTextFile(req, cwd),
+    writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites, cwd),
   }
   // New turn: reset the restore point so this turn's first file-write approval
   // snapshots the user's current uncommitted work (see respondToPermission).
@@ -513,6 +515,8 @@ export function shouldAutoApproveLowRiskAcpPermission(
 async function respondToAcpExecutePermission(
   agent: { sandboxed: boolean },
   req: RequestPermissionRequest,
+  root: string | null,
+  projectRoot: string | null,
 ): Promise<RequestPermissionResponse | null> {
   const command = acpExecuteCommandText(req.toolCall)
   if (!command) return null
@@ -521,6 +525,8 @@ async function respondToAcpExecutePermission(
     sandboxEnabled: agent.sandboxed,
     autoRun: getSetting<boolean>('autoRunSandboxCommands', true) || readOnly,
     networkScopeAlreadyApplies: agent.sandboxed,
+    executionRoot: root,
+    projectRoot,
   })
   return permissionResponseFor(req.options, approved)
 }
@@ -538,6 +544,8 @@ async function respondToAcpExecutePermission(
 async function respondToPermission(
   agent: { id: string; title: string; sandboxed: boolean },
   req: RequestPermissionRequest,
+  root: string | null = getAgentExecutionRoot(),
+  projectRoot: string | null = getAgentProjectRoot(),
 ): Promise<RequestPermissionResponse> {
   const kind = req.toolCall.kind ?? 'other'
   if (isAcpPermissionRemembered(agent.id, kind)) {
@@ -562,7 +570,7 @@ async function respondToPermission(
     return permissionResponseFor(req.options, true)
   }
   if (kind === 'execute') {
-    const executeResponse = await respondToAcpExecutePermission(agent, req)
+    const executeResponse = await respondToAcpExecutePermission(agent, req, root, projectRoot)
     if (executeResponse) return executeResponse
   }
   // File-mutating kinds (edit/delete/move) are auto-approved once a durable
@@ -571,7 +579,7 @@ async function respondToPermission(
   // adds friction without adding protection. Shell/web/other still prompt: a
   // stash makes overwritten files recoverable, not a `rm -rf` or a network call.
   if (WRITE_TOOL_KINDS.has(kind) && getSetting<boolean>('acpAutoApproveEditsWithBackup', true)) {
-    if (await ensureWorktreeRecoverable()) {
+    if (await ensureWorktreeRecoverable(root)) {
       return permissionResponseFor(req.options, true)
     }
   }
@@ -620,8 +628,8 @@ function pickPermissionOption(
 }
 
 /** Back `fs/read_text_file` with a workspace-scoped read (path sandbox enforced). */
-async function readTextFile(req: ReadTextFileRequest): Promise<ReadTextFileResponse> {
-  const absPath = await resolveWorkspacePath(req.path)
+async function readTextFile(req: ReadTextFileRequest, root: string): Promise<ReadTextFileResponse> {
+  const absPath = await resolvePathWithinRoot(req.path, root)
   const content = await fsp.readFile(absPath, 'utf-8')
   return { content: sliceLines(content, req.line, req.limit) }
 }
@@ -732,9 +740,10 @@ async function writeViaDiffQueue(
   req: WriteTextFileRequest,
   signal: AbortSignal,
   queueWrites: Set<string>,
+  root: string,
 ): Promise<WriteTextFileResponse> {
-  const absPath = await resolveWorkspacePath(req.path)
-  const relPath = await toRelativePath(absPath)
+  const absPath = await resolvePathWithinRoot(req.path, root)
+  const relPath = await toRelativePathWithinRoot(absPath, root)
   let before = ''
   try {
     before = await fsp.readFile(absPath, 'utf-8')
