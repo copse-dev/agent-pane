@@ -3,7 +3,8 @@
 // same value once settings load (idempotent).
 ;(function applyBootThemeFromQuery() {
   var theme = new URLSearchParams(window.location.search).get('t')
-  if (theme === 'light' || theme === 'dark') {
-    document.documentElement.dataset.theme = theme
-  }
+  // Keep the document themed when index.html is loaded without the main-process
+  // query (browser demo/tests or a malformed URL). The normal Electron path
+  // always supplies the persisted, system-resolved value.
+  document.documentElement.dataset.theme = theme === 'light' || theme === 'dark' ? theme : 'dark'
 })()
