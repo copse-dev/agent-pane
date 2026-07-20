@@ -797,13 +797,12 @@ export function mountInputBar(
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
+    const isolatedWorktree = thread !== undefined && thread.worktree !== undefined
     // Worktree threads keep the project checkout on its original branch; the
     // bound `gitBranch` names the isolated checkout, not a required HEAD move.
     if (
       threadBranch &&
-      threadGitBranchMismatch(threadBranch, currentBranch, {
-        isolatedWorktree: Boolean(thread && thread.worktree),
-      })
+      threadGitBranchMismatch(threadBranch, currentBranch, { isolatedWorktree })
     ) {
       showBranchMismatch(threadBranch)
       return
