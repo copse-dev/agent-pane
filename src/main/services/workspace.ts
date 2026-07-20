@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
 import { getActivePathBackend } from './workspace-fs/get-path-backend.ts'
 import type { PathBackend } from './workspace-fs/path-backend.ts'
@@ -17,9 +17,14 @@ const allowedWorkspaceRoots = new Set<string>()
 
 /** Linked-worktree roots trusted by the main process, never renderer-selectable. */
 export interface InternalWorkspaceRootRegistration {
+  /** Effective thread root (which may be a project subdirectory of the checkout). */
   readonly root: string
+  /** Top-level linked checkout containing the `.git` indirection file. */
+  readonly checkoutRoot: string
   readonly gitDir: string
   readonly commonGitDir: string
+  /** Other linked checkouts in the same repository, explicitly denied by the sandbox. */
+  readonly siblingRoots: readonly string[]
 }
 
 const internalWorkspaceRoots = new Map<string, InternalWorkspaceRootRegistration>()
@@ -138,15 +143,21 @@ export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string)
  * this trusted record without accepting an arbitrary renderer-supplied parent path.
  */
 export async function registerInternalWorkspaceRoot(
-  root: string,
+  checkoutRoot: string,
+  executionRoot: string = checkoutRoot,
 ): Promise<InternalWorkspaceRootRegistration> {
-  const canonicalRoot = await canonicalWorkspaceRoot(root)
-  const dotGitPath = join(canonicalRoot, '.git')
+  const canonicalCheckoutRoot = await canonicalWorkspaceRoot(checkoutRoot)
+  const canonicalExecutionRoot = await canonicalWorkspaceRoot(executionRoot)
+  const executionRelative = relative(canonicalCheckoutRoot, canonicalExecutionRoot)
+  if (executionRelative === '..' || executionRelative.startsWith(`..${sep}`)) {
+    throw new Error('Internal execution root is outside its linked Git worktree')
+  }
+  const dotGitPath = join(canonicalCheckoutRoot, '.git')
   const dotGit = await readFile(dotGitPath, 'utf-8')
   const match = /^gitdir:\s*(.+?)\s*$/i.exec(dotGit.trim())
   if (!match?.[1]) throw new Error('Internal workspace root is not a linked Git worktree')
 
-  const gitDir = realpathSync.native(resolve(canonicalRoot, match[1]))
+  const gitDir = realpathSync.native(resolve(canonicalCheckoutRoot, match[1]))
   const commonRelative = (await readFile(join(gitDir, 'commondir'), 'utf-8')).trim()
   if (!commonRelative) throw new Error('Linked worktree has no common Git directory')
   const commonGitDir = realpathSync.native(resolve(gitDir, commonRelative))
@@ -154,8 +165,33 @@ export async function registerInternalWorkspaceRoot(
     throw new Error('Linked worktree Git directory is outside the common worktrees directory')
   }
 
-  const registration = Object.freeze({ root: canonicalRoot, gitDir, commonGitDir })
-  internalWorkspaceRoots.set(canonicalRoot, registration)
+  const siblingRoots: string[] = []
+  for (const entry of await readdir(dirname(gitDir), { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === basename(gitDir)) continue
+    try {
+      const siblingGitFile = (
+        await readFile(join(dirname(gitDir), entry.name, 'gitdir'), 'utf-8')
+      ).trim()
+      if (!siblingGitFile) continue
+      const siblingDotGit = realpathSync.native(
+        isAbsolute(siblingGitFile)
+          ? siblingGitFile
+          : resolve(dirname(gitDir), entry.name, siblingGitFile),
+      )
+      siblingRoots.push(dirname(siblingDotGit))
+    } catch {
+      // A stale/prunable sibling cannot grant authority; it needs no extra deny path.
+    }
+  }
+
+  const registration = Object.freeze({
+    root: canonicalExecutionRoot,
+    checkoutRoot: canonicalCheckoutRoot,
+    gitDir,
+    commonGitDir,
+    siblingRoots: Object.freeze([...new Set(siblingRoots)]),
+  })
+  internalWorkspaceRoots.set(canonicalExecutionRoot, registration)
   return registration
 }
 

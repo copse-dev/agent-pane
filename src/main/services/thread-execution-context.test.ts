@@ -9,6 +9,7 @@ import {
   type ThreadExecutionContext,
   type ThreadExecutionContextDependencies,
 } from './thread-execution-context.ts'
+import type { ValidatedThreadWorktree } from './worktree-manager.ts'
 
 function sharedContext(threadId: string, root: string): ThreadExecutionContext {
   return {
@@ -27,6 +28,9 @@ function resolver(
   const dependencies: ThreadExecutionContextDependencies = {
     getProjectRoot: () => '/project',
     getThreadMeta: async () => ({ id: 'thread-1' }),
+    validateWorktree: async () => {
+      throw new Error('unexpected worktree validation')
+    },
     ...overrides,
   }
   return resolveThreadExecutionContext('project-1', 'thread-1', dependencies)
@@ -50,6 +54,78 @@ describe('thread execution context', () => {
       branch: null,
     })
     assert.equal(Object.isFrozen(context), true)
+  })
+
+  it('retains the persisted shared branch without deriving it from active HEAD', async () => {
+    const context = await resolver({
+      getThreadMeta: async () => ({ id: 'thread-1', gitBranch: 'feature/shared' }),
+    })
+
+    assert.equal(context.checkoutMode, 'shared')
+    assert.equal(context.branch, 'feature/shared')
+  })
+
+  it('uses only a manager-validated worktree root and branch', async () => {
+    const persisted = {
+      path: '/diagnostic/path',
+      branch: 'copse/thread-1',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    const validated: ValidatedThreadWorktree = {
+      ...persisted,
+      path: '/validated/root',
+      root: '/validated/root',
+      gitDir: '/repo/.git/worktrees/thread-1',
+      commonGitDir: '/repo/.git',
+    }
+    let received: unknown
+    const context = await resolver({
+      getThreadMeta: async () => ({ id: 'thread-1', worktree: persisted }),
+      validateWorktree: async (input) => {
+        received = input
+        return validated
+      },
+    })
+
+    assert.deepEqual(received, {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: '/project',
+      worktree: persisted,
+    })
+    assert.deepEqual(context, {
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: '/project',
+      root: '/validated/root',
+      checkoutMode: 'worktree',
+      branch: 'copse/thread-1',
+    })
+  })
+
+  it('does not fall back to the project checkout when worktree validation fails', async () => {
+    await assert.rejects(
+      resolver({
+        getThreadMeta: async () => ({
+          id: 'thread-1',
+          worktree: {
+            path: '/missing',
+            branch: 'copse/missing',
+            baseBranch: 'main',
+            baseCommit: 'abc123',
+            createdAt: 1,
+            seededFromDirtyProject: false,
+          },
+        }),
+        validateWorktree: async () => {
+          throw new Error('Thread worktree is missing')
+        },
+      }),
+      /Thread worktree is missing/,
+    )
   })
 
   it('rejects a missing persisted project root', async () => {

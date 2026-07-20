@@ -102,6 +102,30 @@ describe('thread-store', () => {
     assert.deepEqual(loaded[0], t)
   })
 
+  it('round-trips optional worktree metadata while legacy threads remain shared', async () => {
+    await saveProjectThread('proj-1', thread('legacy'))
+    const isolated = thread('isolated', {
+      gitBranch: 'copse/isolated',
+      worktreeChoice: 'worktree',
+      worktree: {
+        path: '/diagnostic/worktree/path',
+        branch: 'copse/isolated',
+        baseBranch: 'main',
+        baseCommit: 'abc123',
+        createdAt: 123,
+        seededFromDirtyProject: true,
+      },
+    })
+    await saveProjectThread('proj-1', isolated)
+
+    const loaded = await loadProjectThreads('proj-1')
+    assert.equal(loaded.find((candidate) => candidate.id === 'legacy')?.worktree, undefined)
+    assert.deepEqual(
+      loaded.find((candidate) => candidate.id === 'isolated'),
+      isolated,
+    )
+  })
+
   it('stores prose as OKF files and results as blobs', async () => {
     await saveProjectThread(
       'proj-1',
