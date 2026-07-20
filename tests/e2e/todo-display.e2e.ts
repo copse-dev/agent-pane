@@ -104,7 +104,9 @@ describe('todo plan display', () => {
     // --spacing-lg (≈12px) horizontal, matching review/comparison panels.
     expect(padding!.panelPaddingTop).toMatch(/^\d+px$/)
     expect(padding!.panelPaddingBottom).toMatch(/^\d+px$/)
-    expect(parseInt(padding!.panelPaddingTop)).toBeLessThanOrEqual(parseInt(padding!.panelPaddingRight))
+    expect(parseInt(padding!.panelPaddingTop)).toBeLessThanOrEqual(
+      parseInt(padding!.panelPaddingRight),
+    )
     // Rows should have minimal vertical padding (2px) with none horizontally.
     expect(padding!.rowPaddingTop).toBe('2px')
     expect(padding!.rowPaddingBottom).toBe('2px')
