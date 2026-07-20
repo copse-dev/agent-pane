@@ -75,6 +75,7 @@ export async function runPermissionDecisionHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   const hooks = await copsePermissionDecisionHooks(payload, discoverOpts)

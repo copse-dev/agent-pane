@@ -118,6 +118,7 @@ export async function runAfterToolUseHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   const [cursorHooks, copseHooks] = await Promise.all([

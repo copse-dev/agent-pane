@@ -3,10 +3,9 @@ import { dirname } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
 import {
-  assertWorkspaceWriteTarget,
+  assertWriteTargetWithinRoot,
   getActiveProjectId,
-  getWorkspaceRoot,
-  resolveWorkspacePath,
+  resolvePathWithinRoot,
 } from './workspace.ts'
 import { getActiveWorkspaceFs } from './workspace-fs/get-workspace-fs.ts'
 import { buildIndex } from './search/file-index.ts'
@@ -23,9 +22,11 @@ import { currentAgentSessionInfo } from './hooks/agent-session.ts'
 import { snapshotHookRunContext } from './hook-run-recorder.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
+  getThreadExecutionContext,
   requireThreadExecutionOwner,
   type ThreadExecutionOwner,
 } from './thread-execution-context.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from './execution-root.ts'
 
 export type DiffOp = 'write' | 'delete' | 'rename' | 'mkdir'
 
@@ -73,6 +74,8 @@ export type ApplyResult =
 type DecisionWaiter = (status: DiffDecision['status']) => void
 
 interface DiffQueueState {
+  root: string | null
+  projectRoot: string | null
   readonly queue: QueueEntry[]
   readonly recentDecisions: DiffDecision[]
   readonly directAppliedSnapshots: Map<string, string>
@@ -81,8 +84,10 @@ interface DiffQueueState {
 
 const statesByProject = new Map<string, Map<string, DiffQueueState>>()
 
-function createDiffQueueState(): DiffQueueState {
+function createDiffQueueState(root: string | null, projectRoot: string | null): DiffQueueState {
   return {
+    root,
+    projectRoot,
     queue: [],
     recentDecisions: [],
     directAppliedSnapshots: new Map(),
@@ -91,6 +96,10 @@ function createDiffQueueState(): DiffQueueState {
 }
 
 function stateFor(owner: ThreadExecutionOwner = requireThreadExecutionOwner()): DiffQueueState {
+  const context = getThreadExecutionContext()
+  const ownsContext = context?.projectId === owner.projectId && context.threadId === owner.threadId
+  const root = ownsContext ? context.root : null
+  const projectRoot = ownsContext ? context.projectRoot : null
   let projectStates = statesByProject.get(owner.projectId)
   if (!projectStates) {
     projectStates = new Map()
@@ -98,10 +107,21 @@ function stateFor(owner: ThreadExecutionOwner = requireThreadExecutionOwner()): 
   }
   let state = projectStates.get(owner.threadId)
   if (!state) {
-    state = createDiffQueueState()
+    state = createDiffQueueState(root, projectRoot)
     projectStates.set(owner.threadId, state)
+  } else if (root) {
+    state.root = root
+    state.projectRoot = projectRoot
   }
   return state
+}
+
+function executionRootFor(state: DiffQueueState): string | null {
+  return state.root ?? getAgentExecutionRoot()
+}
+
+function projectRootFor(state: DiffQueueState): string | null {
+  return state.projectRoot ?? getAgentProjectRoot()
 }
 
 /**
@@ -153,7 +173,7 @@ async function resolveStagedEntry(path: string): Promise<string> {
     removeEntry(state, owner, path)
     return `Change to ${path} was rejected; nothing was written to disk.`
   }
-  const result = await applyDiffEntry(entry)
+  const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
   if (result.status === 'conflict') {
     restage(owner, entry, result.current)
     recordDecision(state, owner, { path, status: 'conflict' })
@@ -167,7 +187,7 @@ async function resolveStagedEntry(path: string): Promise<string> {
   recordOwnershipAfterApply(state, entry)
   recordDecision(state, owner, { path, status: 'approved' })
   removeEntry(state, owner, path)
-  const root = getWorkspaceRoot()
+  const root = projectRootFor(state)
   if (root) await buildIndex(root)
   return `Approved and applied change to ${path}.`
 }
@@ -234,10 +254,14 @@ export function getPendingAfterContent(path: string): string | null {
   return stateFor().queue.find((e) => e.path === path)?.after ?? null
 }
 
-async function readCurrentContent(path: string): Promise<string> {
+async function readCurrentContent(
+  path: string,
+  root: string | null = getAgentExecutionRoot(),
+): Promise<string> {
+  if (!root) return ''
   try {
     const fs = getActiveWorkspaceFs()
-    return await fs.readFile(await resolveWorkspacePath(path), 'utf-8')
+    return await fs.readFile(await resolvePathWithinRoot(path, root), 'utf-8')
   } catch {
     return ''
   }
@@ -251,7 +275,8 @@ async function canApplyDirectly(
     return { ok: false, reason: 'there are pending staged diffs waiting for user approval' }
   }
 
-  const status = await getGitStatus()
+  const root = executionRootFor(state)
+  const status = await getGitStatus(root)
   if (!status) {
     return { ok: false, reason: 'git is unavailable or the workspace is not a git worktree' }
   }
@@ -267,7 +292,7 @@ async function canApplyDirectly(
     // With a restore point in hand, overwriting them is safe, so the edit — and
     // later edits this turn — can apply directly. Only fall back to approval when
     // the backup fails (e.g. git unavailable), leaving no safety net.
-    const backup = await ensureSessionBackup()
+    const backup = await ensureSessionBackup(root)
     if (!backup) {
       return {
         ok: false,
@@ -275,12 +300,15 @@ async function canApplyDirectly(
       }
     }
     for (const changedPath of new Set(unownedChanges)) {
-      recordDirectAppliedSnapshot(state, changedPath, await readCurrentContent(changedPath))
+      recordDirectAppliedSnapshot(state, changedPath, await readCurrentContent(changedPath, root))
     }
   }
 
   const lastDirectContent = state.directAppliedSnapshots.get(ownedKey(path))
-  if (lastDirectContent !== undefined && (await readCurrentContent(path)) !== lastDirectContent) {
+  if (
+    lastDirectContent !== undefined &&
+    (await readCurrentContent(path, root)) !== lastDirectContent
+  ) {
     return {
       ok: false,
       reason: 'the file changed on disk since Copse last applied a direct edit',
@@ -298,11 +326,13 @@ async function canApplyDirectly(
  * actually changed are adopted.
  */
 export async function captureWorktreeBaseline(): Promise<Map<string, string>> {
+  const state = stateFor()
   const baseline = new Map<string, string>()
-  const status = await getGitStatus()
+  const status = await getGitStatus(executionRootFor(state))
   if (!status) return baseline
   const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
-  for (const path of paths) baseline.set(ownedKey(path), await readCurrentContent(path))
+  const root = executionRootFor(state)
+  for (const path of paths) baseline.set(ownedKey(path), await readCurrentContent(path, root))
   return baseline
 }
 
@@ -327,12 +357,14 @@ export async function adoptWorktreeChangesSince(baseline: Map<string, string>): 
 async function worktreeChangesSince(
   baseline: Map<string, string>,
 ): Promise<{ path: string; after: string }[]> {
-  const status = await getGitStatus()
+  const state = stateFor()
+  const root = executionRootFor(state)
+  const status = await getGitStatus(executionRootFor(state))
   if (!status) return []
   const paths = new Set([...status.staged, ...status.unstaged].map((c) => c.path))
   const changes: { path: string; after: string }[] = []
   for (const path of paths) {
-    const after = await readCurrentContent(path)
+    const after = await readCurrentContent(path, root)
     const before = baseline.get(ownedKey(path))
     if (before === undefined || before !== after) changes.push({ path, after })
   }
@@ -445,25 +477,30 @@ export function clearStagedDiffsForTest(): void {
  * model (#122): they are staged as queue entries and applied here so they share
  * the user-approval safety guarantees instead of bypassing them via run_shell.
  */
-export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
+export async function applyDiffEntry(
+  entry: QueueEntry,
+  root: string | null = getAgentExecutionRoot(),
+  projectRoot: string | null = getAgentProjectRoot(),
+): Promise<ApplyResult> {
+  if (!root) return { status: 'error', error: 'No workspace open.' }
   const op = entry.op ?? 'write'
   // F2: the canonical `beforeDiffApply` blocking gate fires at this single
   // apply choke point every path funnels through — direct apply, GUI approve /
   // approve-all, and the headless resolver — before any op lands. A hook deny /
   // halt blocks the apply; the diff stays queued for the user to retry.
-  const gate = await fireBeforeDiffApply(entry.path)
+  const gate = await fireBeforeDiffApply(entry.path, root, projectRoot)
   if (gate.blocked) return { status: 'error', error: gate.reason }
-  if (op === 'mkdir') return applyMkdir(entry)
-  if (op === 'delete') return applyDelete(entry)
-  if (op === 'rename') return applyRename(entry)
-  const result = await applyWrite(entry)
+  if (op === 'mkdir') return applyMkdir(entry, root)
+  if (op === 'delete') return applyDelete(entry, root)
+  if (op === 'rename') return applyRename(entry, root)
+  const result = await applyWrite(entry, root)
   // Fire the canonical `afterFileEdit` hook once the content edit has landed on
   // disk (B2). This is the single choke point every write path funnels through
   // — direct apply, GUI approve / approve-all, and the headless resolver — so
   // the event fires exactly once per successful write regardless of mode. Only
   // content writes qualify: delete / rename / mkdir are not file *edits* in
   // Cursor's afterFileEdit sense.
-  if (result.status === 'written') await fireAfterFileEdit(entry.path)
+  if (result.status === 'written') await fireAfterFileEdit(entry.path, root, projectRoot)
   return result
 }
 
@@ -476,13 +513,17 @@ export async function applyDiffEntry(entry: QueueEntry): Promise<ApplyResult> {
  * landed: the runner resolves per-dialect failure semantics internally, and a
  * defensive catch here swallows any unexpected throw.
  */
-async function fireAfterFileEdit(path: string): Promise<void> {
+async function fireAfterFileEdit(
+  path: string,
+  root: string,
+  projectRoot: string | null,
+): Promise<void> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
-  const workspaceRoot = getWorkspaceRoot()
   try {
-    await runAfterFileEditHooks(await resolveWorkspacePath(path), {
-      workspaceRoot,
-      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    await runAfterFileEditHooks(await resolvePathWithinRoot(path, root), {
+      workspaceRoot: projectRoot,
+      executionRoot: root,
+      projectTrusted: isWorkspaceTrusted(projectRoot),
       // Real conversation/generation ids + running model on the wire payload (B4).
       agentSession: currentAgentSessionInfo(),
     })
@@ -500,13 +541,17 @@ async function fireAfterFileEdit(path: string): Promise<void> {
  * never wedge the diff queue, and the per-dialect `onFailure` (decision 9) is the
  * knob a security-conscious hook uses to fail closed instead.
  */
-async function fireBeforeDiffApply(path: string): Promise<{ blocked: boolean; reason: string }> {
+async function fireBeforeDiffApply(
+  path: string,
+  root: string,
+  projectRoot: string | null,
+): Promise<{ blocked: boolean; reason: string }> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return { blocked: false, reason: '' }
-  const workspaceRoot = getWorkspaceRoot()
   try {
-    const decision = await runBeforeDiffApplyHooks(await resolveWorkspacePath(path), {
-      workspaceRoot,
-      projectTrusted: isWorkspaceTrusted(workspaceRoot),
+    const decision = await runBeforeDiffApplyHooks(await resolvePathWithinRoot(path, root), {
+      workspaceRoot: projectRoot,
+      executionRoot: root,
+      projectTrusted: isWorkspaceTrusted(projectRoot),
       agentSession: currentAgentSessionInfo(),
     })
     if (!decision.blocked) return { blocked: false, reason: '' }
@@ -528,7 +573,10 @@ async function fireBeforeDiffApply(path: string): Promise<{ blocked: boolean; re
  */
 function fireAfterDiffApply(owner: ThreadExecutionOwner, path: string, applied: boolean): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
-  const workspaceRoot = getWorkspaceRoot()
+  const state = stateFor(owner)
+  const root = executionRootFor(state)
+  const projectRoot = projectRootFor(state)
+  if (!root) return
   const agentSession = currentAgentSessionInfo()
   const threadId = agentSession.conversationId || owner.threadId
   const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
@@ -539,12 +587,13 @@ function fireAfterDiffApply(owner: ThreadExecutionOwner, path: string, applied: 
   const recordingSnapshot = snapshotHookRunContext()
   void (async (): Promise<unknown> =>
     runAfterDiffApplyHooks(
-      { filePath: await resolveWorkspacePath(path), applied },
+      { filePath: await resolvePathWithinRoot(path, root), applied },
       {
         threadId,
         turnTreeId,
-        workspaceRoot,
-        projectTrusted: isWorkspaceTrusted(workspaceRoot),
+        workspaceRoot: projectRoot,
+        executionRoot: root,
+        projectTrusted: isWorkspaceTrusted(projectRoot),
         agentSession,
         recordingSnapshot,
       },
@@ -553,8 +602,8 @@ function fireAfterDiffApply(owner: ThreadExecutionOwner, path: string, applied: 
   })
 }
 
-async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = await resolveWorkspacePath(entry.path)
+async function applyWrite(entry: QueueEntry, root: string): Promise<ApplyResult> {
+  const absPath = await resolvePathWithinRoot(entry.path, root)
   const fs = getActiveWorkspaceFs()
   let current = ''
   try {
@@ -566,7 +615,7 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
     return { status: 'conflict', current }
   }
   try {
-    await assertWorkspaceWriteTarget(absPath)
+    await assertWriteTargetWithinRoot(absPath, root)
     await fs.mkdir(dirname(absPath), { recursive: true })
     await fs.writeFile(absPath, entry.after, 'utf-8')
   } catch (err) {
@@ -575,8 +624,8 @@ async function applyWrite(entry: QueueEntry): Promise<ApplyResult> {
   return { status: 'written' }
 }
 
-async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = await resolveWorkspacePath(entry.path)
+async function applyDelete(entry: QueueEntry, root: string): Promise<ApplyResult> {
+  const absPath = await resolvePathWithinRoot(entry.path, root)
   const fs = getActiveWorkspaceFs()
   let current: string
   try {
@@ -600,10 +649,10 @@ async function applyDelete(entry: QueueEntry): Promise<ApplyResult> {
   return { status: 'written' }
 }
 
-async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
+async function applyRename(entry: QueueEntry, root: string): Promise<ApplyResult> {
   if (!entry.renameTo) return { status: 'error', error: 'rename target missing' }
-  const fromAbs = await resolveWorkspacePath(entry.path)
-  const toAbs = await resolveWorkspacePath(entry.renameTo)
+  const fromAbs = await resolvePathWithinRoot(entry.path, root)
+  const toAbs = await resolvePathWithinRoot(entry.renameTo, root)
   const fs = getActiveWorkspaceFs()
   let current: string
   try {
@@ -622,7 +671,7 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
     /* destination is free */
   }
   try {
-    await assertWorkspaceWriteTarget(toAbs)
+    await assertWriteTargetWithinRoot(toAbs, root)
     await fs.mkdir(dirname(toAbs), { recursive: true })
     await fs.rename(fromAbs, toAbs)
   } catch (err) {
@@ -631,10 +680,10 @@ async function applyRename(entry: QueueEntry): Promise<ApplyResult> {
   return { status: 'written' }
 }
 
-async function applyMkdir(entry: QueueEntry): Promise<ApplyResult> {
-  const absPath = await resolveWorkspacePath(entry.path)
+async function applyMkdir(entry: QueueEntry, root: string): Promise<ApplyResult> {
+  const absPath = await resolvePathWithinRoot(entry.path, root)
   try {
-    await assertWorkspaceWriteTarget(absPath)
+    await assertWriteTargetWithinRoot(absPath, root)
     await getActiveWorkspaceFs().mkdir(absPath, { recursive: true })
   } catch (err) {
     return { status: 'error', error: errorMessage(err) }
@@ -662,7 +711,7 @@ export function initDiffQueue(win: BrowserWindow): void {
       const state = stateFor(owner)
       const entry = state.queue.find((e) => e.path === path)
       if (!entry) return
-      const result = await applyDiffEntry(entry)
+      const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
       if (result.status === 'conflict') {
         restage(owner, entry, result.current)
         recordDecision(state, owner, { path: entry.path, status: 'conflict' })
@@ -674,7 +723,7 @@ export function initDiffQueue(win: BrowserWindow): void {
         recordDecision(state, owner, { path: entry.path, status: 'error', error: result.error })
         throw new Error(`Failed to write ${entry.path}: ${result.error}`)
       }
-      const root = getWorkspaceRoot()
+      const root = projectRootFor(state)
       if (root) await buildIndex(root)
       recordOwnershipAfterApply(state, entry)
       recordDecision(state, owner, { path: entry.path, status: 'approved' })
@@ -751,7 +800,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
   const toApply = [...state.queue]
   const appliedEntries = new Set<QueueEntry>()
   for (const entry of toApply) {
-    const result = await applyDiffEntry(entry)
+    const result = await applyDiffEntry(entry, executionRootFor(state), projectRootFor(state))
     if (result.status === 'conflict') {
       restage(resolvedOwner, entry, result.current)
       recordDecision(state, resolvedOwner, { path: entry.path, status: 'conflict' })
@@ -770,7 +819,7 @@ export async function approveAllStagedDiffs(owner?: ThreadExecutionOwner): Promi
     }
   }
   if (appliedEntries.size > 0) {
-    const root = getWorkspaceRoot()
+    const root = projectRootFor(state)
     if (root) await buildIndex(root)
     for (let i = state.queue.length - 1; i >= 0; i--) {
       const queued = state.queue[i]
@@ -860,11 +909,15 @@ export async function applyOrStageDiff(
     return `${staged}\nReason approval is required: ${direct.reason}.`
   }
 
-  const result = await applyDiffEntry({ path, before, after, language })
+  const result = await applyDiffEntry(
+    { path, before, after, language },
+    executionRootFor(state),
+    projectRootFor(state),
+  )
   if (result.status === 'written') {
     recordDirectAppliedSnapshot(state, path, after)
     recordDecision(state, owner, { path, status: 'applied_directly' })
-    const root = getWorkspaceRoot()
+    const root = projectRootFor(state)
     if (root) await buildIndex(root)
     const backup = getSessionBackup()
     const safetyNote = backup

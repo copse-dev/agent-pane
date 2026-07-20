@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { accessSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import {
@@ -17,6 +18,11 @@ import {
   workspaceSandboxOverlay,
   workspaceTmpDir,
 } from './config.ts'
+import {
+  assertAllowedWorkspaceRoot,
+  clearAllowedWorkspaceRootsForTest,
+  registerInternalWorkspaceRoot,
+} from '../services/workspace.ts'
 
 describe('acpAgentSandboxOverlay', () => {
   const workspace = '/tmp/acp-sandbox-test-workspace'
@@ -187,6 +193,63 @@ describe('workspaceSandboxOverlay', () => {
       const denyWrite = workspaceMandatoryWriteDenyPaths(linkedWorkspace)
       assert.ok(denyWrite.includes(join(realWorkspace, '.git/hooks')))
     } finally {
+      rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('allows only validated linked-worktree Git administration paths', async () => {
+    const tmpRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-sandbox-worktree-')))
+    const repo = join(tmpRoot, 'repo')
+    const worktree = join(tmpRoot, 'thread')
+    const sibling = join(tmpRoot, 'sibling')
+    const git = (cwd: string, args: string[]): void => {
+      execFileSync('git', args, {
+        cwd,
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'Copse Test',
+          GIT_AUTHOR_EMAIL: 'copse@example.invalid',
+          GIT_COMMITTER_NAME: 'Copse Test',
+          GIT_COMMITTER_EMAIL: 'copse@example.invalid',
+        },
+      })
+    }
+
+    try {
+      mkdirSync(repo)
+      git(repo, ['init', '-q'])
+      git(repo, ['commit', '--allow-empty', '-m', 'initial'])
+      git(repo, ['worktree', 'add', '-q', '-b', 'thread-a', worktree])
+      git(repo, ['worktree', 'add', '-q', '-b', 'thread-b', sibling])
+
+      const registration = await registerInternalWorkspaceRoot(worktree)
+      const siblingGitDir = realpathSync.native(
+        join(registration.commonGitDir, 'worktrees', 'sibling'),
+      )
+      const overlay = workspaceSandboxOverlay(worktree)
+      const allowRead = overlay.filesystem?.allowRead ?? []
+      const allowWrite = overlay.filesystem?.allowWrite ?? []
+      const denyWrite = overlay.filesystem?.denyWrite ?? []
+
+      assert.ok(allowRead.includes(registration.gitDir))
+      assert.ok(allowWrite.includes(`${registration.gitDir}/**`))
+      assert.ok(allowRead.includes(join(registration.commonGitDir, 'config')))
+      assert.ok(allowWrite.includes(join(registration.commonGitDir, 'objects/**')))
+      assert.ok(allowWrite.includes(join(registration.commonGitDir, 'refs/**')))
+      assert.ok(!allowWrite.includes(registration.commonGitDir))
+      assert.ok(
+        !allowWrite.some((path) => path === siblingGitDir || path.startsWith(siblingGitDir)),
+      )
+      assert.ok(!allowWrite.includes(join(registration.commonGitDir, 'config')))
+      assert.ok(!allowWrite.includes(join(registration.commonGitDir, 'hooks/**')))
+      assert.ok(denyWrite.includes(join(registration.commonGitDir, 'config')))
+      assert.ok(denyWrite.includes(join(registration.commonGitDir, 'hooks/**')))
+
+      // Internal roots are deliberately not renderer-selectable project roots.
+      await assert.rejects(assertAllowedWorkspaceRoot(worktree), /not an allowed project folder/)
+    } finally {
+      clearAllowedWorkspaceRootsForTest()
       rmSync(tmpRoot, { recursive: true, force: true })
     }
   })

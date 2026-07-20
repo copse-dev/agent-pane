@@ -1,4 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
@@ -13,6 +14,15 @@ let workspaceRoot: string | null = (storageGet(WORKSPACE_KEY) as string | null |
 
 /** Roots the renderer may activate via `workspace:set` (dialog-opened or persisted projects). */
 const allowedWorkspaceRoots = new Set<string>()
+
+/** Linked-worktree roots trusted by the main process, never renderer-selectable. */
+export interface InternalWorkspaceRootRegistration {
+  readonly root: string
+  readonly gitDir: string
+  readonly commonGitDir: string
+}
+
+const internalWorkspaceRoots = new Map<string, InternalWorkspaceRootRegistration>()
 
 /** Resolves once persisted project roots are seeded at main-process startup. */
 let allowedWorkspaceRootsReady: Promise<void> = Promise.resolve()
@@ -119,9 +129,58 @@ export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string)
   return canonical
 }
 
+/**
+ * Register a locally-created linked worktree without making it an openable project.
+ *
+ * The relationship is derived from Git's own administrative files and validated
+ * narrowly: `.git` must point at one child of `<common>/.git/worktrees`, whose
+ * `commondir` must point back to that common directory. The sandbox can then use
+ * this trusted record without accepting an arbitrary renderer-supplied parent path.
+ */
+export async function registerInternalWorkspaceRoot(
+  root: string,
+): Promise<InternalWorkspaceRootRegistration> {
+  const canonicalRoot = await canonicalWorkspaceRoot(root)
+  const dotGitPath = join(canonicalRoot, '.git')
+  const dotGit = await readFile(dotGitPath, 'utf-8')
+  const match = /^gitdir:\s*(.+?)\s*$/i.exec(dotGit.trim())
+  if (!match?.[1]) throw new Error('Internal workspace root is not a linked Git worktree')
+
+  const gitDir = realpathSync.native(resolve(canonicalRoot, match[1]))
+  const commonRelative = (await readFile(join(gitDir, 'commondir'), 'utf-8')).trim()
+  if (!commonRelative) throw new Error('Linked worktree has no common Git directory')
+  const commonGitDir = realpathSync.native(resolve(gitDir, commonRelative))
+  if (dirname(gitDir) !== join(commonGitDir, 'worktrees')) {
+    throw new Error('Linked worktree Git directory is outside the common worktrees directory')
+  }
+
+  const registration = Object.freeze({ root: canonicalRoot, gitDir, commonGitDir })
+  internalWorkspaceRoots.set(canonicalRoot, registration)
+  return registration
+}
+
+/** Return a previously validated internal root for sandbox construction. */
+export function getInternalWorkspaceRootRegistration(
+  root: string,
+): InternalWorkspaceRootRegistration | null {
+  let canonical = resolve(root)
+  try {
+    canonical = realpathSync.native(canonical)
+  } catch {
+    // Missing roots cannot acquire new authority; only an existing exact record can match.
+  }
+  return internalWorkspaceRoots.get(canonical) ?? null
+}
+
+export function unregisterInternalWorkspaceRoot(root: string): void {
+  const registration = getInternalWorkspaceRootRegistration(root)
+  if (registration) internalWorkspaceRoots.delete(registration.root)
+}
+
 /** @internal test helper */
 export function clearAllowedWorkspaceRootsForTest(): void {
   allowedWorkspaceRoots.clear()
+  internalWorkspaceRoots.clear()
   allowedWorkspaceRootsReady = Promise.resolve()
 }
 
@@ -245,7 +304,16 @@ export async function resolveWorkspacePath(
   backend: PathBackend = getActivePathBackend(),
 ): Promise<string> {
   if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  const absRoot = await backend.realpath(resolve(workspaceRoot))
+  return resolvePathWithinRoot(path, workspaceRoot, backend)
+}
+
+/** Resolve a path against an explicit trusted root, with the workspace containment rules. */
+export async function resolvePathWithinRoot(
+  path: string,
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string> {
+  const absRoot = await backend.realpath(resolve(root))
   let relPath = path
   if (isAbsolute(path)) {
     const absInput = await resolveThroughExistingPrefix(resolve(path), backend)
@@ -338,8 +406,18 @@ export async function resolveReadablePath(
   path: string,
   backend: PathBackend = getActivePathBackend(),
 ): Promise<string> {
+  if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
+  return resolveReadablePathWithinRoot(path, workspaceRoot, backend)
+}
+
+/** Explicit-root variant used by agent turns whose checkout differs from the project root. */
+export async function resolveReadablePathWithinRoot(
+  path: string,
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string> {
   try {
-    return await resolveWorkspacePath(path, backend)
+    return await resolvePathWithinRoot(path, root, backend)
   } catch (workspaceErr) {
     if (isAbsolute(path)) {
       const chatRoot = await getChatStoreRoot(backend)
@@ -379,7 +457,16 @@ export async function assertWorkspaceWriteTarget(
   backend: PathBackend = getActivePathBackend(),
 ): Promise<void> {
   if (!workspaceRoot) throw new Error('No workspace open. Use Open Folder first.')
-  const absRoot = await backend.realpath(resolve(workspaceRoot))
+  return assertWriteTargetWithinRoot(absPath, workspaceRoot, backend)
+}
+
+/** Explicit-root write guard for thread checkouts. */
+export async function assertWriteTargetWithinRoot(
+  absPath: string,
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<void> {
+  const absRoot = await backend.realpath(resolve(root))
   const rel = relative(absRoot, absPath)
   if (rel === '' || rel.startsWith('..') || rel.split(sep).includes('..')) {
     throw new Error(`Path outside workspace: ${absPath}.`)
@@ -431,7 +518,16 @@ export async function toRelativePath(
   backend: PathBackend = getActivePathBackend(),
 ): Promise<string> {
   if (!workspaceRoot) return absPath
-  const base = resolve(workspaceRoot)
+  return toRelativePathWithinRoot(absPath, workspaceRoot, backend)
+}
+
+/** Convert an absolute path to the relative form for one explicit checkout root. */
+export async function toRelativePathWithinRoot(
+  absPath: string,
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<string> {
+  const base = resolve(root)
   const target = resolve(absPath)
   let rel = relative(base, target)
   // A realpath'd input (e.g. from `resolveWorkspacePath`) compared against a

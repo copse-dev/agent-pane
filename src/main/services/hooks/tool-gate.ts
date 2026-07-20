@@ -112,6 +112,7 @@ export async function runToolGateHooks(
 
   const discoverOpts: DialectDiscoverOpts = {
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.executionRoot !== undefined ? { executionRoot: opts.executionRoot } : {}),
     projectTrusted: opts.projectTrusted,
   }
   const [cursorHooks, claudeHooks, copseHooks] = await Promise.all([
@@ -125,7 +126,10 @@ export async function runToolGateHooks(
   // Only now that a hook actually gates this read do we pay for the file read
   // (B4) — a redaction/secret-detection hook needs the bytes to decide.
   if (check.toolName === 'read_file') {
-    const fileContent = await readFileContentForGate(payload.input, opts.workspaceRoot)
+    const fileContent = await readFileContentForGate(
+      payload.input,
+      opts.executionRoot ?? opts.workspaceRoot,
+    )
     if (fileContent !== undefined) payload.fileContent = fileContent
   }
 

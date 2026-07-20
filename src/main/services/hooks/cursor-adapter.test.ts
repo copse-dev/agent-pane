@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm, chmod, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, chmod, readFile, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -19,11 +19,19 @@ import { parseSpineEntries, type SpineHookRunLine } from '@shared/threads/spine-
 function gate(
   toolName: string,
   args: Record<string, unknown>,
-  opts: { workspaceRoot?: string | null; projectTrusted?: boolean } = {},
+  opts: {
+    workspaceRoot?: string | null
+    executionRoot?: string | null
+    projectTrusted?: boolean
+  } = {},
 ): ReturnType<typeof runToolGateHooks> {
   return runToolGateHooks(
     { toolName, args },
-    { workspaceRoot: opts.workspaceRoot ?? null, projectTrusted: opts.projectTrusted ?? false },
+    {
+      workspaceRoot: opts.workspaceRoot ?? null,
+      executionRoot: opts.executionRoot ?? null,
+      projectTrusted: opts.projectTrusted ?? false,
+    },
   )
 }
 
@@ -168,6 +176,41 @@ describe('cursor-adapter', () => {
       const trusted = await listCursorHooks({ workspaceRoot: tempProject, projectTrusted: true })
       assert.equal(trusted.hooks.length, 1)
       assert.equal(trusted.hooks[0]?.scope, 'project')
+    })
+
+    it('discovers project hooks from the project root but runs them in the thread root', async () => {
+      const executionRootPath = join(tempProject, 'thread-checkout')
+      const capturedCwd = join(tempHome, 'project-hook-cwd.txt')
+      const capturedStdin = join(tempHome, 'project-hook-stdin.json')
+      await mkdir(executionRootPath)
+      const executionRoot = await realpath(executionRootPath)
+      const script = join(tempHome, 'capture-cwd.sh')
+      await writeFile(
+        script,
+        `#!/bin/sh\ncat > '${capturedStdin}'\npwd > '${capturedCwd}'\nprintf '%s' '{"permission":"allow"}'\n`,
+        'utf-8',
+      )
+      await chmod(script, 0o755)
+      await writeProjectHooks({ hooks: { beforeShellExecution: [{ command: script }] } })
+
+      const decision = await gate(
+        'run_shell',
+        { command: 'true' },
+        {
+          workspaceRoot: tempProject,
+          executionRoot,
+          projectTrusted: true,
+        },
+      )
+
+      assert.equal(decision.permission, 'allow')
+      assert.equal((await readFile(capturedCwd, 'utf-8')).trim(), executionRoot)
+      const stdin = JSON.parse(await readFile(capturedStdin, 'utf-8')) as {
+        cwd: string
+        workspace_roots: string[]
+      }
+      assert.equal(stdin.cwd, executionRoot)
+      assert.deepEqual(stdin.workspace_roots, [executionRoot])
     })
 
     it('ignores a malformed hooks.json without throwing, but surfaces a warning', async () => {

@@ -1,4 +1,5 @@
 import { getWorkspaceRoot } from '../workspace.ts'
+import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import { isWorkspaceTrusted } from './workspace-trust.ts'
 import { runToolGateHooks, type HookGateDecision } from '../hooks/tool-gate.ts'
 import { runPermissionDecisionHooks } from '../hooks/permission-decision.ts'
@@ -79,6 +80,8 @@ export interface ShellCommandPermissionOptions {
   sandboxEnabled?: boolean
   autoRun?: boolean
   networkScopeAlreadyApplies?: boolean
+  executionRoot?: string | null
+  projectRoot?: string | null
 }
 
 /**
@@ -305,9 +308,14 @@ function shellVerdictToHookDecision(action: ShellPermissionDecision['action']): 
  * cannot delay the tool. Gated behind `cursorHooksEnabled` (default off), the
  * same flag `applyToolGateHooks` uses; any dispatch error is swallowed.
  */
-function firePermissionDecision(toolName: string, decision: HookDecision): void {
+function firePermissionDecision(
+  toolName: string,
+  decision: HookDecision,
+  roots: { executionRoot?: string | null; projectRoot?: string | null } = {},
+): void {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = roots.projectRoot ?? getAgentProjectRoot()
+  const executionRoot = roots.executionRoot ?? getAgentExecutionRoot()
   const agentSession = currentAgentSessionInfo()
   const threadId = agentSession.conversationId || getActiveRunThread() || 'permission'
   const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
@@ -318,6 +326,7 @@ function firePermissionDecision(toolName: string, decision: HookDecision): void 
     threadId,
     turnTreeId,
     workspaceRoot,
+    executionRoot,
     projectTrusted: isWorkspaceTrusted(workspaceRoot),
     agentSession,
     recordingSnapshot,
@@ -360,7 +369,7 @@ export async function ensureShellCommandPermitted(
   if (routeShellCommand(command).outcome === 'allow') return true
 
   const autoRun = opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true)
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
   const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
   const decision = decideShellPermission(command, {
     workspaceRoot,
@@ -374,7 +383,10 @@ export async function ensureShellCommandPermitted(
   // `decideShellPermission` produced (audit-trail-ready; feeds a future #840
   // subscriber). Fired here, right after the verdict, so it reflects the policy
   // decision itself rather than the downstream prompt result.
-  firePermissionDecision('run_shell', shellVerdictToHookDecision(decision.action))
+  firePermissionDecision('run_shell', shellVerdictToHookDecision(decision.action), {
+    executionRoot: workspaceRoot,
+    ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
+  })
 
   if (decision.action === 'allow') return true
 
@@ -472,7 +484,7 @@ async function checkBackgroundProcessPermission(args: unknown): Promise<boolean>
 
   if (!backgroundAllowsPortBinding(args)) return true
 
-  const root = getWorkspaceRoot()
+  const root = getAgentExecutionRoot()
   if (!root) throw new Error('No workspace open.')
 
   const allowed = getSetting<string[]>(PORT_BINDING_ALLOWED_ROOTS_SETTING, [])
@@ -553,12 +565,13 @@ interface ToolGateHookOutcome {
 async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookOutcome> {
   if (!getSetting<boolean>('cursorHooksEnabled', false)) return { ok: true }
 
-  const workspaceRoot = getWorkspaceRoot()
+  const workspaceRoot = getAgentProjectRoot()
+  const executionRoot = getAgentExecutionRoot()
   const projectTrusted = isWorkspaceTrusted(workspaceRoot)
 
   const decision = await runToolGateHooks(
     { toolName: check.toolName, args: check.args },
-    { workspaceRoot, projectTrusted, agentSession: currentAgentSessionInfo() },
+    { workspaceRoot, executionRoot, projectTrusted, agentSession: currentAgentSessionInfo() },
   )
 
   // H3 (decision 12): a `haltRun` stops the whole turn, not just this tool call.
