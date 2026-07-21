@@ -63,7 +63,15 @@ function trialId(resultPath: string, value: unknown): string {
 async function trials(): Promise<Trial[]> {
   const found: Trial[] = []
   for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
-    const value: unknown = JSON.parse(await readFile(resultPath, 'utf8'))
+    let value: unknown
+    try {
+      value = JSON.parse(await readFile(resultPath, 'utf8'))
+    } catch (error) {
+      console.warn(
+        `bench:terminal:analyze: ignoring unreadable result ${resultPath}: ${String(error)}`,
+      )
+      continue
+    }
     const taskName = nested(value, 'task_name')
     const startedAt = nested(value, 'started_at')
     if (typeof taskName !== 'string' || typeof startedAt !== 'string') continue

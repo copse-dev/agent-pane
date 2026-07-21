@@ -286,7 +286,7 @@ async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number)
     host,
     [
       'set -uo pipefail',
-      `trap 'sudo rm -f ${envPath}' EXIT`,
+      `trap 'sudo rm -f ${shellQuote(envPath)}' EXIT`,
       `sudo docker rm -f ${container} >/dev/null 2>&1 || true`,
       `sudo docker run --detach --name ${container} --env-file ${envPath} ` +
         '--volume /var/run/docker.sock:/var/run/docker.sock ' +

@@ -124,7 +124,13 @@ const capsules: Array<{
 
 for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
   const directory = dirname(resultPath)
-  const result: unknown = JSON.parse(await readFile(resultPath, 'utf8'))
+  let result: unknown
+  try {
+    result = JSON.parse(await readFile(resultPath, 'utf8'))
+  } catch (error) {
+    console.warn(`bench:terminal:seal: ignoring unreadable result ${resultPath}: ${String(error)}`)
+    continue
+  }
   const id = trialId(resultPath, result)
   const manifestPath = join(directory, 'run-manifest.json')
   const manifest = {
