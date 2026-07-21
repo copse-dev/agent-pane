@@ -415,6 +415,47 @@ describe('createIntellectFrontierPanel', () => {
     card.remove()
   })
 
+  it('ZDR only filter hides retained-by-default cloud models and keeps ZDR paths', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => ['qwen/qwen2.5-coder-32b'],
+      async () => [
+        {
+          id: 'fireworks',
+          label: 'Fireworks AI',
+          prefix: 'fireworks:',
+          baseUrl: 'https://api.fireworks.ai/inference/v1',
+          builtin: true,
+          local: false,
+          keyLabel: 'Fireworks',
+          keyPlaceholder: '',
+          keyHint: '',
+          fallbackContextWindow: 128_000,
+          models: [
+            {
+              id: 'MiniMaxAI/MiniMax-M3',
+              inputPricePerMTok: 0.3,
+              outputPricePerMTok: 1.2,
+            },
+          ],
+        },
+      ],
+    )
+    await panel.refresh()
+    let svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.match(svg.textContent || '', /claude-opus-4-8|claude-fable-5/)
+    assert.match(svg.textContent || '', /MiniMax-M3/)
+    const zdrBtn = panel.root.querySelector<HTMLButtonElement>('button.frontier-zdr-toggle')
+    assert.ok(zdrBtn)
+    zdrBtn.click()
+    assert.equal(zdrBtn.classList.contains('active'), true)
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.doesNotMatch(svg.textContent || '', /claude-opus-4-8|claude-fable-5|gpt-5\.5/)
+    assert.match(svg.textContent || '', /MiniMax-M3|qwen2\.5-coder/)
+    assert.match(panel.root.textContent || '', /ZDR only: hiding/)
+  })
+
   it('toggles the cost axis between $/MTok and $/task when live task costs exist', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],

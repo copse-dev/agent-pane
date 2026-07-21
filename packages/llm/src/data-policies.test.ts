@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  dataPolicyForModelPath,
   dataPolicyForProvider,
+  isZeroRetentionModelPath,
   openRouterDataPolicy,
   pickerPrivacyNote,
   privacyBadge,
@@ -160,5 +162,31 @@ describe('pickerPrivacyNote', () => {
     assert.equal(pickerPrivacyNote(dataPolicyForProvider({ id: 'anthropic' })), null)
     assert.equal(pickerPrivacyNote(openRouterDataPolicy(true)), null)
     assert.equal(pickerPrivacyNote(null), null)
+  })
+})
+
+describe('isZeroRetentionModelPath', () => {
+  it('treats local / lmstudio paths as zero retention', () => {
+    assert.equal(isZeroRetentionModelPath('qwen/qwen2.5-coder-32b', { local: true }), true)
+    assert.equal(isZeroRetentionModelPath('lmstudio:qwen/qwen2.5-coder-32b'), true)
+  })
+
+  it('keeps Anthropic/OpenAI API defaults off the ZDR filter', () => {
+    assert.equal(isZeroRetentionModelPath('claude-opus-4-8'), false)
+    assert.equal(isZeroRetentionModelPath('gpt-5.5'), false)
+  })
+
+  it('accepts Fireworks / Together prefixes and HF partner tags', () => {
+    assert.equal(isZeroRetentionModelPath('fireworks:accounts/fireworks/models/llama'), true)
+    assert.equal(isZeroRetentionModelPath('together:meta/llama-3.3'), true)
+    assert.equal(isZeroRetentionModelPath('groq:llama-3.3'), false)
+    assert.equal(isZeroRetentionModelPath('huggingface:zai-org/GLM-5.2:together'), true)
+    assert.equal(isZeroRetentionModelPath('huggingface:zai-org/GLM-5.2:fireworks'), true)
+    assert.equal(isZeroRetentionModelPath('huggingface:zai-org/GLM-5.2:novita'), false)
+  })
+
+  it('treats openrouter: paths as ZDR under Copse default routing', () => {
+    assert.equal(isZeroRetentionModelPath('openrouter:anthropic/claude-sonnet-4'), true)
+    assert.equal(dataPolicyForModelPath('openrouter:x').policy?.retainsPrompts, false)
   })
 })
