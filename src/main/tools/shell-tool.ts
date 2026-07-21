@@ -21,7 +21,12 @@ import {
   shellSandboxFailureShouldOfferUnsandboxedRetry,
 } from '../services/security/permission-policy.ts'
 import { envForRendererChildProcess } from '../services/exec/child-process-env.ts'
+import { maybeEnablePipefail } from '../services/exec/shell-pipeline.ts'
 import { leaseGitSshEnv } from '../services/ssh-workspace/git-ssh-env.ts'
+import {
+  isActiveSshWorkspace,
+  resolveSshExecutionTargetForCwd,
+} from '../services/ssh-workspace/execution-target.ts'
 import { getSetting } from '../services/storage/settings.ts'
 import { detectPackageInstall, wrapWithSocketFirewall } from '../services/security/safe-install.ts'
 import {
@@ -264,7 +269,7 @@ function formatShellFailure(result: ShellRunResult): Error {
 export const runShellTool = defineTool({
   name: 'run_shell',
   description:
-    'Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. A foreground command may run up to 30 minutes (timeout_ms); for dev servers, watchers, or intentionally unbounded processes use run_background instead of a long timeout.',
+    "Run a shell command for tests, builds, installs, and other tasks not covered by a dedicated tool — not for reading files or searching code (use read_file/search tools or explore). Output is streamed to the conversation. Commands contained within the sandbox auto-run; network or outside-workspace access (e.g. gh, curl, git push) prompts for approval and runs outside the sandbox when the macOS project sandbox is active. If a sandbox-contained command fails because the sandbox blocks filesystem/process access (e.g. Playwright), the user may approve running it once outside the sandbox. If you already expect a command to need the network or files outside the workspace (e.g. gh, cloud CLIs), set expects_sandbox_block so the user is asked up front instead of after a failed sandboxed attempt. Package-manager installs (npm/pnpm/yarn/pip/uv/cargo/npx) are automatically run through Socket Firewall to scan for malicious packages, with install lifecycle scripts disabled. A foreground command may run up to 30 minutes (timeout_ms); for dev servers, watchers, or intentionally unbounded processes use run_background instead of a long timeout. Piping a command through `tail`/`head` normally masks the earlier command's exit code; run_shell enables pipefail so a failing pipeline is still reported as failed, but when trimming long logs prefer redirecting to a file and reading a slice.",
   parameters: z.object({
     command: z.string().describe('Shell command to run'),
     timeout_ms: z
@@ -299,6 +304,19 @@ export const runShellTool = defineTool({
     if ('refused' in prepared) return prepared.refused
     const { command: finalCommand, env, banner } = prepared
     const withBanner = (output: string): string => (banner ? `${banner}\n${output}` : output)
+
+    // Enable pipefail for real pipelines so a failing producer piped into
+    // `tail`/`head` surfaces as a non-zero exit instead of being masked as
+    // success (issue #787) — which also restores the runner-verified unsandboxed
+    // retry offer. Only injected where the shell honors pipefail (see
+    // maybeEnablePipefail): remote and non-macOS shells preserve current behavior.
+    // The same transformed command is used for the sandboxed run and any approved
+    // unsandboxed retry so both share one shell, command, and violation attribution.
+    const isRemote = isActiveSshWorkspace() || resolveSshExecutionTargetForCwd(cwd) !== null
+    const executedCommand = maybeEnablePipefail(finalCommand, {
+      platform: process.platform,
+      isRemote,
+    })
 
     // Decide sandbox vs unsandboxed from the RAW command (not the sfw-wrapped
     // finalCommand) so this matches the permission gate's decision exactly: a
@@ -347,7 +365,7 @@ export const runShellTool = defineTool({
     const baseline = await captureWorktreeBaseline()
     try {
       const result = await runShellOnce(
-        finalCommand,
+        executedCommand,
         cwd,
         timeout_ms,
         signal,
@@ -359,7 +377,7 @@ export const runShellTool = defineTool({
 
       if (!suppressUnsandboxedRetry) {
         const retry = await maybeRetryUnsandboxed(
-          finalCommand,
+          executedCommand,
           cwd,
           timeout_ms,
           signal,
