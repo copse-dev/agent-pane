@@ -24,10 +24,13 @@ import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm
  * tool later is a drop-in with no behavioural change.
  *
  * This module is pure (no I/O, no settings read). The run-scoped provider call
- * lives in advisor-runner.ts, and the tool gating lives in registry-bootstrap.
+ * lives in advisor-runner.ts, and the tool gating lives in registry-bootstrap:
+ * the `advisor` tool is now the `copse.advisor-strategy` first-party pack, so it
+ * is registered iff that pack is enabled (Settings → Packs). The orthogonal
+ * `advisorModel` setting below — which model the advisor consults — stays a
+ * top-level setting and is used wherever the advisor model is referenced.
  */
 
-export const ADVISOR_STRATEGY_ENABLED_SETTING = 'advisorStrategyEnabled'
 export const ADVISOR_MODEL_SETTING = 'advisorModel'
 
 /** Default advisor model when the strategy is enabled (a frontier Claude). */

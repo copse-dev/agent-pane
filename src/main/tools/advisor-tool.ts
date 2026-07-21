@@ -8,8 +8,8 @@ import { getAdvisorRunner } from '../services/advisor-runner.ts'
  * advisor model for strategic guidance. Parameters are optional client-side
  * enhancements — the native `advisor_20260301` tool takes none, so the no-arg
  * call stays a drop-in: `question` focuses the advice, `include_diff` attaches
- * the current working-tree diff. Registered only when `advisorStrategyEnabled`
- * is on.
+ * the current working-tree diff. Registered only when the
+ * `copse.advisor-strategy` first-party pack is enabled.
  */
 export const advisorTool = defineTool({
   name: 'advisor',
