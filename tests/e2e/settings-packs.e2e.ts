@@ -73,6 +73,14 @@ describe('settings packs (about:addons)', function () {
     assert.equal(await todosRow.$('.pack-name').getText(), 'copse.todos')
     assert.equal(await packs.$('.pack-row[data-pack-id="copse.noop"]').isExisting(), false)
 
+    // Long-horizon tasks pack (#558 → pack migration): listed, default-OFF via
+    // the one-time enablement bridge (absent legacy setting ⇒ disabled).
+    const longHorizonRow = packs.$('.pack-row[data-pack-id="copse.long-horizon-tasks"]')
+    await expect(longHorizonRow).toBeDisplayed()
+    assert.equal(await longHorizonRow.$('.pack-name').getText(), 'copse.long-horizon-tasks')
+    await expect(longHorizonRow.$('.pack-badge-first-party')).toBeDisplayed()
+    assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
+
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
 
