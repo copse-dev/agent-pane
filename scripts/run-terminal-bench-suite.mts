@@ -1,11 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { glob, readFile, statfs } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
 import { TERMINAL_BENCH_TASK_NAMES, terminalBenchTaskImage } from './lib/terminal-bench-tasks.mts'
 import {
   terminalBenchCompletedTaskNames,
   terminalBenchDiskSpaceError,
   terminalBenchPrefetchMinimumFreeDiskBytes,
+  terminalBenchShard,
 } from './lib/terminal-bench.mts'
 
 interface StoredResult {
@@ -40,6 +42,26 @@ function parseMaxTasks(args: readonly string[]): number | undefined {
   return parsed
 }
 
+function parsePositiveFlag(args: readonly string[], name: string, fallback: number): number {
+  const raw = args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1)
+  if (raw === undefined) return fallback
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer, received '${raw}'`)
+  }
+  return parsed
+}
+
+function parseNonNegativeFlag(args: readonly string[], name: string, fallback: number): number {
+  const raw = args.find((arg) => arg.startsWith(`${name}=`))?.slice(name.length + 1)
+  if (raw === undefined) return fallback
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer, received '${raw}'`)
+  }
+  return parsed
+}
+
 const rawArgs = process.argv.slice(2)
 if (
   rawArgs.some(
@@ -57,22 +79,27 @@ const resume = rawArgs.includes('--resume')
 const pruneImages = rawArgs.includes('--prune-images')
 const prefetchImages = rawArgs.includes('--prefetch-images')
 const maxTasks = parseMaxTasks(rawArgs)
+const shardCount = parsePositiveFlag(rawArgs, '--shard-count', 1)
+const shardIndex = parseNonNegativeFlag(rawArgs, '--shard-index', 0)
 const harborArgs = rawArgs.filter(
   (arg) =>
     arg !== '--resume' &&
     arg !== '--prune-images' &&
     arg !== '--prefetch-images' &&
-    !arg.startsWith('--max-tasks='),
+    !arg.startsWith('--max-tasks=') &&
+    !arg.startsWith('--shard-count=') &&
+    !arg.startsWith('--shard-index='),
 )
 const beforeSuite = await storedResults()
 const completed = new Set(
   resume ? terminalBenchCompletedTaskNames(beforeSuite.map((r) => r.value)) : [],
 )
-let pending = TERMINAL_BENCH_TASK_NAMES.filter((taskName) => !completed.has(taskName))
-if (maxTasks !== undefined) pending = pending.slice(0, maxTasks)
+const eligible = TERMINAL_BENCH_TASK_NAMES.filter((taskName) => !completed.has(taskName))
+const pending = terminalBenchShard(eligible, maxTasks, shardCount, shardIndex)
 
 console.log(
   `bench:terminal:suite tasks=${String(pending.length)} completed=${String(completed.size)} ` +
+    `shard=${String(shardIndex + 1)}/${String(shardCount)} ` +
     `pruneImages=${String(pruneImages)} prefetchImages=${String(prefetchImages)}`,
 )
 
@@ -186,7 +213,8 @@ for (const [index, taskName] of pending.entries()) {
   const taskResults = (await storedResults()).filter(
     (result) => resultTaskName(result.value) === taskName,
   )
-  const latest = taskResults.find((result) => !beforeTaskPaths.has(result.path))
+  const newTaskResults = taskResults.filter((result) => !beforeTaskPaths.has(result.path))
+  const latest = newTaskResults[0]
   if (!latest) {
     console.error(`bench:terminal:suite: ${taskName} exited without writing a new trial result`)
     process.exit(1)
@@ -197,6 +225,7 @@ for (const [index, taskName] of pending.entries()) {
     )
     process.exit(1)
   }
+  for (const result of newTaskResults) await recordTerminalBenchTaskImage(taskName, result.path)
   if (pruneImages) {
     const image = terminalBenchTaskImage(taskName)
     const prune = spawnSync('docker', ['image', 'rm', image], {

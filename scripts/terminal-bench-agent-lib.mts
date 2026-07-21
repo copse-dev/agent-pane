@@ -1,9 +1,16 @@
 import { createInterface } from 'node:readline'
+import { copyFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
 import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
+import { recordTerminalBenchProviderRequests } from './lib/terminal-bench-provider-recorder.mts'
+import {
+  loadTerminalBenchSteering,
+  terminalBenchSteeringPrompt,
+} from './lib/terminal-bench-steering.mts'
 import { TerminalBenchTranscript } from './lib/terminal-bench-transcript.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
@@ -88,12 +95,30 @@ export async function runTerminalBenchAgent(): Promise<void> {
     'COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS',
     DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS,
   )
-  const provider = createLMStudioProvider(baseUrl, parsed.model, apiKey)
+  if (typeof parsed.threadDir !== 'string' || !parsed.threadDir.trim()) {
+    throw new Error('Terminal agent bridge expected a thread transcript directory.')
+  }
+  const agentDirectory = dirname(parsed.threadDir)
+  const baseProvider = createLMStudioProvider(baseUrl, parsed.model, apiKey)
+  const provider = recordTerminalBenchProviderRequests(
+    baseProvider,
+    join(agentDirectory, 'provider-requests.jsonl'),
+  )
   const usageModel = parsed.model.startsWith('lmstudio:')
     ? parsed.model
     : `lmstudio:${parsed.model}`
+  const steeringPath = process.env['COPSE_TERMINAL_STEERING_FILE']?.trim()
+  const steering = steeringPath ? loadTerminalBenchSteering(steeringPath).steering : undefined
   const messages = [
     { role: 'system' as const, content: TERMINAL_BENCH_SYSTEM_PROMPT },
+    ...(steering
+      ? [
+          {
+            role: 'system' as const,
+            content: terminalBenchSteeringPrompt(steering),
+          },
+        ]
+      : []),
     { role: 'user' as const, content: parsed.instruction },
   ]
   const usage = {
@@ -104,8 +129,8 @@ export async function runTerminalBenchAgent(): Promise<void> {
     commandTimeouts: 0,
   }
   let stopReason: string | undefined
-  if (typeof parsed.threadDir !== 'string' || !parsed.threadDir.trim()) {
-    throw new Error('Terminal agent bridge expected a thread transcript directory.')
+  if (steeringPath) {
+    copyFileSync(steeringPath, join(agentDirectory, 'steering.json'))
   }
   const transcript = new TerminalBenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
   transcript.write()

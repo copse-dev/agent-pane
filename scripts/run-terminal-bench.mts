@@ -1,6 +1,5 @@
-import * as esbuild from 'esbuild'
 import { spawn, spawnSync } from 'node:child_process'
-import { statfsSync } from 'node:fs'
+import { existsSync, statfsSync } from 'node:fs'
 import { glob, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
@@ -10,6 +9,7 @@ import {
   terminalBenchDiskSpaceError,
   terminalBenchFatalInfrastructureOutput,
 } from './lib/terminal-bench.mts'
+import { buildTerminalBenchAgentBundle } from './build-terminal-bench-agent.mts'
 
 async function resumeArgs(rawArgs: readonly string[]): Promise<string[]> {
   if (!rawArgs.includes('--resume')) return [...rawArgs]
@@ -57,23 +57,16 @@ if (docker.error || docker.status !== 0) {
   process.exit(1)
 }
 
-const out = resolve('dist-test/terminal-bench-agent.cjs')
-await esbuild.build({
-  entryPoints: [resolve('scripts/terminal-bench-agent-entry.mts')],
-  outfile: out,
-  bundle: true,
-  platform: 'node',
-  format: 'cjs',
-  sourcemap: false,
-  alias: {
-    '@shared': resolve('./src/shared'),
-    '@copse/agent': resolve('./packages/agent/src'),
-    '@copse/llm': resolve('./packages/llm/src'),
-    '@copse/plan-usage': resolve('./packages/plan-usage/src'),
-  },
-  define: { __COPSE_TEST_DIRECTIVES__: 'false' },
-})
-console.log(`bench:terminal bundle=${out}`)
+const prebuiltBundle = launch.env['COPSE_TERMINAL_PREBUILT_AGENT_BUNDLE']?.trim()
+if (prebuiltBundle) {
+  if (!existsSync(prebuiltBundle)) {
+    console.error(`bench:terminal: prebuilt agent bundle does not exist: ${prebuiltBundle}`)
+    process.exit(1)
+  }
+  console.log(`bench:terminal bundle=${prebuiltBundle} (prebuilt)`)
+} else {
+  console.log(`bench:terminal bundle=${await buildTerminalBenchAgentBundle()}`)
+}
 
 const child = spawn(launch.command, launch.args, {
   cwd: process.cwd(),

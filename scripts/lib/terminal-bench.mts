@@ -33,6 +33,24 @@ export function terminalBenchCompletedTaskNames(records: readonly unknown[]): st
   return [...completed].sort()
 }
 
+export function terminalBenchShard<T>(
+  values: readonly T[],
+  maxTasks: number | undefined,
+  shardCount: number,
+  shardIndex: number,
+): T[] {
+  if (!Number.isInteger(shardCount) || shardCount <= 0) {
+    throw new Error(`shard count must be a positive integer, received '${String(shardCount)}'`)
+  }
+  if (!Number.isInteger(shardIndex) || shardIndex < 0 || shardIndex >= shardCount) {
+    throw new Error(
+      `shard index must be an integer from 0 through ${String(shardCount - 1)}, received '${String(shardIndex)}'`,
+    )
+  }
+  const selected = maxTasks === undefined ? values : values.slice(0, maxTasks)
+  return selected.filter((_, index) => index % shardCount === shardIndex)
+}
+
 function terminalBenchFreeDiskBytes(
   envName: string,
   fallbackGib: number,
@@ -118,6 +136,9 @@ export function buildTerminalBenchLaunch(
   const repositoryRoot = resolve()
   const jobsDir = resolve('bench-results/terminal-bench')
   const pythonPath = env['PYTHONPATH']
+  const agentBundle =
+    env['COPSE_TERMINAL_PREBUILT_AGENT_BUNDLE']?.trim() ||
+    resolve('dist-test/terminal-bench-agent.cjs')
 
   const harborArgs = [
     '--from',
@@ -146,7 +167,7 @@ export function buildTerminalBenchLaunch(
     args: harborArgs,
     env: {
       ...env,
-      COPSE_TERMINAL_AGENT_BUNDLE: resolve('dist-test/terminal-bench-agent.cjs'),
+      COPSE_TERMINAL_AGENT_BUNDLE: agentBundle,
       PYTHONPATH: pythonPath ? `${repositoryRoot}${delimiter}${pythonPath}` : repositoryRoot,
     },
   }

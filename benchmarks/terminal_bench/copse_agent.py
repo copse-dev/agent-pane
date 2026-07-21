@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shlex
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ _MAX_TOOL_OUTPUT_CHARS = 40_000
 _DEFAULT_COMMAND_TIMEOUT_SEC = 120
 _TRACE_BUFFER_MAX_LINES = 256
 _TRACE_BUFFER_MAX_CHARS = 64_000
+_DEFAULT_WORKSPACE_CAP_MB = 500
 
 
 def _bounded_output(value: str | None) -> str:
@@ -50,6 +52,98 @@ class CopseTerminalAgent(BaseAgent):
     async def setup(self, environment: BaseEnvironment) -> None:
         del environment
 
+    async def _capture_workspace(
+        self,
+        environment: BaseEnvironment,
+        workspace_root: str,
+        context: AgentContext,
+    ) -> None:
+        cap_mb = int(
+            os.environ.get(
+                "COPSE_TERMINAL_WORKSPACE_CAP_MB",
+                str(_DEFAULT_WORKSPACE_CAP_MB),
+            )
+        )
+        if cap_mb < 0:
+            raise ValueError("COPSE_TERMINAL_WORKSPACE_CAP_MB must be non-negative.")
+        snapshot = {
+            "root": workspace_root,
+            "cap_mb": cap_mb,
+            "manifest": "workspace-files.tsv",
+            "archive": None,
+            "archive_bytes": None,
+            "status": "disabled" if cap_mb == 0 else "capturing",
+        }
+        context.metadata["workspace_snapshot"] = snapshot
+        if cap_mb == 0:
+            return
+        if workspace_root == "/":
+            snapshot["status"] = "unsafe-root"
+            return
+
+        quoted_root = shlex.quote(workspace_root)
+        remote_manifest = "/tmp/copse-workspace-files.tsv"
+        remote_archive = "/tmp/copse-workspace-final.tar.gz"
+        try:
+            manifest_result = await environment.exec(
+                f"find {quoted_root} -xdev -type f "
+                f"-printf '%P\\t%s\\t%T@\\n' | sort > {remote_manifest}",
+                timeout_sec=120,
+                user="root",
+            )
+            if manifest_result.return_code == 0:
+                await environment.download_file(
+                    remote_manifest,
+                    self.logs_dir / "workspace-files.tsv",
+                )
+
+            tar_result = await environment.exec(
+                "tar --ignore-failed-read "
+                "--exclude='./copse-workspace-files.tsv' "
+                "--exclude='./copse-workspace-final.tar.gz' "
+                f"-czf {remote_archive} -C {quoted_root} .",
+                timeout_sec=300,
+                user="root",
+            )
+            if tar_result.return_code != 0:
+                snapshot["status"] = "archive-error"
+                snapshot["error"] = _bounded_output(
+                    tar_result.stderr or tar_result.stdout
+                )
+                return
+            size_result = await environment.exec(
+                f"wc -c < {remote_archive}",
+                timeout_sec=30,
+                user="root",
+            )
+            if size_result.return_code != 0 or not (size_result.stdout or "").strip().isdigit():
+                snapshot["status"] = "size-error"
+                return
+            archive_bytes = int((size_result.stdout or "0").strip())
+            snapshot["archive_bytes"] = archive_bytes
+            if archive_bytes > cap_mb * 1024 * 1024:
+                snapshot["status"] = "over-cap"
+                return
+            await environment.download_file(
+                remote_archive,
+                self.logs_dir / "workspace-final.tar.gz",
+            )
+            snapshot["archive"] = "workspace-final.tar.gz"
+            snapshot["status"] = "captured"
+        except Exception as error:  # noqa: BLE001 - retention must not replace benchmark outcome
+            snapshot["status"] = "capture-error"
+            snapshot["error"] = str(error)
+            self.logger.warning("Unable to retain final workspace: %s", error)
+        finally:
+            try:
+                await environment.exec(
+                    f"rm -f {remote_manifest} {remote_archive}",
+                    timeout_sec=30,
+                    user="root",
+                )
+            except Exception as error:  # noqa: BLE001 - best-effort temporary cleanup
+                self.logger.warning("Unable to remove workspace transfer files: %s", error)
+
     async def run(
         self,
         instruction: str,
@@ -77,6 +171,8 @@ class CopseTerminalAgent(BaseAgent):
             raise ValueError("COPSE_TERMINAL_COMMAND_TIMEOUT_SEC must be positive.")
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         trace_path = self.logs_dir / "copse-trace.jsonl"
+        workspace_result = await environment.exec("pwd", timeout_sec=30)
+        workspace_root = (workspace_result.stdout or "/").strip() or "/"
         context.n_input_tokens = 0
         context.n_output_tokens = 0
         context.metadata = {
@@ -85,11 +181,15 @@ class CopseTerminalAgent(BaseAgent):
             "command_timeouts": 0,
             "stop_reason": None,
             "trace": trace_path.name,
+            "provider_requests": "provider-requests.jsonl",
             "applied_nudges": "applied-nudges.jsonl",
             "hook_runs": "hook-runs.jsonl",
             "stream_stats": "stream-stats.jsonl",
             "thread": "thread/events.jsonl",
             "thread_export": "thread/thread.jsonl",
+            "parent_trial_id": os.environ.get("COPSE_TERMINAL_PARENT_TRIAL_ID"),
+            "intervention_id": os.environ.get("COPSE_TERMINAL_INTERVENTION_ID"),
+            "workspace_root": workspace_root,
         }
         stderr_tail: deque[str] = deque(maxlen=80)
         process = await asyncio.create_subprocess_exec(
@@ -250,3 +350,4 @@ class CopseTerminalAgent(BaseAgent):
             if not stderr_task.done():
                 stderr_task.cancel()
             await asyncio.gather(stderr_task, return_exceptions=True)
+            await self._capture_workspace(environment, workspace_root, context)

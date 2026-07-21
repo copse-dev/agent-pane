@@ -15,6 +15,7 @@ import {
   terminalBenchMinimumFreeDiskBytes,
   terminalBenchModel,
   terminalBenchPrefetchMinimumFreeDiskBytes,
+  terminalBenchShard,
 } from './terminal-bench.mts'
 
 const env = { LM_STUDIO_MODEL: 'local/test-model', LM_STUDIO_API_KEY: 'test-key' }
@@ -56,6 +57,14 @@ describe('terminal benchmark launcher', () => {
     assert.equal(launch.env['PYTHONPATH'], `${process.cwd()}${delimiter}/existing/python/path`)
   })
 
+  it('uses an immutable prebuilt agent bundle when the worker image supplies one', () => {
+    const launch = buildTerminalBenchLaunch([], {
+      ...env,
+      COPSE_TERMINAL_PREBUILT_AGENT_BUNDLE: '/opt/copse/prebuilt/agent.cjs',
+    })
+    assert.equal(launch.env['COPSE_TERMINAL_AGENT_BUNDLE'], '/opt/copse/prebuilt/agent.cjs')
+  })
+
   it('removes the local task cap for a full-suite run and preserves overrides', () => {
     const launch = buildTerminalBenchLaunch(
       ['--all', '-k', '5', '-n', '2', '--include-task-name', 'example-*'],
@@ -93,6 +102,14 @@ describe('terminal benchmark launcher', () => {
       ]),
       ['pass', 'timeout'],
     )
+  })
+
+  it('splits a globally bounded task list into disjoint deterministic shards', () => {
+    const values = ['a', 'b', 'c', 'd', 'e', 'f']
+    assert.deepEqual(terminalBenchShard(values, 5, 3, 0), ['a', 'd'])
+    assert.deepEqual(terminalBenchShard(values, 5, 3, 1), ['b', 'e'])
+    assert.deepEqual(terminalBenchShard(values, 5, 3, 2), ['c'])
+    assert.throws(() => terminalBenchShard(values, 5, 3, 3), /shard index/)
   })
 
   it('guards enough host disk for large task images', () => {
