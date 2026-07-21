@@ -20,3 +20,12 @@ paths = [
   '''^src/shared/llm/redact-secrets\.test\.ts$''',
   '''^packages/llm/src/redact-secrets\.test\.ts$''',
 ]
+
+[[allowlists]]
+# CLAUDE_OAUTH_CLIENT_ID is the Claude Code CLI's public PKCE OAuth client id
+# (a UUID) — an identifier the client ships in the clear, not a secret. It has
+# no client secret and grants nothing on its own, but its entropy trips the
+# generic-api-key heuristic. Scope the exemption to that one rule + file.
+description = "Public Claude Code OAuth client id (not a secret)"
+targetRules = ["generic-api-key"]
+paths = ['''^packages/plan-usage/src/claude-oauth\.ts$''']
