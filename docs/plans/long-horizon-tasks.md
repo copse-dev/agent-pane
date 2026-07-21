@@ -33,8 +33,9 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
   `status` / `list`, registered via `syncLongHorizonTasksTools` in `registry-bootstrap.ts`
   (boot + live `packs:setEnabled`).
 - **Tests** `long-task-tracker.test.ts`, `long-horizon-tasks-pack.test.ts` (registration +
-  atomic disable), `pack-service.test.ts` (default-OFF migration), and
-  `settings-packs.e2e.ts` (pack row defaults off).
+  atomic disable), `pack-service.test.ts` (default-OFF migration),
+  `settings-packs.e2e.ts` (pack row defaults off), and `settings-experimental.e2e.ts`
+  (retired `longHorizonTasksEnabled` fieldset gone). Pack toggles emit `settings_changed`.
 
 While the pack is disabled the tool is not registered and nothing reads or writes the store.
 

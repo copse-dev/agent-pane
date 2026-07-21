@@ -1743,7 +1743,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       toggle.disabled = true
       void api.packs
         .setEnabled(pack.id, toggle.checked)
-        .then(() => refreshPacks())
+        .then(async () => {
+          await refreshPacks()
+          // Wake listeners that gate chrome on pack enablement so a toggle
+          // takes effect without an app restart — mirrors the
+          // `settings_changed` emit the Save button fires. Tool-only packs
+          // still emit for consistency with chrome-gating packs.
+          store.emit('settings_changed')
+        })
         .catch(() => {
           toggle.checked = !toggle.checked
         })

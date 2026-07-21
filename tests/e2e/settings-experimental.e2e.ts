@@ -50,6 +50,16 @@ describe('experimental settings section', () => {
     await expect(memoriesToggle).toBeExisting()
     assert.equal(await memoriesToggle.isSelected(), false)
 
+    // Long-horizon tasks migrated from an experimental toggle to the
+    // `copse.long-horizon-tasks` first-party pack (Settings > Packs), so the
+    // retired fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="longHorizonTasksEnabled"]').isExisting(),
+      false,
+      'longHorizonTasksEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(await experimental.$('legend=Long-horizon tasks').isExisting(), false)
+
     // The model classifier speaks the shared intellect scale, not a separate
     // tier vocabulary (docs/plans/advisor-strategy.md).
     const classifierHint = await experimental
