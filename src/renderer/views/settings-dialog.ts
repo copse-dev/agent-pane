@@ -350,18 +350,32 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <div id="settings-env-detect-host" class="settings-mount"></div>
 
-            <fieldset>
-              <legend>Chat model</legend>
+            <fieldset id="settings-models-section">
+              <legend>Models</legend>
+              <p class="settings-fieldset-desc">
+                Choose the main chat model and the models used for background tasks. Role defaults
+                prefer on-device models, but any connected cloud or on-device provider model can be
+                selected.
+              </p>
               <label>
-                Default model
+                Chat model
                 <select name="model"></select>
+                <span class="field-hint">
+                  Pick a cloud, local, or remote-agent model here (or from the model picker beside
+                  the chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to
+                  Cursor Cloud instead of running it on this machine — configure it in the Remote
+                  agents section.
+                </span>
               </label>
-              <span class="field-hint">
-                Pick a cloud, local, or remote-agent model here (or from the model picker beside the
-                chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
-                Cloud instead of running it on this machine — configure it in the Remote agents
-                section.
-              </span>
+              <label>
+                Small tasks
+                <select name="smallTasksModel"></select>
+                <span class="field-hint">
+                  Lightweight prompts such as thread titles and follow-up suggestions. Auto prefers
+                  an on-device model, then falls back to the chat model.
+                </span>
+              </label>
+              <div id="settings-model-routing-host"></div>
             </fieldset>
 
             <fieldset>
@@ -405,20 +419,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Push directly to the current branch instead of a new branch
               </label>
             </fieldset>
-
-            <fieldset>
-              <legend>Small tasks</legend>
-              <p class="settings-fieldset-desc">
-                Lightweight prompts such as thread titles and follow-up suggestions. Use any cloud or
-                local model — not limited to LM Studio.
-              </p>
-              <label>
-                Model
-                <select name="smallTasksModel"></select>
-              </label>
-            </fieldset>
-
-            <div id="settings-model-routing-host" class="settings-mount"></div>
 
             <div id="settings-gh-cli-host" class="settings-mount"></div>
 
@@ -1214,7 +1214,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const ghCliSection = createGhCliSection(api)
   qsRequired(overlay, '#settings-gh-cli-host').append(ghCliSection.root)
 
-  const modelRoutingSection = createModelRoutingSection(api)
+  const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
   const usageSection = createUsageSection(api, store, closeSettingsDialog)
@@ -2225,10 +2225,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         model ?? DEFAULT_CLOUD_MODEL,
       )
       const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
+      const roleModels =
+        ((await api.settings.get('roleModels')) as Record<string, string> | undefined) ?? {}
       await populateSmallTasksModelSelect(
         form.elements.namedItem('smallTasksModel') as HTMLSelectElement,
         api,
-        smallTasksModel ?? '',
+        roleModels['small-tasks'] ?? smallTasksModel ?? '',
       )
       const advisorModel = (await api.settings.get('advisorModel')) as string | undefined
       await populateModelSelect(
@@ -2406,6 +2408,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
       await api.settings.set('localDefaultModel', routingValues.localDefaultModel)
       await api.settings.set('subagentModel', routingValues.subagentModel)
+      const savedRoleModels =
+        ((await api.settings.get('roleModels')) as Record<string, string> | undefined) ?? {}
+      await api.settings.set('roleModels', {
+        ...savedRoleModels,
+        coder: routingValues.localDefaultModel,
+        research: routingValues.subagentModel,
+        'small-tasks': ((data.get('smallTasksModel') as string | null) ?? '').trim(),
+      })
       await api.settings.setSecurity({
         localServerUrl: lmStudioSection.getUrl(),
         safetyModel: routingValues.safetyModel,

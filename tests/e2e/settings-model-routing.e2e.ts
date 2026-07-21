@@ -52,7 +52,7 @@ async function scrollSettingsToLegend(legendText: string): Promise<void> {
       (candidate) => candidate.querySelector('legend')?.textContent?.trim() === text,
     )
     if (!content || !fieldset) return
-    content.scrollTop = Math.max(0, fieldset.offsetTop - 24)
+    content.scrollTop = Math.max(0, fieldset.offsetTop - 64)
   }, legendText)
   await browser.pause(100)
 }
@@ -68,6 +68,7 @@ describe('settings model routing placement', () => {
       localServerUrl: lmStudio.url,
       localDefaultModel: LOCAL_MODELS[0],
       subagentModel: LOCAL_MODELS[1],
+      roleModels: { research: 'claude-haiku-4-5' },
     })
     await browser.reloadSession()
   })
@@ -77,15 +78,18 @@ describe('settings model routing placement', () => {
     if (lmStudio) await lmStudio.close()
   })
 
-  it('shows Model routing in General alongside small task model settings', async () => {
+  it('combines chat and task models, with provider-wide role choices and local defaults', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
 
     const general = settingsSection('general')
     await expect(general).toBeDisplayed()
-    await $('select[name="localDefaultModel"] option[value="qwen/qwen3.6-35b-a3b"]').waitForExist({
+    await $(
+      'select[name="localDefaultModel"] option[value="lmstudio:qwen/qwen3.6-35b-a3b"]',
+    ).waitForExist({
       timeout: 30_000,
     })
+    await $('select[name="subagentModel"] option[value="claude-haiku-4-5"]').waitForExist()
 
     const placement = await browser.execute(() => {
       const generalSection = document.querySelector<HTMLElement>(
@@ -94,9 +98,8 @@ describe('settings model routing placement', () => {
       const localModelsSection = document.querySelector<HTMLElement>(
         '.settings-section[data-section="local-models"]',
       )
-      const fieldsets = [...(generalSection?.querySelectorAll('fieldset') ?? [])]
-      const smallTasks = fieldsets.find(
-        (fieldset) => fieldset.querySelector('legend')?.textContent?.trim() === 'Small tasks',
+      const modelSection = generalSection?.querySelector<HTMLFieldSetElement>(
+        '#settings-models-section',
       )
       const routingHost = generalSection?.querySelector<HTMLElement>('#settings-model-routing-host')
       const routingFieldLabels = [
@@ -105,21 +108,32 @@ describe('settings model routing placement', () => {
 
       return {
         generalHasRouting: !!routingHost?.querySelector('fieldset'),
+        modelsLegend: modelSection?.querySelector('legend')?.textContent?.trim() ?? '',
+        modelControlNames: [
+          ...(modelSection?.querySelectorAll<HTMLSelectElement>('select') ?? []),
+        ].map((select) => select.name),
+        standaloneModelLegends: [...(generalSection?.querySelectorAll('legend') ?? [])]
+          .map((legend) => legend.textContent?.trim())
+          .filter((legend) =>
+            ['Chat model', 'Small tasks', 'Local model roles'].includes(legend ?? ''),
+          ),
         localModelsHasRouting: !!localModelsSection?.querySelector('#settings-model-routing-host'),
-        routingFollowsSmallTasks:
-          !!smallTasks &&
-          !!routingHost &&
-          (smallTasks.compareDocumentPosition(routingHost) & Node.DOCUMENT_POSITION_FOLLOWING) !==
-            0,
-        routingLegend: routingHost?.querySelector('legend')?.textContent?.trim() ?? '',
         routingFieldLabels,
       }
     })
 
-    assert.equal(placement.generalHasRouting, true)
+    assert.equal(placement.generalHasRouting, false, 'roles should not create a nested fieldset')
+    assert.equal(placement.modelsLegend, 'Models')
+    assert.deepEqual(placement.modelControlNames, [
+      'model',
+      'smallTasksModel',
+      'localDefaultModel',
+      'subagentModel',
+      'safetyModel',
+      'reviewModel',
+    ])
+    assert.deepEqual(placement.standaloneModelLegends, [])
     assert.equal(placement.localModelsHasRouting, false)
-    assert.equal(placement.routingFollowsSmallTasks, true)
-    assert.equal(placement.routingLegend, 'Local model roles')
     assert.deepEqual(placement.routingFieldLabels, [
       'Coder',
       'Research',
@@ -127,7 +141,22 @@ describe('settings model routing placement', () => {
       'Post-turn review model',
     ])
 
-    await scrollSettingsToLegend('Small tasks')
+    const coder = $('select[name="localDefaultModel"]')
+    const research = $('select[name="subagentModel"]')
+    const safety = $('select[name="safetyModel"]')
+    const review = $('select[name="reviewModel"]')
+    assert.equal(await coder.getValue(), `lmstudio:${LOCAL_MODELS[0]}`)
+    assert.equal(await research.getValue(), 'claude-haiku-4-5')
+    assert.equal(await safety.getValue(), `lmstudio:${LOCAL_MODELS[2]}`)
+    assert.equal(await review.getValue(), '')
+    const reviewAutoLabel = await browser.execute(
+      () =>
+        document.querySelector<HTMLSelectElement>('select[name="reviewModel"]')?.options[0]
+          ?.textContent ?? '',
+    )
+    assert.match(reviewAutoLabel, /prefer on-device/)
+
+    await scrollSettingsToLegend('Models')
     await saveElementScreenshot('#settings-dialog', 'settings-general-model-routing.png')
 
     await $('.settings-nav-btn[data-section="local-models"]').click()

@@ -302,6 +302,12 @@ export interface FetchModelOptionsOpts {
    * visible but disabled.
    */
   sshWorkspace?: boolean
+  /**
+   * Remote / ACP agents run whole chat sessions rather than one-shot model
+   * roles. Role pickers set this false so they only offer provider-backed
+   * models that can execute a task in-process.
+   */
+  includeAgentModels?: boolean
 }
 
 export async function fetchModelOptions(
@@ -311,6 +317,7 @@ export async function fetchModelOptions(
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
   const sshWorkspace = opts.sshWorkspace === true
+  const includeAgentModels = opts.includeAgentModels !== false
 
   let available: AvailableProviders = {}
   try {
@@ -344,10 +351,12 @@ export async function fetchModelOptions(
 
   // Remote agents (Cursor Cloud, Claude Cloud): expand into per-provider groups
   // with concrete model rows — same pattern as ACP agents.
-  options.push(...(await remoteAgentOptions(api, isAvailable, current)))
+  if (includeAgentModels) {
+    options.push(...(await remoteAgentOptions(api, isAvailable, current)))
+  }
 
   // ACP agents (external coding agents Copse drives): local stdio only — hide on SSH.
-  if (!sshWorkspace) {
+  if (includeAgentModels && !sshWorkspace) {
     options.push(...(await acpAgentOptions(api)))
   }
 
@@ -373,14 +382,14 @@ export async function fetchModelOptions(
         label: `${current.slice('lmstudio:'.length)} (offline)`,
         group: lmGroup,
       })
-    } else if (current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
+    } else if (includeAgentModels && current.startsWith(REMOTE_AGENT_MODEL_PREFIX)) {
       const selection = parseRemoteAgentModelSelection(current)
       options.push({
         value: current,
         label: `${modelDisplayLabel(current)} (no valid key)`,
         group: selection ? remoteAgentGroupLabel(selection.provider) : 'Remote agents',
       })
-    } else if (current.startsWith(ACP_MODEL_PREFIX)) {
+    } else if (includeAgentModels && current.startsWith(ACP_MODEL_PREFIX)) {
       const stale: ModelOption = {
         value: current,
         label: sshWorkspace
@@ -476,6 +485,41 @@ export async function populateSmallTasksModelSelect(
   clear(select)
   select.append(opt('', '(auto — prefer local, fall back to chat model)'))
   const options = await fetchModelOptions(api, current)
+  let lastGroup: string | undefined
+  let groupEl: HTMLOptGroupElement | null = null
+  for (const item of options) {
+    if (item.group !== lastGroup) {
+      lastGroup = item.group
+      if (item.group) {
+        groupEl = document.createElement('optgroup')
+        groupEl.label = item.group
+        select.append(groupEl)
+      } else {
+        groupEl = null
+      }
+    }
+    const node = opt(item.value, item.label, item.disabled)
+    if (groupEl) groupEl.append(node)
+    else select.append(node)
+  }
+  select.value = current
+}
+
+/**
+ * Model picker for a task role. Unlike the chat picker, this deliberately omits
+ * remote / ACP agents: those own an entire chat session and cannot act as an
+ * in-process research, review, or safety model. The blank choice keeps the
+ * role's on-device default.
+ */
+export async function populateRoleModelSelect(
+  select: HTMLSelectElement,
+  api: ApiClient,
+  current: string,
+  autoLabel = '(auto — prefer on-device)',
+): Promise<void> {
+  clear(select)
+  select.append(opt('', autoLabel))
+  const options = await fetchModelOptions(api, current, { includeAgentModels: false })
   let lastGroup: string | undefined
   let groupEl: HTMLOptGroupElement | null = null
   for (const item of options) {
