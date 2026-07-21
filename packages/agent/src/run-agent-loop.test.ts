@@ -11,6 +11,7 @@ import {
 } from '@copse/llm/provider-stop-reason.ts'
 import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wire-types.ts'
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
+import { STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
 
 function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
@@ -274,6 +275,237 @@ describe('runAgentLoop', () => {
     assert.ok(cut.reasoningText.includes('Actually, I just realized'))
     assert.equal(cut.willInjectReasoningRunawayNudge, true)
     assert.equal(cut.reasoningRunawayStreak, 0)
+  })
+
+  it('honours a host-specific per-stream output cap', async () => {
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          yield { type: 'reasoning', text: 'x'.repeat(80) }
+          return
+        }
+        yield { type: 'text', text: 'Final answer.' }
+        yield { type: 'done' }
+      },
+    }
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [],
+      maxSteps: 5,
+      maxStreamOutputTokens: 20,
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+    })
+    assert.equal(streamCalls, 2)
+    assert.ok(
+      messages.some(
+        (message) =>
+          message.role === 'user' && message.content === REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
+      ),
+    )
+  })
+
+  it('honours a host-specific reasoning-runaway recovery nudge', async () => {
+    const recoveryNudge = 'Stop planning and use the available tool now.'
+    let streamCalls = 0
+    let toolCalls = 0
+    const provider: LLMProvider = {
+      async *stream(messages): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          yield { type: 'text', text: 'Let me think.' }
+          yield { type: 'reasoning', text: 'x'.repeat(80) }
+          return
+        }
+        if (streamCalls === 2) {
+          const latestMessage = messages.at(-1)
+          assert.ok(latestMessage?.role === 'user')
+          assert.equal(latestMessage.content, recoveryNudge)
+          yield { type: 'tool_call', toolCall: { id: 'act', name: 'run_shell', args: {} } }
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'text', text: 'Task completed.' }
+        yield { type: 'done' }
+      },
+    }
+    const messages: LLMMessage[] = [{ role: 'user', content: 'go' }]
+    await runAgentLoop({
+      provider,
+      messages,
+      tools: [],
+      maxSteps: 5,
+      maxStreamOutputTokens: 20,
+      reasoningRunawayRecoveryNudge: recoveryNudge,
+      reasoningRunawayTextToleranceChars: 32,
+      onChunk: () => {},
+      executeTool: async () => {
+        toolCalls++
+        return 'ok'
+      },
+    })
+    assert.equal(streamCalls, 3)
+    assert.equal(toolCalls, 1)
+    assert.ok(
+      !messages.some(
+        (message) =>
+          message.role === 'user' && message.content === REASONING_RUNAWAY_FORCE_ANSWER_NUDGE,
+      ),
+    )
+  })
+
+  it('can give the bounded reasoning-runaway recovery stream a larger cap', async () => {
+    const recoveryNudge = 'Use the available tool now.'
+    let streamCalls = 0
+    let toolCalls = 0
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          yield { type: 'reasoning', text: 'x'.repeat(80) }
+          return
+        }
+        if (streamCalls === 2) {
+          yield { type: 'reasoning', text: 'y'.repeat(80) }
+          yield { type: 'tool_call', toolCall: { id: 'act', name: 'run_shell', args: {} } }
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'text', text: 'Task completed.' }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+      maxSteps: 5,
+      maxStreamOutputTokens: 20,
+      reasoningRunawayRecoveryOutputTokens: 40,
+      reasoningRunawayRecoveryNudge: recoveryNudge,
+      onChunk: () => {},
+      executeTool: async () => {
+        toolCalls++
+        return 'ok'
+      },
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(streamCalls, 3)
+    assert.equal(toolCalls, 1)
+    assert.equal(cuts.length, 1)
+    assert.equal(cuts[0]?.streamOutputTokenLimit, 20)
+  })
+
+  it('applies the host-specific output cap to the final text-only turn', async () => {
+    let yieldedChunks = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        for (let index = 0; index < 10; index++) {
+          yieldedChunks++
+          yield { type: 'text', text: 'x'.repeat(80) }
+        }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 0,
+      maxStreamOutputTokens: 20,
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+    })
+    assert.equal(yieldedChunks, 1)
+  })
+
+  it('lets a host disable pressure-triggered forced-text escalation', async () => {
+    let toolCalls = 0
+    let sawStuckFinalizeNudge = false
+    const provider: LLMProvider = {
+      async *stream(messages, tools): AsyncGenerator<ProviderStreamChunk> {
+        sawStuckFinalizeNudge ||= messages.some(
+          (message) => message.role === 'user' && message.content === STUCK_FINALIZE_NUDGE,
+        )
+        if (tools.length > 0) {
+          toolCalls++
+          yield {
+            type: 'tool_call',
+            toolCall: { id: `tool-${String(toolCalls)}`, name: 'run_shell', args: {} },
+          }
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'text', text: 'Final.' }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+      maxSteps: 15,
+      maxContextTokens: 1_000,
+      allowForcedTextEscalation: false,
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+    })
+    assert.equal(toolCalls, 15)
+    assert.equal(sawStuckFinalizeNudge, false)
+  })
+
+  it('can replace forced-text escalation with a tool-enabled recovery nudge', async () => {
+    const recoveryNudge = 'Stop inspecting and implement a concrete draft now.'
+    let toolCalls = 0
+    let sawRecoveryNudge = false
+    let toolCallsBeforeFinalTextTurn: number | undefined
+    const appliedNudges: import('./run-agent-loop.ts').AppliedNudgeRecord[] = []
+    const provider: LLMProvider = {
+      async *stream(messages, tools): AsyncGenerator<ProviderStreamChunk> {
+        sawRecoveryNudge ||= messages.some(
+          (message) => message.role === 'user' && message.content === recoveryNudge,
+        )
+        if (tools.length === 0) {
+          toolCallsBeforeFinalTextTurn = toolCalls
+          yield { type: 'text', text: 'Final.' }
+          yield { type: 'done' }
+          return
+        }
+        toolCalls++
+        yield {
+          type: 'tool_call',
+          toolCall: { id: `tool-${String(toolCalls)}`, name: 'run_shell', args: {} },
+        }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+      maxSteps: 15,
+      maxContextTokens: 1_000,
+      allowForcedTextEscalation: false,
+      stuckToolRecoveryNudge: recoveryNudge,
+      recordAppliedNudge: (record) => appliedNudges.push(record),
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+    })
+    assert.equal(toolCalls, 15)
+    assert.equal(sawRecoveryNudge, true)
+    assert.equal(toolCallsBeforeFinalTextTurn, 15)
+    assert.ok(
+      appliedNudges.some(
+        (record) =>
+          record.hookId === 'stuck-finalize-nudge' &&
+          record.mechanism === 'tool-enabled-message' &&
+          record.text === recoveryNudge,
+      ),
+    )
   })
 
   it('gives up cleanly when reasoning keeps tripping the cap (#489)', async () => {

@@ -22,7 +22,7 @@ const CHARS_PER_TOKEN = 4
  */
 export function isStreamOutputRunaway(
   outputChars: number,
-  maxOutputTokens = MAX_STREAM_OUTPUT_TOKENS,
+  maxOutputTokens: number | undefined = MAX_STREAM_OUTPUT_TOKENS,
 ): boolean {
   return outputChars / CHARS_PER_TOKEN >= maxOutputTokens
 }
