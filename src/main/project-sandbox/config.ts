@@ -419,6 +419,31 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
   const siblingDeny = internalRoot
     ? internalRoot.siblingRoots.flatMap((siblingRoot) => [siblingRoot, `${siblingRoot}/**`])
     : []
+  // Close the "shared project tree" hole: ASRT default-allows all reads, and
+  // the base `denyRead: [homedir()]` only covers layouts where the primary
+  // checkout lives under $HOME. Linked worktrees under `/tmp`, `/var/folders`,
+  // or a custom `COPSE_WORKTREES_DIR` sit outside $HOME, so a sandboxed
+  // worktree agent could still read the primary checkout without an explicit
+  // deny. Same story for sibling packages inside a nested worktree checkout:
+  // the more-specific `allowRead: [executionRoot, executionRoot/**]` above
+  // covers the agent's own directory; denying the enclosing checkout tree
+  // walls off the rest without touching the discovery-read ancestors.
+  const primaryCheckoutDeny =
+    internalRoot?.primaryCheckoutRoot &&
+    internalRoot.primaryCheckoutRoot !== internalRoot.root &&
+    internalRoot.primaryCheckoutRoot !== internalRoot.checkoutRoot
+      ? [internalRoot.primaryCheckoutRoot, `${internalRoot.primaryCheckoutRoot}/**`]
+      : []
+  // Nested execution root (e.g. `worktree/packages/app` under `worktree`):
+  // deny the enclosing worktree's remaining children so a sibling package can
+  // no longer be read. The exact `checkoutRoot` path stays out of the deny
+  // list — `worktreeDiscoveryRead` still needs it in `allowRead` for git's
+  // ancestor probe — and `${executionRoot}/**` in allowRead is more specific
+  // than `${checkoutRoot}/**`, so ASRT keeps the agent's own tree readable.
+  const nestedCheckoutDeny =
+    internalRoot && internalRoot.root !== internalRoot.checkoutRoot
+      ? [`${internalRoot.checkoutRoot}/**`]
+      : []
   const gitAdminDenyWrite = internalRoot
     ? [
         join(internalRoot.commonGitDir, 'config'),
@@ -435,7 +460,7 @@ export function workspaceSandboxOverlay(workspaceRoot: string): Partial<SandboxR
     filesystem: {
       // Deny home reads, re-allow only this project plus the user's git config
       // files (ASRT deny-then-allow; a more-specific allow overrides the deny).
-      denyRead: [homedir(), ...siblingDeny],
+      denyRead: [homedir(), ...siblingDeny, ...primaryCheckoutDeny, ...nestedCheckoutDeny],
       allowRead: [
         root,
         `${root}/**`,
