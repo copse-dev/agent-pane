@@ -74,6 +74,9 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
       theme: 'dark',
       uiTintStrength: 'off',
       model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+      // Copy/export overflow actions are developer-mode gated; the geometry
+      // demo needs them visible to exercise `.footer-overflow`.
+      developerMode: true,
     },
     threads: [
       {
