@@ -6,6 +6,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 
 export type PanelControlId =
   'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser'
@@ -16,7 +17,15 @@ interface PanelControlDef {
   ariaLabel: string
   label: string
   icon: () => SVGSVGElement
-  experimentalSetting?: 'okfMemoriesEnabled' | 'roadmapPlansEnabled'
+  /** Hide the button until this experimental setting is on (read via settings IPC). */
+  experimentalSetting?: 'okfMemoriesEnabled'
+  /** Hide the button until this first-party pack is enabled (read via `packs:list`). */
+  experimentalPack?: string
+}
+
+/** True for a control whose visibility is gated behind an experimental flag or pack. */
+function isGated(def: PanelControlDef): boolean {
+  return !!def.experimentalSetting || !!def.experimentalPack
 }
 
 function panelIcon(): SVGSVGElement {
@@ -131,7 +140,7 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Open roadmap',
     label: 'Roadmap',
     icon: roadmapIcon,
-    experimentalSetting: 'roadmapPlansEnabled',
+    experimentalPack: ROADMAP_PLANS_PACK_ID,
   },
   {
     id: 'browser',
@@ -201,11 +210,11 @@ export function mountPanelModeControls(
           .join(' '),
         'aria-label': def.ariaLabel,
         'data-panel-control': def.id,
-        ...(def.experimentalSetting ? { hidden: true } : {}),
+        ...(isGated(def) ? { hidden: true } : {}),
       },
       ...children,
     )
-    if (def.experimentalSetting) btn.setAttribute('data-experimental-hidden', '')
+    if (isGated(def)) btn.setAttribute('data-experimental-hidden', '')
     btn.addEventListener('click', () => {
       toggleRightPanelWithWorkspace(store, api, def.mode)
       syncPanelBtns()
@@ -369,20 +378,44 @@ export function mountPanelModeControls(
     syncOverflow?.()
   }
 
+  function applyGate(btn: HTMLButtonElement, enabled: boolean): void {
+    const hide = !enabled
+    btn.hidden = hide
+    if (hide) btn.setAttribute('data-experimental-hidden', '')
+    else btn.removeAttribute('data-experimental-hidden')
+  }
+
   function syncExperimentalBtns(): void {
     const pending: Array<Promise<void>> = []
     for (const def of PANEL_CONTROL_DEFS) {
-      if (!def.experimentalSetting) continue
       const btn = buttons.get(def.id)
       if (!btn) continue
-      pending.push(
-        api.settings.get(def.experimentalSetting).then((enabled) => {
-          const hide = enabled !== true
-          btn.hidden = hide
-          if (hide) btn.setAttribute('data-experimental-hidden', '')
-          else btn.removeAttribute('data-experimental-hidden')
-        }),
-      )
+      if (def.experimentalSetting) {
+        const setting = def.experimentalSetting
+        pending.push(
+          api.settings.get(setting).then((enabled) => {
+            applyGate(btn, enabled === true)
+          }),
+        )
+      } else if (def.experimentalPack) {
+        // Pack-gated controls (e.g. Roadmap) read the shared host pack registry
+        // via `packs:list`; the button shows iff the pack is enabled. Toggling
+        // the pack in Settings emits `settings_changed`, which re-runs this.
+        const packId = def.experimentalPack
+        pending.push(
+          api.packs
+            .list()
+            .then((res) => {
+              applyGate(
+                btn,
+                res.packs.some((p) => p.id === packId && p.enabled),
+              )
+            })
+            .catch(() => {
+              applyGate(btn, false)
+            }),
+        )
+      }
     }
     void Promise.all(pending).then(() => {
       syncOverflow?.()

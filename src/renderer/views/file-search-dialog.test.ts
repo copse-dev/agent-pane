@@ -13,6 +13,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
@@ -81,8 +82,15 @@ function stubApi(
       },
     },
     settings: {
-      get: (key: string): Promise<unknown> =>
-        Promise.resolve(key === 'roadmapPlansEnabled' ? (options?.roadmapEnabled ?? false) : null),
+      get: (): Promise<unknown> => Promise.resolve(null),
+    },
+    packs: {
+      // Roadmap is gated by the `copse.roadmap-plans` pack; the dialog reads
+      // enablement from `packs:list` (mirrors the pane's titlebar-button gate).
+      list: (): Promise<{ packs: { id: string; enabled: boolean }[] }> =>
+        Promise.resolve({
+          packs: [{ id: ROADMAP_PLANS_PACK_ID, enabled: options?.roadmapEnabled ?? false }],
+        }),
     },
     roadmap: {
       list: (): Promise<Record<string, unknown>[]> => {
