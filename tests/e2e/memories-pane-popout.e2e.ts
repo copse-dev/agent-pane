@@ -4,10 +4,11 @@ import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
 
-// The Memories pane is gated on the experimental okfMemoriesEnabled setting, so
-// unlike the other right-panel panes it needs the toggle seeded on and a couple
-// of notes to render. This spec seeds both, opens the pane, and pops it out so
-// the list + inline editor get a committed reference screenshot.
+// The Memories pane is gated on the `copse.okf-memories` first-party pack, so
+// unlike the other right-panel panes it needs the pack seeded on (via the legacy
+// opt-in the enablement migration reads) and a couple of notes to render. This
+// spec seeds both, opens the pane, and pops it out so the list + inline editor
+// get a committed reference screenshot.
 describe('Memories pane pop-out', () => {
   let mainHandle: string
 

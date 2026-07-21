@@ -35,7 +35,7 @@ import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
-import { rememberTool, recallTool, OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
+import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
 import { listSkills } from './skills/skills-registry.ts'
@@ -58,6 +58,7 @@ import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
@@ -121,8 +122,11 @@ export function createRegistry(): ToolRegistry {
     registry.register(ghRunViewTool)
     registry.register(investigateCiTool)
   }
-  // Experimental OKF memories (off by default). Adds remember/recall tools that
-  // persist project knowledge as Open Knowledge Format notes under ~/.copse.
+  // Experimental OKF memories (off by default). Gated by the
+  // `copse.okf-memories` first-party pack — the pack toggle in Settings > Packs
+  // is the atomic master switch. Adds remember/recall tools that persist project
+  // knowledge as Open Knowledge Format notes under ~/.copse. Live toggles route
+  // through {@link syncOkfMemoryTools} on `packs:setEnabled`.
   syncOkfMemoryTools(registry)
   // Experimental long-horizon tasks (off by default, issue #558). Gated by the
   // `copse.long-horizon-tasks` first-party pack — the pack toggle in Settings >
@@ -192,15 +196,17 @@ export function createRegistry(): ToolRegistry {
 
 /**
  * Register or unregister the experimental OKF memory tools to match the current
- * `okfMemoriesEnabled` setting. Called at startup (via createRegistry) and again
- * whenever the setting is toggled, so the tools appear or disappear live without
- * an app restart. This keeps the registry in sync with the memory system-prompt
- * block, which is rebuilt every turn from the same setting — otherwise enabling
- * the feature mid-session would advertise remember/recall in the prompt while the
- * registry still rejected the calls as "Unknown tool".
+ * enablement of the `copse.okf-memories` first-party pack. Called at startup
+ * (via createRegistry) and again whenever the pack is toggled from Settings >
+ * Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so the tools appear
+ * or disappear live without an app restart. This keeps the registry in sync with
+ * the memory system-prompt block, which is rebuilt every turn from the same pack
+ * enablement (`agent-system-prompt.ts`) — otherwise enabling the feature
+ * mid-session would advertise remember/recall in the prompt while the registry
+ * still rejected the calls as "Unknown tool".
  */
 export function syncOkfMemoryTools(registry: ToolRegistry): void {
-  if (getSetting<boolean>(OKF_MEMORIES_ENABLED_SETTING, false)) {
+  if (getDefaultPackRegistry().isEnabled(OKF_MEMORIES_PACK_ID)) {
     if (!registry.has('remember')) registry.register(rememberTool)
     if (!registry.has('recall')) registry.register(recallTool)
   } else {

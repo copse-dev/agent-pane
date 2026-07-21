@@ -18,9 +18,10 @@ import {
  * Experimental OKF memories feature. `remember`/`recall` persist durable project
  * knowledge as OKF markdown notes. Memories are now the `Memory` type in the
  * shared knowledge store (issue #645) rather than a bespoke `~/.copse/memories`
- * store; this setting still gates the tools and the memory system-prompt block.
+ * store. The feature is gated by the `copse.okf-memories` first-party pack
+ * (`packages/agent/src/packs/okf-memories-pack.ts`), which the host reads to
+ * register these tools and append the memory system-prompt block.
  */
-export const OKF_MEMORIES_ENABLED_SETTING = 'okfMemoriesEnabled'
 
 /** Knowledge-note type used for memories. */
 export const MEMORY_TYPE = 'Memory'

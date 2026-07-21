@@ -7,6 +7,7 @@ import type { RightPanelMode } from '@shared/types/state.ts'
 import { toggleRightPanelWithWorkspace } from '../controller/panels.ts'
 import { countPortraitPanelOverflow } from './portrait-panel-bar-overflow.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 
 export type PanelControlId =
   'explorer' | 'terminal' | 'changes' | 'prs' | 'memories' | 'roadmap' | 'browser'
@@ -17,15 +18,13 @@ interface PanelControlDef {
   ariaLabel: string
   label: string
   icon: () => SVGSVGElement
-  /** Hide the button until this experimental setting is on (read via settings IPC). */
-  experimentalSetting?: 'okfMemoriesEnabled'
   /** Hide the button until this first-party pack is enabled (read via `packs:list`). */
   experimentalPack?: string
 }
 
-/** True for a control whose visibility is gated behind an experimental flag or pack. */
+/** True for a control whose visibility is gated behind an experimental pack. */
 function isGated(def: PanelControlDef): boolean {
-  return !!def.experimentalSetting || !!def.experimentalPack
+  return !!def.experimentalPack
 }
 
 function panelIcon(): SVGSVGElement {
@@ -132,7 +131,7 @@ const PANEL_CONTROL_DEFS: readonly PanelControlDef[] = [
     ariaLabel: 'Open memories',
     label: 'Memories',
     icon: memoriesIcon,
-    experimentalSetting: 'okfMemoriesEnabled',
+    experimentalPack: OKF_MEMORIES_PACK_ID,
   },
   {
     id: 'roadmap',
@@ -390,17 +389,11 @@ export function mountPanelModeControls(
     for (const def of PANEL_CONTROL_DEFS) {
       const btn = buttons.get(def.id)
       if (!btn) continue
-      if (def.experimentalSetting) {
-        const setting = def.experimentalSetting
-        pending.push(
-          api.settings.get(setting).then((enabled) => {
-            applyGate(btn, enabled === true)
-          }),
-        )
-      } else if (def.experimentalPack) {
-        // Pack-gated controls (e.g. Roadmap) read the shared host pack registry
-        // via `packs:list`; the button shows iff the pack is enabled. Toggling
-        // the pack in Settings emits `settings_changed`, which re-runs this.
+      if (def.experimentalPack) {
+        // Pack-gated controls (Memories / Roadmap) read the shared host pack
+        // registry via `packs:list`; the button shows iff the pack is enabled.
+        // Toggling the pack in Settings emits `settings_changed`, which re-runs
+        // this.
         const packId = def.experimentalPack
         pending.push(
           api.packs

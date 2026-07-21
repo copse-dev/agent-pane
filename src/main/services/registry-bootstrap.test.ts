@@ -22,6 +22,9 @@ import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
+import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -98,18 +101,24 @@ describe('createRegistry GitHub tool gating', () => {
 
 describe('syncOkfMemoryTools', () => {
   afterEach(() => {
-    setSetting('okfMemoriesEnabled', false)
+    // Restore the fresh first-party-seed fallback for other suites.
+    setDefaultPackRegistry(null)
   })
 
-  it('adds the memory tools when enabled and removes them when disabled', () => {
+  it('adds the memory tools when the pack is enabled and removes them when disabled', () => {
     const registry = new ToolRegistry()
+    // Drive the sync through the shared pack registry the host reads: the
+    // `copse.okf-memories` pack is now the master switch (its old
+    // `okfMemoriesEnabled` setting is retired).
+    const packs = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(packs)
 
-    setSetting('okfMemoriesEnabled', false)
+    packs.disable(OKF_MEMORIES_PACK_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
 
-    setSetting('okfMemoriesEnabled', true)
+    packs.enable(OKF_MEMORIES_PACK_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), true)
     assert.equal(registry.has('recall'), true)
@@ -118,7 +127,7 @@ describe('syncOkfMemoryTools', () => {
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), true)
 
-    setSetting('okfMemoriesEnabled', false)
+    packs.disable(OKF_MEMORIES_PACK_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
