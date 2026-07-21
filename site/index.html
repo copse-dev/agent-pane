@@ -4,26 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Copse — AI coding assistant for your desktop</title>
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'><rect width='48' height='48' rx='12' fill='%230F172A'/><path d='M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24' fill='none' stroke='%237C3AED' stroke-width='3' stroke-linecap='round'/><path d='M34 18C34 12 28 10 23 13C18 16 17 22 20 26C23 30 28 29 30 25C31 22 29 19 26 20C24 21 23 24 25 25C26 26 28 25 29 24' fill='none' stroke='%2322D3EE' stroke-width='3' stroke-linecap='round' transform='translate(1,0)'/></svg>"
-    />
     <meta
       name="description"
-      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more."
+      content="Copse is a desktop AI coding assistant with agent chat, Monaco editor, git worktrees, roadmap and memories, MCP, privacy-forward provider defaults, and approval gates for every file write and shell command."
     />
     <meta property="og:title" content="Copse — AI coding assistant for your desktop" />
     <meta
       property="og:description"
-      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more."
+      content="Copse is a desktop AI coding assistant with agent chat, Monaco editor, git worktrees, roadmap and memories, MCP, privacy-forward provider defaults, and approval gates for every file write and shell command."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://copse.dev/" />
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Copse — AI coding assistant for your desktop" />
     <meta
       name="twitter:description"
-      content="Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more."
+      content="Copse is a desktop AI coding assistant with agent chat, Monaco editor, git worktrees, roadmap and memories, MCP, privacy-forward provider defaults, and approval gates for every file write and shell command."
     />
     <script type="application/ld+json">
       {
@@ -31,9 +27,10 @@
         "@type": "SoftwareApplication",
         "name": "Copse",
         "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS, Windows, Linux",
-        "description": "Copse is a desktop AI coding assistant with agent tools, Monaco editor, git integration, MCP, semantic search, browser automation, and local or cloud models from OpenRouter, Anthropic, OpenAI and more.",
+        "operatingSystem": "macOS",
+        "description": "Copse is a desktop AI coding assistant with agent chat, Monaco editor, git worktrees, roadmap and memories, MCP, privacy-forward provider defaults, and approval gates for every file write and shell command.",
         "url": "https://copse.dev/",
+        "downloadUrl": "https://github.com/copse-dev/agent-pane/releases",
         "offers": {
           "@type": "Offer",
           "price": "0",
@@ -44,70 +41,59 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
-      <defs>
-        <linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#7C3AED" />
-          <stop offset="100%" stop-color="#22D3EE" />
-        </linearGradient>
-      </defs>
-    </svg>
-    <div class="container">
-      <header>
-        <div class="logo">
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 512 512"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <rect width="512" height="512" rx="128" fill="#0F172A" />
-            <g transform="translate(-8, 14)">
-              <g transform="translate(256, 256) scale(1.18) translate(-256, -256)">
+    <nav class="nav-pill" aria-label="Primary">
+      <a class="nav-pill__brand" href="/">
+        <svg width="24" height="24" viewBox="0 0 512 512" aria-hidden="true">
+          <defs>
+            <linearGradient id="brand-g" x1="145.7" y1="85.8" x2="406.7" y2="346.8" gradientTransform="scale(0.98604077,1.0141569)" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#FDA4AF" />
+              <stop offset="100%" stop-color="#F472B6" />
+            </linearGradient>
+            <clipPath id="brand-clip"><rect width="512" height="512" rx="110" /></clipPath>
+          </defs>
+          <g clip-path="url(#brand-clip)">
+            <rect width="512" height="512" class="brand-mark-bg" />
+            <g transform="translate(-12,38)">
+              <g transform="translate(256,256) scale(1.18) translate(-256,-256)">
                 <path
-                  d="M380 180C380 110 290 90 225 125C160 160 145 240 190 295C235 350 320 340 345 280C365 235 330 195 285 205C250 213 240 255 268 275C288 289 314 282 320 260"
+                  d="m 380,180 c 0,-70 -90,-90 -155,-55 -65,35 -80,115 -35,170 45,55 130,45 155,-15 20,-45 -15,-85 -60,-75 -35,8 -45,50 -17,70 20,14 46,7 52,-15"
                   fill="none"
-                  stroke="url(#wave)"
+                  stroke="url(#brand-g)"
                   stroke-width="42"
                   stroke-linecap="round"
                 />
               </g>
             </g>
-            <defs>
-              <linearGradient id="wave" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#7C3AED" />
-                <stop offset="100%" stop-color="#22D3EE" />
-              </linearGradient>
-            </defs>
-          </svg>
-          <h1>Copse</h1>
-        </div>
-        <p class="tagline">AI coding assistant for your desktop</p>
-      </header>
+          </g>
+        </svg>
+        Copse
+      </a>
+      <ul class="nav-pill__links">
+        <li><a href="#tour">Tour</a></li>
+        <li><a href="#spec">Capabilities</a></li>
+        <li><a href="#install">Download</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+      </ul>
+      <a class="nav-pill__cta" href="https://github.com/copse-dev/agent-pane/releases">Releases</a>
+    </nav>
 
-      <main>
-        <section class="hero">
-          <p class="eyebrow">Free &amp; open source · Runs on your machine</p>
-          <h2>Code with an agent that lives in your project</h2>
-          <p>
-            Copse is a desktop coding assistant that pairs an AI agent with a real IDE — chat,
-            editor, terminal, and git in one window. The agent reads, writes, and runs code in your
-            workspace, and every change waits for your approval. No backend, no lock-in.
-          </p>
-          <div class="hero-cta">
-            <a class="btn btn-primary" href="#download">Get started</a>
-            <a class="btn btn-secondary" href="https://github.com/copse-dev/agent-pane"
-              >View on GitHub</a
-            >
+    <main class="page">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-split">
+          <div class="hero-copy">
+            <p class="hero-kicker">Free &amp; open source · Desktop-native · macOS 26+</p>
+            <h1 id="hero-title">An AI editor that stays on your machine</h1>
+            <p class="hero-lede">
+              Copse pairs agent chat with Monaco, a terminal, and git in one window. The agent reads
+              and edits your project — but every file write and shell command waits for your
+              approval. No backend service between you and the model.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-primary" href="#install">Download for macOS</a>
+              <a class="btn btn-secondary" href="https://github.com/copse-dev/agent-pane">View repo</a>
+            </div>
           </div>
-          <ul class="trust-strip" aria-label="Why teams choose Copse">
-            <li>Your code never leaves your machine</li>
-            <li>Bring your own keys — or run fully local</li>
-            <li>Fine-grained permissions, your call</li>
-          </ul>
-          <figure class="hero-shot">
+          <figure class="hero-figure">
             <img
               src="screenshots/chat-layout-three-pane.png"
               alt="Copse three-pane layout with projects sidebar, agent chat, and right panel"
@@ -116,767 +102,701 @@
               loading="eager"
             />
           </figure>
-        </section>
+        </div>
+      </section>
 
-        <section class="features" aria-label="Core features">
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Agent chat</h3>
-            <p>
-              Multi-turn conversations with tool calls, follow-up suggestions, and message queuing
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Workspace tools</h3>
-            <p>
-              Read, write, search, and refactor files with grouped tool cards and expandable details
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="11" cy="11" r="8" stroke="url(#fg)" stroke-width="1.5" />
-                <path
-                  d="m21 21-4.3-4.3"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </div>
-            <h3>Semantic search</h3>
-            <p>Find code by meaning with bundled gortex indexing and explore results in chat</p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M6 3v5.5a4.5 4.5 0 0 0 7.9 3L18 6"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M18 21v-5.5a4.5 4.5 0 0 0-7.9-3L6 18"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Git built in</h3>
-            <p>Review changes, inline diffs, image diffs, and branch warnings in the composer</p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M4 18 2 14l7-3"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M2 14s2 3 7 2"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="m13 6 7-3-2 4"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M18 3s-2 3-7 2"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Shell with guardrails</h3>
-            <p>
-              Run commands with permission prompts; macOS seatbelt sandbox for contained commands
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 2v20" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" />
-                <path d="M2 12h20" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" />
-                <circle cx="12" cy="12" r="4" stroke="url(#fg)" stroke-width="1.5" />
-              </svg>
-            </div>
-            <h3>MCP host</h3>
-            <p>
-              Connect MCP servers from <span class="inline-code">.cursor/mcp.json</span> with
-              approval controls
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <circle cx="12" cy="9" r="2" stroke="url(#fg)" stroke-width="1.5" />
-              </svg>
-            </div>
-            <h3>Local + cloud models</h3>
-            <p>
-              Claude, GPT, Gemini, Llama and more via OpenRouter; native Mistral, Gemini, DeepSeek
-              and Hugging Face; LM Studio or any OpenAI-compatible endpoint for local inference
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 3c-4 0-8 2-8 6 0 3 2 5 4 6l1 4h6l1-4c2-1 4-3 4-6 0-4-4-6-8-6z"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Subagents</h3>
-            <p>Delegate exploration to nested agents with their own tool timelines</p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <rect
-                  x="3"
-                  y="3"
-                  width="18"
-                  height="18"
-                  rx="2"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                />
-                <path d="M8 7v10" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" />
-                <path d="M12 7v10" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" />
-                <path d="M16 7v10" stroke="url(#fg)" stroke-width="1.5" stroke-linecap="round" />
-              </svg>
-            </div>
-            <h3>Monaco editor</h3>
-            <p>Edit files, preview markdown, attach selections to chat, and approve staged diffs</p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <rect
-                  x="2"
-                  y="4"
-                  width="20"
-                  height="16"
-                  rx="2"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                />
-                <path
-                  d="m6 15 3 3 5-6"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Terminal</h3>
-            <p>Integrated xterm shell in the right panel, alongside explorer and git views</p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="10" stroke="url(#fg)" stroke-width="1.5" />
-                <path d="M2 12h20" stroke="url(#fg)" stroke-width="1.5" />
-                <path
-                  d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                />
-              </svg>
-            </div>
-            <h3>In-app browser</h3>
-            <p>Browse documentation and test web UIs without leaving the workspace</p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 2 2 7l10 5 10-5-10-5z"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M2 17l10 5 10-5"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M2 12l10 5 10-5"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Skills</h3>
-            <p>
-              Slash commands and <span class="inline-code">.cursor/skills/</span> for reusable agent
-              workflows
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <rect
-                  x="3"
-                  y="4"
-                  width="18"
-                  height="14"
-                  rx="2"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                />
-                <path d="M3 8h18" stroke="url(#fg)" stroke-width="1.5" />
-                <path
-                  d="m10 11 6 2.5-2.6 1 1.4 2.6-1.4.8-1.4-2.6-2 1.7z"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Browser automation</h3>
-            <p>
-              Let the agent drive a real browser — navigate, snapshot, click, type, and screenshot —
-              off by default and origin-gated when you turn it on
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M9 4.5a2 2 0 1 1 4 0V6h3a1 1 0 0 1 1 1v3h1.5a2 2 0 1 1 0 4H17v3a1 1 0 0 1-1 1h-3v-1.5a2 2 0 1 0-4 0V18H6a1 1 0 0 1-1-1v-3"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Custom tools</h3>
-            <p>
-              Drop your own JavaScript tools into a folder to extend the agent — no MCP server
-              required, and every call still asks first
-            </p>
-          </div>
-
-          <div class="feature">
-            <div class="feature-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M3 12a9 9 0 0 1 15-6.7L21 8"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M21 4v4h-4"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M21 12a9 9 0 0 1-15 6.7L3 16"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <path
-                  d="M3 20v-4h4"
-                  stroke="url(#fg)"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <h3>Cursor-compatible</h3>
-            <p>
-              Reuses your Cursor setup — skills, marketplace plugins, and permission hooks from
-              <span class="inline-code">.cursor/</span> work out of the box
-            </p>
-          </div>
-        </section>
-
-        <section class="showcase" aria-label="Feature tour">
-          <h2>See it in action</h2>
-          <p class="showcase-intro">
-            Real screenshots from Copse running locally — the exact views you get on day one.
+      <section class="tour" id="tour" aria-labelledby="tour-title">
+        <div class="section-head">
+          <h2 id="tour-title">See it in action</h2>
+          <p>
+            Screenshots from current Copse builds — agent chat, editor, terminal, git, roadmap,
+            hooks, and provider settings in one desktop window.
           </p>
+        </div>
 
-          <div class="showcase-grid">
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Transparent tool use</h3>
-                <p>
-                  Every agent action appears as a human-readable tool card. Related calls group
-                  together so a burst of file reads stays compact; expand any group to inspect
-                  individual steps.
-                </p>
-                <ul>
-                  <li>Grouped labels like “Reading files ×2”</li>
-                  <li>Expandable argument details</li>
-                  <li>Clear error states for failed tools</li>
-                </ul>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/tool-display-group-expanded.png"
-                  alt="Expanded tool group showing Read file and List directory steps"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
+        <div class="tour-grid">
+          <div class="tour-group">
+            <div class="tour-group__head">
+              <h3>Agent loop</h3>
+              <p>
+                Multi-turn chat with readable tool cards, nested subagents, inline plans, and rich
+                markdown — including diagrams when the agent needs to explain structure.
+              </p>
+            </div>
+            <div class="tour-group__steps">
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Transparent tool use</h3>
+                  <p>
+                    Every agent action appears as a human-readable tool card. Related calls group
+                    together so a burst of file reads stays compact; expand any group to inspect
+                    individual steps, arguments, and errors.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/tool-display-group-expanded.png"
+                    alt="Expanded tool group showing Read file and List directory steps"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
 
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Subagents for deep exploration</h3>
-                <p>
-                  When the main agent needs to explore broadly, it can spawn subagents that run
-                  their own tool loops. Collapsed cards keep the timeline tidy; expand to follow
-                  nested work.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/subagent-display-expanded.png"
-                  alt="Expanded subagent card with nested tool calls"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Subagents for deep exploration</h3>
+                  <p>
+                    When the main agent needs to explore broadly, it can spawn subagents that run
+                    their own tool loops. Collapsed cards keep the timeline tidy; expand to follow
+                    nested work.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/subagent-display-expanded.png"
+                    alt="Expanded subagent card with nested tool calls"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
 
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Git changes at a glance</h3>
-                <p>
-                  The Changes panel lists staged, unstaged, and untracked files. Open inline diffs —
-                  including images — without switching to another app. Branch status appears in the
-                  footer and composer when your thread and git branch diverge.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/git-changes-diff-expanded.png"
-                  alt="Git changes panel with an expanded inline diff"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Plans and todos inline</h3>
+                  <p>
+                    The agent keeps a to-do and plan list inside the conversation so you can track
+                    multi-step work across long sessions without losing the thread.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/todo-inline-panel.png"
+                    alt="Agent to-do and plan list tracked inline in the conversation"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
 
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Approve edits before they land</h3>
-                <p>
-                  Agent-proposed file changes enter a staged-diff queue. Review hunks in Monaco,
-                  then accept or reject each change — nothing writes to disk until you approve it.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/staged-diff-single.png"
-                  alt="Staged diff approval queue with a single pending change"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Monaco ↔ chat bridge</h3>
-                <p>
-                  Select code in the editor and attach it directly to your prompt. Copse keeps file
-                  context, line ranges, and attachments visible in the composer.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/monaco-selection-chat-attachment.png"
-                  alt="Monaco editor selection attached to the chat composer"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Semantic code search</h3>
-                <p>
-                  Ask questions in natural language and get ranked code hits from a project index.
-                  Results render as rich markdown explore cards inside the conversation.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/semantic-search-explore-expanded.png"
-                  alt="Semantic search explore results expanded in chat"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Terminal &amp; browser panes</h3>
-                <p>
-                  The right panel switches between Explorer, Changes, Terminal, Browser, and a
-                  GitHub PR view. Run shell commands beside the agent, Cmd/Ctrl-click file paths in
-                  terminal output to jump to them in the editor, or load a local dev server in the
-                  embedded browser.
-                </p>
-              </div>
-              <div class="showcase-image">
-                <img
-                  src="screenshots/terminal-echo-hello.png"
-                  alt="Integrated terminal running a shell command"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </div>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>In-app browser tabs</h3>
-                <p>
-                  Open multiple browser tabs inside Copse for docs, staging sites, or quick visual
-                  checks while the agent keeps working in chat.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/browser-mode-two-tabs.png"
-                  alt="In-app browser with two tabs open"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Plan &amp; todos</h3>
-                <p>
-                  The agent keeps a to-do and plan list inline in the conversation so you can track
-                  multi-step work across long sessions without losing the thread.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/todo-inline-panel.png"
-                  alt="Agent to-do and plan list tracked inline in the conversation"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>MCP servers on your terms</h3>
-                <p>
-                  Copse is an MCP host: add servers in project or global config, see connection
-                  status in Settings, and approve tool calls before they run.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/mcp-settings-connected.png"
-                  alt="MCP server connected in Settings"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Model routing</h3>
-                <p>
-                  Route everyday tasks to a fast local model and reserve cloud models for harder
-                  work. The onboarding wizard walks through API keys, OpenRouter, LM Studio, and
-                  routing in a few steps.
-                </p>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/onboarding-step-routing.png"
-                  alt="Onboarding wizard model routing step"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
-
-            <article class="showcase-item">
-              <div class="showcase-copy">
-                <h3>Rich conversation UI</h3>
-                <p>
-                  Mermaid diagrams, code blocks with copy buttons, follow-up suggestion chips, and a
-                  message queue while the agent is still running — polish that keeps long sessions
-                  usable.
-                </p>
-                <ul>
-                  <li>Queue messages without interrupting the current turn</li>
-                  <li>Context usage wheel in the footer</li>
-                  <li>Export threads as JSONL for review</li>
-                </ul>
-              </div>
-              <figure class="showcase-image">
-                <img
-                  src="screenshots/mermaid-diagram-agent-loop.png"
-                  alt="Mermaid diagram rendered in agent chat"
-                  width="1280"
-                  height="800"
-                  loading="lazy"
-                />
-              </figure>
-            </article>
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Rich conversation UI</h3>
+                  <p>
+                    Mermaid diagrams, code blocks with copy buttons, follow-up suggestion chips,
+                    and a message queue while the agent is still running. Export threads as JSONL
+                    when you need to review a run outside the app.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/mermaid-diagram-agent-loop.png"
+                    alt="Mermaid diagram rendered in agent chat"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+            </div>
           </div>
-        </section>
 
-        <section class="install" id="download">
-          <h2>Get started in minutes</h2>
-          <p class="install-intro">
-            Copse is free and open source. Build it from source today — signed installers are on the
-            way.
+          <div class="tour-group">
+            <div class="tour-group__head">
+              <h3>Edits and review</h3>
+              <p>
+                Proposed changes never land silently. Review diffs in Monaco, inspect git status,
+                and attach editor selections directly to your next prompt.
+              </p>
+            </div>
+            <div class="tour-group__steps">
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Approve edits before they land</h3>
+                  <p>
+                    Agent-proposed file changes enter a staged-diff queue. Review hunks in Monaco,
+                    then accept or reject each change — nothing writes to disk until you approve it.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/composer-branch-warning-checkout.png"
+                    alt="Staged diff approval queue with a single pending change"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Monaco ↔ chat bridge</h3>
+                  <p>
+                    Select code in the editor and attach it directly to your prompt. Copse keeps
+                    file context, line ranges, and attachments visible in the composer.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/monaco-selection-chat-attachment.png"
+                    alt="Monaco editor selection attached to the chat composer"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Git changes at a glance</h3>
+                  <p>
+                    The Changes panel lists staged, unstaged, and untracked files. Open inline
+                    diffs — including images — without switching to another app. Branch status
+                    appears in the footer and composer when your thread and git branch diverge.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/git-changes-diff-expanded.png"
+                    alt="Git changes panel with an expanded inline diff"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Isolated worktrees per thread</h3>
+                  <p>
+                    Start a thread on a shared checkout or spin up an isolated git worktree so
+                    parallel agent runs do not stomp each other. Choose the mode from the composer
+                    before the first message.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/thread-worktree-checkout-menu.png"
+                    alt="Thread checkout menu offering shared checkout or isolated worktree"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+            </div>
+          </div>
+
+          <div class="tour-group">
+            <div class="tour-group__head">
+              <h3>Plan and remember</h3>
+              <p>
+                Keep future-work prompts and durable project knowledge in panes beside the agent —
+                not scattered across sticky notes and chat history.
+              </p>
+            </div>
+            <div class="tour-group__steps">
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Roadmap backlog with resolution review</h3>
+                  <p>
+                    Jot prompts for work you have not started yet, track status, import open GitHub
+                    issues, and run resolution review against commits and PR evidence. Reopen the
+                    thread that originally tackled an item, or find items from
+                    <kbd>Cmd</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd>.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/roadmap-review-badges.png"
+                    alt="Roadmap pane showing resolution review badges on backlog items"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Quick-open any item</h3>
+                  <p>
+                    Press <kbd>Cmd</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd> to search and jump to
+                    roadmap items, project files, or command palettes — no mouse needed.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/file-search-palette.png"
+                    alt="Quick-open palette showing roadmap search results"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Memories for project knowledge</h3>
+                  <p>
+                    Browse and edit persistent knowledge notes in a dedicated pane — the same OKF
+                    store that backs roadmap items. Pop a pane out into its own window when you
+                    want more room.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/pane-popout-memories.png"
+                    alt="Memories pane listing project knowledge notes"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+            </div>
+          </div>
+
+          <div class="tour-group">
+            <div class="tour-group__head">
+              <h3>Explore and search</h3>
+              <p>
+                Regex search, semantic indexing, terminal output, and an embedded browser — all
+                reachable from the same right-hand panel as your file tree.
+              </p>
+            </div>
+            <div class="tour-group__steps">
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Semantic code search</h3>
+                  <p>
+                    Ask questions in natural language and get ranked code hits from a project
+                    index. Results render as rich markdown explore cards inside the conversation.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/semantic-search-explore-expanded.png"
+                    alt="Semantic search explore results expanded in chat"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Terminal beside the agent</h3>
+                  <p>
+                    The right panel switches between Explorer, Changes, Terminal, Browser, and a
+                    GitHub PR view. Run shell commands next to the agent, reference open shells with
+                    <code>@shell</code> mentions, and Cmd/Ctrl-click file paths in output to jump to
+                    the editor.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/agent-tasks-terminal.png"
+                    alt="Integrated terminal running a shell command"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>In-app browser tabs</h3>
+                  <p>
+                    Open multiple browser tabs inside Copse for docs, staging sites, or quick visual
+                    checks while the agent keeps working in chat. Browser automation is off by
+                    default and origin-gated when you turn it on.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/browser-mode-example-com.png"
+                    alt="In-app browser with two tabs open"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>GitHub pull requests in the IDE</h3>
+                  <p>
+                    Inspect linked PRs, read descriptions, and open file diffs without leaving
+                    Copse. Actions like approve, mark ready, and re-run failed CI are available
+                    when <code>gh</code> is configured.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/pr-panel-viewer.png"
+                    alt="GitHub pull request viewer open in the right panel"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+            </div>
+          </div>
+
+          <div class="tour-group" id="privacy">
+            <div class="tour-group__head">
+              <h3>Privacy and model choice</h3>
+              <p>
+                Provider retention and training policies are visible before you send a prompt.
+                OpenRouter requests default to zero-data-retention, non-training endpoints.
+              </p>
+            </div>
+            <div class="tour-group__steps">
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Provider privacy badges</h3>
+                  <p>
+                    Settings → Providers badges each preset with its default retention and training
+                    posture. OpenRouter routing keeps ZDR-only and training-exclusion toggles on by
+                    default; direct OpenAI requests send <code>store: false</code>.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/settings-zdr-provider-presets.png"
+                    alt="Settings showing provider presets with privacy badges and ZDR defaults"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Usage and model value map</h3>
+                  <p>
+                    Track token usage per thread, compare cloud spend, and explore a value map that
+                    plots model intellect against cost — toggle between price per million tokens and
+                    Artificial Analysis cost-per-task estimates.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/settings-usage-value-map-mtok.png"
+                    alt="Settings usage page showing the model value map"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Model routing</h3>
+                  <p>
+                    Route everyday tasks to a fast local model and reserve cloud models for harder
+                    work. The onboarding wizard walks through API keys, OpenRouter, LM Studio, and
+                    per-role routing in a few steps.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/settings-ssh-workspace.png"
+                    alt="Onboarding wizard model routing step"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+            </div>
+          </div>
+
+          <div class="tour-group">
+            <div class="tour-group__head">
+              <h3>Extend and connect</h3>
+              <p>
+                MCP servers, Cursor-compatible hooks and skills, feature packs, and custom tools —
+                all with approval on every external call.
+              </p>
+            </div>
+            <div class="tour-group__steps">
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>MCP servers on your terms</h3>
+                  <p>
+                    Copse is an MCP host: add servers in project or global config, see connection
+                    status in Settings, and approve tool calls before they run.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/mcp-settings-connected.png"
+                    alt="MCP server connected in Settings"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Hooks visible in chat</h3>
+                  <p>
+                    Cursor and Claude hooks run through a unified registry with sandbox-by-default
+                    execution. Hook executions appear as readable cards in the agent timeline so you
+                    can see what fired and when.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/thread-reference-chip.png"
+                    alt="Hook execution cards shown in the agent chat timeline"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+
+              <article class="tour-step">
+                <div class="tour-copy">
+                  <h3>Feature packs in Settings</h3>
+                  <p>
+                    Install and configure declarative feature packs from Settings → Packs. Each pack
+                    can expose its own settings panel while staying scoped to the hook platform
+                    lifecycle.
+                  </p>
+                </div>
+                <figure class="tour-figure">
+                  <img
+                    src="screenshots/settings-packs.png"
+                    alt="Settings Packs section listing installed feature packs"
+                    width="1280"
+                    height="800"
+                    loading="lazy"
+                  />
+                </figure>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="spec" id="spec" aria-labelledby="spec-title">
+        <div class="section-head">
+          <h2 id="spec-title">What ships in the box</h2>
+          <p>A full coding environment — not a chat tab in a browser.</p>
+        </div>
+
+        <table class="spec-sheet tnum">
+          <thead>
+            <tr>
+              <th scope="col">Area</th>
+              <th scope="col">Capability</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Layout</th>
+              <td>Three-pane IDE — projects, chat, editor/terminal/git</td>
+              <td class="muted">Monaco editor, pane pop-out, open in external editor</td>
+            </tr>
+            <tr>
+              <th scope="row">Agent</th>
+              <td>Multi-turn chat with tool calls, subagents, message queue, and in-chat find</td>
+              <td class="muted"><code>@</code> past threads; greppable files under <code>~/.copse</code></td>
+            </tr>
+            <tr>
+              <th scope="row">Parallel work</th>
+              <td>Shared checkout or isolated git worktree per thread</td>
+              <td class="muted">Thread-scoped staged diffs and backup state</td>
+            </tr>
+            <tr>
+              <th scope="row">Planning</th>
+              <td>Roadmap backlog, resolution review, Memories knowledge notes</td>
+              <td class="muted">OKF store; roadmap items in quick-open (Cmd/Ctrl+P)</td>
+            </tr>
+            <tr>
+              <th scope="row">Safety</th>
+              <td>Approval gates for shell, MCP, file writes, and background tasks</td>
+              <td class="muted">macOS seatbelt sandbox for agent shell; sandboxed terminal PTYs</td>
+            </tr>
+            <tr>
+              <th scope="row">Search</th>
+              <td>Regex and semantic codebase search</td>
+              <td class="muted">Bundled gortex indexing</td>
+            </tr>
+            <tr>
+              <th scope="row">Integrations</th>
+              <td>MCP host, Cursor skills/hooks, feature packs, custom JS tools</td>
+              <td class="muted">Reads <code>.cursor/mcp.json</code>, <code>.cursor/skills/</code>, hook configs</td>
+            </tr>
+            <tr>
+              <th scope="row">Models</th>
+              <td>Anthropic, OpenAI, OpenRouter, Mistral, Gemini, DeepSeek, Groq, Together, Fireworks, Perplexity, LM Studio</td>
+              <td class="muted">Cost/intellect value map; route local vs cloud by role</td>
+            </tr>
+            <tr>
+              <th scope="row">Privacy</th>
+              <td>Provider retention/training badges; OpenRouter ZDR routing on by default</td>
+              <td class="muted">OpenAI <code>store: false</code>; see <a href="privacy.html">Privacy Policy</a></td>
+            </tr>
+            <tr>
+              <th scope="row">Shell</th>
+              <td>Integrated terminal, <code>run_background</code>, <code>read_terminal</code>, <code>@shell</code> mentions</td>
+              <td class="muted">Cmd/Ctrl-click paths in terminal output to open files</td>
+            </tr>
+            <tr>
+              <th scope="row">GitHub</th>
+              <td>Changes panel, PR viewer, inline diffs</td>
+              <td class="muted">PR actions when <code>gh</code> CLI is available</td>
+            </tr>
+            <tr>
+              <th scope="row">Remote</th>
+              <td>SSH-backed project workspaces</td>
+              <td class="muted">Open folders on configured remote hosts</td>
+            </tr>
+            <tr>
+              <th scope="row">Storage</th>
+              <td>API keys in OS secure storage; threads as files under <code>~/.copse</code></td>
+              <td class="muted">Opt-in env scan for keys in your shell profile</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="install" id="install" aria-labelledby="install-title">
+        <div class="section-head">
+          <h2 id="install-title">Get Copse</h2>
+          <p>
+            Signed, notarized macOS builds ship on stable and beta release channels. Source builds
+            remain available for development on any platform Copse compiles on.
           </p>
+        </div>
+
+        <div class="install-panel">
           <div class="install-steps">
-            <div class="step">
-              <div class="step-number">1</div>
-              <div class="step-content">
-                <h4>Prerequisites</h4>
+            <div class="install-step">
+              <div class="install-step__num">01</div>
+              <div>
+                <h3>Download for macOS</h3>
                 <p>
-                  Node.js 22.18 or newer. The supported packaged app requires macOS 26 or newer on
-                  Apple Silicon or Intel; building it also needs Xcode command-line tools. Optional:
-                  LM Studio for local models; an OpenRouter, Anthropic, or OpenAI API key for cloud
-                  models.
+                  Requires <strong>macOS 26 or newer</strong> on Apple Silicon or Intel. Pick a
+                  stable release (<code>X.Y.Z</code>) or a beta prerelease
+                  (<code>X.Y.Z-beta.N</code>) from GitHub Releases — both channels auto-update inside
+                  the app.
+                </p>
+                <div class="hero-actions" style="margin-top: var(--space-md)">
+                  <a
+                    class="btn btn-primary"
+                    href="https://github.com/copse-dev/agent-pane/releases/latest"
+                    >Stable release</a
+                  >
+                  <a
+                    class="btn btn-secondary"
+                    href="https://github.com/copse-dev/agent-pane/releases"
+                    >All releases</a
+                  >
+                </div>
+              </div>
+            </div>
+
+            <div class="install-step">
+              <div class="install-step__num">02</div>
+              <div>
+                <h3>Add a model provider</h3>
+                <p>
+                  On first launch, connect Anthropic, OpenAI, OpenRouter, or a local endpoint such
+                  as LM Studio. Keys are stored in the OS keychain when available. Already export
+                  keys in your shell? Use <strong>Scan environment</strong> in Settings → General —
+                  nothing is read until you click Scan.
                 </p>
               </div>
             </div>
 
-            <div class="step">
-              <div class="step-number">2</div>
-              <div class="step-content">
-                <h4>Clone &amp; install</h4>
+            <div class="install-step">
+              <div class="install-step__num">03</div>
+              <div>
+                <h3>Build from source (optional)</h3>
+                <p>Node.js 22.18+ required. Useful for Linux/Windows development or contributing.</p>
                 <div class="code-block">
-                  <code
+                  <code id="clone-cmd"
                     >git clone https://github.com/copse-dev/agent-pane.git &amp;&amp; cd agent-pane
-                    &amp;&amp; npm install</code
+                    &amp;&amp; npm install &amp;&amp; npm run dev</code
                   >
-                  <button
-                    class="copy-btn"
-                    onclick="
-                      copyToClipboard(
-                        'git clone https://github.com/copse-dev/agent-pane.git && cd agent-pane && npm install',
-                      )
-                    "
-                  >
-                    Copy
-                  </button>
+                  <button class="copy-btn" type="button" data-copy-target="clone-cmd">Copy</button>
                 </div>
-                <p class="alt-text">
-                  <code>npm install</code> also fetches the bundled semantic-search binary on
-                  supported platforms.
-                </p>
-              </div>
-            </div>
-
-            <div class="step">
-              <div class="step-number">3</div>
-              <div class="step-content">
-                <h4>Run in development</h4>
-                <div class="code-block">
-                  <code>npm run dev</code>
-                  <button class="copy-btn" onclick="copyToClipboard('npm run dev')">Copy</button>
-                </div>
-                <p class="alt-text">
-                  Opens the app with hot rebuild. Use
-                  <span class="inline-code">npm run build &amp;&amp; npm start</span>
-                  for a production bundle.
-                </p>
-              </div>
-            </div>
-
-            <div class="step">
-              <div class="step-number">4</div>
-              <div class="step-content">
-                <h4>Build for macOS</h4>
-                <div class="code-block">
-                  <code>npm run pack:mac</code>
-                  <button class="copy-btn" onclick="copyToClipboard('npm run pack:mac')">
-                    Copy
-                  </button>
-                </div>
-                <p class="alt-text">
-                  Produces an unpacked <span class="inline-code">.app</span> under
-                  <span class="inline-code">release/</span>. Open a project folder from the welcome
-                  screen or seed
-                  <span class="inline-code">~/.config/copse-panel/config.json</span> on Linux.
-                </p>
-                <p class="download-note">
-                  Signed macOS and Windows installers are coming soon. For now, build from source
-                  with the commands above.
+                <p style="margin-top: var(--space-sm)">
+                  Run <code>npm run pack:mac</code> locally to produce an unpacked
+                  <code>.app</code> under <code>release/</code> — distinct from the signed release
+                  pipeline.
                 </p>
               </div>
             </div>
           </div>
-        </section>
 
-        <section class="why">
-          <h2>Why Copse?</h2>
-          <div class="why-grid">
-            <div class="why-item">
-              <h4>Desktop-native</h4>
-              <p>
-                A real IDE layout — projects, chat, editor, terminal, and git — not a browser tab
-                lost among dozens of others.
-              </p>
-            </div>
-            <div class="why-item">
-              <h4>No backend</h4>
-              <p>
-                The app talks directly to LLM providers. Your code stays on your machine; API keys
-                live in local settings.
-              </p>
-            </div>
-            <div class="why-item">
-              <h4>You stay in control</h4>
-              <p>
-                Shell commands, MCP tools, and file writes go through approval gates. Staged diffs
-                mean the agent proposes — you decide.
-              </p>
-            </div>
-            <div class="why-item">
-              <h4>Hybrid models</h4>
-              <p>
-                Run everyday tasks locally with LM Studio, reach Claude, GPT, Gemini and more
-                through OpenRouter or native provider keys, and route complex work to the cloud when
-                you need it.
-              </p>
-            </div>
-          </div>
-        </section>
-      </main>
+          <p class="install-note">
+            Linux and Windows builds are useful for source development but are not supported general-
+            availability targets today. See
+            <a href="https://github.com/copse-dev/agent-pane/blob/main/SUPPORT.md">SUPPORT.md</a>
+            for the supported platform matrix.
+          </p>
+        </div>
+      </section>
+    </main>
 
-      <footer>
-        <p>
+    <footer class="foot-stmt page">
+      <p class="foot-stmt__line">Your code stays local. Your agent asks first.</p>
+      <div class="foot-stmt__meta">
+        <div class="foot-links">
+          <a href="https://github.com/copse-dev/agent-pane/releases">Releases</a>
           <a href="https://github.com/copse-dev/agent-pane">GitHub</a>
-          <span class="separator">•</span>
           <a href="architecture.html">Architecture</a>
-          <span class="separator">•</span>
-          <a href="privacy.html">Privacy Policy</a>
-        </p>
-        <p class="copyright">
-          Free &amp; open source · Made for developers who pair with agents every day
-        </p>
-      </footer>
-    </div>
+          <a href="privacy.html">Privacy</a>
+        </div>
+        <span class="foot-copy">© Copse · Open source</span>
+      </div>
+    </footer>
 
     <script>
-      function copyToClipboard(text) {
-        navigator.clipboard
-          .writeText(text)
-          .then(() => {
-            const btn = event.target
-            const originalText = btn.textContent
-            btn.textContent = 'Copied!'
-            btn.classList.add('copied')
-            setTimeout(() => {
-              btn.textContent = originalText
-              btn.classList.remove('copied')
-            }, 2000)
-          })
-          .catch((err) => {
-            console.error('Failed to copy:', err)
-          })
-      }
+      document.querySelectorAll('[data-copy-target]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const id = button.getAttribute('data-copy-target');
+          const source = id ? document.getElementById(id) : null;
+          if (!source) return;
+
+          try {
+            await navigator.clipboard.writeText(source.textContent ?? '');
+            const original = button.textContent;
+            button.textContent = 'Copied';
+            button.classList.add('is-success');
+            window.setTimeout(() => {
+              button.textContent = original;
+              button.classList.remove('is-success');
+            }, 2000);
+          } catch (error) {
+            console.error('Failed to copy:', error);
+          }
+        });
+      });
     </script>
   </body>
 </html>
