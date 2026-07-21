@@ -23,20 +23,42 @@ async function smokeTestPty(): Promise<void> {
   })
   const output = await new Promise<string>((resolve, reject) => {
     let data = ''
+    let settled = false
+    const finish = (fn: () => void): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      fn()
+    }
     const timer = setTimeout(() => {
       child.kill()
-      reject(new Error('Packaged PTY smoke test timed out'))
+      finish(() => reject(new Error('Packaged PTY smoke test timed out')))
     }, 15_000)
+    const resolveIfMarked = (): void => {
+      if (!data.includes(marker)) return
+      finish(() => {
+        child.kill()
+        resolve(data)
+      })
+    }
     child.onData((chunk) => {
       data += chunk
+      resolveIfMarked()
     })
     child.onExit(({ exitCode }) => {
-      clearTimeout(timer)
-      if (exitCode !== 0) {
-        reject(new Error(`Packaged PTY smoke test exited ${String(exitCode)}`))
-        return
-      }
-      resolve(data)
+      // node-pty can deliver the final onData after onExit under CI load; wait a
+      // beat so the marker is not lost when the shell exits cleanly.
+      setTimeout(() => {
+        if (data.includes(marker)) {
+          finish(() => resolve(data))
+          return
+        }
+        if (exitCode !== 0) {
+          finish(() => reject(new Error(`Packaged PTY smoke test exited ${String(exitCode)}`)))
+          return
+        }
+        finish(() => resolve(data))
+      }, 100)
     })
     // Give the login shell a beat to attach before the first write — avoids a
     // race where the command is dropped on cold PTY startup in CI.
