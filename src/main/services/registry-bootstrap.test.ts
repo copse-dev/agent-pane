@@ -15,6 +15,9 @@ import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registr
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
+import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
@@ -145,18 +148,24 @@ describe('syncReadTerminalTools', () => {
 })
 
 describe('syncRoadmapPlanTools', () => {
+  // Roadmap plans are now gated by the `copse.roadmap-plans` first-party pack,
+  // so drive enablement through the shared pack registry (not the retired
+  // `roadmapPlansEnabled` setting). Install a fresh first-party registry per
+  // test and restore the fallback afterwards.
   afterEach(() => {
-    setSetting('roadmapPlansEnabled', false)
+    setDefaultPackRegistry(null)
   })
 
-  it('adds the roadmap tool when enabled and removes it when disabled', () => {
+  it('adds the roadmap tool when the pack is enabled and removes it when disabled', () => {
+    const packRegistry = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(packRegistry)
     const registry = new ToolRegistry()
 
-    setSetting('roadmapPlansEnabled', false)
+    packRegistry.disable(ROADMAP_PLANS_PACK_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
 
-    setSetting('roadmapPlansEnabled', true)
+    packRegistry.enable(ROADMAP_PLANS_PACK_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), true)
 
@@ -164,7 +173,7 @@ describe('syncRoadmapPlanTools', () => {
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), true)
 
-    setSetting('roadmapPlansEnabled', false)
+    packRegistry.disable(ROADMAP_PLANS_PACK_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
   })
