@@ -702,6 +702,57 @@ export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
   })
 }
 
+/** Two threads where one owns a Cursor cloud run opened in the browser pane. */
+export function seedBrowserCursorAgentThreadFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-browser-cursor-agent-project'
+  const linkedThreadId = 'e2e-browser-cursor-agent-linked-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-browser-cursor-agent-github-thread',
+        title: 'Review agent PR on GitHub',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-github-review',
+            role: 'assistant',
+            content: 'Reviewing the pull request in the built-in browser.',
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: linkedThreadId,
+        title: 'Implement browser handoff',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-linked-cursor-run',
+            role: 'assistant',
+            content: 'This thread launched the matching Cursor cloud agent.',
+            createdAt: now - 1_000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'bc-e2e-linked-agent',
+          createdAt: now - 1_000,
+        },
+        createdAt: now - 1_000,
+        updatedAt: now - 1_000,
+      },
+    ],
+  })
+}
+
 /** Thread with a GitHub PR markdown link for PR panel e2e. */
 export function seedPrPanelChatFixture(workspaceRoot: string): void {
   const projectId = 'e2e-pr-panel-project'

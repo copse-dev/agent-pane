@@ -7,6 +7,7 @@ import {
 import { getMainWindow } from './create-main-window.ts'
 import { browserGuestWindowOpen } from './web-contents-lockdown.ts'
 import { isAllowedBrowserNavigationUrl } from '../services/browser/browser-origin-policy.ts'
+import { cursorAgentIdFromUrl } from '@shared/remote-agent-link.ts'
 
 let browserSession: Electron.Session | undefined
 let agentBrowserSession: Electron.Session | undefined
@@ -77,9 +78,20 @@ export function attachBrowserGuestWindowOpen(contents: WebContents): void {
   // The guest browses the public web freely, but a hostile page or redirect must
   // not be able to drive it to file:/chrome:/data: and render local or privileged
   // content inside the guest. Restrict its own navigations to web schemes.
-  const blockNonWebScheme = (event: Electron.Event, url: string): void => {
+  //
+  // Cursor cloud-run links are a host-app navigation: keep the current web page
+  // in place and forward the URL to the renderer, which either opens its linked
+  // Copse thread or (when the run is unknown) a separate background browser tab.
+  // Do this at WebContents level because its preventDefault() is authoritative;
+  // the renderer <webview> will-navigate event cannot reliably cancel a load.
+  const interceptNavigation = (event: Electron.Event, url: string): void => {
+    if (contents.session === getInAppBrowserSession() && cursorAgentIdFromUrl(url) !== null) {
+      event.preventDefault()
+      getMainWindow()?.webContents.send('browser:open-tab', url)
+      return
+    }
     if (!isAllowedBrowserNavigationUrl(url)) event.preventDefault()
   }
-  contents.on('will-navigate', blockNonWebScheme)
-  contents.on('will-redirect', blockNonWebScheme)
+  contents.on('will-navigate', interceptNavigation)
+  contents.on('will-redirect', interceptNavigation)
 }
