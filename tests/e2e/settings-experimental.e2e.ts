@@ -91,6 +91,15 @@ describe('experimental settings section', () => {
       'longHorizonTasksEnabled must leave Settings > Experimental after pack migration',
     )
     assert.equal(await experimental.$('legend=Long-horizon tasks').isExisting(), false)
+    // PII redaction migrated from an experimental toggle to the
+    // `copse.pii-redaction` first-party pack (Settings > Packs), so the retired
+    // fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="piiRedactionEnabled"]').isExisting(),
+      false,
+      'piiRedactionEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(await experimental.$('legend=PII redaction (on-device)').isExisting(), false)
 
     // Roadmap plans migrated from an experimental toggle to the
     // `copse.roadmap-plans` first-party pack (Settings > Packs), so the retired
