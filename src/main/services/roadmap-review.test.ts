@@ -11,6 +11,7 @@ import {
   prepareRoadmapReview,
   reviewRoadmapItem,
 } from './roadmap-review.ts'
+import type { PrRef } from './github/backend/backend.ts'
 import { mockGitHubBackend } from './github/backend/mock-backend.ts'
 import {
   addKnowledgeNote,
@@ -18,6 +19,7 @@ import {
   setKnowledgeRootForTest,
 } from './storage/knowledge-store.ts'
 import { getRoadmapLastReviewAt, setRoadmapReviewRootForTest } from './roadmap-review-state.ts'
+import type { GhIssueSummary } from '../../shared/types/git.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 
 describe('parseReviewVerdict', () => {
@@ -115,11 +117,14 @@ describe('roadmap review service', () => {
     let searchCalls = 0
     const origGetIssue = mockGitHubBackend.getIssue.bind(mockGitHubBackend)
     const origSearch = mockGitHubBackend.searchWorkspaceIssues.bind(mockGitHubBackend)
-    mockGitHubBackend.getIssue = async (ref) => {
+    mockGitHubBackend.getIssue = async (ref: PrRef): Promise<GhIssueSummary | null> => {
       getIssueCalls++
       return origGetIssue(ref)
     }
-    mockGitHubBackend.searchWorkspaceIssues = async (query, limit) => {
+    mockGitHubBackend.searchWorkspaceIssues = async (
+      query: string,
+      limit: number,
+    ): Promise<GhIssueSummary[]> => {
       searchCalls++
       return origSearch(query, limit)
     }
