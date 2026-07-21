@@ -44,6 +44,17 @@ describe('experimental settings section', () => {
     await expect(ciToggle).toBeExisting()
     assert.equal(await ciToggle.isSelected(), false)
 
+    // Advisor strategy enablement migrated to the `copse.advisor-strategy` pack;
+    // the retired checkbox must not appear. The orthogonal advisor model select
+    // stays in a slimmed "Advisor model" fieldset.
+    assert.equal(
+      await experimental.$('input[name="advisorStrategyEnabled"]').isExisting(),
+      false,
+      'advisorStrategyEnabled must leave Settings > Experimental after pack migration',
+    )
+    await expect(experimental.$('legend=Advisor model')).toBeDisplayed()
+    assert.equal(await experimental.$('legend=Advisor strategy').isExisting(), false)
+
     // OKF memories are likewise an opt-in experimental toggle, off by default.
     await expect(experimental.$('legend=Memories (Open Knowledge Format)')).toBeDisplayed()
     const memoriesToggle = await experimental.$('input[name="okfMemoriesEnabled"]')

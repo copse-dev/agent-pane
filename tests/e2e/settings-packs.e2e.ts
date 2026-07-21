@@ -89,6 +89,14 @@ describe('settings packs (about:addons)', function () {
     await expect(roadmapPlansRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await roadmapPlansRow.getAttribute('data-enabled'), 'false')
 
+    // Advisor strategy pack: listed, default-OFF via the one-time enablement
+    // bridge (absent legacy `advisorStrategyEnabled` ⇒ disabled).
+    const advisorRow = packs.$('.pack-row[data-pack-id="copse.advisor-strategy"]')
+    await expect(advisorRow).toBeDisplayed()
+    assert.equal(await advisorRow.$('.pack-name').getText(), 'copse.advisor-strategy')
+    await expect(advisorRow.$('.pack-badge-first-party')).toBeDisplayed()
+    assert.equal(await advisorRow.getAttribute('data-enabled'), 'false')
+
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
 

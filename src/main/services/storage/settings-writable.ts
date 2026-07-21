@@ -203,7 +203,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   ciInvestigatorEnabled: z.boolean(),
   okfMemoriesEnabled: z.boolean(),
   modelClassifierEnabled: z.boolean(),
-  advisorStrategyEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.

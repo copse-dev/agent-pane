@@ -49,7 +49,7 @@ import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-servic
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
-import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
+import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
 import { delegateStepTool } from '../tools/delegate-step-tool.ts'
@@ -140,9 +140,10 @@ export function createRegistry(): ToolRegistry {
   // a larger advisor model for strategic guidance, so the executor can run on a
   // cheaper / on-device model. The no-arg call matches Claude's native advisor
   // tool contract; optional question / include_diff params only add context.
-  if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
-    registry.register(advisorTool)
-  }
+  // Gated by the `copse.advisor-strategy` first-party pack — the pack toggle in
+  // Settings > Packs is the atomic master switch. Live toggles route through
+  // {@link syncAdvisorStrategyTools} on `packs:setEnabled`.
+  syncAdvisorStrategyTools(registry)
   // Experimental orchestration strategy (off by default) — the advisor's
   // inverse: the chat model stays the orchestrator and a `delegate_step` tool
   // hands each bounded implementation step to a cheaper/faster worker model
@@ -258,6 +259,24 @@ export function syncLongHorizonTasksTools(registry: ToolRegistry): void {
     if (!registry.has('track_long_task')) registry.register(trackLongTaskTool)
   } else {
     registry.unregister('track_long_task')
+  }
+}
+
+/**
+ * Register or unregister the experimental `advisor` tool to match the current
+ * enablement of the `copse.advisor-strategy` first-party pack (issue #566).
+ * Called at startup (via createRegistry) and again whenever the pack is toggled
+ * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
+ * the tool appears or disappears live — the atomic pack disable drops the tool
+ * from the model tool list in the same flag flip that drops the pack's
+ * `activeToolNames()` entry from the Settings pack list. The orthogonal
+ * `advisorModel` setting (which model the advisor consults) is unaffected.
+ */
+export function syncAdvisorStrategyTools(registry: ToolRegistry): void {
+  if (getDefaultPackRegistry().isEnabled(ADVISOR_STRATEGY_PACK_ID)) {
+    if (!registry.has('advisor')) registry.register(advisorTool)
+  } else {
+    registry.unregister('advisor')
   }
 }
 
