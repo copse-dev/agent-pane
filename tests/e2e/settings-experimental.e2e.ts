@@ -38,12 +38,6 @@ describe('experimental settings section', () => {
     // Off by default — opt-in only.
     assert.equal(await toggle.isSelected(), false)
 
-    // The CI investigator subagent is also an opt-in experimental toggle.
-    await expect(experimental.$('legend=CI investigator subagent')).toBeDisplayed()
-    const ciToggle = await experimental.$('input[name="ciInvestigatorEnabled"]')
-    await expect(ciToggle).toBeExisting()
-    assert.equal(await ciToggle.isSelected(), false)
-
     // Advisor strategy enablement migrated to the `copse.advisor-strategy` pack;
     // the retired checkbox must not appear. The orthogonal advisor model select
     // stays in a slimmed "Advisor model" fieldset.
@@ -67,6 +61,16 @@ describe('experimental settings section', () => {
       await experimental.$('legend=Memories (Open Knowledge Format)').isExisting(),
       false,
     )
+
+    // CI investigator migrated from an experimental toggle to the
+    // `copse.ci-investigator` first-party pack (Settings > Packs), so the
+    // retired fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="ciInvestigatorEnabled"]').isExisting(),
+      false,
+      'ciInvestigatorEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(await experimental.$('legend=CI investigator subagent').isExisting(), false)
 
     // Long-horizon tasks migrated from an experimental toggle to the
     // `copse.long-horizon-tasks` first-party pack (Settings > Packs), so the

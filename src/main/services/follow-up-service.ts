@@ -10,7 +10,8 @@ import {
   resolveSmallTasksModelId,
 } from './providers/small-tasks-provider.ts'
 import { getSetting } from './storage/settings.ts'
-import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-service.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { getPrWorkspaceContext } from './github/pr-context-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
@@ -98,7 +99,10 @@ function buildDeterministicFollowUps(
   }
 
   if (ctx.hasOpenPr && ctx.hasCiFailures) {
-    const ci = buildDebugCiSuggestion(getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false))
+    // Point the follow-up at the investigate_ci subagent tool only when the
+    // `copse.ci-investigator` pack is enabled (the same gate that registers the
+    // tool); otherwise fall back to the generic "Debug CI Failure" prompt.
+    const ci = buildDebugCiSuggestion(getDefaultPackRegistry().isEnabled(CI_INVESTIGATOR_PACK_ID))
     out.push({ id: ci.id, label: ci.label, prompt: ci.prompt })
   }
 

@@ -39,6 +39,12 @@
 //    tool list (`registry-bootstrap.ts` reads the pack registry), stops
 //    appending the prompt block (`agent-system-prompt.ts`), and hides the
 //    renderer Memories pane (which reads the pack's enablement via `packs:list`).
+//  - `ciInvestigatorPack` — the first-party pack for the experimental CI
+//    investigator subagent. Declares the `investigate_ci` tool plus its
+//    deep-log `gh_run_list` / `gh_run_view` helpers; the pack toggle atomically
+//    drops all three from the model tool list (`registry-bootstrap.ts` reads the
+//    pack registry, ANDing `gh` availability into the register direction) and
+//    re-points the "Investigate CI failure" follow-up.
 import type { RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
@@ -48,12 +54,14 @@ import { longHorizonTasksPack } from './long-horizon-tasks-pack.ts'
 import { roadmapPlansPack } from './roadmap-plans-pack.ts'
 import { advisorStrategyPack } from './advisor-strategy-pack.ts'
 import { okfMemoriesPack } from './okf-memories-pack.ts'
+import { ciInvestigatorPack } from './ci-investigator-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
  * enumeration order (P3): the pilot todos pack, then P5's two extracted
  * feature packs (post-turn review + model comparison), then long-horizon
- * tasks, then roadmap plans, then advisor strategy, then OKF memories.
+ * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
+ * the CI investigator.
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -63,6 +71,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   roadmapPlansPack,
   advisorStrategyPack,
   okfMemoriesPack,
+  ciInvestigatorPack,
 ]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */
