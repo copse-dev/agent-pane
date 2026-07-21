@@ -31,6 +31,7 @@ import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry
 import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-summary.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
+import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -39,6 +40,9 @@ const PACK_DISABLED_KEY = 'packDisabled'
 
 /** One-time bridge from P5's retired standalone enablement settings. */
 const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
+
+/** One-time bridge from the retired `longHorizonTasksEnabled` standalone setting. */
+const LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.longHorizonTasksEnablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -76,6 +80,28 @@ function migrateP5Enablement(): void {
 
   storageSet(PACK_DISABLED_KEY, [...disabled].sort())
   storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Preserve the enablement users had before long-horizon tasks became a pack.
+ * Like model comparison, the feature was previously opt-in (off by default via
+ * the `longHorizonTasksEnabled` setting), so an absent or false value must
+ * disable the new `copse.long-horizon-tasks` pack — otherwise the migration
+ * would expose a previously opt-in experimental tool to every existing user
+ * after upgrade. Runs synchronously before the shared registry is created and
+ * is idempotent (guarded by its own migration key).
+ */
+function migrateLongHorizonTasksEnablement(): void {
+  if (storageGet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const longHorizonTasksEnabled = storageGet('longHorizonTasksEnabled')
+
+  if (longHorizonTasksEnabled === true) disabled.delete(LONG_HORIZON_TASKS_PACK_ID)
+  else disabled.add(LONG_HORIZON_TASKS_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -169,6 +195,7 @@ export function createPackService(registry: PackRegistry): PackService {
 export function getPackService(): PackService {
   if (singleton) return singleton
   migrateP5Enablement()
+  migrateLongHorizonTasksEnablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

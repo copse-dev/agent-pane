@@ -46,7 +46,6 @@ import {
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
 import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-service.ts'
-import { LONG_HORIZON_TASKS_ENABLED_SETTING } from './storage/long-task-tracker.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
@@ -57,6 +56,7 @@ import { delegateStepTool } from '../tools/delegate-step-tool.ts'
 import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
+import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
@@ -123,12 +123,11 @@ export function createRegistry(): ToolRegistry {
   // Experimental OKF memories (off by default). Adds remember/recall tools that
   // persist project knowledge as Open Knowledge Format notes under ~/.copse.
   syncOkfMemoryTools(registry)
-  // Experimental long-horizon tasks (off by default, issue #558). Adds a
-  // track_long_task tool that keeps a durable, resumable checklist for grind
-  // work within a PR (lint backlogs, deep research) across sessions.
-  if (getSetting<boolean>(LONG_HORIZON_TASKS_ENABLED_SETTING, false)) {
-    registry.register(trackLongTaskTool)
-  }
+  // Experimental long-horizon tasks (off by default, issue #558). Gated by the
+  // `copse.long-horizon-tasks` first-party pack — the pack toggle in Settings >
+  // Packs is the atomic master switch. Live toggles route through
+  // {@link syncLongHorizonTasksTools} on `packs:setEnabled`.
+  syncLongHorizonTasksTools(registry)
   // Experimental model classifier (off by default, issue #557). Adds a
   // suggest_model tool that recommends a capability tier for a task so work can
   // be routed to the cheapest model that can handle it. Advisory only.
@@ -236,6 +235,23 @@ export function syncModelComparisonTools(registry: ToolRegistry): void {
     if (!registry.has('compare_models')) registry.register(compareModelsTool)
   } else {
     registry.unregister('compare_models')
+  }
+}
+
+/**
+ * Register or unregister the experimental `track_long_task` tool to match the
+ * current enablement of the `copse.long-horizon-tasks` first-party pack (issue
+ * #558). Called at startup (via createRegistry) and again whenever the pack is
+ * toggled from Settings > Packs (see `ipc/register-handlers.ts`
+ * `packs:setEnabled`), so the tool appears or disappears live — the atomic pack
+ * disable drops the tool from the model tool list in the same flag flip that
+ * drops the pack's `activeToolNames()` entry from the Settings pack list.
+ */
+export function syncLongHorizonTasksTools(registry: ToolRegistry): void {
+  if (getDefaultPackRegistry().isEnabled(LONG_HORIZON_TASKS_PACK_ID)) {
+    if (!registry.has('track_long_task')) registry.register(trackLongTaskTool)
+  } else {
+    registry.unregister('track_long_task')
   }
 }
 

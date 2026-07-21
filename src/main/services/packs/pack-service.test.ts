@@ -16,11 +16,13 @@ import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { definePack } from '@copse/agent/packs/pack-manifest.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
+import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
 const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
+const LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.longHorizonTasksEnablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -53,8 +55,10 @@ function makeRegistry(): PackRegistry {
 function clearStorage(): void {
   storageSet(PACK_DISABLED_KEY, [])
   storageDelete(P5_ENABLEMENT_MIGRATION_KEY)
+  storageDelete(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY)
   storageDelete('postTurnReviewEnabled')
   storageDelete('modelComparisonEnabled')
+  storageDelete('longHorizonTasksEnabled')
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -156,6 +160,10 @@ describe('PackService', () => {
   })
 
   it('migrates P5 defaults without enabling the previously opt-in comparison tool', () => {
+    // Isolate P5: the long-horizon-tasks migration runs in the same
+    // getPackService() call, so mark it already-done to keep this assertion
+    // scoped to the P5 packs (its own coverage lives in the block below).
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), true)
@@ -165,6 +173,7 @@ describe('PackService', () => {
   })
 
   it('preserves explicit legacy P5 enablement choices', () => {
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet('postTurnReviewEnabled', false)
     storageSet('modelComparisonEnabled', true)
 
@@ -177,6 +186,7 @@ describe('PackService', () => {
 
   it('does not overwrite pack choices after the P5 migration has run', () => {
     storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(PACK_DISABLED_KEY, [POST_TURN_REVIEW_PACK_ID])
     storageSet('postTurnReviewEnabled', true)
     storageSet('modelComparisonEnabled', false)
@@ -186,5 +196,38 @@ describe('PackService', () => {
     assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), false)
     assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), true)
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [POST_TURN_REVIEW_PACK_ID])
+  })
+
+  it('migrates long-horizon-tasks default-OFF without enabling the previously opt-in tool', () => {
+    // Isolate the long-horizon migration from P5's (both run in getPackService).
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(LONG_HORIZON_TASKS_PACK_ID), false)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [LONG_HORIZON_TASKS_PACK_ID])
+    assert.equal(storageGet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY), true)
+  })
+
+  it('preserves an explicit legacy longHorizonTasksEnabled=true choice', () => {
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet('longHorizonTasksEnabled', true)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(LONG_HORIZON_TASKS_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('does not overwrite pack choices after the long-horizon migration has run', () => {
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PACK_DISABLED_KEY, [])
+    // A stale legacy value must be ignored once the migration key is set.
+    storageSet('longHorizonTasksEnabled', false)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(LONG_HORIZON_TASKS_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 })

@@ -165,7 +165,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'longHorizonTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
@@ -995,22 +994,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Long-horizon tasks</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="longHorizonTasksEnabled" />
-                Let the agent keep a durable checklist for long grind tasks
-              </label>
-              <p class="field-hint">
-                Adds a <code>track_long_task</code> tool so the agent can keep a durable, resumable
-                checklist for a long task within a PR — clearing a lint/type-safety backlog, a deep
-                research pass — with done/remaining state that survives across sessions, so it can
-                resume from the last checkpoint and know when every step is complete. Tasks are
-                stored per project under <code>~/.copse/long-tasks</code>. While off, the tool is not
-                registered.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -1760,7 +1743,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       toggle.disabled = true
       void api.packs
         .setEnabled(pack.id, toggle.checked)
-        .then(() => refreshPacks())
+        .then(async () => {
+          await refreshPacks()
+          // Wake listeners that gate chrome on pack enablement so a toggle
+          // takes effect without an app restart — mirrors the
+          // `settings_changed` emit the Save button fires. Tool-only packs
+          // still emit for consistency with chrome-gating packs.
+          store.emit('settings_changed')
+        })
         .catch(() => {
           toggle.checked = !toggle.checked
         })
