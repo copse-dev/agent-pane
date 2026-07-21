@@ -160,15 +160,6 @@ export function mountInputBar(
   checkoutMenu.append(sharedCheckoutBtn, isolatedCheckoutBtn)
   checkoutHost.append(checkoutBtn, checkoutMenu)
   const branchHost = el('div', { class: 'footer-branch-host' })
-  const exportBtn = el(
-    'button',
-    {
-      type: 'button',
-      class: 'footer-export',
-      'aria-label': 'Export conversation as JSONL',
-    },
-    'Export',
-  )
   // Token usage — always shown once a thread has used tokens; click to expand
   // into the in/out breakdown and cost.
   const usageBtn = el('button', { class: 'footer-usage', 'aria-label': 'Toggle cost details' })
@@ -178,10 +169,15 @@ export function mountInputBar(
   // Appends its chip first, so it sits left of the wheel/queue/usage widgets.
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
-  footer.append(modelHost, checkoutHost, branchHost, exportBtn)
+  footer.append(modelHost, checkoutHost, branchHost)
   const footerOverflow = mountFooterOverflow(footer, [
     {
-      label: 'Export',
+      label: 'Copy thread ID',
+      hidden: (): boolean => !getActiveThreadId(),
+      onClick: copyThreadId,
+    },
+    {
+      label: 'Export conversation (JSONL)',
       hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
       onClick: (): void => {
         const thread = getActiveThread(store)
@@ -250,10 +246,16 @@ export function mountInputBar(
   })
   const branchControl = mountFooterBranchStatus(branchHost, store, api)
 
-  exportBtn.addEventListener('click', () => {
-    const thread = getActiveThread(store)
-    if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
-  })
+  function copyThreadId(): void {
+    const id = getActiveThreadId()
+    if (!id) return
+    void navigator.clipboard
+      .writeText(id)
+      .then(() => showToast('Copied thread ID', { durationMs: 1500 }))
+      .catch((error: unknown) => {
+        showErrorToast('Failed to copy thread ID', error)
+      })
+  }
   usageBtn.addEventListener('click', () => {
     costVisible = !costVisible
     updateFooter()
@@ -585,7 +587,6 @@ export function mountInputBar(
       usageBtn.hidden = tuckUsageIntoWheel
       usageBtn.textContent = usageText
     }
-    exportBtn.hidden = !threadHasExportableContent(thread)
     footerOverflow.update()
     updateCheckoutControl()
     updateState()
