@@ -395,6 +395,10 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
     },
+    decisions: {
+      list: emptyArray,
+      export: () => resolved({ path: '', count: 0 }),
+    },
     instructions: { list: emptyArray },
     cursorRules: { list: emptyArray },
     terminal: {
