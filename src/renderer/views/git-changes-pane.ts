@@ -25,7 +25,6 @@ import {
   disposeDiffModels,
   observeDiffHostLayout,
   setGitFileDiffModel,
-  whenDiffHostVisible,
 } from '../monaco/git-diff-viewer.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 
@@ -404,16 +403,26 @@ export function mountGitChangesPane(
     imageWrap.hidden = true
     diffWrap.hidden = false
 
-    await whenDiffHostVisible(viewerRoot)
-    if (requestId !== selectRequestId || pendingSelect.path !== view.path) return
-
     const proposed: GitFileDiff = {
       path: view.path,
       before: view.before,
       after: view.after,
       language: view.language,
     }
-    await setGitFileDiffModel(ensureDiffEditor(), monaco, proposed, viewerRoot)
+    // Store and IPC events can request the same/new proposed diff several times
+    // while Monaco is still computing the previous view-model. Keep all diff
+    // work on one queue and let only the latest request attach its model.
+    diffLoadQueue = diffLoadQueue
+      .catch(() => undefined)
+      .then(async () => {
+        const isCurrent = (): boolean =>
+          requestId === selectRequestId &&
+          pendingSelect?.kind === 'proposed' &&
+          pendingSelect.path === view.path
+        if (!isCurrent()) return
+        await setGitFileDiffModel(ensureDiffEditor(), monaco, proposed, viewerRoot, isCurrent)
+      })
+    await diffLoadQueue
   }
 
   async function selectProposed(path: string): Promise<void> {
