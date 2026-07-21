@@ -35,7 +35,7 @@ import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
-import { rememberTool, recallTool, OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
+import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
 import { listSkills } from './skills/skills-registry.ts'
@@ -49,7 +49,7 @@ import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-servic
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
-import { ADVISOR_STRATEGY_ENABLED_SETTING } from './advisor-strategy.ts'
+import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { advisorTool } from '../tools/advisor-tool.ts'
 import { ORCHESTRATION_STRATEGY_ENABLED_SETTING } from './orchestration-strategy.ts'
 import { delegateStepTool } from '../tools/delegate-step-tool.ts'
@@ -57,7 +57,9 @@ import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
+import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
 import {
@@ -120,8 +122,11 @@ export function createRegistry(): ToolRegistry {
     registry.register(ghRunViewTool)
     registry.register(investigateCiTool)
   }
-  // Experimental OKF memories (off by default). Adds remember/recall tools that
-  // persist project knowledge as Open Knowledge Format notes under ~/.copse.
+  // Experimental OKF memories (off by default). Gated by the
+  // `copse.okf-memories` first-party pack — the pack toggle in Settings > Packs
+  // is the atomic master switch. Adds remember/recall tools that persist project
+  // knowledge as Open Knowledge Format notes under ~/.copse. Live toggles route
+  // through {@link syncOkfMemoryTools} on `packs:setEnabled`.
   syncOkfMemoryTools(registry)
   // Experimental long-horizon tasks (off by default, issue #558). Gated by the
   // `copse.long-horizon-tasks` first-party pack — the pack toggle in Settings >
@@ -139,9 +144,10 @@ export function createRegistry(): ToolRegistry {
   // a larger advisor model for strategic guidance, so the executor can run on a
   // cheaper / on-device model. The no-arg call matches Claude's native advisor
   // tool contract; optional question / include_diff params only add context.
-  if (getSetting<boolean>(ADVISOR_STRATEGY_ENABLED_SETTING, false)) {
-    registry.register(advisorTool)
-  }
+  // Gated by the `copse.advisor-strategy` first-party pack — the pack toggle in
+  // Settings > Packs is the atomic master switch. Live toggles route through
+  // {@link syncAdvisorStrategyTools} on `packs:setEnabled`.
+  syncAdvisorStrategyTools(registry)
   // Experimental orchestration strategy (off by default) — the advisor's
   // inverse: the chat model stays the orchestrator and a `delegate_step` tool
   // hands each bounded implementation step to a cheaper/faster worker model
@@ -154,9 +160,10 @@ export function createRegistry(): ToolRegistry {
   // Packs is the atomic master switch. Live toggles route through
   // {@link syncModelComparisonTools} on `packs:setEnabled`.
   syncModelComparisonTools(registry)
-  // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
-  // tool that records future-work prompts and tracks their status across
-  // sessions so longer-horizon work is captured without being started early.
+  // Experimental roadmap plans (off by default, issue #556). Gated by the
+  // `copse.roadmap-plans` first-party pack — the pack toggle in Settings > Packs
+  // is the atomic master switch (it also gates the renderer's Roadmap pane).
+  // Live toggles route through {@link syncRoadmapPlanTools} on `packs:setEnabled`.
   syncRoadmapPlanTools(registry)
   // Experimental background tasks (off by default, issue #691). Lets the agent
   // run a long-lived command (dev server, watcher, build) that stays alive
@@ -189,15 +196,17 @@ export function createRegistry(): ToolRegistry {
 
 /**
  * Register or unregister the experimental OKF memory tools to match the current
- * `okfMemoriesEnabled` setting. Called at startup (via createRegistry) and again
- * whenever the setting is toggled, so the tools appear or disappear live without
- * an app restart. This keeps the registry in sync with the memory system-prompt
- * block, which is rebuilt every turn from the same setting — otherwise enabling
- * the feature mid-session would advertise remember/recall in the prompt while the
- * registry still rejected the calls as "Unknown tool".
+ * enablement of the `copse.okf-memories` first-party pack. Called at startup
+ * (via createRegistry) and again whenever the pack is toggled from Settings >
+ * Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so the tools appear
+ * or disappear live without an app restart. This keeps the registry in sync with
+ * the memory system-prompt block, which is rebuilt every turn from the same pack
+ * enablement (`agent-system-prompt.ts`) — otherwise enabling the feature
+ * mid-session would advertise remember/recall in the prompt while the registry
+ * still rejected the calls as "Unknown tool".
  */
 export function syncOkfMemoryTools(registry: ToolRegistry): void {
-  if (getSetting<boolean>(OKF_MEMORIES_ENABLED_SETTING, false)) {
+  if (getDefaultPackRegistry().isEnabled(OKF_MEMORIES_PACK_ID)) {
     if (!registry.has('remember')) registry.register(rememberTool)
     if (!registry.has('recall')) registry.register(recallTool)
   } else {
@@ -207,13 +216,17 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
 }
 
 /**
- * Register or unregister the experimental roadmap_plan tool to match the current
- * `roadmapPlansEnabled` setting. Called at startup (via createRegistry) and again
- * whenever the setting is toggled, so enabling the feature (e.g. to use the
- * Roadmap pane) also gives the agent its tool without an app restart.
+ * Register or unregister the experimental `roadmap_plan` tool to match the
+ * current enablement of the `copse.roadmap-plans` first-party pack (issue #556).
+ * Called at startup (via createRegistry) and again whenever the pack is toggled
+ * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
+ * enabling the feature (e.g. to use the Roadmap pane) also gives the agent its
+ * tool without an app restart — the atomic pack disable drops the tool from the
+ * model tool list in the same flag flip that drops the pack's
+ * `activeToolNames()` entry from the Settings pack list.
  */
 export function syncRoadmapPlanTools(registry: ToolRegistry): void {
-  if (getSetting<boolean>(ROADMAP_PLANS_ENABLED_SETTING, false)) {
+  if (getDefaultPackRegistry().isEnabled(ROADMAP_PLANS_PACK_ID)) {
     if (!registry.has('roadmap_plan')) registry.register(roadmapPlanTool)
   } else {
     registry.unregister('roadmap_plan')
@@ -252,6 +265,24 @@ export function syncLongHorizonTasksTools(registry: ToolRegistry): void {
     if (!registry.has('track_long_task')) registry.register(trackLongTaskTool)
   } else {
     registry.unregister('track_long_task')
+  }
+}
+
+/**
+ * Register or unregister the experimental `advisor` tool to match the current
+ * enablement of the `copse.advisor-strategy` first-party pack (issue #566).
+ * Called at startup (via createRegistry) and again whenever the pack is toggled
+ * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
+ * the tool appears or disappears live — the atomic pack disable drops the tool
+ * from the model tool list in the same flag flip that drops the pack's
+ * `activeToolNames()` entry from the Settings pack list. The orthogonal
+ * `advisorModel` setting (which model the advisor consults) is unaffected.
+ */
+export function syncAdvisorStrategyTools(registry: ToolRegistry): void {
+  if (getDefaultPackRegistry().isEnabled(ADVISOR_STRATEGY_PACK_ID)) {
+    if (!registry.has('advisor')) registry.register(advisorTool)
+  } else {
+    registry.unregister('advisor')
   }
 }
 

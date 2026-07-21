@@ -17,11 +17,11 @@ import {
  * Roadmap items are now stored as the `Roadmap` type in the shared knowledge
  * store (issue #645) rather than a bespoke `items.json`: each item is an OKF
  * markdown note whose body is the prompt, with the lifecycle `status` in
- * frontmatter and any waiting-on context in a `notes` field. The tool surface and
- * the `roadmapPlansEnabled` experimental flag are unchanged. Registered only when
- * the flag is on (`registry-bootstrap.ts`).
+ * frontmatter and any waiting-on context in a `notes` field. Off by default: the
+ * `copse.roadmap-plans` first-party pack gates the `roadmap_plan` tool
+ * registration (see `registry-bootstrap.ts`) and the Roadmap pane, so the
+ * feature is fully inert until the user opts in via Settings → Packs.
  */
-export const ROADMAP_PLANS_ENABLED_SETTING = 'roadmapPlansEnabled'
 
 /** Knowledge-note type used for roadmap items. */
 export const ROADMAP_TYPE = 'Roadmap'

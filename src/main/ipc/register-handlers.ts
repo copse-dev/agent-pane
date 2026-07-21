@@ -99,6 +99,7 @@ import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/c
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
+  syncAdvisorStrategyTools,
   syncLongHorizonTasksTools,
   syncModelComparisonTools,
   syncOkfMemoryTools,
@@ -108,19 +109,13 @@ import {
 } from '../services/registry-bootstrap.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
-import {
-  OKF_MEMORIES_ENABLED_SETTING,
-  MEMORY_TYPE,
-  migrateLegacyMemories,
-} from '../tools/memory-tools.ts'
-import {
-  ROADMAP_PLANS_ENABLED_SETTING,
-  ROADMAP_STATUSES,
-  ROADMAP_TYPE,
-  roadmapTitleFromPrompt,
-} from '../tools/roadmap-tools.ts'
+import { MEMORY_TYPE, migrateLegacyMemories } from '../tools/memory-tools.ts'
+import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
 import {
   addKnowledgeNote,
   deleteKnowledgeNote,
@@ -772,16 +767,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       await initSkillsRegistry()
       registerSkillTools(registry)
     }
-    // Toggling the experimental OKF memories feature adds/removes its tools on the
-    // live registry so it takes effect without an app restart.
-    if (k === OKF_MEMORIES_ENABLED_SETTING) {
-      syncOkfMemoryTools(registry)
-    }
-    // Same for the experimental roadmap plans tool (the Roadmap pane shares
-    // this flag, so enabling it there should arm the agent tool live too).
-    if (k === ROADMAP_PLANS_ENABLED_SETTING) {
-      syncRoadmapPlanTools(registry)
-    }
     // Same for the experimental PII redaction reveal tool.
     if (k === PII_REDACTION_ENABLED_SETTING) {
       syncPiiTools(registry)
@@ -1076,6 +1061,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Same for the `copse.long-horizon-tasks` pack's `track_long_task` tool.
     if (id === LONG_HORIZON_TASKS_PACK_ID) {
       syncLongHorizonTasksTools(registry)
+    }
+    // Same for the `copse.roadmap-plans` pack's `roadmap_plan` tool.
+    if (id === ROADMAP_PLANS_PACK_ID) {
+      syncRoadmapPlanTools(registry)
+    }
+    // Same for the `copse.advisor-strategy` pack's `advisor` tool.
+    if (id === ADVISOR_STRATEGY_PACK_ID) {
+      syncAdvisorStrategyTools(registry)
+    }
+    // Same for the `copse.okf-memories` pack's `remember`/`recall` tools — the
+    // atomic pack-disable also drops the tools from the model tool list (and
+    // stops the memory prompt block) without an app restart.
+    if (id === OKF_MEMORIES_PACK_ID) {
+      syncOkfMemoryTools(registry)
     }
     return { packs: getPackService().list() }
   })

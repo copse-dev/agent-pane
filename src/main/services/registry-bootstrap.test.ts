@@ -15,10 +15,14 @@ import { refreshSkillsRegistry, setSkillsForTest } from './skills/skills-registr
 import { setWorkspaceRootForTest } from './workspace.ts'
 import { setSetting } from './storage/settings.test-shim.ts'
 import { setGhAvailableForTest } from './tool-availability.ts'
+import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 
 describe('registerSkillTools', () => {
   let tempRoot = ''
@@ -95,18 +99,24 @@ describe('createRegistry GitHub tool gating', () => {
 
 describe('syncOkfMemoryTools', () => {
   afterEach(() => {
-    setSetting('okfMemoriesEnabled', false)
+    // Restore the fresh first-party-seed fallback for other suites.
+    setDefaultPackRegistry(null)
   })
 
-  it('adds the memory tools when enabled and removes them when disabled', () => {
+  it('adds the memory tools when the pack is enabled and removes them when disabled', () => {
     const registry = new ToolRegistry()
+    // Drive the sync through the shared pack registry the host reads: the
+    // `copse.okf-memories` pack is now the master switch (its old
+    // `okfMemoriesEnabled` setting is retired).
+    const packs = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(packs)
 
-    setSetting('okfMemoriesEnabled', false)
+    packs.disable(OKF_MEMORIES_PACK_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
 
-    setSetting('okfMemoriesEnabled', true)
+    packs.enable(OKF_MEMORIES_PACK_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), true)
     assert.equal(registry.has('recall'), true)
@@ -115,7 +125,7 @@ describe('syncOkfMemoryTools', () => {
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), true)
 
-    setSetting('okfMemoriesEnabled', false)
+    packs.disable(OKF_MEMORIES_PACK_ID)
     syncOkfMemoryTools(registry)
     assert.equal(registry.has('remember'), false)
     assert.equal(registry.has('recall'), false)
@@ -145,18 +155,24 @@ describe('syncReadTerminalTools', () => {
 })
 
 describe('syncRoadmapPlanTools', () => {
+  // Roadmap plans are now gated by the `copse.roadmap-plans` first-party pack,
+  // so drive enablement through the shared pack registry (not the retired
+  // `roadmapPlansEnabled` setting). Install a fresh first-party registry per
+  // test and restore the fallback afterwards.
   afterEach(() => {
-    setSetting('roadmapPlansEnabled', false)
+    setDefaultPackRegistry(null)
   })
 
-  it('adds the roadmap tool when enabled and removes it when disabled', () => {
+  it('adds the roadmap tool when the pack is enabled and removes it when disabled', () => {
+    const packRegistry = createFirstPartyPackRegistry()
+    setDefaultPackRegistry(packRegistry)
     const registry = new ToolRegistry()
 
-    setSetting('roadmapPlansEnabled', false)
+    packRegistry.disable(ROADMAP_PLANS_PACK_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
 
-    setSetting('roadmapPlansEnabled', true)
+    packRegistry.enable(ROADMAP_PLANS_PACK_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), true)
 
@@ -164,7 +180,7 @@ describe('syncRoadmapPlanTools', () => {
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), true)
 
-    setSetting('roadmapPlansEnabled', false)
+    packRegistry.disable(ROADMAP_PLANS_PACK_ID)
     syncRoadmapPlanTools(registry)
     assert.equal(registry.has('roadmap_plan'), false)
   })

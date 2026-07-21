@@ -86,6 +86,14 @@ function createApi(options: {
       get: async () => undefined,
       set: async () => {},
     },
+    packs: {
+      // Memories / Roadmap are gated on first-party packs after migration off
+      // their retired settings; the panel controls read `packs:list` on mount.
+      // Default OFF (empty list) keeps those panes hidden.
+      list: async () => ({ packs: [] }),
+      setEnabled: async () => ({ packs: [] }),
+      setSetting: async () => ({ packs: [] }),
+    },
     skills: {
       list: async () => [],
     },

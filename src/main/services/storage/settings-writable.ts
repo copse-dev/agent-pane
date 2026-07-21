@@ -201,9 +201,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // section in Settings.
   mcpUiArtefactsEnabled: z.boolean(),
   ciInvestigatorEnabled: z.boolean(),
-  okfMemoriesEnabled: z.boolean(),
   modelClassifierEnabled: z.boolean(),
-  advisorStrategyEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
   // cheaper worker model implements delegated steps. See orchestration-strategy.ts.
@@ -218,7 +216,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   comparisonModelA: z.string().max(256),
   comparisonModelB: z.string().max(256),
   comparisonJudgeModel: z.string().max(256),
-  roadmapPlansEnabled: z.boolean(),
   backgroundTasksEnabled: z.boolean(),
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),

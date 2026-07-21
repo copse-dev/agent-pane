@@ -164,14 +164,11 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
-  { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
@@ -978,22 +975,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Memories (Open Knowledge Format)</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="okfMemoriesEnabled" />
-                Let the agent remember and recall project knowledge
-              </label>
-              <p class="field-hint">
-                Adds <code>remember</code> and <code>recall</code> tools so the agent can persist
-                durable project knowledge — conventions, decisions, gotchas — across sessions. Notes
-                are saved per project as portable
-                <a href="https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing" target="_blank" rel="noreferrer">Open Knowledge Format</a>
-                markdown files (YAML frontmatter plus a markdown body) under
-                <code>~/.copse/memories</code>. While off, neither tool is registered.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -1009,27 +990,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset id="advisor-strategy-fieldset">
-              <legend>Advisor strategy</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="advisorStrategyEnabled" />
-                Let the agent consult a larger advisor model mid-task
-              </label>
-              <p class="field-hint">
-                Adds an <code>advisor</code> tool that forwards your full conversation
-                transcript to a larger advisor model for strategic guidance, so the everyday loop can
-                run on a cheaper or on-device model while frontier intelligence is pulled in at the
-                moments that matter (planning, getting unstuck, final review). Runs client-side, so
-                any executor/advisor pairing works — ACP agents can sit on either side (as the
-                advisor, or as an executor consulting it through the native-tool bridge). While
-                off, the tool is not registered.
-              </p>
+              <legend>Advisor model</legend>
               <label class="field-label" for="advisorModel">Advisor model</label>
               <select id="advisorModel" name="advisorModel">
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                Model used for advisor consultations. Any configured provider works; defaults to
-                <code>claude-opus-4-8</code>.
+                Model used for advisor consultations, and for the advisor/executor pairing shown
+                below. Any configured provider works; defaults to <code>claude-opus-4-8</code>. The
+                advisor strategy itself — the <code>advisor</code> tool that forwards your full
+                conversation transcript to this model for strategic guidance — is now the
+                <code>copse.advisor-strategy</code> pack in Settings → Packs; while that pack is off,
+                the tool is not registered, but this model choice still applies wherever the advisor
+                model is used.
               </p>
               <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>
             </fieldset>
@@ -1095,23 +1068,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </select>
               <p class="field-hint">
                 Model that compares the two reviews. Defaults to <code>claude-opus-4-8</code>.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Roadmap plans</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="roadmapPlansEnabled" />
-                Let the agent keep a roadmap of future-work prompts
-              </label>
-              <p class="field-hint">
-                Adds a <code>roadmap_plan</code> tool and a Roadmap pane (titlebar button) for
-                jotting prompts to run over a longer time horizon than the current change, with a
-                per-item status (ready / blocked / conflicts / done) tracked across sessions — a
-                notes app for future work, so longer-horizon plans aren't started before the PRs
-                they depend on merge. Items are stored per project in the knowledge store under
-                <code>~/.copse/knowledge</code>. While off, the tool is not registered and the
-                pane is hidden.
               </p>
             </fieldset>
 
@@ -1745,10 +1701,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         .setEnabled(pack.id, toggle.checked)
         .then(async () => {
           await refreshPacks()
-          // Wake listeners that gate chrome on pack enablement so a toggle
-          // takes effect without an app restart — mirrors the
-          // `settings_changed` emit the Save button fires. Tool-only packs
-          // still emit for consistency with chrome-gating packs.
+          // Wake listeners that gate chrome on pack enablement (e.g. the
+          // Memories / Roadmap titlebar buttons in panel-mode-controls, which
+          // read the pack list) so a toggle takes effect without an app restart —
+          // mirrors the `settings_changed` emit the Save button fires. Tool-only
+          // packs still emit for consistency with chrome-gating packs.
           store.emit('settings_changed')
         })
         .catch(() => {

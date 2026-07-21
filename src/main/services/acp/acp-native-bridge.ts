@@ -90,8 +90,9 @@ export const BRIDGE_TOOL_NAMES: readonly string[] = [
   'staged_diffs',
   'read_staged_diff',
   // The advisor strategy (docs/plans/advisor-strategy.md). Only registered
-  // when `advisorStrategyEnabled` is on, so it is only offered then; the
-  // transcript context is turn-scoped by agent-service around the ACP run.
+  // when the `copse.advisor-strategy` pack is enabled, so it is only offered
+  // then; the transcript context is turn-scoped by agent-service around the ACP
+  // run.
   'advisor',
   // Origin-gated web + in-app browser tools.
   'web_search',

@@ -2,8 +2,9 @@
 
 Tracking: [#566](https://github.com/copse-dev/agent-pane/issues/566)
 
-Status: **experimental scaffold** — off by default behind the `advisorStrategyEnabled`
-setting (Settings → Experimental).
+Status: **experimental scaffold** — off by default behind the `copse.advisor-strategy`
+first-party pack (Settings → Packs). The orthogonal `advisorModel` setting stays top-level
+(Settings → Experimental).
 
 ## What this is
 
@@ -47,9 +48,12 @@ stop_reason? }` union, with an `advisor_redacted_result` branch reserved for par
 
 ## What landed in this scaffold
 
-- **Settings** `advisorStrategyEnabled` (experimental, default off) and `advisorModel`
-  (default `claude-opus-4-8`) — schema in `settings-writable.ts`, UI in the Experimental
-  section of `settings-dialog.ts`.
+- **Enablement** the `copse.advisor-strategy` first-party pack (default off; Settings →
+  Packs) gates the `advisor` tool via `syncAdvisorStrategyTools` in `registry-bootstrap.ts`.
+  A one-time `migrateAdvisorStrategyEnablement()` in `pack-service.ts` carries the retired
+  `advisorStrategyEnabled` opt-in forward. The orthogonal `advisorModel` setting (default
+  `claude-opus-4-8`) stays top-level — schema in `settings-writable.ts`, UI in the
+  Experimental section of `settings-dialog.ts`.
 - **Core** `src/main/services/advisor-strategy.ts` — pure: Claude-compatible result types
   and `normalizeAdvisorResult()` / `renderAdvisorResult()`, `buildAdvisorTranscript()`,
   and `isNativeAdvisorPair()` / `validateAdvisorPair()` from the native compatibility table.

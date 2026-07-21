@@ -44,11 +44,29 @@ describe('experimental settings section', () => {
     await expect(ciToggle).toBeExisting()
     assert.equal(await ciToggle.isSelected(), false)
 
-    // OKF memories are likewise an opt-in experimental toggle, off by default.
-    await expect(experimental.$('legend=Memories (Open Knowledge Format)')).toBeDisplayed()
-    const memoriesToggle = await experimental.$('input[name="okfMemoriesEnabled"]')
-    await expect(memoriesToggle).toBeExisting()
-    assert.equal(await memoriesToggle.isSelected(), false)
+    // Advisor strategy enablement migrated to the `copse.advisor-strategy` pack;
+    // the retired checkbox must not appear. The orthogonal advisor model select
+    // stays in a slimmed "Advisor model" fieldset.
+    assert.equal(
+      await experimental.$('input[name="advisorStrategyEnabled"]').isExisting(),
+      false,
+      'advisorStrategyEnabled must leave Settings > Experimental after pack migration',
+    )
+    await expect(experimental.$('legend=Advisor model')).toBeDisplayed()
+    assert.equal(await experimental.$('legend=Advisor strategy').isExisting(), false)
+
+    // OKF memories migrated from an experimental toggle to the
+    // `copse.okf-memories` first-party pack (Settings > Packs), so the retired
+    // fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="okfMemoriesEnabled"]').isExisting(),
+      false,
+      'okfMemoriesEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(
+      await experimental.$('legend=Memories (Open Knowledge Format)').isExisting(),
+      false,
+    )
 
     // Long-horizon tasks migrated from an experimental toggle to the
     // `copse.long-horizon-tasks` first-party pack (Settings > Packs), so the
@@ -59,6 +77,16 @@ describe('experimental settings section', () => {
       'longHorizonTasksEnabled must leave Settings > Experimental after pack migration',
     )
     assert.equal(await experimental.$('legend=Long-horizon tasks').isExisting(), false)
+
+    // Roadmap plans migrated from an experimental toggle to the
+    // `copse.roadmap-plans` first-party pack (Settings > Packs), so the retired
+    // fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="roadmapPlansEnabled"]').isExisting(),
+      false,
+      'roadmapPlansEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(await experimental.$('legend=Roadmap plans').isExisting(), false)
 
     // The model classifier speaks the shared intellect scale, not a separate
     // tier vocabulary (docs/plans/advisor-strategy.md).

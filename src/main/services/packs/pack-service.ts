@@ -32,6 +32,9 @@ import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-sum
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -43,6 +46,15 @@ const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
 
 /** One-time bridge from the retired `longHorizonTasksEnabled` standalone setting. */
 const LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.longHorizonTasksEnablement'
+
+/** One-time bridge from the retired `roadmapPlansEnabled` standalone setting. */
+const ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY = 'packMigration.roadmapPlansEnablement'
+
+/** One-time bridge from the retired `advisorStrategyEnabled` standalone setting. */
+const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategyEnablement'
+
+/** One-time bridge from the retired `okfMemoriesEnabled` standalone setting. */
+const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -102,6 +114,73 @@ function migrateLongHorizonTasksEnablement(): void {
 
   storageSet(PACK_DISABLED_KEY, [...disabled].sort())
   storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Preserve the enablement users had before roadmap plans became a pack. Like
+ * model comparison, the feature was previously opt-in (off by default via the
+ * `roadmapPlansEnabled` setting), so an absent or false value must disable the
+ * new `copse.roadmap-plans` pack — otherwise the migration would expose a
+ * previously opt-in experimental tool (and its Roadmap pane) to every existing
+ * user after upgrade. Runs synchronously before the shared registry is created
+ * and is idempotent (guarded by its own migration key).
+ */
+function migrateRoadmapPlansEnablement(): void {
+  if (storageGet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const roadmapPlansEnabled = storageGet('roadmapPlansEnabled')
+
+  if (roadmapPlansEnabled === true) disabled.delete(ROADMAP_PLANS_PACK_ID)
+  else disabled.add(ROADMAP_PLANS_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Preserve the enablement users had before the advisor strategy became a pack.
+ * Like model comparison, the feature was previously opt-in (off by default via
+ * the `advisorStrategyEnabled` setting), so an absent or false value must
+ * disable the new `copse.advisor-strategy` pack — otherwise the migration would
+ * expose a previously opt-in experimental tool to every existing user after
+ * upgrade. The orthogonal `advisorModel` setting is left untouched (it is not a
+ * pack enablement flag). Runs synchronously before the shared registry is
+ * created and is idempotent (guarded by its own migration key).
+ */
+function migrateAdvisorStrategyEnablement(): void {
+  if (storageGet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const advisorStrategyEnabled = storageGet('advisorStrategyEnabled')
+
+  if (advisorStrategyEnabled === true) disabled.delete(ADVISOR_STRATEGY_PACK_ID)
+  else disabled.add(ADVISOR_STRATEGY_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Preserve the enablement users had before OKF memories became a pack. Like
+ * model comparison, the feature was previously opt-in (off by default via the
+ * `okfMemoriesEnabled` setting), so an absent or false value must disable the
+ * new `copse.okf-memories` pack — otherwise the migration would expose a
+ * previously opt-in experimental tool (and its prompt block + Memories pane) to
+ * every existing user after upgrade. Runs synchronously before the shared
+ * registry is created and is idempotent (guarded by its own migration key).
+ */
+function migrateOkfMemoriesEnablement(): void {
+  if (storageGet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const okfMemoriesEnabled = storageGet('okfMemoriesEnabled')
+
+  if (okfMemoriesEnabled === true) disabled.delete(OKF_MEMORIES_PACK_ID)
+  else disabled.add(OKF_MEMORIES_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -196,6 +275,9 @@ export function getPackService(): PackService {
   if (singleton) return singleton
   migrateP5Enablement()
   migrateLongHorizonTasksEnablement()
+  migrateRoadmapPlansEnablement()
+  migrateAdvisorStrategyEnablement()
+  migrateOkfMemoriesEnablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)
