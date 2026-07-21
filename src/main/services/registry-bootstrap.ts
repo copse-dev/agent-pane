@@ -57,7 +57,8 @@ import { compareModelsTool } from '../tools/compare-models-tool.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_ENABLED_SETTING, roadmapPlanTool } from '../tools/roadmap-tools.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
 import {
@@ -154,9 +155,10 @@ export function createRegistry(): ToolRegistry {
   // Packs is the atomic master switch. Live toggles route through
   // {@link syncModelComparisonTools} on `packs:setEnabled`.
   syncModelComparisonTools(registry)
-  // Experimental roadmap plans (off by default, issue #556). Adds a roadmap_plan
-  // tool that records future-work prompts and tracks their status across
-  // sessions so longer-horizon work is captured without being started early.
+  // Experimental roadmap plans (off by default, issue #556). Gated by the
+  // `copse.roadmap-plans` first-party pack — the pack toggle in Settings > Packs
+  // is the atomic master switch (it also gates the renderer's Roadmap pane).
+  // Live toggles route through {@link syncRoadmapPlanTools} on `packs:setEnabled`.
   syncRoadmapPlanTools(registry)
   // Experimental background tasks (off by default, issue #691). Lets the agent
   // run a long-lived command (dev server, watcher, build) that stays alive
@@ -207,13 +209,17 @@ export function syncOkfMemoryTools(registry: ToolRegistry): void {
 }
 
 /**
- * Register or unregister the experimental roadmap_plan tool to match the current
- * `roadmapPlansEnabled` setting. Called at startup (via createRegistry) and again
- * whenever the setting is toggled, so enabling the feature (e.g. to use the
- * Roadmap pane) also gives the agent its tool without an app restart.
+ * Register or unregister the experimental `roadmap_plan` tool to match the
+ * current enablement of the `copse.roadmap-plans` first-party pack (issue #556).
+ * Called at startup (via createRegistry) and again whenever the pack is toggled
+ * from Settings > Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so
+ * enabling the feature (e.g. to use the Roadmap pane) also gives the agent its
+ * tool without an app restart — the atomic pack disable drops the tool from the
+ * model tool list in the same flag flip that drops the pack's
+ * `activeToolNames()` entry from the Settings pack list.
  */
 export function syncRoadmapPlanTools(registry: ToolRegistry): void {
-  if (getSetting<boolean>(ROADMAP_PLANS_ENABLED_SETTING, false)) {
+  if (getDefaultPackRegistry().isEnabled(ROADMAP_PLANS_PACK_ID)) {
     if (!registry.has('roadmap_plan')) registry.register(roadmapPlanTool)
   } else {
     registry.unregister('roadmap_plan')

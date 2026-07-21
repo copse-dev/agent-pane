@@ -237,6 +237,16 @@ export function seedEmptyProject(
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     okfMemoriesEnabled?: boolean
+    /**
+     * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
+     * Roadmap pane). Like `modelComparisonEnabled`, the one-time
+     * `migrateRoadmapPlansEnablement()` treats an absent legacy
+     * `roadmapPlansEnabled` as "keep the experimental feature off" and disables
+     * the pack on first boot — so a roadmap test must seed the legacy opt-in.
+     * Written to `config.json` (the unvalidated `electron-store` the migration
+     * reads via `storageGet`), not `settings.json` (whose writable schema
+     * retired the flag), mirroring pack-service.test.ts.
+     */
     roadmapPlansEnabled?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
     windowBounds?: { width: number; height: number }
@@ -279,6 +289,12 @@ export function seedEmptyProject(
   if (options?.modelComparisonEnabled) {
     seedConfig.modelComparisonEnabled = true
   }
+  // Same for the `copse.roadmap-plans` pack: seed the legacy opt-in into
+  // `config.json` so `migrateRoadmapPlansEnablement` keeps the pack (and its
+  // Roadmap pane) enabled instead of disabling it as a previously opt-in tool.
+  if (options?.roadmapPlansEnabled) {
+    seedConfig.roadmapPlansEnabled = true
+  }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
@@ -316,9 +332,6 @@ export function seedEmptyProject(
   }
   if (options?.okfMemoriesEnabled !== undefined) {
     settings.okfMemoriesEnabled = options.okfMemoriesEnabled
-  }
-  if (options?.roadmapPlansEnabled !== undefined) {
-    settings.roadmapPlansEnabled = options.roadmapPlansEnabled
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
@@ -1259,6 +1272,11 @@ export function seedPortraitRightPanelFixture(
   windowBounds: { width: number; height: number } = { width: 760, height: 1180 },
   options?: {
     okfMemoriesEnabled?: boolean
+    /**
+     * Opt into the `copse.roadmap-plans` pack (Roadmap pane). Seeded into
+     * `config.json` so `migrateRoadmapPlansEnablement` keeps the pack enabled —
+     * the writable settings schema retired the flag (see `seedEmptyProject`).
+     */
     roadmapPlansEnabled?: boolean
     /** Pin panel placement; `bottom` forces portrait chrome without a tall window. */
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
@@ -1270,6 +1288,7 @@ export function seedPortraitRightPanelFixture(
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
+    ...(options?.roadmapPlansEnabled ? { roadmapPlansEnabled: true } : {}),
     [`threads:${projectId}`]: [
       {
         id: threadId,
@@ -1298,9 +1317,6 @@ export function seedPortraitRightPanelFixture(
       : {}),
     ...(options?.okfMemoriesEnabled !== undefined
       ? { okfMemoriesEnabled: options.okfMemoriesEnabled }
-      : {}),
-    ...(options?.roadmapPlansEnabled !== undefined
-      ? { roadmapPlansEnabled: options.roadmapPlansEnabled }
       : {}),
   })
 }

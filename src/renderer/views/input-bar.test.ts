@@ -86,6 +86,14 @@ function createApi(options: {
       get: async () => undefined,
       set: async () => {},
     },
+    packs: {
+      // Roadmap is gated on the roadmap-plans pack after its migration off the
+      // retired `roadmapEnabled` setting; the panel controls read `packs:list`
+      // on mount. Default OFF (empty list) keeps the Roadmap pane hidden.
+      list: async () => ({ packs: [] }),
+      setEnabled: async () => ({ packs: [] }),
+      setSetting: async () => ({ packs: [] }),
+    },
     skills: {
       list: async () => [],
     },

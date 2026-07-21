@@ -4,8 +4,9 @@ Tracking: [#645](https://github.com/copse-dev/agent-pane/issues/645)
 
 Status: **Active experimental feature** — the store, roadmap migration, and memories
 migration are on `main`; knowledge surfacing remains tracked in the open issue. The
-consumers are opt-in behind existing experimental settings, and nothing reads or writes
-the store while those flags are off.
+roadmap consumer is opt-in behind the `copse.roadmap-plans` first-party pack
+(Settings → Packs; extraction in [#1089](https://github.com/copse-dev/agent-pane/pull/1089));
+nothing reads or writes roadmap notes while that pack is off.
 
 ## What this is
 

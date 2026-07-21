@@ -171,7 +171,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
-  { name: 'roadmapPlansEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
@@ -1099,23 +1098,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Roadmap plans</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="roadmapPlansEnabled" />
-                Let the agent keep a roadmap of future-work prompts
-              </label>
-              <p class="field-hint">
-                Adds a <code>roadmap_plan</code> tool and a Roadmap pane (titlebar button) for
-                jotting prompts to run over a longer time horizon than the current change, with a
-                per-item status (ready / blocked / conflicts / done) tracked across sessions — a
-                notes app for future work, so longer-horizon plans aren't started before the PRs
-                they depend on merge. Items are stored per project in the knowledge store under
-                <code>~/.copse/knowledge</code>. While off, the tool is not registered and the
-                pane is hidden.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Background tasks</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="backgroundTasksEnabled" />
@@ -1745,10 +1727,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         .setEnabled(pack.id, toggle.checked)
         .then(async () => {
           await refreshPacks()
-          // Wake listeners that gate chrome on pack enablement so a toggle
-          // takes effect without an app restart — mirrors the
-          // `settings_changed` emit the Save button fires. Tool-only packs
-          // still emit for consistency with chrome-gating packs.
+          // Wake listeners that gate chrome on pack enablement (e.g. the
+          // Roadmap pane titlebar button, whose `copse.roadmap-plans` gate reads
+          // the pack list) so a toggle takes effect without an app restart —
+          // mirrors the `settings_changed` emit the Save button fires. Tool-only
+          // packs still emit for consistency with chrome-gating packs.
           store.emit('settings_changed')
         })
         .catch(() => {
