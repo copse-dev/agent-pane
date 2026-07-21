@@ -645,6 +645,21 @@ dialog.settings-overlay::backdrop {
 .usage-plan-status-error {
   color: var(--danger, #c44);
 }
+.usage-plan-signin-btn {
+  align-self: flex-start;
+  -webkit-app-region: no-drag;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius);
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.usage-plan-signin-btn:hover {
+  filter: brightness(1.05);
+}
 .usage-plan-window {
   display: flex;
   flex-direction: column;

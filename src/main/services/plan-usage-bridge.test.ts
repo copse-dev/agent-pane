@@ -3,7 +3,13 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
-import { discoverPlanUsageCredentials, loadPlanUsageSnapshot } from './plan-usage-bridge.ts'
+import { readFileSync } from 'node:fs'
+import {
+  discoverPlanUsageCredentials,
+  loadPlanUsageSnapshot,
+  persistRefreshedClaudeToken,
+  updateClaudeOAuthJson,
+} from './plan-usage-bridge.ts'
 
 const noKeychain = (): string | null => null
 const noStoredHf = (): string | null => null
@@ -40,6 +46,38 @@ describe('discoverPlanUsageCredentials', () => {
     assert.equal(creds.codex.accountId, 'acct')
     assert.equal(creds.huggingfaceToken, 'hf_from_file')
     assert.equal(creds.cursorSessionToken, 'user_01%3A%3Ajwt.from.env')
+  })
+
+  it('carries the refresh token and expiry into claudeCredentials', () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-'))
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    writeFileSync(
+      join(home, '.claude', '.credentials.json'),
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: 'sk-ant-oat01-acc',
+          refreshToken: 'sk-ant-ort01-ref',
+          expiresAt: 1_800_000_000_000,
+        },
+      }),
+    )
+    const creds = discoverPlanUsageCredentials(
+      home,
+      {},
+      noKeychain,
+      noStoredHf,
+      noCursorKeychain,
+      noCursorDb,
+    )
+    assert.deepEqual(creds.claudeCredentials, [
+      {
+        accessToken: 'sk-ant-oat01-acc',
+        refreshToken: 'sk-ant-ort01-ref',
+        expiresAt: 1_800_000_000_000,
+        source: 'credentials.json',
+      },
+    ])
+    assert.equal(typeof creds.onClaudeTokenRefreshed, 'function')
   })
 
   it('orders keychain before credentials.json before env setup-token', () => {
@@ -109,6 +147,80 @@ describe('discoverPlanUsageCredentials', () => {
     assert.equal(creds.codex, undefined)
     assert.equal(creds.huggingfaceToken, undefined)
     assert.equal(creds.cursorSessionToken, undefined)
+  })
+})
+
+describe('updateClaudeOAuthJson', () => {
+  it('updates the token fields while preserving everything else', () => {
+    const original = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'old-acc',
+        refreshToken: 'old-ref',
+        expiresAt: 1,
+        scopes: ['user:inference', 'user:profile'],
+        subscriptionType: 'max',
+      },
+    })
+    const updated = updateClaudeOAuthJson(original, {
+      accessToken: 'new-acc',
+      refreshToken: 'new-ref',
+      expiresAt: 2,
+    })
+    assert.ok(updated)
+    const parsed = JSON.parse(updated) as { claudeAiOauth: Record<string, unknown> }
+    assert.equal(parsed.claudeAiOauth['accessToken'], 'new-acc')
+    assert.equal(parsed.claudeAiOauth['refreshToken'], 'new-ref')
+    assert.equal(parsed.claudeAiOauth['expiresAt'], 2)
+    assert.deepEqual(parsed.claudeAiOauth['scopes'], ['user:inference', 'user:profile'])
+    assert.equal(parsed.claudeAiOauth['subscriptionType'], 'max')
+  })
+
+  it('refuses to touch an unfamiliar payload', () => {
+    assert.equal(updateClaudeOAuthJson(null, { accessToken: 'x', refreshToken: null, expiresAt: null }), null)
+    assert.equal(updateClaudeOAuthJson('not json', { accessToken: 'x', refreshToken: null, expiresAt: null }), null)
+    assert.equal(updateClaudeOAuthJson('{}', { accessToken: 'x', refreshToken: null, expiresAt: null }), null)
+  })
+})
+
+describe('persistRefreshedClaudeToken', () => {
+  it('writes the rotated token back to ~/.claude/.credentials.json', () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-persist-'))
+    mkdirSync(join(home, '.claude'), { recursive: true })
+    const path = join(home, '.claude', '.credentials.json')
+    writeFileSync(
+      path,
+      JSON.stringify({
+        claudeAiOauth: { accessToken: 'old-acc', refreshToken: 'old-ref', expiresAt: 1, scopes: ['a'] },
+      }),
+    )
+    persistRefreshedClaudeToken(
+      'credentials.json',
+      { accessToken: 'new-acc', refreshToken: 'new-ref', expiresAt: 999 },
+      home,
+      noKeychain,
+    )
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+      claudeAiOauth: Record<string, unknown>
+    }
+    assert.equal(parsed.claudeAiOauth['accessToken'], 'new-acc')
+    assert.equal(parsed.claudeAiOauth['refreshToken'], 'new-ref')
+    assert.equal(parsed.claudeAiOauth['expiresAt'], 999)
+    assert.deepEqual(parsed.claudeAiOauth['scopes'], ['a'])
+  })
+
+  it('is a no-op for env-sourced tokens and never throws', () => {
+    const home = mkdtempSync(join(tmpdir(), 'copse-plan-usage-persist-'))
+    assert.doesNotThrow(() => {
+      persistRefreshedClaudeToken(
+        'env',
+        { accessToken: 'x', refreshToken: null, expiresAt: null },
+        home,
+        noKeychain,
+        () => {
+          throw new Error('keychain writer should not be called for env')
+        },
+      )
+    })
   })
 })
 

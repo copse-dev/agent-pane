@@ -1229,7 +1229,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const modelRoutingSection = createModelRoutingSection(api)
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
-  const usageSection = createUsageSection(api, store)
+  const usageSection = createUsageSection(api, store, closeSettingsDialog)
   qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
 
   const navBtns = overlay.querySelectorAll<HTMLButtonElement>('.settings-nav-btn')

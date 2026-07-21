@@ -1,4 +1,9 @@
-import { fetchClaudePlanUsageFromCandidates } from './claude.ts'
+import {
+  fetchClaudePlanUsageFromCandidates,
+  fetchClaudePlanUsageFromCredentials,
+  type ClaudeCredentialInput,
+  type ClaudePlanUsageFetchOptions,
+} from './claude.ts'
 import { fetchCodexPlanUsage, type CodexPlanUsageAuth } from './codex.ts'
 import { fetchCursorPlanUsage } from './cursor.ts'
 import { fetchHuggingFacePlanUsage } from './huggingface.ts'
@@ -10,6 +15,14 @@ export interface PlanUsageCredentials {
   claudeOAuthToken?: string | null
   /** Tried in order; Keychain login tokens should come before env setup-tokens. */
   claudeOAuthTokens?: ReadonlyArray<string | null | undefined>
+  /**
+   * Full Claude credentials (with refresh tokens). Preferred over
+   * `claudeOAuthTokens` — lets the fetch refresh an expired access token
+   * instead of surfacing a "credentials were rejected" error.
+   */
+  claudeCredentials?: ReadonlyArray<ClaudeCredentialInput>
+  /** Persist a rotated Claude token back to its store after a refresh. */
+  onClaudeTokenRefreshed?: ClaudePlanUsageFetchOptions['onTokenRefreshed']
   codex?: CodexPlanUsageAuth | null
   /** HF user token (`HF_TOKEN`, Settings key, or `hf auth login` cache). */
   huggingfaceToken?: string | null
@@ -36,9 +49,19 @@ export async function getPlanUsageSnapshot(
       ? credentials.claudeOAuthTokens
       : [credentials.claudeOAuthToken]
 
+  const claudeResult =
+    credentials.claudeCredentials && credentials.claudeCredentials.length > 0
+      ? fetchClaudePlanUsageFromCredentials(credentials.claudeCredentials, {
+          ...options,
+          ...(credentials.onClaudeTokenRefreshed
+            ? { onTokenRefreshed: credentials.onClaudeTokenRefreshed }
+            : {}),
+        })
+      : fetchClaudePlanUsageFromCandidates(claudeTokens, options)
+
   try {
     const [claude, codex, huggingface, cursor] = await Promise.all([
-      fetchClaudePlanUsageFromCandidates(claudeTokens, options),
+      claudeResult,
       fetchCodexPlanUsage(credentials.codex ?? { accessToken: null }, options),
       fetchHuggingFacePlanUsage(credentials.huggingfaceToken, options),
       fetchCursorPlanUsage(credentials.cursorSessionToken, options),

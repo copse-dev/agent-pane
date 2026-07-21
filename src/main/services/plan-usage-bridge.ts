@@ -1,13 +1,14 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
   getPlanUsageSnapshot,
-  orderClaudeTokenCandidates,
+  orderClaudeOAuthCredentials,
   parseCodexAuthJson,
   parseCursorSessionToken,
   parseHuggingFaceToken,
+  type ClaudeRefreshedToken,
   type PlanUsageCredentials,
   type PlanUsageSnapshot,
 } from '@copse/plan-usage'
@@ -48,6 +49,102 @@ export function readClaudeKeychainCredentialsJson(): string | null {
     return raw || null
   } catch {
     return null
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Merge refreshed tokens into the existing credential JSON, preserving every
+ * other field (`scopes`, `subscriptionType`, …) exactly as Claude Code wrote
+ * it. Returns `null` when the payload isn't the shape we expect, so we never
+ * clobber an unfamiliar credential store.
+ */
+export function updateClaudeOAuthJson(
+  rawJson: string | null,
+  refreshed: ClaudeRefreshedToken,
+): string | null {
+  if (!rawJson) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(rawJson)
+  } catch {
+    return null
+  }
+  if (!isRecord(parsed)) return null
+  const oauth = parsed['claudeAiOauth']
+  if (!isRecord(oauth)) return null
+  oauth['accessToken'] = refreshed.accessToken
+  if (refreshed.refreshToken) oauth['refreshToken'] = refreshed.refreshToken
+  if (refreshed.expiresAt !== null) oauth['expiresAt'] = refreshed.expiresAt
+  return JSON.stringify(parsed)
+}
+
+/** The account (`-a`) on the Keychain item, needed to update it in place. */
+function readClaudeKeychainAccount(): string | null {
+  if (process.platform !== 'darwin') return null
+  try {
+    // Attributes only (no `-w`/`-g`), so the password never hits our buffer.
+    const attrs = execFileSync(
+      'security',
+      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE],
+      { encoding: 'utf8', timeout: 5_000 },
+    )
+    const match = /"acct"<blob>="([^"]*)"/.exec(attrs)
+    return match?.[1] ?? null
+  } catch {
+    return null
+  }
+}
+
+/** Update the `claude /login` Keychain item in place with a refreshed payload. */
+export function writeClaudeKeychainCredentialsJson(json: string): void {
+  if (process.platform !== 'darwin') return
+  const account = readClaudeKeychainAccount() ?? process.env['USER'] ?? ''
+  execFileSync(
+    'security',
+    ['add-generic-password', '-U', '-s', CLAUDE_KEYCHAIN_SERVICE, '-a', account, '-w', json],
+    { timeout: 5_000 },
+  )
+}
+
+/** Atomic, owner-only write so a concurrent reader never sees a half-written file. */
+function atomicWriteFile(path: string, data: string): void {
+  const tmp = `${path}.copse-${String(process.pid)}.tmp`
+  writeFileSync(tmp, data, { mode: 0o600 })
+  renameSync(tmp, path)
+}
+
+/**
+ * Persist a refreshed Claude token back to the store it came from, mirroring
+ * what the `claude` CLI does on its own refresh so both stay in sync. Rotated
+ * refresh tokens must be saved or the next refresh fails. Best-effort — any
+ * failure (Keychain ACL prompt denied, read-only FS) is swallowed; the fresh
+ * in-memory token still served the current fetch.
+ */
+export function persistRefreshedClaudeToken(
+  source: string | undefined,
+  refreshed: ClaudeRefreshedToken,
+  home = homedir(),
+  readKeychain: () => string | null = readClaudeKeychainCredentialsJson,
+  writeKeychain: (json: string) => void = writeClaudeKeychainCredentialsJson,
+): void {
+  try {
+    if (source === 'credentials.json') {
+      const path = join(home, '.claude', '.credentials.json')
+      const next = updateClaudeOAuthJson(readTextFile(path), refreshed)
+      if (next) atomicWriteFile(path, next)
+      return
+    }
+    if (source === 'keychain') {
+      const next = updateClaudeOAuthJson(readKeychain(), refreshed)
+      if (next) writeKeychain(next)
+    }
+    // 'env' / unknown: nothing to persist (env is process-scoped).
+  } catch {
+    // Swallow — see doc comment.
   }
 }
 
@@ -154,7 +251,7 @@ export function discoverPlanUsageCredentials(
   readCursorKeychain: () => string | null = readCursorKeychainAccessToken,
   readCursorStateDb: (dbPath: string) => string | null = readCursorAccessTokenFromStateDb,
 ): PlanUsageCredentials {
-  const candidates = orderClaudeTokenCandidates({
+  const claudeCredentials = orderClaudeOAuthCredentials({
     keychainJson: readKeychain(),
     credentialsJson: readJsonFile(join(home, '.claude', '.credentials.json')),
     envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
@@ -164,7 +261,18 @@ export function discoverPlanUsageCredentials(
   const parsedCodex = parseCodexAuthJson(codexFile)
 
   const credentials: PlanUsageCredentials = {
-    claudeOAuthTokens: candidates.map((c) => c.token),
+    // Keep the flat token list for back-compat; `claudeCredentials` carries the
+    // refresh tokens the fetch needs to self-heal an expired access token.
+    claudeOAuthTokens: claudeCredentials.map((c) => c.accessToken),
+    claudeCredentials: claudeCredentials.map((c) => ({
+      accessToken: c.accessToken,
+      refreshToken: c.refreshToken,
+      expiresAt: c.expiresAt,
+      source: c.source,
+    })),
+    onClaudeTokenRefreshed: (credential, refreshed) => {
+      persistRefreshedClaudeToken(credential.source, refreshed, home, readKeychain)
+    },
   }
   if (parsedCodex) {
     credentials.codex = {

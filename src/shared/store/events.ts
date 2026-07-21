@@ -55,6 +55,10 @@ export interface StoreEvents {
   // Terminal tab: a shell tab was activated, so any agent-task panel showing in
   // the viewer should yield back to the live terminal.
   shell_tab_activated: []
+  // Open a Shells tab (switching the right panel to terminal mode) and run a
+  // command in it. Used by the Usage panel's "Sign in to Claude" button to
+  // launch `claude /login` in a real interactive terminal.
+  request_terminal_command: [command: string]
   // The set of non-focused threads awaiting user input (a pending approval or
   // ask_user question) changed. Drives the sidebar attention indicator.
   attention_changed: []

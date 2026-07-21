@@ -1,3 +1,4 @@
+import { refreshClaudeOAuthToken, type ClaudeRefreshedToken } from './claude-oauth.ts'
 import {
   clampPercent,
   CLAUDE_PROFILE_SCOPE_HINT,
@@ -291,23 +292,118 @@ export async function fetchClaudePlanUsage(
   }
 }
 
+/** A Claude OAuth credential the usage fetch can refresh when it goes stale. */
+export interface ClaudeCredentialInput {
+  accessToken: string
+  /** Long-lived token used to mint a fresh access token; `null` when absent. */
+  refreshToken?: string | null
+  /** Epoch ms the access token expires; drives a proactive refresh. */
+  expiresAt?: number | null
+  /** Opaque tag echoed back to `onTokenRefreshed` (e.g. the store to write). */
+  source?: string
+}
+
+export interface ClaudePlanUsageFetchOptions extends PlanUsageFetchOptions {
+  /**
+   * Called after a successful refresh so the host can persist the rotated
+   * tokens (refresh tokens rotate on use — not persisting eventually breaks
+   * the next refresh). Best-effort: a throw here never fails the usage fetch.
+   */
+  onTokenRefreshed?: (
+    credential: ClaudeCredentialInput,
+    refreshed: ClaudeRefreshedToken,
+  ) => void | Promise<void>
+}
+
+/** Refresh a minute early so an in-flight request never races the expiry. */
+const TOKEN_EXPIRY_SKEW_MS = 60_000
+
+function accessTokenExpired(expiresAt: number | null | undefined, nowMs: number): boolean {
+  return (
+    typeof expiresAt === 'number' &&
+    Number.isFinite(expiresAt) &&
+    expiresAt - TOKEN_EXPIRY_SKEW_MS <= nowMs
+  )
+}
+
+async function tryRefresh(
+  credential: ClaudeCredentialInput,
+  refreshToken: string,
+  options: ClaudePlanUsageFetchOptions,
+): Promise<ClaudeRefreshedToken | null> {
+  try {
+    const refreshed = await refreshClaudeOAuthToken(refreshToken, options)
+    if (options.onTokenRefreshed) {
+      try {
+        await options.onTokenRefreshed(credential, refreshed)
+      } catch {
+        // Persistence is best-effort; the fresh token still serves this fetch.
+      }
+    }
+    return refreshed
+  } catch {
+    // Refresh token dead/revoked or network failure — caller falls back to the
+    // access token we already have (and ultimately the "re-run login" hint).
+    return null
+  }
+}
+
 /**
- * Try Claude OAuth tokens in order. Skips `user:profile` scope misses so a
- * Keychain login token can win after an env setup-token 403s.
+ * Fetch plan usage for one credential, refreshing its access token when we know
+ * it is expired (proactive) or when the server rejects it (reactive, one retry).
  */
-export async function fetchClaudePlanUsageFromCandidates(
-  tokens: ReadonlyArray<string | null | undefined>,
-  options: PlanUsageFetchOptions = {},
+async function fetchClaudePlanUsageForCredential(
+  credential: ClaudeCredentialInput,
+  options: ClaudePlanUsageFetchOptions,
+): Promise<ProviderPlanResult> {
+  const now = options.now ?? Date.now
+  const refreshToken = credential.refreshToken?.trim() || null
+  let accessToken = credential.accessToken.trim()
+  let refreshed = false
+
+  if (refreshToken && accessTokenExpired(credential.expiresAt, now())) {
+    const next = await tryRefresh(credential, refreshToken, options)
+    if (next) {
+      accessToken = next.accessToken
+      refreshed = true
+    }
+  }
+
+  let result = await fetchClaudePlanUsage(accessToken, options)
+
+  // A rejection despite a live-looking token means the stored access token was
+  // already stale; refresh once and retry before giving up on this credential.
+  if (
+    !refreshed &&
+    refreshToken &&
+    result.status === 'unavailable' &&
+    result.reason === CLAUDE_AUTH_REJECTED_HINT
+  ) {
+    const next = await tryRefresh(credential, refreshToken, options)
+    if (next) result = await fetchClaudePlanUsage(next.accessToken, options)
+  }
+
+  return result
+}
+
+/**
+ * Try Claude OAuth credentials in order, refreshing stale access tokens along
+ * the way. Skips `user:profile` scope misses so a Keychain login token can win
+ * after an env setup-token 403s.
+ */
+export async function fetchClaudePlanUsageFromCredentials(
+  credentials: ReadonlyArray<ClaudeCredentialInput>,
+  options: ClaudePlanUsageFetchOptions = {},
 ): Promise<ProviderPlanResult> {
   const seen = new Set<string>()
   let sawProfileScopeMiss = false
   let last: ProviderPlanResult | null = null
 
-  for (const raw of tokens) {
-    const token = raw?.trim()
+  for (const credential of credentials) {
+    const token = credential.accessToken.trim()
     if (!token || seen.has(token)) continue
     seen.add(token)
-    const result = await fetchClaudePlanUsage(token, options)
+    const result = await fetchClaudePlanUsageForCredential(credential, options)
     last = result
     if (result.status === 'ok') return result
     if (
@@ -333,4 +429,21 @@ export async function fetchClaudePlanUsageFromCandidates(
       reason: 'No Claude OAuth token (sign in with `claude /login`)',
     }
   )
+}
+
+/**
+ * Try bare Claude OAuth tokens in order. Back-compat wrapper over
+ * {@link fetchClaudePlanUsageFromCredentials} for callers without refresh
+ * tokens (behaviour is unchanged: no token can be refreshed).
+ */
+export async function fetchClaudePlanUsageFromCandidates(
+  tokens: ReadonlyArray<string | null | undefined>,
+  options: PlanUsageFetchOptions = {},
+): Promise<ProviderPlanResult> {
+  const credentials: ClaudeCredentialInput[] = []
+  for (const raw of tokens) {
+    const token = raw?.trim()
+    if (token) credentials.push({ accessToken: token })
+  }
+  return fetchClaudePlanUsageFromCredentials(credentials, options)
 }

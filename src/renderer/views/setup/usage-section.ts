@@ -31,6 +31,15 @@ function isAbortTimeoutMessage(message: string): boolean {
   return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message)
 }
 
+/**
+ * True when a Claude "unavailable" reason is a sign-in / credential problem a
+ * fresh `claude /login` would fix — not an inherent limitation like a Console
+ * API key that simply can't report plan windows.
+ */
+function claudeReasonNeedsLogin(reason: string): boolean {
+  return /claude \/login|user:profile|rejected/i.test(reason)
+}
+
 function formatReset(resetsAt: string | null): string {
   if (!resetsAt) return 'reset unknown'
   const ms = Date.parse(resetsAt)
@@ -43,7 +52,11 @@ function formatReset(resetsAt: string | null): string {
   return `resets in ${String(days)}d`
 }
 
-function renderPlanProvider(host: HTMLElement, result: ProviderPlanResult): void {
+function renderPlanProvider(
+  host: HTMLElement,
+  result: ProviderPlanResult,
+  onClaudeSignIn?: (() => void) | null,
+): void {
   const card = document.createElement('div')
   card.className = 'usage-plan-provider'
   card.dataset['provider'] = result.provider
@@ -59,6 +72,17 @@ function renderPlanProvider(host: HTMLElement, result: ProviderPlanResult): void
     hint.className = 'usage-plan-status field-hint'
     hint.textContent = result.reason
     card.append(hint)
+    if (result.provider === 'claude' && onClaudeSignIn && claudeReasonNeedsLogin(result.reason)) {
+      const signIn = document.createElement('button')
+      signIn.type = 'button'
+      signIn.className = 'usage-plan-signin-btn'
+      signIn.textContent = 'Sign in to Claude'
+      signIn.title = 'Open a terminal and run `claude /login`'
+      signIn.addEventListener('click', () => {
+        onClaudeSignIn()
+      })
+      card.append(signIn)
+    }
     host.append(card)
     return
   }
@@ -111,6 +135,7 @@ function renderPlanSection(
   host: HTMLElement,
   snapshot: PlanUsageSnapshot | null,
   error: string | null,
+  onClaudeSignIn?: (() => void) | null,
 ): void {
   host.replaceChildren()
 
@@ -152,7 +177,7 @@ function renderPlanSection(
   const list = document.createElement('div')
   list.className = 'usage-plan-providers'
   for (const provider of snapshot.providers) {
-    renderPlanProvider(list, provider)
+    renderPlanProvider(list, provider, onClaudeSignIn)
   }
   host.append(list)
 }
@@ -269,11 +294,20 @@ function renderPeriodSummary(
 export function createUsageSection(
   api: ApiClient,
   store?: AppStore,
+  onRequestClose?: () => void,
 ): {
   root: HTMLElement
   refresh: () => Promise<void>
   detach: () => void
 } {
+  // Close the settings modal (so the shell is visible) and launch `claude /login`
+  // in a fresh Shells terminal. No-op when there's no store to route through.
+  const handleClaudeSignIn: (() => void) | null = store
+    ? (): void => {
+        onRequestClose?.()
+        store.emit('request_terminal_command', 'claude /login')
+      }
+    : null
   const root = document.createElement('div')
   root.className = 'usage-section-root'
   root.innerHTML = `
@@ -332,14 +366,14 @@ export function createUsageSection(
   })
 
   async function refreshPlan(): Promise<void> {
-    renderPlanSection(planEl, null, null)
+    renderPlanSection(planEl, null, null, handleClaudeSignIn)
     try {
       const snapshot = await api.usage.getPlanUsage()
-      renderPlanSection(planEl, snapshot, null)
+      renderPlanSection(planEl, snapshot, null, handleClaudeSignIn)
     } catch (err) {
       // Plan usage is best-effort — never block the ledger on IPC failure.
       const message = err instanceof Error ? err.message : 'Failed to load subscription plan usage.'
-      renderPlanSection(planEl, null, message)
+      renderPlanSection(planEl, null, message, handleClaudeSignIn)
     }
   }
 

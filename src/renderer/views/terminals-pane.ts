@@ -338,7 +338,7 @@ export function mountTerminalsPane(
     if (!visible) tab.panel.classList.remove('is-active')
   }
 
-  function addTab(options?: { activate?: boolean }): string {
+  function addTab(options?: { activate?: boolean; initialInput?: string }): string {
     tabCounter += 1
     const id = crypto.randomUUID()
     const label = `Terminal ${String(tabCounter)}`
@@ -379,7 +379,9 @@ export function mountTerminalsPane(
       fileLinks,
       sessionId: null,
       creating: false,
-      pendingInput: [],
+      // Seed the command so it runs as soon as the PTY spawns; `ensureSession`
+      // flushes pending input right after create.
+      pendingInput: options?.initialInput ? [options.initialInput] : [],
       termOpened: false,
       commandRan: false,
       autoNamed: false,
@@ -514,6 +516,21 @@ export function mountTerminalsPane(
 
   newBtn.addEventListener('click', () => addTab())
 
+  // Open a fresh shell and run a command in it (e.g. `claude /login` from the
+  // Usage panel). Seed the tab first so switching to terminal mode spawns the
+  // seeded session rather than an extra empty one.
+  function runCommandInNewShell(command: string): void {
+    const trimmed = command.trim()
+    if (!trimmed) return
+    const wasActive = terminalModeActive(store)
+    addTab({ activate: true, initialInput: `${trimmed}\r` })
+    if (!wasActive) {
+      store.setState({ filesPaneOpen: true, rightPanelMode: 'terminal' })
+      store.emit('files_pane_changed')
+      store.emit('right_panel_mode_changed')
+    }
+  }
+
   onTerminalModeChange()
 
   // While an agent task panel owns the viewer, the shells list drops its active
@@ -542,6 +559,7 @@ export function mountTerminalsPane(
     store.on('settings_changed', onFontSizeChange),
     store.on('threads_changed', onThreadMaybeChanged),
     store.on('workspace_changed', onThreadMaybeChanged),
+    store.on('request_terminal_command', runCommandInNewShell),
   ]
 
   const unregisterCatalog = registerShellCatalog(
