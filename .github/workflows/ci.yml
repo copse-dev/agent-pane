@@ -335,6 +335,9 @@ jobs:
           name: coverage-report
           path: coverage/lcov-report
           if-no-files-found: ignore
+          # Debug/inspection aid, not a durable record — expire quickly so it
+          # doesn't accumulate against the org's Actions storage quota.
+          retention-days: 7
       # The CommonMark normalizer-parity check now lives in the extracted
       # @copse/streaming-markdown repo's CI (copse-dev/streaming-markdown).
       # The build is validated once in the dedicated `build` job below (whose
@@ -377,6 +380,8 @@ jobs:
           name: bench-semantic
           path: bench-semantic.json
           if-no-files-found: ignore
+          # Small trend JSON; keep two weeks for regression triage, then expire.
+          retention-days: 14
       # Agent bench harness self-test (#752): the deterministic mock run drives
       # run-agent-loop headlessly end-to-end (directive tool call → workspace
       # write → grading) and the --gate ratchet compares solve rate and
@@ -388,6 +393,8 @@ jobs:
           name: bench-agent-mock
           path: bench-results/
           if-no-files-found: ignore
+          # Small trend data; keep two weeks for regression triage, then expire.
+          retention-days: 14
 
   # Real-model agent benchmark (#752): the SWE-bench Verified pinned subset
   # driven by a local model on a self-hosted runner with an LM Studio host.
@@ -418,6 +425,8 @@ jobs:
           name: bench-agent-model
           path: bench-results/
           if-no-files-found: ignore
+          # Small trend data; keep two weeks for regression triage, then expire.
+          retention-days: 14
 
   build:
     needs: precheck
@@ -624,6 +633,11 @@ jobs:
           path: changed/
           include-hidden-files: true
           if-no-files-found: error
+          # Only consumed by commit-screenshots within this same run; it never
+          # needs to outlive the run. Uploaded per shard on every PR, so the
+          # default 90-day retention made this the largest draw on the org's
+          # Actions storage quota. Expire fast, keeping a small debug window.
+          retention-days: 3
       # On failure, surface the screenshot + page source captured in afterTest so
       # the constrained-runner render/OOM flakes can be inspected. Skipped when a
       # hard runner OOM ("shutdown signal") kills the job before this step runs.
