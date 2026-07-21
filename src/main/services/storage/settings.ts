@@ -1,11 +1,20 @@
 import { safeStorage } from 'electron'
-import ElectronStore from 'electron-store'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
+import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
 
-const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
+// Cache reads in memory so electron-store does not re-read and re-parse the
+// whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
+// settings writes in this process go through this module, including encrypted
+// API-key records, so the write-through cache stays coherent.
+//
+// Known limitation (same as config storage): a separate process that shares
+// settings.json has its own persistent-store instance; this cache will not
+// observe another process's write to a key it has already read. In-process
+// writers stay coherent via write-through + the per-key write queue.
+const cached = openPersistentStore({ name: 'settings' })
 
 // Distinct write-queue namespace so settings keys can't collide with the shared
 // electron-store keys serialized elsewhere.
@@ -45,14 +54,14 @@ const PROVIDER_ENV_VARS: Record<string, string> = {
 }
 
 export function hasApiKey(provider: KeyProvider): boolean {
-  const raw = store.get(`apiKey.${provider}`) as StoredKey | undefined
+  const raw = cached.get(`apiKey.${provider}`) as StoredKey | undefined
   return !!raw && typeof raw === 'object' && typeof raw.enc === 'string' && raw.enc.length > 0
 }
 
 export function getApiKey(provider: KeyProvider): string | null {
   // electron-store JSON-serializes values, so a raw Buffer cannot round-trip.
   // We persist a base64 string instead. (Old Buffer-shaped records are ignored.)
-  const raw = store.get(`apiKey.${provider}`) as StoredKey | undefined
+  const raw = cached.get(`apiKey.${provider}`) as StoredKey | undefined
   if (!raw || typeof raw !== 'object' || !raw.enc) return null
   try {
     const buf = Buffer.from(raw.enc, 'base64')
@@ -110,13 +119,13 @@ export function setApiKey(
   }
   const bytes = available ? safeStorage.encryptString(trimmed) : Buffer.from(trimmed, 'utf8')
   const record: StoredKey = { v: 1, enc: bytes.toString('base64'), plain: !available }
-  store.set(`apiKey.${provider}`, record)
+  cached.set(`apiKey.${provider}`, record)
   return { ok: true }
 }
 
 /** Remove a stored API key and clear the corresponding session env var. */
 export function deleteApiKey(provider: KeyProvider): void {
-  store.delete(`apiKey.${provider}`)
+  cached.delete(`apiKey.${provider}`)
   const envVar = envVarFor(provider)
   if (envVar) Reflect.deleteProperty(process.env, envVar)
 }
@@ -131,7 +140,7 @@ export function deleteApiKey(provider: KeyProvider): void {
  * "How API keys are stored" section.
  */
 export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
-  const raw = store.get(`apiKey.${provider}`) as StoredKey | undefined
+  const raw = cached.get(`apiKey.${provider}`) as StoredKey | undefined
   if (!raw || typeof raw !== 'object' || typeof raw.enc !== 'string' || raw.enc.length === 0) {
     return null
   }
@@ -158,7 +167,7 @@ export function getLmStudioApiKey(): string {
 }
 
 export function getSetting<T>(key: string, fallback: T): T {
-  const raw = store.get(key)
+  const raw = cached.get(key)
   if (raw === undefined || raw === null) return fallback
   // If we have a schema for this key, validate on read so a corrupt/wrong-typed
   // persisted value degrades to the fallback instead of being trusted blindly.
@@ -185,6 +194,6 @@ export function setSetting(key: string, value: unknown): Promise<void> {
   const schema = getSettingSchema(key)
   const toStore = schema ? schema.parse(value) : value
   return runSerialized(queueKey(key), () => {
-    store.set(key, toStore)
+    cached.set(key, toStore)
   })
 }

@@ -1,8 +1,5 @@
-import ElectronStore from 'electron-store'
-import { createCachedStore } from './cached-store.ts'
+import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
-
-const store = new ElectronStore<Record<string, unknown>>()
 
 // Cache reads in memory (see cached-store.ts for why: electron-store re-parses
 // the whole multi-MB config.json on every `.get`, which turned hot-loop reads
@@ -14,15 +11,7 @@ const store = new ElectronStore<Record<string, unknown>>()
 // already last-writer-wins on the whole file, and the cache does not change
 // that — it only means this process won't observe another process's write to a
 // key it has already read. The write-queue serializes only in-process writers.
-const cached = createCachedStore({
-  get: (key) => store.get(key),
-  set: (key, value) => {
-    store.set(key, value)
-  },
-  delete: (key) => {
-    store.delete(key)
-  },
-})
+const cached = openPersistentStore()
 
 export const storageGet = (key: string): unknown => cached.get(key)
 
