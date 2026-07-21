@@ -43,7 +43,7 @@ import {
 } from '@shared/remote-agent-link.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
 import { storageGet } from './storage/storage.ts'
-import { projectStoreDir } from './storage/copse-paths.ts'
+import { projectStoreDir, workspaceRoot } from './storage/copse-paths.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
 /**

@@ -2,9 +2,22 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { projectStoreDir } from './copse-paths.ts'
+import { projectStoreDir, workspaceRoot } from './copse-paths.ts'
 
 const STORE_ROOT = join(tmpdir(), 'copse-store')
+
+describe('workspaceRoot', () => {
+  it('honors COPSE_WORKSPACE_DIR for callers that list the store root', () => {
+    const previous = process.env['COPSE_WORKSPACE_DIR']
+    process.env['COPSE_WORKSPACE_DIR'] = STORE_ROOT
+    try {
+      assert.equal(workspaceRoot(), STORE_ROOT)
+    } finally {
+      if (previous === undefined) delete process.env['COPSE_WORKSPACE_DIR']
+      else process.env['COPSE_WORKSPACE_DIR'] = previous
+    }
+  })
+})
 
 describe('projectStoreDir', () => {
   it('resolves a project beneath the configured workspace store', () => {

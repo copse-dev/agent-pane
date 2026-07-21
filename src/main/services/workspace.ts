@@ -1,6 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { readFile, readdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
 import { workspaceRoot as copseStoreRoot } from './storage/copse-paths.ts'
