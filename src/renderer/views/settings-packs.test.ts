@@ -9,7 +9,7 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from '@shared/store/store.ts'
+import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { PackSummary, PacksListResult } from '@shared/types/packs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
@@ -126,9 +126,13 @@ const disabledUserPack: PackSummary = {
   settings: [],
 }
 
-async function openPacks(initial: PacksListResult, spy: StubApiSpy): Promise<HTMLElement> {
+async function openPacks(
+  initial: PacksListResult,
+  spy: StubApiSpy,
+  store: AppStore = createStore(),
+): Promise<HTMLElement> {
   document.body.innerHTML = ''
-  mountSettingsDialog(createStore(), stubApi(initial, spy))
+  mountSettingsDialog(store, stubApi(initial, spy))
   const btn = document.querySelector<HTMLButtonElement>('.settings-nav-btn[data-section="packs"]')
   assert.ok(btn)
   btn.click()
@@ -242,6 +246,22 @@ describe('settings → packs list', () => {
     toggle.dispatchEvent(new Event('change'))
     // The change handler awaits the IPC — let microtasks drain.
     await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(spy.lastSetEnabled, { id: 'copse.demo', enabled: false })
+  })
+
+  it('toggling emits settings_changed so pack-gated chrome can wake live', async () => {
+    const store = createStore()
+    let settingsChanged = 0
+    store.on('settings_changed', () => {
+      settingsChanged += 1
+    })
+    const list = await openPacks({ packs: [demoPack] }, spy, store)
+    const toggle = list.querySelector<HTMLInputElement>('input.pack-toggle-input')
+    assert.ok(toggle)
+    toggle.checked = false
+    toggle.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(settingsChanged, 1)
     assert.deepEqual(spy.lastSetEnabled, { id: 'copse.demo', enabled: false })
   })
 

@@ -2,8 +2,9 @@
 
 Tracking: [#558](https://github.com/copse-dev/agent-pane/issues/558)
 
-Status: **experimental scaffold** — off by default behind the `longHorizonTasksEnabled`
-setting (Settings → Experimental).
+Status: **experimental scaffold** — off by default behind the first-party pack
+`copse.long-horizon-tasks` (Settings → Packs). Tracking PR:
+[#1084](https://github.com/copse-dev/agent-pane/pull/1084).
 
 ## What this is
 
@@ -18,17 +19,25 @@ This is the "within a PR" companion to the roadmap-plans feature (#556), which c
 
 ## What landed in this scaffold
 
-- **Setting** `longHorizonTasksEnabled` (experimental, default off) — schema in
-  `settings-writable.ts`, UI in the Experimental section of `settings-dialog.ts`.
-- **Store** `src/main/services/long-task-tracker.ts` — per-project JSON persistence under
-  `~/.copse/long-tasks/<workspace>/tasks.json`, zod-validated. A task has a `goal` (its
-  terminal condition), an ordered `steps` checklist, and a `taskProgress()` helper that
+- **Pack** `copse.long-horizon-tasks` (`packages/agent/src/packs/long-horizon-tasks-pack.ts`)
+  — first-party pack declaring the `track_long_task` native tool + namespaced storage. The
+  Settings → Packs toggle is the atomic master switch (same pattern as P5's
+  `copse.model-comparison`). A one-time `migrateLongHorizonTasksEnablement()` bridge in
+  `pack-service.ts` preserves any prior `longHorizonTasksEnabled=true` opt-in and otherwise
+  seeds the pack into the persisted disabled set (default OFF).
+- **Store** `src/main/services/storage/long-task-tracker.ts` — per-project JSON persistence
+  under `~/.copse/long-tasks/<workspace>/tasks.json`, zod-validated. A task has a `goal`
+  (its terminal condition), an ordered `steps` checklist, and a `taskProgress()` helper that
   reports done/total, completeness, and the next step.
 - **Tool** `track_long_task` (`src/main/tools/long-task-tool.ts`) — `create` / `check` /
-  `status` / `list`, registered only when the flag is on (`registry-bootstrap.ts`).
-- **Tests** `long-task-tracker.test.ts`.
+  `status` / `list`, registered via `syncLongHorizonTasksTools` in `registry-bootstrap.ts`
+  (boot + live `packs:setEnabled`).
+- **Tests** `long-task-tracker.test.ts`, `long-horizon-tasks-pack.test.ts` (registration +
+  atomic disable), `pack-service.test.ts` (default-OFF migration),
+  `settings-packs.e2e.ts` (pack row defaults off), and `settings-experimental.e2e.ts`
+  (retired `longHorizonTasksEnabled` fieldset gone). Pack toggles emit `settings_changed`.
 
-While the flag is off the tool is not registered and nothing reads or writes the store.
+While the pack is disabled the tool is not registered and nothing reads or writes the store.
 
 ## Relationship to existing state
 

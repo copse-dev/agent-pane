@@ -21,7 +21,7 @@ function formatTask(task: LongTask): string {
  * durable, resumable checklist for a grind-it-out task within a PR (clearing a
  * lint backlog, a deep research pass) so progress survives across turns and
  * sessions and the agent knows when it is actually done. Registered only when
- * `longHorizonTasksEnabled` is on.
+ * the `copse.long-horizon-tasks` first-party pack is enabled.
  */
 export const trackLongTaskTool = defineTool({
   name: 'track_long_task',
