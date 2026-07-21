@@ -34,10 +34,27 @@ function isAbortTimeoutMessage(message: string): boolean {
 /**
  * True when a Claude "unavailable" reason is a sign-in / credential problem a
  * fresh `claude /login` would fix — not an inherent limitation like a Console
- * API key that simply can't report plan windows.
+ * API key that simply can't report plan windows. Exported for unit tests.
  */
-function claudeReasonNeedsLogin(reason: string): boolean {
+export function claudeReasonNeedsLogin(reason: string): boolean {
   return /claude \/login|user:profile|rejected/i.test(reason)
+}
+
+/**
+ * Build the "Sign in to Claude" click handler: close the settings modal so the
+ * shell is visible, then launch `claude /login` in a fresh Shells terminal.
+ * Returns `null` without a store to route the request through. Exported so the
+ * emit + close wiring is unit-testable without standing up the whole section.
+ */
+export function createClaudeSignInHandler(
+  store: AppStore | undefined,
+  onRequestClose?: () => void,
+): (() => void) | null {
+  if (!store) return null
+  return (): void => {
+    onRequestClose?.()
+    store.emit('request_terminal_command', 'claude /login')
+  }
 }
 
 function formatReset(resetsAt: string | null): string {
@@ -52,7 +69,8 @@ function formatReset(resetsAt: string | null): string {
   return `resets in ${String(days)}d`
 }
 
-function renderPlanProvider(
+/** Exported for unit tests. */
+export function renderPlanProvider(
   host: HTMLElement,
   result: ProviderPlanResult,
   onClaudeSignIn?: (() => void) | null,
@@ -300,14 +318,7 @@ export function createUsageSection(
   refresh: () => Promise<void>
   detach: () => void
 } {
-  // Close the settings modal (so the shell is visible) and launch `claude /login`
-  // in a fresh Shells terminal. No-op when there's no store to route through.
-  const handleClaudeSignIn: (() => void) | null = store
-    ? (): void => {
-        onRequestClose?.()
-        store.emit('request_terminal_command', 'claude /login')
-      }
-    : null
+  const handleClaudeSignIn = createClaudeSignInHandler(store, onRequestClose)
   const root = document.createElement('div')
   root.className = 'usage-section-root'
   root.innerHTML = `

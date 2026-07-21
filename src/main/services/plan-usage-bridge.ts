@@ -143,8 +143,16 @@ export function persistRefreshedClaudeToken(
       if (next) writeKeychain(next)
     }
     // 'env' / unknown: nothing to persist (env is process-scoped).
-  } catch {
-    // Swallow — see doc comment.
+  } catch (err) {
+    // Non-fatal: the fresh token still served the current fetch. But log it —
+    // if the server rotated the refresh token and we failed to save it, the
+    // stored one is now stale and the next refresh will need a re-login, so
+    // this shouldn't pass unnoticed.
+    console.warn(
+      `[plan-usage] could not persist refreshed Claude token to the ${source ?? 'unknown'} store; ` +
+        'a rotated refresh token may be lost and require re-running `claude /login`:',
+      err instanceof Error ? err.message : err,
+    )
   }
 }
 
