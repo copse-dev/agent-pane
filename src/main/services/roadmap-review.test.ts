@@ -4,13 +4,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { parseReviewVerdict, reviewDetailMarkdown } from '@shared/roadmap/review.ts'
-import { completeRoadmapReview, prepareRoadmapReview, reviewRoadmapItem } from './roadmap-review.ts'
+import {
+  clearBulkRunIssueCacheForTest,
+  completeRoadmapReview,
+  gatherIssueEvidenceWithBulkCache,
+  prepareRoadmapReview,
+  reviewRoadmapItem,
+} from './roadmap-review.ts'
+import type { PrRef } from './github/backend/backend.ts'
+import { mockGitHubBackend } from './github/backend/mock-backend.ts'
 import {
   addKnowledgeNote,
   getKnowledgeNote,
   setKnowledgeRootForTest,
 } from './storage/knowledge-store.ts'
 import { getRoadmapLastReviewAt, setRoadmapReviewRootForTest } from './roadmap-review-state.ts'
+import type { GhIssueSummary } from '../../shared/types/git.ts'
 import { setWorkspaceRootForTest } from './workspace.ts'
 
 describe('parseReviewVerdict', () => {
@@ -99,5 +108,57 @@ describe('roadmap review service', () => {
     const after = getKnowledgeNote(note.id)
     assert.equal(after?.fields['reviewVerdict'], 'resolved')
     assert.equal(after.fields['reviewBulkRun'], 'run-test')
+  })
+
+  it('dedupes GitHub issue fetches for the same pinned issue within one bulk run', async () => {
+    process.env['COPSE_PANEL_MOCK_GH'] = '1'
+    process.env['COPSE_PANEL_MOCK_GH_STATUS'] = 'ready'
+    let getIssueCalls = 0
+    let searchCalls = 0
+    const origGetIssue = mockGitHubBackend.getIssue.bind(mockGitHubBackend)
+    const origSearch = mockGitHubBackend.searchWorkspaceIssues.bind(mockGitHubBackend)
+    mockGitHubBackend.getIssue = async (ref: PrRef): Promise<GhIssueSummary | null> => {
+      getIssueCalls++
+      return origGetIssue(ref)
+    }
+    mockGitHubBackend.searchWorkspaceIssues = async (
+      query: string,
+      limit: number,
+    ): Promise<GhIssueSummary[]> => {
+      searchCalls++
+      return origSearch(query, limit)
+    }
+    try {
+      clearBulkRunIssueCacheForTest()
+      const prepared = await prepareRoadmapReview()
+      const slug = 'copse-mock/demo'
+      await gatherIssueEvidenceWithBulkCache('#41', slug, prepared.runId)
+      await gatherIssueEvidenceWithBulkCache('#41', slug, prepared.runId)
+      assert.equal(getIssueCalls, 1)
+      assert.equal(searchCalls, 1)
+
+      getIssueCalls = 0
+      searchCalls = 0
+      const otherRun = await prepareRoadmapReview()
+      await gatherIssueEvidenceWithBulkCache('#41', slug, otherRun.runId)
+      assert.equal(getIssueCalls, 1)
+      assert.equal(searchCalls, 1)
+
+      // Re-prepare orphans the first runId from pending — its cache must be dropped
+      // so a later gather under that id cannot reuse stranded evidence.
+      getIssueCalls = 0
+      searchCalls = 0
+      await gatherIssueEvidenceWithBulkCache('#41', slug, prepared.runId)
+      assert.equal(getIssueCalls, 1)
+      assert.equal(searchCalls, 1)
+      assert.equal(completeRoadmapReview(prepared.runId), false)
+      assert.equal(completeRoadmapReview(otherRun.runId), true)
+    } finally {
+      mockGitHubBackend.getIssue = origGetIssue
+      mockGitHubBackend.searchWorkspaceIssues = origSearch
+      delete process.env['COPSE_PANEL_MOCK_GH']
+      delete process.env['COPSE_PANEL_MOCK_GH_STATUS']
+      clearBulkRunIssueCacheForTest()
+    }
   })
 })
