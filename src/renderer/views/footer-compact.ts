@@ -1,5 +1,5 @@
 const SHRINKING_FOOTER_ITEMS =
-  '.footer-model-host, .footer-branch-host, .footer-export, .footer-usage-group'
+  '.footer-model-host, .footer-branch-host, .footer-usage-group'
 
 function footerNaturalWidth(footer: HTMLElement): number {
   const items = footer.querySelectorAll<HTMLElement>(SHRINKING_FOOTER_ITEMS)

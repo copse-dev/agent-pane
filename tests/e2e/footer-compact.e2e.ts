@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { $, browser, expect } from '@wdio/globals'
+import { $, $$, browser, expect } from '@wdio/globals'
 import { resetUserData, seedE2eViewport, seedFooterCompactFixture } from './helpers/seed-config.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
@@ -57,7 +57,7 @@ describe('footer compact layout', () => {
     resetUserData()
   })
 
-  it('shows export and token count when the footer is wide enough', async () => {
+  it('shows the overflow menu and token count when the footer is wide enough', async () => {
     await setChatPaneWidth(720)
 
     await browser.waitUntil(
@@ -65,15 +65,21 @@ describe('footer compact layout', () => {
       { timeout: 30_000, timeoutMsg: 'expected wide footer layout' },
     )
 
-    await expect($('.footer-export')).toBeDisplayed()
-    await expect($('.footer-overflow')).not.toBeDisplayed()
+    await expect($('.footer-overflow')).toBeDisplayed()
     await expect($('.footer-usage')).toHaveText(seed.tokenLabel)
+
+    await (await $('.footer-overflow-trigger')).click()
+    await expect($('.footer-overflow-menu')).toBeDisplayed()
+    const items = await $$('.footer-overflow-item')
+    await expect(items).toBeElementsArrayOfSize(2)
+    await expect(items[0]).toHaveText('Copy thread ID')
+    await expect(items[1]).toHaveText('Export conversation (JSONL)')
 
     const footer = await $('.input-footer')
     await footer.saveScreenshot(join(SCREENSHOT_DIR, 'footer-compact-wide.png'))
   })
 
-  it('collapses export and tokens when the footer is cramped', async () => {
+  it('keeps the overflow menu and collapses tokens when the footer is cramped', async () => {
     await setChatPaneWidth(360)
 
     await browser.waitUntil(
@@ -81,7 +87,6 @@ describe('footer compact layout', () => {
       { timeout: 30_000, timeoutMsg: 'expected compact footer layout' },
     )
 
-    await expect($('.footer-export')).not.toBeDisplayed()
     await expect($('.footer-overflow')).toBeDisplayed()
     await expect($('.footer-usage')).not.toBeDisplayed()
 
@@ -96,7 +101,7 @@ describe('footer compact layout', () => {
 
     await (await $('.footer-overflow-trigger')).click()
     await expect($('.footer-overflow-menu')).toBeDisplayed()
-    await expect($('.footer-overflow-item')).toHaveText('Export')
+    await expect($$('.footer-overflow-item')).toBeElementsArrayOfSize(2)
     await footer.saveScreenshot(join(SCREENSHOT_DIR, 'footer-compact-overflow-open.png'))
   })
 })

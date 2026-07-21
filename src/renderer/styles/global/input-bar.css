@@ -745,25 +745,10 @@
   color: var(--text-muted);
   font-size: 11px;
 }
-.footer-export {
-  font-size: 11px;
-  color: var(--text-muted);
-  padding: 0 4px;
-  flex-shrink: 0;
-}
-.footer-export:hover {
-  color: var(--text-secondary);
-}
 .footer-overflow {
-  display: none;
+  display: block;
   position: relative;
   flex-shrink: 0;
-}
-.input-footer.is-compact .footer-overflow {
-  display: block;
-}
-.input-footer.is-compact .footer-export {
-  display: none;
 }
 .input-footer.is-compact .footer-usage {
   display: none;
