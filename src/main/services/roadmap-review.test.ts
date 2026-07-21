@@ -144,8 +144,15 @@ describe('roadmap review service', () => {
       assert.equal(getIssueCalls, 1)
       assert.equal(searchCalls, 1)
 
-      completeRoadmapReview(prepared.runId)
-      completeRoadmapReview(otherRun.runId)
+      // Re-prepare orphans the first runId from pending — its cache must be dropped
+      // so a later gather under that id cannot reuse stranded evidence.
+      getIssueCalls = 0
+      searchCalls = 0
+      await gatherIssueEvidenceWithBulkCache('#41', slug, prepared.runId)
+      assert.equal(getIssueCalls, 1)
+      assert.equal(searchCalls, 1)
+      assert.equal(completeRoadmapReview(prepared.runId), false)
+      assert.equal(completeRoadmapReview(otherRun.runId), true)
     } finally {
       mockGitHubBackend.getIssue = origGetIssue
       mockGitHubBackend.searchWorkspaceIssues = origSearch

@@ -150,6 +150,10 @@ function reviewPrompt(
 /** Load review scope: items to judge and commits since the last acknowledged run. */
 export async function prepareRoadmapReview(): Promise<RoadmapReviewPrepareResult> {
   const since = getRoadmapLastReviewAt()
+  // Re-prepare (e.g. double-click ◎) overwrites pendingBulkRun; drop the previous
+  // run's issue cache so complete/abort of the orphaned id cannot leave it stranded.
+  const previousPending = readRoadmapReviewCheckpoint().pendingBulkRun
+  if (previousPending) dropBulkRunIssueCache(previousPending)
   const runId = randomUUID()
   setPendingBulkRun(runId)
   const commits = await getGitLogSinceText(since, BULK_COMMIT_MAX)
