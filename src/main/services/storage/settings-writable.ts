@@ -245,6 +245,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // boolean is retired — the pack toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
+  developerMode: z.boolean(),
   // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party
   // pack's `devtools-shortcut` capability (Settings > Packs), so the former
   // `devtoolsShortcutEnabled` top-level boolean is retired.

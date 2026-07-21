@@ -54,6 +54,7 @@ import {
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
+import { DEVELOPER_MODE_SETTING, LEGACY_DEVTOOLS_SHORTCUT_SETTING } from '@shared/developer-mode.ts'
 
 export type SettingsSection =
   | 'general'
@@ -197,6 +198,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
+  { name: DEVELOPER_MODE_SETTING, kind: 'checkbox', default: false, save: true },
   // Background tasks moved to Settings > Packs (`copse.background-tasks`), which
   // also declares the `loopback-bind` sandbox relaxation (issue #1190).
   // The DevTools shortcut toggle moved to Settings > Packs (`copse.devtools-shortcut`).
@@ -217,7 +219,10 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
     if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) {
       throw new Error(`Settings dialog template is missing ${JSON.stringify(field.name)}`)
     }
-    const saved = await api.settings.get(field.name)
+    let saved = await api.settings.get(field.name)
+    if (field.name === DEVELOPER_MODE_SETTING && typeof saved !== 'boolean') {
+      saved = await api.settings.get(LEGACY_DEVTOOLS_SHORTCUT_SETTING)
+    }
     if (field.kind === 'checkbox') {
       if (!(input instanceof HTMLInputElement)) {
         throw new Error(`Settings field ${JSON.stringify(field.name)} must be an input`)
@@ -881,7 +886,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </div>
             </fieldset>
 
-            <fieldset>
+            <fieldset data-developer-only="hooks" hidden>
               <legend>Hooks</legend>
               <p class="settings-fieldset-desc">
                 Cursor hooks from <code>~/.cursor/hooks.json</code> and Claude Code hooks from
@@ -1137,6 +1142,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 spend approval). When off, run it on demand via the <code>compare_models</code> tool.
               </p>
             </fieldset>
+
+            <fieldset>
+              <legend>Developer mode</legend>
+              <label class="checkbox-label">
+                <input type="checkbox" name="developerMode" />
+                Enable developer mode
+              </label>
+              <p class="field-hint">
+                Shows Hooks in Sources and the conversation diagnostics menu. The optional
+                <code>Ctrl+Shift+I</code> shortcut is controlled separately by the
+                <code>copse.devtools-shortcut</code> pack.
+              </p>
+            </fieldset>
           </section>
 
           <div class="settings-search-results" id="settings-search-results"></div>
@@ -1303,6 +1321,24 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Async section content (ACP agents, Sources lists) loads only when its tab is
   // opened; search reveals those blocks too, so populate them once per open.
   let searchContentLoaded = false
+  const developerModeInput = qsRequired<HTMLInputElement>(
+    overlay,
+    `input[name="${DEVELOPER_MODE_SETTING}"]`,
+  )
+  const hooksEnabledInput = qsRequired<HTMLInputElement>(
+    overlay,
+    'input[name="cursorHooksEnabled"]',
+  )
+  const hooksFieldset = qsRequired(overlay, '[data-developer-only="hooks"]')
+
+  // Never hide an already-enabled security-sensitive feature: it must remain
+  // reachable so the user can turn its execution gate back off.
+  function syncDeveloperOnlySettings(): void {
+    hooksFieldset.hidden = !developerModeInput.checked && !hooksEnabledInput.checked
+  }
+
+  developerModeInput.checked = store.getState().developerMode
+  syncDeveloperOnlySettings()
 
   function showSection(id: SettingsSection): void {
     activeSection = id
@@ -1357,6 +1393,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const matches: { node: HTMLElement; rank: number }[] = []
     sections.forEach((sec) => {
       for (const block of topLevelBlocks(sec)) {
+        if (block.hidden) continue
         if (!block.textContent.toLowerCase().includes(query)) continue
         const legend = block.querySelector('legend')?.textContent.toLowerCase() ?? ''
         matches.push({ node: block, rank: legend.includes(query) ? 0 : 1 })
@@ -2381,6 +2418,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   }
 
   overlay.addEventListener('settings-open', () => {
+    developerModeInput.checked = store.getState().developerMode
+    syncDeveloperOnlySettings()
     // A fresh open always starts on a section, never in a leftover search.
     searchContentLoaded = false
     if (searchInput.value) {
@@ -2429,6 +2468,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
       await loadSimpleFields(form, api)
+      syncDeveloperOnlySettings()
       wireSafetySliders(form)
       const savedWebOrigins = storedStringArray(await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING))
       textareaControl(form, 'webAllowedOrigins').value = (
@@ -2489,6 +2529,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
   settingsForm.addEventListener('change', (e) => {
     const target = e.target
+    if (target === developerModeInput || target === hooksEnabledInput) {
+      syncDeveloperOnlySettings()
+    }
     // The executor (chat) model changed — re-grade the advisor pairing hint,
     // which now lives with the advisor pack's model field (Settings → Packs).
     if (target instanceof HTMLSelectElement && target.name === 'model') {
@@ -2528,6 +2571,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : 'auto'
       const appIconVariant = data.get('appIconVariant')
       const externalDeny = parseFloat(formDataString(data, 'safetyExternalDenyThreshold'))
+      const developerMode = data.get(DEVELOPER_MODE_SETTING) === 'on'
 
       const accentColorRaw = data.get('uiAccentColor')
       const uiAccentColor =
@@ -2600,6 +2644,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         autoPortraitRightPanel,
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get('openLinksInBuiltInBrowser') === 'on',
+        developerMode,
         settings: { ...store.getState().settings, model },
       })
       store.emit('theme_changed', theme)

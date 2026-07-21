@@ -40,15 +40,27 @@ describe('hook cards in the transcript', function () {
     const host = await $('[data-hook-cards-for="msg-assistant-hook"]')
     await expect(host).toBeExisting()
 
-    // Multi-card turns collapse into one summary group by default (worst status
-    // still visible while closed). Nested .hook-card nodes stay in the DOM.
+    // Multi-card turns always collapse into one summary group by default. The
+    // summary leads with the outcome instead of merely reporting that hooks ran.
     const group = await host.$('.hook-card-group')
     await expect(group).toBeExisting()
     await expect(group).not.toHaveAttribute('open')
     await expect(group).toHaveAttribute('data-status', 'deny')
     const summary = await group.$(':scope > .hook-card-header .hook-card-status')
+    await expect(summary).toHaveText(expect.stringMatching(/^1 blocked/))
     await expect(summary).toHaveText(expect.stringMatching(/2 ran/))
-    await expect(summary).toHaveText(expect.stringMatching(/1 blocked/))
+
+    // Once the user expands the group, allow-only/no-op hooks remain contracted
+    // while a hook that applied a deny is already open with its effect first.
+    await group.$(':scope > .hook-card-header').click()
+    await expect(group).toHaveAttribute('open')
+    const allow = await group.$('.hook-card[data-status="allow"]')
+    const deny = await group.$('.hook-card[data-status="deny"]')
+    await expect(allow).not.toHaveAttribute('open')
+    await expect(allow.$('.hook-card-status')).toHaveText('Allowed')
+    await expect(deny).toHaveAttribute('open')
+    await expect(deny.$('.hook-card-status')).toHaveText('Blocked action')
+    await expect(deny.$('.hook-card-detail')).toHaveText(expect.stringMatching(/gated action/))
 
     // The hook-originated follow-up turn is marked, not shown as a plain user msg.
     const originTurn = await $('.msg-hook-origin[data-hook-id="todo-closeout"]')
