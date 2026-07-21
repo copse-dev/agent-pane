@@ -55,11 +55,18 @@ describe('experimental settings section', () => {
     await expect(experimental.$('legend=Advisor model')).toBeDisplayed()
     assert.equal(await experimental.$('legend=Advisor strategy').isExisting(), false)
 
-    // OKF memories are likewise an opt-in experimental toggle, off by default.
-    await expect(experimental.$('legend=Memories (Open Knowledge Format)')).toBeDisplayed()
-    const memoriesToggle = await experimental.$('input[name="okfMemoriesEnabled"]')
-    await expect(memoriesToggle).toBeExisting()
-    assert.equal(await memoriesToggle.isSelected(), false)
+    // OKF memories migrated from an experimental toggle to the
+    // `copse.okf-memories` first-party pack (Settings > Packs), so the retired
+    // fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="okfMemoriesEnabled"]').isExisting(),
+      false,
+      'okfMemoriesEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(
+      await experimental.$('legend=Memories (Open Knowledge Format)').isExisting(),
+      false,
+    )
 
     // Long-horizon tasks migrated from an experimental toggle to the
     // `copse.long-horizon-tasks` first-party pack (Settings > Packs), so the

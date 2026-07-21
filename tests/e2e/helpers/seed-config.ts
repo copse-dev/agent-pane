@@ -236,6 +236,16 @@ export function seedEmptyProject(
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
+    /**
+     * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
+     * memory prompt block, and the Memories pane). The feature migrated off the
+     * retired `okfMemoriesEnabled` setting; `migrateOkfMemoriesEnablement()`
+     * treats an absent legacy value as "keep the experimental feature off" and
+     * disables the pack on first boot — so a test that needs the Memories pane
+     * visible seeds the legacy opt-in. Written to `config.json` (the unvalidated
+     * `electron-store` the migration reads via `storageGet`), not `settings.json`
+     * (whose writable schema retired the flag), mirroring `modelComparisonEnabled`.
+     */
     okfMemoriesEnabled?: boolean
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
@@ -295,6 +305,13 @@ export function seedEmptyProject(
   if (options?.roadmapPlansEnabled) {
     seedConfig.roadmapPlansEnabled = true
   }
+  // Same as modelComparisonEnabled: seed the retired `okfMemoriesEnabled` legacy
+  // opt-in into `config.json` so `migrateOkfMemoriesEnablement()` keeps the
+  // `copse.okf-memories` pack enabled instead of disabling it as a previously
+  // opt-in feature (which is what reveals the Memories pane).
+  if (options?.okfMemoriesEnabled) {
+    seedConfig.okfMemoriesEnabled = true
+  }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
@@ -329,9 +346,6 @@ export function seedEmptyProject(
   }
   if (options?.rightPanelPosition !== undefined) {
     settings.rightPanelPosition = options.rightPanelPosition
-  }
-  if (options?.okfMemoriesEnabled !== undefined) {
-    settings.okfMemoriesEnabled = options.okfMemoriesEnabled
   }
   if (options?.registeredAcpAgents !== undefined) {
     settings.registeredAcpAgents = options.registeredAcpAgents
@@ -1340,6 +1354,10 @@ export function seedPortraitRightPanelFixture(
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
     ...(options?.roadmapPlansEnabled ? { roadmapPlansEnabled: true } : {}),
+    // The Memories pane is gated by the `copse.okf-memories` pack; seed the
+    // retired legacy opt-in into `config.json` so the enablement migration keeps
+    // the pack (and its pane) enabled (mirrors `seedEmptyProject`).
+    ...(options?.okfMemoriesEnabled ? { okfMemoriesEnabled: true } : {}),
     [`threads:${projectId}`]: [
       {
         id: threadId,
@@ -1365,9 +1383,6 @@ export function seedPortraitRightPanelFixture(
     windowBounds,
     ...(options?.rightPanelPosition !== undefined
       ? { rightPanelPosition: options.rightPanelPosition }
-      : {}),
-    ...(options?.okfMemoriesEnabled !== undefined
-      ? { okfMemoriesEnabled: options.okfMemoriesEnabled }
       : {}),
   })
 }

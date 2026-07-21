@@ -87,9 +87,9 @@ function createApi(options: {
       set: async () => {},
     },
     packs: {
-      // Roadmap is gated on the roadmap-plans pack after its migration off the
-      // retired `roadmapEnabled` setting; the panel controls read `packs:list`
-      // on mount. Default OFF (empty list) keeps the Roadmap pane hidden.
+      // Memories / Roadmap are gated on first-party packs after migration off
+      // their retired settings; the panel controls read `packs:list` on mount.
+      // Default OFF (empty list) keeps those panes hidden.
       list: async () => ({ packs: [] }),
       setEnabled: async () => ({ packs: [] }),
       setSetting: async () => ({ packs: [] }),

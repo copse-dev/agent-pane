@@ -21,7 +21,8 @@ import {
   READ_TERMINAL_BLOCK,
 } from './agent-prompt.ts'
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
-import { OKF_MEMORIES_ENABLED_SETTING } from '../tools/memory-tools.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
@@ -56,7 +57,10 @@ export async function buildSystemPrompt(opts: {
     BROWSER_TOOLS_ENABLED_SETTING,
     BROWSER_TOOLS_DEFAULT_ENABLED,
   )
-  const okfMemoriesEnabled = getSetting<boolean>(OKF_MEMORIES_ENABLED_SETTING, false)
+  // Gated on the `copse.okf-memories` pack — the same enablement
+  // `syncOkfMemoryTools` reads to register the remember/recall tools, so the
+  // prompt block and the registered tools always agree.
+  const okfMemoriesEnabled = getDefaultPackRegistry().isEnabled(OKF_MEMORIES_PACK_ID)
   const piiRedactionEnabled = getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)
   const readTerminalEnabled =
     getSetting<boolean>(READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT) &&

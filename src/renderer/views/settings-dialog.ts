@@ -164,7 +164,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Packs
@@ -976,22 +975,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset>
-              <legend>Memories (Open Knowledge Format)</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="okfMemoriesEnabled" />
-                Let the agent remember and recall project knowledge
-              </label>
-              <p class="field-hint">
-                Adds <code>remember</code> and <code>recall</code> tools so the agent can persist
-                durable project knowledge — conventions, decisions, gotchas — across sessions. Notes
-                are saved per project as portable
-                <a href="https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing" target="_blank" rel="noreferrer">Open Knowledge Format</a>
-                markdown files (YAML frontmatter plus a markdown body) under
-                <code>~/.copse/memories</code>. While off, neither tool is registered.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -1719,8 +1702,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         .then(async () => {
           await refreshPacks()
           // Wake listeners that gate chrome on pack enablement (e.g. the
-          // Roadmap pane titlebar button, whose `copse.roadmap-plans` gate reads
-          // the pack list) so a toggle takes effect without an app restart —
+          // Memories / Roadmap titlebar buttons in panel-mode-controls, which
+          // read the pack list) so a toggle takes effect without an app restart —
           // mirrors the `settings_changed` emit the Save button fires. Tool-only
           // packs still emit for consistency with chrome-gating packs.
           store.emit('settings_changed')

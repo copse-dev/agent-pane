@@ -201,7 +201,6 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // section in Settings.
   mcpUiArtefactsEnabled: z.boolean(),
   ciInvestigatorEnabled: z.boolean(),
-  okfMemoriesEnabled: z.boolean(),
   modelClassifierEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
