@@ -1,12 +1,9 @@
 import { safeStorage } from 'electron'
-import ElectronStore from 'electron-store'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
-import { createCachedStore } from './cached-store.ts'
+import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
-
-const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
 
 // Cache reads in memory so electron-store does not re-read and re-parse the
 // whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
@@ -14,18 +11,10 @@ const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
 // API-key records, so the write-through cache stays coherent.
 //
 // Known limitation (same as config storage): a separate process that shares
-// settings.json has its own ElectronStore; this cache will not observe another
-// process's write to a key it has already read. In-process writers stay
-// coherent via write-through + the per-key write queue.
-const cached = createCachedStore({
-  get: (key) => store.get(key),
-  set: (key, value) => {
-    store.set(key, value)
-  },
-  delete: (key) => {
-    store.delete(key)
-  },
-})
+// settings.json has its own persistent-store instance; this cache will not
+// observe another process's write to a key it has already read. In-process
+// writers stay coherent via write-through + the per-key write queue.
+const cached = openPersistentStore({ name: 'settings' })
 
 // Distinct write-queue namespace so settings keys can't collide with the shared
 // electron-store keys serialized elsewhere.
