@@ -275,8 +275,8 @@ async function spawnInterpretResolve(
  * detached — decision 3); D1 adds `subagentStart` (blocking spawn gate, matcher
  * on subagent type) and `subagentStop` (detached completion, `followup_message`
  * routed to the queue channel); D2 adds `afterToolUse` (post-tool observation,
- * dispatched detached — the Cursor `afterShellExecution` / `afterMCPExecution`
- * flavors with a capped output snapshot). F2 adds the four Copse-native events —
+ * dispatched detached — Cursor's dedicated and generic post-tool flavors with
+ * a capped output snapshot). F2 adds the four Copse-native events —
  * `beforeDiffApply` (blocking diff-apply gate), `afterDiffApply` /
  * `permissionDecision` / `postTurnReview` (detached observations). Foreign
  * adapters (Cursor / Claude) declare no marshaller for those, so the runner
@@ -409,7 +409,7 @@ export function createCommandHookRunner(opts?: {
           hook,
           adapter,
           marshal(hook, payload, session),
-          (spawn) => interpret(spawn, payload),
+          (spawn) => interpret(spawn, payload, hook),
           context,
           recordingSnapshot,
         )

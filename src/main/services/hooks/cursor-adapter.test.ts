@@ -110,6 +110,8 @@ describe('cursor-adapter', () => {
           beforeSubmitPrompt: [{ command: './submit.sh' }],
           afterFileEdit: [{ command: './fmt.sh' }],
           stop: [{ command: './notify.sh' }],
+          postToolUse: [{ command: './after-success.sh' }],
+          postToolUseFailure: [{ command: './after-failure.sh' }],
         },
       })
 
@@ -124,6 +126,8 @@ describe('cursor-adapter', () => {
       assert.equal(hooks.find((h) => h.event === 'beforeShellExecution')?.supported, true)
       assert.equal(hooks.find((h) => h.event === 'beforeSubmitPrompt')?.supported, true)
       assert.equal(hooks.find((h) => h.event === 'afterFileEdit')?.supported, true)
+      assert.equal(hooks.find((h) => h.event === 'postToolUse')?.supported, true)
+      assert.equal(hooks.find((h) => h.event === 'postToolUseFailure')?.supported, true)
     })
 
     it('warns on malformed entries without dropping valid ones', async () => {

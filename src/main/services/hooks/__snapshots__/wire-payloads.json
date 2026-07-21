@@ -181,6 +181,64 @@
       "result_json": "{\"result\":\"sunny\"}",
       "duration": 108
     },
+    "afterToolUse/postToolUse": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "postToolUse",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "tool_name": "Read",
+      "tool_input": {
+        "path": "/fixture/workspace/README.md"
+      },
+      "tool_use_id": "call-read-1",
+      "cwd": "/fixture/workspace",
+      "duration": 15,
+      "tool_output": "\"README contents\\n\""
+    },
+    "afterToolUse/postToolUseFailure": {
+      "conversation_id": "conv-fixture-1",
+      "generation_id": "gen-fixture-1",
+      "hook_event_name": "postToolUseFailure",
+      "workspace_roots": [
+        "/fixture/workspace"
+      ],
+      "model": "claude-sonnet-4",
+      "model_id": "anthropic/claude-sonnet-4",
+      "model_params": [
+        {
+          "id": "context",
+          "value": "1m"
+        },
+        {
+          "id": "thinking",
+          "value": "high"
+        }
+      ],
+      "tool_name": "Shell",
+      "tool_input": {
+        "command": "exit 1"
+      },
+      "tool_use_id": "call-shell-failed-1",
+      "cwd": "/fixture/workspace",
+      "duration": 21,
+      "error_message": "Error: command failed",
+      "failure_type": "error",
+      "is_interrupt": false
+    },
     "subagentStart": {
       "conversation_id": "conv-fixture-1",
       "generation_id": "gen-fixture-1",

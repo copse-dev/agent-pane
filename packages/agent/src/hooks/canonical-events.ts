@@ -152,8 +152,9 @@ export interface StopPayload {
 
 /**
  * Payload for `afterToolUse` (D2). The generic post-tool observation; the
- * Cursor `afterShellExecution` / `afterMCPExecution` variants are payload
- * *flavors* of this one canonical event (matching how `toolGate` unifies
+ * Cursor's dedicated `afterShellExecution` / `afterMCPExecution` and generic
+ * `postToolUse` / `postToolUseFailure` variants are payload *flavors* of this
+ * one canonical event (matching how `toolGate` unifies
  * `beforeShell`/`beforeMCP`/`beforeReadFile`), not separate event names. Async,
  * observation-only (decision 3): a hook here can never gate control flow.
  */

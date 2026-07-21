@@ -117,6 +117,16 @@ describe('dry-run — dryRunPlanFor', () => {
       canonicalEvent: 'afterToolUse',
       toolName: 'run_shell',
     })
+    assert.deepEqual(dryRunPlanFor('cursor', 'postToolUse'), {
+      canonicalEvent: 'afterToolUse',
+      toolName: 'run_shell',
+      isError: false,
+    })
+    assert.deepEqual(dryRunPlanFor('cursor', 'postToolUseFailure'), {
+      canonicalEvent: 'afterToolUse',
+      toolName: 'run_shell',
+      isError: true,
+    })
   })
 
   it('maps Cursor 1:1 events and rejects unknown ones', () => {
