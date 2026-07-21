@@ -166,7 +166,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'ciInvestigatorEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'okfMemoriesEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'advisorStrategyEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
@@ -1008,27 +1007,19 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </fieldset>
 
             <fieldset id="advisor-strategy-fieldset">
-              <legend>Advisor strategy</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="advisorStrategyEnabled" />
-                Let the agent consult a larger advisor model mid-task
-              </label>
-              <p class="field-hint">
-                Adds an <code>advisor</code> tool that forwards your full conversation
-                transcript to a larger advisor model for strategic guidance, so the everyday loop can
-                run on a cheaper or on-device model while frontier intelligence is pulled in at the
-                moments that matter (planning, getting unstuck, final review). Runs client-side, so
-                any executor/advisor pairing works — ACP agents can sit on either side (as the
-                advisor, or as an executor consulting it through the native-tool bridge). While
-                off, the tool is not registered.
-              </p>
+              <legend>Advisor model</legend>
               <label class="field-label" for="advisorModel">Advisor model</label>
               <select id="advisorModel" name="advisorModel">
                 <option value="">(loading…)</option>
               </select>
               <p class="field-hint">
-                Model used for advisor consultations. Any configured provider works; defaults to
-                <code>claude-opus-4-8</code>.
+                Model used for advisor consultations, and for the advisor/executor pairing shown
+                below. Any configured provider works; defaults to <code>claude-opus-4-8</code>. The
+                advisor strategy itself — the <code>advisor</code> tool that forwards your full
+                conversation transcript to this model for strategic guidance — is now the
+                <code>copse.advisor-strategy</code> pack in Settings → Packs; while that pack is off,
+                the tool is not registered, but this model choice still applies wherever the advisor
+                model is used.
               </p>
               <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>
             </fieldset>

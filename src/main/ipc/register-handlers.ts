@@ -99,6 +99,7 @@ import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/c
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
   registerSkillTools,
+  syncAdvisorStrategyTools,
   syncLongHorizonTasksTools,
   syncModelComparisonTools,
   syncOkfMemoryTools,
@@ -109,6 +110,7 @@ import {
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
+import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import {
@@ -1071,6 +1073,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // Same for the `copse.roadmap-plans` pack's `roadmap_plan` tool.
     if (id === ROADMAP_PLANS_PACK_ID) {
       syncRoadmapPlanTools(registry)
+    }
+    // Same for the `copse.advisor-strategy` pack's `advisor` tool.
+    if (id === ADVISOR_STRATEGY_PACK_ID) {
+      syncAdvisorStrategyTools(registry)
     }
     return { packs: getPackService().list() }
   })
