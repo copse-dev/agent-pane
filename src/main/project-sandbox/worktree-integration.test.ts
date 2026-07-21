@@ -136,5 +136,40 @@ describe('linked-worktree sandbox integration', () => {
     )
     assert.notEqual(readSibling.code, 0)
     assert.equal(readSibling.stdout, '')
+
+    // Bug fix: the sandbox must also deny reads of the shared primary
+    // checkout. Before the fix, `denyRead` only listed `[homedir(), ...siblings]`
+    // and the primary tree — living under `/tmp` in this test — was
+    // ASRT-default-allowed, so a worktree agent could read the whole main
+    // project through this exact path.
+    await writeFile(join(repo, 'primary-only.txt'), 'primary secret\n')
+    const readPrimary = await runSandboxed(
+      process.execPath,
+      [
+        '-e',
+        'process.stdout.write(require("node:fs").readFileSync(process.argv[1], "utf8"))',
+        join(repo, 'primary-only.txt'),
+      ],
+      nested,
+    )
+    assert.notEqual(readPrimary.code, 0)
+    assert.equal(readPrimary.stdout, '')
+
+    // Sibling packages under the same worktree checkout must also be denied
+    // when the execution root is nested (packages/app), while the agent's
+    // own execution root remains readable via the more-specific allow.
+    await mkdir(join(worktree, 'packages', 'other'), { recursive: true })
+    await writeFile(join(worktree, 'packages', 'other', 'peer.txt'), 'sibling pkg\n')
+    const readSiblingPkg = await runSandboxed(
+      process.execPath,
+      [
+        '-e',
+        'process.stdout.write(require("node:fs").readFileSync(process.argv[1], "utf8"))',
+        join(worktree, 'packages', 'other', 'peer.txt'),
+      ],
+      nested,
+    )
+    assert.notEqual(readSiblingPkg.code, 0)
+    assert.equal(readSiblingPkg.stdout, '')
   })
 })

@@ -254,6 +254,22 @@ describe('workspaceSandboxOverlay', () => {
       assert.ok(denyRead.includes(`${sibling}/**`))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'config')))
       assert.ok(denyWrite.includes(join(registration.commonGitDir, 'hooks/**')))
+      // Bug fix: the shared primary checkout must also be denied for reads —
+      // ASRT default-allows all reads and the base home-deny only covers
+      // layouts where the primary tree lives under $HOME. `tmpRoot` is a
+      // realpath'd tmpdir, so it may sit outside $HOME, and without this
+      // deny a sandboxed worktree agent could read `repo/packages/app/...`.
+      assert.equal(registration.primaryCheckoutRoot, repo)
+      assert.ok(denyRead.includes(repo))
+      assert.ok(denyRead.includes(`${repo}/**`))
+      // Nested execution root also gets the enclosing worktree's remaining
+      // children denied so a sibling package under the same checkout can no
+      // longer be read; the exact checkout path stays readable via the
+      // discovery-read ancestors and the executionRoot allow keeps `packages/app`.
+      assert.ok(denyRead.includes(`${worktree}/**`))
+      assert.ok(!denyRead.includes(worktree))
+      assert.ok(allowRead.includes(executionRoot))
+      assert.ok(allowRead.includes(`${executionRoot}/**`))
       await assert.rejects(
         registerInternalWorkspaceRoot(worktree, sibling),
         /outside its linked Git worktree/,
@@ -264,6 +280,54 @@ describe('workspaceSandboxOverlay', () => {
         assertAllowedWorkspaceRoot(executionRoot),
         /not an allowed project folder/,
       )
+    } finally {
+      clearAllowedWorkspaceRootsForTest()
+      rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('denies the shared primary checkout without walling off a non-nested worktree root', async () => {
+    // Non-nested variant of the linked-worktree test: executionRoot ===
+    // checkoutRoot === a linked worktree path. The primary checkout must
+    // still be denied (that is the bug this test pins), but the worktree
+    // path itself must stay readable — no `${checkoutRoot}/**` deny in this
+    // shape, or the agent could no longer read its own execution root.
+    const tmpRoot = realpathSync.native(mkdtempSync(join(tmpdir(), 'copse-sandbox-flat-wt-')))
+    const repo = join(tmpRoot, 'repo')
+    const worktree = join(tmpRoot, 'thread')
+    const gitEnv = {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'Copse Test',
+      GIT_AUTHOR_EMAIL: 'copse@example.invalid',
+      GIT_COMMITTER_NAME: 'Copse Test',
+      GIT_COMMITTER_EMAIL: 'copse@example.invalid',
+    }
+    const git = (cwd: string, args: string[]): void => {
+      execFileSync('git', args, { cwd, stdio: 'pipe', env: gitEnv })
+    }
+    try {
+      mkdirSync(repo)
+      git(repo, ['init', '-q'])
+      git(repo, ['commit', '--allow-empty', '-m', 'initial'])
+      git(repo, ['worktree', 'add', '-q', '-b', 'flat', worktree])
+
+      const registration = await registerInternalWorkspaceRoot(worktree)
+      const overlay = workspaceSandboxOverlay(worktree)
+      const allowRead = overlay.filesystem?.allowRead ?? []
+      const denyRead = overlay.filesystem?.denyRead ?? []
+
+      assert.equal(registration.primaryCheckoutRoot, repo)
+      assert.equal(registration.root, worktree)
+      assert.equal(registration.checkoutRoot, worktree)
+      // Shared primary tree is denied even outside $HOME…
+      assert.ok(denyRead.includes(repo))
+      assert.ok(denyRead.includes(`${repo}/**`))
+      // …but the worktree the agent actually runs in stays fully readable —
+      // the non-nested branch does not add `${checkoutRoot}/**` to denyRead.
+      assert.ok(!denyRead.includes(worktree))
+      assert.ok(!denyRead.includes(`${worktree}/**`))
+      assert.ok(allowRead.includes(worktree))
+      assert.ok(allowRead.includes(`${worktree}/**`))
     } finally {
       clearAllowedWorkspaceRootsForTest()
       rmSync(tmpRoot, { recursive: true, force: true })
