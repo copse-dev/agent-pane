@@ -43,12 +43,15 @@ human approval** before it can reach the host or the network, and should leave a
 
 ## Trust boundaries
 
-| Boundary                  | Trusted side                           | Untrusted side                                    |
-| ------------------------- | -------------------------------------- | ------------------------------------------------- |
-| Workspace vs. host        | The host and the user's own config     | The opened project's contents                     |
-| User dir vs. workspace    | `<userData>/tools/`, global MCP config | Project-supplied `.mcp.json` / `.cursor/mcp.json` |
-| Main process vs. renderer | Electron main, `contextBridge` API     | Rendered web/markdown/browser content             |
-| Approved vs. auto-run     | Commands the user OK'd                 | Agent-proposed shell commands and writes          |
+| Boundary                   | Trusted side                           | Untrusted side                                          |
+| -------------------------- | -------------------------------------- | ------------------------------------------------------- |
+| Workspace vs. host         | The host and the user's own config     | The opened project's contents                           |
+| User dir vs. workspace     | `<userData>/tools/`, global MCP config | Project-supplied `.mcp.json` / `.cursor/mcp.json`       |
+| Main process vs. renderer  | Electron main, `contextBridge` API     | Rendered web/markdown/browser content                   |
+| Approved vs. auto-run      | Commands the user OK'd                 | Agent-proposed shell commands and writes                |
+| Local control vs. SSH host | Local UI, approvals, thread store      | The remote account, filesystem, processes, network      |
+| Copse vs. managed agent    | Local handoff and local record         | Provider-managed runtime and retained remote state      |
+| Session vs. runtime        | Durable thread and execution metadata  | Replaceable process, container, VM, or provider session |
 
 The existing design already encodes several of these: custom tools load **only**
 from the user-controlled `<userData>/tools/` directory (never the workspace),
@@ -58,8 +61,10 @@ project-defined MCP servers are gated behind workspace trust, the
 ## Threat scenarios
 
 1. **Indirect prompt injection.** Untrusted repo/tool/web content instructs the
-   agent to exfiltrate secrets or run a destructive command. _Backstop:_ writes
-   and shell commands wait for approval; outbound network actions are visible.
+   agent to exfiltrate secrets or run a destructive command. _Backstop:_ file
+   mutations pass through workspace guards, the diff/recoverability path, and hooks;
+   risky or external shell actions require approval; contained auto-run work has no
+   network.
 2. **Write-then-run.** The agent writes a benign-looking script, then proposes
    running it via an interpreter (`node x.js`, `bash x.sh`). The approval prompt
    shows only the launcher, not the payload. _This is a known gap — see below._
@@ -67,11 +72,30 @@ project-defined MCP servers are gated behind workspace trust, the
    config hoping to auto-execute. _Backstop:_ project MCP config is trust-gated;
    full-privilege custom tools never load from the workspace.
 4. **Secret egress.** The agent reads a key from the environment or settings and
-   sends it outbound. _Backstop:_ secrets are scrubbed from child-process
-   environments; env-var keys are never written to `settings.json`.
+   sends it outbound. _Backstop:_ model-provider secrets are scrubbed from ordinary
+   child-process environments and env-var keys are never written to `settings.json`.
+   Tool credentials intentionally passed to a process remain a separate exposure.
 5. **Swapped/hostile model.** The configured provider returns actions aimed at
    harming the host. _Backstop:_ the approval boundary is provider-agnostic — the
    same gates apply no matter which model produced the action.
+6. **Approval cliff.** A task genuinely needs network or a host tool, the user
+   approves it, and the command gains full host authority beyond the capability the
+   user intended. _Backstop today:_ prompts explain that the command will run outside
+   the sandbox; the target design grants narrow capabilities without dropping
+   unrelated containment.
+7. **Remote-host compromise.** An SSH workspace or provisioned host reads or alters
+   workspace data, command output, or injected credentials. _Backstop:_ the LLM loop,
+   approval UI, and thread store remain local; remote credentials and data must be
+   minimized. A user-supplied SSH host is still a user-selected trust boundary, not a
+   Copse sandbox.
+8. **Managed-runtime overclaim.** A provider-managed agent is described as having the
+   same guarantees as local containment even though Copse cannot enforce or inspect
+   its kernel, egress, secret injection, retention, or teardown. _Backstop:_ record the
+   handoff, surface provider ownership, and never infer local guarantees.
+9. **Stale or orphaned runtime.** Copse, an SSH connection, or a cloud control request
+   fails during create, checkpoint, or teardown, leaving work lost or a billable
+   runtime alive. _Backstop target:_ persisted desired/observed state, idempotent
+   reconciliation, TTL/idle reap, and complete-only checkpoints.
 
 ## Design principles
 
@@ -89,11 +113,34 @@ project-defined MCP servers are gated behind workspace trust, the
 4. **Observability.** The user should be able to answer, during and after a run,
    _what did the agent actually do?_ Actions that touch the host, the workspace,
    or the network should leave an inspectable trail.
+5. **Approval and containment are distinct.** Approval records human intent; it does
+   not make an uncontained process safe. Preserve filesystem, process, network, and
+   secret controls independently wherever the runtime can enforce them.
+6. **State outlives compute.** Durable conversation and checkpoint state belongs to
+   the logical thread. Processes, containers, VMs, and provider sessions are
+   replaceable runtimes with explicit capabilities and lifecycle.
+
+The target runtime, egress, credential, lifecycle, and checkpoint architecture is in
+[`plans/execution-runtime-security.md`](plans/execution-runtime-security.md).
+
+## Execution surfaces and guarantees
+
+| Surface                                  | Current guarantee                                                                                   | Important limitation                                                                                                                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local shell/background work on macOS     | Workspace-scoped ASRT filesystem policy and deny-all network for contained auto-run work            | Approved external work may run with full host authority                                                                                                     |
+| Local shell/background work without ASRT | Conservative approval; the classifier cannot authorize execution                                    | An approved command runs with the user's authority                                                                                                          |
+| Local ACP agent                          | macOS workspace profile with configured agent destinations; native tools re-enter Copse's gate      | Network allow-list implementation is process-global; enforcement is absent off macOS                                                                        |
+| SSH workspace                            | Local approval policy and thread ownership; remote filesystem/process routing over SSH              | The remote account and host enforce filesystem, process, and network security                                                                               |
+| Managed remote agent                     | Local handoff, PII-redaction option, durable provider-session link, and local transcript projection | Runtime isolation, network, credentials, retention, and teardown are provider-owned; the current Anthropic environment request uses unrestricted networking |
+| Remote e2e                               | Fresh one-shot container per run, explicit snapshot transfer, bounded dev-host TTL                  | Developer/CI tooling, not a product agent runtime or multi-tenant security claim                                                                            |
+| Copse-provisioned cloud workspace        | Proposed only                                                                                       | Must satisfy the gates in the execution-runtime-security and cloud-workspace plans before release                                                           |
 
 ## Current controls
 
-- **Approval gate.** Writes and shell commands wait for explicit approval; custom
-  tools always prompt before running.
+- **Approval and mutation gates.** Risky/external shell commands ask for explicit
+  approval; custom tools prompt or use their documented remembered-grant path. File
+  mutations flow through workspace guards, the diff queue, hooks, and recoverability
+  checks.
 - **OS sandbox (macOS).** Sandbox-contained commands auto-run inside a seatbelt
   profile; external commands prompt and run outside only when approved.
 - **Global network-scope guard.** When a sandboxed ACP agent or a loopback
@@ -109,15 +156,15 @@ project-defined MCP servers are gated behind workspace trust, the
 - **Trust gating.** Project-supplied MCP config is gated behind workspace trust;
   full-privilege custom tools load only from `<userData>/tools/`.
 - **Secret handling.** Provider keys stored via `safeStorage` where a keyring is
-  available; secrets scrubbed from spawned child-process environments; env-var
-  keys never persisted to disk.
+  available; model-provider secrets scrubbed from ordinary spawned child-process
+  environments; env-var keys never persisted to disk. Explicit tool/server/agent
+  configuration can still pass selected credentials by design.
 - **Renderer hardening.** Narrow `contextBridge` API, main-frame IPC gating,
   strict DOMPurify on rendered content.
-- **Persisted thread history + export.** Every thread is autosaved to the
-  main-process electron-store (a JSON file under the `copse-panel` userData dir),
-  with each message's tool calls — args _and_ results — retained inline. Any
-  thread can be exported to JSONL (`downloadThreadJsonl`), giving an inspectable,
-  greppable record of what the agent did across a run.
+- **Filesystem-native thread history + export.** Every thread lives under
+  `~/.copse/workspace/<projectId>/<threadId>/` (or `COPSE_WORKSPACE_DIR`) with
+  `meta.json`, an event spine, readable message files, blobs, and nested subagents.
+  Tool arguments/results and hook records remain inspectable and exportable.
 
 ## Known gaps
 
@@ -129,21 +176,32 @@ enforced, ordered by how much they widen the blast radius:
   unless the user has explicitly allow-listed its binary as trusted; the optional
   local classifier can only make strict-mode blocks, never authorize host
   execution. Approved commands run with the user's full privilege.
-- **Auto-run classifier is bypassable.** The auto-run decision is made by pattern
-  matching over the raw command string, which is evadable (quote-splitting,
-  interpreter-run of agent-written files, `git` transport tricks). It should fail
-  toward prompting, and treat "run a file the agent just wrote" as approval-worthy.
+- **Approved external commands lose containment.** The contained macOS profile denies
+  network and out-of-workspace access, but an approved external command or retry runs
+  fully outside that profile. The intended fix is scoped egress/operation grants,
+  retaining unrelated filesystem and process controls.
+- **Network mediation is not per execution.** ASRT's allow-list is process-global.
+  Copse forces overlapping commands to prompt while a scope is widened, preventing
+  silent inheritance, but cannot attribute the allow-list itself to one child.
+- **Tool credentials can reach child processes.** Model-provider keys are scrubbed,
+  while credentials such as GitHub, package-registry, and cloud tokens may remain for
+  tools that need them. The target is brokered use without exposing the raw value to
+  the workload.
+- **Remote guarantees are heterogeneous.** The local seatbelt does not protect an SSH
+  host. Managed-agent isolation is provider-owned, and the current Anthropic managed
+  environment is requested with unrestricted networking. Copse needs capability
+  reporting and narrower requested policies where provider APIs support them.
+- **Write-then-run context remains incomplete.** An interpreter invocation can execute
+  a file the agent just wrote, while the approval prompt primarily describes the
+  launcher. The command analyzer is token-aware and conservative, but provenance-aware
+  prompts and runtime enforcement would give the user a better decision surface.
 - **The action record is a transcript, not an audit log.** Tool calls (args +
-  results) are persisted and exportable, which covers most of "what did the agent
-  do?". But the record has three audit-grade weaknesses: (1) it's plaintext JSON
-  in the userData dir — the same trust zone as the app — so it is neither
-  append-only nor tamper-evident, and a host compromise could edit or delete it;
-  (2) it captures the tool I/O the agent reported through the registry, not an
-  independent OS-level record of everything a spawned shell process did once
-  approved; (3) export is a manual, per-thread action rather than a continuous
-  stream.
+  results) and hook runs are persisted and exportable, which covers much of "what
+  did the agent do?". But the record is not tamper-evident, does not independently
+  observe everything an approved process does, and does not yet canonically record
+  every permission, egress, credential, lifecycle, checkpoint, and teardown event.
 
-Closing the Linux/Windows isolation gap is the single highest-leverage change.
-Hardening the existing thread record into a tamper-evident, append-only audit log
-is the natural follow-up — the data is already captured; what's missing are the
-audit-grade properties.
+Closing the approval-to-full-host cliff and Linux/Windows isolation gap are the two
+highest-leverage changes. Per-execution network and credential mediation is the shared
+foundation for local and provisioned-cloud runtimes. Canonical runtime events and
+eventual tamper evidence then make those boundaries inspectable after a run.

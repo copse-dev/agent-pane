@@ -2,6 +2,12 @@
 
 Status: architecture review and implementation proposal, 2026-07-19.
 
+Implementation ownership for the cross-target sandbox, network, credential, lifecycle,
+checkpoint, and audit work now lives in
+[`execution-runtime-security.md`](execution-runtime-security.md). This document remains
+the comparative evidence and broader runtime-spine proposal; where sequencing overlaps,
+the Copse-native execution-runtime plan is authoritative.
+
 This document compares Copse with the public OpenAI Codex repositories and turns the
 comparison into a set of implementation decisions. It is deliberately not a feature
 scorecard. Copse is an integrated, multi-provider Electron product; Codex OSS is a
@@ -307,6 +313,11 @@ Persist declarative permission profiles and report runner capabilities. Add Linu
 containment using a maintained primitive such as bubblewrap or an equivalent container
 boundary. Design a supported Windows boundary before claiming sandbox parity. Separate
 provider credentials from child processes and remote execution.
+
+The detailed local/SSH/cloud capability contract, brokered-egress design, secret
+mediation, lifecycle state machine, and acceptance gates are maintained in
+[`execution-runtime-security.md`](execution-runtime-security.md); P4 should be delivered
+through that plan rather than a parallel implementation.
 
 Exit gate: platform-matrix tests prove deny rules and writable-root constraints at the
 OS boundary, and the UI accurately identifies reduced-capability environments.
