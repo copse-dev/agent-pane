@@ -22,8 +22,6 @@ import {
   setBundledCursorSkillsRootForTest,
   resetBundledCursorSkillsRootForTest,
 } from './skills/bundled-cursor-skills.ts'
-import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 
 describe('registerSkillTools', () => {
