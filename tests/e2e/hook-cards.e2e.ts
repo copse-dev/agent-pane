@@ -40,6 +40,16 @@ describe('hook cards in the transcript', function () {
     const host = await $('[data-hook-cards-for="msg-assistant-hook"]')
     await expect(host).toBeExisting()
 
+    // Multi-card turns collapse into one summary group by default (worst status
+    // still visible while closed). Nested .hook-card nodes stay in the DOM.
+    const group = await host.$('.hook-card-group')
+    await expect(group).toBeExisting()
+    await expect(group).not.toHaveAttribute('open')
+    await expect(group).toHaveAttribute('data-status', 'deny')
+    const summary = await group.$(':scope > .hook-card-header .hook-card-status')
+    await expect(summary).toHaveText(expect.stringMatching(/2 ran/))
+    await expect(summary).toHaveText(expect.stringMatching(/1 blocked/))
+
     // The hook-originated follow-up turn is marked, not shown as a plain user msg.
     const originTurn = await $('.msg-hook-origin[data-hook-id="todo-closeout"]')
     await expect(originTurn).toBeExisting()

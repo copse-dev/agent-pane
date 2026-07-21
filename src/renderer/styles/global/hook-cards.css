@@ -19,7 +19,8 @@
   margin-top: calc(-1 * var(--spacing-sm));
 }
 
-.hook-card {
+.hook-card,
+.hook-card-group {
   align-self: flex-end;
   max-width: min(80%, 460px);
   background: var(--accent-soft);
@@ -28,6 +29,28 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: var(--font-size-sm);
   box-shadow: var(--shadow-sm);
+}
+
+/* Collapsed group: a turn's hook cards fold into a single summary row
+   (`Hooks · N ran`) that expands on click. Machine-side provenance stays quiet
+   by default; the summary still carries the worst status so a deny/halt/error
+   is never buried. */
+.hook-card-group-body {
+  margin-top: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.hook-card-group:not([open]) .hook-card-group-body {
+  display: none;
+}
+/* Inner cards inside an expanded group are flat rows, not cards-in-a-card: the
+   group already provides the blue chrome, so drop the nested fill/shadow and let
+   them fill the group's width. */
+.hook-card-group-body .hook-card {
+  max-width: none;
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  box-shadow: none;
 }
 
 .hook-card-header {
@@ -72,24 +95,36 @@
 /* Status tints: a blocking verdict (deny / sandbox-block / error / halt) reads
    as error; an ask reads as warning; allow/ran stay success-green. The card
    keeps its blue family fill — only the status glyph + a hairline shift. */
-.hook-card[data-status='allow'] .hook-status-icon,
-.hook-card[data-status='ok'] .hook-status-icon {
+.hook-card[data-status='allow'] > .hook-card-header > .hook-status-icon,
+.hook-card[data-status='ok'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='allow'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='ok'] > .hook-card-header > .hook-status-icon {
   color: var(--success);
 }
-.hook-card[data-status='ask'] .hook-status-icon,
-.hook-card[data-status='halt-suppressed'] .hook-status-icon {
+.hook-card[data-status='ask'] > .hook-card-header > .hook-status-icon,
+.hook-card[data-status='halt-suppressed'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='ask'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='halt-suppressed'] > .hook-card-header > .hook-status-icon {
   color: var(--warning);
 }
-.hook-card[data-status='deny'] .hook-status-icon,
-.hook-card[data-status='blocked'] .hook-status-icon,
-.hook-card[data-status='error'] .hook-status-icon,
-.hook-card[data-status='halted'] .hook-status-icon {
+.hook-card[data-status='deny'] > .hook-card-header > .hook-status-icon,
+.hook-card[data-status='blocked'] > .hook-card-header > .hook-status-icon,
+.hook-card[data-status='error'] > .hook-card-header > .hook-status-icon,
+.hook-card[data-status='halted'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='deny'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='blocked'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='error'] > .hook-card-header > .hook-status-icon,
+.hook-card-group[data-status='halted'] > .hook-card-header > .hook-status-icon {
   color: var(--error);
 }
 .hook-card[data-status='deny'],
 .hook-card[data-status='blocked'],
 .hook-card[data-status='error'],
-.hook-card[data-status='halted'] {
+.hook-card[data-status='halted'],
+.hook-card-group[data-status='deny'],
+.hook-card-group[data-status='blocked'],
+.hook-card-group[data-status='error'],
+.hook-card-group[data-status='halted'] {
   border-color: color-mix(in srgb, var(--error) 45%, var(--border));
 }
 

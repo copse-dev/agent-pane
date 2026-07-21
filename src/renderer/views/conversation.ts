@@ -13,6 +13,7 @@ import {
   hookEventLabel,
   isHookCardBlocking,
   type HookCard,
+  type HookCardStatus,
 } from '@shared/hooks/hook-card.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById, getActiveThread, setQueuePaused } from '@shared/store/thread-helpers.ts'
@@ -491,9 +492,9 @@ function createMessageImages(images: string[]): HTMLElement {
 // records, or delivered live via the `hook_run` chunk), so history renders them
 // without any live hook registration (decision 17).
 
-function hookCardStatusIcon(card: HookCard): SVGSVGElement {
-  if (card.status === 'ask') return warningIcon('ui-icon ui-icon-sm')
-  if (isHookCardBlocking(card.status)) return closeIcon('ui-icon ui-icon-sm')
+function hookCardStatusIcon(status: HookCardStatus): SVGSVGElement {
+  if (status === 'ask') return warningIcon('ui-icon ui-icon-sm')
+  if (isHookCardBlocking(status)) return closeIcon('ui-icon ui-icon-sm')
   return checkIcon('ui-icon ui-icon-sm')
 }
 
@@ -534,7 +535,11 @@ function createHookCard(card: HookCard): HTMLElement {
     zapIcon('ui-icon ui-icon-sm hook-card-icon'),
     el('span', { class: 'hook-name' }, getHookCardTitle(card)),
     el('span', { class: 'hook-card-status' }, getHookCardStatusLabel(card)),
-    el('span', { class: 'hook-status-icon', 'aria-label': card.status }, hookCardStatusIcon(card)),
+    el(
+      'span',
+      { class: 'hook-status-icon', 'aria-label': card.status },
+      hookCardStatusIcon(card.status),
+    ),
   )
   const detail = el('div', { class: 'hook-card-detail' })
   for (const line of hookCardDetailLines(card)) {
@@ -567,13 +572,60 @@ function buildHookOriginMarker(
   return marker
 }
 
-/** Right-aligned host holding a turn's hook cards, in fire order (decision 10). */
+/**
+ * The most severe status across a turn's hook runs, so the collapsed summary
+ * never buries a deny / halt / error behind a quiet "ran" count. Blocking wins
+ * outright; an ask (or stale-halt) beats a plain ok/allow.
+ */
+function hookGroupStatus(cards: HookCard[]): HookCardStatus {
+  let worst: HookCardStatus = 'ok'
+  for (const card of cards) {
+    if (isHookCardBlocking(card.status)) return card.status
+    if (card.status === 'ask' || card.status === 'halt-suppressed') worst = card.status
+  }
+  return worst
+}
+
+/** Summary line for the collapsed group, e.g. `12 ran` or `12 ran · 1 blocked`. */
+function hookGroupSummaryLabel(cards: HookCard[]): string {
+  const ran = `${String(cards.length)} ran`
+  const blocking = cards.filter((c) => isHookCardBlocking(c.status)).length
+  if (blocking > 0) return `${ran} · ${String(blocking)} blocked`
+  const asked = cards.filter((c) => c.status === 'ask').length
+  if (asked > 0) return `${ran} · ${String(asked)} asked`
+  return ran
+}
+
+/**
+ * Right-aligned host holding a turn's hook cards (decision 10). The cards are
+ * machine-side provenance — handy on demand, noise inline — so they collapse
+ * into a single summary row (`Hooks · 12 ran`) that expands to reveal each card
+ * in fire order. The summary carries the worst status so a blocking verdict is
+ * still visible while collapsed.
+ */
 function createHookCardHost(messageId: string, cards: HookCard[]): HTMLElement {
   const host = el('div', {
     class: 'hook-card-host',
     'data-hook-cards-for': messageId,
   })
-  for (const card of cards) host.append(createHookCard(card))
+  const status = hookGroupStatus(cards)
+  const group = el('details', {
+    class: 'hook-card-group',
+    'data-status': status,
+    'data-hook-count': String(cards.length),
+  })
+  const header = el(
+    'summary',
+    { class: 'hook-card-header' },
+    zapIcon('ui-icon ui-icon-sm hook-card-icon'),
+    el('span', { class: 'hook-name' }, cards.length === 1 ? 'Hook' : 'Hooks'),
+    el('span', { class: 'hook-card-status' }, hookGroupSummaryLabel(cards)),
+    el('span', { class: 'hook-status-icon', 'aria-label': status }, hookCardStatusIcon(status)),
+  )
+  const body = el('div', { class: 'hook-card-group-body' })
+  for (const card of cards) body.append(createHookCard(card))
+  group.append(header, body)
+  host.append(group)
   return host
 }
 
