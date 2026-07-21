@@ -1702,8 +1702,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         .then(async () => {
           await refreshPacks()
           // Wake listeners that gate chrome on pack enablement (e.g. the
-          // Roadmap pane titlebar button, whose `copse.roadmap-plans` gate reads
-          // the pack list) so a toggle takes effect without an app restart —
+          // Memories / Roadmap titlebar buttons in panel-mode-controls, which
+          // read the pack list) so a toggle takes effect without an app restart —
           // mirrors the `settings_changed` emit the Save button fires. Tool-only
           // packs still emit for consistency with chrome-gating packs.
           store.emit('settings_changed')

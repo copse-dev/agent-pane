@@ -1,9 +1,9 @@
 # Hooks platform & feature packs
 
 Status: **Active** — design settled (July 2026). The major hook-platform foundations
-and feature-pack phases P1–P7 are on `main`; the next extraction
-(`copse.advisor-strategy`) is open in
-[#1090](https://github.com/copse-dev/agent-pane/pull/1090). This document is the
+and feature-pack phases P1–P8 are on `main`; the next extraction
+(`copse.okf-memories`) is open in
+[#1088](https://github.com/copse-dev/agent-pane/pull/1088). This document is the
 source of truth for the phased breakdown below. It extends
 [`docs/cursor-hooks.md`](../cursor-hooks.md) (current Cursor-hooks support) and folds in
 PR #879 (Claude `PreToolUse` hooks) and the direction of PR #840 (permission-decision
@@ -372,8 +372,8 @@ conversations still render todo history (decision 17); `npm run check` dead-code
 passes because the pack is referenced by the registry, not the loop.
 
 Later packs, in extraction order: post-turn review, model comparison, long-horizon
-tasks, roadmap plans, advisor strategy, GitHub-link steering, commit attribution, memory
-tools, browser tools.
+tasks, roadmap plans, advisor strategy, OKF memories (memory tools), GitHub-link
+steering, commit attribution, browser tools.
 **Not packs** (the platform): permission gate, context trimming, the step machine,
 diff queue.
 
@@ -503,7 +503,8 @@ name) and todo compaction pinning. Scope discipline matters more than completene
 
 | P6 ✅ | Extract long-horizon tasks pack | Same P5 native-tool pattern for issue #558. **Landed (#1084):** first-party pack `copse.long-horizon-tasks` declares `track_long_task`; `syncLongHorizonTasksTools` gates registration at boot and on `packs:setEnabled`; the retired `longHorizonTasksEnabled` setting + Experimental checkbox are deleted in the same change; `migrateLongHorizonTasksEnablement()` preserves prior opt-in and otherwise seeds the pack disabled (default OFF). Pack toggles emit `settings_changed`. Contract tests: `long-horizon-tasks-pack.test.ts`, pack-service migration cases, `settings-packs.e2e.ts` asserts the pack row defaults off, `settings-experimental.e2e.ts` asserts the retired fieldset is gone. See [`long-horizon-tasks.md`](long-horizon-tasks.md). |
 | P7 ✅ | Extract roadmap plans pack | Same P5 native-tool pattern for issue #556. **Landed (#1089):** first-party pack `copse.roadmap-plans` declares `roadmap_plan`; `syncRoadmapPlanTools` gates registration at boot and on `packs:setEnabled`; the retired `roadmapPlansEnabled` setting + Experimental checkbox are deleted in the same change; `migrateRoadmapPlansEnablement()` preserves prior opt-in and otherwise seeds the pack disabled (default OFF). Pack toggles emit `settings_changed` so the Roadmap pane titlebar button syncs live. Contract tests: `roadmap-plans-pack.test.ts`, pack-service migration cases, `settings-packs.e2e.ts` asserts the pack row defaults off, `settings-experimental.e2e.ts` asserts the retired fieldset is gone. See [`roadmap-plans.md`](roadmap-plans.md). |
-| P8 🔄 | Extract advisor strategy pack | Same P5 native-tool pattern for issue #566. **In flight (#1090):** first-party pack `copse.advisor-strategy` declares the `advisor` tool; `syncAdvisorStrategyTools` gates registration at boot and on `packs:setEnabled`; the retired `advisorStrategyEnabled` setting + Experimental enable checkbox are deleted in the same change (orthogonal `advisorModel` select stays); `migrateAdvisorStrategyEnablement()` preserves prior opt-in and otherwise seeds the pack disabled (default OFF). Pack toggles emit `settings_changed`. Contract tests: `advisor-strategy-pack.test.ts`, pack-service migration cases, `settings-packs.e2e.ts` asserts the pack row defaults off, `settings-experimental.e2e.ts` asserts the retired enable checkbox is gone. See [`advisor-strategy.md`](advisor-strategy.md). |
+| P8 ✅ | Extract advisor strategy pack | Same P5 native-tool pattern for issue #566. **Landed (#1090):** first-party pack `copse.advisor-strategy` declares the `advisor` tool; `syncAdvisorStrategyTools` gates registration at boot and on `packs:setEnabled`; the retired `advisorStrategyEnabled` setting + Experimental enable checkbox are deleted in the same change (orthogonal `advisorModel` select stays); `migrateAdvisorStrategyEnablement()` preserves prior opt-in and otherwise seeds the pack disabled (default OFF). Pack toggles emit `settings_changed`. Contract tests: `advisor-strategy-pack.test.ts`, pack-service migration cases, `settings-packs.e2e.ts` asserts the pack row defaults off, `settings-experimental.e2e.ts` asserts the retired enable checkbox is gone. See [`advisor-strategy.md`](advisor-strategy.md). |
+| P9 🔄 | Extract OKF memories pack | Same P5 native-tool + prompt-block pattern for the memories consumer of [#645](https://github.com/copse-dev/agent-pane/issues/645). **In flight (#1088):** first-party pack `copse.okf-memories` declares `remember`/`recall` and the memory prompt block; host sync gates tool registration + prompt contribution; the retired `okfMemoriesEnabled` setting + Experimental checkbox are deleted in the same change; `migrateOkfMemoriesEnablement()` preserves prior opt-in and otherwise seeds the pack disabled (default OFF). Pack toggles emit `settings_changed` so the Memories titlebar button syncs live. Contract tests: `okf-memories-pack.test.ts`, pack-service migration cases, `settings-packs.e2e.ts` asserts the pack row defaults off, `settings-experimental.e2e.ts` asserts the retired fieldset is gone. See [`knowledge-store.md`](knowledge-store.md). |
 
 P4 restack invariant: cancelled todos stay in durable thread state but are omitted
 from `todosToPanelListData()` so the extracted pack preserves the pre-existing UI
