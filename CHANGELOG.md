@@ -8,6 +8,12 @@ every published entry.
 
 ## Unreleased
 
+- CI: bounded the retention of every workflow artifact that previously inherited
+  the 90-day default (per-shard PR screenshots, coverage report, and the three
+  bench result sets), so routine PR runs stop accumulating against the org's
+  Actions artifact-storage quota. Screenshots expire in 3 days (only ever
+  consumed by `commit-screenshots` within the same run); coverage in 7; bench
+  trend data in 14.
 - Added general-availability security, support, privacy/data-flow, release, and
   recovery documentation.
 - Privacy: OpenRouter requests now route only to zero-data-retention,
