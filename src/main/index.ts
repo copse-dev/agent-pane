@@ -79,6 +79,11 @@ import {
   zProjectId,
   zThreadId,
 } from './ipc/ipc-guards.ts'
+import {
+  recordStartupPhase,
+  startEventLoopWatchdog,
+  stopEventLoopWatchdog,
+} from './services/diagnostics/event-loop-watchdog.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import {
@@ -148,17 +153,27 @@ app
       return
     }
 
+    // Watch the main event loop for stalls from here on. Startup is exactly when
+    // a synchronous hang (migrations, sandbox init, indexing) is most likely and
+    // most expensive to diagnose after the fact (issue #995).
+    startEventLoopWatchdog()
+    recordStartupPhase('app-ready')
+
     // Before we allocate our window/renderer: reap an oversized gortex daemon
     // left over from a previous (possibly SIGKILLed) session. Freeing its memory
     // while our own footprint is still minimal is what keeps a multi-GB zombie
     // from pushing the machine over its ceiling and OOM-killing us mid-boot.
+    recordStartupPhase('reap-gortex')
     await reapOversizedGortexDaemon()
 
+    recordStartupPhase('tool-availability')
     await checkToolAvailability()
+    recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
     // One-time import of pre-#644 threads into the ~/.copse/workspace store.
     // Self-contained — delete this block and thread-migration.ts to drop it.
+    recordStartupPhase('thread-migration')
     const { migrateLegacyThreads } = await import('./services/thread-migration.ts')
     const migration = await migrateLegacyThreads()
     if (migration.ranMigration) {
@@ -167,6 +182,7 @@ app
       )
     }
 
+    recordStartupPhase('window-create')
     const win = createMainWindow()
     applyAppIcon([win])
     buildAppMenu(win)
@@ -203,6 +219,7 @@ app
     initDiffQueue(win)
     initFsWatcher(win)
     const disposeTerminalHandlers = initTerminal(win)
+    recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
@@ -513,12 +530,14 @@ app
       return suggestFollowUps(parsed.data)
     })
 
+    recordStartupPhase('skills-mcp')
     await initSkillsRegistry()
     registerSkillTools(registry)
     await loadMcpServers(registry)
     win.webContents.send('mcp:status_changed', getMcpServerStatuses())
     await loadCustomTools(registry)
 
+    recordStartupPhase('boot-complete')
     disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)
@@ -528,6 +547,7 @@ let quitCleanupFinished = false
 let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
+  stopEventLoopWatchdog()
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
