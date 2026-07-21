@@ -18,6 +18,7 @@ import {
   scalewayTagArgs,
   scalewayTags,
   scalewayTerminateArgs,
+  selectScaleDownHosts,
   shellQuote,
   sshCommonArgs,
   sshProbeError,
@@ -65,6 +66,55 @@ describe('option helpers', () => {
     assert.equal(hasFlag({ yes: true }, 'yes'), true)
     assert.equal(hasFlag({ yes: 'true' }, 'yes'), false)
     assert.equal(hasFlag({}, 'yes'), false)
+  })
+})
+
+describe('selectScaleDownHosts', () => {
+  const hosts: CloudHost[] = [
+    {
+      launchTime: '2026-07-21T08:00:00Z',
+      name: 'oldest',
+      privateIp: '',
+      providerId: 'host-a',
+      publicIp: '',
+      state: 'running',
+    },
+    {
+      launchTime: '2026-07-21T10:00:00Z',
+      name: 'newest-b',
+      privateIp: '',
+      providerId: 'host-b',
+      publicIp: '',
+      state: 'running',
+    },
+    {
+      launchTime: '2026-07-21T10:00:00Z',
+      name: 'newest-c',
+      privateIp: '',
+      providerId: 'host-c',
+      publicIp: '',
+      state: 'running',
+    },
+  ]
+
+  it('returns the full provider order when no partial count is requested', () => {
+    assert.equal(selectScaleDownHosts(hosts, undefined), hosts)
+  })
+
+  it('selects newest hosts first with a stable provider-id tie break', () => {
+    assert.deepEqual(
+      selectScaleDownHosts(hosts, 2).map((host) => host.providerId),
+      ['host-b', 'host-c'],
+    )
+    assert.deepEqual(
+      hosts.map((host) => host.providerId),
+      ['host-a', 'host-b', 'host-c'],
+    )
+  })
+
+  it('refuses to turn a partial scale-down into a full fleet teardown', () => {
+    assert.throws(() => selectScaleDownHosts(hosts, 3), /would terminate the entire 3-host fleet/)
+    assert.throws(() => selectScaleDownHosts(hosts, 4), /would terminate the entire 3-host fleet/)
   })
 })
 
