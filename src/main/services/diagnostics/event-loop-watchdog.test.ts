@@ -152,12 +152,12 @@ describe('PhaseRing (issue #995)', () => {
 describe('startup phase timeline singleton (issue #995 / #994)', () => {
   it('records phases and exposes consecutive durations', () => {
     // Uses a real monotonic clock; assert on structure, not exact millisecond
-    // values, so the test is not timing-flaky.
-    recordStartupPhase('phase-under-test-a')
-    recordStartupPhase('phase-under-test-b')
+    // values, so the test is not timing-flaky. Only StartupPhase literals type-check.
+    recordStartupPhase('app-ready')
+    recordStartupPhase('window-create')
     const timeline = getStartupPhaseTimeline()
     const phases = timeline.map((p) => p.phase)
-    assert.ok(phases.includes('phase-under-test-a'))
+    assert.ok(phases.includes('app-ready'))
     for (const entry of timeline) {
       assert.equal(typeof entry.ms, 'number')
       assert.ok(entry.ms >= 0)

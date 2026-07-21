@@ -192,8 +192,25 @@ function formatRecord(record: LagRecord): string {
   return `[event-loop-watchdog] main loop stalled — ${parts.join(' ')}`
 }
 
-/** Record a short, static startup/runtime phase name for later lag attribution. */
-export function recordStartupPhase(phase: string): void {
+/**
+ * The closed set of startup/runtime phase markers. Constraining `recordStartupPhase`
+ * to this union — rather than an open `string` — makes it impossible for a call
+ * site to route a dynamic path, prompt, or command into the phase ring (and thus
+ * into console output). Add a new literal here to introduce a phase.
+ */
+export type StartupPhase =
+  | 'app-ready'
+  | 'reap-gortex'
+  | 'tool-availability'
+  | 'sandbox-init'
+  | 'thread-migration'
+  | 'window-create'
+  | 'register-handlers'
+  | 'skills-mcp'
+  | 'boot-complete'
+
+/** Record a static startup/runtime phase marker for later lag attribution. */
+export function recordStartupPhase(phase: StartupPhase): void {
   phaseRing.mark(phase)
 }
 
