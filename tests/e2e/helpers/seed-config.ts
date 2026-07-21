@@ -508,50 +508,6 @@ export function seedInnerHtmlToolArgsFixture(workspaceRoot: string): void {
   })
 }
 
-export function seedMarkdownListFixture(workspaceRoot: string): void {
-  const projectId = 'e2e-markdown-list-project'
-  const threadId = 'e2e-markdown-list-thread'
-  const content = [
-    '### ⚠️ Known Failures',
-    '',
-    '**Unit tests (2 failures):**',
-    '- `terminal-service` — 2 subtests fail with posix spawnp failed',
-    '',
-    '**E2E tests (all 10 fail):**',
-    '- Every e2e test fails with listen EPERM: operation not permitted 0.0.0.0',
-    '',
-    '### 📦 Architecture Highlights',
-    '- Electron app — AI coding assistant with tool-executing agents',
-    '- No backend — Direct LLM provider calls (Anthropic, OpenAI, LM Studio)',
-    '- Mock LLM — `COPSE-PANEL-MOCK-LLM=1` enables full e2e testing without API keys',
-    '- MCP host — Per-server enable toggles in Settings',
-    '- Persistence — `electron-store` for projects, threads, settings',
-  ].join('\n')
-  mkdirSync(USER_DATA, { recursive: true })
-  writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-    activeProjectId: projectId,
-    [`threads:${projectId}`]: [
-      {
-        id: threadId,
-        title: 'Markdown list indent',
-        status: 'idle',
-        messages: [
-          {
-            id: 'msg-assistant-list',
-            role: 'assistant',
-            content,
-            createdAt: Date.now(),
-          },
-        ],
-        usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-    ],
-  })
-}
-
 /** Assistant message with sprint retrospective metadata using &nbsp; pipe separators. */
 export function seedSprintRetroNbspFixture(workspaceRoot: string): void {
   const projectId = 'e2e-sprint-retro-project'
@@ -1295,57 +1251,6 @@ export function seedContextWheelFixture(workspaceRoot: string): void {
       },
     ],
   })
-}
-
-/** Footer with long model/branch labels plus context wheel + token usage for compact layout e2e. */
-export function seedFooterCompactFixture(workspaceRoot: string): {
-  model: string
-  branch: string
-  tokenLabel: string
-} {
-  const projectId = 'e2e-footer-compact-project'
-  const threadId = 'e2e-footer-compact-thread'
-  const model = 'lmstudio:qwen/qwen3.6-35b-a3b'
-  const branch = 'jkt/auto/markdown-file-links-3d2c'
-  const conversationBudget = 180_000
-  const conversationTokens = 9_000
-  const inputTokens = 50_000
-  const outputTokens = 1_800
-  const tokenLabel = `${((inputTokens + outputTokens) / 1000).toFixed(1)}k tokens`
-  mkdirSync(USER_DATA, { recursive: true })
-  writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-    activeProjectId: projectId,
-    [`threads:${projectId}`]: [
-      {
-        id: threadId,
-        title: 'Footer compact layout',
-        status: 'idle',
-        gitBranch: branch,
-        messages: [
-          {
-            id: 'msg-user-compact',
-            role: 'user',
-            content: 'Check footer layout at narrow widths.',
-            toolCalls: [],
-            createdAt: Date.now(),
-          },
-        ],
-        usage: { inputTokens, outputTokens },
-        contextSnapshot: {
-          contextWindow: 200_000,
-          conversationBudget,
-          conversationTokens,
-          fillRatio: conversationTokens / conversationBudget,
-          updatedAt: Date.now(),
-        },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-    ],
-  })
-  writeSettings({ model })
-  return { model: 'qwen/qwen3.6-35b-a3b', branch, tokenLabel }
 }
 
 export function seedPortraitRightPanelFixture(

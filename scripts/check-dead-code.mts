@@ -59,6 +59,7 @@ const roots = [
   'src/main/services/ssh-workspace/askpass-helper.ts',
   'src/preload/index.ts',
   'src/renderer/main.ts',
+  'src/renderer/demo/main.ts',
   // Standalone bundle injected lazily at runtime (not imported by product code).
   'src/renderer/monaco/monaco-global.ts',
   ...tracked.filter((p) => /\.test\.ts$/.test(p)),
@@ -66,6 +67,7 @@ const roots = [
   ...tracked.filter((p) => p.startsWith('tests/') && isModuleTs(p)),
   ...tracked.filter((p) => p.startsWith('scripts/') && isModuleTs(p)),
   'wdio.conf.ts',
+  'wdio.demo.conf.ts',
   'wdio.eval.conf.ts',
 ].filter((p) => existsSync(abs(p)))
 
