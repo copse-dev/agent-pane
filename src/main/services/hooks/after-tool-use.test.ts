@@ -53,7 +53,10 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     originalHome = process.env['HOME']
     process.env['HOME'] = tempHome
     resetCursorHookSessionErrorsForTest()
-    setCursorHookTimeoutForTest(2_000)
+    // macOS project-sandbox startup can take ~1.5s before the script itself
+    // begins. Leave enough headroom for the deliberate 600ms slow-hook case;
+    // production still uses Cursor's 30s vendor default.
+    setCursorHookTimeoutForTest(5_000)
   })
 
   afterEach(async () => {
@@ -145,6 +148,66 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.equal(stdin.result_json, '{"rows":[1]}')
     assert.equal(stdin.duration, 7)
     assert.equal(stdin.hook_event_name, 'afterMCPExecution')
+  })
+
+  it('fires generic postToolUse after any successful tool with the Cursor wire payload', async () => {
+    const stdinFile = join(tempHome, 'post-tool.json')
+    const script = await writeCaptureHook('post-tool.sh', stdinFile)
+    await writeUserHooks({ hooks: { postToolUse: [{ command: script }] } })
+
+    const result = await fireAfterToolUse({
+      toolName: 'read_file',
+      toolCallId: 'tc-read-success',
+      isError: false,
+      input: { path: 'README.md' },
+      output: 'hello\n',
+      durationMs: 9,
+    })
+    assert.equal(result.ran, 1)
+    await result.settled
+
+    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as Record<string, unknown>
+    assert.equal(stdin['hook_event_name'], 'postToolUse')
+    assert.equal(stdin['tool_name'], 'Read')
+    assert.deepEqual(stdin['tool_input'], { path: 'README.md' })
+    assert.equal(stdin['tool_use_id'], 'tc-read-success')
+    assert.equal(stdin['tool_output'], JSON.stringify('hello\n'))
+    assert.equal(stdin['duration'], 9)
+  })
+
+  it('fires postToolUseFailure only for failed tools', async () => {
+    const stdinFile = join(tempHome, 'post-tool-failure.json')
+    const script = await writeCaptureHook('post-tool-failure.sh', stdinFile)
+    await writeUserHooks({ hooks: { postToolUseFailure: [{ command: script }] } })
+
+    const success = await fireAfterToolUse({
+      toolName: 'run_shell',
+      toolCallId: 'tc-shell-success',
+      isError: false,
+      input: { command: 'false' },
+      output: '',
+    })
+    assert.equal(success.ran, 0)
+
+    const failed = await fireAfterToolUse({
+      toolName: 'run_shell',
+      toolCallId: 'tc-shell-failure',
+      isError: true,
+      input: { command: 'false' },
+      output: 'Error: command failed',
+      durationMs: 12,
+    })
+    assert.equal(failed.ran, 1)
+    await failed.settled
+
+    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as Record<string, unknown>
+    assert.equal(stdin['hook_event_name'], 'postToolUseFailure')
+    assert.equal(stdin['tool_name'], 'Shell')
+    assert.deepEqual(stdin['tool_input'], { command: 'false' })
+    assert.equal(stdin['tool_use_id'], 'tc-shell-failure')
+    assert.equal(stdin['error_message'], 'Error: command failed')
+    assert.equal(stdin['failure_type'], 'error')
+    assert.equal(stdin['is_interrupt'], false)
   })
 
   it('caps the output snapshot before it reaches the hook stdin', async () => {

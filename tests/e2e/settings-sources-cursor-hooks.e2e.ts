@@ -13,9 +13,10 @@ import {
  * Visual eval for issue A4 (docs/plans/hooks-and-feature-packs.md): the
  * Settings → Sources → Hooks panel must show the cursorHooksEnabled security
  * toggle, per-entry validation warnings (unknown event, empty command), and
- * plain rows for the wired Cursor lifecycle events. As of B3, every Cursor
- * event Copse can declare has a fire site (permission gates + beforeSubmitPrompt
- * + afterFileEdit + stop), so no Cursor hook renders the "unsupported" badge any
+ * plain rows for the wired Cursor lifecycle events. This fixture includes the
+ * generic `postToolUse` / `postToolUseFailure` events that previously rendered
+ * as unknown-event warnings. Every Cursor event Copse can declare has a fire
+ * site, so no Cursor hook renders the "unsupported" badge any
  * more — that badge's rendering is pinned in the component test
  * `src/renderer/views/settings-sources-hooks.test.ts` with a synthetic fixture.
  *
@@ -34,6 +35,9 @@ describe('settings sources hooks', () => {
         beforeShellExecution: [{ command: './audit.sh' }],
         // Wired in B3 (turn end / abort) — renders as a plain supported row.
         stop: [{ command: './notify.sh' }],
+        // Generic success/failure observations — both are supported rows, not warnings.
+        postToolUse: [{ command: './after-success.sh' }],
+        postToolUseFailure: [{ command: './after-failure.sh' }],
         // Unknown event — must surface as a warning row, not vanish.
         notARealEvent: [{ command: './nope.sh' }],
         // Invalid entry (empty command) — warning row too.
@@ -93,11 +97,21 @@ describe('settings sources hooks', () => {
     assert.ok(stopRow, `expected a stop row in ${JSON.stringify(rows)}`)
     assert.ok(!stopRow.badges.some((b) => /unsupported/i.test(b)))
 
+    // Regression for the reported UI: current Cursor generic tool events are
+    // recognized and supported, never rendered as yellow warning cards.
+    for (const event of ['postToolUse', 'postToolUseFailure']) {
+      const row = rows.find((r) => r.title === event)
+      assert.ok(row, `expected a ${event} row in ${JSON.stringify(rows)}`)
+      assert.equal(row.isWarning, false)
+      assert.ok(!row.badges.some((b) => /unsupported|warning/i.test(b)))
+    }
+
     // Both authoring problems surface as warning rows with the source path.
     const warningRows = rows.filter((r) => r.isWarning)
     assert.equal(warningRows.length, 2, `expected 2 warning rows in ${JSON.stringify(rows)}`)
     assert.ok(warningRows.some((r) => r.title.includes('notARealEvent')))
     assert.ok(warningRows.some((r) => r.title.includes('beforeMCPExecution')))
+    assert.ok(!warningRows.some((r) => r.title.includes('postToolUse')))
     for (const row of warningRows) {
       assert.ok(row.badges.some((b) => /warning/i.test(b)))
       assert.match(row.detail, /\.cursor\/hooks\.json$/)

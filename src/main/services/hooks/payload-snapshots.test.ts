@@ -31,7 +31,7 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentSessionInfo } from '@copse/agent/hooks/canonical-events.ts'
-import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
+import type { CommandHook, HookDialect } from '@copse/agent/hooks/command-executor.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import type { DialectAdapter } from './dialect-adapter.ts'
 import { cursorAdapter } from './cursor-adapter.ts'
@@ -91,6 +91,12 @@ const HOOK: CommandHook = {
   onFailure: 'open',
 }
 
+const cursorAfterToolHook = (wireEvent: 'postToolUse' | 'postToolUseFailure'): CommandHook => ({
+  ...HOOK,
+  dialect: 'cursor',
+  wireEvent,
+})
+
 /**
  * One wire payload to snapshot: a label (canonical event + optional flavor) and
  * the marshal call. The closure calls the adapter's marshaller with a concrete,
@@ -101,6 +107,7 @@ const HOOK: CommandHook = {
 interface SnapshotCase {
   label: string
   marshal: (adapter: DialectAdapter) => unknown
+  dialects?: HookDialect[]
 }
 
 const CASES: SnapshotCase[] = [
@@ -181,6 +188,40 @@ const CASES: SnapshotCase[] = [
       ),
   },
   {
+    label: 'afterToolUse/postToolUse',
+    dialects: ['cursor'],
+    marshal: (a) =>
+      a.marshalAfterToolUseRequest?.(
+        cursorAfterToolHook('postToolUse'),
+        {
+          toolName: 'read_file',
+          toolCallId: 'call-read-1',
+          isError: false,
+          input: { path: READ_PATH },
+          output: 'README contents\n',
+          durationMs: 15,
+        },
+        SESSION,
+      ),
+  },
+  {
+    label: 'afterToolUse/postToolUseFailure',
+    dialects: ['cursor'],
+    marshal: (a) =>
+      a.marshalAfterToolUseRequest?.(
+        cursorAfterToolHook('postToolUseFailure'),
+        {
+          toolName: 'run_shell',
+          toolCallId: 'call-shell-failed-1',
+          isError: true,
+          input: { command: 'exit 1' },
+          output: 'Error: command failed',
+          durationMs: 21,
+        },
+        SESSION,
+      ),
+  },
+  {
     label: 'subagentStart',
     marshal: (a) => a.marshalSubagentStartRequest?.(HOOK, { subagentType: 'explore' }, SESSION),
   },
@@ -235,6 +276,7 @@ function buildSnapshot(): Record<string, Record<string, unknown>> {
   for (const adapter of ADAPTERS) {
     const dialectOut: Record<string, unknown> = {}
     for (const c of CASES) {
+      if (c.dialects && !c.dialects.includes(adapter.dialect)) continue
       const request = c.marshal(adapter)
       // null (marshaller declined — tool does not apply) / undefined (no
       // marshaller for the event) means this dialect does not send this payload.
@@ -302,6 +344,8 @@ describe('hook payload snapshots (G4, decision 14)', () => {
     assert.deepEqual(Object.keys(snapshot['cursor'] ?? {}).sort(), [
       'afterFileEdit',
       'afterToolUse/mcp',
+      'afterToolUse/postToolUse',
+      'afterToolUse/postToolUseFailure',
       'afterToolUse/shell',
       'beforeSubmitPrompt',
       'sessionStart',

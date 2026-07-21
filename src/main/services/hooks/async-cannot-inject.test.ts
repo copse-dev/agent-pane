@@ -15,6 +15,23 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { cursorAdapter } from './cursor-adapter.ts'
 import type { HookSpawnResult } from './hook-spawn.ts'
+import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
+
+const AFTER_SHELL_HOOK: CommandHook<'afterToolUse'> = {
+  id: 'after-shell',
+  event: 'afterToolUse',
+  executor: 'command',
+  dialect: 'cursor',
+  wireEvent: 'afterShellExecution',
+  command: './after-shell.sh',
+  onFailure: 'open',
+}
+
+const POST_TOOL_HOOK: CommandHook<'afterToolUse'> = {
+  ...AFTER_SHELL_HOOK,
+  id: 'post-tool',
+  wireEvent: 'postToolUse',
+}
 
 /** A clean (exit-0) spawn result whose stdout is `stdout`. */
 function cleanSpawn(stdout: string): HookSpawnResult {
@@ -36,11 +53,15 @@ describe('async hooks cannot inject current-turn context (decision 11)', () => {
     const interpretAfterToolUse = cursorAdapter.interpretAfterToolUse?.bind(cursorAdapter)
     assert.ok(interpretAfterToolUse, 'cursor adapter must implement interpretAfterToolUse')
     const spawn = cleanSpawn('{"additionalContext":"try to inject mid-turn"}')
-    const interpretation = interpretAfterToolUse(spawn, {
-      toolName: 'run_shell',
-      toolCallId: 'call-1',
-      isError: false,
-    })
+    const interpretation = interpretAfterToolUse(
+      spawn,
+      {
+        toolName: 'run_shell',
+        toolCallId: 'call-1',
+        isError: false,
+      },
+      AFTER_SHELL_HOOK,
+    )
     // No control-flow outcome at all, so certainly no injectContext.
     assert.equal(interpretation.outcome, null)
     assert.equal(interpretation.spineDecision.injectContextChars, undefined)
@@ -60,6 +81,22 @@ describe('async hooks cannot inject current-turn context (decision 11)', () => {
     assert.equal(interpretation.outcome, null)
     assert.deepEqual(interpretation.queueMessage, {
       text: 'look at the failing test',
+      sendNow: false,
+    })
+    assert.equal(interpretation.spineDecision.injectContextChars, undefined)
+  })
+
+  it('postToolUse converts additional_context to a queued message', () => {
+    const interpretAfterToolUse = cursorAdapter.interpretAfterToolUse?.bind(cursorAdapter)
+    assert.ok(interpretAfterToolUse)
+    const interpretation = interpretAfterToolUse(
+      cleanSpawn('{"additional_context":"re-check the edited file"}'),
+      { toolName: 'write_file', toolCallId: 'call-2', isError: false },
+      POST_TOOL_HOOK,
+    )
+    assert.equal(interpretation.outcome, null)
+    assert.deepEqual(interpretation.queueMessage, {
+      text: 're-check the edited file',
       sendNow: false,
     })
     assert.equal(interpretation.spineDecision.injectContextChars, undefined)

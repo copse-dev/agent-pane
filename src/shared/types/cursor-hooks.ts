@@ -15,6 +15,8 @@ export const CURSOR_HOOK_EVENTS = [
   'afterFileEdit',
   'afterShellExecution',
   'afterMCPExecution',
+  'postToolUse',
+  'postToolUseFailure',
   'stop',
   'subagentStart',
   'subagentStop',
@@ -40,13 +42,16 @@ export function isCursorPermissionHookEvent(
 }
 
 /**
- * The Cursor post-tool observation events (D2). `afterShellExecution` /
- * `afterMCPExecution` are payload *flavors* of the canonical `afterToolUse`
- * event — the shell/MCP split is chosen by the tool name, the same way the
- * permission gates map onto `toolGate`. Both are fire-and-forget: they carry the
- * command/output (shell) or tool params/result (MCP) on stdin and return nothing.
+ * Cursor post-tool events mapped onto canonical `afterToolUse`. The dedicated
+ * shell/MCP flavors and generic success/failure flavors share one fire point;
+ * the generic `postToolUse` response may queue `additional_context`.
  */
-export const CURSOR_AFTER_TOOL_HOOK_EVENTS = ['afterShellExecution', 'afterMCPExecution'] as const
+export const CURSOR_AFTER_TOOL_HOOK_EVENTS = [
+  'afterShellExecution',
+  'afterMCPExecution',
+  'postToolUse',
+  'postToolUseFailure',
+] as const
 
 export type CursorAfterToolHookEvent = (typeof CURSOR_AFTER_TOOL_HOOK_EVENTS)[number]
 
@@ -56,9 +61,10 @@ export type CursorAfterToolHookEvent = (typeof CURSOR_AFTER_TOOL_HOOK_EVENTS)[nu
  * (B2 — the diff-queue / write-tool site), `stop` (B3 — fired the moment agent
  * work stops, at turn end or abort), `subagentStart` / `subagentStop`
  * (D1 — the subagent spawn gate + detached completion, matcher on subagent type),
- * and `afterShellExecution` / `afterMCPExecution` (D2 — post-tool observations,
- * flavors of the canonical `afterToolUse`, dispatched detached with a capped
- * output snapshot), and `sessionStart` (H4 — fire-and-forget on a new
+ * and `afterShellExecution` / `afterMCPExecution` / `postToolUse` /
+ * `postToolUseFailure` (post-tool observations, flavors of the canonical
+ * `afterToolUse`, dispatched detached with a capped output snapshot), and
+ * `sessionStart` (H4 — fire-and-forget on a new
  * conversation's first turn; its `env` output propagates to later hook spawns).
  */
 export const CURSOR_WIRED_HOOK_EVENTS = [

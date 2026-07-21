@@ -220,15 +220,15 @@ export interface DialectAdapter {
   ): unknown
   /**
    * Apply this dialect's `afterToolUse` response table (D2). Optional, paired
-   * with {@link marshalAfterToolUseRequest}. Cursor's after-events are
-   * fire-and-forget (detached, decision 3): they return nothing, so the outcome
-   * is always null; a crash / timeout / non-zero exit is reported as `failed`
-   * for the spine + Sources error indicator only — there is nothing to block
-   * post-hoc (the tool already ran).
+   * with {@link marshalAfterToolUseRequest}. These events are detached (decision
+   * 3), so the blocking outcome is always null. A dialect may still return a
+   * queued message through decision 11's async output channel; crashes and
+   * invalid responses are reported to the spine + Sources only.
    */
   interpretAfterToolUse?(
     spawn: HookSpawnResult,
     payload: HookEventPayloads['afterToolUse'],
+    hook: CommandHook,
   ): DialectInterpretation
   /**
    * Marshal a canonical `sessionStart` payload into this dialect's stdin wire

@@ -17,6 +17,7 @@ import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import micromatch from 'micromatch'
 import {
+  CURSOR_AFTER_TOOL_HOOK_EVENTS,
   CURSOR_HOOK_EVENTS,
   isCursorWiredHookEvent,
   type CursorAfterToolHookEvent,
@@ -85,6 +86,7 @@ interface DiscoveredCursorHook {
    * | ------------------------------------------ | ------------------------ |
    * | `beforeShellExecution` / `afterShellExecution` | the full shell command text |
    * | `beforeMCPExecution` / `afterMCPExecution` | the (MCP) tool name      |
+   * | `postToolUse` / `postToolUseFailure`       | the Cursor tool type     |
    * | `beforeReadFile`                           | the tool type (`Read`)   |
    * | `afterFileEdit`                            | the tool type (`Write`)  |
    * | `beforeSubmitPrompt`                       | the value `UserPromptSubmit` |
@@ -333,15 +335,69 @@ export function cursorEventForTool(toolName: string): CursorPermissionHookEvent 
 /**
  * Map a canonical tool name to the Cursor post-tool observation event (D2), if
  * any. The shell/MCP split mirrors {@link cursorEventForTool} — the tool name
- * is the flavor selector for the one canonical `afterToolUse` event. Cursor has
- * no generic post-tool hook, so tools other than shell / MCP have no
- * `afterToolUse` Cursor equivalent and this returns null (the fire site fires
- * for every tool, discovery filters to the shell/MCP flavors).
+ * is the flavor selector for the one canonical `afterToolUse` event. This
+ * helper selects only the dedicated shell/MCP flavor; generic `postToolUse` /
+ * `postToolUseFailure` are selected separately from `payload.isError` and
+ * therefore cover every tool.
  */
 export function cursorAfterEventForTool(toolName: string): CursorAfterToolHookEvent | null {
   if (toolName === 'run_shell') return 'afterShellExecution'
   if (toolName.startsWith('mcp__')) return 'afterMCPExecution'
   return null
+}
+
+/**
+ * Map Copse's canonical tool ids onto Cursor's generic hook tool-type tokens.
+ * Cursor matchers use broad types (`Shell`, `Read`, `Write`, `Grep`, `Delete`,
+ * `Task`, `MCP:<tool_name>`). Native tools without a direct Cursor analogue keep
+ * their canonical id so an unfiltered generic hook still receives an honest,
+ * stable name and can opt into matching it explicitly.
+ */
+export function cursorGenericToolName(toolName: string): string {
+  if (toolName.startsWith('mcp__')) return `MCP:${toolName}`
+  switch (toolName) {
+    case 'run_shell':
+    case 'run_background':
+      return 'Shell'
+    case 'read_file':
+    case 'list_dir':
+    case 'read_staged_diff':
+    case 'read_terminal':
+    case 'read_skill':
+      return 'Read'
+    case 'write_file':
+    case 'str_replace':
+    case 'rename_file':
+    case 'make_directory':
+      return 'Write'
+    case 'delete_file':
+      return 'Delete'
+    case 'search_code':
+    case 'find_files':
+    case 'search_codebase':
+    case 'semantic_search':
+      return 'Grep'
+    case 'explore':
+    case 'investigate_ci':
+    case 'delegate_step':
+      return 'Task'
+    default:
+      return toolName
+  }
+}
+
+function isCursorAfterToolHookEvent(value: string | undefined): value is CursorAfterToolHookEvent {
+  return value !== undefined && (CURSOR_AFTER_TOOL_HOOK_EVENTS as readonly string[]).includes(value)
+}
+
+/** Resolve the dialect event carried by a registered canonical afterToolUse hook. */
+function cursorWireAfterToolEvent(
+  hook: CommandHook,
+  payload: HookEventPayloads['afterToolUse'],
+): CursorAfterToolHookEvent | null {
+  if (isCursorAfterToolHookEvent(hook.wireEvent)) return hook.wireEvent
+  // Backward-compatible fallback for tests / callers constructing a bare hook.
+  return cursorAfterEventForTool(payload.toolName)
 }
 
 function stringField(input: Record<string, unknown>, key: string): string {
@@ -411,6 +467,8 @@ interface CursorMatcherContext {
   command?: string
   /** Canonical (MCP) tool name — `beforeMCPExecution` / `afterMCPExecution`. */
   toolName?: string
+  /** Cursor tool-type token — `postToolUse` / `postToolUseFailure`. */
+  toolType?: string
   /** Subagent type — `subagentStart` / `subagentStop`. */
   subagentType?: string
 }
@@ -429,6 +487,9 @@ function cursorMatcherSubject(event: CursorHookEvent, ctx: CursorMatcherContext)
     case 'beforeMCPExecution':
     case 'afterMCPExecution':
       return ctx.toolName ?? ''
+    case 'postToolUse':
+    case 'postToolUseFailure':
+      return ctx.toolType ?? ''
     case 'beforeReadFile':
       return MATCHER_TOOL_TYPE_READ
     case 'afterFileEdit':
@@ -708,33 +769,42 @@ export async function cursorSubagentStopHooks(
 
 /**
  * Discover the Cursor command hooks registered for the post-tool observation
- * event that matches `payload.toolName` (D2), as canonical `afterToolUse`
- * `CommandHook`s. The tool → event mapping ({@link cursorAfterEventForTool}) is
- * the flavor selector: `run_shell` → `afterShellExecution`, `mcp__*` →
- * `afterMCPExecution`; any other tool has no Cursor after-event and yields no
- * hooks (so the fire site can fire generically and only shell/MCP hooks run).
+ * events that match this result, as canonical `afterToolUse` `CommandHook`s.
+ * The dedicated flavor selector maps `run_shell` → `afterShellExecution` and
+ * `mcp__*` → `afterMCPExecution`; the generic success/failure split maps every
+ * result onto exactly one of `postToolUse` / `postToolUseFailure`.
  *
  * The tool-type split selects the flavor; the per-hook `matcher` (D3) is then
  * applied on top — the shell command text for `afterShellExecution`, the tool
  * name for `afterMCPExecution` — so a hook can observe only matching commands /
  * tools. Fired **detached** (decision 3) through the C1 executor by the fire
- * site (`after-tool-use.ts`); Cursor's after-events are notification-only, so a
- * `failClosed` flag has nothing to block post-hoc but still maps to `onFailure`
- * for spine + Sources uniformity.
+ * site (`after-tool-use.ts`). The completed tool call cannot be changed; generic
+ * success `additional_context` is queued for the next model boundary. A
+ * `failClosed` flag therefore has nothing to block post-hoc but still maps to
+ * `onFailure` for spine + Sources uniformity.
  */
 export async function cursorAfterToolUseHooks(
   payload: HookEventPayloads['afterToolUse'],
   opts: DialectDiscoverOpts,
 ): Promise<CommandHook<'afterToolUse'>[]> {
-  const event = cursorAfterEventForTool(payload.toolName)
-  if (!event) return []
+  const dedicatedEvent = cursorAfterEventForTool(payload.toolName)
+  const genericEvent: CursorAfterToolHookEvent = payload.isError
+    ? 'postToolUseFailure'
+    : 'postToolUse'
+  const events = new Set<CursorAfterToolHookEvent>(
+    dedicatedEvent ? [dedicatedEvent, genericEvent] : [genericEvent],
+  )
   const matcherCtx: CursorMatcherContext = {
     command: stringField(payload.input ?? {}, 'command'),
     toolName: payload.toolName,
+    toolType: cursorGenericToolName(payload.toolName),
   }
   const { hooks } = await discoverHooksDetailed(opts)
   return hooks
-    .filter((h) => h.event === event && cursorMatcherMatches(h, matcherCtx))
+    .filter(
+      (h): h is DiscoveredCursorHook & { event: CursorAfterToolHookEvent } =>
+        events.has(h.event as CursorAfterToolHookEvent) && cursorMatcherMatches(h, matcherCtx),
+    )
     .map((h) => {
       auditProjectHook(h)
       return {
@@ -742,6 +812,7 @@ export async function cursorAfterToolUseHooks(
         event: 'afterToolUse' as const,
         executor: 'command' as const,
         dialect: 'cursor' as const,
+        wireEvent: h.event,
         command: h.command,
         onFailure: h.failClosed ? ('closed' as const) : ('open' as const),
         cwd: h.scope === 'project' ? (opts.executionRoot ?? h.cwd) : h.cwd,
@@ -817,6 +888,13 @@ interface CursorHookResponse {
 interface CursorSubagentStopResponse {
   followup_message?: string
   followupMessage?: string
+}
+
+/** Cursor `postToolUse` stdout fields that remain meaningful on detached dispatch. */
+interface CursorPostToolUseResponse {
+  additional_context?: unknown
+  additionalContext?: unknown
+  updated_mcp_tool_output?: unknown
 }
 
 /**
@@ -1269,14 +1347,11 @@ export const cursorAdapter: DialectAdapter = {
   },
 
   marshalAfterToolUseRequest(hook, payload, session) {
-    // Cursor splits the canonical afterToolUse into two payload flavors by tool
-    // name (D2): afterShellExecution carries the `command` + captured `output`
-    // + `duration`; afterMCPExecution carries `tool_name` + `tool_input` (JSON
-    // string) + `result_json` + `duration`. `output` is already capped at the
-    // fire site (a tool's stdout is unbounded), so it is safe to marshal
-    // verbatim. Returns null when the tool has no Cursor after-event (the
-    // marshaller's final guard past discovery matching).
-    const event = cursorAfterEventForTool(payload.toolName)
+    // Several Cursor wire events share the canonical afterToolUse fire point.
+    // The discovered hook carries the exact dialect event in `wireEvent`, so a
+    // shell result can invoke both afterShellExecution and generic postToolUse
+    // with their distinct stdin contracts.
+    const event = cursorWireAfterToolEvent(hook, payload)
     if (!event) return null
     const base = agentSessionEnvelope(event, session, hook.executionRoot)
     const duration = payload.durationMs ?? 0
@@ -1288,26 +1363,54 @@ export const cursorAdapter: DialectAdapter = {
         duration,
       }
     }
-    // afterMCPExecution: `tool_input` is the JSON params *string*, `result_json`
-    // the JSON result *string* — both stringified per the vendor contract.
-    return {
+    if (event === 'afterMCPExecution') {
+      // `tool_input` is the JSON params *string*, `result_json` the JSON result
+      // *string* — both stringified per the dedicated vendor contract.
+      return {
+        ...base,
+        tool_name: payload.toolName,
+        tool_input: JSON.stringify(payload.input ?? {}),
+        result_json: payload.output ?? '',
+        duration,
+      }
+    }
+
+    const root = hook.executionRoot ?? getAgentExecutionRoot() ?? ''
+    const genericBase = {
       ...base,
-      tool_name: payload.toolName,
-      tool_input: JSON.stringify(payload.input ?? {}),
-      result_json: payload.output ?? '',
+      tool_name: cursorGenericToolName(payload.toolName),
+      tool_input: payload.input ?? {},
+      tool_use_id: payload.toolCallId,
+      cwd: root,
       duration,
+    }
+    if (event === 'postToolUse') {
+      return {
+        ...genericBase,
+        // The vendor field is a JSON-encoded string. Copse's normalized tool
+        // result is textual, so encode that value directly without inventing a
+        // vendor-specific result object shape.
+        tool_output: JSON.stringify(payload.output ?? ''),
+      }
+    }
+    return {
+      ...genericBase,
+      error_message: payload.output ?? 'Tool failed',
+      failure_type: 'error',
+      is_interrupt: false,
     }
   },
 
-  interpretAfterToolUse(spawn: HookSpawnResult, payload): DialectInterpretation {
-    // Cursor's after-events are fire-and-forget (detached, decision 3): they
-    // return nothing that gates control flow, so the outcome is always null. We
-    // still surface a crash / timeout / non-zero exit as `failed` for the
+  interpretAfterToolUse(spawn: HookSpawnResult, payload, hook): DialectInterpretation {
+    // Cursor's after-events are fire-and-forget (detached, decision 3): nothing
+    // they return can gate the completed tool call. Generic success
+    // `additional_context` may still become a queued message below. We surface
+    // a crash / timeout / non-zero exit as `failed` for the
     // Sources per-hook error indicator + the spine, but the fire site
     // (after-tool-use.ts) never acts on it — the tool has already run. The spine
     // event is the resolved dialect flavor (afterShell/afterMCP), so the Sources
     // error key matches discovery/list.
-    const spineEvent = cursorAfterEventForTool(payload.toolName) ?? 'afterToolUse'
+    const spineEvent = cursorWireAfterToolEvent(hook, payload) ?? 'afterToolUse'
     const emptyDecision: SpineHookRunDecision = {}
     const base = { outcome: null, spineEvent, spineDecision: emptyDecision }
 
@@ -1330,7 +1433,40 @@ export const cursorAdapter: DialectAdapter = {
         runtimeError: `exited with code ${String(spawn.exitCode)}`,
       }
     }
-    return { ...base, failed: false, parseOk: true }
+    // The dedicated afterShell/afterMCP events and postToolUseFailure are
+    // notification-only. Generic postToolUse alone declares a response shape.
+    if (spineEvent !== 'postToolUse') return { ...base, failed: false, parseOk: true }
+
+    const text = spawn.stdout.trim()
+    if (!text) return { ...base, failed: false, parseOk: true }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      return {
+        ...base,
+        failed: true,
+        parseOk: false,
+        runtimeError: 'printed invalid JSON — response ignored',
+      }
+    }
+    if (typeof parsed !== 'object' || parsed === null) {
+      return { ...base, failed: false, parseOk: true }
+    }
+    const response = parsed as CursorPostToolUseResponse
+    const additionalContext = firstString(response.additional_context, response.additionalContext)
+    if (additionalContext === undefined) return { ...base, failed: false, parseOk: true }
+
+    // Decision 11: detached hooks cannot inject into the active model turn.
+    // Preserve Cursor's additional context through the one safe async channel:
+    // a hook-originated queued message, budgeted at drain time.
+    return {
+      ...base,
+      queueMessage: { text: additionalContext, sendNow: false },
+      spineDecision: { queuedMessageChars: additionalContext.length },
+      failed: false,
+      parseOk: true,
+    }
   },
 
   marshalSessionStartRequest(hook, _payload, session) {
