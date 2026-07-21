@@ -176,9 +176,18 @@ describe('updateClaudeOAuthJson', () => {
   })
 
   it('refuses to touch an unfamiliar payload', () => {
-    assert.equal(updateClaudeOAuthJson(null, { accessToken: 'x', refreshToken: null, expiresAt: null }), null)
-    assert.equal(updateClaudeOAuthJson('not json', { accessToken: 'x', refreshToken: null, expiresAt: null }), null)
-    assert.equal(updateClaudeOAuthJson('{}', { accessToken: 'x', refreshToken: null, expiresAt: null }), null)
+    assert.equal(
+      updateClaudeOAuthJson(null, { accessToken: 'x', refreshToken: null, expiresAt: null }),
+      null,
+    )
+    assert.equal(
+      updateClaudeOAuthJson('not json', { accessToken: 'x', refreshToken: null, expiresAt: null }),
+      null,
+    )
+    assert.equal(
+      updateClaudeOAuthJson('{}', { accessToken: 'x', refreshToken: null, expiresAt: null }),
+      null,
+    )
   })
 })
 
@@ -190,7 +199,12 @@ describe('persistRefreshedClaudeToken', () => {
     writeFileSync(
       path,
       JSON.stringify({
-        claudeAiOauth: { accessToken: 'old-acc', refreshToken: 'old-ref', expiresAt: 1, scopes: ['a'] },
+        claudeAiOauth: {
+          accessToken: 'old-acc',
+          refreshToken: 'old-ref',
+          expiresAt: 1,
+          scopes: ['a'],
+        },
       }),
     )
     persistRefreshedClaudeToken(

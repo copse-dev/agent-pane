@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import {
-  fetchClaudePlanUsageFromCredentials,
-  type ClaudeCredentialInput,
-} from './claude.ts'
+import { fetchClaudePlanUsageFromCredentials, type ClaudeCredentialInput } from './claude.ts'
 import { refreshClaudeOAuthToken } from './claude-oauth.ts'
 import { parseClaudeOAuthCredential } from './credentials.ts'
 import type { FetchLike } from './types.ts'

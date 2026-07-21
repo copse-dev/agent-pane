@@ -62,8 +62,6 @@ export async function refreshClaudeOAuthToken(
     // Keep the token we sent when the server does not rotate it.
     refreshToken: typeof rotated === 'string' && rotated.trim() ? rotated.trim() : token,
     expiresAt:
-      typeof expiresIn === 'number' && Number.isFinite(expiresIn)
-        ? now() + expiresIn * 1000
-        : null,
+      typeof expiresIn === 'number' && Number.isFinite(expiresIn) ? now() + expiresIn * 1000 : null,
   }
 }
