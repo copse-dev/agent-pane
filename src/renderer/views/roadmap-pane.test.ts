@@ -1459,4 +1459,83 @@ describe('roadmap pane', () => {
       unmount()
     }
   })
+
+  it('returns to the review panel after opening an item from triage', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([makeItem('a', 'Fix startup flash', 'ready', undefined, '#41')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      await flush()
+      const reviewView = viewer.querySelector<HTMLElement>('.roadmap-review')
+      assert.ok(reviewView)
+      assert.equal(reviewView.hidden, false)
+
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-open')?.click()
+      await flush()
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-form:not([hidden])'))
+      assert.equal(reviewView.hidden, true)
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-review-back:not([hidden])'))
+
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-back')?.click()
+      await flush()
+      assert.equal(reviewView.hidden, false)
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-form[hidden]'))
+      assert.ok(viewer.querySelector('.roadmap-review-row'))
+    } finally {
+      unmount()
+    }
+  })
+
+  it('stops an in-progress review and keeps partial triage results', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([
+      makeItem('a', 'Fix startup flash', 'ready', undefined, '#41'),
+      makeItem('b', 'Terminal shortcut', 'ready', undefined, '#42'),
+    ])
+    let releaseSecond!: () => void
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+    const reviewProgress = { secondStarted: false }
+    const baseReviewItem = api.roadmap.reviewItem
+    api.roadmap.reviewItem = async (
+      id: string,
+      commits: string,
+      runId?: string,
+    ): Promise<Awaited<ReturnType<typeof baseReviewItem>>> => {
+      if (id === 'b') {
+        reviewProgress.secondStarted = true
+        await secondGate
+      }
+      return baseReviewItem(id, commits, runId)
+    }
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-review-btn')?.click()
+      for (let i = 0; i < 20 && !reviewProgress.secondStarted; i++) await flush()
+      assert.ok(reviewProgress.secondStarted, 'second item review should have started')
+
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-stop')?.click()
+      await flush()
+      releaseSecond()
+      await flush()
+
+      assert.equal(viewer.querySelectorAll('.roadmap-review-row').length, 1)
+      assert.deepEqual(calls.abortReview, ['bulk-run-1'])
+      assert.equal(calls.completeReview.length, 0)
+      assert.match(viewer.querySelector('.roadmap-review-status')?.textContent ?? '', /stopped/i)
+      assert.ok(viewer.querySelector<HTMLElement>('.roadmap-review-stop[hidden]'))
+
+      viewer.querySelector<HTMLButtonElement>('.roadmap-review-close')?.click()
+      await flush()
+      assert.equal(calls.completeReview.length, 0)
+    } finally {
+      unmount()
+    }
+  })
 })

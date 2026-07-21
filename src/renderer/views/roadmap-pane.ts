@@ -1,4 +1,4 @@
-import { el, clear } from '../dom/helpers.ts'
+import { el, clear, scrollIntoViewIfNeeded } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
@@ -139,11 +139,15 @@ export function mountRoadmapPane(
   let importing = false
   // Review mode: model-judged resolution status for each active item.
   let reviewing = false
+  /** Item opened from the review triage panel while bulk review is still running. */
+  let reviewPeekId: string | null = null
   let reviewResults: ReviewItemResult[] = []
   /** Status the user applied from the review triage panel (id → new status). */
   const reviewApplied = new Map<string, RoadmapStatus>()
   /** True after a bulk ◎ run finishes — Close advances the commit checkpoint. */
   let bulkReviewFinished = false
+  /** True while prepareReview/reviewItem loop is running (including prepare). */
+  let reviewInFlight = false
   let bulkRunId: string | null = null
   let reviewRunToken = 0
   let cachedCheckpoint:
@@ -362,6 +366,15 @@ export function mountRoadmapPane(
     { type: 'button', class: 'memories-btn roadmap-cancel-btn' },
     'Cancel',
   )
+  const reviewBackBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-review-back',
+      title: 'Return to the in-progress review results',
+    },
+    'Back to review',
+  )
   const actions = el(
     'div',
     { class: 'memories-actions' },
@@ -371,6 +384,7 @@ export function mountRoadmapPane(
     fitBtn,
     resolutionBtn,
     deleteBtn,
+    reviewBackBtn,
     cancelBtn,
   )
 
@@ -416,6 +430,15 @@ export function mountRoadmapPane(
 
   const reviewStatus = el('div', { class: 'memories-meta roadmap-review-status' })
   const reviewList = el('div', { class: 'roadmap-review-list' })
+  const reviewStopBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'memories-btn roadmap-review-stop',
+      title: 'Stop the in-progress review',
+    },
+    'Stop',
+  )
   const reviewCloseBtn = el(
     'button',
     { type: 'button', class: 'memories-btn roadmap-review-close' },
@@ -448,6 +471,7 @@ export function mountRoadmapPane(
     el(
       'div',
       { class: 'memories-actions roadmap-review-actions' },
+      reviewStopBtn,
       reviewMarkResolvedBtn,
       reviewArchiveResolvedBtn,
       reviewCloseBtn,
@@ -574,8 +598,9 @@ export function mountRoadmapPane(
   /** Keep the viewer column aligned with import/review overlays vs the editor. */
   function syncViewerMode(): void {
     importView.hidden = !importing
-    reviewView.hidden = !reviewing
-    if (importing || reviewing) {
+    const reviewPanelActive = reviewing && !reviewPeekId
+    reviewView.hidden = !reviewPanelActive
+    if (importing || reviewPanelActive) {
       form.hidden = true
       emptyState.hidden = true
     }
@@ -587,7 +612,7 @@ export function mountRoadmapPane(
   function renderEditor(opts?: { preserveDirty?: boolean }): void {
     errorLine.hidden = true
     syncViewerMode()
-    if (importing || reviewing) {
+    if (importing || (reviewing && !reviewPeekId)) {
       return
     }
     const item = selectedId ? items.find((m) => m.id === selectedId) : null
@@ -622,6 +647,7 @@ export function mountRoadmapPane(
     fitBtn.hidden = !item || !itemIssue(item)
     resolutionBtn.hidden = !item || item.status === 'done' || item.status === 'archived'
     deleteBtn.hidden = !item
+    reviewBackBtn.hidden = !(reviewing && reviewPeekId != null)
     // The stored verdict + reasoning render whenever the item is shown, so a
     // past check survives closing the pane. While a check is in flight,
     // checkFit owns this box (progress/error text) and blocks this rewrite.
@@ -870,10 +896,11 @@ export function mountRoadmapPane(
       })
       listBody.append(row)
     }
-    // Scroll the selected row into view so it's visible after re-render.
+    // Keep the selected row visible after re-render without nudging scroll when
+    // it is already fully on screen (e.g. the user just clicked it).
     const selectedRow = listBody.querySelector('.is-selected')
     if (selectedRow) {
-      selectedRow.scrollIntoView({ block: 'nearest' })
+      scrollIntoViewIfNeeded(selectedRow, listBody)
     }
   }
 
@@ -983,6 +1010,9 @@ export function mountRoadmapPane(
     deleteBtn.disabled = true
     try {
       await api.roadmap.delete(selectedId)
+      if (reviewPeekId === selectedId) {
+        reviewPeekId = null
+      }
       selectedId = null
       creating = false
       await refresh()
@@ -995,6 +1025,10 @@ export function mountRoadmapPane(
 
   function cancel(): void {
     cancelResolutionCheckUi()
+    if (reviewing && reviewPeekId) {
+      returnToReview()
+      return
+    }
     creating = false
     selectedId = null
     renderList()
@@ -1275,9 +1309,27 @@ export function mountRoadmapPane(
     cancelResolutionCheckUi()
     selectedId = id
     creating = false
-    reviewing = false
+    reviewPeekId = reviewing ? id : null
     renderList()
     renderEditor()
+  }
+
+  function returnToReview(): void {
+    cancelResolutionCheckUi()
+    reviewPeekId = null
+    selectedId = null
+    renderList()
+    renderEditor()
+    if (reviewing) renderReviewResults()
+  }
+
+  function syncReviewActionVisibility(): void {
+    reviewStopBtn.hidden = !reviewInFlight
+    reviewStopBtn.disabled = false
+    if (reviewInFlight) {
+      reviewMarkResolvedBtn.hidden = true
+      reviewArchiveResolvedBtn.hidden = true
+    }
   }
 
   function renderReviewResults(): void {
@@ -1357,11 +1409,36 @@ export function mountRoadmapPane(
       row.append(actions)
       reviewList.append(row)
     }
-    const hasBulk = pendingResolved > 0
+    const hasBulk = pendingResolved > 0 && !reviewInFlight
     reviewMarkResolvedBtn.hidden = !hasBulk
     reviewArchiveResolvedBtn.hidden = !hasBulk
     reviewMarkResolvedBtn.disabled = !hasBulk
     reviewArchiveResolvedBtn.disabled = !hasBulk
+  }
+
+  function stopReview(): void {
+    if (!reviewInFlight) return
+    reviewInFlight = false
+    reviewStopBtn.disabled = true
+    reviewStatus.textContent = 'Stopping review…'
+    reviewRunToken++
+    reviewPeekId = null
+    selectedId = null
+    const runId = bulkRunId
+    bulkRunId = null
+    if (runId) {
+      void api.roadmap.abortReview(runId).then(() => {
+        cachedCheckpoint = undefined
+      })
+    }
+    reviewStatus.textContent =
+      reviewResults.length > 0
+        ? `Review stopped — ${String(reviewResults.length)} item(s) judged so far. Close when finished.`
+        : 'Review stopped.'
+    syncReviewActionVisibility()
+    renderList()
+    renderEditor()
+    if (reviewing) renderReviewResults()
   }
 
   async function applyReviewBulkStatus(status: 'done' | 'archived'): Promise<void> {
@@ -1396,7 +1473,9 @@ export function mountRoadmapPane(
     cancelResolutionCheckUi()
     const runToken = ++reviewRunToken
     reviewing = true
+    reviewPeekId = null
     bulkReviewFinished = false
+    reviewInFlight = false
     bulkRunId = null
     importing = false
     creating = false
@@ -1406,6 +1485,8 @@ export function mountRoadmapPane(
     clear(reviewList)
     reviewStatus.textContent = 'Preparing review…'
     reviewBtn.disabled = true
+    reviewInFlight = true
+    syncReviewActionVisibility()
     renderList()
     renderEditor()
     try {
@@ -1433,15 +1514,20 @@ export function mountRoadmapPane(
       }
       bulkReviewFinished = true
       reviewStatus.textContent = `Review complete — ${String(reviewResults.length)} item(s) judged. Use the row actions to mark done, archive, or open an item. Close when finished to advance the commit checkpoint.`
+      syncReviewActionVisibility()
+      renderReviewResults()
     } catch (err) {
       reviewStatus.textContent = ipcErrorMessage(err, 'Roadmap review failed.')
     } finally {
+      reviewInFlight = false
       reviewBtn.disabled = false
+      syncReviewActionVisibility()
     }
   }
 
   function closeReview(): void {
     reviewRunToken++
+    reviewPeekId = null
     if (bulkReviewFinished && bulkRunId) {
       void api.roadmap.completeReview(bulkRunId).then(() => {
         cachedCheckpoint = undefined
@@ -1453,12 +1539,15 @@ export function mountRoadmapPane(
     }
     reviewing = false
     bulkReviewFinished = false
+    reviewInFlight = false
     bulkRunId = null
     renderEditor()
   }
 
   importBtn.addEventListener('click', startImport)
   reviewBtn.addEventListener('click', () => void startReview())
+  reviewBackBtn.addEventListener('click', returnToReview)
+  reviewStopBtn.addEventListener('click', stopReview)
   reviewCloseBtn.addEventListener('click', closeReview)
   reviewMarkResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('done'))
   reviewArchiveResolvedBtn.addEventListener('click', () => void applyReviewBulkStatus('archived'))
