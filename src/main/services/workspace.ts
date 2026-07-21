@@ -23,6 +23,15 @@ export interface InternalWorkspaceRootRegistration {
   readonly checkoutRoot: string
   readonly gitDir: string
   readonly commonGitDir: string
+  /**
+   * Main-repository working tree derived from `commonGitDir` when its basename
+   * is `.git` (the standard non-bare layout). `null` for bare repositories or
+   * unusual `commondir` values where no primary checkout can be inferred. The
+   * sandbox denies reads under this path so a linked-worktree agent cannot
+   * read the shared project tree of an outside-$HOME layout (tmpdir,
+   * `COPSE_WORKTREES_DIR`, …) where ASRT's default home-deny does not apply.
+   */
+  readonly primaryCheckoutRoot: string | null
   /** Other linked checkouts in the same repository, explicitly denied by the sandbox. */
   readonly siblingRoots: readonly string[]
 }
@@ -184,11 +193,18 @@ export async function registerInternalWorkspaceRoot(
     }
   }
 
-  const registration = Object.freeze({
+  // Standard non-bare layout: `<primary>/.git` is the common Git directory, so
+  // the primary working tree is its parent. Bare repos (or unusual custom
+  // `commondir` targets) have no working tree — leave `primaryCheckoutRoot`
+  // null and rely on the sibling deny list plus the home-deny fallback.
+  const primaryCheckoutRoot = basename(commonGitDir) === '.git' ? dirname(commonGitDir) : null
+
+  const registration: InternalWorkspaceRootRegistration = Object.freeze({
     root: canonicalExecutionRoot,
     checkoutRoot: canonicalCheckoutRoot,
     gitDir,
     commonGitDir,
+    primaryCheckoutRoot,
     siblingRoots: Object.freeze([...new Set(siblingRoots)]),
   })
   internalWorkspaceRoots.set(canonicalExecutionRoot, registration)
