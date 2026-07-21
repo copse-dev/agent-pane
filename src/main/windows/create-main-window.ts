@@ -4,6 +4,7 @@ import { getAppIcon } from '../app-icon.ts'
 import { getSetting, setSetting } from '../services/storage/settings.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
+import { toggleDetachedDevTools } from '@shared/developer-mode.ts'
 
 let mainWin: BrowserWindow | null = null
 
@@ -88,11 +89,21 @@ const DEVTOOLS_SHORTCUT = 'Control+Shift+I'
 /** Register the Ctrl+Shift+I DevTools shortcut (no-op if already registered). */
 export function registerDevtoolsShortcut(win: BrowserWindow): void {
   globalShortcut.register(DEVTOOLS_SHORTCUT, () => {
-    win.webContents.toggleDevTools()
+    toggleDetachedDevTools(win.webContents)
   })
 }
 
 /** Unregister the Ctrl+Shift+I DevTools shortcut. */
 export function unregisterDevtoolsShortcut(): void {
   globalShortcut.unregister(DEVTOOLS_SHORTCUT)
+}
+
+/** Apply Developer mode to the main window immediately. */
+export function syncDeveloperMode(win: BrowserWindow, enabled: boolean): void {
+  if (enabled) {
+    registerDevtoolsShortcut(win)
+    return
+  }
+  unregisterDevtoolsShortcut()
+  if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools()
 }

@@ -84,7 +84,7 @@ describe('hook cards (component, decision 10)', () => {
     assert.equal(document.querySelector('.hook-card.msg-user'), null)
   })
 
-  it('collapses a turn’s hook cards into one summary row, worst status surfaced', () => {
+  it('keeps the group collapsed and pre-opens only inner hooks that took action', () => {
     const store = createStore()
     const host = document.createElement('div')
     document.body.append(host)
@@ -113,16 +113,62 @@ describe('hook cards (component, decision 10)', () => {
     assert.equal(group.getAttribute('data-hook-count'), '3')
     // Collapsed by default: <details> starts closed.
     assert.equal(group.hasAttribute('open'), false, 'the group is collapsed by default')
-    // The summary counts the runs and flags the one blocking verdict.
+    // The outcome leads; the less-interesting run count stays secondary.
     const summary = group.querySelector('.hook-card-header .hook-card-status')
     assert.ok(summary)
+    assert.match(summary.textContent, /^1 blocked/)
     assert.match(summary.textContent, /3 ran/)
-    assert.match(summary.textContent, /1 blocked/)
     // Worst status wins, so a deny is visible while collapsed.
     assert.equal(group.getAttribute('data-status'), 'deny')
-    // Every individual card still lives inside the group, in fire order.
+    // Every individual card still lives inside the group, in fire order. Plain
+    // and allow-only responses stay contracted; the applied deny is ready open
+    // when the user expands the still-collapsed outer group.
     const inner = group.querySelectorAll('.hook-card')
     assert.equal(inner.length, 3, 'all cards are nested in the group body')
+    assert.equal(inner[0]?.hasAttribute('open'), false)
+    assert.equal(inner[1]?.hasAttribute('open'), false)
+    assert.equal(inner[2]?.hasAttribute('open'), true)
+    const actionCard = inner[2]
+    assert.ok(actionCard)
+    assert.match(actionCard.querySelector('.hook-card-status')?.textContent ?? '', /Blocked action/)
+    assert.match(actionCard.querySelector('.hook-card-detail')?.textContent ?? '', /gated action/)
+  })
+
+  it('opens a non-blocking hook that changed the turn and names every effect in its details', () => {
+    const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    seedThread(store, [
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'run safely',
+        toolCalls: [],
+        createdAt: 1,
+        hookCards: [
+          card({
+            id: 'h-rewrite',
+            updatedInput: true,
+            injectContextChars: 24,
+            queuedMessageChars: 12,
+          }),
+        ],
+      },
+    ])
+
+    const group = document.querySelector<HTMLDetailsElement>('.hook-card-group')
+    const action = group?.querySelector<HTMLDetailsElement>('.hook-card')
+    assert.ok(group)
+    assert.ok(action)
+    assert.equal(group.open, false, 'the outer hook group always auto-collapses')
+    assert.equal(action.open, true, 'an applied effect opens inside the group')
+    assert.match(action.querySelector('.hook-card-status')?.textContent ?? '', /Rewrote input \+2/)
+    const detail = action.querySelector('.hook-card-detail')?.textContent ?? ''
+    assert.match(detail, /Rewrote the tool input/)
+    assert.match(detail, /Injected 24 chars of context/)
+    assert.match(detail, /Queued a 12-char follow-up/)
   })
 
   it('marks a hook-originated turn with an origin marker (not a plain user message)', () => {

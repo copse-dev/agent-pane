@@ -149,13 +149,13 @@ returning modified content.
 | **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                                                                                                                                                                                                                                                                                                          |
 | **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                                                                                                                                                                                                                                                                                                                    |
 | **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                                                                                                                                                                                                                                                                                                                   |
-| **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                                                                                                                                           |
+| **Settings UI**               | Supported     | Developer mode → Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                                                                                                                          |
 
 ### Enablement
 
 Hooks are **off by default**. Honouring a hook spawns a user/project script on the
 agent's hot path, so it is gated behind the `cursorHooksEnabled` security setting
-(Settings → Sources → Hooks). When disabled the gate skips discovery entirely (no
+(Developer mode → Settings → Sources → Hooks). When disabled the gate skips discovery entirely (no
 overhead); the Sources panel still lists discovered hooks so authoring problems are
 visible before enabling.
 

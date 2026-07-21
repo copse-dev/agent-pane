@@ -7,7 +7,7 @@ import {
 } from './windows/browser-web-contents.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
-import { createMainWindow } from './windows/create-main-window.ts'
+import { createMainWindow, syncDeveloperMode } from './windows/create-main-window.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
@@ -85,6 +85,8 @@ import {
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
+import { getSetting } from './services/storage/settings.ts'
+import { DEVELOPER_MODE_SETTING, LEGACY_DEVTOOLS_SHORTCUT_SETTING } from '@shared/developer-mode.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import {
   prepareThreadExecutionContext,
@@ -185,7 +187,10 @@ app
     recordStartupPhase('window-create')
     const win = createMainWindow()
     applyAppIcon([win])
-    buildAppMenu(win)
+    const legacyDeveloperMode = getSetting<boolean>(LEGACY_DEVTOOLS_SHORTCUT_SETTING, false)
+    const developerMode = getSetting<boolean>(DEVELOPER_MODE_SETTING, legacyDeveloperMode)
+    syncDeveloperMode(win, developerMode)
+    buildAppMenu(win, developerMode)
     initUpdatePrompt(win)
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)

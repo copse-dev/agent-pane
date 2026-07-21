@@ -269,6 +269,53 @@ describe('input bar first-message checkout', () => {
   })
 })
 
+describe('input bar developer diagnostics', () => {
+  it('hides the overflow by default and reveals both diagnostics in Developer mode', async () => {
+    const populated = thread()
+    populated.messages = [
+      {
+        id: 'message-1',
+        role: 'user',
+        content: 'A persisted message makes this thread exportable.',
+        toolCalls: [],
+        createdAt: 1,
+      },
+    ]
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: populated.id,
+      threads: [populated],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const overflow = host.querySelector<HTMLElement>('.footer-overflow')
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(overflow)
+    assert.ok(trigger)
+    assert.equal(overflow.hidden, true)
+
+    store.setState({ developerMode: true })
+    store.emit('settings_changed')
+    assert.equal(overflow.hidden, false)
+    trigger.click()
+    assert.deepEqual(
+      Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
+        item.textContent.trim(),
+      ),
+      ['Copy thread ID', 'Export conversation (JSONL)'],
+    )
+
+    store.setState({ developerMode: false })
+    store.emit('settings_changed')
+    assert.equal(overflow.hidden, true)
+  })
+})
+
 describe('input bar branch mismatch warning', () => {
   it('does not block submit when an isolated worktree binds a different branch', async () => {
     let runs = 0

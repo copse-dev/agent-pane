@@ -173,12 +173,13 @@ export function mountInputBar(
   const footerOverflow = mountFooterOverflow(footer, [
     {
       label: 'Copy thread ID',
-      hidden: (): boolean => !getActiveThreadId(),
+      hidden: (): boolean => !store.getState().developerMode || !getActiveThreadId(),
       onClick: copyThreadId,
     },
     {
       label: 'Export conversation (JSONL)',
-      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean =>
+        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
       onClick: (): void => {
         const thread = getActiveThread(store)
         if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)

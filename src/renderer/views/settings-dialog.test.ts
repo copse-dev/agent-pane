@@ -144,9 +144,14 @@ describe('settings search (cross-section block filter)', () => {
   })
 
   it('matches text in a label or hint, not just the heading', () => {
-    // "DevTools" appears in a checkbox label / hint inside the Experimental block.
+    // "DevTools" appears in the Developer mode hint inside the Experimental block.
     search('devtools')
-    assert.deepEqual(resultLegends(), ['DevTools shortcut'])
+    assert.deepEqual(resultLegends(), ['Developer mode'])
+  })
+
+  it('excludes developer-only settings from search while Developer mode is off', () => {
+    search('cursor hooks')
+    assert.deepEqual(resultLegends(), [])
   })
 
   it('ranks a heading (legend) match above a body-only match', () => {

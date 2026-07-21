@@ -198,11 +198,9 @@ import {
   type MockScriptStep,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import {
-  getMainWindow,
-  registerDevtoolsShortcut,
-  unregisterDevtoolsShortcut,
-} from '../windows/create-main-window.ts'
+import { getMainWindow, syncDeveloperMode } from '../windows/create-main-window.ts'
+import { buildAppMenu } from '../windows/app-menu.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
@@ -789,14 +787,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
     }
-    // Toggle the DevTools shortcut registration when the setting changes.
-    if (k === 'devtoolsShortcutEnabled') {
+    // Developer mode owns every main-process diagnostic surface live: shortcut,
+    // detached DevTools window, and the native View-menu entry.
+    if (k === DEVELOPER_MODE_SETTING) {
       const win = getMainWindow()
       const enabled = typeof value === 'boolean' && value
-      if (enabled) {
-        if (win) registerDevtoolsShortcut(win)
-      } else {
-        unregisterDevtoolsShortcut()
+      if (win) {
+        syncDeveloperMode(win, enabled)
+        buildAppMenu(win, enabled)
       }
     }
   })
