@@ -34,6 +34,7 @@ import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pa
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -51,6 +52,9 @@ const ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY = 'packMigration.roadmapPlansEnable
 
 /** One-time bridge from the retired `advisorStrategyEnabled` standalone setting. */
 const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategyEnablement'
+
+/** One-time bridge from the retired `okfMemoriesEnabled` standalone setting. */
+const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -157,6 +161,28 @@ function migrateAdvisorStrategyEnablement(): void {
   storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
 }
 
+/**
+ * Preserve the enablement users had before OKF memories became a pack. Like
+ * model comparison, the feature was previously opt-in (off by default via the
+ * `okfMemoriesEnabled` setting), so an absent or false value must disable the
+ * new `copse.okf-memories` pack — otherwise the migration would expose a
+ * previously opt-in experimental tool (and its prompt block + Memories pane) to
+ * every existing user after upgrade. Runs synchronously before the shared
+ * registry is created and is idempotent (guarded by its own migration key).
+ */
+function migrateOkfMemoriesEnablement(): void {
+  if (storageGet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const okfMemoriesEnabled = storageGet('okfMemoriesEnabled')
+
+  if (okfMemoriesEnabled === true) disabled.delete(OKF_MEMORIES_PACK_ID)
+  else disabled.add(OKF_MEMORIES_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+}
+
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
 function readPackSettings(packId: string): Record<string, unknown> {
   const raw = storageGet(packSettingsKey(packId))
@@ -251,6 +277,7 @@ export function getPackService(): PackService {
   migrateLongHorizonTasksEnablement()
   migrateRoadmapPlansEnablement()
   migrateAdvisorStrategyEnablement()
+  migrateOkfMemoriesEnablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

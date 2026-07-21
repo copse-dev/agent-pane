@@ -146,14 +146,12 @@ You can read the user's open Shells tabs (interactive terminals in the right pan
 - read: snapshot recent scrollback (defaults to the active tab; pass id / max_lines to target another or pull more history)
 This is for user-run terminals, not your own run_shell / run_background output. Prefer read_terminal over asking the user to paste when a relevant shell is open. Users may also @shell a tab into the message explicitly.`
 
-// Optional steering, toggled by the experimental `okfMemoriesEnabled` setting.
-// Only appended when the remember/recall tools are actually registered.
-export const MEMORY_TOOLS_BLOCK = `
-
-You have a persistent memory for this project, stored as Open Knowledge Format markdown notes:
-- remember: Save a durable fact worth recalling in future sessions — a project convention, decision, gotcha, or environment detail. Re-use a title to update that memory.
-- recall: Look up what you previously stored, optionally filtered by a query.
-Use recall early when a task may depend on prior context, and remember when you learn something durable the user would not want to re-explain. Keep memories concise and project-specific; do not store secrets.`
+// Optional steering, gated by the `copse.okf-memories` first-party pack. Only
+// appended when the remember/recall tools are actually registered. The block
+// text lives in the pack (its `promptBlocks` declaration) so the pack decl and
+// the host appending site read the identical string; re-exported here to keep
+// this module's block-export surface stable for `agent-system-prompt.ts`.
+export { MEMORY_TOOLS_BLOCK } from '@copse/agent/packs/okf-memories-pack.ts'
 
 // Optional steering, toggled by the experimental `piiRedactionEnabled` setting.
 // Only appended when the reveal_pii tool is actually registered.

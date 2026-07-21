@@ -97,6 +97,14 @@ describe('settings packs (about:addons)', function () {
     await expect(advisorRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await advisorRow.getAttribute('data-enabled'), 'false')
 
+    // OKF memories pack: listed, default-OFF via the one-time enablement bridge
+    // (absent legacy `okfMemoriesEnabled` ⇒ disabled).
+    const okfMemoriesRow = packs.$('.pack-row[data-pack-id="copse.okf-memories"]')
+    await expect(okfMemoriesRow).toBeDisplayed()
+    assert.equal(await okfMemoriesRow.$('.pack-name').getText(), 'copse.okf-memories')
+    await expect(okfMemoriesRow.$('.pack-badge-first-party')).toBeDisplayed()
+    assert.equal(await okfMemoriesRow.getAttribute('data-enabled'), 'false')
+
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
 
