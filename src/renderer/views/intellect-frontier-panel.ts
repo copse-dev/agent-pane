@@ -39,6 +39,7 @@ import { liveIntellectCandidates, type LiveAaModel } from '@copse/llm/live-intel
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
+import { isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { applyPlanCoverage } from './plan-inclusion.ts'
 import { el } from '../dom/helpers.ts'
@@ -1258,6 +1259,7 @@ export function createIntellectFrontierPanel(
   } | null = null
   let discover = false
   let showUnpriced = false
+  let zdrOnly = false
   let costAxis: FrontierCostAxis = 'blended'
   // The full lists behind the chart, cached so the pop-out can show the same
   // "below the chart" content the inline panel does.
@@ -1270,6 +1272,7 @@ export function createIntellectFrontierPanel(
   let expandTooltip: FrontierTooltip | null = null
   let expandDiscoverBtn: HTMLButtonElement | null = null
   let expandUnpricedBtn: HTMLButtonElement | null = null
+  let expandZdrBtn: HTMLButtonElement | null = null
   let expandCostAxisGroup: HTMLElement | null = null
 
   function toggleDiscover(): void {
@@ -1280,10 +1283,23 @@ export function createIntellectFrontierPanel(
     showUnpriced = !showUnpriced
     render()
   }
+  function toggleZdrOnly(): void {
+    zdrOnly = !zdrOnly
+    render()
+  }
   function setCostAxis(next: FrontierCostAxis): void {
     if (costAxis === next) return
     costAxis = next
     render()
+  }
+
+  function syncZdrBtn(btn: HTMLButtonElement | null): void {
+    if (!btn) return
+    btn.textContent = 'ZDR only'
+    btn.classList.toggle('active', zdrOnly)
+    btn.setAttribute('aria-pressed', zdrOnly ? 'true' : 'false')
+    btn.title =
+      'Show only models on zero-data-retention paths (local, Fireworks, Together, OpenRouter ZDR routing, HF partner tags). Matches the Settings privacy badge — not enterprise-contract ZDR.'
   }
 
   function makeCostAxisGroup(): HTMLElement {
@@ -1330,6 +1346,11 @@ export function createIntellectFrontierPanel(
     class: 'frontier-btn frontier-unpriced-toggle',
   })
   unpricedBtn.addEventListener('click', toggleUnpriced)
+  const zdrBtn = el('button', {
+    type: 'button',
+    class: 'frontier-btn frontier-zdr-toggle',
+  })
+  zdrBtn.addEventListener('click', toggleZdrOnly)
   const costAxisGroup = makeCostAxisGroup()
   const expandBtn = el(
     'button',
@@ -1350,6 +1371,11 @@ export function createIntellectFrontierPanel(
       class: 'frontier-btn frontier-unpriced-toggle',
     })
     expandUnpricedBtn.addEventListener('click', toggleUnpriced)
+    expandZdrBtn = el('button', {
+      type: 'button',
+      class: 'frontier-btn frontier-zdr-toggle',
+    })
+    expandZdrBtn.addEventListener('click', toggleZdrOnly)
     expandCostAxisGroup = makeCostAxisGroup()
     const bigChart = el('div', { class: 'frontier-chart frontier-expand-chart' })
     expandChartHost = bigChart
@@ -1359,6 +1385,7 @@ export function createIntellectFrontierPanel(
       expandTooltip = null
       expandDiscoverBtn = null
       expandUnpricedBtn = null
+      expandZdrBtn = null
       expandCostAxisGroup = null
       dialog.remove()
     }
@@ -1370,6 +1397,7 @@ export function createIntellectFrontierPanel(
         'div',
         { class: 'frontier-expand-controls' },
         expandCostAxisGroup,
+        expandZdrBtn,
         expandDiscoverBtn,
         expandUnpricedBtn,
         close,
@@ -1392,6 +1420,8 @@ export function createIntellectFrontierPanel(
       { class: 'settings-fieldset-desc' },
       'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived. ',
       costAxisGroup,
+      ' ',
+      zdrBtn,
       ' ',
       discoverBtn,
       ' ',
@@ -1618,6 +1648,22 @@ export function createIntellectFrontierPanel(
     } else {
       allPoints = blendedPoints
     }
+    syncZdrBtn(zdrBtn)
+    syncZdrBtn(expandZdrBtn)
+    // ZDR filter matches Settings privacy badges (local + zero-retention paths).
+    // Recompute dominance after filtering so the frontier isn't polluted by
+    // retained-by-default Anthropic/OpenAI points that were just hidden.
+    let hiddenByZdr = 0
+    if (zdrOnly) {
+      const kept = allPoints.filter((p) =>
+        isZeroRetentionModelPath(p.id, {
+          ...(p.local === true ? { local: true } : {}),
+          providers: extraProviders,
+        }),
+      )
+      hiddenByZdr = allPoints.length - kept.length
+      allPoints = computeParetoFrontier(kept.map(asFrontierCandidate))
+    }
     // A verified feed can carry a hundred-plus priced models; the map's job is
     // the frontier, so dominated LIVE points collapse into a disclosure rather
     // than each claiming a labelled dot. Curated/local/provider points always
@@ -1627,7 +1673,9 @@ export function createIntellectFrontierPanel(
     const dominatedLive = allPoints.filter((p) => liveIds.has(p.id) && !p.onFrontier)
     const points = allPoints.filter((p) => !liveIds.has(p.id) || p.onFrontier)
     const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
-    const unpricedModels = unpricedCanonicalModels(plottedIds, live.hintOnly)
+    const unpricedModels = unpricedCanonicalModels(plottedIds, live.hintOnly).filter(
+      (u) => !zdrOnly || isZeroRetentionModelPath(u.id, { providers: extraProviders }),
+    )
     lastPoints = points
     // The unpriced gutter is off by default (it can carry hundreds); the toggle
     // overlays the top few on the left axis, the full set stays in the list.
@@ -1639,9 +1687,12 @@ export function createIntellectFrontierPanel(
     }
     applyUnpriced(unpricedBtn)
     applyUnpriced(expandUnpricedBtn)
+    const unscoredAll = unscoredPricedModels(extraProviders)
     lastGutters = {
       ...(showUnpriced ? { unpriced: unpricedModels } : {}),
-      unscored: unscoredPricedModels(extraProviders),
+      unscored: zdrOnly
+        ? unscoredAll.filter((u) => isZeroRetentionModelPath(u.id, { providers: extraProviders }))
+        : unscoredAll,
     }
     // When discovery is OFF, tell the user how many models the toggle reveals.
     if (!discover && live.candidates.length > 0) {
@@ -1659,6 +1710,24 @@ export function createIntellectFrontierPanel(
           'span',
           {},
           `${String(missingTaskCost)} model${missingTaskCost === 1 ? '' : 's'} lack AA task-cost data and are hidden on this axis. `,
+        ),
+      )
+    }
+    if (zdrOnly && hiddenByZdr > 0) {
+      liveNoteParts.push(
+        el(
+          'span',
+          {},
+          `ZDR only: hiding ${String(hiddenByZdr)} model${hiddenByZdr === 1 ? '' : 's'} on retained-by-default paths (Anthropic/OpenAI API, …). `,
+        ),
+      )
+    }
+    if (zdrOnly && points.length === 0) {
+      liveNoteParts.push(
+        el(
+          'span',
+          {},
+          'No zero-retention models on this map yet — add a Fireworks/Together provider, an HF model pinned to a ZDR partner, a local model, or OpenRouter under default ZDR routing. ',
         ),
       )
     }
