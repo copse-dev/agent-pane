@@ -12,6 +12,11 @@ const store = new ElectronStore<Record<string, unknown>>({ name: 'settings' })
 // whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
 // settings writes in this process go through this module, including encrypted
 // API-key records, so the write-through cache stays coherent.
+//
+// Known limitation (same as config storage): a separate process that shares
+// settings.json has its own ElectronStore; this cache will not observe another
+// process's write to a key it has already read. In-process writers stay
+// coherent via write-through + the per-key write queue.
 const cached = createCachedStore({
   get: (key) => store.get(key),
   set: (key, value) => {
