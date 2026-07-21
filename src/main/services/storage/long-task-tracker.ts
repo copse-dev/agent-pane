@@ -20,11 +20,11 @@ import { getActiveProjectRoot } from '../workspace.ts'
  * State persists per project as JSON under
  * `~/.copse/long-tasks/<workspace>/tasks.json` (mirroring the memories store's
  * workspace namespacing). It complements the in-thread `todos` (#530), which is
- * scoped to a single thread; a long task outlives the thread. Off by default;
- * gates the `track_long_task` tool registration (registry-bootstrap) so the
- * feature is fully inert until the user opts in via Settings → Experimental.
+ * scoped to a single thread; a long task outlives the thread. Off by default:
+ * the `copse.long-horizon-tasks` first-party pack gates the `track_long_task`
+ * tool registration (see `registry-bootstrap.ts`) so the feature is fully inert
+ * until the user opts in via Settings → Packs.
  */
-export const LONG_HORIZON_TASKS_ENABLED_SETTING = 'longHorizonTasksEnabled'
 
 const stepSchema = z.object({
   id: z.string(),
