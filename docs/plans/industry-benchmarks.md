@@ -21,7 +21,7 @@ held-back test patch and running its `FAIL_TO_PASS` pytest ids) nightly or
 via the `bench-agent` label on a runner named by the `LM_EVAL_RUNNER`
 variable. Grading fidelity caveat: the runner's Python env, not the
 official per-instance Docker images — trend data, not leaderboard claims.
-Phases 3–4 remain. This doc maps where public agent benchmarks
+Phases 2b–4 remain. This doc maps where public agent benchmarks
 (SWE-bench, Terminal-Bench, BFCL, TAU-bench, RULER-style long-context
 suites, MCP conformance suites) plug into the harness we already have,
 and what each one buys the _plumbing_ specifically.
@@ -37,6 +37,8 @@ of harness machinery whose value is currently asserted, not measured:
   (`agent-loop-guards`, `agent-loop-escalation`)
 - in-loop compaction and context accounting (`trim-history`,
   `context-breakdown`, `working-brief`)
+- thread-native task-state surfacing (working brief, todos, OKF thread history,
+  tool-result evidence) versus pull-only durable memory
 - tool-call recovery for sloppy dialects (`parse-text-tool-calls`,
   `parse-tool-args`, provider stop-reason normalization)
 - search routing, read-file paging, subagent orchestration
@@ -112,18 +114,63 @@ No model at test time; pure fixtures. Fits tier 1 of
   task**. The second is the plumbing-efficiency metric — compaction, dedupe
   guards, and search routing exist to move it.
 
+### Phase 2b — terminal-task and small-model stress lane
+
+- Add a Terminal-Bench-compatible adapter through the same headless host. Keep the
+  task checkout, command transcript, final workspace diff, verifier result, model id,
+  runtime flags, and stop reason together as one replayable run artifact.
+- Make a local/smaller-model lane first-class. Plumbing differences are easiest to see
+  where context pressure, malformed tool calls, repeated exploration, command failure,
+  and premature completion are common; a frontier-only lane can hide those effects.
+- Run every task multiple times with a fixed model/configuration and report the per-task
+  distribution, not just a single aggregate. Distinguish stable wins (`N/N`), unstable
+  tasks, coverage (`>=1/N`), and the zero-pass frontier (`0/N`) so iteration can target
+  failure classes instead of score-chasing.
+- Treat self-run results as lower-bound trend evidence until the exact environment and
+  verifier are reproducible outside the originating runner. Raw traces and grading
+  artifacts are required for any published comparison.
+
 ### Phase 3 — plumbing A/B mode
 
 The payoff phase. Add a flag matrix to the Phase 2 harness so one invocation
 runs the same model over the same task subset with a plumbing feature toggled:
 trim-history on/off, todo gating on/off, duplicate-explore guard on/off,
-working-brief on/off. Report the delta in solve rate and tokens-per-solve.
+working-brief on/off. Extend the matrix with candidate features before committing
+them to the core loop:
+
+- compact thread-derived task state on/off;
+- thread-history search/state tools on/off;
+- generic durable memory tools on/off for short tasks, to test whether they add value
+  beyond the thread rather than assuming they do;
+- completion evidence gates on/off (material diff, validation artifact, or an explicit
+  blocked/unverified outcome);
+- targeted validation and bounded repair on/off.
+
+Report the delta in solve rate and tokens-per-solve. A feature that only improves prompt
+appearance or produces more activity has not paid for itself.
 
 - Non-determinism is handled statistically, not wished away: fixed subsets,
   N repeats per arm, report ranges; treat results as trends, never PR gates.
 - This converts "we believe the finalize nudge helps" into a measured claim,
   and — just as valuable — licenses _deleting_ guards that measure as neutral.
   The loop machinery only stays honest if features must pay rent.
+
+### Measurement contract
+
+Each arm records enough structured telemetry to explain a score change:
+
+- outcome: verifier pass, material diff, validation evidence, and terminal stop reason;
+- efficiency: input/output tokens, model requests, tool calls, wall time, and commands;
+- loop quality: duplicate tool calls, repeated failed commands, file reopens, recovery
+  nudges, compactions, and context pressure at stop;
+- task-state use: projected-state injections, task-history searches, task annotations,
+  and durable-memory reads/writes;
+- reproducibility: task revision, verifier revision, model identifier, sampling settings,
+  runtime feature flags, attempt number, patch, and full thread artifact.
+
+Aggregate solve rate stays the headline trend, but per-task attempt histograms and failure
+taxonomy drive the next engineering iteration. Compare one runtime variable at a time where
+possible; bundled "new runtime" versus "old runtime" runs cannot attribute the improvement.
 
 ### Phase 4 — feed routing scaffolds with benchmark ground truth
 
