@@ -329,8 +329,12 @@ jobs:
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       - run: npm run coverage:ci
+      # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
+      # Org artifact-storage quota must not fail the merge gate after a green suite
+      # (seen on #1074: CreateArtifact quota error after 0 unit failures).
       - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: coverage-report
           path: coverage/lcov-report
@@ -373,6 +377,7 @@ jobs:
           --min-recall 0.65 --max-p95-ms 3000 --json bench-semantic.json
       - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: bench-semantic
           path: bench-semantic.json
@@ -384,6 +389,7 @@ jobs:
       - run: npm run bench:agent -- --mock --gate
       - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: bench-agent-mock
           path: bench-results/
@@ -414,6 +420,7 @@ jobs:
         run: npm run bench:agent -- --tasks benchmarks/tasks/swe-bench --gate
       - uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: bench-agent-model
           path: bench-results/
@@ -629,6 +636,7 @@ jobs:
       # hard runner OOM ("shutdown signal") kills the job before this step runs.
       - uses: actions/upload-artifact@v7
         if: failure()
+        continue-on-error: true
         with:
           name: e2e-failure-artifacts-shard-${{ matrix.shard }}
           path: e2e-failure-artifacts/
