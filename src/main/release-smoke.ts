@@ -32,7 +32,9 @@ async function smokeTestPty(): Promise<void> {
     }
     const timer = setTimeout(() => {
       child.kill()
-      finish(() => reject(new Error('Packaged PTY smoke test timed out')))
+      finish(() => {
+        reject(new Error('Packaged PTY smoke test timed out'))
+      })
     }, 15_000)
     const resolveIfMarked = (): void => {
       if (!data.includes(marker)) return
@@ -50,14 +52,20 @@ async function smokeTestPty(): Promise<void> {
       // beat so the marker is not lost when the shell exits cleanly.
       setTimeout(() => {
         if (data.includes(marker)) {
-          finish(() => resolve(data))
+          finish(() => {
+            resolve(data)
+          })
           return
         }
         if (exitCode !== 0) {
-          finish(() => reject(new Error(`Packaged PTY smoke test exited ${String(exitCode)}`)))
+          finish(() => {
+            reject(new Error(`Packaged PTY smoke test exited ${String(exitCode)}`))
+          })
           return
         }
-        finish(() => resolve(data))
+        finish(() => {
+          resolve(data)
+        })
       }, 100)
     })
     // Give the login shell a beat to attach before the first write — avoids a
