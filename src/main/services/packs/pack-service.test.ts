@@ -408,7 +408,6 @@ describe('PackService', () => {
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 
-
   it('migrates ci-investigator default-OFF without enabling the previously opt-in tool', () => {
     // Isolate the CI-investigator migration from sibling migrations.
     storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
