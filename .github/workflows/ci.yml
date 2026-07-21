@@ -451,6 +451,47 @@ jobs:
       - uses: actions/checkout@v7.0.0
       - uses: ./.github/actions/setup
       - run: npm run build
+      # Plain-Chrome geometry coverage replaces Electron specs that do not need
+      # main/preload IPC. Skip screenshot-only heads: their parent already ran
+      # this tier and re-running could create a screenshot commit loop.
+      - run: npm run build:demo
+        if: needs.precheck.outputs.mode != 'skip'
+      - run: npm run test:demo
+        if: needs.precheck.outputs.mode != 'skip'
+      - name: Collect changed browser reference screenshots
+        if: >-
+          success() && github.event_name == 'pull_request' &&
+          needs.precheck.outputs.mode != 'skip'
+        run: |
+          mkdir -p changed/tests/e2e/screenshots
+          touch changed/.demo
+          mapfile -t files < <(
+            {
+              git diff --name-only -- tests/e2e/screenshots/
+              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
+            } | sort -u
+          )
+          for f in "${files[@]}"; do
+            [ -n "$f" ] || continue
+            cp "$f" "changed/tests/e2e/screenshots/"
+          done
+          echo "Collected ${#files[@]} browser screenshot(s)"
+      - uses: actions/upload-artifact@v7
+        if: >-
+          success() && github.event_name == 'pull_request' &&
+          needs.precheck.outputs.mode != 'skip'
+        with:
+          name: screenshots-demo
+          path: changed/
+          include-hidden-files: true
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: demo-failure-artifacts
+          path: e2e-failure-artifacts/
+          if-no-files-found: ignore
+          retention-days: 3
       - run: tar -cf dist.tar dist
       - uses: actions/upload-artifact@v7
         with:
@@ -690,9 +731,9 @@ jobs:
   # to github.token when the secret is unset — commits still land, just without the
   # CI re-trigger (the pre-PAT behaviour).
   commit-screenshots:
-    needs: e2e
+    needs: [build, e2e]
     if: >-
-      always() && needs.e2e.result == 'success' &&
+      always() && needs.build.result == 'success' && needs.e2e.result == 'success' &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
@@ -744,7 +785,7 @@ jobs:
         if: steps.head.outputs.exists == 'true'
         uses: actions/download-artifact@v8
         with:
-          pattern: screenshots-shard-*
+          pattern: screenshots-*
           merge-multiple: true
           path: artifacts
       - name: Apply regenerated screenshots

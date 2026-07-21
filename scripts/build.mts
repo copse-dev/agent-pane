@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
+const isDemo = process.argv.includes('--demo')
 
 const sharedAlias = {
   '@shared': resolve('./src/shared'),
@@ -55,29 +56,30 @@ const nodeOpts = {
   minifySyntax: isRelease,
 }
 
-fetchBundledCursorSkillsForBuild()
-
-await esbuild.build({
-  ...nodeOpts,
-  entryPoints: ['src/main/index.ts'],
-  outfile: 'dist/main/index.js',
-})
-await esbuild.build({
-  ...nodeOpts,
-  entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
-  outfile: 'dist/main/sandbox-fs-worker.js',
-})
-await esbuild.build({
-  ...nodeOpts,
-  entryPoints: ['src/main/services/ssh-workspace/askpass-helper.ts'],
-  outfile: 'dist/main/ssh-askpass-helper.js',
-  banner: { js: '#!/usr/bin/env node' },
-})
-await esbuild.build({
-  ...nodeOpts,
-  entryPoints: ['src/preload/index.ts'],
-  outfile: 'dist/preload/index.js',
-})
+if (!isDemo) {
+  fetchBundledCursorSkillsForBuild()
+  await esbuild.build({
+    ...nodeOpts,
+    entryPoints: ['src/main/index.ts'],
+    outfile: 'dist/main/index.js',
+  })
+  await esbuild.build({
+    ...nodeOpts,
+    entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
+    outfile: 'dist/main/sandbox-fs-worker.js',
+  })
+  await esbuild.build({
+    ...nodeOpts,
+    entryPoints: ['src/main/services/ssh-workspace/askpass-helper.ts'],
+    outfile: 'dist/main/ssh-askpass-helper.js',
+    banner: { js: '#!/usr/bin/env node' },
+  })
+  await esbuild.build({
+    ...nodeOpts,
+    entryPoints: ['src/preload/index.ts'],
+    outfile: 'dist/preload/index.js',
+  })
+}
 const browserOpts = {
   bundle: true,
   platform: 'browser' as const,
@@ -88,28 +90,37 @@ const browserOpts = {
   minifySyntax: isRelease,
 }
 
+const rendererOutDir = isDemo ? 'dist/demo' : 'dist/renderer'
+const rendererEntry = isDemo ? 'src/renderer/demo/main.ts' : 'src/renderer/main.ts'
+
 await esbuild.build({
   ...browserOpts,
-  entryPoints: ['src/renderer/main.ts'],
-  outfile: 'dist/renderer/app.js',
+  entryPoints: [rendererEntry],
+  outfile: `${rendererOutDir}/app.js`,
 })
 // Monaco is bundled on its own and injected lazily by monaco/setup.ts, keeping
 // the multi-megabyte editor (and its CSS) out of the initial app.js.
 await esbuild.build({
   ...browserOpts,
   entryPoints: ['src/renderer/monaco/monaco-global.ts'],
-  outfile: 'dist/renderer/monaco-bundle.js',
+  outfile: `${rendererOutDir}/monaco-bundle.js`,
 })
 
-copyFileSync('src/renderer/index.html', 'dist/renderer/index.html')
-copyFileSync('src/renderer/theme-boot.js', 'dist/renderer/theme-boot.js')
-cpSync('assets', 'dist/assets', { recursive: true })
-copyFileSync('assets/icons/rose/icon-32.png', 'dist/renderer/favicon.png')
-cpSync('src/renderer/icon-previews', 'dist/renderer/icon-previews', { recursive: true })
-copyMonacoWorkers('dist/renderer')
-cpSync('node_modules/vscode-material-icons/generated/icons', 'dist/renderer/material-icons', {
+copyFileSync('src/renderer/index.html', `${rendererOutDir}/index.html`)
+copyFileSync('src/renderer/theme-boot.js', `${rendererOutDir}/theme-boot.js`)
+copyFileSync('assets/icons/rose/icon-32.png', `${rendererOutDir}/favicon.png`)
+cpSync('src/renderer/icon-previews', `${rendererOutDir}/icon-previews`, { recursive: true })
+copyMonacoWorkers(rendererOutDir)
+cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/material-icons`, {
   recursive: true,
 })
+
+if (isDemo) {
+  console.log(`Demo build written to ${rendererOutDir}`)
+  process.exit(0)
+}
+
+cpSync('assets', 'dist/assets', { recursive: true })
 
 const bundledGortex = resolve('vendor/gortex', bundledGortexName)
 try {
