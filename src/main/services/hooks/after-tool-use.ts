@@ -1,7 +1,8 @@
 // afterToolUse orchestration (D2) — fires the canonical `afterToolUse` event
-// after each tool result. Cursor's `afterShellExecution` / `afterMCPExecution`
-// are payload *flavors* of this one canonical event (the tool name selects the
-// flavor), the same way `toolGate` unifies the before-shell/MCP/read gates.
+// after each tool result. Cursor's dedicated `afterShellExecution` /
+// `afterMCPExecution` and generic `postToolUse` / `postToolUseFailure` are wire
+// flavors of this one canonical event, the same way `toolGate` unifies the
+// before-shell/MCP/read gates.
 //
 // **Detached async — no drain barrier (decision 3).** Same shape as `stop.ts`:
 // the fire site dispatches through the shared {@link AsyncHookDispatcher} via
@@ -10,11 +11,12 @@
 // dispatch carries the emitting turn-tree id (decision 16), supplied by the
 // fire site.
 //
-// **Observation only (decision 3 / plan D2 row).** Cursor's after-events are
-// fire-and-forget: they return nothing, so nothing here parses a control-flow
-// decision. This module carries no return the caller must consume — it resolves
-// to a count plus a `settled` promise purely so a test can await completion and
-// assert the event fired.
+// **Post-hoc only (decision 3 / plan D2 row).** Cursor's after-events are
+// fire-and-forget and cannot change the completed tool call. A generic
+// `postToolUse` hook may return `additional_context`; the adapter turns that into
+// a queued message for the next model boundary. This module carries no return
+// the caller must consume — it resolves to a count plus a `settled` promise
+// purely so a test can await completion and assert the event fired.
 //
 // **Capped output snapshot.** A tool's stdout / result is unbounded; dumping it
 // verbatim into a hook's stdin is a known D2 trap. {@link runAfterToolUseHooks}
@@ -93,18 +95,17 @@ export type RunAfterToolUseHooksOpts = DialectDiscoverOpts & {
 
 /**
  * Discover + fire every dialect's post-tool observation command hooks for this
- * tool result (the Cursor `afterShellExecution` / `afterMCPExecution` flavor),
+ * tool result (Cursor's dedicated and generic post-tool flavors),
  * **dispatched through the detached async executor** (C1, decision 3 — never
  * awaited). Caps the output snapshot before dispatch so an unbounded tool result
- * never reaches a hook's stdin. Returns `{ ran: 0 }` when the tool has no
- * matching after-event (any tool other than shell / MCP) or nothing is
- * registered, so the default path is unchanged.
+ * never reaches a hook's stdin. Returns `{ ran: 0 }` when nothing is registered,
+ * so the default path is unchanged.
  *
- * Cursor's after-events are observation-only (they return nothing), but the
- * `onAsyncOutcome` sink is still wired so a first-party *async function* hook on
- * this mid-turn event can route a `queueMessage` (C2) or a `haltRun` (H3,
- * decision 12 — halt the current turn through the abort path). The Cursor
- * command hooks produce neither, so this stays a no-op for them.
+ * Cursor's generic success event may return `additional_context`, which the
+ * adapter routes through `onAsyncOutcome` as a queued message (C2). The same
+ * sink lets a first-party *async function* hook on this mid-turn event route a
+ * `queueMessage` or a `haltRun` (H3, decision 12 — halt the current turn through
+ * the abort path).
  */
 export async function runAfterToolUseHooks(
   payload: HookEventPayloads['afterToolUse'],
@@ -138,8 +139,8 @@ export async function runAfterToolUseHooks(
   // run context strips the abort signal, so an in-flight hook is never killed.
   // Every dispatch carries the emitting `turnTreeId` (decision 16). The
   // `onAsyncOutcome` sink routes a `queueMessage` (C2) / `haltRun` (H3) an async
-  // function hook returns; Cursor's after-events return nothing, so it is a
-  // no-op for them.
+  // function hook returns, and carries generic Cursor `additional_context` to
+  // the next model boundary.
   registry.emitAsync('afterToolUse', cappedPayload, {
     dispatcher,
     threadId: opts.threadId,

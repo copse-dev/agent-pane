@@ -45,6 +45,14 @@ export interface CommandHook<E extends HookEventName = HookEventName> {
   executor: 'command'
   /** Which dialect this hook was discovered from (drives failure semantics). */
   dialect: HookDialect
+  /**
+   * Dialect-native event name when several vendor events map onto one canonical
+   * event. For example, Cursor's `afterShellExecution`, `postToolUse`, and
+   * `postToolUseFailure` all subscribe to canonical `afterToolUse`, but each
+   * requires a different stdin shape. Adapters set and consume this opaque
+   * value; the registry never interprets it.
+   */
+  wireEvent?: string
   /** The command line to spawn (resolved by the dialect adapter). */
   command: string
   /**

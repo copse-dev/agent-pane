@@ -66,6 +66,7 @@ function syntheticRoot(): string {
 interface DryRunPlan {
   canonicalEvent: HookEventName
   toolName?: string
+  isError?: boolean
 }
 
 /**
@@ -87,6 +88,10 @@ function cursorPlan(wireEvent: string): DryRunPlan | null {
       return { canonicalEvent: 'afterToolUse', toolName: 'run_shell' }
     case 'afterMCPExecution':
       return { canonicalEvent: 'afterToolUse', toolName: SYNTHETIC_MCP_TOOL }
+    case 'postToolUse':
+      return { canonicalEvent: 'afterToolUse', toolName: 'run_shell', isError: false }
+    case 'postToolUseFailure':
+      return { canonicalEvent: 'afterToolUse', toolName: 'run_shell', isError: true }
     case 'beforeSubmitPrompt':
       return { canonicalEvent: 'beforeSubmitPrompt' }
     case 'afterFileEdit':
@@ -160,11 +165,11 @@ function buildToolGatePayload(toolName: string): ToolGatePayload {
   return { toolName, input: { command: SYNTHETIC_SHELL_COMMAND } }
 }
 
-function buildAfterToolUsePayload(toolName: string): AfterToolUsePayload {
+function buildAfterToolUsePayload(toolName: string, isError = false): AfterToolUsePayload {
   return {
     toolName,
     toolCallId: 'dry-run-tool-call',
-    isError: false,
+    isError,
     input: toolName.startsWith('mcp__')
       ? { example: 'value' }
       : { command: SYNTHETIC_SHELL_COMMAND },
@@ -187,7 +192,7 @@ export function synthesizeCanonicalPayload(plan: DryRunPlan): Record<string, unk
     case 'toolGate':
       return { ...buildToolGatePayload(plan.toolName ?? 'run_shell') }
     case 'afterToolUse':
-      return { ...buildAfterToolUsePayload(plan.toolName ?? 'run_shell') }
+      return { ...buildAfterToolUsePayload(plan.toolName ?? 'run_shell', plan.isError) }
     case 'beforeSubmitPrompt':
       return { prompt: 'This is a synthetic prompt from the hook dry-run tester.' }
     case 'afterFileEdit':
@@ -252,8 +257,11 @@ function marshalDryRun(
       const marshal = adapter.marshalAfterToolUseRequest?.bind(adapter)
       const interpret = adapter.interpretAfterToolUse?.bind(adapter)
       if (!marshal || !interpret) return null
-      const payload = buildAfterToolUsePayload(plan.toolName ?? 'run_shell')
-      return { request: marshal(hook, payload, session), interpret: (s) => interpret(s, payload) }
+      const payload = buildAfterToolUsePayload(plan.toolName ?? 'run_shell', plan.isError)
+      return {
+        request: marshal(hook, payload, session),
+        interpret: (s) => interpret(s, payload, hook),
+      }
     }
     case 'beforeSubmitPrompt': {
       const marshal = adapter.marshalBeforeSubmitPromptRequest?.bind(adapter)
@@ -402,6 +410,7 @@ export async function dryRunHook(req: HookTestRequest): Promise<HookTestResult> 
     event: plan.canonicalEvent,
     executor: 'command',
     dialect,
+    wireEvent: req.event,
     command: req.command,
     // A dry run never applies failure resolution, so `onFailure` is irrelevant;
     // `open` keeps the reconstructed hook shape valid without implying a policy.

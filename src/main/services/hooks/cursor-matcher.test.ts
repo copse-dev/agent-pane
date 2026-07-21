@@ -139,6 +139,24 @@ describe('Cursor per-event matcher semantics (D3)', () => {
     assert.equal(skipped.length, 0)
   })
 
+  it('tool-type matcher on generic postToolUse matches Cursor tool tokens', async () => {
+    await writeUserHooks({
+      hooks: { postToolUse: [{ command: './read-audit.sh', matcher: '^Read$' }] },
+    })
+
+    const read = await cursorAfterToolUseHooks(
+      { toolName: 'read_file', toolCallId: 'tc-read', isError: false, input: {}, output: '' },
+      discover,
+    )
+    assert.equal(read.length, 1)
+
+    const shell = await cursorAfterToolUseHooks(
+      { toolName: 'run_shell', toolCallId: 'tc-shell', isError: false, input: {}, output: '' },
+      discover,
+    )
+    assert.equal(shell.length, 0)
+  })
+
   // --- tool-type matcher: beforeReadFile (`Read`) ---
 
   it('tool-type matcher on beforeReadFile — matches `Read`, not `TabRead`', async () => {
