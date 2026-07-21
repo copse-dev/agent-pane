@@ -2,6 +2,7 @@ import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
+import { createThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
 
@@ -32,6 +33,124 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
+  it('opens a linked Cursor agent thread instead of a new popup browser tab', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
+    const linkedThreadId = createThread(store)
+    const activeThreadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) =>
+        thread.id === linkedThreadId
+          ? {
+              ...thread,
+              remoteAgentLink: {
+                provider: 'cursor',
+                agentId: 'bc-linked-agent',
+                createdAt: Date.now(),
+              },
+            }
+          : thread,
+      ),
+      activeThreadId,
+    })
+    const callbacks: { openTab?: (url: string) => void } = {}
+    const api = {
+      browser: {
+        onOpenTab: (handler: (url: string) => void): (() => void) => {
+          callbacks.openTab = handler
+          return (): void => {}
+        },
+      },
+      panes: { popout: async (): Promise<void> => {} },
+    } as unknown as Parameters<typeof mountBrowserPane>[3]
+    const unmount = mountBrowserPane(list, viewer, store, api)
+
+    try {
+      const popupHandler = callbacks.openTab
+      assert.ok(popupHandler)
+      popupHandler('https://cursor.com/agents/bc-linked-agent?from=github')
+
+      assert.equal(store.getState().activeThreadId, linkedThreadId)
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+
+      popupHandler('https://cursor.com/agents/bc-unknown-agent')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
+  it('keeps the active browser tab in place for a requested linked Cursor run', () => {
+    const raf = globalThis.requestAnimationFrame
+    globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+      cb(0)
+      return 0
+    }
+    const hadResizeObserver = Object.prototype.hasOwnProperty.call(globalThis, 'ResizeObserver')
+    const ResizeObserverCtor = globalThis.ResizeObserver
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    globalThis.ResizeObserver = NoopResizeObserver
+
+    const { list, viewer } = mountBrowserHosts()
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'browser' })
+    const linkedThreadId = createThread(store)
+    const activeThreadId = createThread(store)
+    store.setState({
+      threads: store.getState().threads.map((thread) =>
+        thread.id === linkedThreadId
+          ? {
+              ...thread,
+              remoteAgentLink: {
+                provider: 'cursor',
+                agentId: 'bc-requested-agent',
+                createdAt: Date.now(),
+              },
+            }
+          : thread,
+      ),
+      activeThreadId,
+    })
+    const unmount = mountBrowserPane(list, viewer, store)
+
+    try {
+      const webview = viewer.querySelector('.browser-webview') as FakeWebview
+      stubWebviewMethods(webview)
+      webview.dispatchEvent(new Event('dom-ready'))
+
+      openBrowserUrl(store, 'https://cursor.com/agents/bc-requested-agent')
+
+      assert.equal(store.getState().activeThreadId, linkedThreadId)
+      assert.equal(webview.src, 'about:blank')
+      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+    } finally {
+      globalThis.requestAnimationFrame = raf
+      if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
+      else Reflect.deleteProperty(globalThis, 'ResizeObserver')
+      unmount()
+    }
+  })
+
   it('opens a requested URL in the active tab address bar', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
