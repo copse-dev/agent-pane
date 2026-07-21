@@ -148,6 +148,11 @@ describe('settings search (cross-section block filter)', () => {
     assert.deepEqual(resultLegends(), ['Model comparison'])
   })
 
+  it('excludes developer-only settings from search while Developer mode is off', () => {
+    search('cursor hooks')
+    assert.deepEqual(resultLegends(), [])
+  })
+
   it('ranks a heading (legend) match above a body-only match', () => {
     // "ACP agents" names the block via its legend; other blocks (e.g. Local
     // models routing) only mention ACP in body copy, so they sort after it.
