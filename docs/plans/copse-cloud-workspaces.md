@@ -8,6 +8,10 @@ part of the _developer's_ loop (offloading e2e), let **Copse itself** spin up
 cloud containers for any workspace — so a thread's execution, tests, and
 builds can run on a disposable cloud machine instead of the user's laptop.
 
+Security, credential, network, checkpoint, and runtime lifecycle requirements are
+owned by [`execution-runtime-security.md`](execution-runtime-security.md). This plan
+owns provisioning providers, workspace attachment, cost UX, and rollout order.
+
 ## Goal
 
 From the app, for any opened workspace:
@@ -19,26 +23,35 @@ From the app, for any opened workspace:
 3. **Tear down** — explicitly, with a TTL backstop so forgotten containers
    never run up a bill.
 
-The end state is Claude-Code-on-the-web-shaped: local UI, approvals, thread
-store and LLM loop; remote filesystem and execution.
+The end state keeps the UI, policy engine, thread store, and provider-neutral LLM loop
+local while filesystem and command execution run remotely. The remote runtime is
+replaceable compute attached to the logical thread, not the owner of the conversation.
+
+This is distinct from the shipped **managed remote agent** path in
+`src/main/services/remote/`: managed agents hand the prompt and repository resource to
+a provider-owned agent/runtime. A Copse-provisioned cloud workspace keeps Copse's own
+loop and tool policy in control and uses a runtime Copse provisions and reconciles.
 
 ## What already exists to build on
 
-- **Provisioning:** `scripts/burst-runners.mts` already launches AWS/Scaleway
-  hosts, waits for SSH, uploads a compose dir, and manages TTL/teardown by
-  tags. Stage one extracts its core into `scripts/lib/cloud-hosts.mts`.
+- **Provisioning:** `scripts/lib/cloud-hosts.mts` is the shipped shared core behind
+  burst runners and remote e2e. It launches AWS/Scaleway hosts, waits for SSH, and
+  manages TTL/teardown by tags.
 - **Image:** `ci-runners/` builds a repo-parameterized image (`TARGET_REPO`
   build arg) that clones a repo and bakes its dependency tree — already
   repo-agnostic by design ("point it at any consumer").
-- **Remote-workspace seams in the app:** the audit in
-  [`ssh-remote-repo.md`](ssh-remote-repo.md) maps them: all workspace command
-  execution funnels through the four spawns in
-  `src/main/project-sandbox/spawn.ts`; the terminal renderer is
-  transport-agnostic; path _resolution_ is centralized while file I/O is
-  scattered (~15 modules); search shells out with `cwd = workspaceRoot`.
-- **Isolation model:** [`thread-worktrees.md`](thread-worktrees.md) gives
-  threads independent checkouts; a remote container is the same idea with the
-  checkout on another machine.
+- **Remote-workspace stack in the app:** the core in
+  [`ssh-remote-repo.md`](ssh-remote-repo.md) has shipped: connection management,
+  execution and PTYs, filesystem, git, search, and UI already target a remote account.
+  A provisioned runtime reuses those tools and transport seams.
+- **Execution-ownership direction:** [`thread-worktrees.md`](thread-worktrees.md) is
+  moving mutable state and checkout allocation under trusted project/thread ownership.
+  A per-thread remote runtime extends that ownership model; a worktree or container is
+  not by itself a security boundary.
+- **Runtime-security model:** [`execution-runtime-security.md`](execution-runtime-security.md)
+  defines capability reporting, per-execution grants, brokered egress/secrets,
+  lifecycle reconciliation, checkpoints, and canonical audit events across local and
+  cloud targets.
 
 ## Decisions
 
@@ -68,23 +81,39 @@ store and LLM loop; remote filesystem and execution.
    uncommitted state over, and pulls result commits back. No continuous
    file-mirroring in v1; the agent's edits happen _on the container_ via the
    remote tool surface.
-5. **Secrets follow the existing rules.**
+5. **Secrets follow the existing rules and move toward mediation.**
    - Cloud provider credentials are user settings stored like API keys —
      `safeStorage`-encrypted, env-var override, never in the workspace.
-   - GitHub tokens: per-workspace, narrowest scope (Contents R/W on that
-     repo), injected at attach time over SSH — never baked into image layers
-     (keep the BuildKit-secret discipline from `ci-runners/README.md`).
+   - GitHub tokens: per-workspace and narrowest scope (Contents R/W on that repo).
+     The target is host-side Git/HTTP mediation so the token never enters the guest.
+     If an initial implementation must inject a raw token, it is short-lived,
+     execution-scoped, absent from the shell environment and image layers, removed
+     after bootstrap/use, and excluded from checkpoints.
    - LLM/provider keys **never leave the local machine** — the model loop
      stays local, mirroring `envForRendererChildProcess` scrubbing.
    - The approval gate keeps running locally (it is host-agnostic per the
      ssh-remote audit); a remote host does not weaken the write/shell
-     approval story. `docs/threat-model.md` and `docs/ci-runner-security.md`
-     get companion sections before GA.
-6. **Cost is a first-class UI concern.** Every provisioned host carries the
+     approval story. Approval grants are bound to project, thread, turn, runtime,
+     operation, and expiry.
+6. **Egress is deny-by-default and per runtime.** Workload sockets do not receive
+   unrestricted internet access. A host-side gateway mediates approved destinations
+   and denies cloud metadata endpoints, private networks, redirects to unapproved
+   origins, and cross-thread grant reuse. Control-plane, Git, package-registry, and
+   user-requested web access are separate grants.
+7. **The runtime lifecycle is reconciled, not fire-and-forget.** Copse persists desired
+   and observed state, gives every runtime stable project/thread ownership, and makes
+   create/stop/teardown idempotent. Startup reconciles tagged resources that outlived a
+   crash or local uninstall. A checkpoint is restorable only after all artifacts are
+   durable and integrity-checked.
+8. **Cost is a first-class UI concern.** Every provisioned host carries the
    TTL-shutdown backstop and managed-by tags from the burst CLI. The UI always
    shows what is running (provider, shape, uptime, TTL) with one-click
    teardown; closing the workspace prompts about live containers. No silent
    fleets.
+9. **A container is not the host boundary.** The workload runs unprivileged with a
+   read-only base image and dedicated writable storage, but a container alone does not
+   justify a hostile multi-tenant claim. v1 uses a dedicated user-controlled host or
+   VM; stronger VM isolation can be added behind the same runtime contract.
 
 ### Alternatives considered
 
@@ -102,36 +131,43 @@ store and LLM loop; remote filesystem and execution.
 
 ## Phases
 
-- **C0 — prerequisites (shared with stage one / ssh-remote):**
-  `cloud-hosts.mts` extraction (stage one M0); ssh-remote Phase 0 (SSH auth
-  plumbing) and the spawn-seam work from `ssh-remote-repo.md` Phases 1–2.
-  Cloud workspaces should not start ahead of those seams landing.
+- **C0 ✅ — prerequisites (shared with stage one / ssh-remote).** The
+  `cloud-hosts.mts` extraction, remote-e2e loop, and SSH workspace execution/file/git/UI
+  stack have shipped. Port forwarding, semantic indexing, and ACP-on-SSH remain
+  independent limitations rather than blockers for command offload.
 - **C1 — provisioning service + local-docker provider.** Main-process
   `CloudWorkspaceProvider`, Settings → Cloud providers (creds via
   `safeStorage`), `copse-workspace` image + sshd entrypoint, lifecycle IPC +
-  a minimal status pane. Validated entirely against local Docker.
+  a minimal status pane. Implement the `ExecutionRuntime` lifecycle/capability
+  contract and canonical runtime-state events here; validate entirely against local
+  Docker before adding cloud credentials.
 - **C2 — remote command offload (first user-visible win).** Before the full
-  remote workspace: a `run_remote` tool + UI action that executes a command
-  (build, test suite, e2e) in the workspace's container against a snapshot
-  push, streaming output into the thread — the in-app equivalent of stage
-  one's CLI, and immediately useful for "check e2e while iterating".
+  remote workspace, route a command (build, test suite, e2e) through the common runtime
+  contract against a snapshot push, streaming output into the thread. The UI may offer
+  a dedicated action, but it must not introduce a second permission or process-record
+  path.
 - **C3 — full remote workspace.** Wire the provisioned container in as an
   SSH-remote workspace per `ssh-remote-repo.md` Phases 2–5: file tools,
   terminal, git pane, search on the container; UI affordance to open a
   workspace "in the cloud".
 - **C4 — cloud providers + guardrails.** Scaleway then AWS providers via the
-  shared core; TTL/idle auto-teardown, cost/status surfaces, threat-model and
-  security-doc updates.
+  shared core; TTL/idle auto-teardown, startup/orphan reconciliation, cost/status
+  surfaces, deny-by-default egress, credential mediation, capability display, and the
+  execution-runtime-security R4 acceptance suite.
 - **C5 — per-thread containers.** The `thread-worktrees.md` allocation policy
   extended with a third mode: thread → fresh container (worktree semantics,
-  machine-level isolation), enabling parallel agents that don't even share a
-  host.
+  runtime-level separation), enabling parallel agents that need not share a guest.
+  Dedicated-host/container does not become a multi-tenant security claim.
+- **C6 — suspend, restore, rollback, and fork.** Publish portable checkpoint manifests
+  from the thread spine, workspace snapshot, and runtime metadata. Add backend-specific
+  process/VM snapshots only as optional capabilities after crash recovery and teardown
+  are proven.
 
 ## Risks / open questions
 
-- **Sequencing risk:** C3 is gated on the ssh-remote plan's phases, which are
-  the largest unbuilt piece. C1/C2 are deliberately scoped to be valuable
-  without it — if ssh-remote slips, command offload still ships.
+- **Sequencing risk:** the SSH core is no longer the blocker. C1 may validate
+  provisioning independently, but product execution must not invent a cloud-only
+  permission, event, or lifecycle path ahead of execution-runtime-security R1/R2.
 - **Image freshness:** per-workspace baked images go stale on lockfile
   changes; same answer as stage one (lockhash gate, explicit rebake) but
   needs an in-app surface.
@@ -140,5 +176,14 @@ store and LLM loop; remote filesystem and execution.
 - **Billing failure modes:** TTL backstop + tags are necessary but not
   sufficient; C4 should add reconciliation on app start ("these tagged hosts
   exist but no workspace references them — tear down?").
+- **Credential compatibility:** some developer tools assume a raw token or credential
+  file. Prefer broker-aware Git/package integrations; any compatibility injection must
+  be explicitly labelled as a reduced guarantee and excluded from snapshots.
+- **Egress compatibility:** builds often fetch from dynamic registries and mirrors.
+  Grants need explainable denial output and scoped expansion without falling back to
+  an unrestricted runtime profile.
+- **Host compromise:** a dedicated VM protects the user's laptop but is still inside
+  the trust path for workspace contents and command output. Encrypt transport, minimize
+  durable secrets, keep the control plane local, and document provider-host exposure.
 - **Windows/macOS containers:** out of scope — containers are Linux;
   platform-specific work stays local.
