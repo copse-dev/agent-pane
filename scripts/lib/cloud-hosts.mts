@@ -118,6 +118,27 @@ export interface SshConfig {
   sshHost: 'public' | 'private'
 }
 
+/**
+ * Pick hosts for a partial fleet scale-down. Newest hosts go first so capacity
+ * added most recently is the first capacity removed. A partial scale-down must
+ * leave at least one host; callers use an omitted count for an explicit full
+ * fleet teardown.
+ */
+export function selectScaleDownHosts(hosts: CloudHost[], count: number | undefined): CloudHost[] {
+  if (count === undefined) return hosts
+  if (count >= hosts.length) {
+    throw new Error(
+      `--instances ${String(count)} would terminate the entire ${String(hosts.length)}-host fleet; omit --instances to explicitly terminate all hosts`,
+    )
+  }
+  return [...hosts]
+    .sort((a, b) => {
+      const launchOrder = b.launchTime.localeCompare(a.launchTime)
+      return launchOrder !== 0 ? launchOrder : a.providerId.localeCompare(b.providerId)
+    })
+    .slice(0, count)
+}
+
 // ---------------------------------------------------------------------------
 // Process + CLI helpers
 // ---------------------------------------------------------------------------

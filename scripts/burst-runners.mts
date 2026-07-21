@@ -50,6 +50,7 @@ import {
   resolveAmiId,
   run,
   SCALEWAY_ZONES,
+  selectScaleDownHosts,
   type ScalewayLaunchSpec,
   scalewayArgs,
   scalewayTerminateArgs,
@@ -128,14 +129,16 @@ function usage(): string {
   npm run runners:burst:scw -- up
   npm run runners:burst -- status [--name ${DEFAULT_NAME}]
   npm run runners:burst:scw -- status [--name ${DEFAULT_NAME}]
-  npm run runners:burst -- down --yes [--name ${DEFAULT_NAME}]
-  npm run runners:burst:scw -- down --yes [--name ${DEFAULT_NAME}]
-  npm run runners:burst:scw -- drain --yes --key-path <key> [--name ${DEFAULT_NAME}]
+  npm run runners:burst -- down --yes [--instances <n>] [--name ${DEFAULT_NAME}]
+  npm run runners:burst:scw -- down --yes [--instances <n>] [--name ${DEFAULT_NAME}]
+  npm run runners:burst:scw -- drain --yes --key-path <key> [--instances <n>] [--name ${DEFAULT_NAME}]
 
 Commands:
   up       Launch host(s), upload ci-runners/, and start ephemeral GitHub runners.
   status   List non-terminated instances tagged for this burst fleet.
   down     Terminate instances tagged for this burst fleet. Requires --yes.
+           Pass --instances <n> to remove only the newest n hosts; partial
+           scale-down refuses to remove the entire fleet.
   drain    Gracefully retire a fleet: stop each host's runners from accepting new
            jobs (flip the ephemeral containers' restart policy off, stop idle
            runners, wait for in-flight jobs to finish), then — with --yes —
@@ -161,8 +164,9 @@ Common options:
   --name <tag>                  Burst fleet tag/name (default: ${DEFAULT_NAME}).
   --region <region>             AWS region (default: $${AWS_REGION_ENV} / AWS CLI config).
   --zone <zone>                  Scaleway AZ. Omit on up to auto-pick an AZ with
-                                capacity; omit on status/down to scan all AZs.
-  --instances <n>               e2e hosts to launch (default: ${String(DEFAULT_INSTANCES)}).
+                                capacity; omit on status/down/drain to scan all AZs.
+  --instances <n>               up: hosts to launch (default: ${String(DEFAULT_INSTANCES)}).
+                                down/drain: newest hosts to retire; must leave one.
   --runners-per-instance <n>    e2e runners per host (default: ${String(DEFAULT_RUNNERS_PER_INSTANCE)}); add
                                 hosts, not runners, to widen the e2e tier.
   --instance-type <type>        EC2 instance type (default: ${DEFAULT_AWS_INSTANCE_TYPE}).
@@ -459,15 +463,28 @@ function awsStatus(options: Options): void {
   printHosts(describeAwsHosts(awsFleetConfig(options)))
 }
 
+function scaleDownHosts(hosts: CloudHost[], options: Options): CloudHost[] {
+  const rawCount = option(options, 'instances')
+  const count = rawCount === undefined ? undefined : positiveInt(rawCount, 'instances')
+  const selected = selectScaleDownHosts(hosts, count)
+  if (count !== undefined) {
+    console.log(
+      `==> Scaling down ${String(selected.length)}/${String(hosts.length)} hosts (newest first)`,
+    )
+  }
+  return selected
+}
+
 function awsDown(options: Options): void {
   requireTool('aws')
   if (!hasFlag(options, 'yes')) die('down requires --yes')
   const config = awsFleetConfig(options)
-  const hosts = describeAwsHosts(config).filter((host) => host.state !== 'terminated')
-  if (hosts.length === 0) {
+  const fleet = describeAwsHosts(config).filter((host) => host.state !== 'terminated')
+  if (fleet.length === 0) {
     console.log('No burst instances to terminate.')
     return
   }
+  const hosts = scaleDownHosts(fleet, options)
   printHosts(hosts)
   const ids = hosts.map((host) => host.providerId)
   console.log(`==> Terminating: ${ids.join(', ')}`)
@@ -585,14 +602,15 @@ function drainScript(timeoutMinutes: number): string {
 
 async function scalewayDrain(options: Options): Promise<void> {
   requireScalewayTool()
-  const hosts = listScalewayFleet(
+  const fleet = listScalewayFleet(
     { name: fleetName(options), tags: BURST_TAGS },
     scalewayZonesForOptions(options),
   ).filter((host) => host.state !== 'terminated')
-  if (hosts.length === 0) {
+  if (fleet.length === 0) {
     console.log('No Scaleway burst instances to drain.')
     return
   }
+  const hosts = scaleDownHosts(fleet, options)
   printHosts(hosts)
   const sshConfig = {
     keyPath: option(options, 'key-path') ?? '',
@@ -633,14 +651,15 @@ async function scalewayDrain(options: Options): Promise<void> {
 function scalewayDown(options: Options): void {
   requireScalewayTool()
   if (!hasFlag(options, 'yes')) die('down requires --yes')
-  const hosts = listScalewayFleet(
+  const fleet = listScalewayFleet(
     { name: fleetName(options), tags: BURST_TAGS },
     scalewayZonesForOptions(options),
   ).filter((host) => host.state !== 'terminated')
-  if (hosts.length === 0) {
+  if (fleet.length === 0) {
     console.log('No Scaleway burst instances to terminate.')
     return
   }
+  const hosts = scaleDownHosts(fleet, options)
   printHosts(hosts)
   for (const host of hosts) {
     const zone = host.zone
