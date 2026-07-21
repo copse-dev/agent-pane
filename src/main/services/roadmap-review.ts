@@ -70,6 +70,17 @@ export interface RoadmapReviewItemResult {
   linkedIssues: RoadmapReviewIssueEvidence[]
 }
 
+type IssueEvidenceBundle = {
+  pinned: GhIssueSummary | null
+  pinnedEvidence: RoadmapReviewIssueEvidence | null
+  linked: RoadmapReviewIssueEvidence[]
+}
+
+/** Dedupes pinned-issue + linked-issue GitHub reads within one bulk review pass. */
+type IssueEvidenceCache = Map<string, IssueEvidenceBundle | Promise<IssueEvidenceBundle>>
+
+const bulkRunIssueCaches = new Map<string, IssueEvidenceCache>()
+
 function issueState(issue: GhIssueSummary): 'open' | 'closed' | 'unknown' {
   return issue.state ?? 'unknown'
 }
@@ -139,6 +150,10 @@ function reviewPrompt(
 /** Load review scope: items to judge and commits since the last acknowledged run. */
 export async function prepareRoadmapReview(): Promise<RoadmapReviewPrepareResult> {
   const since = getRoadmapLastReviewAt()
+  // Re-prepare (e.g. double-click ◎) overwrites pendingBulkRun; drop the previous
+  // run's issue cache so complete/abort of the orphaned id cannot leave it stranded.
+  const previousPending = readRoadmapReviewCheckpoint().pendingBulkRun
+  if (previousPending) dropBulkRunIssueCache(previousPending)
   const runId = randomUUID()
   setPendingBulkRun(runId)
   const commits = await getGitLogSinceText(since, BULK_COMMIT_MAX)
@@ -161,40 +176,97 @@ export function readRoadmapReviewCheckpointForRenderer(): RoadmapReviewCheckpoin
  * review panel after a finished run — not when deep single-item checks run.
  */
 export function completeRoadmapReview(runId: string): boolean {
-  return acknowledgeBulkRun(runId)
+  const acknowledged = acknowledgeBulkRun(runId)
+  if (acknowledged) dropBulkRunIssueCache(runId)
+  return acknowledged
 }
 
 /** Clear an in-progress bulk run without advancing the commit checkpoint. */
 export function abortRoadmapReview(runId: string): boolean {
-  return clearPendingBulkRun(runId)
+  const aborted = clearPendingBulkRun(runId)
+  if (aborted) dropBulkRunIssueCache(runId)
+  return aborted
+}
+
+function issueEvidenceCacheKey(coords: { owner: string; repo: string; number: number }): string {
+  return `${coords.owner}/${coords.repo}#${String(coords.number)}`
+}
+
+function cacheForBulkRun(runId: string): IssueEvidenceCache {
+  let cache = bulkRunIssueCaches.get(runId)
+  if (!cache) {
+    cache = new Map()
+    bulkRunIssueCaches.set(runId, cache)
+  }
+  return cache
+}
+
+function dropBulkRunIssueCache(runId: string): void {
+  bulkRunIssueCaches.delete(runId)
+}
+
+/** @internal test helper — reset in-memory bulk-run GitHub caches. */
+export function clearBulkRunIssueCacheForTest(runId?: string): void {
+  if (runId) dropBulkRunIssueCache(runId)
+  else bulkRunIssueCaches.clear()
+}
+
+/** @internal test helper — exercise bulk-run GitHub dedup without an LLM. */
+export async function gatherIssueEvidenceWithBulkCache(
+  ref: string,
+  slug: string | null,
+  bulkRunId: string,
+): Promise<IssueEvidenceBundle> {
+  return gatherIssueEvidence(ref, slug, cacheForBulkRun(bulkRunId))
 }
 
 async function gatherIssueEvidence(
   ref: string,
   slug: string | null,
-): Promise<{
-  pinned: GhIssueSummary | null
-  pinnedEvidence: RoadmapReviewIssueEvidence | null
-  linked: RoadmapReviewIssueEvidence[]
-}> {
+  cache?: IssueEvidenceCache,
+): Promise<IssueEvidenceBundle> {
   const coords = resolveIssueRef(ref, slug)
   if (!coords) {
     return { pinned: null, pinnedEvidence: null, linked: [] }
   }
-  const backend = resolveGitHubBackend()
-  const pinned = await backend.getIssue(coords)
-  if (!pinned) {
-    return { pinned: null, pinnedEvidence: null, linked: [] }
+
+  const key = issueEvidenceCacheKey(coords)
+  if (cache) {
+    const hit = cache.get(key)
+    if (hit) return hit
   }
-  const pinnedEvidence = toEvidence(ref, pinned)
-  const searchNeedle = `"#${String(pinned.number)}"`
-  const linkedRaw = slug
-    ? await backend.searchWorkspaceIssues(searchNeedle, LINKED_ISSUE_LIMIT)
-    : []
-  const linked = linkedRaw
-    .filter((issue) => issue.number !== pinned.number)
-    .map((issue) => toEvidence(`#${String(issue.number)}`, issue))
-  return { pinned, pinnedEvidence, linked }
+
+  const backend = resolveGitHubBackend()
+  const load = (async (): Promise<IssueEvidenceBundle> => {
+    const pinned = await backend.getIssue(coords)
+    if (!pinned) {
+      return { pinned: null, pinnedEvidence: null, linked: [] }
+    }
+    const pinnedEvidence = toEvidence(ref, pinned)
+    const searchNeedle = `"#${String(pinned.number)}"`
+    const linkedRaw = slug
+      ? await backend.searchWorkspaceIssues(searchNeedle, LINKED_ISSUE_LIMIT)
+      : []
+    const linked = linkedRaw
+      .filter((issue) => issue.number !== pinned.number)
+      .map((issue) => toEvidence(`#${String(issue.number)}`, issue))
+    return { pinned, pinnedEvidence, linked }
+  })()
+
+  if (cache) {
+    cache.set(key, load)
+  }
+
+  try {
+    const result = await load
+    if (cache) {
+      cache.set(key, result)
+    }
+    return result
+  } catch (err) {
+    cache?.delete(key)
+    throw err
+  }
 }
 
 /** Judge one roadmap item and stamp the advisory verdict on its note. */
@@ -209,16 +281,6 @@ export async function reviewRoadmapItem(
     throw new Error(`No roadmap item with id "${id}".`)
   }
 
-  const slug = await getGithubRepoSlug()
-  const issueRef = note.fields['issue'] ?? ''
-  const { pinned, pinnedEvidence, linked } = issueRef
-    ? await gatherIssueEvidence(issueRef, slug)
-    : {
-        pinned: null as GhIssueSummary | null,
-        pinnedEvidence: null,
-        linked: [] as RoadmapReviewIssueEvidence[],
-      }
-
   if (note.status === 'done') {
     const detail = 'Item is already marked done on the roadmap.'
     stampReview(id, note, 'resolved', detail, depth, bulkRunId)
@@ -227,10 +289,21 @@ export async function reviewRoadmapItem(
       verdict: 'resolved',
       detail,
       depth,
-      pinnedIssue: pinnedEvidence,
-      linkedIssues: linked,
+      pinnedIssue: null,
+      linkedIssues: [],
     }
   }
+
+  const slug = await getGithubRepoSlug()
+  const issueRef = note.fields['issue'] ?? ''
+  const cache = depth === 'bulk' && bulkRunId ? cacheForBulkRun(bulkRunId) : undefined
+  const { pinned, pinnedEvidence, linked } = issueRef
+    ? await gatherIssueEvidence(issueRef, slug, cache)
+    : {
+        pinned: null as GhIssueSummary | null,
+        pinnedEvidence: null,
+        linked: [] as RoadmapReviewIssueEvidence[],
+      }
 
   // A closed GitHub issue is evidence, not proof of implementation: issues can
   // be closed as duplicates, not planned, or invalid. Keep the state in the
