@@ -17,7 +17,9 @@ Default to the cheapest layer that can actually fail on the bug:
    DOM/TS over a store, so most "does the UI do X" questions answer here without
    a browser engine. See `src/renderer/views/new-thread-keeps-panel.test.ts` for
    the canonical shape.
-3. **E2E** (`tests/e2e/*.e2e.ts`, WebdriverIO + real Electron) — only the
+3. **Browser geometry** (`tests/demo/*.demo.ts`, WebdriverIO + plain Chrome) — real layout and
+   computed styles over deterministic in-memory state, without Electron lifecycle cost.
+4. **E2E** (`tests/e2e/*.e2e.ts`, WebdriverIO + real Electron) — only the
    broad-validation and real-runtime cases below.
 
 When a behavior is reachable from more than one tier, write it at the lower one.
@@ -30,9 +32,9 @@ import-graph selection from the oracle.
 E2E is for **broad validation** and for assertions that need a real runtime.
 Keep a spec at e2e only when its check requires one of:
 
-- **Sizing / layout / geometry** — `getBoundingClientRect`, `getComputedStyle`,
-  `clientWidth`, `elementFromPoint`. happy-dom/jsdom return zeroed geometry, so
-  rendering and sizing regressions are genuinely only catchable here.
+- **Sizing / layout / geometry that depends on Electron** — native window chrome,
+  Electron-only elements, or geometry derived from real main/preload state. Plain deterministic
+  renderer geometry belongs in the browser tier because happy-dom/jsdom return zeroed geometry.
 - **Monaco** editor (diff, selection, language workers).
 - **xterm / node-pty** terminal.
 - **webview / browser** panel (Electron webContents).
@@ -44,8 +46,8 @@ per-spec migration backlog live in
 list rather than adding e2e specs for DOM-only behavior.
 
 > Visual changes still require a focused visual eval (see AGENTS.md → "Visual
-> changes require evals"). That eval is usually a small e2e that seeds a state
-> and saves a screenshot — exactly the sizing/rendering job e2e is for. Pushing
+> changes require evals"). That eval is usually a small browser or Electron spec that seeds a state
+> and saves a screenshot — exactly the sizing/rendering job those tiers are for. Pushing
 > _logic_ down doesn't waive the visual check.
 
 ## CI cost is a design input
@@ -80,17 +82,18 @@ new tests should keep that trend:
 Net: every new e2e spec should justify why it can't be a component test. The
 default direction is _down_.
 
-## Experimental browser geometry tier
+## Browser geometry tier
 
-`npm run build:demo && npm run test:demo` is the focused spike from
+`npm run build:demo && npm run test:demo` is the focused browser-hosted tier from
 [`docs/spikes/demo-browser-tier.md`](spikes/demo-browser-tier.md). It runs the unchanged renderer
 against an in-memory `ApiClient` in ordinary headless Chrome, so geometry/computed-style checks that
 do not need Electron can be evaluated without main-process or window lifecycle cost.
 
-This is not yet a blanket migration target. Keep existing Electron specs in place until the repeat
-experiment on the constrained self-hosted runner passes. The tier boundary under evaluation is:
+CI runs it from the existing build job and collects its reference screenshots alongside Electron
+screenshots. `footer-compact` and `markdown-list-indent` are the first migrated specs. Keep further
+migrations small while their runner-scale soak accumulates. The tier boundary is:
 
-| Question the test answers                              | Candidate tier |
+| Question the test answers                              | Tier           |
 | ------------------------------------------------------ | -------------- |
 | Sizing/geometry over a deterministic mocked backend    | demo (browser) |
 | Monaco / terminal / webview / native window / main IPC | e2e (Electron) |
@@ -161,6 +164,6 @@ and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
 | -------------------------------------- | ---------------- |
 | Pure logic / data transform            | unit             |
 | "Does the view render / wire up X?"    | component        |
-| Sizing, computed style, real geometry  | e2e              |
+| Sizing, computed style, real geometry  | browser geometry |
 | Monaco / terminal / webview / main IPC | e2e              |
 | Does a real local model drive the loop | local-model eval |

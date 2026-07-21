@@ -25,10 +25,12 @@ selection. This doc tracks what can move.
   into this view test plus the existing `composer-draft-autosave` /
   `thread-helpers` draft-event units).
 - `new-thread-keeps-panel` → component (prototype, see Pattern below).
-- Markdown specs (`markdown-bold-glob` / `-list-indent` / `-ordered-list-spacing`)
+- Markdown specs (`markdown-bold-glob` / `-ordered-list-spacing`)
   stay e2e for their layout half, but their **parsing** assertions moved to
   `src/renderer/markdown/renderer-fixtures.test.ts` (#386) — fast structural
   coverage alongside the geometry checks.
+- `footer-compact` and `markdown-list-indent` → browser-hosted geometry specs in
+  `tests/demo/`; they exercise the unchanged renderer without Electron startup or IPC.
 
 ## The discriminator
 
@@ -38,8 +40,8 @@ just seed a `config.json` thread the renderer loads and renders, which reproduce
 directly in happy-dom. A spec must **stay e2e** only when its assertion needs a
 real runtime:
 
-- **Layout/geometry** — `getBoundingClientRect`, `getComputedStyle`,
-  `clientWidth`, `elementFromPoint` (happy-dom/jsdom return zeroed geometry).
+- **Layout/geometry** — use the browser-hosted tier when deterministic mocked state is sufficient;
+  keep Electron only when the geometry depends on native chrome or Electron-only primitives.
 - **Monaco** editor (diff, selection, language workers).
 - **xterm / node-pty** terminal.
 - **webview / browser** panel (Electron webContents).
@@ -48,7 +50,7 @@ real runtime:
 Everything else (DOM structure, classes, text, `data-*` attrs, store wiring,
 event handlers, markdown render output) is component-testable.
 
-## Classification (52 specs: 24 component · 6 hybrid · 22 e2e-only)
+## Classification (52 specs: 24 component · 6 hybrid · 2 browser · 20 e2e-only)
 
 ### COMPONENT — convertible to happy-dom/jsdom
 
@@ -70,11 +72,15 @@ check, drop it)
 - **context-wheel** — seeded static part is component; the live mock-run part stays e2e.
 - **markdown-streaming-table** — `is-streaming` class transitions are component; the `getComputedStyle` CSS-transition check stays e2e.
 
+### BROWSER — real geometry over deterministic mocked state
+
+footer-compact (clientWidth) · markdown-list-indent (bounding-rect geometry)
+
 ### E2E-ONLY — needs a real Electron/Chromium runtime
 
 chat-layout-styling (geometry) · code-block-copy (computed opacity + clipboard) ·
-footer-compact (clientWidth) · markdown-bold-glob · markdown-list-indent ·
-markdown-ordered-list-spacing · markdown-table-wrap (all 4: bounding-rect geometry) ·
+markdown-bold-glob · markdown-ordered-list-spacing · markdown-table-wrap
+(all 3: bounding-rect geometry) ·
 mermaid-diagram (worker SVG render) · monaco-selection-chat · staged-diff-ui ·
 file-open-worker-error (Monaco) · git-changes · git-changes-image (git IPC + Monaco) ·
 terminal-display (xterm/pty) · browser-display · browser-link-chat · browser-tools
@@ -114,7 +120,8 @@ visibility, and `rightPanelMode === 'explorer'` (what drives the Explorer tab's
 
 ## Workflow per migration
 
-1. Add the component test (mount real views/controllers; assert the same DOM).
-2. Confirm it passes locally (`npm test`) and reproduces the e2e's intent.
-3. Delete the e2e spec (or, for HYBRID, trim it to the thin integration smoke)
+1. Add the lowest viable replacement: component for DOM/logic, browser-hosted for real geometry.
+2. Confirm it passes locally (`npm test` or `npm run build:demo && npm run test:demo`) and
+   reproduces the e2e's intent.
+3. Delete the Electron spec (or, for HYBRID, trim it to the thin integration smoke)
    and drop it from `wdio.ci.conf.ts` `ciExclude` if it was quarantined.

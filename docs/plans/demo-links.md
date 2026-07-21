@@ -1,7 +1,8 @@
 # Demo links: a browser-hosted renderer build
 
-**Status: Active.** Nothing is on `main` yet; the technical spike is in draft
-PR [#989](https://github.com/copse-dev/agent-pane/pull/989).
+**Status: Active.** PR [#989](https://github.com/copse-dev/agent-pane/pull/989) implements the
+browser build, total mock API, initial shared scenarios, CI execution, and the first two geometry
+migrations. The gallery and broader fixture picker remain follow-up work.
 
 Build the renderer as a static web page backed by a mock API, so a UI change
 can be reviewed as a **shareable demo link** — interactive, both themes, live
@@ -110,15 +111,14 @@ Chromium via chromedriver — a new `wdio.demo.conf.ts` with
 server (or `file://`) serving `dist/demo/`. Specs reuse the existing helper
 style; no Electron shell, no Xvfb, no `.e2e-env.json`.
 
-**Spike before migrating anything** — the flake theory is measurable. The
+**Migrate in measured groups** — the flake theory is measurable. The
 Electron tier's recorded failures are lifecycle ones (runner OOM / disk /
 session-startup, per `docs/e2e-component-migration.md`), and the browser tier
 boots the heavy thing once per shard instead of per spec. But per-page render
-memory and pixel nondeterminism are identical in both. So: port 2–3
-quarantined geometry specs (`footer-compact`, `markdown-list-indent`), loop
-them a few hundred times on the same self-hosted runner class that OOMs
-today, and compare. If they still fall over, the flake is content-level and
-the tier buys review UX only — still worth M0–M3, not worth a migration.
+memory and pixel nondeterminism are identical in both. `footer-compact` and
+`markdown-list-indent` are the first group; collect a few hundred CI runs on the same
+self-hosted runner class before moving the next group. If they still fall over, the flake is
+content-level and the tier buys review UX only — still worth M0–M3, not worth broader migration.
 
 **Tier boundary if the spike passes.** The demo tier can absorb e2e-only
 specs whose real-runtime need is _geometry/computed style_ (roughly:
@@ -148,10 +148,10 @@ evals (`wdio.eval.conf.ts`). `docs/testing-strategy.md` gains a row:
 
 ## Milestone summary
 
-- **M0** demo build target + total mock `ApiClient` — the bulk of the work.
-- **M1** shared fixtures + scenario picker page.
+- **M0** demo build target + total mock `ApiClient` — implemented in #989.
+- **M1** shared scenario data — initial fixtures in #989; picker page remains.
 - **M2** in-browser mock-script playback (interactive demos).
 - **M3** copse.dev/demo gallery from main; per-PR distribution decided
   separately (artifact link is the default).
-- **M4** wdio Chromium demo-test config + flake spike; migrate geometry specs
-  only if the spike passes.
+- **M4** wdio Chromium demo-test config + CI integration — initial two migrations in #989;
+  broaden only after the runner-scale soak.

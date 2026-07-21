@@ -88,6 +88,8 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         emitChunk(threadId, { type: 'done', stopReason: 'end_turn' })
         return resolvedVoid()
       },
+      prepareCheckout: unsupported,
+      previewCheckout: unsupported,
       estimateContext: (_threadId: string, payload: string) =>
         resolved({
           segments: [
@@ -198,6 +200,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         return resolvedVoid()
       },
       catalog: emptyArray,
+      listOrphans: emptyArray,
     },
     openRouter: { models: emptyArray },
     models: {
@@ -207,6 +210,9 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
           minimum: 100_000,
           bestAvailableContext: 200_000,
         }),
+    },
+    intellect: {
+      liveModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),
     },
     lmStudio: {
       test: () => resolved({ ok: false, error: 'Unavailable in demo' }),
@@ -323,13 +329,26 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: emptyArray,
       create: unsupported,
       update: () => resolved(null),
+      setStatus: () => resolved(null),
       delete: () => resolved(false),
       issueUrl: () => resolved(null),
       openIssues: () => resolved({ slug: 'copse-dev/agent-pane', issues: [] }),
       importIssues: emptyArray,
       checkFit: unsupported,
       attachmentData: () => resolved(null),
+      prepareReview: unsupported,
+      lastReviewAt: () =>
+        resolved({
+          lastReviewAt: null,
+          lastAcknowledgedBulkRun: null,
+          pendingBulkRun: null,
+        }),
+      reviewItem: unsupported,
+      reviewItemDeep: unsupported,
+      completeReview: () => resolved(false),
+      abortReview: () => resolved(false),
       onChanged: subscribe,
+      setThread: () => resolved(null),
     },
     skills: { list: emptyArray },
     plugins: { list: emptyArray },
@@ -343,6 +362,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       setSetting: () => resolved({ packs: [] }),
     },
     instructions: { list: emptyArray },
+    cursorRules: { list: emptyArray },
     terminal: {
       create: () => resolved('demo-terminal'),
       write: resolvedVoid,

@@ -1,6 +1,6 @@
 # Browser-hosted renderer spike (#986)
 
-**Status:** technically viable; runner-scale flake claim still unproven.
+**Status:** supported initial browser-geometry tier; runner-scale soak is ongoing.
 
 This spike implements the smallest end-to-end slice of the plan in
 [#986](https://github.com/copse-dev/agent-pane/pull/986): build the production renderer for an
@@ -21,6 +21,9 @@ Chrome without Electron.
   `AgentRunPayload` with `parseAgentRunPayload` and emits `agent.onChunk` events.
 - `npm run test:demo` serves `dist/demo/` locally and runs two WebdriverIO Chrome workers in
   parallel. It checks computed geometry and saves deterministic screenshots.
+- CI builds and runs this tier in the existing build job, then feeds changed browser screenshots
+  into the same review/commit pipeline as Electron screenshots.
+- `footer-compact` and `markdown-list-indent` now run here instead of starting Electron sessions.
 
 No renderer view or stylesheet was changed for the spike.
 
@@ -40,13 +43,13 @@ suite completed roughly 2–3× faster than the sequential Electron pair. It is 
 self-hosted lifecycle/OOM failures are fixed; this machine is not the constrained runner class and
 ten repetitions are too few to estimate a low flake rate.
 
-## Visual evaluation
+## Initial visual evaluation
 
-- `demo-spike-markdown-list-indent.png`: the real application chrome, conversation, composer, and
-  markdown styles render in Chrome. Both headings are followed by sibling lists, bullets are
-  consistently indented, and list rows are compact.
-- `demo-spike-footer-compact.png`: at a 360px chat width the real responsive footer hides export and
-  token text, preserves model/branch context, and keeps the context wheel visible.
+- `markdown-list-indent-{multi-section,architecture}.png`: the real application chrome,
+  conversation, composer, and markdown styles render in Chrome. Both headings are followed by
+  sibling lists, bullets are consistently indented, and list rows are compact.
+- `footer-compact-{wide,narrow,overflow-open}.png`: the responsive footer preserves the wide state,
+  hides secondary information at 360px, keeps context visible, and exposes Export in overflow.
 
 The screenshots contain only fixed fixture data. No clock, host path, live git state, or provider
 response is rendered.
@@ -67,11 +70,10 @@ response is rendered.
    validate Electron `<webview>`, native menus/window chrome, preload IPC, real filesystem/git, pty,
    or process lifecycle behavior.
 
-## Recommendation
+## Next gate
 
-Keep the demo build and browser test harness, but do not migrate Electron specs based on this local
-sample alone. The next decision gate should run these same two specs at least a few hundred times on
-the constrained self-hosted runner used by Electron e2e and compare:
+Keep these first migrations in CI and collect at least a few hundred runs on the same constrained
+self-hosted runner class used by Electron e2e before moving the next group. Compare:
 
 - session-start failures and retries;
 - peak RSS and disk use per shard;
@@ -79,5 +81,5 @@ the constrained self-hosted runner used by Electron e2e and compare:
 - median and p95 wall time.
 
 If that run stays green and materially reduces lifecycle failures, move geometry-only specs in
-small groups. M1's shared fixture extraction and scenario picker should land before a public demo
-gallery so the browser and Electron fixtures cannot silently diverge.
+small groups. Scenario data now lives in `src/shared/demo-scenarios.ts`; expand that single source of
+fixture data before adding a public demo gallery.
