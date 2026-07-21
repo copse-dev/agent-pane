@@ -84,6 +84,47 @@ describe('hook cards (component, decision 10)', () => {
     assert.equal(document.querySelector('.hook-card.msg-user'), null)
   })
 
+  it('collapses a turn’s hook cards into one summary row, worst status surfaced', () => {
+    const store = createStore()
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    seedThread(store, [
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'run the build',
+        toolCalls: [],
+        createdAt: 1,
+        hookCards: [
+          card({ id: 'h1', status: 'ok' }),
+          card({ id: 'h2', status: 'allow' }),
+          card({ id: 'h3', kind: 'decision', status: 'deny' }),
+        ],
+      },
+    ])
+
+    const hostEl = document.querySelector<HTMLElement>('[data-hook-cards-for="u1"]')
+    assert.ok(hostEl)
+    // A single collapsed group wraps every card — not three loose cards.
+    const group = hostEl.querySelector<HTMLElement>('.hook-card-group')
+    assert.ok(group, 'the cards fold into one group entry')
+    assert.equal(group.getAttribute('data-hook-count'), '3')
+    // Collapsed by default: <details> starts closed.
+    assert.equal(group.hasAttribute('open'), false, 'the group is collapsed by default')
+    // The summary counts the runs and flags the one blocking verdict.
+    const summary = group.querySelector('.hook-card-header .hook-card-status')
+    assert.ok(summary)
+    assert.match(summary.textContent, /3 ran/)
+    assert.match(summary.textContent, /1 blocked/)
+    // Worst status wins, so a deny is visible while collapsed.
+    assert.equal(group.getAttribute('data-status'), 'deny')
+    // Every individual card still lives inside the group, in fire order.
+    const inner = group.querySelectorAll('.hook-card')
+    assert.equal(inner.length, 3, 'all cards are nested in the group body')
+  })
+
   it('marks a hook-originated turn with an origin marker (not a plain user message)', () => {
     const store = createStore()
     const host = document.createElement('div')
