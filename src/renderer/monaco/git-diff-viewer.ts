@@ -62,8 +62,10 @@ export async function setGitFileDiffModel(
   monaco: typeof Monaco,
   diff: GitFileDiff,
   host: HTMLElement,
-): Promise<void> {
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
   await whenDiffHostVisible(host)
+  if (!isCurrent()) return false
 
   disposeDiffModels(diffEditor)
   const version = diffModelVersion++
@@ -80,11 +82,18 @@ export async function setGitFileDiffModel(
   )
   const viewModel = diffEditor.createViewModel({ original, modified })
   await waitForViewModelDiff(viewModel, 2_000)
+  if (!isCurrent()) {
+    viewModel.dispose()
+    original.dispose()
+    modified.dispose()
+    return false
+  }
   diffEditor.setModel(viewModel)
 
   await refreshGitChangesDiffCollapse(diffEditor)
   diffEditor.layout()
-  revealFirstDiffChange(diffEditor)
+  if (isCurrent()) revealFirstDiffChange(diffEditor)
+  return true
 }
 
 export function observeDiffHostLayout(

@@ -96,6 +96,35 @@ describe('staged diff approval UI', () => {
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'staged-diff-multi.png'))
 
+    // Rapid selection used to start overlapping Monaco view-model computations;
+    // the slower, stale request could win and leave the viewer blank or showing
+    // the wrong file. Click both rows without waiting for either diff load.
+    await browser.execute(() => {
+      for (const path of ['src/e2e-staged-a.ts', 'src/e2e-staged-b.ts']) {
+        const row = [
+          ...document.querySelectorAll<HTMLButtonElement>('.git-change-row-proposed'),
+        ].find((candidate) => candidate.textContent?.includes(path))
+        row?.click()
+      }
+    })
+    await browser.waitUntil(
+      async () =>
+        await browser.execute(() => {
+          const selected = document.querySelector('.git-change-row-proposed.is-selected')
+          const viewerText =
+            document.querySelector('#git-diff-viewer-host')?.textContent?.replace(/\s/g, '') ?? ''
+          return (
+            selected?.textContent?.includes('src/e2e-staged-b.ts') === true &&
+            viewerText.includes('exportconstb=2')
+          )
+        }),
+      {
+        timeout: 30_000,
+        timeoutMsg: 'expected the last rapidly selected proposed diff to render',
+      },
+    )
+    await saveAppScreenshot('staged-diff-rapid-selection.png')
+
     await $('.project-new-thread-btn').click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     await browser.waitUntil(async () => !(await $('.git-changes-section-proposed').isDisplayed()), {
