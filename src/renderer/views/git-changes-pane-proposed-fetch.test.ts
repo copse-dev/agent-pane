@@ -27,9 +27,14 @@ interface StubModel {
 interface StubDiffEditor {
   models: { original: StubModel; modified: StubModel } | null
   revealLineCalls: number[]
+  activeDiffComputations: number
+  maxActiveDiffComputations: number
 }
 
-function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Monaco {
+function makeMonacoStub(
+  capture: { editor: StubDiffEditor | null },
+  diffDelayMs: (modifiedValue: string) => number = () => 0,
+): typeof Monaco {
   const noopEditor = {
     onKeyDown: (): { dispose(): void } => ({ dispose(): void {} }),
   }
@@ -53,6 +58,8 @@ function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Mona
         const self: StubDiffEditor & Record<string, unknown> = {
           models: null,
           revealLineCalls: [],
+          activeDiffComputations: 0,
+          maxActiveDiffComputations: 0,
           getOriginalEditor: () => ({
             ...noopEditor,
             revealLineInCenterIfOutsideViewport: (line: number): void => {
@@ -92,7 +99,23 @@ function makeMonacoStub(capture: { editor: StubDiffEditor | null }): typeof Mona
           },
           createViewModel: (model: { original: StubModel; modified: StubModel }) => ({
             model,
-            waitForDiff: async (): Promise<void> => undefined,
+            waitForDiff: async (): Promise<void> => {
+              self.activeDiffComputations++
+              self.maxActiveDiffComputations = Math.max(
+                self.maxActiveDiffComputations,
+                self.activeDiffComputations,
+              )
+              try {
+                const delayMs = diffDelayMs(model.modified.value)
+                if (delayMs > 0) {
+                  await new Promise<void>((resolve) => {
+                    setTimeout(resolve, delayMs)
+                  })
+                }
+              } finally {
+                self.activeDiffComputations--
+              }
+            },
             dispose: (): void => {},
           }),
           updateOptions: (): void => {
@@ -203,6 +226,31 @@ async function waitForReveal(capture: { editor: StubDiffEditor | null }): Promis
   }
 }
 
+async function waitForActiveDiff(capture: { editor: StubDiffEditor | null }): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (Date.now() < deadline) {
+    if ((capture.editor?.activeDiffComputations ?? 0) > 0) return
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 5)
+    })
+  }
+  assert.fail('expected Monaco diff computation to start')
+}
+
+async function waitForModifiedValue(
+  capture: { editor: StubDiffEditor | null },
+  expected: string,
+): Promise<void> {
+  const deadline = Date.now() + 2_000
+  while (Date.now() < deadline) {
+    if (capture.editor?.models?.modified.value === expected) return
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 5)
+    })
+  }
+  assert.fail(`expected modified model to become ${JSON.stringify(expected)}`)
+}
+
 describe('git changes pane fetches proposed diff content on cache miss', () => {
   it('renders a proposed diff whose show_diff push was never received', async () => {
     const store = createStore({
@@ -309,13 +357,76 @@ describe('git changes pane fetches proposed diff content on cache miss', () => {
       'b-after\n',
       'typescript',
     )
-    await settle()
-    assert.equal(capture.editor?.models?.modified.value, 'b-after\n')
+    await waitForModifiedValue(capture, 'b-after\n')
 
     store.setState({ activeThreadId: 'thread-a', activeDiff: null })
     store.emit('staged_diffs_changed')
-    await settle()
-    assert.equal(capture.editor.models.original.value, 'a-before\n')
-    assert.equal(capture.editor.models.modified.value, 'a-after\n')
+    await waitForModifiedValue(capture, 'a-after\n')
+    const models = capture.editor?.models
+    assert.ok(models, 'expected thread-a models to be restored')
+    assert.equal(models.original.value, 'a-before\n')
+    assert.equal(models.modified.value, 'a-after\n')
+  })
+
+  it('serializes proposed model computation and only attaches the latest selection', async () => {
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: true,
+      rightPanelMode: 'changes',
+    })
+    store.setState({
+      stagedDiffs: [
+        { path: 'slow.ts', language: 'typescript' },
+        { path: 'fast.ts', language: 'typescript' },
+      ],
+    })
+
+    const api = makeApi(
+      {
+        'slow.ts': {
+          path: 'slow.ts',
+          before: 'slow-before\n',
+          after: 'slow-after\n',
+          language: 'typescript',
+        },
+        'fast.ts': {
+          path: 'fast.ts',
+          before: 'fast-before\n',
+          after: 'fast-after\n',
+          language: 'typescript',
+        },
+      },
+      [],
+    )
+    const capture: { editor: StubDiffEditor | null } = { editor: null }
+    const monaco = makeMonacoStub(capture, (value) => (value === 'slow-after\n' ? 80 : 5))
+    const listRoot = document.createElement('div')
+    const viewerRoot = document.createElement('div')
+    forceVisible(viewerRoot)
+    document.body.append(listRoot, viewerRoot)
+
+    mountGitChangesPane(listRoot, viewerRoot, store, api, monaco)
+    await waitForActiveDiff(capture)
+
+    const fastRow = [
+      ...listRoot.querySelectorAll<HTMLButtonElement>('.git-change-row-proposed'),
+    ].find((row) => row.textContent.includes('fast.ts'))
+    assert.ok(fastRow, 'expected the second proposed file row')
+    fastRow.click()
+
+    await waitForReveal(capture)
+    const editor = capture.editor
+    assert.ok(editor, 'expected the diff editor')
+    const models = editor.models
+    assert.ok(models, 'expected the latest diff models')
+
+    assert.equal(
+      editor.maxActiveDiffComputations,
+      1,
+      'Monaco view-model computations must not overlap',
+    )
+    assert.equal(models.original.value, 'fast-before\n')
+    assert.equal(models.modified.value, 'fast-after\n')
   })
 })
