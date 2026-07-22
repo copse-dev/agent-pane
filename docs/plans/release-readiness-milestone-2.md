@@ -15,22 +15,22 @@ Keep the plans together so cross-cutting dependencies remain visible. Split impl
 boundaries in the table; in particular, never combine terminal execution, semantic-index limits,
 or permission auditing with unrelated release work.
 
-| Item                                                                              | Current state                                    | Risk        | Recommended implementation boundary                       |
-| --------------------------------------------------------------------------------- | ------------------------------------------------ | ----------- | --------------------------------------------------------- |
-| [#607 ACP permission modes](#607-acp-permission-modes)                            | Core implementation is on `main`                 | Low         | Acceptance/closure only                                   |
-| [#830 ACP warm-session resume](#830-acp-warm-session-resume)                      | Resume path is on `main`                         | Low–medium  | Acceptance first; durable/load fallback is a follow-up    |
-| [#832 ACP Tier-2 probes](#832-acp-tier-2-behavioral-probes)                       | One write-routing probe is on `main`             | Medium      | One harness PR, then findings-only updates                |
-| [#785 longer `run_shell` timeouts](#785-long-running-run_shell-commands)          | Unimplemented                                    | Low         | One schema/lifecycle PR                                   |
-| [#787 pipeline exit masking](#787-pipelines-mask-run_shell-failures)              | Unimplemented                                    | Medium      | One shell-semantics PR                                    |
-| [#993 move `llm-history`](#993-move-llm-history-out-of-electron-store)            | Implemented (sidecar + migration)                | High        | Landed as one storage+migration PR                        |
-| [#998 catalog/lazy thread loading](#998-catalog-based-lazy-thread-loading)        | Catalog exists; renderer still folds all threads | High        | Main/store API PR, then renderer hydration PR             |
-| [#995 main-loop watchdog](#995-main-process-event-loop-lag-watchdog)              | Unimplemented                                    | Medium      | One invisible diagnostics PR                              |
-| [#994 aged-profile startup e2e](#994-aged-profile-startup-e2e)                    | Unimplemented                                    | Medium      | Dedicated fixture/config/CI PR after #993 and #998        |
-| [#806 artifact-size budget](#806-artifact-size-budget-and-packaged-footprint)     | Unimplemented                                    | Medium–high | Reporting/budget first; each footprint reduction separate |
-| [#795 semantic-index scale guard](#795-semantic-index-scale-guard)                | Unimplemented                                    | High        | Policy/status PR, then repo and daemon-lifecycle PRs      |
-| [#623 ACP client-owned terminals](#623-acp-client-owned-terminals)                | Unimplemented                                    | Very high   | Shell-core extraction, protocol backend, then UI          |
-| [#840 audit-trail draft PR](#840-salvage-the-audit-trail-draft)                   | Draft is conflicted and incomplete               | High        | Salvage only a reviewed infrastructure slice              |
-| [#656 durable permission audit trail](#656-complete-permission-decision-auditing) | Partially explored by #840                       | Very high   | Contract/event PR, persistence PR, then export/UX         |
+| Item                                                                              | Current state                                                                | Risk        | Recommended implementation boundary                       |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------- | --------------------------------------------------------- |
+| [#607 ACP permission modes](#607-acp-permission-modes)                            | Core implementation is on `main`                                             | Low         | Acceptance/closure only                                   |
+| [#830 ACP warm-session resume](#830-acp-warm-session-resume)                      | Resume path is on `main`                                                     | Low–medium  | Acceptance first; durable/load fallback is a follow-up    |
+| [#832 ACP Tier-2 probes](#832-acp-tier-2-behavioral-probes)                       | One write-routing probe is on `main`                                         | Medium      | One harness PR, then findings-only updates                |
+| [#785 longer `run_shell` timeouts](#785-long-running-run_shell-commands)          | Unimplemented                                                                | Low         | One schema/lifecycle PR                                   |
+| [#787 pipeline exit masking](#787-pipelines-mask-run_shell-failures)              | Unimplemented                                                                | Medium      | One shell-semantics PR                                    |
+| [#993 move `llm-history`](#993-move-llm-history-out-of-electron-store)            | Implemented (sidecar + migration)                                            | High        | Landed as one storage+migration PR                        |
+| [#998 catalog/lazy thread loading](#998-catalog-based-lazy-thread-loading)        | Catalog exists; renderer still folds all threads                             | High        | Main/store API PR, then renderer hydration PR             |
+| [#995 main-loop watchdog](#995-main-process-event-loop-lag-watchdog)              | Unimplemented                                                                | Medium      | One invisible diagnostics PR                              |
+| [#994 aged-profile startup e2e](#994-aged-profile-startup-e2e)                    | Unimplemented                                                                | Medium      | Dedicated fixture/config/CI PR after #993 and #998        |
+| [#806 artifact-size budget](#806-artifact-size-budget-and-packaged-footprint)     | Unimplemented                                                                | Medium–high | Reporting/budget first; each footprint reduction separate |
+| [#795 semantic-index scale guard](#795-semantic-index-scale-guard)                | Policy/status/sequencing landed; nested-repo + daemon wait follow-ups remain | High        | Nested-repo excludes/cache PR, then daemon wait lifecycle |
+| [#623 ACP client-owned terminals](#623-acp-client-owned-terminals)                | Unimplemented                                                                | Very high   | Shell-core extraction, protocol backend, then UI          |
+| [#840 audit-trail draft PR](#840-salvage-the-audit-trail-draft)                   | Draft is conflicted and incomplete                                           | High        | Salvage only a reviewed infrastructure slice              |
+| [#656 durable permission audit trail](#656-complete-permission-decision-auditing) | Partially explored by #840                                                   | Very high   | Contract/event PR, persistence PR, then export/UX         |
 
 ## Delivery order
 
@@ -373,26 +373,25 @@ shipped architecture.
 **Outcome:** Preserve fast text search while preventing semantic indexing and recursive watching
 from overwhelming large umbrella workspaces or the shared daemon.
 
-Plan:
+**Landed (policy/status PR):**
 
-1. Build synthetic umbrella fixtures and a pure `decideWorkspaceIndexPolicy`. Inputs are indexed
-   path count, byte estimate, nested-repo observations, configured override, and discovery
-   confidence; output independently controls semantic indexing and recursive watching.
-2. Sequence startup so the bounded file index provides scale evidence before Gortex tracking or a
-   recursive watcher begins. Above a conservative reviewed cap, keep text/regex search available
-   while semantic indexing and broad watching enter `limited`/`skipped`, not `error`/`unavailable`.
-3. If the UI exposes this status or an “index anyway” override, add component behavior assertions
-   and a focused screenshot eval. The default remains safe when discovery times out.
-4. Distinguish a timed-out `track --wait` from a dead daemon. Probe status/progress after timeout,
-   retain `building` while work advances, and schedule one low-frequency bounded poll. Never stack
-   duplicate tracking commands.
-5. Add bounded nested-repository discovery. For child repos only, use cheap tracked-file/byte counts
-   with time/output caps and add workspace-relative anchored excludes above a reviewed threshold.
-   Never exclude the selected root itself.
-6. Cache discovery decisions with repository HEAD/config fingerprints and invalidate them when the
-   relevant state changes. If discovery is incomplete, the global cap remains the safety net.
-7. Disable recursive `fs.watch` under the same large-root policy. App-owned writes still trigger
-   direct refresh; a later slice may add per-repository watchers if measurements justify them.
+1. ✅ Pure `decideWorkspaceIndexPolicy` (`workspace-index-policy.ts`) with path/byte/nested inputs,
+   independent semantic/watch modes, and suggested child-repo excludes.
+2. ✅ Startup sequences file-index stats → policy → optional Gortex/`fs.watch` (`workspace-indexing.ts`
+   - `workspace-index-gate.ts`). Over-cap roots keep text search and surface `limited`/`skipped`.
+3. ✅ Footer chip + component tests + focused screenshot eval for the skipped state. No sticky
+   “index anyway” UI yet (test override only).
+4. ✅ Recursive `fs.watch` gated by the same policy; app-owned rebuilds still refresh the file index.
+
+**Remaining:** 4. Distinguish a timed-out `track --wait` from a dead daemon. Probe status/progress after timeout,
+retain `building` while work advances, and schedule one low-frequency bounded poll. Never stack
+duplicate tracking commands. 5. Add bounded nested-repository discovery. For child repos only, use cheap tracked-file/byte counts
+with time/output caps and add workspace-relative anchored excludes above a reviewed threshold.
+Never exclude the selected root itself. (Policy already emits `suggestedExcludes`.) 6. Cache discovery decisions with repository HEAD/config fingerprints and invalidate them when the
+relevant state changes. If discovery is incomplete, the global cap remains the safety net.
+
+- Replace conservative caps with checked-in benchmark baselines when review lands.
+- Optional sticky “index anyway” override in Settings.
 
 Exit: the umbrella fixture never starts unbounded semantic/watcher work, ordinary repositories are
 unchanged, timeout-with-progress stays `building`, one project cannot starve another through the
