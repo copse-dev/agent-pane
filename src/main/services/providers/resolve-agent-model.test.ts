@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { resolveAgentChatModel } from './resolve-agent-model.ts'
 import { clearProviderKeyStatusCache, recordProviderKeyValidation } from './provider-key-status.ts'
 import { setSetting, deleteApiKey, setApiKey } from '../storage/settings.ts'
-import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { FALLBACK_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 
 describe('resolveAgentChatModel', () => {
   beforeEach(() => {
@@ -24,10 +24,21 @@ describe('resolveAgentChatModel', () => {
     recordProviderKeyValidation('cursor', false)
 
     const resolved = await resolveAgentChatModel('remote-agent:cursor')
-    assert.equal(resolved.model, DEFAULT_APP_CHAT_MODEL)
+    assert.equal(resolved.model, FALLBACK_APP_CHAT_MODEL)
     assert.match(resolved.fallbackNotice ?? '', /Could not run on \*\*Cursor Cloud Agent\*\*/)
     assert.match(resolved.fallbackNotice ?? '', /no valid API key/)
     assert.match(resolved.fallbackNotice ?? '', /qwen/)
+  })
+
+  it('expands the best-value sentinel to a concrete routable model', async () => {
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    try {
+      const resolved = await resolveAgentChatModel('auto:best-value')
+      assert.equal(resolved.model, FALLBACK_APP_CHAT_MODEL)
+      assert.equal(resolved.fallbackNotice, undefined)
+    } finally {
+      delete process.env['COPSE_PANEL_MOCK_LLM']
+    }
   })
 
   it('keeps a remote agent when its key validated successfully', async () => {

@@ -275,6 +275,11 @@ export interface ApiClient {
       minimum: number
       bestAvailableContext: number | null
     }>
+    /**
+     * Concrete model id for the plan/price Pareto best-value default
+     * (`auto:best-value` setting expands to this on new chats / agent runs).
+     */
+    bestValueDefault: () => Promise<string>
   }
   intellect: {
     /** Live Artificial Analysis model feed; empty models when no key stored. */

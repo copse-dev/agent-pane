@@ -27,6 +27,12 @@ import {
   type FrontierCostAxis,
   type FrontierPoint,
 } from '@copse/llm/pareto-frontier.ts'
+import {
+  extraProviderFrontierCandidates,
+  localFrontierCandidates,
+  openRouterFrontierCandidates,
+  type OpenRouterPricedModel,
+} from '@copse/llm/frontier-candidates.ts'
 import { TRACKED_MODELS, getModelInfo } from '@copse/llm/model-catalog.ts'
 import {
   getIntellectScore,
@@ -38,10 +44,10 @@ import {
 import { liveIntellectCandidates, type LiveAaModel } from '@copse/llm/live-intellect.ts'
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composite-intellect.ts'
-import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
+import { getLocalModelCapability } from '@copse/llm/local-model-catalog.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
-import { applyPlanCoverage, type PlanCoverageMode } from './plan-inclusion.ts'
+import { applyPlanCoverage, type PlanCoverageMode } from '@shared/plan-inclusion.ts'
 import { el } from '../dom/helpers.ts'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -83,86 +89,13 @@ function svgEl(
   return node
 }
 
-/** Frontier input for the loaded local models: only canonical-scale scores. */
-export function localFrontierCandidates(localModelIds: readonly string[]): FrontierCandidate[] {
-  const out: FrontierCandidate[] = []
-  for (const id of localModelIds) {
-    const cap = getLocalModelCapability(id)
-    if (!cap) continue
-    const score = localBenchmarkScore(cap, 'aa-intelligence')
-    if (!score) continue
-    out.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: 0,
-      local: true,
-      quant: cap.quant,
-    })
-  }
-  return out
-}
-
-/**
- * Frontier input for extra-provider models (Hugging Face router, Mistral,
- * DeepSeek, user-added): any model with BOTH a stored per-MTok rate and a
- * resolvable intellect measurement joins the graph at its real price. Models
- * missing either stay off — a hint-only picker row is as far as an unpriced
- * measurement goes.
- */
-export function extraProviderFrontierCandidates(
-  providers: readonly ExtraProvider[],
-): FrontierCandidate[] {
-  const out: FrontierCandidate[] = []
-  for (const provider of providers) {
-    for (const m of provider.models) {
-      if (typeof m.inputPricePerMTok !== 'number') continue
-      const score = getIntellectScore(m.id)
-      if (!score) continue
-      out.push({
-        id: `${provider.id}:${m.id}`,
-        intellect: score.value,
-        intellectEstimated: score.estimated === true,
-        costPerMTok: blendedRate(m.inputPricePerMTok, m.outputPricePerMTok ?? m.inputPricePerMTok),
-      })
-    }
-  }
-  return out
-}
-
-export interface OpenRouterPricedModel {
-  id: string
-  name: string
-  inputPricePerMTok: number | null
-  outputPricePerMTok: number | null
-}
+export type { OpenRouterPricedModel }
+export { extraProviderFrontierCandidates, localFrontierCandidates, openRouterFrontierCandidates }
 
 export interface OpenRouterFrontierSource {
   models: readonly OpenRouterPricedModel[]
   zdrOnly: boolean
   allowTraining: boolean
-}
-
-/** Configured OpenRouter routes with both catalog pricing and a sourced score. */
-export function openRouterFrontierCandidates(
-  models: readonly OpenRouterPricedModel[],
-): FrontierCandidate[] {
-  const out: FrontierCandidate[] = []
-  for (const model of models) {
-    const input = model.inputPricePerMTok
-    const output = model.outputPricePerMTok
-    if (input === null || output === null || input < 0 || output < 0) continue
-    const id = `openrouter:${model.id}`
-    const score = getIntellectScore(id)
-    if (!score) continue
-    out.push({
-      id,
-      intellect: score.value,
-      intellectEstimated: score.estimated === true,
-      costPerMTok: blendedRate(input, output),
-    })
-  }
-  return out
 }
 
 export interface CompositeScoredModel {

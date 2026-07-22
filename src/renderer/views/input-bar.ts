@@ -49,7 +49,7 @@ import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
 import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
-import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_APP_CHAT_MODEL, isBestValueChatModel } from '@shared/lm-studio-defaults.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -217,16 +217,34 @@ export function mountInputBar(
     (model) => {
       const thread = getActiveThread(store)
       if (!thread) return
-      const threads = store
-        .getState()
-        .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
-      store.setState({ threads })
-      modelPicker.refresh()
-      updateFooter()
-      // The context window depends on the model, so re-estimate the footer wheel
-      // against the newly selected model rather than waiting for the next keystroke.
-      void runContextEstimate()
-      void refreshAutomaticCheckoutPreview()
+      const applyModel = (next: string): void => {
+        const active = getActiveThread(store)
+        if (!active || active.id !== thread.id) return
+        const threads = store
+          .getState()
+          .threads.map((t) =>
+            t.id !== thread.id ? t : { ...t, model: next, updatedAt: Date.now() },
+          )
+        store.setState({ threads })
+        modelPicker.refresh()
+        updateFooter()
+        // The context window depends on the model, so re-estimate the footer wheel
+        // against the newly selected model rather than waiting for the next keystroke.
+        void runContextEstimate()
+        void refreshAutomaticCheckoutPreview()
+      }
+      // Best-value is a Settings default mode; picking it in the footer resolves
+      // once to the concrete plan/price winner so the thread shows the real route.
+      if (isBestValueChatModel(model)) {
+        void api.models
+          .bestValueDefault()
+          .then(applyModel)
+          .catch(() => {
+            applyModel(model)
+          })
+        return
+      }
+      applyModel(model)
     },
     {
       isSshWorkspace: (): boolean => {

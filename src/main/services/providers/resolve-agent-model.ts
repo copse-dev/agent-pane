@@ -1,4 +1,8 @@
-import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import {
+  FALLBACK_APP_CHAT_MODEL,
+  isBestValueChatModel,
+  LM_STUDIO_MODEL_IDS,
+} from '@shared/lm-studio-defaults.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import {
   REMOTE_AGENT_MODELS,
@@ -9,6 +13,7 @@ import {
 import { isProviderKeyUsable } from './provider-key-status.ts'
 import { buildProvider } from './provider-selection.ts'
 import { isProviderAvailable } from '../storage/settings.ts'
+import { resolveBestValueChatModel } from './best-value-model.ts'
 
 export interface ResolvedAgentChatModel {
   /** Model id actually used for the turn. */
@@ -48,7 +53,7 @@ function buildFallbackNotice(input: {
 /** Prefer the default local chat model, then any configured cloud model. */
 async function pickFallbackChatModel(): Promise<string> {
   const candidates = [
-    DEFAULT_APP_CHAT_MODEL,
+    FALLBACK_APP_CHAT_MODEL,
     `lmstudio:${LM_STUDIO_MODEL_IDS.chat}`,
     DEFAULT_CLOUD_MODEL,
     'claude-sonnet-4-6',
@@ -67,15 +72,20 @@ async function pickFallbackChatModel(): Promise<string> {
   }
   if (isProviderAvailable('anthropic')) return DEFAULT_CLOUD_MODEL
   if (isProviderAvailable('openai')) return 'gpt-4o'
-  return DEFAULT_APP_CHAT_MODEL
+  return FALLBACK_APP_CHAT_MODEL
 }
 
 /**
- * Resolve the chat model for an agent turn. When the user picked a remote agent
- * but has no valid API key, fall back to a runnable local/cloud chat model and
- * return a notice so the transcript states what happened.
+ * Resolve the chat model for an agent turn. Expands the best-value sentinel to a
+ * concrete routable model; when the user picked a remote agent but has no valid
+ * API key, fall back to a runnable local/cloud chat model and return a notice
+ * so the transcript states what happened.
  */
 export async function resolveAgentChatModel(requested: string): Promise<ResolvedAgentChatModel> {
+  if (isBestValueChatModel(requested)) {
+    return { model: await resolveBestValueChatModel() }
+  }
+
   const remoteProvider = parseRemoteAgentModel(requested)
   if (!remoteProvider) return { model: requested }
 

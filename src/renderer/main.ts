@@ -69,6 +69,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
+import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
   addProjectFromPath,
@@ -257,6 +258,7 @@ async function boot(): Promise<void> {
   if (!popoutMode) {
     startAgentController(store, api)
     attachAutosave(store, api)
+    attachBestValueDefaultResolver(store, api)
   }
   attachProjectThreadCache(store)
 

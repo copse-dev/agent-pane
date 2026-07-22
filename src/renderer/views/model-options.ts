@@ -39,11 +39,18 @@ import {
 } from '@shared/remote-agent.ts'
 import { ACP_MODEL_PREFIX, acpGroupLabel, acpModelValue, parseAcpModel } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import {
+  BEST_VALUE_CHAT_MODEL,
+  BEST_VALUE_CHAT_MODEL_LABEL,
+  isBestValueChatModel,
+} from '@shared/lm-studio-defaults.ts'
 import { clear } from '../dom/helpers.ts'
 
 const ACP_GROUP = 'ACP agents'
 
 const OPENROUTER_GROUP = 'OpenRouter'
+
+const CHAT_DEFAULT_GROUP = 'Chat default'
 
 export interface ModelOption {
   value: string
@@ -53,6 +60,7 @@ export interface ModelOption {
 }
 
 export function modelDisplayLabel(model: string): string {
+  if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
   if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
@@ -315,7 +323,13 @@ export async function fetchModelOptions(
   current: string,
   opts: FetchModelOptionsOpts = {},
 ): Promise<ModelOption[]> {
-  const options: ModelOption[] = []
+  const options: ModelOption[] = [
+    {
+      value: BEST_VALUE_CHAT_MODEL,
+      label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
+      group: CHAT_DEFAULT_GROUP,
+    },
+  ]
   const sshWorkspace = opts.sshWorkspace === true
   const includeAgentModels = opts.includeAgentModels !== false
 
@@ -404,9 +418,9 @@ export async function fetchModelOptions(
     }
   }
 
-  // Only when nothing at all is configured (no cloud key, no provider, no local
-  // server) do we surface a single guiding message instead of an empty picker.
-  if (options.length === 0) {
+  // When nothing concrete is configured beyond the best-value mode, keep a
+  // guiding row so the picker explains how to add a provider.
+  if (options.length === 1) {
     options.push({
       value: '',
       label: 'No models available — add a provider or API key in Settings',

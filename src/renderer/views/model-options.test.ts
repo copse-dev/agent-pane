@@ -71,13 +71,16 @@ describe('fetchModelOptions visibility', () => {
     )
   })
 
-  it('shows a single guiding message when nothing is configured', async () => {
+  it('always offers best-value mode and a guiding message when nothing else is configured', async () => {
     const options = await fetchModelOptions(mockApi(), '')
-    assert.equal(options.length, 1)
-    const [option] = options
-    assert.ok(option)
-    assert.match(option.label, /No models available/)
-    assert.equal(option.disabled, true)
+    assert.equal(options.length, 2)
+    const [bestValue, empty] = options
+    assert.ok(bestValue)
+    assert.equal(bestValue.value, 'auto:best-value')
+    assert.match(bestValue.label, /Best value/)
+    assert.ok(empty)
+    assert.match(empty.label, /No models available/)
+    assert.equal(empty.disabled, true)
   })
 
   it('omits unconfigured providers entirely (no "add a key" rows)', async () => {
