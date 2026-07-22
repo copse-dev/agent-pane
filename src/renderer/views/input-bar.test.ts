@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
+import { mountProjectsPane } from './projects-pane.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
 
 class TestResizeObserver {
@@ -54,6 +55,7 @@ function createApi(options: {
     agent: {
       abort: options.onAbort ?? (async (): Promise<void> => {}),
       run: options.onRun ?? (async (): Promise<void> => {}),
+      clearHistory: async (): Promise<void> => {},
       prepareCheckout:
         options.onPrepareCheckout ??
         (async (): Promise<PreparedThreadCheckout> => ({
@@ -103,6 +105,9 @@ function createApi(options: {
         semantic: { phase: 'idle' },
       }),
       onStatusChanged: () => () => {},
+    },
+    threads: {
+      listOrphans: async () => [],
     },
   } as unknown as ApiClient
 }
@@ -274,6 +279,104 @@ describe('input bar first-message checkout', () => {
     assert.equal(prepared.gitBranch, 'copse/first-message')
     assert.equal(prepared.messages[0]?.content, 'Start in isolation')
     assert.equal(composer.textContent, '')
+  })
+})
+
+describe('draft prompt preservation', () => {
+  it('keeps a drafted blank thread, restores its composer, and opens a fresh blank', async () => {
+    const draftText = 'still typing a draft prompt…'
+    const blankThread: Thread = {
+      id: 'thread-blank',
+      title: 'New Thread',
+      status: 'idle',
+      messages: [],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 2,
+      updatedAt: 2,
+    }
+    const usedThread: Thread = {
+      id: 'thread-used',
+      title: 'Used thread',
+      status: 'idle',
+      messages: [
+        {
+          id: 'message-used',
+          role: 'user',
+          content: 'hello from used thread',
+          toolCalls: [],
+          createdAt: 1,
+        },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      expandedProjectId: 'project-1',
+      activeThreadId: blankThread.id,
+      threads: [blankThread, usedThread],
+    })
+    const api = createApi({ currentBranch: 'main' })
+    const projectsHost = document.createElement('div')
+    const inputHost = document.createElement('div')
+    document.body.append(projectsHost, inputHost)
+    mountProjectsPane(projectsHost, store, api)
+    mountInputBar(inputHost, store, api)
+    await settle()
+
+    const composer = inputHost.querySelector<HTMLElement>('.prompt-input')
+    assert.ok(composer)
+    assert.equal(
+      projectsHost.querySelector('.chat-row.selected .chat-title')?.textContent,
+      'New Thread',
+    )
+
+    composer.textContent = draftText
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const clickThread = (title: string): void => {
+      const row = [...projectsHost.querySelectorAll<HTMLElement>('.chat-row')].find(
+        (candidate) => candidate.querySelector('.chat-title')?.textContent === title,
+      )
+      assert.ok(row, `expected sidebar row ${title}`)
+      row.click()
+    }
+
+    clickThread('Used thread')
+    assert.equal(store.getState().activeThreadId, usedThread.id)
+    assert.equal(
+      store.getState().threads.find((thread) => thread.id === blankThread.id)?.draftPrompt,
+      draftText,
+    )
+    assert.equal(composer.textContent, '')
+    assert.equal(
+      store.getState().threads.find((thread) => thread.id === usedThread.id)?.messages[0]?.content,
+      'hello from used thread',
+    )
+
+    clickThread('New Thread')
+    assert.equal(store.getState().activeThreadId, blankThread.id)
+    assert.equal(composer.textContent, draftText)
+
+    const newThreadButton = projectsHost.querySelector<HTMLButtonElement>('.project-new-thread-btn')
+    assert.ok(newThreadButton)
+    newThreadButton.click()
+
+    assert.equal(store.getState().threads.length, 3)
+    assert.notEqual(store.getState().activeThreadId, blankThread.id)
+    assert.equal(composer.textContent, '')
+    assert.equal(
+      store.getState().threads.filter((thread) => thread.title === 'New Thread').length,
+      2,
+    )
+
+    const showMore = projectsHost.querySelector<HTMLButtonElement>('.chats-show-more')
+    assert.ok(showMore)
+    showMore.click()
+    assert.equal(projectsHost.querySelectorAll('.chats-list .chat-row').length, 3)
   })
 })
 

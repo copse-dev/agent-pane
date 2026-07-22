@@ -26,11 +26,19 @@ selection. This doc tracks what can move.
   `thread-helpers` draft-event units).
 - `new-thread-keeps-panel` → component (prototype, see Pattern below).
 - Markdown specs (`markdown-bold-glob` / `-ordered-list-spacing`)
-  stay e2e for their layout half, but their **parsing** assertions moved to
-  `src/renderer/markdown/renderer-fixtures.test.ts` (#386) — fast structural
-  coverage alongside the geometry checks.
+  kept fast structural coverage alongside their geometry checks when the renderer lived in this
+  repository; those parser contracts now live in the extracted `@copse/streaming-markdown` package.
 - `footer-compact` and `markdown-list-indent` → browser-hosted geometry specs in
   `tests/demo/`; they exercise the unchanged renderer without Electron startup or IPC.
+- `draft-prompt` → the real projects pane + input bar in `input-bar.test.ts`; draft retention,
+  thread switching, composer restoration, and creating a second blank thread are all store/DOM.
+- `skills` → slash-picker filtering and insertion in `skill-picker.test.ts`; the Electron spec is
+  trimmed to the workspace-skill discovery + live agent invocation seam.
+- `semantic-search-markdown` → structural assertions in `subagent-display.test.ts`, with only
+  indentation and expanded-preview geometry retained in the browser tier.
+- `subagent-display` visual smoke, `settings-footer`, and `chat-layout-styling` → browser-hosted
+  scenarios. The latter two remove active Electron sessions from the CI suite; none needs main or
+  preload IPC.
 
 ## The discriminator
 
@@ -50,7 +58,12 @@ real runtime:
 Everything else (DOM structure, classes, text, `data-*` attrs, store wiring,
 event handlers, markdown render output) is component-testable.
 
-## Classification (52 specs: 24 component · 6 hybrid · 2 browser · 20 e2e-only)
+## Historical classification snapshot
+
+The lists below classify the 52-spec suite as it existed when the migration started. The suite has
+grown substantially, so treat this as rationale for the named candidates, not a current inventory;
+`npm run check:oracle` is authoritative for the live spec count. Completed entries remain here to
+show why they moved.
 
 ### COMPONENT — convertible to happy-dom/jsdom
 
@@ -74,18 +87,20 @@ check, drop it)
 
 ### BROWSER — real geometry over deterministic mocked state
 
-footer-compact (clientWidth) · markdown-list-indent (bounding-rect geometry)
+footer-compact (clientWidth) · markdown-list-indent (bounding-rect geometry) ·
+semantic-search-markdown (list indentation) · subagent-display (visual reference) ·
+settings-footer (sticky-footer geometry) · chat-layout-styling (pane/gradient geometry)
 
 ### E2E-ONLY — needs a real Electron/Chromium runtime
 
-chat-layout-styling (geometry) · code-block-copy (computed opacity + clipboard) ·
+code-block-copy (computed opacity + clipboard) ·
 markdown-bold-glob · markdown-ordered-list-spacing · markdown-table-wrap
 (all 3: bounding-rect geometry) ·
 mermaid-diagram (worker SVG render) · monaco-selection-chat · staged-diff-ui ·
 file-open-worker-error (Monaco) · git-changes · git-changes-image (git IPC + Monaco) ·
 terminal-display (xterm/pty) · browser-display · browser-link-chat · browser-tools
 (webview; low-confidence — tool-card text could decouple) · explorer-reload-spaced-path
-(fs IPC) · portrait-right-panel · queued-pinned · scroll-to-bottom · settings-footer
+(fs IPC) · portrait-right-panel · queued-pinned · scroll-to-bottom
 (all: bounding-rect geometry) · agent-eval-drive (real LLM + git)
 
 ## Top conversion candidates (do first)
@@ -96,16 +111,16 @@ flake/cost reduction:
 | #   | Spec                   | Quarantined for               | Unit-test target                                            |
 | --- | ---------------------- | ----------------------------- | ----------------------------------------------------------- |
 | 1   | new-thread-keeps-panel | new-thread `$$` race          | `controller/panels.ts` + projects-pane _(prototype landed)_ |
-| 2   | subagent-display ✓     | runner OOM (live-mock half)   | `subagent-display.test.ts` (DOM) + quarantined visual smoke |
+| 2   | subagent-display ✓     | runner OOM (live-mock half)   | `subagent-display.test.ts` (DOM) + browser visual smoke     |
 | 3   | context-breakdown      | OOM                           | footer context-breakdown view + store                       |
 | 4   | message-queue          | timing                        | message-queue controller                                    |
 | 5   | queued-message-edit    | timing                        | message-queue / composer controller                         |
 | 6   | queued-send-now        | timing                        | message-queue controller                                    |
-| 7   | draft-prompt           | `$$` race + reloadSession OOM | thread-switch draft persistence                             |
-| 8   | skills                 | flake                         | composer slash-command controller                           |
+| 7   | draft-prompt ✓         | `$$` race + reloadSession OOM | thread-switch draft persistence                             |
+| 8   | skills ✓               | flake                         | composer slash-command controller + thin integration smoke  |
 
-(Runner-up: semantic-search-markdown — markdown-renderer structure, once the
-trivial indent-geometry line is dropped.)
+(Runner-up `semantic-search-markdown` is now split between component structure and browser
+geometry.)
 
 ## Pattern (established by the prototype)
 

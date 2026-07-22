@@ -12,9 +12,9 @@ import type { ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 
-// Component-level port of the seeded `subagent display` describe in
-// tests/e2e/subagent-display.e2e.ts (CI-quarantined: its live-mock describe
-// OOM-crashes the constrained runner). The seeded describe asserts pure DOM
+// Component-level port of the former seeded `subagent display` e2e coverage.
+// Its live-mock describe OOM-crashed the constrained runner, while the seeded
+// describe asserted pure DOM
 // structure of the rendered subagent card — collapsed "Explore files" header,
 // and on expand the inner explore-message markdown + nested tool label — none of
 // which needs Electron. happy-dom holds the whole `<details>` timeline in the DOM
@@ -45,8 +45,8 @@ function apiWithFiles(
   } as unknown as ApiClient
 }
 
-// Mirrors seedSubagentFixture(): one assistant message with a done `explore`
-// tool call whose subagent session read README.md and summarised it.
+// One assistant message with a done `explore` tool call whose subagent session
+// read README.md and summarised it.
 const exploreCall: ToolCall = {
   id: 'tc-explore-1',
   name: 'explore',
@@ -78,6 +78,53 @@ const exploreCall: ToolCall = {
         id: 'sub-msg-2',
         role: 'assistant',
         content: 'README describes Copse setup and dev workflow.',
+        toolCalls: [],
+      },
+    ],
+  },
+}
+
+const semanticSearchSummary = [
+  'Here is the complete summary of how semantic search is classified, routed, and executed:',
+  '',
+  '---',
+  '',
+  "## Search Routing Summary ('search-routing.ts')",
+  '',
+  "### 1. Classification ('classifySearchQuery')",
+  '',
+  '**File:** `src/main/services/search-routing.ts`',
+  '',
+  'The router picks semantic vs grep based on query shape.',
+  '',
+  '- **Semantic path** — embedding search via `search_codebase`',
+  '- **Grep path** — ripgrep via `grep_search`',
+  '',
+  '### 2. Execution',
+  '',
+  'Let me find where this classification function is called.',
+  '',
+  '- Read `search-routing.ts`',
+  '- Search for `classifySearchQuery`',
+].join('\n')
+
+const semanticSearchCall: ToolCall = {
+  id: 'tc-explore-semantic',
+  name: 'explore',
+  args: { query: 'How is semantic search routed?' },
+  status: 'done',
+  result: semanticSearchSummary,
+  subagent: {
+    id: 'sub-semantic-1',
+    kind: 'explore',
+    status: 'done',
+    prompt: 'How is semantic search routed?',
+    summary: semanticSearchSummary,
+    messages: [
+      {
+        id: 'sub-semantic-message',
+        role: 'assistant',
+        content: semanticSearchSummary,
         toolCalls: [],
       },
     ],
@@ -122,6 +169,45 @@ describe('subagent display (component)', () => {
     assert.equal(card.querySelector('.subagent-message-assistant strong')?.textContent, 'README.md')
     // e2e (after expand): .subagent-inner-tool .tool-name === 'Read file'
     assert.equal(card.querySelector('.subagent-inner-tool .tool-name')?.textContent, 'Read file')
+  })
+
+  it('renders semantic-search summary markdown as structural HTML', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(
+      store,
+      threadId,
+      'assistant',
+      "Good find — there *is* semantic search in the agent's code search routing.",
+    )
+    addToolCall(store, messageId, semanticSearchCall)
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const intro = host.querySelector('.msg-assistant .message-text')
+    const summary = host.querySelector('.tool-card-subagent .subagent-message-assistant')
+    assert.ok(intro)
+    assert.ok(summary)
+    assert.equal(intro.querySelector('em')?.textContent, 'is')
+    assert.equal(summary.querySelectorAll('p ul').length, 0)
+    assert.equal(
+      [...summary.querySelectorAll('code')].some((code) => code.querySelector('em') !== null),
+      false,
+    )
+    assert.equal(
+      [...summary.querySelectorAll('h2')].some((heading) =>
+        heading.textContent.includes('Search Routing Summary'),
+      ),
+      true,
+    )
+    const classification = [...summary.querySelectorAll('h3')].find((heading) =>
+      heading.textContent.includes('Classification'),
+    )
+    assert.ok(classification)
+    assert.notEqual(classification.nextElementSibling?.tagName, 'UL')
+    assert.ok(summary.querySelectorAll('ul').length >= 2)
+    assert.equal(summary.textContent.includes('##'), false)
   })
 
   it('keeps a user-expanded inner tool open when the timeline rebuilds', () => {

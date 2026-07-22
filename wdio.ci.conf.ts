@@ -29,23 +29,8 @@ const ciExclude = [
   // OOM-crashes ("tab crashed") or overruns the timeout on the 2-core/7GB GitHub
   // runner even on a fresh first attempt; all pass locally.
   './tests/e2e/scroll-to-bottom.e2e.ts',
-  // Drives a mock subagent/explore run and waits on `.tool-card-subagent`,
-  // which is flaky to render in time on the constrained runner.
-  './tests/e2e/semantic-search-markdown.e2e.ts',
-  // draft-prompt hits a new-thread `$$` race (expected 3 rows, saw 2),
-  // and its heavy reloadSession run also drew the per-shard OOM on retry. The
-  // race fix landed in this branch (poll for the row before snapshotting), but
-  // it stays quarantined until a follow-up confirms a few green CI runs and
-  // removes this line — re-added after the #345 un-quarantine regressed.
-  './tests/e2e/draft-prompt.e2e.ts',
   // context-wheel stays quarantined (describeSkipInCi in its spec): it hard-OOM
   // crashes the runner on its first launch even in a 4-spec shard.
-  // subagent-display is now a thin VISUAL-ONLY smoke (renders the seeded card +
-  // saves collapsed/expanded screenshots). Its DOM contract is asserted in the
-  // fast tier (src/renderer/views/subagent-display.test.ts), so it doesn't need
-  // to gate PRs; keep it quarantined to avoid re-exposing the migrated card to
-  // the flaky e2e tier. Screenshots regenerate on a local/nightly run.
-  './tests/e2e/subagent-display.e2e.ts',
 ]
 
 export const config: Options.Testrunner = {
