@@ -10,7 +10,6 @@ import {
   setMessageContent,
   setMessageCommandSummary,
   setThreadStatus,
-  setThreadTitle,
   addUsageDelta,
   recordContextTrim,
   updateContextSnapshot,
@@ -33,6 +32,7 @@ import {
 import { planAgentTextChunk } from '@copse/agent/agent-text-chunk.ts'
 import { syncAgentActivity, CONTEXT_TRIM_ACTIVITY } from '../agent-activity.ts'
 import { drainMessageQueue, enqueueHookMessage, foldBackContinuationUsed } from './message-queue.ts'
+import { maybeNameThread } from './thread-naming.ts'
 import { usageRecordFromAgentDelta } from '@shared/usage/usage-record-input.ts'
 import type { UsageDelta } from '@shared/types'
 
@@ -149,6 +149,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (plan.text.trim()) {
           st.writing = true
           activity(threadId)
+          // First visible assistant output — start naming without waiting for `done`.
+          maybeNameThread(store, api, threadId)
         }
         break
       }
@@ -187,6 +189,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         st.toolSinceText = true
         st.writing = false
         activity(threadId)
+        // First tool call counts as the agent responding — name in parallel.
+        maybeNameThread(store, api, threadId)
         break
       }
       case 'tool_result': {
@@ -382,7 +386,6 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         if (threadId === store.getState().activeThreadId) {
           void syncThreadGitBranchAfterShell(store, api, threadId)
         }
-        void maybeNameThread(store, api, threadId)
         drainMessageQueue(store, api, threadId)
         break
       }
@@ -491,33 +494,6 @@ function maybeSummarizeCommands(
     }
     if (summary?.trim()) setMessageCommandSummary(store, msgId, summary.trim())
   })()
-}
-
-// Threads we've already attempted to auto-name, to avoid repeat calls.
-const namedThreads = new Set<string>()
-
-function firstWords(text: string, n = 6): string {
-  return text.split(/\s+/).slice(0, n).join(' ').slice(0, 60) || 'New Thread'
-}
-
-// After a thread's first exchange completes, derive a title from the first user
-// message — using the configured small-tasks model, with a plain word-slice
-// fallback.
-async function maybeNameThread(store: AppStore, api: ApiClient, threadId: string): Promise<void> {
-  if (namedThreads.has(threadId)) return
-  const thread = getThreadById(store, threadId)
-  if (!thread || thread.title !== 'New Thread') return
-  const firstUser = thread.messages.find((m) => m.role === 'user')
-  if (!firstUser || !firstUser.content.trim()) return
-  namedThreads.add(threadId)
-
-  let title: string | null
-  try {
-    title = await api.agent.suggestTitle(firstUser.content)
-  } catch {
-    title = null
-  }
-  setThreadTitle(store, threadId, title?.trim() || firstWords(firstUser.content))
 }
 
 function tryOpenFileFromResult(_store: AppStore, _result: string): void {
