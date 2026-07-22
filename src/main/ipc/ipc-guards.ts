@@ -30,8 +30,9 @@ export const zNonEmptyString = z.string().min(1)
 export const zPathString = z.string().max(4096)
 export const zSessionId = z.uuid()
 
-// Thread ids compose a persisted storage key (`llm-history:${threadId}`), so they
-// must be restricted to a safe charset/length to avoid key-injection.
+// Thread ids name on-disk directories and historically composed electron-store
+// keys (`llm-history:${threadId}`); keep them charset/length-safe to avoid
+// path/key injection.
 export const zThreadId = z.string().regex(/^[\w-]{1,128}$/)
 
 // An outbound URL the main process will fetch (e.g. a local LM Studio server).

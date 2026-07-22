@@ -52,7 +52,11 @@ export interface IpcInvokeMap {
     result: import('./worktree.ts').ThreadCheckoutPreview
   }
   'agent:abort': { args: [threadId: string]; result: undefined }
-  'agent:clearHistory': { args: [threadId: string]; result: undefined }
+  'agent:estimateContext': {
+    args: [projectId: string, threadId: string, payloadJson: string]
+    result: import('./thread.ts').ContextBreakdown
+  }
+  'agent:clearHistory': { args: [projectId: string, threadId: string]; result: undefined }
   'agent:refreshModelContext': { args: []; result: undefined }
   'agent:suggestTitle': { args: [text: string]; result: string | null }
   'agent:suggestTerminalTitle': { args: [text: string]; result: string | null }

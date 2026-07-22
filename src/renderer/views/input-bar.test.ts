@@ -55,7 +55,7 @@ function createApi(options: {
     agent: {
       abort: options.onAbort ?? (async (): Promise<void> => {}),
       run: options.onRun ?? (async (): Promise<void> => {}),
-      clearHistory: async (): Promise<void> => {},
+      clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
       prepareCheckout:
         options.onPrepareCheckout ??
         (async (): Promise<PreparedThreadCheckout> => ({
