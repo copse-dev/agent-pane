@@ -20,6 +20,7 @@ import { knowledgeDate } from './knowledge-date.ts'
 import { createThread, getThreadById, switchThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 
@@ -551,6 +552,7 @@ export function mountRoadmapPane(
     if (isImageAttachment(att)) {
       const thumb = el('img', { class: 'roadmap-attachment-thumb', alt: att.name })
       if (thumbSrc) thumb.src = thumbSrc
+      attachImageExpand(thumb, att.name)
       chip.append(thumb)
     }
     const remove = el(
