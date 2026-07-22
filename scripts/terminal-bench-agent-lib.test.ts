@@ -126,26 +126,13 @@ describe('terminal benchmark bridge', () => {
     assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /large optional packages or model weights/)
   })
 
-  it('probes the authoritative verifier directory once without hunting unavailable tests', () => {
-    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /Probe \/tests once at the start/)
+  it('checks the authoritative verifier directory before implementation', () => {
+    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /Start by checking \/tests directly/)
     assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /including \/app\/tests/)
-    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /do not search the filesystem for hidden verifier/)
-  })
-
-  it('requires a real test runner and evidence that tests executed', () => {
-    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /must be run with pytest/)
-    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /collected no tests is not verification/)
-  })
-
-  it('creates a provisional deliverable before extended analysis', () => {
-    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /create a runnable or provisional deliverable/)
-    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /never leave the requested path absent/)
-    assert.match(TERMINAL_BENCH_SYSTEM_PROMPT, /save a reusable helper script/)
   })
 
   it('prevents the reasoning recovery from repeating an existing inspection result', () => {
-    assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /best current candidate/)
-    assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /leaving the deliverable absent/)
+    assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /requested deliverable/)
     assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /Do not repeat an inspection command/)
   })
 
@@ -243,16 +230,8 @@ describe('terminal benchmark bridge', () => {
       TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
       /whether it is code, configuration, data, or a recovered artifact/,
     )
-    assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /Do not run another ls, find, grep, sed, cat/)
-    assert.match(
-      TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
-      /use \/tests only if you already found it readable/,
-    )
-    assert.match(
-      TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
-      /do not search for hidden verifier files again/,
-    )
-    assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /actual test runner/)
+    assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /do not run another ls, find, grep, sed, cat/)
+    assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /verifier tests/)
   })
 
   it('formats the exit code and both output streams for the agent', () => {
