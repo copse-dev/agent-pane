@@ -36,7 +36,7 @@ describe('Developer mode surfaces', () => {
         item.textContent?.trim(),
       ),
     )
-    assert.deepEqual(labels, ['Copy thread ID', 'Export conversation (JSONL)'])
+    assert.deepEqual(labels, ['Copy thread ID', 'Export conversation (JSONL)', 'Share trace'])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu.png')
 
     await $('[aria-label="Settings"]').click()
