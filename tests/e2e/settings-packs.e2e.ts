@@ -53,16 +53,16 @@ describe('settings packs (about:addons)', function () {
     await expect(packs.$('legend=Installed packs')).toBeDisplayed()
 
     // Section copy must stay user-facing: no internal design-doc refs, and the
-    // manifest docs path must be a real link (not a bare <code> path).
+    // add-a-pack guide must be a real link (not a bare <code> path).
     const desc = packs.$('.settings-section-desc')
     await expect(desc).toBeDisplayed()
     const descText = await desc.getText()
     assert.doesNotMatch(descText, /decision\s*17/i)
     const docsLink = desc.$(
-      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/packs.md"]',
+      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md"]',
     )
     await expect(docsLink).toBeDisplayed()
-    assert.match(await docsLink.getText(), /pack manifest docs/i)
+    assert.match(await docsLink.getText(), /how to add a pack/i)
 
     // Wait for the async `packs:list` IPC to resolve and render a real
     // first-party pack. The old skeleton was a development fixture and should

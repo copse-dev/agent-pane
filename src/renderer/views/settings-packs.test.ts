@@ -159,21 +159,21 @@ describe('settings → packs list', () => {
     assert.match(list.textContent, /No packs registered\./)
   })
 
-  it('describes packs without internal design-doc leaks, linking the manifest docs', async () => {
+  it('describes packs without internal design-doc leaks, linking the add-a-pack guide', async () => {
     await openPacks({ packs: [] }, spy)
     const section = document.querySelector('.settings-section[data-section="packs"]')
     assert.ok(section)
     const desc = section.querySelector('.settings-section-desc')
     assert.ok(desc)
     assert.doesNotMatch(desc.textContent, /decision\s*17/i)
-    assert.doesNotMatch(desc.innerHTML, /<code>\s*docs\/packs\.md\s*<\/code>/i)
+    assert.doesNotMatch(desc.innerHTML, /<code>\s*docs\/(?:packs|adding-a-pack)\.md\s*<\/code>/i)
     const docsLink = desc.querySelector<HTMLAnchorElement>(
-      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/packs.md"]',
+      'a[href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md"]',
     )
     assert.ok(docsLink)
     assert.equal(docsLink.target, '_blank')
     assert.match(docsLink.rel, /noopener/)
-    assert.match(docsLink.textContent, /pack manifest docs/i)
+    assert.match(docsLink.textContent, /how to add a pack/i)
   })
 
   it('renders one row per pack with a toggle, name, version, and trust badge', async () => {
