@@ -13,8 +13,6 @@ import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
-import { cursorAgentIdFromUrl } from '@shared/remote-agent-link.ts'
-import { switchThread } from '@shared/store/thread-helpers.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -139,26 +137,6 @@ export function mountBrowserPane(
   let activeTabId: string | null = null
   let resizeObserver: ResizeObserver | null = null
 
-  /**
-   * Cursor run pages opened from GitHub point back to the Copse thread that
-   * launched that run. Unknown runs return false so the caller can open them in
-   * a separate browser tab (for example a run created outside this project).
-   */
-  function openLinkedCursorAgentThread(rawUrl: string): boolean {
-    const agentId = cursorAgentIdFromUrl(rawUrl)
-    if (!agentId) return false
-    const thread = store
-      .getState()
-      .threads.find(
-        (candidate) =>
-          candidate.remoteAgentLink?.provider === 'cursor' &&
-          candidate.remoteAgentLink.agentId === agentId,
-      )
-    if (!thread) return false
-    switchThread(store, thread.id)
-    return true
-  }
-
   function closeAllMenus(): void {
     for (const tab of tabs.values()) tab.closeMenu()
   }
@@ -276,7 +254,6 @@ export function mountBrowserPane(
 
   function navigateTab(tab: BrowserTab, rawUrl: string): void {
     const url = normalizeBrowserUrl(rawUrl)
-    if (openLinkedCursorAgentThread(url)) return
     tab.pendingUrl = url === 'about:blank' ? null : url
     tab.urlInput.value = url === 'about:blank' ? '' : url
     if (browserModeActive(store)) {
@@ -340,7 +317,6 @@ export function mountBrowserPane(
 
   function openRequestedBrowserUrl(rawUrl: string): void {
     const url = normalizeBrowserUrl(rawUrl)
-    if (openLinkedCursorAgentThread(url)) return
     let tab = activeTabId ? tabs.get(activeTabId) : undefined
     if (!tab || !isIdleBrowserTab(tab)) {
       addTab({ activate: true })
@@ -628,9 +604,7 @@ export function mountBrowserPane(
     store.on('canvas_artefact_requested', openArtefact),
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
-    api?.browser.onOpenTab((url) => {
-      if (!openLinkedCursorAgentThread(url)) addTab({ url, activate: false })
-    }),
+    api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
     (): void => {
       document.removeEventListener('click', onDocumentClick)
     },

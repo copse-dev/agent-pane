@@ -42,6 +42,7 @@ describe('PR panel agent-owned PR (mock gh)', () => {
   it('badges the agent-opened PR and offers an open-thread action', async function () {
     this.timeout(120_000)
 
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Unrelated local work')
     await openPrTab()
 
     // The chat-linked PR #42 is also recorded as agent-owned, so its row shows
@@ -51,10 +52,15 @@ describe('PR panel agent-owned PR (mock gh)', () => {
     expect(await badge.getAttribute('title')).toMatch(/opened by a cursor agent/i)
 
     // Selecting the PR surfaces the "open agent thread" jump in the viewer meta.
+    // This is the only intentional thread handoff for a Cursor agent run —
+    // browser/chat navigation to cursor.com/agents stays on the web page.
     await $('.pr-list-row[data-pr-section="linked"]').click()
     const openThreadBtn = await $('.pr-open-thread-btn')
     await openThreadBtn.waitForDisplayed({ timeout: 15_000 })
     expect(await openThreadBtn.getText()).toMatch(/open cursor agent thread/i)
+
+    await openThreadBtn.click()
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Agent PR chat')
 
     await saveElementScreenshot('#pane-files', 'pr-panel-agent-owned.png')
   })
