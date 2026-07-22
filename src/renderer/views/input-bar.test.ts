@@ -499,7 +499,7 @@ describe('input bar model recents', () => {
 })
 
 describe('input bar developer diagnostics', () => {
-  it('hides the overflow by default and reveals both diagnostics in Developer mode', async () => {
+  it('hides the overflow by default and reveals diagnostics in Developer mode', async () => {
     const populated = thread()
     populated.messages = [
       {
@@ -536,7 +536,7 @@ describe('input bar developer diagnostics', () => {
       Array.from(host.querySelectorAll('.footer-overflow-item')).map((item) =>
         item.textContent.trim(),
       ),
-      ['Copy thread ID', 'Export conversation (JSONL)'],
+      ['Copy thread ID', 'Export conversation (JSONL)', 'Share trace'],
     )
 
     store.setState({ developerMode: false })

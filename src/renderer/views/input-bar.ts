@@ -211,7 +211,8 @@ export function mountInputBar(
     },
     {
       label: 'Share trace',
-      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      hidden: (): boolean =>
+        !store.getState().developerMode || !threadHasExportableContent(getActiveThread(store)),
       onClick: shareTrace,
     },
   ])
