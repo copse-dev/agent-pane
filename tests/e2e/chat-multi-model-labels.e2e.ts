@@ -28,7 +28,7 @@ describe('primary-chat multi-model labels', () => {
     const labels = await browser.execute(() =>
       [...document.querySelectorAll('.msg-assistant .message-model')].map((n) => n.textContent),
     )
-    expect(labels).toEqual(['claude-sonnet-4-6', 'qwen/qwen3.6-35b-a3b · local'])
+    expect(labels).toEqual(['Claude Sonnet 4.6', 'qwen/qwen3.6-35b-a3b · local'])
 
     await saveAppScreenshot('chat-multi-model-labels.png')
   })

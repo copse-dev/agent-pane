@@ -51,7 +51,7 @@ describe('primary-chat model labels', () => {
     mountConversation(host, store, fakeApi())
 
     const labels = [...document.querySelectorAll('.message-model')].map((n) => n.textContent)
-    assert.deepEqual(labels, ['claude-sonnet-4-6', 'qwen/qwen3.6-35b-a3b · local'])
+    assert.deepEqual(labels, ['Claude Sonnet 4.6', 'qwen/qwen3.6-35b-a3b · local'])
   })
 
   it('does not count missing model provenance toward the multi-model gate', () => {

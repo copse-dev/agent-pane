@@ -1,4 +1,5 @@
 import type { Message } from '@shared/types'
+import { cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 
 /**
  * Distinct primary-chat models stamped on assistant messages in this thread.
@@ -23,5 +24,5 @@ export function shouldShowPrimaryChatModelLabels(messages: readonly Message[]): 
 /** Display label for a primary-chat model id (matches subagent badge local form). */
 export function formatPrimaryChatModelLabel(model: string): string {
   if (model.startsWith('lmstudio:')) return `${model.slice('lmstudio:'.length)} · local`
-  return model
+  return cloudModelDisplayLabel(model)
 }
