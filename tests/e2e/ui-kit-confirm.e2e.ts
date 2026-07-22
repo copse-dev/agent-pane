@@ -69,10 +69,10 @@ describe('UI kit confirm dialog', () => {
   it('renders kit buttons in the confirm dialog', async function () {
     this.timeout(60_000)
 
-    await browser.waitUntil(
-      async () => (await $$('.chats-list .chat-row')).length >= 2,
-      { timeout: 15_000, timeoutMsg: 'expected two seeded chat rows' },
-    )
+    await browser.waitUntil(async () => (await $$('.chats-list .chat-row')).length >= 2, {
+      timeout: 15_000,
+      timeoutMsg: 'expected two seeded chat rows',
+    })
 
     // Dispatch in-page (same pattern as file-search-palette): Electron may
     // swallow a real Ctrl/Cmd+W before the renderer shortcut handler runs.
