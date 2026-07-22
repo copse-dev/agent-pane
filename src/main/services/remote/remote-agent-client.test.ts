@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import {
   buildRemoteAgentContextPreamble,
+  FATAL_REMOTE_STREAM_ERROR_CODES,
   formatRemoteGitSummary,
   parseSseBlock,
   promptPayloadFromUserContent,
+  RemoteAgentStreamError,
   remoteStreamEventToChunks,
   userContentToText,
   type RemoteStreamState,
@@ -17,6 +19,7 @@ import {
   remoteAgentBusyRetryDelayMs,
   resolveRemoteAgentRepository,
   runRemoteAgentFromSettings,
+  setRemoteStreamReconnectDelayForTest,
 } from './remote-agent-client.ts'
 import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
@@ -24,6 +27,8 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 afterEach(() => {
   storageSet('projects', [])
   storageSet('activeProjectId', null)
+  setRemoteStreamReconnectDelayForTest(null)
+  clearRemoteAgentSession('thread-cursor-reconnect')
 })
 
 function state(): RemoteStreamState {
@@ -72,6 +77,15 @@ describe('resolveRemoteAgentRepository', () => {
   })
 })
 
+function cursorSse(events: Array<{ id?: string; event: string; data: unknown }>): string {
+  return events
+    .map((event) => {
+      const idLine = event.id ? `id: ${event.id}\n` : ''
+      return `${idLine}event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`
+    })
+    .join('')
+}
+
 describe('runRemoteAgentFromSettings (cursor)', () => {
   it('rejects a non-GitHub project with a Cursor-specific error', async () => {
     // No workspace and no active project → no repository can be resolved.
@@ -98,6 +112,118 @@ describe('runRemoteAgentFromSettings (cursor)', () => {
       if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
       else process.env['CURSOR_API_KEY'] = prevKey
       restoreWorkspace()
+    }
+  })
+
+  it('reconnects after stream_unavailable and resumes with Last-Event-ID', async () => {
+    setRemoteStreamReconnectDelayForTest(() => 0)
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    storageSet('remote-agent-session:thread-cursor-reconnect', {
+      v: 1,
+      provider: 'cursor',
+      baseUrl: 'https://api.cursor.com',
+      agentId: 'bc-reconnect',
+      url: 'https://cursor.com/agents/bc-reconnect',
+    })
+
+    const streamHeaders: Array<string | null> = []
+    let streamAttempts = 0
+    const chunks: StreamChunk[] = []
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
+      const url = new URL(href)
+      const method = init?.method ?? 'GET'
+
+      if (method === 'POST' && url.pathname === '/v1/agents/bc-reconnect/runs') {
+        return new Response(JSON.stringify({ run: { id: 'run-1', agentId: 'bc-reconnect' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+
+      if (method === 'GET' && url.pathname === '/v1/agents/bc-reconnect/runs/run-1/stream') {
+        streamAttempts += 1
+        streamHeaders.push(new Headers(init?.headers).get('Last-Event-ID'))
+        if (streamAttempts === 1) {
+          return new Response(
+            cursorSse([
+              { id: '100-0', event: 'assistant', data: { text: 'Digging into flicker paths.' } },
+              {
+                event: 'error',
+                data: {
+                  code: 'stream_unavailable',
+                  message: 'Run stream is no longer available',
+                },
+              },
+            ]),
+            { status: 200, headers: { 'content-type': 'text/event-stream' } },
+          )
+        }
+        return new Response(
+          cursorSse([
+            { id: '100-0', event: 'assistant', data: { text: 'Digging into flicker paths.' } },
+            { id: '101-0', event: 'assistant', data: { text: ' Fixed.' } },
+            {
+              id: '102-0',
+              event: 'result',
+              data: { status: 'FINISHED', text: 'Digging into flicker paths. Fixed.' },
+            },
+            { event: 'done', data: {} },
+          ]),
+          { status: 200, headers: { 'content-type': 'text/event-stream' } },
+        )
+      }
+
+      if (method === 'GET' && url.pathname === '/v1/agents/bc-reconnect/runs/run-1') {
+        return new Response(JSON.stringify({ id: 'run-1', status: 'RUNNING' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+
+      if (method === 'GET' && url.pathname === '/v1/agents/bc-reconnect/usage') {
+        return new Response(JSON.stringify({ runs: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+
+      if (method === 'GET' && url.pathname === '/v1/agents/bc-reconnect/artifacts') {
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+
+      throw new Error(`Unexpected request: ${method} ${url.pathname}`)
+    }
+
+    try {
+      const result = await runRemoteAgentFromSettings({
+        threadId: 'thread-cursor-reconnect',
+        provider: 'cursor',
+        userPrompt: 'are we sure about subagent flickers',
+        signal: new AbortController().signal,
+        onChunk: (chunk) => chunks.push(chunk),
+        fetchImpl,
+      })
+
+      assert.equal(streamAttempts, 2)
+      assert.equal(streamHeaders[0], null)
+      assert.equal(streamHeaders[1], '100-0')
+      assert.equal(result.assistantText, 'Digging into flicker paths. Fixed.')
+      const assistantText = chunks
+        .filter((chunk): chunk is { type: 'text'; text: string } => chunk.type === 'text')
+        .map((chunk) => chunk.text)
+        .join('')
+      assert.match(assistantText, /Digging into flicker paths\. Fixed\./)
+      // Replayed id 100-0 on the second attempt must not double the first delta.
+      assert.equal(assistantText.match(/Digging into flicker paths\./g)?.length, 1)
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
     }
   })
 })
@@ -209,6 +335,38 @@ describe('remoteStreamEventToChunks', () => {
       (chunks[0] as { text: string }).text,
       /Pushed branch `cursor\/add-readme-a1b2` on github\.com\/acme\/repo/,
     )
+  })
+
+  it('marks stream_unavailable as recoverable and auth errors as fatal', () => {
+    const current = state()
+    assert.throws(
+      () =>
+        remoteStreamEventToChunks(
+          {
+            event: 'error',
+            data: JSON.stringify({
+              code: 'stream_unavailable',
+              message: 'Run stream is no longer available',
+            }),
+          },
+          current,
+        ),
+      (err: unknown) =>
+        err instanceof RemoteAgentStreamError && err.code === 'stream_unavailable' && !err.fatal,
+    )
+    assert.throws(
+      () =>
+        remoteStreamEventToChunks(
+          {
+            event: 'error',
+            data: JSON.stringify({ code: 'unauthorized', message: 'bad key' }),
+          },
+          current,
+        ),
+      (err: unknown) =>
+        err instanceof RemoteAgentStreamError && err.code === 'unauthorized' && err.fatal,
+    )
+    assert.ok(FATAL_REMOTE_STREAM_ERROR_CODES.has('not_found'))
   })
 })
 
