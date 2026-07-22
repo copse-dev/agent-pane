@@ -62,12 +62,14 @@ describe('browser Cursor agent URL navigation', () => {
     )
     await browser.waitUntil(
       async () =>
-        (await browser.execute(() => {
-          const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-            getURL(): string
-          } | null
-          return webview?.getURL() ?? ''
-        })).includes('cursor.com/agents/bc-e2e-linked-agent'),
+        (
+          await browser.execute(() => {
+            const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
+              getURL(): string
+            } | null
+            return webview?.getURL() ?? ''
+          })
+        ).includes('cursor.com/agents/bc-e2e-linked-agent'),
       { timeout: 15_000, timeoutMsg: 'expected the guest webview to navigate to the agents URL' },
     )
 
