@@ -1181,6 +1181,11 @@ export function mountInputBar(
       })
     }),
     store.on('composer_draft_flush', persistComposerDraft),
+    store.on('composer_checkout_preferred', (choice) => {
+      const thread = getActiveThread(store)
+      if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return
+      selectCheckout(choice)
+    }),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) {
         updateFooter()
