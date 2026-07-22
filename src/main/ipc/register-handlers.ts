@@ -949,6 +949,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
     await setClaudePlanMonthlyFeeUsd(fee)
     return getPlanWorthItPayload()
+  })
   // Durable permission-decision audit log (#656). `projectId` is optional — an
   // empty/absent value falls back to the active project.
   ipcMain.handle('decisions:list', (event, rawProjectId: unknown) => {
