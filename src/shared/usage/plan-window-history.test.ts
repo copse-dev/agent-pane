@@ -166,7 +166,6 @@ describe('appendPlanWindowSamples', () => {
   })
 })
 
-
 describe('appendPlanWindowSamples prior-provider scan', () => {
   it('folds into the latest matching provider when older providers are present', () => {
     const t0 = 2_000_000
