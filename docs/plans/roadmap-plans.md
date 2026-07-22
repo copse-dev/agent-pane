@@ -45,7 +45,8 @@ grinding out large amounts of work before those PRs merge.
   list row also carries a one-click mark-done toggle (✓ → `done`, shown struck
   through; ↺ on a done row → `ready`) over a status-only `roadmap:setStatus` IPC that
   mirrors the tool's `set_status` — no prompt round-trip, so the stored complexity
-  is never re-classified. Archived items keep the editor-only flow.
+  is never re-classified. Done items are filtered out of the list by default; the
+  header **done** toggle reveals them. Archived items keep the editor-only flow.
 - **Issue pinning** — an item can be pinned to the GitHub issue it is meant to solve.
   Stored as a canonical short ref (`#123` / `owner/repo#123`) in the note's `issue`
   frontmatter field (`src/shared/git/issue-ref.ts` parses pasted forms, including full
@@ -94,19 +95,23 @@ grinding out large amounts of work before those PRs merge.
   as image attachments, UTF-8 files as file chips — and the `roadmap_plan` list output
   names each item's attachments.
 - **Review** — the pane's ◎ button reviews every non-archived item for resolution.
-  For each item it checks the pinned GitHub issue (including closed state),
-  cross-linked issues mentioning that pin, commits since the last **acknowledged**
-  bulk review, and asks the small-tasks model for an advisory `resolved` / `likely` /
-  `partial` / `open` verdict (`src/main/services/roadmap-review.ts`). Verdicts stamp
-  `reviewVerdict` / `reviewDetail` / `reviewBulkRun` on the note; status is never
-  auto-changed. The commit checkpoint advances only when the user **Close**s the
-  results panel after a finished run — closing mid-run or abandoning triage without
-  Close does not shrink the next bulk commit window. Opening an item runs a **deep**
-  resolution check automatically when its bulk verdict is stale (older acknowledged
-  pass); **Check resolution** triggers the same deep path manually (full commit
-  history since the item was created). After the run, the results panel offers per-row **Open**, **Mark done**, and
-  **Archive** (for `resolved` / `likely` verdicts) plus bulk mark/archive for
-  the same set — every status change is an explicit click.
+  Active (non-done) items run first in store order; already-`done` items are
+  double-checked last, oldest `createdAt` first (and short-circuit to `resolved`
+  without a model call). For each active item it checks the pinned GitHub issue
+  (including closed state), cross-linked issues mentioning that pin, commits since
+  the last **acknowledged** bulk review, and asks the small-tasks model for an
+  advisory `resolved` / `likely` / `partial` / `open` verdict
+  (`src/main/services/roadmap-review.ts`). Verdicts stamp `reviewVerdict` /
+  `reviewDetail` / `reviewBulkRun` on the note; status is never auto-changed. The
+  commit checkpoint advances only when the user **Close**s the results panel after
+  a finished run — closing mid-run or abandoning triage without Close does not
+  shrink the next bulk commit window. Opening an item runs a **deep** resolution
+  check automatically when its bulk verdict is stale (older acknowledged pass);
+  **Check resolution** triggers the same deep path manually (full commit history
+  since the item was created). After the run, the results panel offers per-row
+  **Open**, **Mark done**, and **Archive** (for `resolved` / `likely` verdicts)
+  plus bulk mark/archive for the same set — every status change is an explicit
+  click.
 
 While the flag is off the tool is not registered, the pane's titlebar button is hidden,
 and nothing reads or writes the store — the feature is fully inert.
