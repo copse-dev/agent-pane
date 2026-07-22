@@ -208,7 +208,11 @@ import {
 } from '../services/providers/provider-key-status.ts'
 import { getUsageSummary, recordUsageEvent } from '../services/storage/usage-ledger.ts'
 import { parseUsageRecordInput } from '../services/storage/usage-record-schema.ts'
-import { loadPlanUsageSnapshot } from '../services/plan-usage-bridge.ts'
+import {
+  getPlanWorthItPayload,
+  loadPlanUsageSnapshotAndSample,
+  setClaudePlanMonthlyFeeUsd,
+} from '../services/storage/plan-window-history.ts'
 import {
   fetchLiveIntellectModels,
   invalidateLiveIntellectCache,
@@ -930,7 +934,20 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     recordUsageEvent(parseUsageRecordInput(input))
   })
   ipcMain.handle('usage:getSummary', () => getUsageSummary())
-  ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshot())
+  ipcMain.handle('usage:getPlanUsage', async () => loadPlanUsageSnapshotAndSample())
+  ipcMain.handle('usage:getPlanWorthIt', () => getPlanWorthItPayload())
+  ipcMain.handle('usage:setClaudePlanMonthlyFee', async (event, fee: unknown) => {
+    assertMainFrameSender(event, win)
+    if (fee === null || fee === undefined || fee === '') {
+      await setClaudePlanMonthlyFeeUsd(null)
+      return getPlanWorthItPayload()
+    }
+    if (typeof fee !== 'number' || !Number.isFinite(fee)) {
+      throw new Error('Claude plan monthly fee must be a positive number or null')
+    }
+    await setClaudePlanMonthlyFeeUsd(fee)
+    return getPlanWorthItPayload()
+  })
   ipcMain.handle('storage:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(256), [key])

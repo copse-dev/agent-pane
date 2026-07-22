@@ -303,6 +303,40 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         })
       },
       getPlanUsage: () => resolved({ providers: [], checkedAt: DEMO_TIME }),
+      getPlanWorthIt: () =>
+        resolved({
+          worthIt: {
+            verdict: 'insufficient_history',
+            reason:
+              'Need a couple of completed weekly windows — keep Copse signed into Claude and reopen Usage after resets.',
+            apiEquivalentBurnPerWeek: null,
+            planFeePerWeek: null,
+            monthlyFeeUsd: null,
+            feeHint: null,
+            completedWeeklyCount: 0,
+            inferenceFrontierNote: null,
+          },
+          windowExhaustion: [],
+          historySampleCount: 0,
+          completedWeeklyCount: 0,
+        }),
+      setClaudePlanMonthlyFee: () =>
+        resolved({
+          worthIt: {
+            verdict: 'insufficient_history',
+            reason:
+              'Need a couple of completed weekly windows — keep Copse signed into Claude and reopen Usage after resets.',
+            apiEquivalentBurnPerWeek: null,
+            planFeePerWeek: null,
+            monthlyFeeUsd: null,
+            feeHint: null,
+            completedWeeklyCount: 0,
+            inferenceFrontierNote: null,
+          },
+          windowExhaustion: [],
+          historySampleCount: 0,
+          completedWeeklyCount: 0,
+        }),
     },
     index: {
       query: (pattern: string) =>

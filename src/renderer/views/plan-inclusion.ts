@@ -24,6 +24,8 @@ import { resolveIntellectModelId } from '@copse/llm/model-intellect.ts'
 
 export interface PlanInclusion {
   provider: PlanProviderId
+  /** Binding (tightest) window id, e.g. `seven_day_fable`. */
+  windowId: string
   /** The binding (tightest) window's human label, e.g. "Weekly Fable". */
   windowLabel: string
   /** Percent of that window consumed, 0–100. */
@@ -33,6 +35,21 @@ export interface PlanInclusion {
   /** usedPercent ≥ 100 — the plan no longer covers new usage here. */
   exhausted: boolean
 }
+
+/** How the value map should re-price plan-covered models. */
+export type PlanCoverageMode = 'plan' | 'inference' | 'expected'
+
+export interface PlanCoverageOptions {
+  mode?: PlanCoverageMode
+  /**
+   * Prior completed-window exhaustion counts keyed by window id (from
+   * `windowExhaustionRates`). Used only in `expected` mode.
+   */
+  windowExhaustion?: ReadonlyMap<string, { hit: number; total: number }>
+}
+
+/** Expected-plan mode: plot at API price when ≥ half of prior windows hit 100%. */
+export const EXPECTED_PLAN_EXHAUSTION_THRESHOLD = 0.5
 
 /** Lower-cased model family Claude's per-model weekly windows are keyed by. */
 function claudeModelFamily(modelId: string): string | null {
@@ -106,6 +123,7 @@ export function resolvePlanInclusion(
   )
   return {
     provider,
+    windowId: binding.id,
     windowLabel: binding.label,
     usedPercent: binding.usedPercent,
     resetsAt: binding.resetsAt,
@@ -128,26 +146,47 @@ export function planProviderForModel(id: string): PlanProviderId | null {
 }
 
 /**
- * Re-price one grouped frontier candidate against the live plan snapshot. When a
- * plan-billed path covers the model and its governing window has headroom, the
- * candidate plots at $0 with a plan badge (the off-plan price is kept for the
- * hover); when that window is spent, it keeps its real price and carries a
- * limit-reached note instead. Everything else passes through untouched — a null
- * snapshot or an unmapped/uncovered model is never marked included.
+ * Re-price one grouped frontier candidate against the live plan snapshot.
+ *
+ * - `plan` (default): included → $0; live-exhausted → API price.
+ * - `inference`: ignore plan coverage (cancel-the-plan frontier).
+ * - `expected`: like `plan`, but if prior completed windows for the binding id
+ *   hit the limit in ≥50% of samples, plot at API price even with live headroom.
+ *
+ * Everything else passes through untouched — a null snapshot or an
+ * unmapped/uncovered model is never marked included.
  */
 export function applyPlanCoverage(
   candidate: FrontierCandidate,
   snapshot: PlanUsageSnapshot | null,
+  options: PlanCoverageOptions = {},
 ): FrontierCandidate {
-  if (!snapshot) return candidate
+  const mode = options.mode ?? 'plan'
+  if (mode === 'inference' || !snapshot) return candidate
   const provider = planProviderForModel(candidate.id)
   if (!provider) return candidate
   const inclusion = resolvePlanInclusion(provider, candidate.id, snapshot)
   if (!inclusion) return candidate
-  if (inclusion.exhausted) {
+
+  const exhaustion = options.windowExhaustion?.get(inclusion.windowId)
+  const expectedExhausted =
+    mode === 'expected' &&
+    exhaustion !== undefined &&
+    exhaustion.total > 0 &&
+    exhaustion.hit / exhaustion.total >= EXPECTED_PLAN_EXHAUSTION_THRESHOLD
+  const priorLimitHits =
+    mode === 'expected' && exhaustion && exhaustion.total > 0
+      ? { hit: exhaustion.hit, total: exhaustion.total }
+      : undefined
+
+  if (inclusion.exhausted || expectedExhausted) {
     return {
       ...candidate,
-      planLimitReached: { label: inclusion.windowLabel, resetsAt: inclusion.resetsAt },
+      planLimitReached: {
+        label: inclusion.windowLabel,
+        resetsAt: inclusion.resetsAt,
+        ...(priorLimitHits ? { priorLimitHits } : {}),
+      },
     }
   }
   return {
@@ -158,6 +197,7 @@ export function applyPlanCoverage(
       usedPercent: inclusion.usedPercent,
       resetsAt: inclusion.resetsAt,
       apiPricePerMTok: candidate.costPerMTok,
+      ...(priorLimitHits ? { priorLimitHits } : {}),
     },
   }
 }

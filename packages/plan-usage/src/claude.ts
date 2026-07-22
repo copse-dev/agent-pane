@@ -52,6 +52,19 @@ function percentFromDollars(raw: Record<string, unknown>): number | null {
   return normalizePercent((used / limit) * 100)
 }
 
+/** Pull Claude legacy `used_dollars` / `limit_dollars` when present and finite. */
+function dollarFields(raw: Record<string, unknown>): {
+  usedDollars?: number
+  limitDollars?: number
+} {
+  const used = raw['used_dollars']
+  const limit = raw['limit_dollars']
+  const out: { usedDollars?: number; limitDollars?: number } = {}
+  if (typeof used === 'number' && Number.isFinite(used) && used >= 0) out.usedDollars = used
+  if (typeof limit === 'number' && Number.isFinite(limit) && limit > 0) out.limitDollars = limit
+  return out
+}
+
 function formatDollarPair(used: number, limit: number): string {
   const fmt = (n: number): string => (Number.isInteger(n) ? `$${String(n)}` : `$${n.toFixed(2)}`)
   return `${fmt(used)} / ${fmt(limit)}`
@@ -70,11 +83,13 @@ function parseLegacyWindow(
       ? normalizePercent(utilization)
       : percentFromDollars(raw)
   if (usedPercent === null) return null
+  const dollars = dollarFields(raw)
   return {
     id,
     label,
     usedPercent,
     resetsAt: toIsoTimestamp(raw['resets_at'], nowMs),
+    ...dollars,
   }
 }
 
@@ -200,12 +215,26 @@ function planLabelForClaude(body: Record<string, unknown>): string | null {
 /**
  * Merge `limits[]` (preferred) with legacy flat keys so a dollar-only
  * `five_hour` still appears when `limits[]` only carried weekly_all.
+ * When both sources share an id, keep the `limits[]` window but attach any
+ * dollar fields that only the legacy key carried.
  */
 function mergeClaudeWindows(fromLimits: PlanWindow[], fromLegacy: PlanWindow[]): PlanWindow[] {
   if (fromLimits.length === 0) return fromLegacy
   if (fromLegacy.length === 0) return fromLimits
-  const seen = new Set(fromLimits.map((w) => w.id))
-  const out = [...fromLimits]
+  const legacyById = new Map(fromLegacy.map((w) => [w.id, w]))
+  const out: PlanWindow[] = fromLimits.map((window) => {
+    const legacy = legacyById.get(window.id)
+    if (!legacy) return window
+    const usedDollars = window.usedDollars ?? legacy.usedDollars
+    const limitDollars = window.limitDollars ?? legacy.limitDollars
+    if (usedDollars === undefined && limitDollars === undefined) return window
+    return {
+      ...window,
+      ...(usedDollars !== undefined ? { usedDollars } : {}),
+      ...(limitDollars !== undefined ? { limitDollars } : {}),
+    }
+  })
+  const seen = new Set(out.map((w) => w.id))
   for (const window of fromLegacy) {
     if (seen.has(window.id)) continue
     seen.add(window.id)

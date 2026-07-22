@@ -182,6 +182,14 @@ export interface IpcInvokeMap {
     args: []
     result: import('@copse/plan-usage').PlanUsageSnapshot
   }
+  'usage:getPlanWorthIt': {
+    args: []
+    result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
+  }
+  'usage:setClaudePlanMonthlyFee': {
+    args: [fee: number | null]
+    result: import('@shared/usage/plan-worth-it.ts').PlanWorthItPayload
+  }
 
   // Storage (generic electron-store access)
   'storage:get': { args: [key: string]; result: unknown }

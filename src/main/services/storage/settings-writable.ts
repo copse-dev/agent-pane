@@ -163,6 +163,12 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // a larger value also skips trivial edits; 0 always reviews. Separately, billable
   // review models are gated by a per-chat spend approval (see agent-service.ts).
   postTurnReviewMinChangedLines: z.number().int().min(0).max(100_000),
+  /**
+   * User-entered Claude subscription monthly fee (USD) for the plan worth-it
+   * verdict. Null/absent means unset — the UI may still hint a fee from weekly
+   * `limitDollars` tiers.
+   */
+  claudePlanMonthlyFeeUsd: z.number().min(1).max(10_000).nullable(),
   bundledCursorSkillsEnabled: z.boolean(),
   skillsEnabled: z.boolean(),
   // Skill safety toggles (default on). Warn up front when an invoked skill

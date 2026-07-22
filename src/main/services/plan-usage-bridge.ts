@@ -317,7 +317,7 @@ function mockSnapshot(): PlanUsageSnapshot {
         provider: 'claude',
         usage: {
           provider: 'claude',
-          plan: 'Extra usage £55.25 / £50 (disabled)',
+          plan: 'Weekly $99 / $100',
           windows: [
             {
               id: 'five_hour',
@@ -325,6 +325,8 @@ function mockSnapshot(): PlanUsageSnapshot {
               usedPercent: 0,
               resetsAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
               severity: 'normal',
+              usedDollars: 0,
+              limitDollars: 20,
             },
             {
               id: 'seven_day',
@@ -332,6 +334,8 @@ function mockSnapshot(): PlanUsageSnapshot {
               usedPercent: 99,
               resetsAt: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
               severity: 'critical',
+              usedDollars: 99,
+              limitDollars: 100,
             },
             {
               id: 'seven_day_fable',

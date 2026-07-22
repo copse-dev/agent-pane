@@ -17,6 +17,17 @@ export interface PlanWindow {
    * Claude `limits[].severity`). Omitted when the provider does not report it.
    */
   severity?: string | null
+  /**
+   * API-equivalent dollars already consumed in this window, when the provider
+   * reports them (Claude legacy `used_dollars`). Powers plan-worth-it math;
+   * the UI progress bar still uses {@link usedPercent}.
+   */
+  usedDollars?: number
+  /**
+   * API-equivalent dollar cap for this window, when the provider reports it
+   * (Claude legacy `limit_dollars`).
+   */
+  limitDollars?: number
 }
 
 export interface ProviderPlanUsage {

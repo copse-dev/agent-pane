@@ -621,17 +621,85 @@ dialog.settings-overlay::backdrop {
   gap: calc(var(--spacing-xl) + var(--spacing-md));
 }
 .usage-plan-section,
+.usage-worth-section,
 .usage-ledger-section {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
 }
 .usage-plan-heading,
+.usage-worth-heading,
 .usage-ledger-heading {
   margin: 0;
   font-size: var(--font-size-md);
   font-weight: 600;
   color: var(--text-primary);
+}
+.usage-worth-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+.usage-worth-verdict {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.usage-worth-card[data-verdict='worth_it'] .usage-worth-verdict {
+  color: var(--success);
+}
+.usage-worth-card[data-verdict='not_worth_it'] .usage-worth-verdict {
+  color: var(--warning);
+}
+.usage-worth-card[data-verdict='borderline'] .usage-worth-verdict {
+  color: var(--text-secondary);
+}
+.usage-worth-reason {
+  margin: 0;
+}
+.usage-worth-fee-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.usage-worth-fee-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+.usage-worth-fee-input {
+  width: 7rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.usage-worth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.usage-worth-inference-btn {
+  -webkit-app-region: no-drag;
+  align-self: flex-start;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.usage-worth-inference-btn:hover {
+  background: var(--bg-hover);
 }
 .usage-plan-providers {
   display: flex;

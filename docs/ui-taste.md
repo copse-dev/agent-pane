@@ -367,3 +367,10 @@ sidebar list.
 Thread rows and the paginated **Show more** control share the same horizontal inset
 (`margin-inline: var(--spacing-xs)` plus `padding-left: 28px`). Don't give Show more `width: 100%`
 without that margin — the label drifts left of the titles above it.
+
+## Settings → Usage worth-it card
+
+The plan worth-it block sits between subscription bars and the local ledger: one short verdict, one
+fee field, one action that jumps to the value map’s Inference cost basis. Do not turn it into a
+dashboard (no sparkline grids, no multi-provider scorecards in v1). Keep the fee control plain —
+label + number input — and let verdict color come from `--success` / `--warning`, not custom hues.
