@@ -24,7 +24,13 @@ ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and
 `forms.css` forces `dialog:not([open]) { display: none !important; }` as a backstop
 (same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
 can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
+## UI kit primitives (buttons, fields, action rows)
 
+When building dialogs, settings forms, or labelled controls, prefer the shared kit in
+[`src/renderer/ui/`](../src/renderer/ui/) (`uiButton`, `uiActions`, `uiField`) and the styles in
+[`ui.css`](../src/renderer/styles/global/ui.css). Do **not** invent another `*-btn-primary` /
+screen-local field stack. Design rationale and non-goals (no Shadow DOM yet):
+[`docs/plans/ui-kit.md`](plans/ui-kit.md).
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in

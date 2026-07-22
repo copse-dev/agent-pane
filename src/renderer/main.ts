@@ -55,7 +55,10 @@ import { mountApprovalDialog } from './views/approval-dialog.ts'
 import { mountAskUserDialog } from './views/ask-user-dialog.ts'
 import { mountSshPromptDialog } from './views/ssh-prompt-dialog.ts'
 import { mountUpdatePromptDialog } from './views/update-prompt-dialog.ts'
+import { registerUiKit } from './ui/index.ts'
 import { mountConfirmDialog, showConfirmDialog } from './views/confirm-dialog.ts'
+
+registerUiKit()
 import {
   mountFileSearchDialog,
   openFileSearchDialog,
