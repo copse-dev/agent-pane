@@ -249,6 +249,21 @@
 }
 /* Bell on a background thread/project awaiting the user. Uses the warning
    accent and a gentle pulse so it reads as "needs attention" without shouting. */
+/* Single GitHub PR icon — color encodes lifecycle (open / merged / closed).
+   Details stay in the title / aria-label; no text chip. */
+.chat-pr-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--spacing-xs);
+  color: var(--text-muted);
+}
+.chat-pr-status.is-open {
+  color: var(--accent);
+}
+.chat-pr-status.is-merged {
+  color: var(--success);
+}
 .chat-attention-bell {
   flex-shrink: 0;
   margin-left: 4px;
@@ -876,7 +891,8 @@
   gap: var(--spacing-xs);
 }
 .pr-open-external-btn,
-.pr-open-thread-btn {
+.pr-open-thread-btn,
+.pr-new-thread-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -885,7 +901,8 @@
   padding: 2px 0;
 }
 .pr-open-external-btn:hover,
-.pr-open-thread-btn:hover {
+.pr-open-thread-btn:hover,
+.pr-new-thread-btn:hover {
   color: var(--text-primary);
 }
 .pr-action-btn {

@@ -45,6 +45,7 @@ import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
+import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
 import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
@@ -184,6 +185,11 @@ export function mountInputBar(
         if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
       },
     },
+    {
+      label: 'Share trace',
+      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      onClick: shareTrace,
+    },
   ])
   footer.append(usageGroup)
   const footerCompact = bindFooterCompactLayout(footer, () => {
@@ -255,6 +261,15 @@ export function mountInputBar(
       .catch((error: unknown) => {
         showErrorToast('Failed to copy thread ID', error)
       })
+  }
+
+  function shareTrace(): void {
+    const thread = getActiveThread(store)
+    if (!threadHasExportableContent(thread)) return
+    downloadThreadJsonl(thread)
+    void api.shell.openExternal(buildShareTraceIssueUrl(thread)).catch((error: unknown) => {
+      showErrorToast('Share trace failed', error)
+    })
   }
   usageBtn.addEventListener('click', () => {
     costVisible = !costVisible
@@ -1166,6 +1181,11 @@ export function mountInputBar(
       })
     }),
     store.on('composer_draft_flush', persistComposerDraft),
+    store.on('composer_checkout_preferred', (choice) => {
+      const thread = getActiveThread(store)
+      if (!thread || thread.messages.length > 0 || thread.worktreeChoice) return
+      selectCheckout(choice)
+    }),
     store.on('thread_status_changed', (tid) => {
       if (tid === getActiveThreadId()) {
         updateFooter()

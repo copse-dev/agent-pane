@@ -151,6 +151,28 @@ describe('input bar first-message checkout', () => {
     assert.equal(choice.textContent, 'Isolated worktree')
   })
 
+  it('honors composer_checkout_preferred on a blank thread', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const choice = host.querySelector<HTMLButtonElement>('.footer-checkout-btn')
+    assert.ok(choice)
+    // Preview may show Isolated when automatic prefers worktree; force shared.
+    store.emit('composer_checkout_preferred', 'shared')
+    assert.equal(choice.textContent, 'Shared checkout')
+    store.emit('composer_checkout_preferred', 'worktree')
+    assert.equal(choice.textContent, 'Isolated worktree')
+  })
+
   it('previews an automatic project opt-in only when Git supports it', async () => {
     const store = createStore({
       workspaceRoot: '/repo',

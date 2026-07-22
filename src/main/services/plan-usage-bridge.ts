@@ -18,6 +18,18 @@ import { resolveApiKey } from './storage/settings.ts'
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
 
+/** Re-fetch subscription plan windows at most this often (avoids provider rate limits). */
+export const PLAN_USAGE_CACHE_TTL_MS = 5 * 60 * 1000
+
+let planUsageCache: { snapshot: PlanUsageSnapshot; fetchedAt: number } | null = null
+let planUsageInflight: Promise<PlanUsageSnapshot> | null = null
+
+/** Drop cached plan usage (tests, or after credentials change). */
+export function invalidatePlanUsageCache(): void {
+  planUsageCache = null
+  planUsageInflight = null
+}
+
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
 
@@ -454,11 +466,7 @@ function mockAuthErrorSnapshot(): PlanUsageSnapshot {
   }
 }
 
-/**
- * Host bridge around `@copse/plan-usage`. Always resolves — never rejects —
- * so Settings → Usage keeps showing the local ledger when plan fetch fails.
- */
-export async function loadPlanUsageSnapshot(): Promise<PlanUsageSnapshot> {
+async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
   try {
     if (process.env[MOCK_ENV] === '1') return mockSnapshot()
     if (process.env[MOCK_ENV] === 'auth-errors') return mockAuthErrorSnapshot()
@@ -475,5 +483,31 @@ export async function loadPlanUsageSnapshot(): Promise<PlanUsageSnapshot> {
       providers: [],
       error: `Plan usage refresh failed before provider checks: ${message}`,
     }
+  }
+}
+
+/**
+ * Host bridge around `@copse/plan-usage`. Always resolves — never rejects —
+ * so Settings → Usage keeps showing the local ledger when plan fetch fails.
+ */
+export async function loadPlanUsageSnapshot(options?: {
+  force?: boolean
+}): Promise<PlanUsageSnapshot> {
+  const force = options?.force === true
+  const now = Date.now()
+  if (!force && planUsageCache && now - planUsageCache.fetchedAt < PLAN_USAGE_CACHE_TTL_MS) {
+    return planUsageCache.snapshot
+  }
+  if (!force && planUsageInflight) {
+    return planUsageInflight
+  }
+
+  planUsageInflight = fetchPlanUsageSnapshotUncached()
+  try {
+    const snapshot = await planUsageInflight
+    planUsageCache = { snapshot, fetchedAt: Date.now() }
+    return snapshot
+  } finally {
+    planUsageInflight = null
   }
 }

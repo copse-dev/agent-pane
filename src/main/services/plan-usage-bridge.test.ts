@@ -6,7 +6,9 @@ import { describe, it } from 'node:test'
 import { readFileSync } from 'node:fs'
 import {
   discoverPlanUsageCredentials,
+  invalidatePlanUsageCache,
   loadPlanUsageSnapshot,
+  PLAN_USAGE_CACHE_TTL_MS,
   persistRefreshedClaudeToken,
   updateClaudeOAuthJson,
 } from './plan-usage-bridge.ts'
@@ -242,6 +244,7 @@ describe('loadPlanUsageSnapshot', () => {
   it('returns the mock fixture when COPSE_PLAN_USAGE_MOCK=1', async () => {
     const prev = process.env['COPSE_PLAN_USAGE_MOCK']
     process.env['COPSE_PLAN_USAGE_MOCK'] = '1'
+    invalidatePlanUsageCache()
     try {
       const snap = await loadPlanUsageSnapshot()
       assert.equal(snap.providers.length, 4)
@@ -250,12 +253,14 @@ describe('loadPlanUsageSnapshot', () => {
     } finally {
       if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
+      invalidatePlanUsageCache()
     }
   })
 
   it('returns the auth-error mock fixture when COPSE_PLAN_USAGE_MOCK=auth-errors', async () => {
     const prev = process.env['COPSE_PLAN_USAGE_MOCK']
     process.env['COPSE_PLAN_USAGE_MOCK'] = 'auth-errors'
+    invalidatePlanUsageCache()
     try {
       const snap = await loadPlanUsageSnapshot()
       assert.equal(snap.providers.length, 4)
@@ -271,6 +276,45 @@ describe('loadPlanUsageSnapshot', () => {
     } finally {
       if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
       else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
+      invalidatePlanUsageCache()
+    }
+  })
+
+  it('reuses cached snapshots within the TTL', async () => {
+    const prev = process.env['COPSE_PLAN_USAGE_MOCK']
+    process.env['COPSE_PLAN_USAGE_MOCK'] = '1'
+    invalidatePlanUsageCache()
+    try {
+      const first = await loadPlanUsageSnapshot()
+      const second = await loadPlanUsageSnapshot()
+      assert.equal(first, second)
+
+      invalidatePlanUsageCache()
+      const third = await loadPlanUsageSnapshot({ force: true })
+      assert.notEqual(first, third)
+    } finally {
+      if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
+      else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
+      invalidatePlanUsageCache()
+    }
+  })
+
+  it('expires cached snapshots after the TTL', async () => {
+    const prev = process.env['COPSE_PLAN_USAGE_MOCK']
+    process.env['COPSE_PLAN_USAGE_MOCK'] = '1'
+    invalidatePlanUsageCache()
+    const { mock } = await import('node:test')
+    mock.timers.enable({ apis: ['Date'], now: 0 })
+    try {
+      const first = await loadPlanUsageSnapshot()
+      mock.timers.setTime(PLAN_USAGE_CACHE_TTL_MS + 1)
+      const second = await loadPlanUsageSnapshot()
+      assert.notEqual(first, second)
+    } finally {
+      mock.timers.reset()
+      if (prev === undefined) delete process.env['COPSE_PLAN_USAGE_MOCK']
+      else process.env['COPSE_PLAN_USAGE_MOCK'] = prev
+      invalidatePlanUsageCache()
     }
   })
 })
