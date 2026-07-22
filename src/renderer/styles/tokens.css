@@ -76,6 +76,9 @@
      windows. Wide artifacts can still scroll or expand within this column. */
   --chat-content-max: 960px;
   --chat-user-max: 840px;
+  /* Settings form column — narrower than chat prose; the scroll surface stays
+     full width beside the nav (same pattern as .messages-list / .msg). */
+  --settings-content-max: 720px;
   /* Left inset for custom titlebars under macOS traffic lights (see trafficLightPosition). */
   --traffic-light-inset: 78px;
   --titlebar-height: 40px;
