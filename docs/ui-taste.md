@@ -29,7 +29,8 @@ can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }
 When building dialogs, settings forms, or labelled controls, prefer the shared kit in
 [`src/renderer/ui/`](../src/renderer/ui/) (`uiButton`, `uiActions`, `uiField`) and the styles in
 [`ui.css`](../src/renderer/styles/global/ui.css). Do **not** invent another `*-btn-primary` /
-screen-local field stack. Design rationale and non-goals (no Shadow DOM yet):
+screen-local field stack. Only add a new kit primitive once **two product call sites** need it
+(tests/docs do not count). Design rationale and non-goals (no Shadow DOM yet):
 [`docs/plans/ui-kit.md`](plans/ui-kit.md).
 ## Design tokens, not magic numbers
 

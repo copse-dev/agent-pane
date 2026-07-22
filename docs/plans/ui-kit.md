@@ -48,9 +48,8 @@ module import).
 
 ### Initial call sites
 
-- `confirm-dialog.ts` — buttons + actions
-- `update-prompt-dialog.ts` — buttons + actions
-- `setup/model-routing-section.ts` — fields
+- `confirm-dialog.ts` + `update-prompt-dialog.ts` — buttons + actions (**2 sites**)
+- `setup/model-routing-section.ts` + `setup/gh-cli-section.ts` — fields (**2 sites**)
 
 Legacy screen classes (e.g. `.confirm-dialog-confirm`) stay as **additional** selectors so existing
 tests keep working while styles consolidate onto `.ui-btn*`.
@@ -64,13 +63,16 @@ tests keep working while styles consolidate onto `.ui-btn*`.
 
 ## How to extend
 
-1. Prefer a factory that returns a native element (`HTMLButtonElement`, etc.) when the browser
+1. **Two-call-site rule.** Do not promote a primitive into the kit until at least two real
+   product call sites use it (tests/docs do not count). Prefer migrating a second site over
+   inventing an unused abstraction.
+2. Prefer a factory that returns a native element (`HTMLButtonElement`, etc.) when the browser
    already has the right primitive.
-2. Use a light-DOM custom element only when a **tag name** helps enforce structure or shared
+3. Use a light-DOM custom element only when a **tag name** helps enforce structure or shared
    behaviour across call sites.
-3. Style with `.ui-*` classes and design tokens — never hardcode spacing/colour.
-4. Migrate one call site family at a time; keep legacy classes until selectors/tests move.
-5. Visual changes need a focused e2e screenshot (see AGENTS.md).
+4. Style with `.ui-*` classes and design tokens — never hardcode spacing/colour.
+5. Migrate one call site family at a time; keep legacy classes until selectors/tests move.
+6. Visual changes need a focused e2e screenshot (see AGENTS.md).
 
 ## Decisions log
 
@@ -80,3 +82,5 @@ tests keep working while styles consolidate onto `.ui-btn*`.
    submit and focus behaviour stay standard.
 3. **Structural hosts may be custom elements.** `<copse-ui-actions>` and `<copse-ui-field>` are
    light-DOM only; they add kit classes and (for fields) assemble label/control/hint.
+4. **Two call sites minimum (2026-07-22).** A kit primitive ships only once two product call
+   sites use it. `uiField` gained `gh-cli-section` as its second site alongside model routing.
