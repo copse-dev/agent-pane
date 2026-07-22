@@ -3,6 +3,11 @@
  * Usage: node --experimental-strip-types scripts/analyze-thread-jsonl.mts <file.jsonl> [scenario.json]
  */
 import { readFileSync } from 'node:fs'
+import {
+  scoreDoctrineCompliance,
+  type DoctrineToolCall,
+  type UserIntent,
+} from '@shared/agent/doctrine-compliance.ts'
 import { shouldSteerGithubLinks } from '@shared/git/github-link-steering.ts'
 import { shouldSteerTodos } from '@shared/todos/todo-logic.ts'
 import { expectString } from '../src/shared/unknown-value.mts'
@@ -19,6 +24,12 @@ interface ScenarioExpect {
   maxInputTokens?: number | undefined
   requireUpdateTodos?: boolean | undefined
   forbidParallelExploreTurn1?: boolean | undefined
+  /** When true, score the transcript against the working-style doctrine (#744). */
+  requireDoctrineCompliance?: boolean | undefined
+  /** Optional intent label for doctrine scoring; inferred from the user message when omitted. */
+  userIntent?: UserIntent | undefined
+  /** Optional in-scope edit paths for doctrine scopeDiscipline. */
+  inScopePaths?: string[] | undefined
 }
 
 interface Scenario {
@@ -198,6 +209,7 @@ function analyze(path: string, scenario?: Scenario): void {
   const userText = typeof user?.content === 'string' ? user.content : JSON.stringify('')
 
   const toolHist: Record<string, number> = {}
+  const doctrineToolCalls: DoctrineToolCall[] = []
   let exploreCount = 0
   let updateTodos = 0
   let firstAssistantToolCount = 0
@@ -214,6 +226,12 @@ function analyze(path: string, scenario?: Scenario): void {
       toolHist[tc.name] = (toolHist[tc.name] ?? 0) + 1
       if (tc.name === 'explore') exploreCount++
       if (tc.name === 'update_todos') updateTodos++
+      const doctrineCall: DoctrineToolCall = { name: tc.name }
+      if (tc.args) doctrineCall.args = tc.args
+      if (tc.status) doctrineCall.status = tc.status
+      const resultText = (tc as { result?: unknown }).result
+      if (typeof resultText === 'string') doctrineCall.result = resultText
+      doctrineToolCalls.push(doctrineCall)
     }
   }
 
@@ -280,6 +298,20 @@ function analyze(path: string, scenario?: Scenario): void {
     )
   }
 
+  const doctrineTranscript = {
+    userMessage: userText,
+    toolCalls: doctrineToolCalls,
+    finalMessage: finalText,
+    ...(exp?.userIntent !== undefined ? { userIntent: exp.userIntent } : {}),
+    ...(exp?.inScopePaths !== undefined ? { inScopePaths: exp.inScopePaths } : {}),
+  }
+  const doctrine = scoreDoctrineCompliance(doctrineTranscript)
+  if (exp?.requireDoctrineCompliance && !doctrine.pass) {
+    for (const id of doctrine.violations) {
+      violations.push(`doctrine:${id}`)
+    }
+  }
+
   const report = {
     file: path,
     scenarioId: scenario?.id ?? null,
@@ -299,6 +331,7 @@ function analyze(path: string, scenario?: Scenario): void {
     duplicateReadPaths: dupPaths
       .slice(0, 15)
       .map(([p, ex]) => ({ path: p, count: ex.length, explores: [...new Set(ex)] })),
+    doctrine,
     violations,
     pass: violations.length === 0,
   }
