@@ -59,6 +59,6 @@ describe('message-model helpers', () => {
       formatPrimaryChatModelLabel('lmstudio:qwen/qwen3.6-35b-a3b'),
       'qwen/qwen3.6-35b-a3b · local',
     )
-    assert.equal(formatPrimaryChatModelLabel('claude-sonnet-4-6'), 'claude-sonnet-4-6')
+    assert.equal(formatPrimaryChatModelLabel('claude-sonnet-4-6'), 'Claude Sonnet 4.6')
   })
 })
