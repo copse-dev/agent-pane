@@ -15,6 +15,7 @@ import {
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
+import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
 import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
@@ -376,6 +377,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <div class="provider-chips" role="tablist" id="settings-remote-agent-tabs"></div>
               <div id="settings-cursor-panel" class="remote-agent-panel">
                 <div id="settings-cursor-key-host"></div>
+                <p class="field-hint" data-testid="cursor-agents-list-hint">
+                  Copse launches via Cursor's API, so runs are owned by this key but hidden on
+                  <a href="${CURSOR_AGENTS_WEB_URL}" target="_blank" rel="noopener noreferrer">cursor.com/agents</a>
+                  until you enable <strong>Filter → Source → API</strong> (same filter in Cursor's
+                  Agents Window). Follow-along links in the chat always open the run directly.
+                </p>
               </div>
               <div id="settings-claude-panel" class="remote-agent-panel" hidden>
                 <div id="settings-claude-agent-key-host"></div>
