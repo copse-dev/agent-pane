@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { storageGet, storageSet } from './storage/storage.ts'
 import { getActivePathBackend } from './workspace-fs/get-path-backend.ts'
+import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
 import type { PathBackend } from './workspace-fs/path-backend.ts'
 
 const WORKSPACE_KEY = 'workspaceRoot'
@@ -104,7 +105,12 @@ export async function seedAllowedWorkspaceRoots(
       if (project.sshHost) {
         allowedWorkspaceRoots.add(workspaceRootKey(project.path, project.sshHost))
       } else {
-        allowedWorkspaceRoots.add(workspaceRootKey(await canonicalWorkspaceRoot(project.path)))
+        // Local project roots always live on the Mac/host disk — never probe
+        // them through an active SSH PathBackend (that would ask the remote
+        // host whether `/Users/...` exists and silently drop the seed).
+        allowedWorkspaceRoots.add(
+          workspaceRootKey(await canonicalWorkspaceRoot(project.path, localWorkspaceFs)),
+        )
       }
     } catch {
       // Ignore stale or missing persisted project paths.
@@ -122,7 +128,10 @@ export async function registerAllowedWorkspaceRoot(
     allowedWorkspaceRoots.add(workspaceRootKey(normalized, sshHost))
     return normalized
   }
-  const canonical = await canonicalWorkspaceRoot(root)
+  // Open Folder / Relocate always pick a local directory. Use the local FS
+  // even when an SSH project is still the active execution target — otherwise
+  // `getActivePathBackend()` would check the path on the remote host.
+  const canonical = await canonicalWorkspaceRoot(root, localWorkspaceFs)
   allowedWorkspaceRoots.add(workspaceRootKey(canonical))
   return canonical
 }
@@ -136,7 +145,7 @@ export async function assertAllowedWorkspaceRoot(root: string, sshHost?: string)
     }
     return normalized
   }
-  const canonical = await canonicalWorkspaceRoot(root)
+  const canonical = await canonicalWorkspaceRoot(root, localWorkspaceFs)
   if (!allowedWorkspaceRoots.has(workspaceRootKey(canonical))) {
     throw new Error('Workspace root is not an allowed project folder')
   }
@@ -291,17 +300,19 @@ export function getActiveProjectSshHost(): string | undefined {
 
 /**
  * Resolve which SSH host owns a workspace root about to be activated.
- * Prefer an explicit host from the renderer, then the active project, then any
- * persisted project whose path matches (so `workspace:set` never falls through
- * to a local `exists` check for remote roots like `/etc/ddg`).
+ * Prefer an explicit host from the renderer, then any persisted project whose
+ * path matches (so `workspace:set` never falls through to a local `exists`
+ * check for remote roots like `/etc/ddg`).
+ *
+ * Do **not** inherit the active project's sshHost for an unrelated path —
+ * switching from an SSH project to a local folder would otherwise treat the
+ * local Mac path as remote and fail the allowlist check.
  */
 export function resolveSshHostForWorkspaceRoot(
   root: string,
   explicitSshHost?: string,
 ): string | undefined {
   if (explicitSshHost) return explicitSshHost
-  const active = getActiveProjectSshHost()
-  if (active) return active
 
   const projects = storageGet(PROJECTS_KEY)
   if (!Array.isArray(projects)) return undefined
