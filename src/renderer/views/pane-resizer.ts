@@ -50,8 +50,10 @@ export function applyLayout(body: HTMLElement, layout: LayoutState): void {
   body.style.setProperty('--tree-width', `${String(layout.fileTreeWidth)}px`)
 }
 
-function maxFilesWidth(body: HTMLElement): number {
-  return Math.floor(body.clientWidth * LAYOUT_LIMITS.files.maxRatio)
+function maxFilesWidth(body: HTMLElement, projectsPaneWidth: number): number {
+  if (body.clientWidth <= 0) return Number.POSITIVE_INFINITY
+  const sharedWidth = Math.max(0, body.clientWidth - projectsPaneWidth)
+  return Math.floor(sharedWidth * LAYOUT_LIMITS.files.maxRatio)
 }
 
 function maxStackedFilesHeight(body: HTMLElement): number {
@@ -133,11 +135,25 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
     applyLayout(body, layout)
   }
 
+  const filesPanelStacked = (): boolean => body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS)
+  const fitSidePanelToChat = (): void => {
+    const state = store.getState()
+    if (!state.filesPaneOpen || filesPanelStacked()) return
+    const maxWidth = maxFilesWidth(body, state.layout.projectsPaneWidth)
+    if (state.layout.filesPaneWidth <= maxWidth) return
+    setLayout({ filesPaneWidth: maxWidth })
+  }
+
+  // A saved width may have been valid in a larger window. Reconcile it before
+  // the next paint whenever the available side-by-side space changes.
+  fitSidePanelToChat()
+
   mountResizeHandle(projectsResizer, {
     startSize: () => store.getState().layout.projectsPaneWidth,
     deltaToSize: (start, deltaX) => start + deltaX,
     applySize: (width) => {
       setLayout({ projectsPaneWidth: width })
+      fitSidePanelToChat()
     },
     min: () => LAYOUT_LIMITS.projects.min,
     max: () => LAYOUT_LIMITS.projects.max,
@@ -145,7 +161,6 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
     onCommit: commitLayout,
   })
 
-  const filesPanelStacked = (): boolean => body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS)
   mountResizeHandle(filesResizer, {
     startSize: () =>
       filesPanelStacked()
@@ -156,7 +171,10 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
       setLayout(filesPanelStacked() ? { filesPaneHeight: size } : { filesPaneWidth: size })
     },
     min: () => (filesPanelStacked() ? LAYOUT_LIMITS.filesStacked.min : LAYOUT_LIMITS.files.min),
-    max: () => (filesPanelStacked() ? maxStackedFilesHeight(body) : maxFilesWidth(body)),
+    max: () =>
+      filesPanelStacked()
+        ? maxStackedFilesHeight(body)
+        : maxFilesWidth(body, store.getState().layout.projectsPaneWidth),
     cursor: () => (filesPanelStacked() ? 'row-resize' : 'col-resize'),
     onCommit: commitLayout,
   })
@@ -175,12 +193,15 @@ export function mountPaneResizers(body: HTMLElement, store: AppStore, api: ApiCl
 
   const syncFilesResizer = (): void => {
     filesResizer.hidden = !store.getState().filesPaneOpen
+    fitSidePanelToChat()
   }
 
   syncFilesResizer()
   const unsub = store.on('files_pane_changed', syncFilesResizer)
+  window.addEventListener('resize', fitSidePanelToChat, { passive: true })
 
   return () => {
     unsub()
+    window.removeEventListener('resize', fitSidePanelToChat)
   }
 }

@@ -88,4 +88,32 @@ describe('pane resizer', () => {
     dispatchPointer(document, 'pointerup', { clientX: 200, clientY: 300 })
     assert.equal(document.body.style.cursor, '')
   })
+
+  it('keeps chat at one third of the width shared with a side panel', () => {
+    const body = mountResizableDom()
+    const store = createStore({
+      filesPaneOpen: true,
+      layout: { ...DEFAULT_LAYOUT, filesPaneWidth: 4000 },
+    })
+    mountPaneResizers(body, store, apiStub())
+
+    // 1000px body - 240px Projects = 760px shared by chat and the panel.
+    assert.equal(store.getState().layout.filesPaneWidth, Math.floor((760 * 2) / 3))
+    assert.equal(body.style.getPropertyValue('--files-width'), '506px')
+  })
+
+  it('preserves the chat share while widening the Projects pane', () => {
+    const body = mountResizableDom()
+    const store = createStore({ filesPaneOpen: true })
+    mountPaneResizers(body, store, apiStub())
+
+    const projectsResizer = document.getElementById('resizer-projects')
+    assert.ok(projectsResizer)
+    dispatchPointer(projectsResizer, 'pointerdown', { clientX: 240, clientY: 0, button: 0 })
+    dispatchPointer(document, 'pointermove', { clientX: 400, clientY: 0 })
+
+    // 1000px body - 400px Projects leaves 600px, so the side panel caps at 400px.
+    assert.equal(store.getState().layout.projectsPaneWidth, 400)
+    assert.equal(store.getState().layout.filesPaneWidth, 400)
+  })
 })

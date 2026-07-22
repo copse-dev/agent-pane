@@ -428,8 +428,10 @@ function mountFullLayout(): void {
 
   const body = document.getElementById('body')
   if (body) {
-    mountPaneResizers(body, store, api)
     mountPortraitRightPanelLayout(body, store)
+    // Mount after portrait layout so its files-pane listener has already
+    // selected stacked vs side-by-side geometry before widths are reconciled.
+    mountPaneResizers(body, store, api)
   }
 
   store.on('files_pane_changed', updateFilesPane)
