@@ -30,6 +30,9 @@ const PROVIDER_LABELS: Record<string, string> = {
   cursor: 'Cursor',
 }
 
+/** Debounce ledger refreshes while usage streams in during active agent turns. */
+const LEDGER_REFRESH_DEBOUNCE_MS = 400
+
 function isAbortTimeoutMessage(message: string): boolean {
   return /aborted due to timeout|operation was aborted|aborterror|timeout/i.test(message)
 }
@@ -381,6 +384,8 @@ export function createUsageSection(
   const tabBtns = root.querySelectorAll<HTMLButtonElement>('.usage-period-btn')
   let activePeriod: UsagePeriodKey = 'day'
   let cachedSummary: UsageSummary | null = null
+  let cachedPlanSnapshot: PlanUsageSnapshot | null = null
+  let ledgerRefreshTimer: ReturnType<typeof setTimeout> | undefined
 
   function showPeriod(period: UsagePeriodKey): void {
     activePeriod = period
@@ -406,9 +411,12 @@ export function createUsageSection(
   })
 
   async function refreshPlan(): Promise<void> {
-    renderPlanSection(planEl, null, null, handleClaudeSignIn)
+    if (!cachedPlanSnapshot) {
+      renderPlanSection(planEl, null, null, handleClaudeSignIn)
+    }
     try {
       const snapshot = await api.usage.getPlanUsage()
+      cachedPlanSnapshot = snapshot
       renderPlanSection(planEl, snapshot, null, handleClaudeSignIn)
     } catch (err) {
       // Plan usage is best-effort — never block the ledger on IPC failure.
@@ -417,8 +425,28 @@ export function createUsageSection(
     }
   }
 
+  async function refreshLedger(): Promise<void> {
+    try {
+      cachedSummary = await api.usage.getSummary()
+      showPeriod(activePeriod)
+    } catch (err) {
+      bodyEl.textContent =
+        err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
+    }
+  }
+
+  function scheduleLedgerRefresh(): void {
+    if (ledgerRefreshTimer !== undefined) clearTimeout(ledgerRefreshTimer)
+    ledgerRefreshTimer = setTimeout(() => {
+      ledgerRefreshTimer = undefined
+      void refreshLedger()
+    }, LEDGER_REFRESH_DEBOUNCE_MS)
+  }
+
   async function refresh(): Promise<void> {
-    bodyEl.textContent = 'Loading usage…'
+    if (!cachedSummary) {
+      bodyEl.textContent = 'Loading usage…'
+    }
     const planPromise = refreshPlan()
     const frontierPromise = frontierPanel.refresh()
     try {
@@ -434,9 +462,18 @@ export function createUsageSection(
 
   const unsubUsage = store?.on('usage_updated', () => {
     if (root.closest('.settings-section')?.classList.contains('active')) {
-      void refresh()
+      // Agent turns emit many usage deltas — only roll up the local ledger; plan
+      // windows and the frontier chart stay on the main-process TTL cache.
+      scheduleLedgerRefresh()
     }
   })
 
-  return { root, refresh, detach: () => unsubUsage?.() }
+  return {
+    root,
+    refresh,
+    detach: () => {
+      unsubUsage?.()
+      if (ledgerRefreshTimer !== undefined) clearTimeout(ledgerRefreshTimer)
+    },
+  }
 }
