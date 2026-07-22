@@ -169,6 +169,8 @@ export function mountRoadmapPane(
   let loadToken = 0
   // Search/filter query entered in the list header.
   let searchQuery = ''
+  // Done items are hidden by default; the header toggle reveals them.
+  let showDone = false
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
@@ -209,6 +211,17 @@ export function mountRoadmapPane(
     },
     '◎',
   )
+  const showDoneBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-show-done-btn',
+      'aria-label': 'Show done items',
+      'aria-pressed': 'false',
+      title: 'Show done items',
+    },
+    'done',
+  )
   const refreshBtn = el(
     'button',
     {
@@ -219,7 +232,7 @@ export function mountRoadmapPane(
     },
     '↻',
   )
-  actionButtons.append(newBtn, importBtn, reviewBtn, refreshBtn)
+  actionButtons.append(newBtn, importBtn, reviewBtn, showDoneBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
@@ -229,10 +242,23 @@ export function mountRoadmapPane(
   const listBody = el('div', { class: 'git-changes-list roadmap-list' })
   listRoot.append(listHeader, listBody)
 
+  function syncShowDoneBtn(): void {
+    showDoneBtn.setAttribute('aria-pressed', showDone ? 'true' : 'false')
+    showDoneBtn.classList.toggle('is-active', showDone)
+    showDoneBtn.title = showDone ? 'Hide done items' : 'Show done items'
+    showDoneBtn.setAttribute('aria-label', showDone ? 'Hide done items' : 'Show done items')
+  }
+
   searchInput.addEventListener('input', () => {
     searchQuery = searchInput.value.trim()
     renderList()
   })
+  showDoneBtn.addEventListener('click', () => {
+    showDone = !showDone
+    syncShowDoneBtn()
+    renderList()
+  })
+  syncShowDoneBtn()
 
   // --- editor column --------------------------------------------------------
   const emptyState = el(
@@ -717,13 +743,22 @@ export function mountRoadmapPane(
     )
   }
 
+  function isListVisible(item: RoadmapItem): boolean {
+    if (!showDone && itemStatus(item) === 'done') return false
+    return matchesSearch(item)
+  }
+
   function renderList(): void {
     clear(listBody)
-    const visible = items.filter(matchesSearch)
+    const visible = items.filter(isListVisible)
     if (visible.length === 0) {
-      const hint = searchQuery
-        ? 'No roadmap items match your filter.'
-        : 'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
+      let hint =
+        'No roadmap items yet. Jot a prompt to run later with +, or the agent records them with the roadmap_plan tool.'
+      if (searchQuery) {
+        hint = 'No roadmap items match your filter.'
+      } else if (!showDone && items.some((item) => itemStatus(item) === 'done')) {
+        hint = 'No open roadmap items. Turn on "done" to see completed work.'
+      }
       listBody.append(el('div', { class: 'git-changes-empty roadmap-list-empty' }, hint))
       return
     }

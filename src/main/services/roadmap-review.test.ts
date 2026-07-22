@@ -8,6 +8,7 @@ import {
   clearBulkRunIssueCacheForTest,
   completeRoadmapReview,
   gatherIssueEvidenceWithBulkCache,
+  orderRoadmapNotesForReview,
   prepareRoadmapReview,
   reviewRoadmapItem,
 } from './roadmap-review.ts'
@@ -80,6 +81,39 @@ describe('roadmap review service', () => {
     assert.ok(prepared.runId)
     completeRoadmapReview(prepared.runId)
     assert.ok(getRoadmapLastReviewAt())
+  })
+
+  it('orders done items last by createdAt for bulk review', () => {
+    const ordered = orderRoadmapNotesForReview([
+      { id: 'done-new', status: 'done', createdAt: '2026-06-01T00:00:00.000Z' },
+      { id: 'ready', status: 'ready', createdAt: '2026-03-01T00:00:00.000Z' },
+      { id: 'blocked', status: 'blocked', createdAt: '2026-02-01T00:00:00.000Z' },
+      { id: 'done-old', status: 'done', createdAt: '2026-01-01T00:00:00.000Z' },
+    ])
+    assert.deepEqual(
+      ordered.map((n) => n.id),
+      ['ready', 'blocked', 'done-old', 'done-new'],
+    )
+  })
+
+  it('prepare places done items after active ones', async () => {
+    addKnowledgeNote({
+      type: 'Roadmap',
+      title: 'Done item',
+      body: 'Finished',
+      status: 'done',
+    })
+    addKnowledgeNote({
+      type: 'Roadmap',
+      title: 'Active item',
+      body: 'Still open',
+      status: 'ready',
+    })
+    const prepared = await prepareRoadmapReview()
+    assert.deepEqual(
+      prepared.items.map((i) => i.title),
+      ['Active item', 'Done item'],
+    )
   })
 
   it('does not advance the checkpoint for a stale or fabricated run id', async () => {
