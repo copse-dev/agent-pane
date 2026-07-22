@@ -413,13 +413,13 @@ export function mountTerminalsPane(
       showContextMenu(e.clientX, e.clientY, [
         {
           label: 'Rename',
-          onSelect: () => {
+          onSelect: (): void => {
             beginRename(tab)
           },
         },
         {
           label: 'Archive',
-          onSelect: () => {
+          onSelect: (): void => {
             void removeTab(id)
           },
         },

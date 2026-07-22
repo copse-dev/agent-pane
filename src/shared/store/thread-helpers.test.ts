@@ -304,7 +304,9 @@ describe('archiveThread', () => {
     archiveThread(store, only)
 
     const state = store.getState()
-    assert.equal(isThreadArchived(getThreadById(store, only)!), true)
+    const archivedOnly = getThreadById(store, only)
+    assert.ok(archivedOnly)
+    assert.equal(isThreadArchived(archivedOnly), true)
     assert.equal(state.threads.length, 2)
     assert.notEqual(state.activeThreadId, only)
     const active = getActiveThread(store)

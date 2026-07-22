@@ -381,7 +381,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         showContextMenu(e.clientX, e.clientY, [
           {
             label: 'Remove from sidebar',
-            onSelect: () => {
+            onSelect: (): void => {
               void removeProject(store, api, project.id)
             },
           },
@@ -500,13 +500,13 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           showContextMenu(e.clientX, e.clientY, [
             {
               label: 'Rename',
-              onSelect: () => {
+              onSelect: (): void => {
                 beginThreadRename(thread.id, displayTitle)
               },
             },
             {
               label: 'Archive',
-              onSelect: () => {
+              onSelect: (): void => {
                 archiveProjectThread(project.id, thread.id)
               },
             },

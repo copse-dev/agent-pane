@@ -126,7 +126,7 @@ describe('projects pane thread rename + archive (component)', () => {
     archiveItem.click()
 
     assert.equal(document.querySelector('.context-menu'), null)
-    assert.equal(
+    assert.deepEqual(
       Array.from(document.querySelectorAll('.chat-title')).map((n) => n.textContent),
       ['Keep me'],
     )
