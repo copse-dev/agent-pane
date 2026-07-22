@@ -255,8 +255,46 @@ export function detectCompletedWindows(
 }
 
 /**
+ * When a sample is dropped by the min-gap rate limit, fold any higher
+ * usedPercent / usedDollars into the retained prior sample for the same
+ * window id + resetsAt. Otherwise a later reset finalizes an under-count.
+ */
+export function foldSkippedSamplePeaks(
+  retained: PlanWindowHistorySample,
+  skipped: PlanWindowHistorySample,
+): void {
+  if (retained.provider !== skipped.provider) return
+  const windows = retained.windows.map((w) => ({ ...w }))
+  const byId = new Map(windows.map((w, i) => [w.id, i]))
+  for (const incoming of skipped.windows) {
+    const idx = byId.get(incoming.id)
+    if (idx === undefined) {
+      windows.push({ ...incoming })
+      byId.set(incoming.id, windows.length - 1)
+      continue
+    }
+    const prev = windows[idx]
+    if (!prev || prev.resetsAt !== incoming.resetsAt) continue
+    if (incoming.usedPercent > prev.usedPercent) {
+      prev.usedPercent = incoming.usedPercent
+    }
+    if (
+      typeof incoming.usedDollars === 'number' &&
+      (typeof prev.usedDollars !== 'number' || incoming.usedDollars > prev.usedDollars)
+    ) {
+      prev.usedDollars = incoming.usedDollars
+    }
+    if (typeof incoming.limitDollars === 'number' && Number.isFinite(incoming.limitDollars)) {
+      prev.limitDollars = incoming.limitDollars
+    }
+  }
+  retained.windows = windows
+}
+
+/**
  * Merge new samples into history. Rate-limits ordinary samples per provider;
  * always keeps a sample that shows a reset and records completed windows.
+ * Gap-skipped samples still contribute peak used%/$ into the retained prior.
  */
 export function appendPlanWindowSamples(
   state: PlanWindowHistoryState,
@@ -273,6 +311,7 @@ export function appendPlanWindowSamples(
       !isReset &&
       sample.at - priorForProvider.at < PLAN_WINDOW_SAMPLE_MIN_GAP_MS
     ) {
+      foldSkippedSamplePeaks(priorForProvider, sample)
       continue
     }
     const newlyCompleted = detectCompletedWindows(priorForProvider, sample)

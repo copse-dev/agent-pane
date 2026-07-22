@@ -138,10 +138,13 @@ describe('appendPlanWindowSamples', () => {
     let state = appendPlanWindowSamples({ samples: [], completed: [] }, [first], t0)
     state = appendPlanWindowSamples(state, [soon], t0 + 60_000)
     assert.equal(state.samples.length, 1, 'gap too short and no reset')
+    assert.equal(state.samples[0]?.windows[0]?.usedDollars, 85, 'gap-skip folds higher peak')
+    assert.equal(state.samples[0]?.windows[0]?.usedPercent, 85)
     state = appendPlanWindowSamples(state, [reset], t0 + 120_000)
     assert.equal(state.samples.length, 2)
     assert.equal(state.completed.length, 1)
-    assert.equal(state.completed[0]?.usedDollars, 80)
+    assert.equal(state.completed[0]?.usedDollars, 85)
+    assert.equal(state.completed[0]?.usedPercent, 85)
 
     const laterAt = t0 + 120_000 + PLAN_WINDOW_SAMPLE_MIN_GAP_MS + 1
     const later = sample(laterAt, [
