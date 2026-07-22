@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { glob, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { c as createTar } from 'tar'
+import { terminalBenchTrialOutcome } from './lib/terminal-bench-outcome.mts'
 
 const RESULTS_ROOT = resolve('bench-results/terminal-bench')
 const CAPSULES_ROOT = resolve('bench-results/terminal-bench-capsules')
@@ -122,10 +123,12 @@ function safeName(value: unknown): string {
 await mkdir(CAPSULES_ROOT, { recursive: true })
 const capsules: Array<{
   trialId: string
-  taskName: unknown
+  taskName: string
   archive: string
   bytes: number
   sha256: string
+  startedAt: string | null
+  outcome: ReturnType<typeof terminalBenchTrialOutcome>
 }> = []
 
 for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
@@ -138,6 +141,16 @@ for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
     continue
   }
   const id = trialId(resultPath, result)
+  const rawTaskName = nested(result, 'task_name')
+  const taskName = typeof rawTaskName === 'string' && rawTaskName ? rawTaskName : 'unknown-task'
+  const rawStartedAt = nested(result, 'started_at')
+  const startedAt = typeof rawStartedAt === 'string' && rawStartedAt ? rawStartedAt : null
+  const rawReward = nested(result, 'verifier_result', 'rewards', 'reward')
+  const reward = typeof rawReward === 'number' && Number.isFinite(rawReward) ? rawReward : undefined
+  const rawExceptionType = nested(result, 'exception_info', 'exception_type')
+  const exceptionType =
+    typeof rawExceptionType === 'string' && rawExceptionType ? rawExceptionType : undefined
+  const outcome = terminalBenchTrialOutcome({ reward, exceptionType })
   const manifestPath = join(directory, 'run-manifest.json')
   const manifest = {
     schemaVersion: 1,
@@ -175,16 +188,18 @@ for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
   }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
-  const archiveName = `${safeName(nested(result, 'task_name'))}-${id}.tar.gz`
+  const archiveName = `${safeName(taskName)}-${id}.tar.gz`
   const archivePath = join(CAPSULES_ROOT, archiveName)
   await createTar({ cwd: directory, file: archivePath, gzip: true, portable: true }, ['.'])
   const archiveInfo = await lstat(archivePath)
   capsules.push({
     trialId: id,
-    taskName: nested(result, 'task_name'),
+    taskName,
     archive: basename(archivePath),
     bytes: archiveInfo.size,
     sha256: await sha256File(archivePath),
+    startedAt,
+    outcome,
   })
   console.log(
     `bench:terminal:seal ${relative(process.cwd(), directory)} -> ${archiveName} (${String(archiveInfo.size)} bytes)`,

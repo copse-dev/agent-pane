@@ -141,6 +141,42 @@ Every trial is sealed into its own gzip-compressed capsule and uploaded privatel
 `s3://<bucket>/terminal-bench/<repository>/<workflow-run>/<attempt>/shard-<n>/` with AES-256 SSE-ONE
 requested explicitly. Upload is attempted after benchmark failures too.
 
+### Post-run debugging
+
+The hosted workflow writes `run.json` at the run-prefix root before provisioning the fleet. It
+records the exact shard count and the fixed keys of each shard index, so a reviewer can retrieve a
+run without `s3:ListBucket`. Create separate read-only Object Storage credentials with
+`s3:GetObject` limited to the `terminal-bench/` prefix; do not reuse the workers' write-only key.
+
+Install AWS CLI locally, then configure the reader without replacing the writer variables used by
+the fleet:
+
+```bash
+export SCW_OBJECT_STORAGE_READER_ACCESS_KEY_ID='...'
+export SCW_OBJECT_STORAGE_READER_SECRET_KEY='...'
+export SCW_OBJECT_STORAGE_BUCKET='...'
+export SCW_OBJECT_STORAGE_REGION='fr-par'
+```
+
+List every retained trial for a GitHub workflow run, fetch the latest attempt for one task, or
+stream its portable thread export:
+
+```bash
+npm run bench:terminal:debug -- list --run 123456 --attempt 1
+npm run bench:terminal:debug -- fetch --run 123456 --task circuit-fibsqrt
+npm run bench:terminal:debug -- thread --run 123456 --task circuit-fibsqrt
+```
+
+Use `--trial-id` instead of `--task` to select a particular repeated attempt, and `--json` with
+`list` for agent-friendly discovery. Downloads are SHA-256 and size verified against the shard
+index before extraction. Extraction rejects absolute/traversing paths, links, special entries,
+archives over 200,000 entries, and expanded content over 1 GiB. Existing extraction directories
+are reused only when their capsule marker matches; the command never replaces an unrelated path.
+
+The initial retrieval layer covers successfully uploaded shards. Incremental per-trial upload and
+controller rescue after a worker failure remain separate reliability work; a shard that never
+uploaded an index is reported as unreadable rather than silently treated as empty.
+
 When `analyst_model` is set, the analyst inspects the latest failed attempt for each task and
 writes the complete analyst input, raw response, diagnosis, metadata, and `steering.json` beneath
 that parent trial. If `steered_rerun` is enabled, each analyzed task is run once more. The child

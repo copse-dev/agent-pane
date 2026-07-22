@@ -25,6 +25,17 @@ test('Scaleway workflow probes Object Storage with PutObject, not HeadBucket', (
   assert.match(workflow, /terminal-bench\/_github_preflight\//)
 })
 
+test('Scaleway workflow publishes a predictable post-run debugging manifest', () => {
+  const workflow = readFileSync('.github/workflows/terminal-bench-scaleway.yml', 'utf8')
+  assert.match(workflow, /name: Publish run manifest/)
+  assert.match(workflow, /write-terminal-bench-run-manifest\.mts/)
+  assert.match(
+    workflow,
+    /terminal-bench\/\$\{GITHUB_REPOSITORY\}\/\$\{GITHUB_RUN_ID\}\/\$\{GITHUB_RUN_ATTEMPT\}/,
+  )
+  assert.match(workflow, /\/run\.json"/)
+})
+
 test('worker image ships Docker CLI plugins Harbor needs for compose', () => {
   const dockerfile = readFileSync('benchmarks/terminal_bench/Dockerfile.worker', 'utf8')
   // Harbor drives each task with `docker compose --project-name …`. Copying only
