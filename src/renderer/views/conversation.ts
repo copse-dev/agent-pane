@@ -346,15 +346,43 @@ function syncSubagentTimeline(
   existing.forEach((node) => {
     if (!keep.has(node)) node.remove()
   })
-  // Re-append in order: moves reused nodes into place and inserts new ones.
-  for (const node of desired) timeline.append(node)
+  // Move/insert only when order actually changed — a no-op append still
+  // remove+reinserts the node and can flash layout on every streaming tick.
+  for (let i = 0; i < desired.length; i++) {
+    const node = desired[i]
+    if (!node) continue
+    if (timeline.children[i] !== node) timeline.insertBefore(node, timeline.children[i] ?? null)
+  }
 }
 
-// Fill (or refresh in place) a subagent card. The timeline is reconciled so the
-// running subagent's streaming message keeps its element/renderer; the header,
-// model badge, preview, args and parent result carry no streaming state and are
-// cheap to rebuild — and the preview/result only appear once the run settles, so
-// they don't churn during the flickery running phase.
+// Signature of the non-timeline chrome on a subagent card (header / badge /
+// args / settled preview+result). Timeline text changes every streaming tick;
+// chrome usually does not — rebuilding it via `clear(card)` was the remaining
+// #728 flicker after the timeline itself started reconciling in place.
+const subagentCardChromeSig = new WeakMap<HTMLElement, string>()
+
+function subagentChromeSignature(
+  tc: ToolCall,
+  session: SubagentSession,
+  label: string,
+  status: ToolCall['status'],
+): string {
+  const preview = status !== 'running' ? (session.summary ?? tc.result ?? '') : ''
+  const result = status === 'done' ? (tc.result ?? '') : ''
+  return JSON.stringify({
+    label,
+    status,
+    model: session.model ?? null,
+    localFallback: session.localFallback === true,
+    args: tc.args,
+    preview,
+    result,
+  })
+}
+
+// Fill (or refresh in place) a subagent card. The timeline is always reconciled
+// without teardown. Chrome (header / badge / args / settled preview+result) is
+// only rebuilt when its signature changes — never on every streamed token.
 function populateSubagentCard(
   card: HTMLElement,
   tc: ToolCall,
@@ -372,7 +400,18 @@ function populateSubagentCard(
     ) ?? el('div', { class: 'subagent-timeline' })
   syncSubagentTimeline(timeline, session, status, api)
 
-  clear(card)
+  const chromeSig = subagentChromeSignature(tc, session, label, status)
+  if (subagentCardChromeSig.get(card) === chromeSig && timeline.isConnected) {
+    // Streaming tick: timeline already updated; leave chrome nodes alone.
+    return
+  }
+
+  // Status / label / model / args / settled preview changed — rebuild chrome
+  // around the preserved timeline node (do not clear the timeline itself).
+  for (const node of Array.from(card.children)) {
+    if (node !== timeline) node.remove()
+  }
+
   card.append(createToolHeader(label, status, 'tool-card-header'))
 
   const badge = subagentModelBadge(session)
@@ -400,6 +439,8 @@ function populateSubagentCard(
     setAssistantMarkdown(resultEl, tc.result, false, api)
     card.append(resultEl)
   }
+
+  subagentCardChromeSig.set(card, chromeSig)
 }
 
 function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
@@ -1264,9 +1305,20 @@ export function mountConversation(
     existing.forEach((node) => {
       node.remove()
     })
-    // Re-append in order: moves reused nodes to the correct position and inserts
-    // freshly built ones. Tool cards are the trailing children of the message.
-    for (const node of desired) msgEl.append(node)
+    // Move/insert only when a card is out of place. Blind `append` of an
+    // already-correct child still remove+reinserts it and can flash siblings
+    // whenever any other tool on the message ticks (#728).
+    const firstToolIdx = Array.from(msgEl.children).findIndex((node) =>
+      (node as HTMLElement).classList.contains('tool-card'),
+    )
+    const base = firstToolIdx === -1 ? msgEl.children.length : firstToolIdx
+    for (let i = 0; i < desired.length; i++) {
+      const node = desired[i]
+      if (!node) continue
+      if (msgEl.children[base + i] !== node) {
+        msgEl.insertBefore(node, msgEl.children[base + i] ?? null)
+      }
+    }
   }
 
   function appendMessageEl(threadId: string, msgId: string): void {
