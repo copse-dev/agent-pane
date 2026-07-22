@@ -44,9 +44,15 @@ describe('onboarding panel', () => {
     await expect(
       overlay.$('.onboarding-panel[data-step="local"].active .setup-install-guide h4'),
     ).toHaveText('Don’t have LM Studio yet?')
+    // Settled "Not loaded" / "not found" use idle (minus), not the pending spinner circle.
     await expect(
       overlay.$(
-        '.onboarding-panel[data-step="local"].active .preferred-model-status .ui-icon[data-icon="circle"]',
+        '.onboarding-panel[data-step="local"].active .preferred-model-status .ui-icon[data-icon="minus"]',
+      ),
+    ).toExist()
+    await expect(
+      overlay.$(
+        '.onboarding-panel[data-step="local"].active .preferred-models-list .ui-icon[data-icon="minus"]',
       ),
     ).toExist()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'onboarding-step-local-models.png'))
