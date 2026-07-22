@@ -192,7 +192,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       const status = el('span', { class: `acp-known-status ${installed ? 'ok' : 'missing'}` })
       status.append(
         inlineStatus(
-          installed ? 'ok' : 'pending',
+          installed ? 'ok' : 'idle',
           installed ? `installed${detected?.running ? ' · running' : ''}` : 'not installed',
         ),
       )

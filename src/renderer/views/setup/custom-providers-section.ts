@@ -368,7 +368,7 @@ export function createCustomProvidersSection(
     const status = el('span', { class: 'key-status' })
     setInlineStatus(
       status,
-      configured.has(slug) ? 'filled' : 'pending',
+      configured.has(slug) ? 'filled' : 'idle',
       configured.has(slug) ? 'saved' : 'not set',
     )
     input.addEventListener('input', () => {

@@ -32,7 +32,7 @@ describe('onboarding panel', () => {
     )
     await expect(
       overlay.$(
-        '.onboarding-panel[data-step="cloud"].active .key-status .ui-icon[data-icon="circle"]',
+        '.onboarding-panel[data-step="cloud"].active .key-status .ui-icon[data-icon="minus"]',
       ),
     ).toExist()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'onboarding-step-cloud-keys.png'))

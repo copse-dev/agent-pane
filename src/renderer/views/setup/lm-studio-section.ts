@@ -388,7 +388,7 @@ export function createLmStudioSection(
     })
     keyInput.value = ''
     const lmSet = await api.settings.getKey('lmstudio')
-    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'idle', lmSet ? 'saved' : 'not set')
     keyStatus.className = 'key-status'
   }
 
@@ -396,7 +396,7 @@ export function createLmStudioSection(
     const lmUrl = (await api.settings.get('localServerUrl')) as string | undefined
     urlInput.value = lmUrl ?? DEFAULT_LM_STUDIO_URL
     const lmSet = await api.settings.getKey('lmstudio')
-    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'idle', lmSet ? 'saved' : 'not set')
     await refreshDetection()
   })()
 
