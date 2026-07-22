@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Message, Thread } from '@shared/types'
+import type { LLMMessage, Message, Thread } from '@shared/types'
 import {
   loadProjectThreads,
   saveProjectThread,
@@ -20,6 +20,11 @@ import {
   rebuildAgentPrIndex,
   listAgentPrLinks,
   listOrphanProjectStores,
+  loadAgentHistory,
+  saveAgentHistory,
+  clearAgentHistory,
+  agentHistoryExists,
+  findThreadOwners,
 } from './thread-store.ts'
 import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 
@@ -573,5 +578,53 @@ describe('thread-store agent-run ↔ PR link (issue #690, Q6)', () => {
     assert.ok(meta)
     assert.equal(meta.title, 'renamed')
     assert.equal(meta.remoteAgentLink?.agentId, 'agent-1')
+  })
+
+  it('round-trips provider agent history beside the thread (#993)', async () => {
+    await createThread('proj-1', thread('t1'))
+    const history: LLMMessage[] = [
+      { role: 'user', content: 'ping' },
+      { role: 'assistant', content: 'pong' },
+    ]
+    await saveAgentHistory('proj-1', 't1', history)
+    assert.equal(await agentHistoryExists('proj-1', 't1'), true)
+    assert.deepEqual(await loadAgentHistory('proj-1', 't1'), history)
+    assert.ok(existsSync(join(root, 'proj-1', 't1', 'agent-history.json')))
+  })
+
+  it('fails closed on corrupt or future-version agent-history sidecars', async () => {
+    await createThread('proj-1', thread('t1'))
+    const path = join(root, 'proj-1', 't1', 'agent-history.json')
+    writeFileSync(path, '{not json')
+    assert.deepEqual(await loadAgentHistory('proj-1', 't1'), [])
+
+    writeFileSync(
+      path,
+      `${JSON.stringify({ v: 99, messages: [{ role: 'user', content: 'x' }] })}\n`,
+    )
+    assert.deepEqual(await loadAgentHistory('proj-1', 't1'), [])
+
+    writeFileSync(path, `${JSON.stringify({ v: 1, messages: 'nope' })}\n`)
+    assert.deepEqual(await loadAgentHistory('proj-1', 't1'), [])
+  })
+
+  it('clearAgentHistory removes the sidecar; deleteProjectThread removes it with the dir', async () => {
+    await createThread('proj-1', thread('t1'))
+    await saveAgentHistory('proj-1', 't1', [{ role: 'user', content: 'x' }])
+    await clearAgentHistory('proj-1', 't1')
+    assert.equal(await agentHistoryExists('proj-1', 't1'), false)
+
+    await saveAgentHistory('proj-1', 't1', [{ role: 'user', content: 'y' }])
+    await deleteProjectThread('proj-1', 't1')
+    assert.equal(existsSync(join(root, 'proj-1', 't1')), false)
+  })
+
+  it('findThreadOwners resolves zero/one/many project matches', async () => {
+    assert.deepEqual(await findThreadOwners('missing'), [])
+    await createThread('proj-a', thread('solo'))
+    assert.deepEqual(await findThreadOwners('solo'), ['proj-a'])
+    await createThread('proj-a', thread('shared'))
+    await createThread('proj-b', thread('shared'))
+    assert.deepEqual((await findThreadOwners('shared')).sort(), ['proj-a', 'proj-b'])
   })
 })

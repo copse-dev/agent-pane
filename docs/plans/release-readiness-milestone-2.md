@@ -22,7 +22,7 @@ or permission auditing with unrelated release work.
 | [#832 ACP Tier-2 probes](#832-acp-tier-2-behavioral-probes)                       | One write-routing probe is on `main`             | Medium      | One harness PR, then findings-only updates                |
 | [#785 longer `run_shell` timeouts](#785-long-running-run_shell-commands)          | Unimplemented                                    | Low         | One schema/lifecycle PR                                   |
 | [#787 pipeline exit masking](#787-pipelines-mask-run_shell-failures)              | Unimplemented                                    | Medium      | One shell-semantics PR                                    |
-| [#993 move `llm-history`](#993-move-llm-history-out-of-electron-store)            | Unimplemented                                    | High        | One storage API PR, one migration PR                      |
+| [#993 move `llm-history`](#993-move-llm-history-out-of-electron-store)            | Implemented (sidecar + migration)                | High        | Landed as one storage+migration PR                        |
 | [#998 catalog/lazy thread loading](#998-catalog-based-lazy-thread-loading)        | Catalog exists; renderer still folds all threads | High        | Main/store API PR, then renderer hydration PR             |
 | [#995 main-loop watchdog](#995-main-process-event-loop-lag-watchdog)              | Unimplemented                                    | Medium      | One invisible diagnostics PR                              |
 | [#994 aged-profile startup e2e](#994-aged-profile-startup-e2e)                    | Unimplemented                                    | Medium      | Dedicated fixture/config/CI PR after #993 and #998        |

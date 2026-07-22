@@ -95,11 +95,15 @@ export interface ApiClient {
       choice: ThreadWorktreeChoice,
       model?: string,
     ) => Promise<ThreadCheckoutPreview>
-    estimateContext: (threadId: string, payload: string) => Promise<ContextBreakdown>
+    estimateContext: (
+      projectId: string,
+      threadId: string,
+      payload: string,
+    ) => Promise<ContextBreakdown>
     abort: (threadId: string) => Promise<void>
     retryReview: (projectId: string, threadId: string, payload: string) => Promise<void>
     retryComparison: (projectId: string, threadId: string, payload: string) => Promise<void>
-    clearHistory: (threadId: string) => Promise<void>
+    clearHistory: (projectId: string, threadId: string) => Promise<void>
     refreshModelContext: () => Promise<void>
     suggestTitle: (text: string) => Promise<string | null>
     suggestTerminalTitle: (text: string) => Promise<string | null>

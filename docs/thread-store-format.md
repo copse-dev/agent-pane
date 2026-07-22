@@ -29,6 +29,7 @@ describes it to the agent, so changing the layout means updating that preamble.
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
     events.jsonl                     # append-only spine: message + hook_run lines
+    agent-history.json               # provider-format LLM resume snapshot (issue #993)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
     blobs/<toolCallId>.result.txt    # verbatim tool result
@@ -52,6 +53,15 @@ describes it to the agent, so changing the layout means updating that preamble.
 - **`meta.json`** holds no message bodies — just the mutable fields (title,
   status, usage, todos, review, workingBrief, gitBranch, pendingMessages,
   queuePaused, draftPrompt, model, timestamps, contextTrims, contextSnapshot).
+- **`agent-history.json`** is a versioned snapshot of the provider-format
+  `LLMMessage[]` used to resume the agent loop after a restart (issue #993).
+  Shape: `{ "v": 1, "messages": [ … ] }`. It is **not** append-only — context
+  trimming replaces the whole file via an atomic write. Corrupt JSON, a missing
+  file, or an unsupported future `v` fail closed to fresh provider history
+  without damaging the human transcript in `events.jsonl` / `messages/`. Do not
+  log history values. Legacy electron-store keys `llm-history:<threadId>` are
+  migrated once at startup (after legacy thread import, before the first window)
+  when ownership resolves to exactly one `(projectId, threadId)`.
 
 ## Spine line schema
 

@@ -506,8 +506,8 @@ function registerKeyboardShortcuts(): void {
 }
 
 async function confirmDeleteThread(): Promise<void> {
-  const { activeThreadId, threads } = store.getState()
-  if (!activeThreadId || threads.length <= 1) return
+  const { activeThreadId, activeProjectId, threads } = store.getState()
+  if (!activeThreadId || !activeProjectId || threads.length <= 1) return
   if (
     !(await showConfirmDialog({
       message: 'Delete this thread?',
@@ -517,7 +517,7 @@ async function confirmDeleteThread(): Promise<void> {
   ) {
     return
   }
-  void api.agent.clearHistory(activeThreadId)
+  void api.agent.clearHistory(activeProjectId, activeThreadId)
   const index = threads.findIndex((t) => t.id === activeThreadId)
   const remaining = threads.filter((t) => t.id !== activeThreadId)
   const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null

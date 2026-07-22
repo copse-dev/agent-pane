@@ -2,14 +2,18 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createCachedStore, type BackingStore } from './cached-store.ts'
 
-/** Backing store that counts reads — the surface the O(1) contract is asserted on. */
+/** Backing store that counts reads/writes — the surface the O(1) contract is asserted on. */
 function countingBacking(seed: Record<string, unknown> = {}): {
   backing: BackingStore
   data: Map<string, unknown>
   reads: () => number
+  writes: () => number
+  deleteKeysCalls: () => number
 } {
   const data = new Map<string, unknown>(Object.entries(seed))
   let reads = 0
+  let writes = 0
+  let deleteKeysCalls = 0
   return {
     backing: {
       get(key): unknown {
@@ -17,14 +21,26 @@ function countingBacking(seed: Record<string, unknown> = {}): {
         return data.get(key)
       },
       set(key, value): void {
+        writes += 1
         data.set(key, value)
       },
       delete(key): void {
+        writes += 1
         data.delete(key)
+      },
+      listKeys(): string[] {
+        return [...data.keys()]
+      },
+      deleteKeys(keys): void {
+        deleteKeysCalls += 1
+        writes += 1
+        for (const key of keys) data.delete(key)
       },
     },
     data,
     reads: () => reads,
+    writes: () => writes,
+    deleteKeysCalls: () => deleteKeysCalls,
   }
 }
 
@@ -90,5 +106,40 @@ describe('cached-store (storage read-complexity contract)', () => {
     data.set('key', 'external') // simulate a later external write
     assert.equal(store.get('key'), 'external')
     assert.equal(reads(), 2, 'read-delete-read = two backing reads')
+  })
+
+  it('deleteKeys removes many keys in one backing rewrite and evicts the cache', () => {
+    // #993 migration contract: finishing a bulk llm-history move must not
+    // rewrite config.json once per key.
+    const { backing, data, deleteKeysCalls, writes } = countingBacking({
+      'llm-history:t1': [{ role: 'user' }],
+      'llm-history:t2': [{ role: 'user' }],
+      projects: [],
+    })
+    const store = createCachedStore(backing)
+    assert.ok(store.get('llm-history:t1'))
+    store.deleteKeys(['llm-history:t1', 'llm-history:t2'])
+    assert.equal(deleteKeysCalls(), 1)
+    assert.equal(writes(), 1)
+    assert.equal(store.backingWrites(), 1)
+    assert.equal(data.has('llm-history:t1'), false)
+    assert.equal(data.has('llm-history:t2'), false)
+    assert.deepEqual(data.get('projects'), [])
+    assert.equal(store.get('llm-history:t1'), undefined)
+  })
+
+  it('deleteKeys is a no-op for an empty key list (no backing rewrite)', () => {
+    const { backing, deleteKeysCalls, writes } = countingBacking({ a: 1 })
+    const store = createCachedStore(backing)
+    store.deleteKeys([])
+    assert.equal(deleteKeysCalls(), 0)
+    assert.equal(writes(), 0)
+    assert.equal(store.backingWrites(), 0)
+  })
+
+  it('listKeys reflects the backing store', () => {
+    const { backing } = countingBacking({ a: 1, b: 2 })
+    const store = createCachedStore(backing)
+    assert.deepEqual(store.listKeys().sort(), ['a', 'b'])
   })
 })
