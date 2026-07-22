@@ -836,7 +836,22 @@ jobs:
         if: steps.head.outputs.exists == 'true'
         id: diff
         run: |
-          mapfile -t files < <(git diff --name-only -- tests/e2e/screenshots/)
+          # Match Collect / filter-screenshots: e2e checks out the pull_request
+          # merge commit (PR + main), so shots main added since the PR branched
+          # are present there and get re-rendered into the artifact. This job
+          # checks out github.head_ref, where those paths are absent — Apply
+          # therefore lands them as untracked. `git diff --name-only` alone
+          # would miss them, skip the commit, and leave untracked PNGs that
+          # make `git merge origin/main` refuse to start
+          # ("untracked working tree files would be overwritten") — which the
+          # reconcile step used to misread as a screenshot conflict and then
+          # die on `git commit --no-edit` with no MERGE_HEAD.
+          mapfile -t files < <(
+            {
+              git diff --name-only -- tests/e2e/screenshots/
+              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
+            } | sort -u
+          )
           if [ ${#files[@]} -eq 0 ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -885,12 +900,44 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --no-tags origin main
-          if git merge --no-commit --no-ff origin/main; then
+
+          # `git merge` returns non-zero for real conflicts AND for "untracked
+          # working tree files would be overwritten" (no MERGE_HEAD). Only the
+          # former is a conflict we can --ours; the latter must be cleared and
+          # retried or failed loudly — never fall through to `git commit --no-edit`.
+          try_merge() {
+            git merge --no-commit --no-ff origin/main
+          }
+          clear_untracked_screenshots_blocking_merge() {
+            mapfile -t blockers < <(
+              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
+            )
+            if [ ${#blockers[@]} -eq 0 ]; then
+              return 1
+            fi
+            echo "Untracked screenshots blocked the merge — removing so main can bring them in:"
+            printf '%s\n' "${blockers[@]}"
+            rm -f -- "${blockers[@]}"
+            return 0
+          }
+
+          if try_merge; then
             # Clean (or already up to date) — don't bake a merge commit onto an
             # otherwise-tidy PR. --abort is a no-op / harmless when no merge started.
             git merge --abort 2>/dev/null || true
             echo "main merges cleanly; nothing to reconcile"
             exit 0
+          fi
+          if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+            if clear_untracked_screenshots_blocking_merge && try_merge; then
+              git merge --abort 2>/dev/null || true
+              echo "main merges cleanly after clearing untracked screenshots"
+              exit 0
+            fi
+            if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+              echo "::error::git merge origin/main failed without starting a merge (no MERGE_HEAD)"
+              exit 1
+            fi
           fi
           conflicts="$(git diff --name-only --diff-filter=U)"
           non_ss="$(printf '%s\n' "$conflicts" | grep -vE '^tests/e2e/screenshots/' || true)"

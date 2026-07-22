@@ -158,10 +158,42 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --no-tags origin main
-          if git merge --no-commit --no-ff origin/main; then
+
+          # Non-zero merge is not always a conflict: untracked working-tree files
+          # that main also adds abort before MERGE_HEAD exists. Clearing those
+          # screenshot paths and retrying avoids the false "screenshot conflict"
+          # path that then dies on `git commit --no-edit` with an empty message.
+          try_merge() {
+            git merge --no-commit --no-ff origin/main
+          }
+          clear_untracked_screenshots_blocking_merge() {
+            mapfile -t blockers < <(
+              git ls-files --others --exclude-standard -- tests/e2e/screenshots/
+            )
+            if [ ${#blockers[@]} -eq 0 ]; then
+              return 1
+            fi
+            echo "PR #$PR_NUMBER: untracked screenshots blocked the merge — removing:"
+            printf '%s\n' "${blockers[@]}"
+            rm -f -- "${blockers[@]}"
+            return 0
+          }
+
+          if try_merge; then
             git merge --abort 2>/dev/null || true
             echo "PR #$PR_NUMBER: no conflict with main — nothing to do"
             exit 0
+          fi
+          if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+            if clear_untracked_screenshots_blocking_merge && try_merge; then
+              git merge --abort 2>/dev/null || true
+              echo "PR #$PR_NUMBER: no conflict with main after clearing untracked screenshots"
+              exit 0
+            fi
+            if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+              echo "::error::PR #$PR_NUMBER: git merge origin/main failed without MERGE_HEAD"
+              exit 1
+            fi
           fi
           conflicts="$(git diff --name-only --diff-filter=U)"
           non_ss="$(printf '%s\n' "$conflicts" | grep -vE '^tests/e2e/screenshots/' || true)"
