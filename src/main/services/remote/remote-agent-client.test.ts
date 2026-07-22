@@ -354,10 +354,10 @@ describe('buildRemoteAgentContextPreamble', () => {
     assert.doesNotMatch(preamble, /contents/)
   })
 
-  it('includes the branch even when there is no prior chat', () => {
-    const preamble = buildRemoteAgentContextPreamble({ priorMessages: [], branch: 'main' })
-    assert.match(preamble, /Current branch: `main`/)
-    assert.doesNotMatch(preamble, /Prior conversation/)
+  it('skips the continue-steer when there is no prior chat (even with a branch)', () => {
+    // Branch is already sent via startingRef / managed-agent system prompt; a
+    // fresh thread has nothing to hand off, so the preamble stays empty.
+    assert.equal(buildRemoteAgentContextPreamble({ priorMessages: [], branch: 'main' }), '')
   })
 
   it('flattens multimodal user content to its text parts', () => {

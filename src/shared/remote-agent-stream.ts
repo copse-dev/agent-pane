@@ -78,10 +78,14 @@ export interface RemoteAgentContextInput {
 }
 
 /**
- * When a thread is first handed off to a remote agent, the remote machine has no
- * memory of the local chat that preceded it. Dump that context — the prior
- * conversation and the current branch — into the first prompt so the remote agent
- * can pick up where the local chat left off instead of starting cold.
+ * When a thread with prior local turns is first handed off to a remote agent,
+ * the remote machine has no memory of that chat. Dump the prior conversation
+ * (and the current branch, when known) into the first prompt so the remote
+ * agent can pick up where the local chat left off.
+ *
+ * Fresh threads (no prior user/assistant turns) return an empty preamble —
+ * there is nothing to hand off, and the branch is already supplied via the
+ * provider create payload (`startingRef` / managed-agent system prompt).
  */
 export function buildRemoteAgentContextPreamble(input: RemoteAgentContextInput): string {
   const lines: string[] = []
@@ -102,22 +106,20 @@ export function buildRemoteAgentContextPreamble(input: RemoteAgentContextInput):
     // handoff compact and free of local-only tooling noise.
   }
 
-  const branch = input.branch?.trim()
-  const hasChat = lines.length > 0
-  if (!hasChat && !branch) return ''
+  if (lines.length === 0) return ''
 
   const sections: string[] = [
     'You are continuing an existing Copse chat that is now being handed off to you. ' +
       'Use the context below to pick up where it left off.',
   ]
+  const branch = input.branch?.trim()
   if (branch) sections.push(`Current branch: \`${branch}\``)
-  if (hasChat) {
-    let transcript = lines.join('\n\n')
-    if (transcript.length > MAX_CONTEXT_PREAMBLE_CHARS) {
-      transcript = `…(earlier messages trimmed)…\n\n${transcript.slice(-MAX_CONTEXT_PREAMBLE_CHARS)}`
-    }
-    sections.push(`--- Prior conversation ---\n${transcript}\n--- End prior conversation ---`)
+
+  let transcript = lines.join('\n\n')
+  if (transcript.length > MAX_CONTEXT_PREAMBLE_CHARS) {
+    transcript = `…(earlier messages trimmed)…\n\n${transcript.slice(-MAX_CONTEXT_PREAMBLE_CHARS)}`
   }
+  sections.push(`--- Prior conversation ---\n${transcript}\n--- End prior conversation ---`)
   return sections.join('\n\n')
 }
 
