@@ -107,8 +107,9 @@ function settleActivationWaiter(projectId: string, error?: Error): void {
 
 export function getSidebarThreads(store: AppStore, projectId: string): Thread[] {
   const { activeProjectId, threads } = store.getState()
-  if (projectId === activeProjectId) return threads
-  return threadCache.get(projectId) ?? []
+  const list = projectId === activeProjectId ? threads : (threadCache.get(projectId) ?? [])
+  // Archived threads stay in the project store / on disk but leave the sidebar.
+  return list.filter((t) => t.archivedAt == null)
 }
 
 export function isProjectSwitchInFlight(store: AppStore, projectId: string): boolean {

@@ -352,6 +352,21 @@ describe('thread-store', () => {
       await updateMeta('proj-1', 'ghost', { title: 'x' })
       assert.deepEqual(await loadProjectThreads('proj-1'), [])
     })
+
+    it('updateMeta with archivedAt drops the thread from the catalog', async () => {
+      await createThread('proj-1', thread('t1', { title: 'Keep' }))
+      await createThread('proj-1', thread('t2', { title: 'Hide' }))
+      await updateMeta('proj-1', 't2', { archivedAt: 99, updatedAt: 99 })
+
+      const catalog = await loadProjectCatalog('proj-1')
+      assert.deepEqual(
+        catalog.map((e) => e.id).sort(),
+        ['t1'],
+      )
+      // Directory + meta remain; only the catalog line is removed.
+      const loaded = await loadProjectThreads('proj-1')
+      assert.equal(loaded.find((t) => t.id === 't2')?.archivedAt, 99)
+    })
   })
 })
 

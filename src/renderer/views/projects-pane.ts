@@ -1,4 +1,5 @@
 import { el, clear } from '../dom/helpers.ts'
+import { dismissContextMenu, showContextMenu } from '../dom/context-menu.ts'
 import {
   chevronRightIcon,
   closeIcon,
@@ -9,7 +10,12 @@ import {
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
-import { openNewThread, deleteThread } from '@shared/store/thread-helpers.ts'
+import {
+  archiveThread,
+  deleteThread,
+  openNewThread,
+  setThreadTitle,
+} from '@shared/store/thread-helpers.ts'
 import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
   collectThreadPrRefs,
@@ -117,61 +123,6 @@ function settingsIcon(): SVGSVGElement {
   return svg
 }
 
-/** Dismiss any open project-row context menu (and its dismiss listeners). */
-let dismissProjectContextMenu: (() => void) | null = null
-
-function showProjectContextMenu(clientX: number, clientY: number, onRemove: () => void): void {
-  dismissProjectContextMenu?.()
-
-  const item = el(
-    'button',
-    { type: 'button', class: 'context-menu-item', role: 'menuitem' },
-    'Remove from sidebar',
-  )
-  const menu = el('div', { class: 'context-menu', role: 'menu' }, item)
-  menu.style.left = `${String(clientX)}px`
-  menu.style.top = `${String(clientY)}px`
-
-  const dismiss = (): void => {
-    menu.remove()
-    document.removeEventListener('pointerdown', onPointerDown, true)
-    document.removeEventListener('keydown', onKeyDown, true)
-    window.removeEventListener('blur', dismiss)
-    if (dismissProjectContextMenu === dismiss) dismissProjectContextMenu = null
-  }
-  const onPointerDown = (e: PointerEvent): void => {
-    if (menu.contains(e.target as Node)) return
-    dismiss()
-  }
-  const onKeyDown = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') dismiss()
-  }
-
-  item.addEventListener('click', (e) => {
-    e.stopPropagation()
-    dismiss()
-    onRemove()
-  })
-
-  document.body.append(menu)
-  dismissProjectContextMenu = dismiss
-  document.addEventListener('pointerdown', onPointerDown, true)
-  document.addEventListener('keydown', onKeyDown, true)
-  window.addEventListener('blur', dismiss)
-
-  // Keep the menu inside the viewport when opened near an edge.
-  const rect = menu.getBoundingClientRect()
-  const pad = 4
-  let left = clientX
-  let top = clientY
-  if (left + rect.width > window.innerWidth - pad) left = window.innerWidth - rect.width - pad
-  if (top + rect.height > window.innerHeight - pad) top = window.innerHeight - rect.height - pad
-  if (left < pad) left = pad
-  if (top < pad) top = pad
-  menu.style.left = `${String(left)}px`
-  menu.style.top = `${String(top)}px`
-}
-
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const title = el('span', {}, 'Projects')
   const openBtn = el(
@@ -218,12 +169,41 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   const visibleThreadCounts = new Map<string, number>()
   let orphans: OrphanProjectStore[] = []
 
+  // Inline rename state survives `render()` (which rebuilds the chat list).
+  let renaming: { threadId: string; draft: string } | null = null
+
   // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
   // `owner/repo#number`. Fetches are coalesced; a successful (or failed) fetch
   // re-renders once so chips appear without blocking the first paint.
   const prLifecycleCache = new Map<string, { state: PrLifecycleState; fetchedAt: number }>()
   const prFetchInFlight = new Set<string>()
   let prStatusGeneration = 0
+
+  function beginThreadRename(threadId: string, currentTitle: string): void {
+    renaming = { threadId, draft: currentTitle || 'New Thread' }
+    render()
+    const input = list.querySelector<HTMLInputElement>(
+      `.chat-row[data-thread-id="${CSS.escape(threadId)}"] .chat-title-rename`,
+    )
+    input?.focus()
+    input?.select()
+  }
+
+  function finishThreadRename(save: boolean): void {
+    if (!renaming) return
+    const { threadId, draft } = renaming
+    renaming = null
+    const next = draft.trim()
+    if (save && next) setThreadTitle(store, threadId, next)
+    else render()
+  }
+
+  function archiveProjectThread(projectId: string, threadId: string): void {
+    // Only the active project's in-memory thread list is mutable here; other
+    // projects' rows are cache-backed until switched.
+    if (projectId !== store.getState().activeProjectId) return
+    archiveThread(store, threadId)
+  }
 
   function cachedPrLifecycle(key: string): PrLifecycleState | undefined {
     const entry = prLifecycleCache.get(key)
@@ -398,9 +378,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       projectRow.addEventListener('contextmenu', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        showProjectContextMenu(e.clientX, e.clientY, () => {
-          void removeProject(store, api, project.id)
-        })
+        showContextMenu(e.clientX, e.clientY, [
+          {
+            label: 'Remove from sidebar',
+            onSelect: () => {
+              void removeProject(store, api, project.id)
+            },
+          },
+        ])
       })
 
       if (isExpanded && project.missing) {
@@ -458,16 +443,75 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         chats.append(el('div', { class: 'sidebar-empty chats-loading' }, 'Loading…'))
       }
       for (const thread of visibleThreads) {
-        const title = el('span', { class: 'chat-title' }, thread.title || 'New Thread')
+        const displayTitle = thread.title || 'New Thread'
+        const renameState =
+          renaming !== null && renaming.threadId === thread.id ? renaming : null
+        let title: HTMLElement
+        if (renameState) {
+          const input = el('input', {
+            type: 'text',
+            class: 'chat-title-rename',
+            'aria-label': 'Rename thread',
+          })
+          input.value = renameState.draft
+          input.addEventListener('input', () => {
+            if (renaming?.threadId === thread.id) renaming.draft = input.value
+          })
+          input.addEventListener('keydown', (e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              finishThreadRename(true)
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              finishThreadRename(false)
+            }
+          })
+          input.addEventListener('blur', () => {
+            finishThreadRename(true)
+          })
+          for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
+            input.addEventListener(evt, (e) => {
+              e.stopPropagation()
+            })
+          }
+          title = input
+        } else {
+          title = el('span', { class: 'chat-title' }, displayTitle)
+          title.addEventListener('dblclick', (e) => {
+            e.stopPropagation()
+            beginThreadRename(thread.id, displayTitle)
+          })
+        }
         const chatRow = el(
           'div',
           {
             class: `chat-row${thread.id === activeThreadId && project.id === activeProjectId ? ' selected' : ''}`,
+            'data-thread-id': thread.id,
           },
           title,
         )
         chatRow.addEventListener('click', () => {
+          if (renaming?.threadId === thread.id) return
           switchProjectThread(store, api, project.id, thread.id)
+        })
+        chatRow.addEventListener('contextmenu', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          showContextMenu(e.clientX, e.clientY, [
+            {
+              label: 'Rename',
+              onSelect: () => {
+                beginThreadRename(thread.id, displayTitle)
+              },
+            },
+            {
+              label: 'Archive',
+              onSelect: () => {
+                archiveProjectThread(project.id, thread.id)
+              },
+            },
+          ])
         })
 
         if (thread.status === 'running') {
@@ -542,7 +586,8 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   refreshOrphans()
   return () => {
     prStatusGeneration += 1
-    dismissProjectContextMenu?.()
+    dismissContextMenu()
+    renaming = null
     unsubs.forEach((u) => {
       u()
     })

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from './store.ts'
 import {
+  archiveThread,
   createThread,
   deleteThread,
   openNewThread,
@@ -11,6 +12,7 @@ import {
   getThreadById,
   getActiveThread,
   isBlankThread,
+  isThreadArchived,
   hasUnsubmittedPrompt,
   normalizeBlankThreads,
   setThreadDraftPrompt,
@@ -273,6 +275,53 @@ describe('draft prompt events', () => {
 
     setThreadDraftPrompt(store, id, 'same')
     assert.equal(draftChanged, 0)
+  })
+})
+
+describe('archiveThread', () => {
+  it('stamps archivedAt, keeps the thread in store, and switches away', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    const second = createThread(store)
+    addMessage(store, second, 'user', 'second')
+    switchThread(store, first)
+
+    archiveThread(store, first)
+
+    const archived = getThreadById(store, first)
+    assert.ok(archived)
+    assert.equal(isThreadArchived(archived), true)
+    assert.ok(archived.archivedAt)
+    assert.equal(store.getState().activeThreadId, second)
+  })
+
+  it('creates a fresh blank thread when the last visible thread is archived', () => {
+    const store = createStore()
+    const only = createThread(store)
+    addMessage(store, only, 'user', 'solo')
+
+    archiveThread(store, only)
+
+    const state = store.getState()
+    assert.equal(isThreadArchived(getThreadById(store, only)!), true)
+    assert.equal(state.threads.length, 2)
+    assert.notEqual(state.activeThreadId, only)
+    const active = getActiveThread(store)
+    assert.ok(active)
+    assert.equal(isBlankThread(active), true)
+    assert.equal(isThreadArchived(active), false)
+  })
+
+  it('is a no-op when the thread is already archived', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    createThread(store)
+    archiveThread(store, first)
+    const stamped = getThreadById(store, first)?.archivedAt
+    archiveThread(store, first)
+    assert.equal(getThreadById(store, first)?.archivedAt, stamped)
   })
 })
 

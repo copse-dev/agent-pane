@@ -2,6 +2,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -405,6 +406,24 @@ export function mountTerminalsPane(
           focusTab(tab)
         })
       }
+    })
+    tabBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Rename',
+          onSelect: () => {
+            beginRename(tab)
+          },
+        },
+        {
+          label: 'Archive',
+          onSelect: () => {
+            void removeTab(id)
+          },
+        },
+      ])
     })
     labelSpan.addEventListener('dblclick', (e) => {
       e.stopPropagation()
