@@ -82,6 +82,11 @@ function threadDir(projectId: string, threadId: string): string {
   return join(projectDir(projectId), threadId)
 }
 
+/** Absolute on-disk directory for a thread (debug share-trace, tooling). */
+export function getThreadStoreDir(projectId: string, threadId: string): string {
+  return threadDir(projectId, threadId)
+}
+
 function catalogPath(projectId: string): string {
   return join(projectDir(projectId), CATALOG_FILE)
 }

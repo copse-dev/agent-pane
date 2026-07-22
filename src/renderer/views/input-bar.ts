@@ -184,6 +184,11 @@ export function mountInputBar(
         if (threadHasExportableContent(thread)) downloadThreadJsonl(thread)
       },
     },
+    {
+      label: 'Share trace',
+      hidden: (): boolean => !threadHasExportableContent(getActiveThread(store)),
+      onClick: shareTrace,
+    },
   ])
   footer.append(usageGroup)
   const footerCompact = bindFooterCompactLayout(footer, () => {
@@ -254,6 +259,31 @@ export function mountInputBar(
       .then(() => showToast('Copied thread ID', { durationMs: 1500 }))
       .catch((error: unknown) => {
         showErrorToast('Failed to copy thread ID', error)
+      })
+  }
+
+  let shareTraceInFlight = false
+  function shareTrace(): void {
+    const thread = getActiveThread(store)
+    const projectId = store.getState().activeProjectId
+    if (!threadHasExportableContent(thread) || !projectId || shareTraceInFlight) return
+    shareTraceInFlight = true
+    showToast('Sharing trace…', { durationMs: 2500 })
+    void api.threads
+      .shareTrace(projectId, thread)
+      .then((result) => {
+        if (!result.ok) {
+          showToast(result.message, { variant: 'error' })
+          return
+        }
+        showToast(result.message, { durationMs: 4000 })
+        if (result.prUrl) void api.shell.openExternal(result.prUrl)
+      })
+      .catch((error: unknown) => {
+        showErrorToast('Share trace failed', error)
+      })
+      .finally(() => {
+        shareTraceInFlight = false
       })
   }
   usageBtn.addEventListener('click', () => {

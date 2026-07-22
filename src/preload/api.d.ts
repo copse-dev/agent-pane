@@ -18,6 +18,7 @@ import type {
   GhPrFileDiff,
   GhPrSummary,
   PrActionResult,
+  ShareTraceResult,
 } from '@shared/types/git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from '@shared/types/mcp.ts'
 import type { RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
@@ -252,6 +253,14 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
+    /**
+     * Open a draft PR on copse-dev/agent-pane with this thread's JSONL (+ store
+     * spine files) attached under `debug-traces/`.
+     */
+    shareTrace: (
+      projectId: string,
+      thread: import('@shared/types').Thread,
+    ) => Promise<ShareTraceResult>
   }
   openRouter: {
     models: () => Promise<

@@ -411,6 +411,8 @@ contextBridge.exposeInMainWorld('api', {
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
+    shareTrace: (projectId: string, thread: import('@shared/types').Thread) =>
+      ipcRenderer.invoke('threads:shareTrace', projectId, thread),
   },
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),

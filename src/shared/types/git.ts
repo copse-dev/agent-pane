@@ -139,6 +139,18 @@ export interface PrActionResult {
   rerunCount?: number
 }
 
+/** Result of opening a debug share-trace PR against the product repo. */
+export interface ShareTraceResult {
+  ok: boolean
+  message: string
+  /** Pull request URL when `ok` is true. */
+  prUrl?: string
+  /** Pull request number when `ok` is true. */
+  prNumber?: number
+  /** Branch that carries the attached JSONL files. */
+  branch?: string
+}
+
 export interface GhPrChangedFile {
   path: string
   status: 'added' | 'modified' | 'removed' | 'renamed'
