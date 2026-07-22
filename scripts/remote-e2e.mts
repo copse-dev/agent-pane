@@ -72,7 +72,6 @@ import {
   run,
   runStatusAsync,
   SCALEWAY_ZONES,
-  scalewayTerminateArgs,
   shellQuote,
   sleepAsync,
   type SshConfig,
@@ -80,6 +79,7 @@ import {
   sshRunAsync,
   sshTarget,
   terminateAwsInstances,
+  terminateScalewayServer,
   validateTagValue,
   waitForAwsInstances,
   waitForScalewayServers,
@@ -1261,7 +1261,7 @@ function downCommand(options: Options): void {
         const zone = host.zone
         if (!zone) continue
         console.log(`==> Terminating ${host.providerId} in ${zone}`)
-        run('scw', scalewayTerminateArgs({ zone }, host.providerId))
+        terminateScalewayServer({ zone }, host.providerId)
         terminated += 1
       }
     } catch (err) {
