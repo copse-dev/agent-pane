@@ -15,6 +15,7 @@ import {
   remoteAgentModelValue,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
+import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
@@ -34,6 +35,8 @@ export { resolveRemoteAgentRepository } from './remote-agent-shared.ts'
 
 const REMOTE_AGENT_SESSION_PREFIX = 'remote-agent-session:'
 const REMOTE_AGENT_MODE = 'agent'
+/** Create-run retries while a just-cancelled run is still settling (`409 agent_busy`). */
+const REMOTE_RUN_BUSY_MAX_ATTEMPTS = 10
 const MAX_REMOTE_ARTIFACT_IMAGE_BYTES = 15 * 1024 * 1024
 // Bound the artifact-image cache so long sessions don't slowly leak memory.
 // Each entry is a base64 data URL that can be ~20 MB, so we cap by total bytes
@@ -314,26 +317,46 @@ function buildLaunchNotice(input: {
   return `_${verb} ${label}${link}_\n\n`
 }
 
+/**
+ * Backoff between create-run retries after `409 agent_busy`. Exported for tests.
+ * Caps at 1s so a cancelled run that takes a moment to settle still fails fast.
+ */
+export function remoteAgentBusyRetryDelayMs(attempt: number): number {
+  return Math.min(1000, 100 * 2 ** attempt)
+}
+
 async function createRemoteRun(input: {
   fetchImpl: typeof fetch
   baseUrl: string
   apiKey: string
   agentId: string
   prompt: PromptPayload
+  signal?: AbortSignal
 }): Promise<string> {
-  const response = await input.fetchImpl(
-    joinUrl(input.baseUrl, `/v1/agents/${encodeURIComponent(input.agentId)}/runs`),
-    {
-      method: 'POST',
-      headers: {
-        Authorization: cursorAuthHeader(input.apiKey),
-        'Content-Type': 'application/json',
+  // Cursor allows one active run per agent. After Stop / Send now cancels the
+  // live run, create can still 409 (`agent_busy`) until that cancel becomes
+  // terminal — retry briefly rather than failing the queued follow-up.
+  for (let attempt = 0; attempt < REMOTE_RUN_BUSY_MAX_ATTEMPTS; attempt++) {
+    const response = await input.fetchImpl(
+      joinUrl(input.baseUrl, `/v1/agents/${encodeURIComponent(input.agentId)}/runs`),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: cursorAuthHeader(input.apiKey),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: input.prompt, mode: REMOTE_AGENT_MODE }),
+        ...(input.signal ? { signal: input.signal } : {}),
       },
-      body: JSON.stringify({ prompt: input.prompt, mode: REMOTE_AGENT_MODE }),
-    },
-  )
-  const json = await readJsonResponse<CursorCreateRunResponse>(response, 'Remote agent follow-up')
-  return assertRunId(json)
+    )
+    if (response.status === 409 && attempt < REMOTE_RUN_BUSY_MAX_ATTEMPTS - 1) {
+      await sleepMs(remoteAgentBusyRetryDelayMs(attempt), input.signal)
+      continue
+    }
+    const json = await readJsonResponse<CursorCreateRunResponse>(response, 'Remote agent follow-up')
+    return assertRunId(json)
+  }
+  throw new Error('Remote agent follow-up failed: exhausted agent_busy retries')
 }
 
 async function cancelRemoteRun(input: {
@@ -592,6 +615,7 @@ export async function runRemoteAgentFromSettings(
           apiKey,
           agentId: priorSession.agentId,
           prompt,
+          signal: options.signal,
         }),
         ...(priorSession.url ? { url: priorSession.url } : {}),
       }
@@ -637,8 +661,9 @@ export async function runRemoteAgentFromSettings(
     }),
   })
 
+  let cancelPromise: Promise<void> | undefined
   const abortCancel = (): void => {
-    void cancelRemoteRun({
+    cancelPromise = cancelRemoteRun({
       fetchImpl,
       baseUrl,
       apiKey,
@@ -649,6 +674,7 @@ export async function runRemoteAgentFromSettings(
     })
   }
   options.signal.addEventListener('abort', abortCancel, { once: true })
+  if (options.signal.aborted) abortCancel()
 
   try {
     const state = await streamRemoteRun({
@@ -704,6 +730,21 @@ export async function runRemoteAgentFromSettings(
       outputTokens: usage.outputTokens,
       messages: assistantText ? [{ role: 'assistant', content: assistantText }] : [],
     }
+  } catch (err) {
+    // User Stop / Send now: cancel the remote run, wait for that POST to finish,
+    // then emit a clean `done` so the queue can drain a follow-up without treating
+    // the abort as a provider error ("An error occurred: …").
+    if (options.signal.aborted) {
+      if (cancelPromise) await cancelPromise
+      options.onChunk({ type: 'done', stopReason: 'CANCELLED' })
+      return {
+        assistantText: '',
+        inputTokens: 0,
+        outputTokens: 0,
+        messages: [],
+      }
+    }
+    throw err
   } finally {
     options.signal.removeEventListener('abort', abortCancel)
   }

@@ -1,4 +1,4 @@
-import { afterEach, describe, it } from 'node:test'
+import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import {
@@ -14,6 +14,7 @@ import {
   clearRemoteAgentSession,
   fetchRemoteArtifactImageDataUrl,
   formatRemoteArtifactsSummary,
+  remoteAgentBusyRetryDelayMs,
   resolveRemoteAgentRepository,
   runRemoteAgentFromSettings,
 } from './remote-agent-client.ts'
@@ -381,5 +382,171 @@ describe('promptPayloadFromUserContent', () => {
       text: 'Inspect this',
       images: [{ mimeType: 'image/png', data: 'abc123' }],
     })
+  })
+})
+
+describe('remoteAgentBusyRetryDelayMs', () => {
+  it('grows exponentially and caps at 1s', () => {
+    assert.equal(remoteAgentBusyRetryDelayMs(0), 100)
+    assert.equal(remoteAgentBusyRetryDelayMs(1), 200)
+    assert.equal(remoteAgentBusyRetryDelayMs(2), 400)
+    assert.equal(remoteAgentBusyRetryDelayMs(3), 800)
+    assert.equal(remoteAgentBusyRetryDelayMs(4), 1000)
+    assert.equal(remoteAgentBusyRetryDelayMs(8), 1000)
+  })
+})
+
+describe('runRemoteAgentFromSettings follow-up after cancel', () => {
+  const threadId = 'thread-cursor-busy-retry'
+  const agentId = 'bc-00000000-0000-0000-0000-000000000099'
+  const baseUrl = 'https://api.cursor.com'
+
+  afterEach(() => {
+    clearRemoteAgentSession(threadId)
+    mock.timers.reset()
+  })
+
+  function seedSession(): void {
+    storageSet(`remote-agent-session:${threadId}`, {
+      v: 1,
+      provider: 'cursor',
+      baseUrl,
+      agentId,
+    })
+  }
+
+  function sseStream(body: string): Response {
+    return new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  }
+
+  function requestUrl(input: RequestInfo | URL): string {
+    if (typeof input === 'string') return input
+    if (input instanceof URL) return input.href
+    return input.url
+  }
+
+  it('retries create-run on 409 agent_busy then continues the follow-up', async () => {
+    seedSession()
+    mock.timers.enable({ apis: ['setTimeout'] })
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    let createAttempts = 0
+    const chunks: StreamChunk[] = []
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (url.endsWith(`/v1/agents/${agentId}/runs`) && init?.method === 'POST') {
+        createAttempts += 1
+        if (createAttempts === 1) {
+          return new Response(JSON.stringify({ error: 'agent_busy' }), { status: 409 })
+        }
+        return new Response(JSON.stringify({ run: { id: 'run-follow-up' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url.includes('/runs/run-follow-up/stream')) {
+        return sseStream(
+          'event: assistant\ndata: {"text":"ok"}\n\nevent: result\ndata: {"status":"FINISHED","text":"ok"}\n\nevent: done\ndata: {}\n\n',
+        )
+      }
+      if (url.includes('/usage') || url.includes('/artifacts')) {
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    try {
+      const runPromise = runRemoteAgentFromSettings({
+        threadId,
+        provider: 'cursor',
+        userPrompt: 'send now follow-up',
+        signal: new AbortController().signal,
+        onChunk: (chunk) => {
+          chunks.push(chunk)
+        },
+        fetchImpl,
+      })
+      // Advance past the first busy-retry sleep without waiting wall-clock time.
+      await Promise.resolve()
+      mock.timers.tick(remoteAgentBusyRetryDelayMs(0))
+      const result = await runPromise
+      assert.equal(createAttempts, 2)
+      assert.equal(result.assistantText, 'ok')
+      assert.ok(chunks.some((c) => c.type === 'done'))
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+    }
+  })
+
+  it('cancels the active run and emits CANCELLED done on abort (Send now / Stop)', async () => {
+    seedSession()
+    const prevKey = process.env['CURSOR_API_KEY']
+    process.env['CURSOR_API_KEY'] = 'test-key'
+    const chunks: StreamChunk[] = []
+    let cancelCalls = 0
+    const controller = new AbortController()
+
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (url.endsWith(`/v1/agents/${agentId}/runs`) && init?.method === 'POST') {
+        return new Response(JSON.stringify({ run: { id: 'run-active' } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      if (url.includes('/runs/run-active/stream')) {
+        // Abort while the stream is open so the abort listener cancels the run.
+        queueMicrotask(() => {
+          controller.abort()
+        })
+        return new Promise((_resolve, reject) => {
+          const onAbort = (): void => {
+            reject(new DOMException('Aborted', 'AbortError'))
+          }
+          if (init?.signal?.aborted) onAbort()
+          else init?.signal?.addEventListener('abort', onAbort, { once: true })
+        })
+      }
+      if (url.includes('/runs/run-active/cancel') && init?.method === 'POST') {
+        cancelCalls += 1
+        return new Response(null, { status: 200 })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    }
+
+    try {
+      const result = await runRemoteAgentFromSettings({
+        threadId,
+        provider: 'cursor',
+        userPrompt: 'interrupt me',
+        signal: controller.signal,
+        onChunk: (chunk) => {
+          chunks.push(chunk)
+        },
+        fetchImpl,
+      })
+      assert.equal(cancelCalls, 1)
+      assert.deepEqual(result.messages, [])
+      assert.ok(
+        chunks.some((c) => c.type === 'done' && c.stopReason === 'CANCELLED'),
+        'expected CANCELLED done chunk after abort',
+      )
+      assert.equal(
+        chunks.some((c) => c.type === 'text' && /error occurred/i.test(c.text)),
+        false,
+        'abort must not surface as a provider error',
+      )
+    } finally {
+      if (prevKey === undefined) delete process.env['CURSOR_API_KEY']
+      else process.env['CURSOR_API_KEY'] = prevKey
+    }
   })
 })
