@@ -6,6 +6,15 @@ doesn't relearn it. It complements — not replaces — the visual-eval rules in
 [`AGENTS.md`](../AGENTS.md) and the markdown invariants in
 [`src/renderer/markdown/README.md`](../src/renderer/markdown/README.md).
 
+## Attached screenshot expand
+
+Thread message images (`.message-image`) and roadmap plan image chips
+(`.roadmap-attachment-thumb`) open the shared lightbox in
+[`src/renderer/attachments/image-expand.ts`](../src/renderer/attachments/image-expand.ts)
+(`dialog.image-expand-dialog`). Wire new attachment thumbs through
+`attachImageExpand` rather than inventing a second overlay. Visual eval:
+[`tests/e2e/image-expand.e2e.ts`](../tests/e2e/image-expand.e2e.ts).
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in

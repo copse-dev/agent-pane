@@ -196,6 +196,55 @@ export function seedThemeBootFixture(workspaceRoot: string, theme: 'light' | 'da
   writeSettings({ theme, uiTintStrength: 'off' })
 }
 
+/**
+ * User message with an attached screenshot data URL so the thread panel can
+ * exercise click-to-expand without driving the composer paste path.
+ */
+export function seedMessageImageFixture(
+  workspaceRoot: string,
+  imageDataUrl: string,
+  options?: { roadmapPlansEnabled?: boolean },
+): void {
+  const projectId = 'e2e-image-expand-project'
+  const threadId = 'e2e-image-expand-thread'
+  mkdirSync(USER_DATA, { recursive: true })
+  const seedConfig: Record<string, unknown> = {
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'Screenshot attachment expand',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-image',
+            role: 'user',
+            content: 'Here is the screenshot from the failing UI.',
+            images: [imageDataUrl],
+            toolCalls: [],
+            createdAt: Date.now(),
+          },
+          {
+            id: 'msg-assistant-ack',
+            role: 'assistant',
+            content: 'Got the screenshot — I will inspect it.',
+            toolCalls: [],
+            createdAt: Date.now() + 1,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+  }
+  if (options?.roadmapPlansEnabled) {
+    seedConfig.roadmapPlansEnabled = true
+  }
+  writeSeedConfig(seedConfig)
+}
+
 /** Layout for three-pane reference screenshots. Call before reloadSession(). */
 export function seedE2eThreePaneLayout(
   overrides: Partial<{

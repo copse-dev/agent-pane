@@ -33,6 +33,7 @@ import {
   shouldShowPrimaryChatModelLabels,
 } from '@shared/threads/message-model.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { attachImageExpand } from '../attachments/image-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
@@ -514,14 +515,14 @@ function toolCardSignature(item: ToolCallDisplayItem): string {
 function createMessageImages(images: string[]): HTMLElement {
   const wrap = el('div', { class: 'message-images' })
   for (const dataUrl of images) {
-    wrap.append(
-      el('img', {
-        class: 'message-image',
-        src: dataUrl,
-        alt: 'Attached image',
-        loading: 'lazy',
-      }),
-    )
+    const img = el('img', {
+      class: 'message-image',
+      src: dataUrl,
+      alt: 'Attached image',
+      loading: 'lazy',
+    })
+    attachImageExpand(img, 'Attached image')
+    wrap.append(img)
   }
   return wrap
 }

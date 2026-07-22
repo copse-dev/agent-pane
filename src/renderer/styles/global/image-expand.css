@@ -1,0 +1,58 @@
+/* Shared lightbox for attached screenshots (thread + roadmap plan chips).
+   Sized to the image (capped by the viewport) so small thumbs don't open a
+   cavernous empty dialog; large screenshots still fill up to the max. */
+.image-expand-dialog {
+  width: max-content;
+  max-width: 96vw;
+  max-height: 92vh;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.image-expand-dialog-body {
+  min-width: min(280px, 80vw);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  padding: var(--spacing-md);
+}
+.image-expand-image {
+  display: block;
+  max-width: min(92vw - 48px, 1160px);
+  max-height: min(80vh, 720px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.image-expand-close {
+  margin-top: var(--spacing-sm);
+  width: 100%;
+  min-width: min(280px, 80vw);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+.image-expand-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+/* Affordances on fold-out thumbnails (thread messages + roadmap chips). */
+.image-expandable {
+  cursor: zoom-in;
+}
+.image-expandable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
