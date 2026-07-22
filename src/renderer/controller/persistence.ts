@@ -206,6 +206,10 @@ export interface Autosave {
 export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
   let timer: ReturnType<typeof setTimeout> | null = null
   let projectsDirty = false
+  // Immediate new-thread creates (and other flushNow work) must be awaitable from
+  // flush()/pagehide so callers do not observe a resolved flush while create is
+  // still in flight.
+  let inflightFlush: Promise<void> = Promise.resolve()
 
   const reconcile = (projectId: string): Promise<void> =>
     reconcileThreads(api, projectId, store.getState().threads)
@@ -237,7 +241,9 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       writes.push(saveProjects(api, projects, activeProjectId))
     }
     if (activeProjectId) writes.push(reconcile(activeProjectId))
-    return Promise.all(writes).then(() => undefined)
+    const done = Promise.all(writes).then(() => undefined)
+    inflightFlush = Promise.all([inflightFlush.catch(() => undefined), done]).then(() => undefined)
+    return done
   }
 
   const schedule = (): void => {
@@ -254,11 +260,30 @@ export function attachAutosave(store: AppStore, api: ApiClient): Autosave {
       timer = null
     }
     projectsDirty = true
-    return flushNow()
+    return flushNow().then(() => inflightFlush)
   }
 
   const unsubscribes = [
     store.on('threads_changed', () => {
+      const { activeProjectId, threads } = store.getState()
+      if (!activeProjectId) {
+        schedule()
+        return
+      }
+      // Blank-thread first send calls `agent:prepareCheckout` before any
+      // `message_added` reconcile. Debouncing that create leaves a race that
+      // surfaces as "Thread is not persisted yet; retry sending the message".
+      // Flush immediately when threads_changed introduces a new id so main can
+      // validate the project/thread pair on the first send.
+      const prev = persistedMeta.get(activeProjectId) ?? new Map()
+      if (threads.some((t) => !prev.has(t.id))) {
+        if (timer !== null) {
+          clearTimeout(timer)
+          timer = null
+        }
+        void flushNow()
+        return
+      }
       schedule()
     }),
     store.on('thread_draft_changed', () => {
