@@ -35,6 +35,25 @@ describe('titlebar workspace name', () => {
     await newThreadBtn.click()
     await expect($('.chat-row.selected .chat-title')).toHaveText('New Thread')
     await $('.pane-chat.composer-centered').waitForExist({ timeout: 10_000 })
+    const centeredBorder = await browser.execute(() => {
+      const input = document.getElementById('input-bar')
+      if (!input) return null
+      const style = getComputedStyle(input)
+      return {
+        top: style.borderTopWidth,
+        right: style.borderRightWidth,
+        bottom: style.borderBottomWidth,
+        left: style.borderLeftWidth,
+        boxShadow: style.boxShadow,
+      }
+    })
+    await expect(centeredBorder).not.toBeNull()
+    if (!centeredBorder) throw new Error('Missing #input-bar')
+    await expect(centeredBorder.top).toBe('0px')
+    await expect(centeredBorder.right).toBe('0px')
+    await expect(centeredBorder.bottom).toBe('0px')
+    await expect(centeredBorder.left).toBe('0px')
+    await expect(centeredBorder.boxShadow).toMatch(/0px 0px 0px 1px/)
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'new-thread-composer-centered.png'))
 
     await newThreadBtn.click()

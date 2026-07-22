@@ -420,7 +420,9 @@
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  border-top: none;
+  /* Clear the full docked `#input-bar` border — a leftover `border-top: none`
+     left left/right/bottom borders stacked under the hairline shadow ring. */
+  border: none;
   border-radius: var(--radius-lg);
   /* Floats over the chat gradient: keep the hairline ring, add real depth. */
   box-shadow:
