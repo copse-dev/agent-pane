@@ -256,14 +256,15 @@ export function detectCompletedWindows(
 
 /**
  * When a sample is dropped by the min-gap rate limit, fold any higher
- * usedPercent / usedDollars into the retained prior sample for the same
+ * usedPercent / usedDollars into a new retained prior sample for the same
  * window id + resetsAt. Otherwise a later reset finalizes an under-count.
+ * Returns `retained` unchanged when providers differ.
  */
 export function foldSkippedSamplePeaks(
   retained: PlanWindowHistorySample,
   skipped: PlanWindowHistorySample,
-): void {
-  if (retained.provider !== skipped.provider) return
+): PlanWindowHistorySample {
+  if (retained.provider !== skipped.provider) return retained
   const windows = retained.windows.map((w) => ({ ...w }))
   const byId = new Map(windows.map((w, i) => [w.id, i]))
   for (const incoming of skipped.windows) {
@@ -288,7 +289,7 @@ export function foldSkippedSamplePeaks(
       prev.limitDollars = incoming.limitDollars
     }
   }
-  retained.windows = windows
+  return { ...retained, windows }
 }
 
 /**
@@ -304,14 +305,16 @@ export function appendPlanWindowSamples(
   const samples = [...state.samples]
   let completed = [...state.completed]
   for (const sample of incoming) {
-    const priorForProvider = [...samples].reverse().find((s) => s.provider === sample.provider)
+    const priorIndex = samples.findLastIndex((s) => s.provider === sample.provider)
+    const priorForProvider = priorIndex >= 0 ? samples[priorIndex] : undefined
     const isReset = sampleShowsReset(priorForProvider, sample)
     if (
       priorForProvider &&
+      priorIndex >= 0 &&
       !isReset &&
       sample.at - priorForProvider.at < PLAN_WINDOW_SAMPLE_MIN_GAP_MS
     ) {
-      foldSkippedSamplePeaks(priorForProvider, sample)
+      samples[priorIndex] = foldSkippedSamplePeaks(priorForProvider, sample)
       continue
     }
     const newlyCompleted = detectCompletedWindows(priorForProvider, sample)
