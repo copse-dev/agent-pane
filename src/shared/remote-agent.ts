@@ -20,6 +20,12 @@ export const DEFAULT_CURSOR_AGENT_BASE_URL = 'https://api.cursor.com'
 export const DEFAULT_ANTHROPIC_AGENT_BASE_URL = 'https://api.anthropic.com'
 
 /**
+ * Cursor's web agents list. API-launched agents (including Copse) are hidden
+ * there until the user enables Filter → Source → API.
+ */
+export const CURSOR_AGENTS_WEB_URL = 'https://cursor.com/agents'
+
+/**
  * Optional model half of a remote-agent selection, encoded after `#` the same way
  * ACP does (`acp:<id>#<model>`). The model id may contain most characters but not
  * `#`, so a first-`#` split is unambiguous.
