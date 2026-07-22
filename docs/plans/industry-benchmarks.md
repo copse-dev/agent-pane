@@ -42,7 +42,9 @@ runaway. Its host-specific recovery nudge directs a stalled terminal agent to
 create the best current deliverable candidate instead of continuing analysis with the requested
 path absent. The terminal host exposes a bounded `write_file` tool for text deliverables, repeats
 the original task beside recovery, and directs the next action to that tool and the task's exact
-output path, so another helper or test file cannot masquerade as completion. It also replaces
+output path. When the task names that path explicitly, the host rejects post-recovery inspection
+and helper-file calls until `write_file` targets it, so advisory wording cannot be silently ignored
+and another artifact cannot masquerade as completion. It also replaces
 the pressure-triggered tool-less answer turn for this host with one tool-enabled recovery
 instruction, because terminal success is durable environment state rather than prose; the
 configured output cap still bounds finalization. The recovery probes `/tests` once, treats it as
