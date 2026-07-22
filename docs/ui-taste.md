@@ -332,3 +332,7 @@ buttons unreadable. Do not introduce one-off component blues that bypass these t
 Chat rows use flat, square selection and hover fills with a slim inset accent rail. Avoid rounded
 row highlights here: they read like detached pills instead of a selection within a continuous
 sidebar list.
+
+Thread rows and the paginated **Show more** control share the same horizontal inset
+(`margin-inline: var(--spacing-xs)` plus `padding-left: 28px`). Don't give Show more `width: 100%`
+without that margin — the label drifts left of the titles above it.

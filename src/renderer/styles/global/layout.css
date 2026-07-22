@@ -276,8 +276,11 @@
     opacity: 0.7;
   }
 }
+/* Match .chat-row inset (margin-inline + left padding) so "Show more" lines up
+   with thread titles instead of sitting ~--spacing-xs further left. */
 .chats-show-more {
-  width: 100%;
+  width: auto;
+  margin-inline: var(--spacing-xs);
   text-align: left;
   padding: 4px var(--spacing-sm) 4px 28px;
   font-size: var(--font-size-sm);
