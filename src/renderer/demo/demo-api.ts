@@ -253,7 +253,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       downloadArtifact: unsupported,
       artifactImageDataUrl: unsupported,
       models: emptyArray,
-      discoverExternal: () =>
+      discoverExternal: (_projectId?: string) =>
         resolved({
           imported: [],
           scanned: 0,
