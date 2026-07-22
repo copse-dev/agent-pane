@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  CURSOR_AGENTS_WEB_URL,
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
   isRemoteAgentModel,
   parseRemoteAgentModel,
@@ -11,6 +12,12 @@ import {
   resolveManagedAgentModelId,
 } from './remote-agent.ts'
 import { DEFAULT_MANAGED_AGENT_MODEL } from './managed-agents.ts'
+
+describe('CURSOR_AGENTS_WEB_URL', () => {
+  it('points at the Cursor agents list (API source filter lives there)', () => {
+    assert.equal(CURSOR_AGENTS_WEB_URL, 'https://cursor.com/agents')
+  })
+})
 
 describe('remote-agent model selection', () => {
   it('encodes and parses provider-only and provider#model values', () => {
