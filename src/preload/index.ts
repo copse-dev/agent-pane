@@ -595,6 +595,8 @@ contextBridge.exposeInMainWorld('api', {
     artifactImageDataUrl: (agentId: string, path: string) =>
       ipcRenderer.invoke('remoteAgent:artifactImageDataUrl', agentId, path),
     models: () => ipcRenderer.invoke('remoteAgent:models'),
+    /** Spike: import outside Cursor cloud agents as local thread stubs. */
+    discoverExternal: () => ipcRenderer.invoke('remoteAgent:discoverExternal'),
   },
   acp: {
     detectAgents: () => ipcRenderer.invoke('acp:detectAgents'),
