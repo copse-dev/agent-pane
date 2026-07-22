@@ -1,5 +1,6 @@
 import type { UserContent } from '@shared/types/llm.ts'
-import { getSetting } from '../storage/settings.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 
 /**
  * Experimental, opt-in client-side PII redaction (off by default).
@@ -17,9 +18,16 @@ import { getSetting } from '../storage/settings.ts'
  * a no-op (the original text is sent unchanged) when the feature is off or the
  * package/model is unavailable. Because this fails open, it is a privacy
  * best-effort, not a guarantee — see docs/pii-redaction.md.
+ *
+ * Enablement is the `copse.pii-redaction` first-party pack (Settings > Packs).
+ * The feature was historically gated by the top-level `piiRedactionEnabled`
+ * boolean; that setting is retired and the pack toggle is the single source of
+ * truth — the same flag flip that registers the `reveal_pii` tool and appends
+ * the steering prompt block also arms this input rewrite (decision 15). Packs
+ * are enabled by default, but the enablement-migration bridge in `pack-service`
+ * seeds this pack disabled for fresh installs and existing users, so redaction
+ * stays off by default.
  */
-
-export const PII_REDACTION_ENABLED_SETTING = 'piiRedactionEnabled'
 
 /** The subset of Rampart's `ScrubResult` we consume. */
 interface ScrubResult {
@@ -75,7 +83,7 @@ export function setRampartLoaderForTest(next: RampartLoader | null): void {
 }
 
 function isEnabled(): boolean {
-  return getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)
+  return getDefaultPackRegistry().isEnabled(PII_REDACTION_PACK_ID)
 }
 
 function loadModule(): Promise<RampartModule | null> {

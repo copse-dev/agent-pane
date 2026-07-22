@@ -153,12 +153,12 @@ This is for user-run terminals, not your own run_shell / run_background output. 
 // this module's block-export surface stable for `agent-system-prompt.ts`.
 export { MEMORY_TOOLS_BLOCK } from '@copse/agent/packs/okf-memories-pack.ts'
 
-// Optional steering, toggled by the experimental `piiRedactionEnabled` setting.
-// Only appended when the reveal_pii tool is actually registered.
-export const PII_REDACTION_BLOCK = `
-
-This conversation has client-side PII redaction on. Personal data the user typed is replaced with stable placeholders before their message reaches you — typed tokens like [GIVEN_NAME_1], [EMAIL_2], [SSN_1], [PHONE_1]. The same real value always maps to the same placeholder, so you can reason about a placeholder as if it were the value. Keep placeholders intact in your replies and edits; do not invent or guess the underlying values.
-- reveal_pii: When you genuinely need a real value — e.g. to write it verbatim into a file or command — call reveal_pii with the placeholder. The user is prompted to approve each reveal and may decline, in which case keep using the placeholder.`
+// Optional steering, gated by the `copse.pii-redaction` first-party pack. Only
+// appended when the pack is enabled (the same flag that registers the reveal_pii
+// tool). The block TEXT is owned by the pack so its `promptBlocks` declaration
+// and this appended text stay a single source of truth; re-exported here so
+// `agent-system-prompt.ts` keeps importing it from this module.
+export { PII_REDACTION_BLOCK } from '@copse/agent/packs/pii-redaction-pack.ts'
 
 // Optional steering, toggled by the `externalApiSafety` setting. Kept short and
 // appended near the top of the system prompt so it sits ahead of workspace- and
