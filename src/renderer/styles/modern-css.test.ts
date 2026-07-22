@@ -83,6 +83,21 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('keeps the centered new-thread composer on a single hairline ring', () => {
+    const css = read('layout.css')
+    // Docked `#input-bar` uses a real CSS border; the empty-thread centered
+    // variant paints its perimeter via `box-shadow: 0 0 0 1px`. Clearing only
+    // `border-top` left the other sides doubled under that ring (#912 fallout).
+    assert.ok(
+      declares(css, '.pane-chat.composer-centered #input-bar', /border:\s*none/),
+      'centered #input-bar must clear the full border so the shadow ring is the only hairline',
+    )
+    assert.ok(
+      declares(css, '.pane-chat.composer-centered #input-bar', /0\s+0\s+0\s+1px\s+var\(--border\)/),
+      'centered #input-bar must keep the 1px hairline shadow ring',
+    )
+  })
+
   it('auto-sizes the composer to its content', () => {
     const css = read('input-bar.css')
     // The composer is a contenteditable (composer-editor.ts), which grows with

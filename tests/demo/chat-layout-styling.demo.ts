@@ -95,4 +95,29 @@ describe('browser-hosted chat layout styling', () => {
     expect(gradient).toContain('linear-gradient')
     await saveAppScreenshot('chat-layout-gradient-empty.png')
   })
+
+  it('keeps a single hairline on the centered new-thread composer', async () => {
+    await $('.project-new-thread-btn').click()
+    await $('.pane-chat.composer-centered').waitForExist()
+    const border = await browser.execute(() => {
+      const input = document.getElementById('input-bar')
+      if (!input) return null
+      const style = getComputedStyle(input)
+      return {
+        top: style.borderTopWidth,
+        right: style.borderRightWidth,
+        bottom: style.borderBottomWidth,
+        left: style.borderLeftWidth,
+        boxShadow: style.boxShadow,
+      }
+    })
+    expect(border).not.toBeNull()
+    if (!border) throw new Error('Missing #input-bar')
+    expect(border.top).toBe('0px')
+    expect(border.right).toBe('0px')
+    expect(border.bottom).toBe('0px')
+    expect(border.left).toBe('0px')
+    expect(border.boxShadow).toMatch(/0px 0px 0px 1px/)
+    await saveAppScreenshot('chat-layout-composer-centered-border.png')
+  })
 })

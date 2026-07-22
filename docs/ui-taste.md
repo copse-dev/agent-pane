@@ -243,6 +243,14 @@ do not leave a `0/0 done` shell with struck-through or muted ghost rows. Striket
 **completed** work, not cancelled work. Spec:
 [`tests/e2e/todo-display.e2e.ts`](../tests/e2e/todo-display.e2e.ts).
 
+## Centered new-thread composer: one hairline, not two
+
+Empty threads float `#input-bar` via `.pane-chat.composer-centered`. The docked composer keeps a
+real CSS `border: 1px solid var(--border)`; the centered variant must **clear the full border**
+(`border: none`) and paint its perimeter only with `box-shadow: 0 0 0 1px var(--border)`. Clearing
+just `border-top` leaves left/right/bottom borders stacked under that ring — a thicker, uneven
+outline. Specs: `modern-css.test.ts`, `tests/demo/chat-layout-styling.demo.ts`.
+
 ## Portrait / vertical chrome (narrow tall windows)
 
 On tall portrait windows (or when the right panel is pinned to **bottom**), keep mode switching
