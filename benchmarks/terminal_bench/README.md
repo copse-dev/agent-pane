@@ -109,7 +109,7 @@ The exact orchestration is also available without GitHub. Install and authentica
 the same model, registry, and Object Storage credentials, then run:
 
 ```bash
-export LM_STUDIO_MODEL='qwen/qwen3.6-35b-a3b:fp8'
+export LM_STUDIO_MODEL='qwen3.6-35b-a3b'
 export SCW_GENERATIVE_API_KEY='...'
 export SCW_SECRET_KEY='...'
 export SCW_OBJECT_STORAGE_ACCESS_KEY_ID='...'
