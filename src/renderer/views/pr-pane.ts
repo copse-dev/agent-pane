@@ -17,6 +17,8 @@ import { showConfirmDialog } from './confirm-dialog.ts'
 import { extractGithubPrUrls, githubPrKey } from '@shared/git/github-pr-url.ts'
 import { remoteAgentPrIndexKey, type RemoteAgentPrIndexEntry } from '@shared/remote-agent-link.ts'
 import { mergePrLists, placeholderPrTitle, prListDisplayTitle, type PrRef } from './pr-pane-list.ts'
+import { startPrDiscussThread } from './pr-pane-thread.ts'
+import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
@@ -467,6 +469,23 @@ export function mountPrPane(
       })
     }
 
+    // Spin off a fresh local thread about this PR (shared checkout + PR URL in
+    // the composer), distinct from jumping to an existing agent-owned thread.
+    const newThreadBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'pr-new-thread-btn',
+        title: 'Open a new thread about this pull request (shared checkout)',
+      },
+      el('span', {}, 'New thread'),
+    )
+    const discussPr = prDetails
+    newThreadBtn.addEventListener('click', () => {
+      startPrDiscussThread(store, discussPr)
+      getPromptAttachmentHandlers()?.focusComposer?.()
+    })
+
     const stats: string[] = []
     if (typeof prDetails.changedFiles === 'number')
       stats.push(`${String(prDetails.changedFiles)} files`)
@@ -491,6 +510,7 @@ export function mountPrPane(
       { class: 'pr-viewer-actions' },
       openBtn,
       ...(openThreadBtn ? [openThreadBtn] : []),
+      newThreadBtn,
     )
     if (prDetails.state === 'OPEN') {
       const ref = { owner: prDetails.owner, repo: prDetails.repo, number: prDetails.number }
