@@ -440,7 +440,7 @@ test('sendQueuedMessageNow reorders to the front and aborts the running thread',
   assert.equal(api.runs.length, 0)
 })
 
-test('sendQueuedMessageNow reorders but does not abort a running remote agent', () => {
+test('sendQueuedMessageNow aborts a running remote agent so the follow-up can drain', () => {
   const store = createStore({ settings: { model: 'remote-agent:cursor' } })
   const api = fakeApi()
   const threadId = createThread(store)
@@ -463,9 +463,9 @@ test('sendQueuedMessageNow reorders but does not abort a running remote agent', 
     thread.pendingMessages?.map((p) => p.messageId),
     ['second', 'first'],
   )
-  // Remote runs must not be cancelled by a follow-up — it stays queued for the
-  // same agent and drains after the current run finishes.
-  assert.deepEqual(api.aborts, [])
+  // Same interrupt path as local: abort → done → drain. Remote create retries
+  // briefly on 409 agent_busy while the cancelled run settles.
+  assert.deepEqual(api.aborts, [threadId])
   assert.equal(api.runs.length, 0)
 })
 

@@ -694,9 +694,16 @@ export async function runAgent(
         ],
       }
     } catch (err) {
-      const msg = classifyAgentError(err)
-      sendChunk({ type: 'text', text: msg })
-      sendChunk({ type: 'done' })
+      // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
+      // emits CANCELLED `done` when it handles the signal; if an abort still
+      // escapes here, don't paint it as a provider error in the transcript.
+      if (controller.signal.aborted) {
+        sendChunk({ type: 'done', stopReason: 'CANCELLED' })
+      } else {
+        const msg = classifyAgentError(err)
+        sendChunk({ type: 'text', text: msg })
+        sendChunk({ type: 'done' })
+      }
       return {
         usage: { inputTokens: 0, outputTokens: 0 },
         messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
