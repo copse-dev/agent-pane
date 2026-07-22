@@ -16,6 +16,7 @@ import {
 } from './index-status.ts'
 import { isRecord } from '@shared/unknown-value.ts'
 import { getElectronUserDataPath } from '../electron-app-runtime.ts'
+import { semanticIndexAllowed, semanticIndexPending } from './workspace-index-gate.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -334,6 +335,9 @@ export async function ensureSemanticIndex(workspaceRoot: string): Promise<void> 
   if (!backend) return
 
   const root = resolve(workspaceRoot)
+  // Scale gate (#795): wait for file-index evidence, then refuse oversized roots.
+  if (semanticIndexPending(root) || !semanticIndexAllowed(root)) return
+
   const existing = indexPromises.get(root)
   if (existing) {
     await existing
@@ -383,6 +387,8 @@ export async function updateSemanticIndex(workspaceRoot: string): Promise<void> 
   if (!backend) return
 
   const root = resolve(workspaceRoot)
+  if (semanticIndexPending(root) || !semanticIndexAllowed(root)) return
+
   const existing = updateInFlight.get(root)
   if (existing) {
     // A run owns this root; ask it to do one more pass and ride its promise.

@@ -900,5 +900,8 @@ if (process.env['COPSE_E2E'] === '1') {
     emitAgentChunks(threadId: string, chunks: unknown[]) {
       return ipcRenderer.invoke('test:emitAgentChunks', threadId, chunks)
     },
+    setSemanticIndexScaleGuard(phase: 'limited' | 'skipped', reason: string) {
+      return ipcRenderer.invoke('test:setSemanticIndexScaleGuard', phase, reason)
+    },
   })
 }
