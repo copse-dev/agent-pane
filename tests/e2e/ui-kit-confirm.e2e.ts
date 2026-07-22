@@ -1,11 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
 import { Key } from 'webdriverio'
-import {
-  resetUserData,
-  seedE2eViewport,
-  writeSeedConfig,
-} from './helpers/seed-config.ts'
+import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-ui-kit-confirm'

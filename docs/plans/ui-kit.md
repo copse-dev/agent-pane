@@ -15,11 +15,11 @@ Copse already has a nascent kit surface (`ui-icon`, `ui-inline-status`) built as
 functions + global CSS classes** on a vanilla TypeScript DOM renderer. The highest-value next
 step is to grow that family — not to introduce Lit/Shadow DOM.
 
-| Approach | Fit for Copse |
-| --- | --- |
-| Factory helpers + `.ui-*` CSS | **Primary.** Matches `el()`, global tokens, happy-dom tests, form/`<dialog>` semantics. |
-| Light-DOM custom elements (`<copse-ui-*>`) | **Useful for structural hosts** (field, actions) that enforce tag + class without fighting the cascade. |
-| Shadow DOM / Lit | **Defer.** Breaks global token/cascade CSS, complicates form association and `<dialog>`, and makes class-based tests/selectors awkward. |
+| Approach                                   | Fit for Copse                                                                                                                           |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Factory helpers + `.ui-*` CSS              | **Primary.** Matches `el()`, global tokens, happy-dom tests, form/`<dialog>` semantics.                                                 |
+| Light-DOM custom elements (`<copse-ui-*>`) | **Useful for structural hosts** (field, actions) that enforce tag + class without fighting the cascade.                                 |
+| Shadow DOM / Lit                           | **Defer.** Breaks global token/cascade CSS, complicates form association and `<dialog>`, and makes class-based tests/selectors awkward. |
 
 ## Why a kit is worth it
 
