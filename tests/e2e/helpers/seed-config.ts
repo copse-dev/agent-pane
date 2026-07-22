@@ -823,8 +823,9 @@ export function seedPrPanelAgentLinkFixture(workspaceRoot: string): void {
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
-    // Active thread is the non-agent one so the PR "open agent thread" jump
-    // has a visible destination to switch to.
+    // Active thread carries the chat PR link (so the linked section appears)
+    // but not the agent ownership — that lives on the quieter thread so the
+    // PR "open agent thread" jump has somewhere visible to switch to.
     [`threads:${projectId}`]: [
       {
         id: 'e2e-pr-agent-link-other-thread',
@@ -832,9 +833,9 @@ export function seedPrPanelAgentLinkFixture(workspaceRoot: string): void {
         status: 'idle',
         messages: [
           {
-            id: 'msg-unrelated',
+            id: 'msg-unrelated-pr-link',
             role: 'assistant',
-            content: 'Working on something else.',
+            content: `Track progress in [PR #42](${mockPrUrl}).`,
             createdAt: now,
           },
         ],
