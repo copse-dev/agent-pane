@@ -1,4 +1,5 @@
 import { el, qs } from '../dom/helpers.ts'
+import { uiActions, uiButton } from '../ui/index.ts'
 
 export interface ConfirmDialogRequest {
   message: string
@@ -23,7 +24,7 @@ export function mountConfirmDialog(): void {
 
   const messageEl = el('h3', { class: 'confirm-dialog-message' })
   const detailEl = el('p', { class: 'confirm-dialog-detail' })
-  const buttonsEl = el('div', { class: 'confirm-dialog-buttons' })
+  const buttonsEl = uiActions({ className: 'confirm-dialog-buttons' })
   const dialog = el('dialog', { id: 'confirm-dialog' }, messageEl, detailEl, buttonsEl)
   document.body.append(dialog)
 
@@ -55,17 +56,16 @@ export function mountConfirmDialog(): void {
 
     const cancelLabel = active.cancelLabel ?? 'Cancel'
     const confirmLabel = active.confirmLabel ?? 'OK'
-    const cancelBtn = el('button', { type: 'button', class: 'confirm-dialog-cancel' }, cancelLabel)
-    const confirmBtn = el(
-      'button',
-      {
-        type: 'button',
-        class: active.danger
-          ? 'confirm-dialog-confirm confirm-dialog-danger'
-          : 'confirm-dialog-confirm',
-      },
-      confirmLabel,
-    )
+    const cancelBtn = uiButton({
+      label: cancelLabel,
+      variant: 'secondary',
+      className: 'confirm-dialog-cancel',
+    })
+    const confirmBtn = uiButton({
+      label: confirmLabel,
+      variant: active.danger ? 'danger' : 'primary',
+      className: 'confirm-dialog-confirm',
+    })
     cancelBtn.addEventListener('click', () => {
       finish(false)
     })

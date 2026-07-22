@@ -1,5 +1,6 @@
 import { el, qs } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { uiActions, uiButton } from '../ui/index.ts'
 import { showToast } from './toast.ts'
 
 interface UpdatePromptRequest {
@@ -18,7 +19,7 @@ interface UpdatePromptRequest {
 export function mountUpdatePromptDialog(api: ApiClient): void {
   const messageEl = el('h3', { class: 'update-prompt-message' })
   const detailEl = el('p', { class: 'update-prompt-detail' })
-  const buttonsEl = el('div', { class: 'update-prompt-buttons' })
+  const buttonsEl = uiActions({ className: 'update-prompt-buttons' })
   const dialog = el('dialog', { id: 'update-prompt-dialog' }, messageEl, detailEl, buttonsEl)
   document.body.append(dialog)
 
@@ -52,14 +53,11 @@ export function mountUpdatePromptDialog(api: ApiClient): void {
     buttonsEl.replaceChildren(
       ...active.buttons.map((label, index) => {
         const isPrimary = index === defaultIndex
-        const button = el(
-          'button',
-          {
-            type: 'button',
-            class: isPrimary ? 'update-prompt-primary' : 'update-prompt-secondary',
-          },
+        const button = uiButton({
           label,
-        )
+          variant: isPrimary ? 'primary' : 'secondary',
+          className: isPrimary ? 'update-prompt-primary' : 'update-prompt-secondary',
+        })
         button.addEventListener('click', () => {
           finish(index)
         })
