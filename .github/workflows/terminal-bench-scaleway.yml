@@ -207,6 +207,35 @@ jobs:
           printf '%s\n' "$SCW_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/copse-ssh/id"
           chmod 600 "$RUNNER_TEMP/copse-ssh/id"
 
+      - name: Publish run manifest
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_OBJECT_STORAGE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_OBJECT_STORAGE_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.SCW_OBJECT_STORAGE_REGION || 'fr-par' }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          SCW_OBJECT_STORAGE_BUCKET: ${{ vars.SCW_OBJECT_STORAGE_BUCKET }}
+          SCW_OBJECT_STORAGE_ENDPOINT: https://s3.${{ vars.SCW_OBJECT_STORAGE_REGION || 'fr-par' }}.scw.cloud
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_SHA: ${{ github.sha }}
+          COPSE_BENCH_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
+          COPSE_TERMINAL_MAX_TASKS: ${{ inputs.max_tasks }}
+          COPSE_TERMINAL_INSTANCES: ${{ inputs.instances }}
+          COPSE_TERMINAL_ATTEMPTS: ${{ inputs.attempts }}
+          LM_STUDIO_MODEL: ${{ inputs.model }}
+        run: |
+          manifest="$RUNNER_TEMP/terminal-bench-run.json"
+          node scripts/write-terminal-bench-run-manifest.mts > "$manifest"
+          object_prefix="terminal-bench/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          aws s3 cp "$manifest" \
+            "s3://${SCW_OBJECT_STORAGE_BUCKET}/${object_prefix}/run.json" \
+            --sse AES256 \
+            --only-show-errors \
+            --endpoint-url "$SCW_OBJECT_STORAGE_ENDPOINT"
+
       - name: Launch, run, retain, and terminate fleet
         env:
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
