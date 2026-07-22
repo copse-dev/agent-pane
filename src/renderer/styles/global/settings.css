@@ -706,6 +706,22 @@ dialog.settings-overlay::backdrop {
 .frontier-fieldset {
   position: relative;
 }
+.frontier-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+.frontier-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.frontier-controls .frontier-btn,
+.frontier-controls .frontier-cost-axis {
+  margin-left: 0;
+}
 .frontier-banded {
   display: flex;
   flex-direction: column;

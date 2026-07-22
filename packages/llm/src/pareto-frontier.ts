@@ -205,6 +205,7 @@ export function groupByModelIdentity(
 export function frontierForKnownModels(
   extra: readonly FrontierCandidate[] = [],
   adjust?: (candidate: FrontierCandidate) => FrontierCandidate,
+  keepRoute?: (candidate: FrontierCandidate) => boolean,
 ): FrontierPoint[] {
   const cloud: FrontierCandidate[] = []
   for (const id of TRACKED_MODELS) {
@@ -221,6 +222,10 @@ export function frontierForKnownModels(
   // Group first (best price per identity), then let the caller re-price each
   // representative — e.g. drop a plan-covered model's cost to $0. Adjusting the
   // grouped candidate (not each raw offering) applies coverage once per model.
-  const grouped = groupByModelIdentity([...cloud, ...extra])
+  // Route-sensitive filters (ZDR / no-training) must run before identity
+  // grouping. Otherwise a direct API route can become the representative and
+  // hide an eligible OpenRouter route to the exact same model weights.
+  const candidates = keepRoute ? [...cloud, ...extra].filter(keepRoute) : [...cloud, ...extra]
+  const grouped = groupByModelIdentity(candidates)
   return computeParetoFrontier(adjust ? grouped.map(adjust) : grouped)
 }

@@ -271,6 +271,12 @@ export interface ModelPathProvider {
   prefix?: string
 }
 
+export interface ModelPathPolicyOptions {
+  /** Effective OpenRouter routing settings; omitted values use Copse defaults. */
+  openRouterZdrOnly?: boolean
+  openRouterAllowTraining?: boolean
+}
+
 /**
  * Resolve the data-retention policy for a model *path* (how Copse would reach
  * it), not just the model weights. Local / loopback paths short-circuit;
@@ -281,6 +287,7 @@ export interface ModelPathProvider {
 export function dataPolicyForModelPath(
   modelId: string,
   providers: readonly ModelPathProvider[] = [],
+  opts: ModelPathPolicyOptions = {},
 ): { policy: ProviderDataPolicy | null; local: boolean } {
   const id = modelId.trim()
   if (id.length === 0) return { policy: null, local: false }
@@ -318,7 +325,13 @@ export function dataPolicyForModelPath(
   if (sep > 0 && !id.slice(0, sep).includes('/')) {
     const slug = id.slice(0, sep)
     if (slug === 'openrouter') {
-      return { policy: openRouterDataPolicy(true), local: false }
+      return {
+        policy: openRouterDataPolicy(
+          opts.openRouterZdrOnly !== false,
+          opts.openRouterAllowTraining === true,
+        ),
+        local: false,
+      }
     }
     const bySlug = dataPolicyForProvider({ id: slug })
     if (bySlug) return { policy: bySlug, local: false }
@@ -346,10 +359,33 @@ export function dataPolicyForModelPath(
  */
 export function isZeroRetentionModelPath(
   modelId: string,
-  opts: { local?: boolean; providers?: readonly ModelPathProvider[] } = {},
+  opts: {
+    local?: boolean
+    providers?: readonly ModelPathProvider[]
+    openRouterZdrOnly?: boolean
+    openRouterAllowTraining?: boolean
+  } = {},
 ): boolean {
   if (opts.local) return true
-  const resolved = dataPolicyForModelPath(modelId, opts.providers ?? [])
+  const resolved = dataPolicyForModelPath(modelId, opts.providers ?? [], opts)
   const kind = privacyBadge(resolved.policy, { local: resolved.local }).kind
   return kind === 'zdr' || kind === 'local'
+}
+
+/**
+ * True only for a route that is known not to train on prompts: local, ZDR, or
+ * retained-but-no-training. Unknown/partner-dependent routes fail closed.
+ */
+export function isNoTrainingModelPath(
+  modelId: string,
+  opts: {
+    local?: boolean
+    providers?: readonly ModelPathProvider[]
+    openRouterZdrOnly?: boolean
+    openRouterAllowTraining?: boolean
+  } = {},
+): boolean {
+  if (opts.local) return true
+  const resolved = dataPolicyForModelPath(modelId, opts.providers ?? [], opts)
+  return resolved.local || resolved.policy?.trainsOnData === false
 }

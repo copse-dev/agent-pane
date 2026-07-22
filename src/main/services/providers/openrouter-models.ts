@@ -10,12 +10,17 @@ export interface OpenRouterModelSummary {
   free: boolean
   /** `supported_parameters` advertises `tools` (i.e. can do function calling). */
   supportsTools: boolean
+  /** Catalog pricing converted from USD/token to USD/million tokens. */
+  inputPricePerMTok: number | null
+  outputPricePerMTok: number | null
 }
 
 /** Picker-facing subset (already filtered to free + tool-capable). */
 export interface OpenRouterModelOption {
   id: string
   name: string
+  inputPricePerMTok: number | null
+  outputPricePerMTok: number | null
 }
 
 // The base is overridable via a (hidden) setting so e2e can point it at a local
@@ -38,6 +43,11 @@ function priceValue(value: unknown): number {
   if (typeof value === 'number') return value
   if (typeof value === 'string') return Number.parseFloat(value)
   return Number.NaN
+}
+
+function pricePerMTok(value: unknown): number | null {
+  const perToken = priceValue(value)
+  return Number.isFinite(perToken) && perToken >= 0 ? perToken * 1_000_000 : null
 }
 
 function isFreePricing(pricing: unknown): boolean {
@@ -74,6 +84,12 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
     contextLength: parsePositiveInt(rec['context_length']),
     free: isFreePricing(rec['pricing']),
     supportsTools: supportsTools(rec['supported_parameters']),
+    inputPricePerMTok: pricePerMTok(
+      (rec['pricing'] as Record<string, unknown> | undefined)?.['prompt'],
+    ),
+    outputPricePerMTok: pricePerMTok(
+      (rec['pricing'] as Record<string, unknown> | undefined)?.['completion'],
+    ),
   }
 }
 
@@ -222,7 +238,12 @@ export async function listFreeOpenRouterModels(): Promise<OpenRouterModelOption[
   const freeOnly = getSetting<boolean>('openRouterFreeMode', false)
   let models = result.models
     .filter((m) => m.supportsTools && (freeOnly ? m.free : true))
-    .map((m) => ({ id: m.id, name: m.name }))
+    .map((m) => ({
+      id: m.id,
+      name: m.name,
+      inputPricePerMTok: m.inputPricePerMTok,
+      outputPricePerMTok: m.outputPricePerMTok,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name))
   if (getSetting<boolean>('openRouterZdrOnly', true)) {
     models = filterToZdrModels(models, await fetchZdrIdentifiersCached())

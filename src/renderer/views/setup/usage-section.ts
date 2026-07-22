@@ -9,7 +9,10 @@ import {
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import { qsRequired } from '../../dom/helpers.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
-import { createIntellectFrontierPanel } from '../intellect-frontier-panel.ts'
+import {
+  createIntellectFrontierPanel,
+  type OpenRouterFrontierSource,
+} from '../intellect-frontier-panel.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 
@@ -338,11 +341,37 @@ export function createUsageSection(
 
   // The model value map earns its place here too: usage is where spend is
   // visible, and the frontier is the "was that spend worth it" view.
+  const loadOpenRouter = async (): Promise<OpenRouterFrontierSource> => {
+    let available = false
+    let zdrOnly = true
+    let allowTraining = false
+    try {
+      available = (await api.settings.availableProviders())['openrouter'] === true
+    } catch {
+      /* unavailable */
+    }
+    try {
+      zdrOnly = (await api.settings.get('openRouterZdrOnly')) !== false
+      allowTraining = (await api.settings.get('openRouterAllowTraining')) === true
+    } catch {
+      /* keep privacy-preserving defaults */
+    }
+    let models: Awaited<ReturnType<ApiClient['openRouter']['models']>> = []
+    if (available) {
+      try {
+        models = await api.openRouter.models()
+      } catch {
+        /* leave OpenRouter off the map when its catalog is unreachable */
+      }
+    }
+    return { models, zdrOnly, allowTraining }
+  }
   const frontierPanel = createIntellectFrontierPanel(
     () => api.lmStudio.models(),
     () => api.settings.extraProviders(),
     () => api.intellect.liveModels(),
     () => api.usage.getPlanUsage(),
+    loadOpenRouter,
   )
   root.append(frontierPanel.root)
 

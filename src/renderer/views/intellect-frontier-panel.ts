@@ -39,7 +39,7 @@ import { liveIntellectCandidates, type LiveAaModel } from '@copse/llm/live-intel
 import type { ExtraProvider } from '@copse/llm/extra-providers.ts'
 import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composite-intellect.ts'
 import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
-import { isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
+import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import { applyPlanCoverage } from './plan-inclusion.ts'
 import { el } from '../dom/helpers.ts'
@@ -126,6 +126,41 @@ export function extraProviderFrontierCandidates(
         costPerMTok: blendedRate(m.inputPricePerMTok, m.outputPricePerMTok ?? m.inputPricePerMTok),
       })
     }
+  }
+  return out
+}
+
+export interface OpenRouterPricedModel {
+  id: string
+  name: string
+  inputPricePerMTok: number | null
+  outputPricePerMTok: number | null
+}
+
+export interface OpenRouterFrontierSource {
+  models: readonly OpenRouterPricedModel[]
+  zdrOnly: boolean
+  allowTraining: boolean
+}
+
+/** Configured OpenRouter routes with both catalog pricing and a sourced score. */
+export function openRouterFrontierCandidates(
+  models: readonly OpenRouterPricedModel[],
+): FrontierCandidate[] {
+  const out: FrontierCandidate[] = []
+  for (const model of models) {
+    const input = model.inputPricePerMTok
+    const output = model.outputPricePerMTok
+    if (input === null || output === null || input < 0 || output < 0) continue
+    const id = `openrouter:${model.id}`
+    const score = getIntellectScore(id)
+    if (!score) continue
+    out.push({
+      id,
+      intellect: score.value,
+      intellectEstimated: score.estimated === true,
+      costPerMTok: blendedRate(input, output),
+    })
   }
   return out
 }
@@ -796,6 +831,7 @@ export function renderFrontierSvg(
           'stroke-width': '2',
           ...(p.discovery ? { 'stroke-dasharray': '2 2', opacity: '0.7' } : {}),
           class: cls,
+          'data-model-id': p.id,
         })
       : svgEl('circle', {
           cx,
@@ -804,6 +840,7 @@ export function renderFrontierSvg(
           fill: emphasis,
           ...(p.discovery ? { opacity: '0.55' } : {}),
           class: cls,
+          'data-model-id': p.id,
         })
     if (p.plan) {
       svg.append(
@@ -819,7 +856,14 @@ export function renderFrontierSvg(
         }),
       )
     }
-    const hit = svgEl('circle', { cx, cy, r: '11', fill: 'transparent', class: 'frontier-hit' })
+    const hit = svgEl('circle', {
+      cx,
+      cy,
+      r: '11',
+      fill: 'transparent',
+      class: 'frontier-hit',
+      'data-model-id': p.id,
+    })
     if (tooltip) wireTooltip(hit, tooltip, () => pointTooltipContent(p, costAxis))
     else hit.append(svgEl('title', {}, tooltipFor(p, costAxis)))
     const text = labelText.get(p.id)
@@ -1243,6 +1287,7 @@ export function createIntellectFrontierPanel(
   loadExtraProviders?: () => Promise<readonly ExtraProvider[]>,
   loadLiveModels?: () => Promise<LiveModelsFetch>,
   loadPlanUsage?: () => Promise<PlanUsageSnapshot>,
+  loadOpenRouter?: () => Promise<OpenRouterFrontierSource>,
 ): IntellectFrontierPanel {
   const chartHost = el('div', { class: 'frontier-chart' })
   const liveNotes = el('div', { class: 'field-hint frontier-live-notes' })
@@ -1256,10 +1301,13 @@ export function createIntellectFrontierPanel(
     live: ReturnType<typeof liveIntellectCandidates>
     liveFetch: LiveModelsFetch
     planUsage: PlanUsageSnapshot | null
+    openRouter: OpenRouterFrontierSource
   } | null = null
   let discover = false
   let showUnpriced = false
   let zdrOnly = false
+  let noTrainingOnly = false
+  let hidePlan = false
   let costAxis: FrontierCostAxis = 'blended'
   // The full lists behind the chart, cached so the pop-out can show the same
   // "below the chart" content the inline panel does.
@@ -1273,6 +1321,8 @@ export function createIntellectFrontierPanel(
   let expandDiscoverBtn: HTMLButtonElement | null = null
   let expandUnpricedBtn: HTMLButtonElement | null = null
   let expandZdrBtn: HTMLButtonElement | null = null
+  let expandNoTrainingBtn: HTMLButtonElement | null = null
+  let expandPlanBtn: HTMLButtonElement | null = null
   let expandCostAxisGroup: HTMLElement | null = null
 
   function toggleDiscover(): void {
@@ -1285,6 +1335,14 @@ export function createIntellectFrontierPanel(
   }
   function toggleZdrOnly(): void {
     zdrOnly = !zdrOnly
+    render()
+  }
+  function toggleNoTrainingOnly(): void {
+    noTrainingOnly = !noTrainingOnly
+    render()
+  }
+  function toggleHidePlan(): void {
+    hidePlan = !hidePlan
     render()
   }
   function setCostAxis(next: FrontierCostAxis): void {
@@ -1300,6 +1358,25 @@ export function createIntellectFrontierPanel(
     btn.setAttribute('aria-pressed', zdrOnly ? 'true' : 'false')
     btn.title =
       'Show only models on zero-data-retention paths (local, Fireworks, Together, OpenRouter ZDR routing, HF partner tags). Matches the Settings privacy badge — not enterprise-contract ZDR.'
+  }
+
+  function syncNoTrainingBtn(btn: HTMLButtonElement | null): void {
+    if (!btn) return
+    btn.textContent = 'No training'
+    btn.classList.toggle('active', noTrainingOnly)
+    btn.setAttribute('aria-pressed', noTrainingOnly ? 'true' : 'false')
+    btn.title =
+      'Show only routes known not to train on prompts. Includes local, ZDR, and retained-but-no-training providers; unknown policies are hidden.'
+  }
+
+  function syncPlanBtn(btn: HTMLButtonElement | null): void {
+    if (!btn) return
+    btn.textContent = hidePlan ? 'Show plan' : 'Hide plan'
+    btn.classList.toggle('active', hidePlan)
+    btn.setAttribute('aria-pressed', hidePlan ? 'true' : 'false')
+    btn.title = hidePlan
+      ? 'Show models currently covered by a subscription plan'
+      : 'Hide models currently covered by a subscription plan'
   }
 
   function makeCostAxisGroup(): HTMLElement {
@@ -1351,6 +1428,16 @@ export function createIntellectFrontierPanel(
     class: 'frontier-btn frontier-zdr-toggle',
   })
   zdrBtn.addEventListener('click', toggleZdrOnly)
+  const noTrainingBtn = el('button', {
+    type: 'button',
+    class: 'frontier-btn frontier-no-training-toggle',
+  })
+  noTrainingBtn.addEventListener('click', toggleNoTrainingOnly)
+  const planBtn = el('button', {
+    type: 'button',
+    class: 'frontier-btn frontier-plan-toggle',
+  })
+  planBtn.addEventListener('click', toggleHidePlan)
   const costAxisGroup = makeCostAxisGroup()
   const expandBtn = el(
     'button',
@@ -1376,6 +1463,16 @@ export function createIntellectFrontierPanel(
       class: 'frontier-btn frontier-zdr-toggle',
     })
     expandZdrBtn.addEventListener('click', toggleZdrOnly)
+    expandNoTrainingBtn = el('button', {
+      type: 'button',
+      class: 'frontier-btn frontier-no-training-toggle',
+    })
+    expandNoTrainingBtn.addEventListener('click', toggleNoTrainingOnly)
+    expandPlanBtn = el('button', {
+      type: 'button',
+      class: 'frontier-btn frontier-plan-toggle',
+    })
+    expandPlanBtn.addEventListener('click', toggleHidePlan)
     expandCostAxisGroup = makeCostAxisGroup()
     const bigChart = el('div', { class: 'frontier-chart frontier-expand-chart' })
     expandChartHost = bigChart
@@ -1386,6 +1483,8 @@ export function createIntellectFrontierPanel(
       expandDiscoverBtn = null
       expandUnpricedBtn = null
       expandZdrBtn = null
+      expandNoTrainingBtn = null
+      expandPlanBtn = null
       expandCostAxisGroup = null
       dialog.remove()
     }
@@ -1398,6 +1497,8 @@ export function createIntellectFrontierPanel(
         { class: 'frontier-expand-controls' },
         expandCostAxisGroup,
         expandZdrBtn,
+        expandNoTrainingBtn,
+        expandPlanBtn,
         expandDiscoverBtn,
         expandUnpricedBtn,
         close,
@@ -1418,16 +1519,14 @@ export function createIntellectFrontierPanel(
     el(
       'p',
       { class: 'settings-fieldset-desc' },
-      'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived. ',
-      costAxisGroup,
-      ' ',
-      zdrBtn,
-      ' ',
-      discoverBtn,
-      ' ',
-      unpricedBtn,
-      ' ',
-      expandBtn,
+      'Where each model sits on intellect vs price. Models on the line are the best value at their level; hover a point for how its score was derived.',
+    ),
+    el(
+      'div',
+      { class: 'frontier-controls' },
+      el('span', { class: 'frontier-control-group' }, costAxisGroup),
+      el('span', { class: 'frontier-control-group' }, zdrBtn, noTrainingBtn, planBtn),
+      el('span', { class: 'frontier-control-group' }, discoverBtn, unpricedBtn, expandBtn),
     ),
     chartHost,
     el(
@@ -1465,11 +1564,21 @@ export function createIntellectFrontierPanel(
     } catch {
       planUsage = null
     }
+    let openRouter: OpenRouterFrontierSource
+    try {
+      openRouter = (await loadOpenRouter?.()) ?? {
+        models: [],
+        zdrOnly: true,
+        allowTraining: false,
+      }
+    } catch {
+      openRouter = { models: [], zdrOnly: true, allowTraining: false }
+    }
     // The gate: live models join ONLY when the feed's declared index version
     // matches the canonical one (when declared) AND its values agree with our
     // curated anchors — a renormalised feed must never share the axis.
     const live = liveIntellectCandidates(liveFetch.models, liveFetch.indexVersion)
-    state = { localIds, extraProviders, live, liveFetch, planUsage }
+    state = { localIds, extraProviders, live, liveFetch, planUsage, openRouter }
     render()
   }
 
@@ -1513,7 +1622,7 @@ export function createIntellectFrontierPanel(
 
   function render(): void {
     if (!state) return
-    const { localIds, extraProviders, live, liveFetch, planUsage } = state
+    const { localIds, extraProviders, live, liveFetch, planUsage, openRouter } = state
     const applyDiscover = (btn: HTMLButtonElement | null): void => {
       if (!btn) return
       btn.hidden = live.candidates.length === 0
@@ -1596,6 +1705,7 @@ export function createIntellectFrontierPanel(
     const baseCandidates = [
       ...localFrontierCandidates(localIds),
       ...extraProviderFrontierCandidates(extraProviders),
+      ...openRouterFrontierCandidates(openRouter.models),
     ]
     const coveredResolved = new Set(
       baseCandidates.map((c) => resolveIntellectModelId(c.id) ?? c.id),
@@ -1625,10 +1735,64 @@ export function createIntellectFrontierPanel(
     // drops to $0 (best price → wins the frontier) with a plan badge; a model
     // whose plan window is spent keeps its real price and carries a
     // limit-reached note. Applied per grouped identity inside the frontier.
-    const blendedPoints = frontierForKnownModels(
-      [...baseCandidates, ...livePricedCurated, ...discoveryCandidates],
-      (c) => applyPlanCoverage(enrichTaskCost(c), planUsage),
-    )
+    const allRouteCandidates = [...baseCandidates, ...livePricedCurated, ...discoveryCandidates]
+    const adjustCandidate = (candidate: FrontierCandidate): FrontierCandidate =>
+      applyPlanCoverage(enrichTaskCost(candidate), planUsage)
+    const routePolicy = {
+      providers: extraProviders,
+      openRouterZdrOnly: openRouter.zdrOnly,
+      openRouterAllowTraining: openRouter.allowTraining,
+    }
+    const routeAllowed = (candidate: FrontierCandidate): boolean => {
+      const local = candidate.local === true
+      if (
+        zdrOnly &&
+        !isZeroRetentionModelPath(candidate.id, {
+          ...routePolicy,
+          ...(local ? { local: true } : {}),
+        })
+      ) {
+        return false
+      }
+      return (
+        !noTrainingOnly ||
+        isNoTrainingModelPath(candidate.id, {
+          ...routePolicy,
+          ...(local ? { local: true } : {}),
+        })
+      )
+    }
+    const unfilteredBlendedPoints = frontierForKnownModels(allRouteCandidates, adjustCandidate)
+    const privacyBlendedPoints =
+      zdrOnly || noTrainingOnly
+        ? frontierForKnownModels(allRouteCandidates, adjustCandidate, routeAllowed)
+        : unfilteredBlendedPoints
+    const hiddenByZdr = zdrOnly
+      ? unfilteredBlendedPoints.length -
+        frontierForKnownModels(allRouteCandidates, adjustCandidate, (candidate) =>
+          isZeroRetentionModelPath(candidate.id, {
+            ...routePolicy,
+            ...(candidate.local === true ? { local: true } : {}),
+          }),
+        ).length
+      : 0
+    const hiddenByNoTraining = noTrainingOnly
+      ? unfilteredBlendedPoints.length -
+        frontierForKnownModels(allRouteCandidates, adjustCandidate, (candidate) =>
+          isNoTrainingModelPath(candidate.id, {
+            ...routePolicy,
+            ...(candidate.local === true ? { local: true } : {}),
+          }),
+        ).length
+      : 0
+    const hiddenByPlan = hidePlan
+      ? privacyBlendedPoints.filter((point) => point.plan !== undefined).length
+      : 0
+    const blendedPoints = hidePlan
+      ? computeParetoFrontier(
+          privacyBlendedPoints.filter((point) => point.plan === undefined).map(asFrontierCandidate),
+        )
+      : privacyBlendedPoints
     const taskCostAvailable = blendedPoints.some(
       (p) => typeof p.costPerTask === 'number' && p.costPerTask > 0,
     )
@@ -1650,20 +1814,10 @@ export function createIntellectFrontierPanel(
     }
     syncZdrBtn(zdrBtn)
     syncZdrBtn(expandZdrBtn)
-    // ZDR filter matches Settings privacy badges (local + zero-retention paths).
-    // Recompute dominance after filtering so the frontier isn't polluted by
-    // retained-by-default Anthropic/OpenAI points that were just hidden.
-    let hiddenByZdr = 0
-    if (zdrOnly) {
-      const kept = allPoints.filter((p) =>
-        isZeroRetentionModelPath(p.id, {
-          ...(p.local === true ? { local: true } : {}),
-          providers: extraProviders,
-        }),
-      )
-      hiddenByZdr = allPoints.length - kept.length
-      allPoints = computeParetoFrontier(kept.map(asFrontierCandidate))
-    }
+    syncNoTrainingBtn(noTrainingBtn)
+    syncNoTrainingBtn(expandNoTrainingBtn)
+    syncPlanBtn(planBtn)
+    syncPlanBtn(expandPlanBtn)
     // A verified feed can carry a hundred-plus priced models; the map's job is
     // the frontier, so dominated LIVE points collapse into a disclosure rather
     // than each claiming a labelled dot. Curated/local/provider points always
@@ -1673,9 +1827,10 @@ export function createIntellectFrontierPanel(
     const dominatedLive = allPoints.filter((p) => liveIds.has(p.id) && !p.onFrontier)
     const points = allPoints.filter((p) => !liveIds.has(p.id) || p.onFrontier)
     const plottedIds = new Set(points.map((p) => resolveIntellectModelId(p.id) ?? p.id))
-    const unpricedModels = unpricedCanonicalModels(plottedIds, live.hintOnly).filter(
-      (u) => !zdrOnly || isZeroRetentionModelPath(u.id, { providers: extraProviders }),
-    )
+    const unpricedModels = unpricedCanonicalModels(plottedIds, live.hintOnly).filter((u) => {
+      if (zdrOnly && !isZeroRetentionModelPath(u.id, routePolicy)) return false
+      return !noTrainingOnly || isNoTrainingModelPath(u.id, routePolicy)
+    })
     lastPoints = points
     // The unpriced gutter is off by default (it can carry hundreds); the toggle
     // overlays the top few on the left axis, the full set stays in the list.
@@ -1688,11 +1843,13 @@ export function createIntellectFrontierPanel(
     applyUnpriced(unpricedBtn)
     applyUnpriced(expandUnpricedBtn)
     const unscoredAll = unscoredPricedModels(extraProviders)
+    const filteredUnscored = unscoredAll.filter((model) => {
+      if (zdrOnly && !isZeroRetentionModelPath(model.id, routePolicy)) return false
+      return !noTrainingOnly || isNoTrainingModelPath(model.id, routePolicy)
+    })
     lastGutters = {
       ...(showUnpriced ? { unpriced: unpricedModels } : {}),
-      unscored: zdrOnly
-        ? unscoredAll.filter((u) => isZeroRetentionModelPath(u.id, { providers: extraProviders }))
-        : unscoredAll,
+      unscored: filteredUnscored,
     }
     // When discovery is OFF, tell the user how many models the toggle reveals.
     if (!discover && live.candidates.length > 0) {
@@ -1719,6 +1876,24 @@ export function createIntellectFrontierPanel(
           'span',
           {},
           `ZDR only: hiding ${String(hiddenByZdr)} model${hiddenByZdr === 1 ? '' : 's'} on retained-by-default paths (Anthropic/OpenAI API, …). `,
+        ),
+      )
+    }
+    if (noTrainingOnly && hiddenByNoTraining > 0) {
+      liveNoteParts.push(
+        el(
+          'span',
+          {},
+          `No training: hiding ${String(hiddenByNoTraining)} model${hiddenByNoTraining === 1 ? '' : 's'} on training or unknown-policy routes. `,
+        ),
+      )
+    }
+    if (hidePlan && hiddenByPlan > 0) {
+      liveNoteParts.push(
+        el(
+          'span',
+          {},
+          `Plan models hidden: ${String(hiddenByPlan)} currently covered model${hiddenByPlan === 1 ? '' : 's'}. `,
         ),
       )
     }
