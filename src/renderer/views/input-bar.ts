@@ -45,6 +45,7 @@ import { createContextWheel } from './context-wheel.ts'
 import { bindFooterCompactLayout } from './footer-compact.ts'
 import { mountFooterOverflow } from './footer-overflow.ts'
 import { downloadThreadJsonl, threadHasExportableContent } from '../export-thread.ts'
+import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
 import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
@@ -262,29 +263,13 @@ export function mountInputBar(
       })
   }
 
-  let shareTraceInFlight = false
   function shareTrace(): void {
     const thread = getActiveThread(store)
-    const projectId = store.getState().activeProjectId
-    if (!threadHasExportableContent(thread) || !projectId || shareTraceInFlight) return
-    shareTraceInFlight = true
-    showToast('Sharing trace…', { durationMs: 2500 })
-    void api.threads
-      .shareTrace(projectId, thread)
-      .then((result) => {
-        if (!result.ok) {
-          showToast(result.message, { variant: 'error' })
-          return
-        }
-        showToast(result.message, { durationMs: 4000 })
-        if (result.prUrl) void api.shell.openExternal(result.prUrl)
-      })
-      .catch((error: unknown) => {
-        showErrorToast('Share trace failed', error)
-      })
-      .finally(() => {
-        shareTraceInFlight = false
-      })
+    if (!threadHasExportableContent(thread)) return
+    downloadThreadJsonl(thread)
+    void api.shell.openExternal(buildShareTraceIssueUrl(thread)).catch((error: unknown) => {
+      showErrorToast('Share trace failed', error)
+    })
   }
   usageBtn.addEventListener('click', () => {
     costVisible = !costVisible

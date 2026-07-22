@@ -180,7 +180,6 @@ import {
   markPrReady,
   rerunFailedPrRuns,
 } from '../services/github/gh-pr-actions-service.ts'
-import { shareThreadTrace } from '../services/github/share-trace-service.ts'
 import {
   getMcpServerStatuses,
   reloadMcpServers,
@@ -1001,14 +1000,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         (p): p is { id: string } => typeof p.id === 'string' && p.id.length > 0,
       ) ?? []
     return listOrphanProjectStores(projects.map((p) => p.id))
-  })
-  ipcMain.handle('threads:shareTrace', (event, projectId: unknown, thread: unknown) => {
-    assertMainFrameSender(event, win)
-    const [id, payload] = parseIpcArgs(z.tuple([zProjectId, z.record(z.string(), z.unknown())]), [
-      projectId,
-      thread,
-    ])
-    return shareThreadTrace(id, payload as unknown as import('@shared/types').Thread)
   })
 
   ipcMain.handle('skills:list', () => listSkills())

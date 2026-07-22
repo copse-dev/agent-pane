@@ -201,8 +201,6 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       },
       catalog: emptyArray,
       listOrphans: emptyArray,
-      shareTrace: () =>
-        resolved({ ok: false, message: 'Share trace is not available in the browser demo.' }),
     },
     openRouter: { models: emptyArray },
     models: {
