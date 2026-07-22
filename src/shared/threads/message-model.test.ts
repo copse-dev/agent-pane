@@ -32,19 +32,16 @@ describe('message-model helpers', () => {
     )
   })
 
-  it('hides labels for a single primary model (or none)', () => {
-    assert.equal(shouldShowPrimaryChatModelLabels([assistant('a1', 'claude-sonnet-4-6')]), false)
+  it('shows labels whenever any assistant turn has model provenance', () => {
+    assert.equal(shouldShowPrimaryChatModelLabels([assistant('a1', 'claude-sonnet-4-6')]), true)
     assert.equal(shouldShowPrimaryChatModelLabels([assistant('a1')]), false)
     assert.equal(
       shouldShowPrimaryChatModelLabels([
         assistant('a1', 'claude-sonnet-4-6'),
         assistant('a2', 'claude-sonnet-4-6'),
       ]),
-      false,
+      true,
     )
-  })
-
-  it('shows labels once two distinct primary models appear', () => {
     assert.equal(
       shouldShowPrimaryChatModelLabels([
         assistant('a1', 'claude-sonnet-4-6'),
@@ -54,11 +51,13 @@ describe('message-model helpers', () => {
     )
   })
 
-  it('formats local lmstudio ids like the subagent badge', () => {
+  it('formats local, OpenRouter, Claude-friendly, and best-value ids for the transcript', () => {
     assert.equal(
       formatPrimaryChatModelLabel('lmstudio:qwen/qwen3.6-35b-a3b'),
       'qwen/qwen3.6-35b-a3b · local',
     )
     assert.equal(formatPrimaryChatModelLabel('claude-sonnet-4-6'), 'Claude Sonnet 4.6')
+    assert.equal(formatPrimaryChatModelLabel('openrouter:openai/gpt-4o'), 'GPT-4o')
+    assert.equal(formatPrimaryChatModelLabel('auto:best-value'), 'Best value (plan / price)')
   })
 })

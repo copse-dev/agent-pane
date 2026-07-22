@@ -371,9 +371,11 @@ Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron sp
 target state, asserts the DOM/layout behavior, and saves a screenshot — not just `npm run check` or a
 manual VNC glance.
 
-- Primary-chat model labels (`.message-model`) appear only when a thread's assistant turns used more
-  than one picker model — keep them muted chrome (`--font-size-xs`, tertiary text), never inside
-  `.message-text`. Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
+- Primary-chat model labels (`.message-model`) appear on every assistant turn with model provenance
+  (so best-value auto-picks stay visible) — keep them muted chrome (`--font-size-xs`, tertiary
+  text), never inside `.message-text`. Specs:
+  [`tests/e2e/chat-single-model-label.e2e.ts`](../tests/e2e/chat-single-model-label.e2e.ts),
+  [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
 - For the footer / settings-column layout,
   [`tests/demo/settings-footer.demo.ts`](../tests/demo/settings-footer.demo.ts) asserts (a) the
   scroll panel fills the body beside the nav while the form column stays at

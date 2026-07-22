@@ -1,18 +1,18 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedMultiModelChatFixture } from './helpers/seed-config.ts'
+import { resetUserData, seedSingleModelChatFixture } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-// Visual eval: when a thread's primary chat used more than one model, each
-// assistant bubble shows a muted model label.
-describe('primary-chat multi-model labels', () => {
+// Visual eval: a single-model thread still shows the muted model label on the
+// assistant turn (best-value default makes the concrete route visible).
+describe('primary-chat single-model label', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedMultiModelChatFixture(process.cwd())
+    seedSingleModelChatFixture(process.cwd())
     await browser.reloadSession()
   })
 
@@ -20,15 +20,15 @@ describe('primary-chat multi-model labels', () => {
     resetUserData()
   })
 
-  it('renders a model label on each assistant turn and captures a screenshot', async () => {
+  it('renders a model label on a single-model thread and captures a screenshot', async () => {
     await $('.messages-list').waitForExist({ timeout: 30_000 })
     await $('.message-model').waitForExist({ timeout: 30_000 })
 
     const labels = await browser.execute(() =>
       [...document.querySelectorAll('.msg-assistant .message-model')].map((n) => n.textContent),
     )
-    expect(labels).toEqual(['Claude Sonnet 4.6', 'qwen/qwen3.6-35b-a3b · local'])
+    expect(labels).toEqual(['claude-sonnet-4-6'])
 
-    await saveAppScreenshot('chat-multi-model-labels.png')
+    await saveAppScreenshot('chat-single-model-label.png')
   })
 })

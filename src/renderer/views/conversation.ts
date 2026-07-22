@@ -1577,14 +1577,13 @@ export function mountConversation(
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
-    // Model labels appear only once the primary chat has used more than one
-    // model; syncing after each append also labels earlier turns when the
-    // second model arrives.
+    // Model labels appear on every assistant turn with provenance (so
+    // best-value auto-picks stay visible). Sync after each append.
     syncModelLabels()
     scrollToBottom(msg.role === 'user')
   }
 
-  /** Show/hide per-message model chrome when the primary chat is multi-model. */
+  /** Show/hide per-message model chrome for assistant turns with a stamped model. */
   function syncModelLabels(): void {
     const thread = getActiveThread(store)
     if (!thread) return
