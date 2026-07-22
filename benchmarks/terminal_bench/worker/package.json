@@ -1,0 +1,23 @@
+{
+  "name": "copse-terminal-bench-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench:terminal": "node scripts/run-terminal-bench.mts",
+    "bench:terminal:analyze": "node scripts/analyze-terminal-bench.mts",
+    "bench:terminal:report": "node scripts/report-terminal-bench.mts",
+    "bench:terminal:seal": "node scripts/seal-terminal-bench.mts",
+    "bench:terminal:steered": "node scripts/run-terminal-bench-steered.mts",
+    "bench:terminal:suite": "node scripts/run-terminal-bench-suite.mts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.0",
+    "esbuild": "^0.28.1",
+    "openai": "^6.46.0",
+    "tar": "^7.5.19",
+    "zod": "^4.4.3"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
