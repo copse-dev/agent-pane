@@ -9,9 +9,59 @@ import {
   TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE,
   TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
   terminalCommandTimeoutParameter,
+  terminalBenchProfileToolNames,
+  terminalReasoningRunawayRecoveryNudge,
+  terminalRecoveryWriteBlockReason,
+  terminalRecoveryWriteTool,
+  terminalRequestedOutputPaths,
+  terminalResultEvidenceWarning,
+  terminalShellResultIsError,
+  terminalStuckToolRecoveryNudge,
+  terminalValidationBoundaryWarning,
+  terminalWriteFileCommand,
 } from './terminal-bench-agent-lib.mts'
+import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 
 describe('terminal benchmark bridge', () => {
+  it('keeps versioned profiles isolated and content-addressed', () => {
+    const main = terminalBenchProfile('main-legacy')
+    const pr = terminalBenchProfile('pr-1149')
+    const aligned = terminalBenchProfile('product-aligned')
+    assert.deepEqual(terminalBenchProfileToolNames(main), ['run_shell'])
+    assert.deepEqual(terminalBenchProfileToolNames(pr), ['run_shell', 'write_file'])
+    assert.deepEqual(terminalBenchProfileToolNames(aligned), ['run_shell', 'write_file'])
+    assert.deepEqual(
+      {
+        'main-legacy@1': main.contentHash,
+        'pr-1149@1': pr.contentHash,
+        'product-aligned@1': aligned.contentHash,
+      },
+      {
+        'main-legacy@1': '4c79ddf0b404ea906d6b136fcc874253c5353ca4987e6d5fc5f8910ce67db65b',
+        'pr-1149@1': '9f482024cb1d5ad879e285f96dd1c73f8ae7c57ae48fcab8476d79598aa0a460',
+        'product-aligned@1': '9880c6ed0d8fac7b93eb5a8d842ce813ae1aeaa430110dc2eb394ab482774aaa',
+      },
+    )
+    assert.equal(new Set([main.contentHash, pr.contentHash, aligned.contentHash]).size, 3)
+    assert.equal(main.forcesRequestedOutputRecovery, false)
+    assert.equal(pr.forcesRequestedOutputRecovery, true)
+    assert.equal(aligned.forcesRequestedOutputRecovery, false)
+    assert.equal(pr.warnsOnValidationEvidence, true)
+    assert.equal(aligned.warnsOnValidationEvidence, false)
+  })
+
+  it('marks nonzero shell exits as errors only in the product-aligned profile', () => {
+    const result = {
+      type: 'tool_result' as const,
+      id: 'failed',
+      exitCode: 2,
+      stdout: '',
+      stderr: '',
+    }
+    assert.equal(terminalShellResultIsError(terminalBenchProfile('main-legacy'), result), false)
+    assert.equal(terminalShellResultIsError(terminalBenchProfile('pr-1149'), result), false)
+    assert.equal(terminalShellResultIsError(terminalBenchProfile('product-aligned'), result), true)
+  })
   it('uses an action-oriented local-model stream cap', () => {
     assert.equal(DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS, 2_048)
     assert.equal(DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS, 4_096)
@@ -56,6 +106,76 @@ describe('terminal benchmark bridge', () => {
   it('prevents the reasoning recovery from repeating an existing inspection result', () => {
     assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /requested deliverable/)
     assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /Do not repeat an inspection command/)
+  })
+
+  it('freezes #1149 output-path recovery without leaking it into other profiles', () => {
+    const instruction = 'Read /app/input.png and write the answer to /app/result.txt.'
+    assert.deepEqual(terminalRequestedOutputPaths(instruction), ['/app/result.txt'])
+    assert.match(terminalReasoningRunawayRecoveryNudge(instruction), /Original task:/)
+    assert.match(terminalStuckToolRecoveryNudge(instruction), /write the answer/)
+    assert.doesNotMatch(
+      terminalBenchProfile('main-legacy').systemPrompt,
+      /never leave the requested path absent/,
+    )
+    assert.doesNotMatch(terminalBenchProfile('product-aligned').systemPrompt, /SIGINT/)
+    assert.match(
+      terminalBenchProfile('pr-1149').systemPrompt,
+      /never leave the requested path absent/,
+    )
+  })
+
+  it('constrains and gates only the #1149 recovery write', () => {
+    const instruction = 'Write the best move to /app/move.txt.'
+    assert.match(
+      terminalRecoveryWriteBlockReason(instruction, 'run_shell', { command: 'ls' }) ?? '',
+      /tool call was not run/,
+    )
+    assert.equal(
+      terminalRecoveryWriteBlockReason(instruction, 'write_file', {
+        path: '/app/move.txt',
+        content: 'e2e4',
+      }),
+      null,
+    )
+    assert.deepEqual(terminalRecoveryWriteTool(['/app/move.txt']).parameters, {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'The exact requested output path: /app/move.txt',
+          enum: ['/app/move.txt'],
+        },
+        content: { type: 'string', description: 'Complete text content to write' },
+      },
+      required: ['path', 'content'],
+    })
+  })
+
+  it('encodes bounded write_file operations under /app', () => {
+    assert.equal(
+      terminalWriteFileCommand('/app/result.txt', 'first\nsecond\n'),
+      "printf '%s' 'Zmlyc3QKc2Vjb25kCg==' | base64 -d > '/app/result.txt'",
+    )
+    assert.throws(() => terminalWriteFileCommand('/tests/result.txt', 'nope'), /under \/app/)
+    assert.throws(() => terminalWriteFileCommand('/app/../tests/result.txt', 'nope'), /under \/app/)
+  })
+
+  it('retains #1149 validation warnings as profile-local mechanisms', () => {
+    const instruction = 'Cleanup must still run when I press Ctrl+C.'
+    assert.match(
+      terminalValidationBoundaryWarning(instruction, 'task.cancel(); await task') ?? '',
+      /not an equivalent validation/,
+    )
+    assert.match(
+      terminalResultEvidenceWarning({
+        type: 'tool_result',
+        id: 'masked',
+        exitCode: 0,
+        stdout: 'Exception in thread worker\nAll tests passed!',
+        stderr: '',
+      }) ?? '',
+      /not clean validation/,
+    )
   })
 
   it('requires the stuck recovery to exercise available verifier tests', () => {

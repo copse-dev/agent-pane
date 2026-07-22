@@ -1,9 +1,16 @@
 import { glob, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { terminalBenchTrialOutcome } from './lib/terminal-bench-outcome.mts'
-import { TERMINAL_BENCH_TASK_NAMES } from './lib/terminal-bench-tasks.mts'
+import {
+  TERMINAL_BENCH_DATASET_DESCRIPTOR,
+  TERMINAL_BENCH_TASK_NAMES,
+  terminalBenchCanonicalTaskName,
+} from './lib/terminal-bench-tasks.mts'
 
 interface TrialSummary {
+  profile: string
+  profileHash: string | undefined
+  model: string | undefined
   taskName: string
   startedAt: string
   reward: number | undefined
@@ -16,7 +23,11 @@ interface TrialSummary {
   commandTimeouts: number
   streamCuts: number
   appliedNudges: number
+  failureCategory: FailureCategory
 }
+
+type FailureCategory =
+  'pass' | 'timeout' | 'infrastructure-invalid' | 'output-finalization' | 'validation-failure'
 
 interface TraceMetrics {
   inputTokens: number
@@ -24,6 +35,60 @@ interface TraceMetrics {
   modelRequests: number
   toolCalls: number
   commandTimeouts: number
+}
+
+interface ProfileCounts {
+  expectedTasks: number
+  reachedTasks: number
+  validTasks: number
+  unseenTasks: number
+  pass: number
+  zero: number
+  timeout: number
+  invalid: number
+  streamCuts: number
+  appliedNudges: number
+  modelRequests: number
+  toolCalls: number
+  commandTimeouts: number
+  inputTokens: number
+  outputTokens: number
+}
+
+interface ProfileSummary {
+  profile: string
+  profileHash: string | undefined
+  counts: ProfileCounts
+  macroAverageReward: number | null
+  failureCategories: Record<FailureCategory, number>
+  models: string[]
+  tasks: Array<TrialSummary & { outcome: ReturnType<typeof terminalBenchTrialOutcome> }>
+}
+
+async function failureCategory(value: unknown, directory: string): Promise<FailureCategory> {
+  const reward = numberValue(nested(value, 'verifier_result', 'rewards', 'reward'))
+  const exceptionType = stringValue(nested(value, 'exception_info', 'exception_type'))
+  const outcome = terminalBenchTrialOutcome({ reward, exceptionType })
+  if (outcome === 'pass') return 'pass'
+  if (outcome === 'timeout') return 'timeout'
+  if (outcome === 'invalid') return 'infrastructure-invalid'
+  const verifierEvidence = (
+    await Promise.all(
+      ['test-stdout.txt', 'test-stderr.txt'].map(async (name) => {
+        try {
+          return await readFile(join(directory, 'verifier', name), 'utf8')
+        } catch {
+          return ''
+        }
+      }),
+    )
+  ).join('\n')
+  const evidence = `${JSON.stringify(value)}\n${verifierEvidence}`
+  return /(?:FileNotFoundError|No such file or directory|(?:required|expected|output|answer|solution)[^\n]{0,100}(?:file|path)[^\n]{0,60}(?:missing|not found|does not exist))/i.test(
+    evidence,
+  )
+    ? 'output-finalization'
+    : 'validation-failure'
 }
 
 function nested(value: unknown, ...keys: string[]): unknown {
@@ -101,7 +166,8 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
     return undefined
   }
 
-  const taskName = stringValue(nested(value, 'task_name'))
+  const rawTaskName = stringValue(nested(value, 'task_name'))
+  const taskName = rawTaskName ? terminalBenchCanonicalTaskName(rawTaskName) : undefined
   const startedAt = stringValue(nested(value, 'started_at'))
   if (!taskName || !startedAt) return undefined
   const finishedAt = stringValue(nested(value, 'finished_at'))
@@ -116,6 +182,11 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
   const trace = await traceMetrics(join(agentDirectory, 'copse-trace.jsonl'))
 
   return {
+    profile: stringValue(nested(metadata, 'profile')) ?? 'main-legacy@1',
+    profileHash: stringValue(nested(metadata, 'profile_hash')),
+    model:
+      stringValue(nested(value, 'config', 'model')) ??
+      stringValue(nested(value, 'config', 'agent', 'model_name')),
     taskName,
     startedAt,
     reward: numberValue(nested(value, 'verifier_result', 'rewards', 'reward')),
@@ -129,6 +200,7 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
     commandTimeouts: numberValue(nested(metadata, 'command_timeouts')) ?? trace.commandTimeouts,
     streamCuts: await lineCount(join(agentDirectory, 'stream-stats.jsonl')),
     appliedNudges: await lineCount(join(agentDirectory, 'applied-nudges.jsonl')),
+    failureCategory: await failureCategory(value, dirname(path)),
   }
 }
 
@@ -138,60 +210,107 @@ for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) {
   if (trial) trials.push(trial)
 }
 
-const latestByTask = new Map<string, TrialSummary>()
-for (const trial of trials.sort((a, b) => a.startedAt.localeCompare(b.startedAt))) {
-  latestByTask.set(trial.taskName, trial)
+function profileSummary(profile: string, selected: TrialSummary[]): ProfileSummary {
+  const ordered = selected.sort(
+    (a, b) => a.taskName.localeCompare(b.taskName) || a.startedAt.localeCompare(b.startedAt),
+  )
+  const valid = ordered.filter((trial) => terminalBenchTrialOutcome(trial) !== 'invalid')
+  const reachedTasks = new Set(ordered.map((trial) => trial.taskName)).size
+  const counts = {
+    expectedTasks: TERMINAL_BENCH_TASK_NAMES.length,
+    reachedTasks,
+    validTasks: valid.length,
+    unseenTasks: TERMINAL_BENCH_TASK_NAMES.length - reachedTasks,
+    pass: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'pass').length,
+    zero: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'zero').length,
+    timeout: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'timeout').length,
+    invalid: ordered.filter((trial) => terminalBenchTrialOutcome(trial) === 'invalid').length,
+    streamCuts: valid.reduce((sum, trial) => sum + trial.streamCuts, 0),
+    appliedNudges: valid.reduce((sum, trial) => sum + trial.appliedNudges, 0),
+    modelRequests: valid.reduce((sum, trial) => sum + trial.modelRequests, 0),
+    toolCalls: valid.reduce((sum, trial) => sum + trial.toolCalls, 0),
+    commandTimeouts: valid.reduce((sum, trial) => sum + trial.commandTimeouts, 0),
+    inputTokens: valid.reduce((sum, trial) => sum + trial.inputTokens, 0),
+    outputTokens: valid.reduce((sum, trial) => sum + trial.outputTokens, 0),
+  }
+  const rewards = valid.map((trial) => trial.reward).filter((reward) => reward !== undefined)
+  return {
+    profile,
+    profileHash: ordered.find((trial) => trial.profileHash)?.profileHash,
+    counts,
+    macroAverageReward:
+      rewards.length > 0 ? rewards.reduce((sum, reward) => sum + reward, 0) / rewards.length : null,
+    failureCategories: {
+      pass: ordered.filter((trial) => trial.failureCategory === 'pass').length,
+      timeout: ordered.filter((trial) => trial.failureCategory === 'timeout').length,
+      'infrastructure-invalid': ordered.filter(
+        (trial) => trial.failureCategory === 'infrastructure-invalid',
+      ).length,
+      'output-finalization': ordered.filter(
+        (trial) => trial.failureCategory === 'output-finalization',
+      ).length,
+      'validation-failure': ordered.filter(
+        (trial) => trial.failureCategory === 'validation-failure',
+      ).length,
+    },
+    models: [...new Set(ordered.flatMap((trial) => (trial.model ? [trial.model] : [])))].sort(),
+    tasks: ordered.map((trial) => ({ ...trial, outcome: terminalBenchTrialOutcome(trial) })),
+  }
 }
-const latest = [...latestByTask.values()].sort((a, b) => a.taskName.localeCompare(b.taskName))
-const valid = latest.filter((trial) => terminalBenchTrialOutcome(trial) !== 'invalid')
-const counts = {
-  expectedTasks: TERMINAL_BENCH_TASK_NAMES.length,
-  reachedTasks: latest.length,
-  validTasks: valid.length,
-  unseenTasks: TERMINAL_BENCH_TASK_NAMES.length - latest.length,
-  pass: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'pass').length,
-  zero: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'zero').length,
-  timeout: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'timeout').length,
-  invalid: latest.filter((trial) => terminalBenchTrialOutcome(trial) === 'invalid').length,
-  streamCuts: valid.reduce((sum, trial) => sum + trial.streamCuts, 0),
-  appliedNudges: valid.reduce((sum, trial) => sum + trial.appliedNudges, 0),
-  modelRequests: valid.reduce((sum, trial) => sum + trial.modelRequests, 0),
-  toolCalls: valid.reduce((sum, trial) => sum + trial.toolCalls, 0),
-  commandTimeouts: valid.reduce((sum, trial) => sum + trial.commandTimeouts, 0),
-  inputTokens: valid.reduce((sum, trial) => sum + trial.inputTokens, 0),
-  outputTokens: valid.reduce((sum, trial) => sum + trial.outputTokens, 0),
-}
+
+const profiles = [...new Set(trials.map((trial) => trial.profile))].sort().map((profile) =>
+  profileSummary(
+    profile,
+    trials.filter((trial) => trial.profile === profile),
+  ),
+)
 
 if (process.argv.slice(2).includes('--json')) {
   console.log(
     JSON.stringify(
       {
-        counts,
-        tasks: latest.map((trial) => ({ ...trial, outcome: terminalBenchTrialOutcome(trial) })),
+        schemaVersion: 2,
+        dataset: {
+          id: TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId,
+          version: TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetVersion,
+          revision: TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision,
+        },
+        profiles,
       },
       null,
       2,
     ),
   )
 } else {
-  console.log(
-    `terminal-bench: ${String(counts.validTasks)}/${String(counts.expectedTasks)} valid; ` +
-      `${String(counts.pass)} pass, ${String(counts.zero)} zero, ${String(counts.timeout)} timeout, ` +
-      `${String(counts.invalid)} invalid, ${String(counts.unseenTasks)} unseen`,
-  )
-  console.log(
-    `lifecycle: ${String(counts.modelRequests)} model requests, ${String(counts.toolCalls)} tool calls, ` +
-      `${String(counts.commandTimeouts)} command timeouts, ${String(counts.streamCuts)} stream cuts, ` +
-      `${String(counts.appliedNudges)} applied nudges`,
-  )
-  console.log('')
-  for (const trial of latest) {
-    const seconds = trial.durationSeconds === undefined ? '?' : trial.durationSeconds.toFixed(0)
+  for (const summary of profiles) {
     console.log(
-      `${terminalBenchTrialOutcome(trial).toUpperCase().padEnd(7)} ${trial.taskName.padEnd(42)} ` +
-        `${seconds.padStart(5)}s  llm=${String(trial.modelRequests).padStart(2)} ` +
-        `tools=${String(trial.toolCalls).padStart(2)} timeouts=${String(trial.commandTimeouts)} ` +
-        `cuts=${String(trial.streamCuts)} nudges=${String(trial.appliedNudges)}`,
+      `terminal-bench ${summary.profile}: ${String(summary.counts.validTasks)} valid trials; ` +
+        `${String(summary.counts.pass)} pass, ${String(summary.counts.zero)} zero, ` +
+        `${String(summary.counts.timeout)} timeout, ${String(summary.counts.invalid)} invalid`,
     )
+    console.log(
+      `lifecycle: ${String(summary.counts.modelRequests)} model requests, ` +
+        `${String(summary.counts.toolCalls)} tool calls, ` +
+        `${String(summary.counts.commandTimeouts)} command timeouts, ` +
+        `${String(summary.counts.streamCuts)} stream cuts, ` +
+        `${String(summary.counts.appliedNudges)} applied nudges`,
+    )
+    console.log(
+      `failures: ${String(summary.failureCategories['output-finalization'])} output-finalization, ` +
+        `${String(summary.failureCategories['validation-failure'])} validation, ` +
+        `${String(summary.failureCategories.timeout)} timeout, ` +
+        `${String(summary.failureCategories['infrastructure-invalid'])} infrastructure-invalid`,
+    )
+    console.log('')
+    for (const trial of summary.tasks) {
+      const seconds = trial.durationSeconds === undefined ? '?' : trial.durationSeconds.toFixed(0)
+      console.log(
+        `${trial.outcome.toUpperCase().padEnd(7)} ${trial.taskName.padEnd(42)} ` +
+          `${seconds.padStart(5)}s  llm=${String(trial.modelRequests).padStart(2)} ` +
+          `tools=${String(trial.toolCalls).padStart(2)} timeouts=${String(trial.commandTimeouts)} ` +
+          `cuts=${String(trial.streamCuts)} nudges=${String(trial.appliedNudges)}`,
+      )
+    }
+    console.log('')
   }
 }

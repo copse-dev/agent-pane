@@ -1,0 +1,454 @@
+{
+  "schemaVersion": 1,
+  "datasetId": "terminal-bench/terminal-bench-2-1",
+  "datasetVersion": "2.1",
+  "upstreamRepository": "harbor-framework/terminal-bench-2-1",
+  "upstreamRevision": "5c8eadf1f393183288fa08b8f73ca9a469cc5e00",
+  "tasks": [
+    {
+      "name": "adaptive-rejection-sampler",
+      "image": "alexgshaw/adaptive-rejection-sampler:20251031",
+      "configSha256": "6ed7b37f74beb46e9d47b0f5fad53025667c9548baff4e96d467b56d429fab1a"
+    },
+    {
+      "name": "bn-fit-modify",
+      "image": "alexgshaw/bn-fit-modify:20251031",
+      "configSha256": "6493f7162da424a4fd95da721bd3fd1ce7e5dd26e792132cb9c46db536b67090"
+    },
+    {
+      "name": "break-filter-js-from-html",
+      "image": "alexgshaw/break-filter-js-from-html:20251031",
+      "configSha256": "f820eb1b47e4ccc548b87d9a418fef519137dcf975ad73d0fb5246df00a9669b"
+    },
+    {
+      "name": "build-cython-ext",
+      "image": "alexgshaw/build-cython-ext:20251031",
+      "configSha256": "c472f0e7522c128fb7f03e00b50c8cdf2e5e6474daa1e094e7441f4b54e770b2"
+    },
+    {
+      "name": "build-pmars",
+      "image": "alexgshaw/build-pmars:20251031",
+      "configSha256": "7ee2eac27b99fd462e0760552a430454db693f86608af5bb570b020270e4c9cd"
+    },
+    {
+      "name": "build-pov-ray",
+      "image": "alexgshaw/build-pov-ray:20251031",
+      "configSha256": "b90a47ec26c1191d3c523cc094ea96b170e42fbfe176ef1f814c57d05390c097"
+    },
+    {
+      "name": "caffe-cifar-10",
+      "image": "alexgshaw/caffe-cifar-10:20260403",
+      "configSha256": "2831165ad9d9e8bbc646e6d85c0a2290640dcc4f13749547a2937c7675012a8b"
+    },
+    {
+      "name": "cancel-async-tasks",
+      "image": "alexgshaw/cancel-async-tasks:20251031",
+      "configSha256": "14db0675e04408f2133b0067e8dbddf66a1d6e7baf6b8d38bef8ecccfc4e58a8"
+    },
+    {
+      "name": "chess-best-move",
+      "image": "alexgshaw/chess-best-move:20251031",
+      "configSha256": "d8f01d3c84ed5836edbb49c6c3b3cc7b5b96d951cf01a0987467c9206fb22f9e"
+    },
+    {
+      "name": "circuit-fibsqrt",
+      "image": "alexgshaw/circuit-fibsqrt:20251031",
+      "configSha256": "9f5aa1f7ebbbcec90fd109121e9bd509af3cfff6b4cec701bd91947988f40972"
+    },
+    {
+      "name": "cobol-modernization",
+      "image": "alexgshaw/cobol-modernization:20251031",
+      "configSha256": "4b620211dc3d6b1b989f0210c5ecd2f606974581c8bce27bd78659d48cf0cfbd"
+    },
+    {
+      "name": "code-from-image",
+      "image": "alexgshaw/code-from-image:20251031",
+      "configSha256": "3a13c1e252bb8759f51215be0b2b2cb1b4c697f0dd570f2d7702cc28b28f08de"
+    },
+    {
+      "name": "compile-compcert",
+      "image": "alexgshaw/compile-compcert:20260403",
+      "configSha256": "1d9618d7178cfa15918a293da126b867f3a7db160e604d4fec369949884dac39"
+    },
+    {
+      "name": "configure-git-webserver",
+      "image": "alexgshaw/configure-git-webserver:20251031",
+      "configSha256": "ebb40d72f689512cbd90d865d88ef966b6665ab215544f9247b898b7fa94751b"
+    },
+    {
+      "name": "constraints-scheduling",
+      "image": "alexgshaw/constraints-scheduling:20251031",
+      "configSha256": "7b9842de16d74e8faf8c7c0aa03b0b81145941cb12dd322d81ae23fc48607250"
+    },
+    {
+      "name": "count-dataset-tokens",
+      "image": "alexgshaw/count-dataset-tokens:20251031",
+      "configSha256": "8220a1b8e6e08ecb95556920de358b6aa74b112d8a79625db6915f6b316ccd18"
+    },
+    {
+      "name": "crack-7z-hash",
+      "image": "alexgshaw/crack-7z-hash:20251031",
+      "configSha256": "8e192bcbe00e817419bde7ff9b562a5fa0c1e24ec4f3384cba4a31eda0a7b013"
+    },
+    {
+      "name": "custom-memory-heap-crash",
+      "image": "alexgshaw/custom-memory-heap-crash:20251031",
+      "configSha256": "ed474be1983e212913aa8866ebb66216acbe36aef2339ac375d232aa46617481"
+    },
+    {
+      "name": "db-wal-recovery",
+      "image": "alexgshaw/db-wal-recovery:20251031",
+      "configSha256": "1cdc2c615e259bc10265efbe71b518332070c1c002e226566399e9788f18d0aa"
+    },
+    {
+      "name": "distribution-search",
+      "image": "alexgshaw/distribution-search:20251031",
+      "configSha256": "70c8e73cafd0a75306375bec2c2e1e4d82e0cb969fd7e38a63e7c344de43b681"
+    },
+    {
+      "name": "dna-assembly",
+      "image": "alexgshaw/dna-assembly:20251031",
+      "configSha256": "7b571544b64d9be1c91526837e5d805c2181afe0e6fd57a7f0676bba36c868d7"
+    },
+    {
+      "name": "dna-insert",
+      "image": "alexgshaw/dna-insert:20251031",
+      "configSha256": "1a9efd5c826d64d31c4874b395f1f9c488b2f26581b0c752fc4619ff177f25eb"
+    },
+    {
+      "name": "extract-elf",
+      "image": "alexgshaw/extract-elf:20251031",
+      "configSha256": "14e2c28fd7cc1c9c7b64ab0db5565899fed538e38c55074824647cacc3f7a172"
+    },
+    {
+      "name": "extract-moves-from-video",
+      "image": "alexgshaw/extract-moves-from-video:20260403",
+      "configSha256": "2c9e1b466871da3c3703ec3c6d9835f154b8f1cc34af1f1ba45d64fec56f3605"
+    },
+    {
+      "name": "feal-differential-cryptanalysis",
+      "image": "alexgshaw/feal-differential-cryptanalysis:20251031",
+      "configSha256": "dcb9f2f15047eee0be15ca18c39c357f89187a94aae6baeff276221e2383eecb"
+    },
+    {
+      "name": "feal-linear-cryptanalysis",
+      "image": "alexgshaw/feal-linear-cryptanalysis:20251031",
+      "configSha256": "a39ec2c427af534c96c719dc87f70eb536956b487ce909d04b6365160e7c9fc4"
+    },
+    {
+      "name": "filter-js-from-html",
+      "image": "alexgshaw/filter-js-from-html:20251031",
+      "configSha256": "f7f888951c97b8120371139bb78d39499c2d3cd7aa3836d57fd6d8b9e4199344"
+    },
+    {
+      "name": "financial-document-processor",
+      "image": "alexgshaw/financial-document-processor:20251031",
+      "configSha256": "163ee252895c05d36ca37137dba4d6c24b46be28d56ce84ef8bb35bb5b894bda"
+    },
+    {
+      "name": "fix-code-vulnerability",
+      "image": "alexgshaw/fix-code-vulnerability:20251031",
+      "configSha256": "9aa2bd14ce9408289d199d0608bc3fa65b8b5e23374c9641020de62197dbf1e2"
+    },
+    {
+      "name": "fix-git",
+      "image": "alexgshaw/fix-git:20260403",
+      "configSha256": "f59d711003b974e4ef8ed63556614e2ea9ea7d0e394af13b2071225e3fda7805"
+    },
+    {
+      "name": "fix-ocaml-gc",
+      "image": "alexgshaw/fix-ocaml-gc:20251031",
+      "configSha256": "423aab8ce6f44ce9349dcde647ca3cbd09afd5ac023910c25699ed687a3c71b2"
+    },
+    {
+      "name": "gcode-to-text",
+      "image": "alexgshaw/gcode-to-text:20251031",
+      "configSha256": "3aa7a504fe5b3c6eaab16881b0e6dbbe8ac6d4f59084fa49b1e98ad9c71ea00c"
+    },
+    {
+      "name": "git-leak-recovery",
+      "image": "alexgshaw/git-leak-recovery:20251031",
+      "configSha256": "d7f23fda4a6ba3fff902d2a475db8ff74feb5d328980696a77068c02c57d3044"
+    },
+    {
+      "name": "git-multibranch",
+      "image": "alexgshaw/git-multibranch:20251031",
+      "configSha256": "4b9981604578a31205257cca36a28d0c89c9d8d1058541330acd11d3f8d65f82"
+    },
+    {
+      "name": "gpt2-codegolf",
+      "image": "alexgshaw/gpt2-codegolf:20251031",
+      "configSha256": "a3fa186d438a42af5909384b8dc0dfdc2ab7a3a68af9159e9d00464988895af0"
+    },
+    {
+      "name": "headless-terminal",
+      "image": "alexgshaw/headless-terminal:20251031",
+      "configSha256": "abe0de1ac3adff1fbf0e22e1765efbc061a412891fd255926ed92a5ccacf69e6"
+    },
+    {
+      "name": "hf-model-inference",
+      "image": "alexgshaw/hf-model-inference:20260430",
+      "configSha256": "951ae476f4d078a25b7a487430148971e3a2222d93c4e0a932442440807eb3b7"
+    },
+    {
+      "name": "install-windows-3.11",
+      "image": "alexgshaw/install-windows-3.11:20251031",
+      "configSha256": "0485184bd16cc74883396115d93520bd25b36d23d61e248da88c0dceeab2eeac"
+    },
+    {
+      "name": "kv-store-grpc",
+      "image": "alexgshaw/kv-store-grpc:20251031",
+      "configSha256": "6ff0f30a526bfff86a67b0b53439b9965229c0f368167dc1a5d05f34d82299a3"
+    },
+    {
+      "name": "large-scale-text-editing",
+      "image": "alexgshaw/large-scale-text-editing:20251031",
+      "configSha256": "5c9488e80c1186f72efb8193e6be13c74eadf334b3846db2e794d24513a88f5f"
+    },
+    {
+      "name": "largest-eigenval",
+      "image": "alexgshaw/largest-eigenval:20251031",
+      "configSha256": "f7b9b7dda446f969a3ce88f61039d216f4d58b5fc5c10ff9faa24e2403bbd830"
+    },
+    {
+      "name": "llm-inference-batching-scheduler",
+      "image": "alexgshaw/llm-inference-batching-scheduler:20251031",
+      "configSha256": "52aaac942f917e6a91ff658e0272195bd1cd842d41d71e302414c52603cc588b"
+    },
+    {
+      "name": "log-summary-date-ranges",
+      "image": "alexgshaw/log-summary-date-ranges:20251031",
+      "configSha256": "9a9593673d6805ef3a301ea734e9c4dbaf80da1b37c0fe9d1f2ceea2a8c57e18"
+    },
+    {
+      "name": "mailman",
+      "image": "alexgshaw/mailman:20251031",
+      "configSha256": "a04f4d0e9be25056d2cd79d6a018bc875b6e6fb51d429a9241f282272cc660d1"
+    },
+    {
+      "name": "make-doom-for-mips",
+      "image": "alexgshaw/make-doom-for-mips:20251031",
+      "configSha256": "a7d7a498f0d3a992b384e5086ba2b411767c1c1a013d1b41f6a25cdaf6d05acc"
+    },
+    {
+      "name": "make-mips-interpreter",
+      "image": "alexgshaw/make-mips-interpreter:20251031",
+      "configSha256": "3fda43066642fd38516d07b2679f9813bdb3f1a42bc80b0c06151f60b9210e82"
+    },
+    {
+      "name": "mcmc-sampling-stan",
+      "image": "alexgshaw/mcmc-sampling-stan:20251031",
+      "configSha256": "c1c0351670499e15b3818f7394894e2789f74fc2a61ea76eccab826c1a951a94"
+    },
+    {
+      "name": "merge-diff-arc-agi-task",
+      "image": "alexgshaw/merge-diff-arc-agi-task:20251031",
+      "configSha256": "6ced40e06b43b169857509765eb7f07791db558f9437cc7367d2536771c2ca5b"
+    },
+    {
+      "name": "model-extraction-relu-logits",
+      "image": "alexgshaw/model-extraction-relu-logits:20251031",
+      "configSha256": "eb64dfaf8ae88868911ae28855cdc4f767de464001e2704919015b595be6dc29"
+    },
+    {
+      "name": "modernize-scientific-stack",
+      "image": "alexgshaw/modernize-scientific-stack:20251031",
+      "configSha256": "a3029f3d4caaa1f08bd1b45488247bf8cb586bf1ce69717acf1114d20f51eb48"
+    },
+    {
+      "name": "mteb-leaderboard",
+      "image": "alexgshaw/mteb-leaderboard:20260430",
+      "configSha256": "86574bd1c6c4fefd2e64eee9c2caa53d87c4bcf2e51547912440a0ddbd0badb8"
+    },
+    {
+      "name": "mteb-retrieve",
+      "image": "alexgshaw/mteb-retrieve:20260430",
+      "configSha256": "a2a4ded9824d296ce99bfba6aa2c9341dcc58f10e66de2e8f95dc8e07379c3aa"
+    },
+    {
+      "name": "multi-source-data-merger",
+      "image": "alexgshaw/multi-source-data-merger:20251031",
+      "configSha256": "ee3964c0ee040f0a0cb121cefefbc15443d127684acb003fa5b61dd42f31c694"
+    },
+    {
+      "name": "nginx-request-logging",
+      "image": "alexgshaw/nginx-request-logging:20251031",
+      "configSha256": "b7a78d00be13656f75069197100b7b8c4fd268decf6f78929c853b3222a2729d"
+    },
+    {
+      "name": "openssl-selfsigned-cert",
+      "image": "alexgshaw/openssl-selfsigned-cert:20251031",
+      "configSha256": "75c8913f0fa15890786c11999cde920b8bfc10d4ce8a14edf1e76985a2ac5800"
+    },
+    {
+      "name": "overfull-hbox",
+      "image": "alexgshaw/overfull-hbox:20260403",
+      "configSha256": "64680925bd47043216bffb2c44eb3620f1730e111a89ffbcc5550e5ffc89e72b"
+    },
+    {
+      "name": "password-recovery",
+      "image": "alexgshaw/password-recovery:20251031",
+      "configSha256": "cfd0362d201b957796f9bf1c02cc75646250cb2bd107ec88c768bfcfd091b24b"
+    },
+    {
+      "name": "path-tracing",
+      "image": "alexgshaw/path-tracing:20251031",
+      "configSha256": "cf47013f69bf1b43242da984f231d4daf364fdf44d3845f2eea2ca2cb9308c46"
+    },
+    {
+      "name": "path-tracing-reverse",
+      "image": "alexgshaw/path-tracing-reverse:20251031",
+      "configSha256": "f609310c99bd5f379eea2711f4af8eca79b5bcd1178a034b2285b1171c031b5b"
+    },
+    {
+      "name": "polyglot-c-py",
+      "image": "alexgshaw/polyglot-c-py:20251031",
+      "configSha256": "d31b9f60c47eed0d79e10d3be8fd56a23e50b3986606e3f2546863d44ac9a9ea"
+    },
+    {
+      "name": "polyglot-rust-c",
+      "image": "alexgshaw/polyglot-rust-c:20251031",
+      "configSha256": "3c41e83437068c62a3fdff74641899146e34907aefd9e47346213f47caeb82de"
+    },
+    {
+      "name": "portfolio-optimization",
+      "image": "alexgshaw/portfolio-optimization:20251031",
+      "configSha256": "4918687e4e261a9852e39e5a554156733c071c17dc89c5f544f15f2ef744ce0a"
+    },
+    {
+      "name": "protein-assembly",
+      "image": "alexgshaw/protein-assembly:20260403",
+      "configSha256": "9b91f32925035fba7b5a1db16c7d4ed650a117af145d3d3f8e514cb4b1e970ab"
+    },
+    {
+      "name": "prove-plus-comm",
+      "image": "alexgshaw/prove-plus-comm:20251031",
+      "configSha256": "240f3ac0076e3362685c8598c4e56658e3882eb25a14ae6cc7e9ab3a4f6b09ea"
+    },
+    {
+      "name": "pypi-server",
+      "image": "alexgshaw/pypi-server:20251031",
+      "configSha256": "07c39d7a733c89adadf74bb63a3e906c3694feb6c490d5fc85ac187c003fd447"
+    },
+    {
+      "name": "pytorch-model-cli",
+      "image": "alexgshaw/pytorch-model-cli:20251031",
+      "configSha256": "fc1c018efbd5d0537ac0741d53d1ebad3886faa51d14cbde8ec953856411bc0d"
+    },
+    {
+      "name": "pytorch-model-recovery",
+      "image": "alexgshaw/pytorch-model-recovery:20260430",
+      "configSha256": "851a51204f53482a31f47cdf8833128cf421113b0331011286940fc857c37dfd"
+    },
+    {
+      "name": "qemu-alpine-ssh",
+      "image": "alexgshaw/qemu-alpine-ssh:20251031",
+      "configSha256": "10a43ec6ee732eeba852c377f12e23178f7fa5a4868143f3699a15565ffb64c7"
+    },
+    {
+      "name": "qemu-startup",
+      "image": "alexgshaw/qemu-startup:20251031",
+      "configSha256": "dc46292fff83fba50192f4c30606a5f9c092a9fb82139686df7dabf6580937d4"
+    },
+    {
+      "name": "query-optimize",
+      "image": "alexgshaw/query-optimize:20251031",
+      "configSha256": "6e88f2a86df699594bcb1bf81df4ed694505f79c9420f671335b02524bbe3868"
+    },
+    {
+      "name": "raman-fitting",
+      "image": "alexgshaw/raman-fitting:20251031",
+      "configSha256": "0f3f6b580d7435954b3a114e77cdfb6cd0a856f15cc0ad83cd1b69c48492dfed"
+    },
+    {
+      "name": "regex-chess",
+      "image": "alexgshaw/regex-chess:20251031",
+      "configSha256": "07fe52636fcc4bc9fff25d5630af145b97a5331219d719cc8decb4ca67ea21d4"
+    },
+    {
+      "name": "regex-log",
+      "image": "alexgshaw/regex-log:20251031",
+      "configSha256": "6bc98525852755caf1fe34c174c2f10f4328adb4ce6c1968dcafe1c877e4e160"
+    },
+    {
+      "name": "reshard-c4-data",
+      "image": "alexgshaw/reshard-c4-data:20251031",
+      "configSha256": "c2f146a1e00f798f7486ff60686ad52749bb73c7b71e984d52716d859e0f7dd8"
+    },
+    {
+      "name": "rstan-to-pystan",
+      "image": "alexgshaw/rstan-to-pystan:20251031",
+      "configSha256": "ed0cd4382cb353e73cb575aa7a20b624e35f09ddd8769c332f40f8986980e13f"
+    },
+    {
+      "name": "sam-cell-seg",
+      "image": "alexgshaw/sam-cell-seg:20251031",
+      "configSha256": "f0eb6af2acb87cb6fee67d77e8fdd55e3b331baf48999260bc5b6c4ac466c128"
+    },
+    {
+      "name": "sanitize-git-repo",
+      "image": "alexgshaw/sanitize-git-repo:20251031",
+      "configSha256": "ff209feb7d07c68b8bd0d2e9abee96a1431c332095a1bbe0a532c44a833a264d"
+    },
+    {
+      "name": "schemelike-metacircular-eval",
+      "image": "alexgshaw/schemelike-metacircular-eval:20251031",
+      "configSha256": "8dae8eb226183b0ca92331c1106152a7abc93b03b4e5a95291b86a4ddc9b44e0"
+    },
+    {
+      "name": "sparql-university",
+      "image": "alexgshaw/sparql-university:20251031",
+      "configSha256": "47a6f6dd9ce0fc7631ef607e900fcd039b2d064ea90545645b49c678cddc9585"
+    },
+    {
+      "name": "sqlite-db-truncate",
+      "image": "alexgshaw/sqlite-db-truncate:20251031",
+      "configSha256": "56061acd75d9933aa554aeb249b85d7d081227fca1b71a3da7e3dc97a675723e"
+    },
+    {
+      "name": "sqlite-with-gcov",
+      "image": "alexgshaw/sqlite-with-gcov:20251031",
+      "configSha256": "9a0da96990ee2ecbf4d92682a4c5301a53db45fc6e2d46ac7d45d3b8ee7fe523"
+    },
+    {
+      "name": "torch-pipeline-parallelism",
+      "image": "alexgshaw/torch-pipeline-parallelism:20251031",
+      "configSha256": "8b4f9f525c08afbbc4eca9168e46238a61ccb903486773e9ca4da64bb7ffe857"
+    },
+    {
+      "name": "torch-tensor-parallelism",
+      "image": "alexgshaw/torch-tensor-parallelism:20251031",
+      "configSha256": "72fd2a5500d1fe8795dcae76cccb1a29fb25894881a7475f2fa519c87d425a8d"
+    },
+    {
+      "name": "train-fasttext",
+      "image": "alexgshaw/train-fasttext:20251031",
+      "configSha256": "994fda7c3081bbdd9f6d05d6279ef64faefa94c214d1e08fbcea656540e4fe91"
+    },
+    {
+      "name": "tune-mjcf",
+      "image": "alexgshaw/tune-mjcf:20251031",
+      "configSha256": "27b6d4e5a23761cc1a24a695125d891be74a2930fb83a02a66221db0244b08b3"
+    },
+    {
+      "name": "video-processing",
+      "image": "alexgshaw/video-processing:20251031",
+      "configSha256": "be4fb42fccc5faa4862789cedd2c560eaa5758a2971989649a6dafeaeccc17aa"
+    },
+    {
+      "name": "vulnerable-secret",
+      "image": "alexgshaw/vulnerable-secret:20251031",
+      "configSha256": "51079626e4c76445e616eff8723efc53af7f1cf8d9c64d15aab2f4f0ecd6df3c"
+    },
+    {
+      "name": "winning-avg-corewars",
+      "image": "alexgshaw/winning-avg-corewars:20251031",
+      "configSha256": "a9b48765d03a66d966f6a162be203bc31e1d9d6e4abe616a2f4b42bac5dc246f"
+    },
+    {
+      "name": "write-compressor",
+      "image": "alexgshaw/write-compressor:20251031",
+      "configSha256": "6066a509066433c97c417fea68c4e3e73996f698dcdcbabe07718835eea355a6"
+    }
+  ]
+}

@@ -1,10 +1,27 @@
 # Terminal benchmark
 
-This adapter runs the headless Copse agent loop against the official Terminal-Bench 2.0
+This adapter runs the headless Copse agent loop against the official Terminal-Bench 2.1
 task environments and verifiers. The model is accessed through an OpenAI-compatible endpoint;
 shell commands are forwarded into the Docker task environment. Harbor records the verifier
 outcome and Copse writes both a buffered raw trace and a normal thread transcript into each
 trial's agent logs.
+
+Choose a versioned behavior with `--profile=main-legacy`, `--profile=pr-1149`, or
+`--profile=product-aligned`. The default is `main-legacy`; profiles are experiment arms, not
+regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phase=diagnostic` or
+`--phase=held-out` to print the precommitted cohorts and workflow inputs.
+
+- `main-legacy@1` freezes the pre-migration prompt, single `run_shell` tool, result formatting,
+  and recovery behavior.
+- `pr-1149@1` retains PR #1149's constrained recovery writes and validation warnings as historical
+  experimental behavior.
+- `product-aligned@1` exposes `run_shell` and an unconstrained `/app` `write_file`, reports nonzero
+  exits as tool errors, and contains no requested-path, forced-write, SIGINT, or task-specific
+  recovery logic.
+
+The four diagnostic tasks are a development cohort, not evidence of general improvement, and
+their historical 2.0 rewards are not comparable with 2.1 rewards. The frozen evidence and run
+links are in [`docs/spikes/terminal-bench-pr-1149.md`](../../docs/spikes/terminal-bench-pr-1149.md).
 
 ## Prerequisites
 
@@ -24,6 +41,15 @@ export LM_STUDIO_API_KEY='your-api-key'
 The `LM_STUDIO_*` names are retained for compatibility with the desktop provider, but the
 benchmark does not require LM Studio. For a local run they can still point to LM Studio at
 `http://localhost:1234/v1`.
+
+The checked-in 89-task descriptor is generated from the official 2.1 `task.toml` files at its
+pinned upstream revision. To audit or deliberately refresh it, check out that revision and run:
+
+```bash
+npm run bench:terminal:sync-dataset -- --source /path/to/terminal-bench-2-1
+```
+
+Review every descriptor diff, especially image tags and task configuration checksums.
 
 ## Run on a ten-instance Scaleway fleet
 
@@ -115,7 +141,8 @@ buildx), AWS CLI, `git`, and the exact source being evaluated.
 Task images are intentionally separate: embedding all 89 would create an unwieldy worker image and
 every host would pull it in full. For repeated runs over a stable shard set, create a zonal custom
 Scaleway image from an x86 Ubuntu host whose `/var/lib/docker` already contains the relevant pinned
-`alexgshaw/*:20251031` task images. Set its UUID in `SCW_TERMINAL_BASE_IMAGE` and pin the same zone in
+task images listed in the pinned 2.1 dataset descriptor. Set its UUID in
+`SCW_TERMINAL_BASE_IMAGE` and pin the same zone in
 `SCW_TERMINAL_ZONE`. The suite still verifies and records each resolved task image digest, and
 prunes completed task images to keep the 100 GB root disk bounded. For a first run, leave the base
 image as `ubuntu_noble` and let one-image-ahead prefetch overlap downloads with model work.
@@ -259,6 +286,13 @@ npm run bench:terminal:report
 
 Pass `-- --json` for machine-readable task and aggregate data.
 
+After collecting the three held-out arms as JSON reports, compare them with the precommitted
+paired task bootstrap and default-selection gate:
+
+```bash
+npm run bench:terminal:compare -- main.json pr-1149.json product-aligned.json
+```
+
 Before Docker or the agent bundle starts, the launcher requires 15 GiB of host free space and
 checks that the Docker daemon is healthy. Large benchmark images can expand to several gigabytes.
 Set `COPSE_TERMINAL_MIN_FREE_DISK_GIB` to change the threshold (`0` disables it). During a run,
@@ -294,11 +328,14 @@ normalization; credentials and HTTP authorization headers are never recorded. Ca
 also scans for the known model, analyst, and storage secret values and refuses the upload if one
 appears in a retained file.
 
-Each capsule contains a `run-manifest.json` with SHA-256 and size metadata for every original
-trial file, source revision, non-secret execution limits, result summary, and lineage. A suite
-`index.json` contains each compressed capsule's digest and size. The immutable task image and
-source commit make the initial state reproducible; the suite records the resolved Docker image ID
-and registry digest in `task-image.json` before optional pruning. Before Harbor destroys the task container, the
+Each capsule contains a schema-v2 `run-manifest.json` with SHA-256 and size metadata for every
+original trial file, source revision, dataset revision, task checksum, image digest, versioned
+profile and hash, attempt index, fixed limits, elapsed time, token/tool counts, official reward,
+and lineage. A suite `index.json` groups every compressed capsule by profile and retains its digest
+and size; schema-v1 run and shard manifests remain readable by the debug tooling. The immutable
+task image and source commit make the initial state reproducible; the suite records the resolved
+Docker image ID and registry digest in `task-image.json` before optional pruning. Before Harbor
+destroys the task container, the
 adapter retains `workspace-files.tsv` and downloads the complete gzip-compressed final working
 directory as `workspace-final.tar.gz` when it fits under `COPSE_TERMINAL_WORKSPACE_CAP_MB` (500 MB
 in the hosted workflow). Oversize and failed captures are recorded in result metadata without

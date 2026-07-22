@@ -57,6 +57,27 @@ describe('Terminal-Bench post-run debugging', () => {
     )
   })
 
+  it('parses v2 dataset and profile provenance while retaining v1 compatibility', () => {
+    const parsed = parseTerminalBenchRunManifest({
+      ...runManifest(),
+      schemaVersion: 2,
+      dataset: {
+        id: 'terminal-bench/terminal-bench-2-1',
+        version: '2.1',
+        revision: 'upstream-commit',
+      },
+      profile: {
+        id: 'main-legacy',
+        versionedId: 'main-legacy@1',
+        contentHash: 'a'.repeat(64),
+      },
+    })
+    assert.equal(parsed.schemaVersion, 2)
+    assert.equal(parsed.dataset?.version, '2.1')
+    assert.equal(parsed.profile?.versionedId, 'main-legacy@1')
+    assert.equal(parseTerminalBenchRunManifest(runManifest()).schemaVersion, 1)
+  })
+
   it('parses shard indexes and selects the latest attempt for a task', () => {
     const capsules = parseTerminalBenchShardIndex(
       {
@@ -90,6 +111,27 @@ describe('Terminal-Bench post-run debugging', () => {
     )
     assert.equal(selectTerminalBenchCapsule(capsules, { trialId: 'trial-old' }).shardIndex, 4)
     assert.throws(() => selectTerminalBenchCapsule(capsules, {}), /exactly one/)
+
+    const v2 = parseTerminalBenchShardIndex(
+      {
+        schemaVersion: 2,
+        capsules: [
+          {
+            trialId: 'trial-profiled',
+            taskName: 'debug-task',
+            archive: 'profiled.tar.gz',
+            bytes: 12,
+            sha256: 'c'.repeat(64),
+            attemptIndex: 3,
+            profile: 'product-aligned@1',
+            profileHash: 'd'.repeat(64),
+          },
+        ],
+      },
+      5,
+    )
+    assert.equal(v2[0]?.attemptIndex, 3)
+    assert.equal(v2[0].profile, 'product-aligned@1')
   })
 
   it('rejects unsafe capsule metadata and archive entries', () => {
@@ -171,12 +213,16 @@ describe('Terminal-Bench post-run debugging', () => {
           COPSE_TERMINAL_INSTANCES: '10',
           COPSE_TERMINAL_ATTEMPTS: '1',
           LM_STUDIO_MODEL: 'model-id',
+          COPSE_TERMINAL_PROFILE: 'product-aligned',
         },
       },
     )
     assert.equal(written.status, 0, written.stderr)
     const manifest = parseTerminalBenchRunManifest(JSON.parse(written.stdout))
     assert.equal(manifest.shardCount, 3)
+    assert.equal(manifest.schemaVersion, 2)
+    assert.equal(manifest.dataset?.id, 'terminal-bench/terminal-bench-2-1')
+    assert.equal(manifest.profile?.versionedId, 'product-aligned@1')
     assert.equal(manifest.objectPrefix, 'terminal-bench/copse-dev/agent-pane/12345/2')
   })
 })
