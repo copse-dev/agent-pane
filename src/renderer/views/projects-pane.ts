@@ -444,8 +444,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       }
       for (const thread of visibleThreads) {
         const displayTitle = thread.title || 'New Thread'
-        const renameState =
-          renaming !== null && renaming.threadId === thread.id ? renaming : null
+        const renameState = renaming !== null && renaming.threadId === thread.id ? renaming : null
         let title: HTMLElement
         if (renameState) {
           const input = el('input', {

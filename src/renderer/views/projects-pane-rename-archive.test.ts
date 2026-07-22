@@ -119,9 +119,9 @@ describe('projects pane thread rename + archive (component)', () => {
     const labels = Array.from(menu.querySelectorAll('.context-menu-item')).map((i) => i.textContent)
     assert.deepEqual(labels, ['Rename', 'Archive'])
 
-    const archiveItem = Array.from(menu.querySelectorAll<HTMLButtonElement>('.context-menu-item')).find(
-      (i) => i.textContent === 'Archive',
-    )
+    const archiveItem = Array.from(
+      menu.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+    ).find((i) => i.textContent === 'Archive')
     assert.ok(archiveItem)
     archiveItem.click()
 

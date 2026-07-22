@@ -1,10 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { E2E_SCREENSHOT_DIR, saveAppScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 import {
-  resetUserData,
-  seedThreadRenameArchiveFixture,
-} from './helpers/seed-config.ts'
+  E2E_SCREENSHOT_DIR,
+  saveAppScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
+import { resetUserData, seedThreadRenameArchiveFixture } from './helpers/seed-config.ts'
 
 describe('thread + terminal rename / archive', () => {
   let keepTitle: string
@@ -65,9 +66,9 @@ describe('thread + terminal rename / archive', () => {
     await toArchive.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await browser.execute(() => {
-      const item = Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item')).find(
-        (i) => i.textContent === 'Archive',
-      )
+      const item = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      ).find((i) => i.textContent === 'Archive')
       item?.click()
     })
 
@@ -114,10 +115,10 @@ describe('thread + terminal rename / archive', () => {
         await approval.waitForDisplayed({ reverse: true, timeout: 10_000 })
       }
     }
-    await browser.waitUntil(
-      async () => (await $$('.terminals-tab')).length >= 2,
-      { timeout: 10_000, timeoutMsg: 'expected two terminal tabs' },
-    )
+    await browser.waitUntil(async () => (await $$('.terminals-tab')).length >= 2, {
+      timeout: 10_000,
+      timeoutMsg: 'expected two terminal tabs',
+    })
 
     const firstTab = await $('.terminals-tab')
     await firstTab.click({ button: 'right' })
@@ -130,9 +131,9 @@ describe('thread + terminal rename / archive', () => {
     await saveAppScreenshot('terminal-context-menu-rename-archive.png')
 
     await browser.execute(() => {
-      const item = Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item')).find(
-        (i) => i.textContent === 'Rename',
-      )
+      const item = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      ).find((i) => i.textContent === 'Rename')
       item?.click()
     })
     const renameInput = await $('.terminals-tab-rename')
@@ -158,9 +159,9 @@ describe('thread + terminal rename / archive', () => {
     await buildTab.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     await browser.execute(() => {
-      const item = Array.from(document.querySelectorAll<HTMLButtonElement>('.context-menu-item')).find(
-        (i) => i.textContent === 'Archive',
-      )
+      const item = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      ).find((i) => i.textContent === 'Archive')
       item?.click()
     })
 

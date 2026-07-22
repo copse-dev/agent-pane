@@ -359,10 +359,7 @@ describe('thread-store', () => {
       await updateMeta('proj-1', 't2', { archivedAt: 99, updatedAt: 99 })
 
       const catalog = await loadProjectCatalog('proj-1')
-      assert.deepEqual(
-        catalog.map((e) => e.id).sort(),
-        ['t1'],
-      )
+      assert.deepEqual(catalog.map((e) => e.id).sort(), ['t1'])
       // Directory + meta remain; only the catalog line is removed.
       const loaded = await loadProjectThreads('proj-1')
       assert.equal(loaded.find((t) => t.id === 't2')?.archivedAt, 99)

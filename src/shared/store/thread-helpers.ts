@@ -201,9 +201,7 @@ export function archiveThread(store: AppStore, id: string): void {
   if (!target || isThreadArchived(target)) return
 
   const now = Date.now()
-  const updated = threads.map((t) =>
-    t.id !== id ? t : { ...t, archivedAt: now, updatedAt: now },
-  )
+  const updated = threads.map((t) => (t.id !== id ? t : { ...t, archivedAt: now, updatedAt: now }))
   const visible = updated.filter((t) => !isThreadArchived(t))
 
   if (visible.length === 0) {
