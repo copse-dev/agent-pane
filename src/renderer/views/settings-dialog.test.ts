@@ -148,6 +148,15 @@ describe('settings search (cross-section block filter)', () => {
     assert.deepEqual(resultLegends(), ['Model comparison'])
   })
 
+  it('does not render the retired standalone DevTools shortcut fieldset', () => {
+    assert.equal(
+      Array.from(document.querySelectorAll('legend')).some((l) =>
+        l.textContent.trim() === 'DevTools shortcut',
+      ),
+      false,
+    )
+  })
+
   it('excludes developer-only settings from search while Developer mode is off', () => {
     search('cursor hooks')
     assert.deepEqual(resultLegends(), [])
