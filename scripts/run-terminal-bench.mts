@@ -10,6 +10,13 @@ import {
   terminalBenchFatalInfrastructureOutput,
 } from './lib/terminal-bench.mts'
 import { buildTerminalBenchAgentBundle } from './build-terminal-bench-agent.mts'
+import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
+
+async function terminalBenchResultPaths(): Promise<Set<string>> {
+  const paths = new Set<string>()
+  for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) paths.add(path)
+  return paths
+}
 
 async function resumeArgs(rawArgs: readonly string[]): Promise<string[]> {
   if (!rawArgs.includes('--resume')) return [...rawArgs]
@@ -68,6 +75,8 @@ if (prebuiltBundle) {
   console.log(`bench:terminal bundle=${await buildTerminalBenchAgentBundle()}`)
 }
 
+const resultPathsBeforeRun = await terminalBenchResultPaths()
+
 const child = spawn(launch.command, launch.args, {
   cwd: process.cwd(),
   env: launch.env,
@@ -123,4 +132,22 @@ const status = await new Promise<number>((resolveStatus) => {
     resolveStatus(fatalInfrastructure ? 1 : (code ?? 1))
   })
 })
-process.exit(status)
+let metadataStatus = 0
+for (const path of await terminalBenchResultPaths()) {
+  if (resultPathsBeforeRun.has(path)) continue
+  try {
+    const result: unknown = JSON.parse(await readFile(path, 'utf8'))
+    const taskName =
+      typeof result === 'object' && result !== null && 'task_name' in result
+        ? result.task_name
+        : undefined
+    if (typeof taskName !== 'string' || !taskName) {
+      throw new Error(`result ${path} has no task_name`)
+    }
+    await recordTerminalBenchTaskImage(taskName, path)
+  } catch (error) {
+    console.error(`bench:terminal: unable to retain task image metadata: ${String(error)}`)
+    metadataStatus = 1
+  }
+}
+process.exit(status === 0 ? metadataStatus : status)

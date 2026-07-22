@@ -187,6 +187,8 @@ class CopseTerminalAgent(BaseAgent):
         workspace_root = (workspace_result.stdout or "/").strip() or "/"
         context.n_input_tokens = 0
         context.n_output_tokens = 0
+        profile_id = os.environ.get("COPSE_TERMINAL_PROFILE", "main-legacy")
+        profile = profile_id if "@" in profile_id else f"{profile_id}@1"
         context.metadata = {
             "tool_calls": 0,
             "model_requests": 0,
@@ -201,6 +203,8 @@ class CopseTerminalAgent(BaseAgent):
             "thread_export": "thread/thread.jsonl",
             "parent_trial_id": os.environ.get("COPSE_TERMINAL_PARENT_TRIAL_ID"),
             "intervention_id": os.environ.get("COPSE_TERMINAL_INTERVENTION_ID"),
+            "profile": profile,
+            "profile_hash": os.environ.get("COPSE_TERMINAL_PROFILE_HASH"),
             "workspace_root": workspace_root,
         }
         stderr_tail: deque[str] = deque(maxlen=80)
@@ -366,6 +370,10 @@ class CopseTerminalAgent(BaseAgent):
                 result_message.get("commandTimeouts", 0)
             )
             context.metadata["stop_reason"] = result_message.get("stopReason")
+            if result_message.get("profile"):
+                context.metadata["profile"] = result_message["profile"]
+            if result_message.get("profileHash"):
+                context.metadata["profile_hash"] = result_message["profileHash"]
         finally:
             if process.returncode is None:
                 process.terminate()

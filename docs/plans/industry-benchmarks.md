@@ -65,6 +65,24 @@ optional one-image-ahead prefetch overlaps the next pull with inference, guarded
 30 GiB free-space floor so provisioning latency can be hidden without recreating unbounded disk
 pressure.
 
+The adapter now targets Terminal-Bench 2.1 and exposes three versioned experiment profiles:
+`main-legacy@1` (the unchanged original adapter), `pr-1149@1` (the exact constrained-write and
+validation-warning experiment), and `product-aligned@1` (regular shell error semantics without
+task-specific recovery). `main-legacy` remains the default. Dataset revision, task configuration
+checksum, resolved image digest, profile ID, and profile content hash are retained with every
+trial. The complete negative and protocol-progress evidence behind `pr-1149@1` is preserved in
+[`docs/spikes/terminal-bench-pr-1149.md`](../spikes/terminal-bench-pr-1149.md).
+
+The ablation is precommitted in code: the four #1149 tasks form a one-attempt diagnostic cohort,
+while the held-out cohort excludes them and selects 12 tasks by sorting
+`SHA256("copse-tbench-2.1-ablation-v1:" + taskName)`. Each held-out profile gets five attempts with
+the same `qwen3.6-35b-a3b` configuration. The comparison reports macro-average official reward,
+paired per-task differences with a task bootstrap 95% interval, solves, tokens, tool calls, elapsed
+time, and failure categories. A non-default profile is eligible only when the held-out interval
+excludes zero, all expected attempts are present, and median tokens and elapsed time stay within
+25% of the baseline unless it adds solved tasks. Otherwise `main-legacy@1` remains the benchmark
+default; no mechanism in this slice changes the regular Copse agent.
+
 ## The framing: benchmarks as harness evals, not model evals
 
 Leaderboards use benchmarks to rank models. That is not the opportunity here —
@@ -99,7 +117,8 @@ tasks we didn't author ourselves.
 | **BFCL / recorded tool-call corpora**      | `parse-tool-args`, `parse-text-tool-calls`, stop-reason machinery | deterministic replay, per-PR `npm test` |
 | **RULER / needle-in-haystack style**       | `trim-history`, `working-brief`, context accounting               | synthetic threads, mostly deterministic |
 | **SWE-bench (Verified subset)**            | whole loop: guards, budgets, search routing, subagents            | nightly, self-hosted + real model       |
-| **Terminal-Bench**                         | node-pty terminal tooling, shell-command permission path          | nightly, self-hosted                    |
+| **Terminal-Bench**                         | autonomous shell-loop and host-adapter semantics                  | nightly, self-hosted                    |
+| **SkillsBench**                            | skill discovery, progressive disclosure, instruction lift         | paired nightly / label-gated            |
 | **TAU-bench style multi-turn tool tasks**  | multi-turn tool reliability, ask-user flow                        | nightly / label-gated                   |
 | **MCP conformance suites (MCPBench-like)** | MCP host: server lifecycle, approval, tool namespacing            | mostly deterministic, per-PR viable     |
 
@@ -243,6 +262,14 @@ truth:
 
 ## Relationship to existing pieces
 
+- [`docs/plans/skillsbench.md`](skillsbench.md) defines the paired SkillsBench v1.1 study. It keeps
+  skill content value, autonomous discovery, and explicit `/skill` injection as separate arms so a
+  selection failure cannot be mistaken for a useless skill.
+- The product-host runtime contract remains tracked by
+  [#1079](https://github.com/copse-dev/agent-pane/issues/1079), building on the headless-harness
+  direction in [#752](https://github.com/copse-dev/agent-pane/issues/752). This Terminal-Bench slice
+  changes only the adapter and evidence trail; BFCL expansion, MCP-Universe, and τ³-bench-style
+  integrations remain later consumers of the same profile and manifest machinery.
 - `wdio.eval.conf.ts` / `agent-run-eval` stay the UI-in-the-loop harness for
   behavioral issues; the bench harness is headless and outcome-graded.
 - `validate:local-agent` becomes the smoke test for the Phase 2 harness's

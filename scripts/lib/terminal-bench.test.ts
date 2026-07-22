@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict'
 import { delimiter } from 'node:path'
 import { describe, it } from 'node:test'
-import { TERMINAL_BENCH_TASK_NAMES, terminalBenchTaskImage } from './terminal-bench-tasks.mts'
+import {
+  TERMINAL_BENCH_DATASET_DESCRIPTOR,
+  TERMINAL_BENCH_TASK_NAMES,
+  terminalBenchCanonicalTaskName,
+  terminalBenchQualifiedTaskName,
+  terminalBenchTaskImage,
+} from './terminal-bench-tasks.mts'
 import {
   buildTerminalBenchLaunch,
   DEFAULT_TERMINAL_BENCH_MIN_FREE_DISK_GIB,
@@ -22,12 +28,27 @@ import {
 const env = { LM_STUDIO_MODEL: 'local/test-model', LM_STUDIO_API_KEY: 'test-key' }
 
 describe('terminal benchmark launcher', () => {
-  it('pins the complete 2.0 task registry without duplicates', () => {
+  it('pins the complete 2.1 task registry without duplicates', () => {
     assert.equal(TERMINAL_BENCH_TASK_NAMES.length, 89)
     assert.equal(new Set(TERMINAL_BENCH_TASK_NAMES).size, 89)
+    assert.equal(TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId, 'terminal-bench/terminal-bench-2-1')
     assert.equal(
-      terminalBenchTaskImage('adaptive-rejection-sampler'),
-      'alexgshaw/adaptive-rejection-sampler:20251031',
+      TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision,
+      '5c8eadf1f393183288fa08b8f73ca9a469cc5e00',
+    )
+    assert.equal(terminalBenchTaskImage('fix-git'), 'alexgshaw/fix-git:20260403')
+    assert.ok(
+      TERMINAL_BENCH_DATASET_DESCRIPTOR.tasks.every((task) =>
+        /^[a-f0-9]{64}$/.test(task.configSha256),
+      ),
+    )
+    assert.equal(
+      terminalBenchQualifiedTaskName('cancel-async-tasks'),
+      'terminal-bench/cancel-async-tasks',
+    )
+    assert.equal(
+      terminalBenchCanonicalTaskName('terminal-bench/cancel-async-tasks'),
+      'cancel-async-tasks',
     )
   })
 
@@ -50,7 +71,19 @@ describe('terminal benchmark launcher', () => {
     ])
     assert.deepEqual(launch.args.slice(-2), ['--n-tasks', '1'])
     assert.match(launch.env['COPSE_TERMINAL_AGENT_BUNDLE'] ?? '', /terminal-bench-agent\.cjs$/)
+    assert.equal(launch.env['COPSE_TERMINAL_PROFILE'], 'main-legacy')
+    assert.match(launch.env['COPSE_TERMINAL_PROFILE_HASH'] ?? '', /^[a-f0-9]{64}$/)
     assert.equal(launch.env['PYTHONPATH'], process.cwd())
+  })
+
+  it('selects profiles without forwarding the harness-only flag to Harbor', () => {
+    const launch = buildTerminalBenchLaunch(['--profile=product-aligned'], env)
+    assert.equal(launch.env['COPSE_TERMINAL_PROFILE'], 'product-aligned')
+    assert.equal(
+      launch.args.some((arg) => arg.startsWith('--profile=')),
+      false,
+    )
+    assert.throws(() => buildTerminalBenchLaunch(['--profile=unknown'], env), /profile must be/)
   })
 
   it('keeps an existing Python import path after the repository root', () => {
@@ -79,7 +112,7 @@ describe('terminal benchmark launcher', () => {
       '-n',
       '2',
       '--include-task-name',
-      'example-*',
+      'terminal-bench/example-*',
     ])
   })
 
@@ -96,7 +129,10 @@ describe('terminal benchmark launcher', () => {
     assert.deepEqual(
       terminalBenchCompletedTaskNames([
         { task_name: 'pass', exception_info: null },
-        { task_name: 'timeout', exception_info: { exception_type: 'AgentTimeoutError' } },
+        {
+          task_name: 'terminal-bench/timeout',
+          exception_info: { exception_type: 'AgentTimeoutError' },
+        },
         { task_name: 'docker-failed', exception_info: { exception_type: 'RuntimeError' } },
         { task_name: 'stream-failed', exception_info: { exception_type: 'TypeError' } },
         { task_name: 'pass', exception_info: null },

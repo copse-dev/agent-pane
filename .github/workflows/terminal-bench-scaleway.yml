@@ -28,6 +28,15 @@ on:
         required: true
         default: '1'
         type: string
+      profile:
+        description: Versioned Copse Terminal-Bench behavior profile
+        required: true
+        default: main-legacy
+        type: choice
+        options:
+          - main-legacy
+          - pr-1149
+          - product-aligned
       scw_type:
         description: Scaleway x86 Instance type
         required: true
@@ -73,6 +82,7 @@ jobs:
           MAX_TASKS: ${{ inputs.max_tasks }}
           INSTANCES: ${{ inputs.instances }}
           ATTEMPTS: ${{ inputs.attempts }}
+          PROFILE: ${{ inputs.profile }}
           MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
           MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
           ANALYST_MODEL: ${{ inputs.analyst_model }}
@@ -100,6 +110,10 @@ jobs:
             echo "::error::attempts must be an integer from 1 through 5"
             exit 2
           fi
+          case "$PROFILE" in
+            main-legacy|pr-1149|product-aligned) ;;
+            *) echo "::error::unsupported Terminal-Bench profile: $PROFILE"; exit 2 ;;
+          esac
           if ! [[ "$MAX_STREAM_OUTPUT_TOKENS" =~ ^[0-9]+$ ]] || \
             [ "$MAX_STREAM_OUTPUT_TOKENS" -lt 512 ] || [ "$MAX_STREAM_OUTPUT_TOKENS" -gt 16384 ]; then
             echo "::error::max_stream_output_tokens must be an integer from 512 through 16384"
@@ -252,6 +266,7 @@ jobs:
           COPSE_TERMINAL_MAX_TASKS: ${{ inputs.max_tasks }}
           COPSE_TERMINAL_INSTANCES: ${{ inputs.instances }}
           COPSE_TERMINAL_ATTEMPTS: ${{ inputs.attempts }}
+          COPSE_TERMINAL_PROFILE: ${{ inputs.profile }}
           LM_STUDIO_MODEL: ${{ inputs.model }}
         run: |
           manifest="$RUNNER_TEMP/terminal-bench-run.json"
@@ -286,10 +301,12 @@ jobs:
           COPSE_TERMINAL_WORKSPACE_CAP_MB: '500'
           COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
           COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
+          COPSE_TERMINAL_PROFILE: ${{ inputs.profile }}
           INSTANCES: ${{ inputs.instances }}
           MAX_TASKS: ${{ inputs.max_tasks }}
           TASK_NAMES: ${{ inputs.task_names }}
           ATTEMPTS: ${{ inputs.attempts }}
+          PROFILE: ${{ inputs.profile }}
           SCW_TYPE: ${{ inputs.scw_type }}
           WORKER_IMAGE: ${{ needs.prepare.outputs.worker_image }}
           FLEET_NAME: terminal-bench-${{ github.run_id }}-${{ github.run_attempt }}
@@ -305,6 +322,7 @@ jobs:
             --instances "$INSTANCES"
             --max-tasks "$MAX_TASKS"
             --attempts "$ATTEMPTS"
+            --profile "$PROFILE"
             --scw-type "$SCW_TYPE"
             --scw-image "$BASE_IMAGE"
             --volume-size-gb 100

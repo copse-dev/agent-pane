@@ -16,6 +16,8 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.doesNotMatch(workflow, /qwen\/qwen3\.6-35b-a3b:(?:fp8|bf16)/)
   assert.match(workflow, /name: Verify fleet teardown\n\s+if: always\(\)/)
   assert.match(workflow, /task_names:/)
+  assert.match(workflow, /profile:/)
+  assert.match(workflow, /default: main-legacy/)
   assert.match(workflow, /default: '2048'/)
   assert.match(workflow, /default: '600'/)
   assert.match(workflow, /--task-names "\$TASK_NAMES"/)
@@ -55,6 +57,15 @@ test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)
   assert.equal(config.maxTasks, 3)
+  assert.equal(config.profile, 'main-legacy')
+})
+
+test('fleet validates and carries an explicit ablation profile', () => {
+  assert.equal(runConfig({ profile: 'pr-1149', 'worker-image': workerImage }).profile, 'pr-1149')
+  assert.throws(
+    () => runConfig({ profile: 'unknown', 'worker-image': workerImage }),
+    /profile must be/,
+  )
 })
 
 test('fleet accepts only exact registry task names and limits workers to that cohort', () => {

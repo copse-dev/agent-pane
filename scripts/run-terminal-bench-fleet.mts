@@ -34,6 +34,10 @@ import {
   waitForScalewayServers,
 } from './lib/cloud-hosts.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
+import {
+  parseTerminalBenchProfileId,
+  type TerminalBenchProfileId,
+} from './lib/terminal-bench-profiles.mts'
 
 const DEFAULT_NAME = 'copse-terminal-bench'
 const DEFAULT_INSTANCES = 10
@@ -59,6 +63,7 @@ export interface RunConfig extends SshConfig {
   maxTasks: number
   name: string
   objectPrefix: string
+  profile: TerminalBenchProfileId
   securityGroupId: string | undefined
   steeredRerun: boolean
   taskNames: string[]
@@ -90,6 +95,7 @@ Options:
   --max-tasks <n>          Global task cap (default: same as instances, max: 89)
   --task-names <a,b,...>   Exact registry tasks to run, in the supplied order
   --attempts <n>           Attempts per task (default: 1, max: 5)
+  --profile <id>           main-legacy, pr-1149, or product-aligned (default: main-legacy)
   --scw-type <type>        x86 Instance type (default: ${DEFAULT_TYPE})
   --scw-image <image>      Ubuntu/custom snapshot image (default: ${DEFAULT_SCW_IMAGE})
   --volume-size-gb <n>     SBS root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB)})
@@ -160,6 +166,7 @@ export function runConfig(options: Options): RunConfig {
       option(options, 'object-prefix') ??
       process.env['SCW_OBJECT_STORAGE_PREFIX']?.trim() ??
       `terminal-bench/manual/${Date.now().toString(36)}`,
+    profile: parseTerminalBenchProfileId(option(options, 'profile')),
     remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_SCW_REMOTE_USER),
     securityGroupId,
     sshHost: 'public',
@@ -222,6 +229,7 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
     ['COPSE_TERMINAL_SHARD_COUNT', String(config.instanceCount)],
     ['COPSE_TERMINAL_SHARD_INDEX', String(shardIndex)],
     ['COPSE_TERMINAL_ATTEMPTS', String(config.attempts)],
+    ['COPSE_TERMINAL_PROFILE', config.profile],
     ['COPSE_TERMINAL_STEERED_RERUN', config.steeredRerun ? '1' : '0'],
     [
       'COPSE_TERMINAL_WORKSPACE_CAP_MB',

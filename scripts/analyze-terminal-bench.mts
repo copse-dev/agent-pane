@@ -3,6 +3,7 @@ import { glob, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import OpenAI from 'openai'
 import { parseTerminalBenchSteering } from './lib/terminal-bench-steering.mts'
+import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
 
 const RESULTS_ROOT = resolve('bench-results/terminal-bench')
 const PLAN_PATH = resolve('bench-results/terminal-bench-analysis-plan.json')
@@ -72,9 +73,10 @@ async function trials(): Promise<Trial[]> {
       )
       continue
     }
-    const taskName = nested(value, 'task_name')
+    const rawTaskName = nested(value, 'task_name')
     const startedAt = nested(value, 'started_at')
-    if (typeof taskName !== 'string' || typeof startedAt !== 'string') continue
+    if (typeof rawTaskName !== 'string' || typeof startedAt !== 'string') continue
+    const taskName = terminalBenchCanonicalTaskName(rawTaskName)
     const reward = nested(value, 'verifier_result', 'rewards', 'reward')
     found.push({
       resultPath,

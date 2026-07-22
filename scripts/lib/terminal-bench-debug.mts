@@ -10,7 +10,7 @@ export const DEFAULT_TERMINAL_BENCH_MAX_EXTRACT_BYTES = 1024 ** 3
 export const DEFAULT_TERMINAL_BENCH_MAX_EXTRACT_ENTRIES = 200_000
 
 export interface TerminalBenchRunManifest {
-  schemaVersion: 1
+  schemaVersion: 1 | 2
   kind: 'terminal-bench-run'
   repository: string
   workflowRunId: string
@@ -23,6 +23,16 @@ export interface TerminalBenchRunManifest {
   model: string
   sourceCommit: string
   createdAt: string
+  dataset?: {
+    id: string
+    version: string
+    revision: string
+  }
+  profile?: {
+    id: string
+    versionedId: string
+    contentHash: string
+  }
 }
 
 export interface TerminalBenchCapsuleRecord {
@@ -34,6 +44,9 @@ export interface TerminalBenchCapsuleRecord {
   sha256: string
   startedAt: string | undefined
   outcome: TerminalBenchTrialOutcome | undefined
+  attemptIndex: number | undefined
+  profile: string | undefined
+  profileHash: string | undefined
 }
 
 function property(value: unknown, key: string): unknown {
@@ -86,7 +99,11 @@ export function terminalBenchRunPrefix(
 }
 
 export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunManifest {
-  if (property(value, 'schemaVersion') !== 1 || property(value, 'kind') !== 'terminal-bench-run') {
+  const schemaVersion = property(value, 'schemaVersion')
+  if (
+    (schemaVersion !== 1 && schemaVersion !== 2) ||
+    property(value, 'kind') !== 'terminal-bench-run'
+  ) {
     throw new Error('unsupported terminal benchmark run manifest')
   }
   const repository = requiredString(value, 'repository')
@@ -97,8 +114,8 @@ export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunM
   if (objectPrefix !== expectedPrefix) {
     throw new Error(`run manifest objectPrefix does not match its run identity`)
   }
-  return {
-    schemaVersion: 1,
+  const base: TerminalBenchRunManifest = {
+    schemaVersion,
     kind: 'terminal-bench-run',
     repository,
     workflowRunId,
@@ -112,6 +129,26 @@ export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunM
     sourceCommit: requiredString(value, 'sourceCommit'),
     createdAt: requiredString(value, 'createdAt'),
   }
+  if (schemaVersion === 1) return base
+  const dataset = property(value, 'dataset')
+  const profile = property(value, 'profile')
+  const contentHash = requiredString(profile, 'contentHash')
+  if (!/^[a-f0-9]{64}$/.test(contentHash)) {
+    throw new Error('run manifest profile contentHash is invalid')
+  }
+  return {
+    ...base,
+    dataset: {
+      id: requiredString(dataset, 'id'),
+      version: requiredString(dataset, 'version'),
+      revision: requiredString(dataset, 'revision'),
+    },
+    profile: {
+      id: requiredString(profile, 'id'),
+      versionedId: requiredString(profile, 'versionedId'),
+      contentHash,
+    },
+  }
 }
 
 function parseOutcome(value: unknown): TerminalBenchTrialOutcome | undefined {
@@ -124,7 +161,8 @@ export function parseTerminalBenchShardIndex(
   value: unknown,
   shardIndex: number,
 ): TerminalBenchCapsuleRecord[] {
-  if (property(value, 'schemaVersion') !== 1) {
+  const schemaVersion = property(value, 'schemaVersion')
+  if (schemaVersion !== 1 && schemaVersion !== 2) {
     throw new Error(`shard ${String(shardIndex)} has an unsupported capsule index`)
   }
   const entries = property(value, 'capsules')
@@ -136,11 +174,25 @@ export function parseTerminalBenchShardIndex(
     const archive = requiredString(entry, 'archive')
     const bytes = property(entry, 'bytes')
     const sha256 = requiredString(entry, 'sha256')
+    const attemptIndex = property(entry, 'attemptIndex')
+    const profile = optionalString(entry, 'profile')
+    const profileHash = optionalString(entry, 'profileHash')
     if (!Number.isInteger(bytes) || typeof bytes !== 'number' || bytes <= 0) {
       throw new Error(`shard ${String(shardIndex)} capsule ${String(index)} bytes is invalid`)
     }
     if (!/^[a-f0-9]{64}$/.test(sha256)) {
       throw new Error(`shard ${String(shardIndex)} capsule ${String(index)} sha256 is invalid`)
+    }
+    if (
+      schemaVersion === 2 &&
+      (!Number.isInteger(attemptIndex) ||
+        typeof attemptIndex !== 'number' ||
+        attemptIndex <= 0 ||
+        !profile ||
+        !profileHash ||
+        !/^[a-f0-9]{64}$/.test(profileHash))
+    ) {
+      throw new Error(`shard ${String(shardIndex)} capsule ${String(index)} profile is invalid`)
     }
     if (!/^[A-Za-z0-9._-]+$/.test(trialId)) {
       throw new Error(`shard ${String(shardIndex)} capsule ${String(index)} trialId is unsafe`)
@@ -157,6 +209,9 @@ export function parseTerminalBenchShardIndex(
       sha256,
       startedAt: optionalString(entry, 'startedAt'),
       outcome: parseOutcome(property(entry, 'outcome')),
+      attemptIndex: typeof attemptIndex === 'number' ? attemptIndex : undefined,
+      profile,
+      profileHash,
     }
   })
 }
