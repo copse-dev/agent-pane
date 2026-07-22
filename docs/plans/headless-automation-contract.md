@@ -2,9 +2,10 @@
 
 Tracking: [#1079](https://github.com/copse-dev/agent-pane/issues/1079)
 
-Status: **Active — Phase 0 landed.** The canonical contract module, its published
-JSON Schema, and the conformance scaffold are on the feature branch; the
-benchmark, ACP, and CLI adapters become conformance consumers in later phases.
+Status: **Active — Phases 0–1 landed.** The canonical contract module, its
+published JSON Schema, and the conformance scaffold are on the feature branch, and
+the benchmark harness is wired as the contract's first conformance consumer; the
+spine projection, ACP, and CLI adapters follow in later phases.
 
 Investigation and trade-offs:
 [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md)
@@ -126,13 +127,13 @@ different ways, with no schema reconciling them:
 ## Phased plan
 
 - [x] **Phase 0 — canonical contract + conformance scaffold.** The source-of-truth
-      module, published JSON Schema, generator, and unit-level conformance tests
-      (this PR).
-- [ ] **Phase 1 — benchmark harness as first conformance consumer.** Have
-      `scripts/bench-agent-lib.mts` project its loop stream through
-      `projectStreamChunk` and emit canonical `jsonl` events, and grade the same
-      deterministic scenario against the contract — the first cross-adapter
-      conformance run, retaining the benchmark measurement-contract fields.
+      module, published JSON Schema, generator, and unit-level conformance tests.
+- [x] **Phase 1 — benchmark harness as first conformance consumer.**
+      `scripts/bench-agent-lib.mts` now projects its loop stream through
+      `projectStreamChunk` (via the exported `buildHeadlessTurnEvents` adapter
+      assembly, which validates every event against `headlessEventSchema` — the
+      conformance check) and writes a canonical `<task>.headless.jsonl` envelope
+      beside each existing raw trace. The first real adapter proving the contract.
 - [ ] **Phase 2 — spine projection.** Show the persisted `SpineMessageLine` /
       `SpineToolCall` shapes derive from (or validate against) the canonical event
       vocabulary, so the replayable artifact and the live stream share one model.
@@ -145,12 +146,12 @@ different ways, with no schema reconciling them:
 
 ## Acceptance-criteria mapping (from #1079)
 
-| Criterion                                                                     | Phase |
-| ----------------------------------------------------------------------------- | ----- |
-| One source of truth generates/validates the TS and JSON schemas               | 0 ✓   |
-| Headless mode cannot silently broaden permissions without interactive input   | 0 ✓   |
-| New/resume/fork/cancel/success/failure/approval flows have documented exits   | 0 ✓   |
-| Same deterministic scenario passes through benchmark, CLI, and ACP adapters   | 1–4   |
-| Conformance runs retain the replayable artifact and measurement fields        | 1–2   |
-| Provider-specific history is a projection, not a second public contract       | 2     |
-| Desktop renderer and external clients observe equivalent turn terminal states | 3     |
+| Criterion                                                                     | Phase                        |
+| ----------------------------------------------------------------------------- | ---------------------------- |
+| One source of truth generates/validates the TS and JSON schemas               | 0 ✓                          |
+| Headless mode cannot silently broaden permissions without interactive input   | 0 ✓                          |
+| New/resume/fork/cancel/success/failure/approval flows have documented exits   | 0 ✓                          |
+| Same deterministic scenario passes through benchmark, CLI, and ACP adapters   | 1 ✓ (benchmark); CLI/ACP 3–4 |
+| Conformance runs retain the replayable artifact and measurement fields        | 1 ✓; 2                       |
+| Provider-specific history is a projection, not a second public contract       | 2                            |
+| Desktop renderer and external clients observe equivalent turn terminal states | 3                            |
