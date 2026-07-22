@@ -47,8 +47,9 @@ the pressure-triggered tool-less answer turn for this host with one tool-enabled
 instruction, because terminal success is durable environment state rather than prose; the
 configured output cap still bounds finalization. The recovery probes `/tests` once, treats it as
 the verifier authority when available, and avoids repeatedly searching for hidden verifier files
-when the harness has not mounted them during the agent phase. Task-local checks must be invoked
-with their real runner—a silent script that merely defines tests is not accepted as verification.
+when the harness has not mounted them during the agent phase. The agent must never create or modify
+that verifier-owned path to satisfy a workspace checker. Task-local checks must be invoked with
+their real runner—a silent script that merely defines tests is not accepted as verification.
 The recovery also requires a best-effort edit before any further read-only inspection. The
 terminal host also treats a short visible planning preamble on an otherwise reasoning-dominated
 cut as part of the same bounded runaway streak. The launcher defaults to one task and one attempt
