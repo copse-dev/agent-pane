@@ -23,7 +23,15 @@ RUN apt-get update \
     && pip3 install --break-system-packages --no-cache-dir uv==0.11.30 \
     && rm -rf /var/lib/apt/lists/*
 
+# Harbor drives task environments with `docker compose` against the host socket.
+# The official cli image ships compose under libexec; copying only `docker` leaves
+# `docker compose --project-name …` failing with "unknown flag: --project-name".
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker-cli \
+  /usr/local/libexec/docker/cli-plugins/docker-compose \
+  /usr/local/libexec/docker/cli-plugins/docker-compose
+RUN ln -sf /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose \
+    && docker compose version >/dev/null
 
 WORKDIR /opt/copse
 COPY benchmarks/terminal_bench/worker/package.json benchmarks/terminal_bench/worker/package-lock.json ./

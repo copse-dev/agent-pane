@@ -96,8 +96,8 @@ capacity is available.
 
 The workflow tags the worker image with the source commit and reuses it when it already exists.
 Registry-backed BuildKit cache makes later source revisions cheaper to build. That image contains
-Node, Python, `uv`, Harbor dependencies, the Copse adapter, Docker CLI, AWS CLI, and the exact source
-being evaluated.
+Node, Python, `uv`, Harbor dependencies, the Copse adapter, Docker CLI plus the Compose plugin,
+AWS CLI, `git`, and the exact source being evaluated.
 
 Task images are intentionally separate: embedding all 89 would create an unwieldy worker image and
 every host would pull it in full. For repeated runs over a stable shard set, create a zonal custom

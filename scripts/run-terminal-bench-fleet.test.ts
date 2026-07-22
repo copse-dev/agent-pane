@@ -12,6 +12,15 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.match(workflow, /name: Verify fleet teardown\n\s+if: always\(\)/)
 })
 
+test('worker image ships the Docker Compose CLI plugin Harbor needs', () => {
+  const dockerfile = readFileSync('benchmarks/terminal_bench/Dockerfile.worker', 'utf8')
+  assert.match(
+    dockerfile,
+    /COPY --from=docker-cli \\\s+\/usr\/local\/libexec\/docker\/cli-plugins\/docker-compose \\\s+\/usr\/local\/libexec\/docker\/cli-plugins\/docker-compose/,
+  )
+  assert.match(dockerfile, /docker compose version/)
+})
+
 test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)
