@@ -723,7 +723,11 @@ export function seedBrowserLinkChatFixture(workspaceRoot: string): void {
   })
 }
 
-/** Two threads where one owns a Cursor cloud run opened in the browser pane. */
+/**
+ * Two threads where one owns a Cursor cloud run. Used to prove browser/chat
+ * navigation to `cursor.com/agents/...` loads the page and does **not** steal
+ * the active thread (thread handoff stays on the PR pane button).
+ */
 export function seedBrowserCursorAgentThreadFixture(workspaceRoot: string): void {
   const projectId = 'e2e-browser-cursor-agent-project'
   const linkedThreadId = 'e2e-browser-cursor-agent-linked-thread'
@@ -751,7 +755,7 @@ export function seedBrowserCursorAgentThreadFixture(workspaceRoot: string): void
       },
       {
         id: linkedThreadId,
-        title: 'Implement browser handoff',
+        title: 'Linked Cursor agent thread',
         status: 'idle',
         messages: [
           {
@@ -814,11 +818,30 @@ export function seedPrPanelAgentLinkFixture(workspaceRoot: string): void {
   const projectId = 'e2e-pr-agent-link-project'
   const threadId = 'e2e-pr-agent-link-thread'
   const mockPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
+  const now = Date.now()
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
+    // Active thread is the non-agent one so the PR "open agent thread" jump
+    // has a visible destination to switch to.
     [`threads:${projectId}`]: [
+      {
+        id: 'e2e-pr-agent-link-other-thread',
+        title: 'Unrelated local work',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-unrelated',
+            role: 'assistant',
+            content: 'Working on something else.',
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
       {
         id: threadId,
         title: 'Agent PR chat',
@@ -828,7 +851,7 @@ export function seedPrPanelAgentLinkFixture(workspaceRoot: string): void {
             id: 'msg-assistant-pr-link',
             role: 'assistant',
             content: `Opened [PR #42](${mockPrUrl}) for you.`,
-            createdAt: Date.now(),
+            createdAt: now - 1_000,
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -837,10 +860,10 @@ export function seedPrPanelAgentLinkFixture(workspaceRoot: string): void {
           agentId: 'e2e-agent-1',
           prUrl: mockPrUrl,
           repo: 'copse-dev/copse-panel',
-          createdAt: Date.now(),
+          createdAt: now - 1_000,
         },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: now - 1_000,
+        updatedAt: now - 1_000,
       },
     ],
   })

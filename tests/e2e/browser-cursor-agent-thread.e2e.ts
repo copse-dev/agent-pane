@@ -9,7 +9,7 @@ import {
 } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
-describe('browser Cursor agent thread handoff', () => {
+describe('browser Cursor agent URL navigation', () => {
   before(async function () {
     this.timeout(120_000)
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -30,7 +30,7 @@ describe('browser Cursor agent thread handoff', () => {
     resetUserData()
   })
 
-  it('selects the local thread without leaving the previous browser page', async function () {
+  it('loads cursor.com/agents in the browser without switching threads', async function () {
     this.timeout(120_000)
 
     await expect($('.chat-row.selected .chat-title')).toHaveText('Review agent PR on GitHub')
@@ -47,27 +47,19 @@ describe('browser Cursor agent thread handoff', () => {
         })) === 'about:blank',
       { timeout: 10_000, timeoutMsg: 'expected the initial browser page to finish attaching' },
     )
-    const previousUrl = await browser.execute(() => {
-      const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-        getURL(): string
-      } | null
-      return webview?.getURL() ?? ''
-    })
 
-    // Exercise a real same-tab link inside the guest (the GitHub-page path),
-    // rather than the address bar's host-side navigation shortcut.
-    await browser.execute(async (cursorUrl) => {
-      const webview = document.querySelector('.browser-tab-panel.is-active webview') as {
-        executeJavaScript(script: string): Promise<unknown>
-      } | null
-      if (!webview) return
-      await webview.executeJavaScript(
-        `const link = document.createElement('a'); link.href = ${JSON.stringify(cursorUrl)}; document.body.append(link); link.click();`,
-      )
-    }, 'https://cursor.com/agents/bc-e2e-linked-agent?from=github')
+    const agentsUrl = 'https://cursor.com/agents/bc-e2e-linked-agent'
+    await input.click()
+    await input.setValue(agentsUrl)
+    await browser.keys('Enter')
 
-    await expect($('.chat-row.selected .chat-title')).toHaveText('Implement browser handoff')
-    await expect($('[data-message-id="msg-linked-cursor-run"]')).toBeDisplayed()
+    await browser.waitUntil(
+      async () => {
+        const value = await input.getValue()
+        return value.includes('cursor.com/agents/bc-e2e-linked-agent')
+      },
+      { timeout: 10_000, timeoutMsg: 'expected the address bar to show the Cursor agents URL' },
+    )
     await browser.waitUntil(
       async () =>
         (await browser.execute(() => {
@@ -75,12 +67,15 @@ describe('browser Cursor agent thread handoff', () => {
             getURL(): string
           } | null
           return webview?.getURL() ?? ''
-        })) === previousUrl,
-      { timeout: 10_000, timeoutMsg: 'expected the browser to remain on the previous page' },
+        })).includes('cursor.com/agents/bc-e2e-linked-agent'),
+      { timeout: 15_000, timeoutMsg: 'expected the guest webview to navigate to the agents URL' },
     )
-    await expect(input).toHaveValue('')
+
+    // Linked-thread handoff is reserved for the PR pane button — chat/browser
+    // navigation must not steal the active conversation.
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Review agent PR on GitHub')
     expect(await $$('.browser-tabs-tab')).toHaveLength(1)
 
-    await saveAppScreenshot('browser-cursor-agent-thread-handoff.png')
+    await saveAppScreenshot('browser-cursor-agent-url-navigation.png')
   })
 })
