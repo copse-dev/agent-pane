@@ -67,8 +67,8 @@ Configure these GitHub Actions settings:
 | Secret   | `SCW_DEFAULT_ORGANIZATION_ID`      | Parent Scaleway Organization                                  |
 | Secret   | `SCW_SSH_PRIVATE_KEY`              | Matches the Project SSH public key                            |
 | Secret   | `SCW_GENERATIVE_API_KEY`           | Hosted Qwen inference                                         |
-| Secret   | `SCW_OBJECT_STORAGE_ACCESS_KEY_ID` | Capsule-only storage writer                                   |
-| Secret   | `SCW_OBJECT_STORAGE_SECRET_KEY`    | Capsule-only storage writer                                   |
+| Secret   | `SCW_OBJECT_STORAGE_ACCESS_KEY_ID` | Capsule writer (`s3:PutObject`; ListBucket not required)      |
+| Secret   | `SCW_OBJECT_STORAGE_SECRET_KEY`    | Capsule writer (`s3:PutObject`; ListBucket not required)      |
 | Variable | `SCW_TERMINAL_REGISTRY`            | Registry namespace, for example `rg.fr-par.scw.cloud/example` |
 | Variable | `SCW_OBJECT_STORAGE_BUCKET`        | Private capsule bucket                                        |
 | Variable | `SCW_OBJECT_STORAGE_REGION`        | Bucket region; defaults to `fr-par`                           |
@@ -86,11 +86,17 @@ Optionally add `BENCH_ANALYST_API_KEY` and `BENCH_ANALYST_API_URL` for a stronge
 analyst. When the analyst uses the same Scaleway endpoint, the workflow falls back to the
 Generative API key and URL. Enter its model ID in the workflow's `analyst_model` input.
 
+Preflight validates the Serverless model catalogue and writes a tiny AES-256 probe object under
+`terminal-bench/_github_preflight/<run>/<attempt>/`. That matches worker capsule uploads
+(`s3:PutObject`) and avoids `HeadBucket`, which Scaleway maps to `s3:ListBucket` and rejects for
+PutObject-only keys.
+
 Open **Actions → Terminal-Bench (Scaleway Fleet) → Run workflow**. The default launches ten hosts
 and runs ten tasks, one on each host. Raise `max_tasks` to process more of the 89-task suite; with
 ten hosts, each host then processes its deterministic shard sequentially. `instances` is capped at
 20 and attempts at five. Hosted-model rate limits can still throttle the fleet even when Docker
-capacity is available.
+capacity is available. Use the Serverless model ID from Scaleway's `/models` catalogue (for
+example `qwen3.6-35b-a3b`), not an LM Studio or dedicated-deployment identifier.
 
 ### Pre-baked images and repeat-run speed
 
