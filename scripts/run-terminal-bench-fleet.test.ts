@@ -77,8 +77,5 @@ test('worker follow script reattaches to a still-running container after SSH dro
 
 test('worker image ships the Docker Compose CLI plugin for Harbor', () => {
   const dockerfile = readFileSync('benchmarks/terminal_bench/Dockerfile.worker', 'utf8')
-  assert.match(
-    dockerfile,
-    /COPY --from=docker-cli \/usr\/local\/libexec\/docker\/cli-plugins/,
-  )
+  assert.match(dockerfile, /COPY --from=docker-cli \/usr\/local\/libexec\/docker\/cli-plugins/)
 })

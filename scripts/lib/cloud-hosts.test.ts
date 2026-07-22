@@ -373,12 +373,12 @@ describe('SSH helpers', () => {
       ),
       true,
     )
-    assert.equal(isTransientSshSessionError(new Error('client_loop: send disconnect: Broken pipe')), true)
-    assert.equal(isTransientSshSessionError(new Error('Connection reset by peer')), true)
     assert.equal(
-      isTransientSshSessionError(new Error('ssh … failed with exit code 1')),
-      false,
+      isTransientSshSessionError(new Error('client_loop: send disconnect: Broken pipe')),
+      true,
     )
+    assert.equal(isTransientSshSessionError(new Error('Connection reset by peer')), true)
+    assert.equal(isTransientSshSessionError(new Error('ssh … failed with exit code 1')), false)
     assert.equal(isTransientSshSessionError(new Error('Permission denied (publickey).')), false)
   })
 
