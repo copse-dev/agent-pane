@@ -302,7 +302,7 @@ $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 	  if grep -qE 'code (ENOTEMPTY|EBUSY|EPERM)' "$$log"; then \
 	    echo "==> npm ci hit a filesystem race pruning node_modules — wiping it and retrying…"; \
 	    rm -rf node_modules; \
-	    $(NPM_CI); \
+	    if ! $(NPM_CI); then exit 1; fi; \
 	  else \
 	    exit 1; \
 	  fi; \
