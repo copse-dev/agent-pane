@@ -16,9 +16,11 @@
 #
 # Run `make` (or `make help`) for the full target list.
 
-# Strict bash flags — any failing command aborts the recipe line. Multi-line
-# shell blocks use backslash continuations so they work on macOS /usr/bin/make
-# (GNU Make 3.81), which predates .ONESHELL (3.82+).
+# Strict bash flags on Make versions that support `.SHELLFLAGS`. macOS ships
+# GNU Make 3.81, which treats this as an ordinary variable and does not pass the
+# flags to recipe shells, so recipes must still propagate pipeline failures
+# explicitly. Multi-line shell blocks use backslash continuations because 3.81
+# also predates .ONESHELL (3.82+).
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
@@ -64,6 +66,12 @@ USE_NVM := if [ -s "$(NVM_DIR)/nvm.sh" ]; then set +u; . "$(NVM_DIR)/nvm.sh"; nv
 STAMP_DIR   := .tmp
 DEPS_STAMP  := $(STAMP_DIR)/deps.stamp
 BUILD_STAMP := $(STAMP_DIR)/build.stamp
+
+# A stamp left by an interrupted or previously misdetected install must not
+# hide a broken dependency tree. esbuild is a direct dev dependency required by
+# both build and test entry points, so its package metadata is a cheap install
+# sentinel. Dropping the stamp makes the normal deps rule repair the tree.
+$(shell if [ -f $(DEPS_STAMP) ] && [ ! -f node_modules/esbuild/package.json ]; then rm -f $(DEPS_STAMP); fi)
 
 # Source that, when changed, should trigger a rebuild of `dist/`. Evaluated when
 # the Makefile is parsed; new files are picked up on the next `make` invocation.
@@ -286,7 +294,11 @@ $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 	@echo "==> Dependencies out of date — running 'npm ci' (scripts forced on)…"
 	@$(USE_NVM); \
 	log="$(STAMP_DIR)/npm-ci.log"; \
-	if ! $(NPM_CI) 2>&1 | tee "$$log"; then \
+	if $(NPM_CI) 2>&1 | tee "$$log"; \
+	  npm_ci_status="$${PIPESTATUS[0]}"; \
+	  [ "$$npm_ci_status" -eq 0 ]; then \
+	  :; \
+	else \
 	  if grep -qE 'code (ENOTEMPTY|EBUSY|EPERM)' "$$log"; then \
 	    echo "==> npm ci hit a filesystem race pruning node_modules — wiping it and retrying…"; \
 	    rm -rf node_modules; \
