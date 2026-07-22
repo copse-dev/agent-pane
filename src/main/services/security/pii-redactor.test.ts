@@ -1,12 +1,16 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setSetting } from '../storage/settings.ts'
+import {
+  setDefaultPackRegistry,
+  getDefaultPackRegistry,
+} from '@copse/agent/packs/default-pack-registry.ts'
+import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import {
   redactUserContent,
   revealPlaceholder,
   clearThreadRedaction,
   setRampartLoaderForTest,
-  PII_REDACTION_ENABLED_SETTING,
   type RampartModule,
   type PiiGuard,
 } from './pii-redactor.ts'
@@ -48,18 +52,21 @@ function fakeModule(): RampartModule {
 }
 
 describe('pii-redactor', () => {
-  beforeEach(async () => {
+  // Enablement is the `copse.pii-redaction` pack (Settings > Packs). A fresh
+  // first-party registry has the pack enabled; install it so `redactUserContent`
+  // reads a stable instance we can toggle.
+  beforeEach(() => {
     setRampartLoaderForTest(() => Promise.resolve(fakeModule()))
-    await setSetting(PII_REDACTION_ENABLED_SETTING, true)
+    setDefaultPackRegistry(createFirstPartyPackRegistry())
   })
 
-  afterEach(async () => {
+  afterEach(() => {
     setRampartLoaderForTest(null)
-    await setSetting(PII_REDACTION_ENABLED_SETTING, false)
+    setDefaultPackRegistry(null)
   })
 
   it('passes text through unchanged when the feature is disabled', async () => {
-    await setSetting(PII_REDACTION_ENABLED_SETTING, false)
+    getDefaultPackRegistry().disable(PII_REDACTION_PACK_ID)
     const text = 'email john@example.com to Jane'
     assert.equal(await redactUserContent('t1', text), text)
   })

@@ -36,6 +36,7 @@ import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -59,6 +60,9 @@ const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnableme
 
 /** One-time bridge from the retired `ciInvestigatorEnabled` standalone setting. */
 const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
+
+/** One-time bridge from the retired `piiRedactionEnabled` standalone setting. */
+const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -209,6 +213,31 @@ function migrateCiInvestigatorEnablement(): void {
   storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
 }
 
+/**
+ * Preserve the enablement users had before client-side PII redaction became a
+ * pack. Like model comparison, the feature was previously opt-in (off by default
+ * via the `piiRedactionEnabled` setting), so an absent or false value must
+ * disable the new `copse.pii-redaction` pack — otherwise the migration would
+ * silently start rewriting the input of, and expose the reveal tool to, every
+ * existing user after upgrade. This preserves the default-OFF invariant: it runs
+ * synchronously before the shared registry is created (which `pii-redactor.ts`
+ * and `registry-bootstrap.ts` immediately consult) and is idempotent (guarded by
+ * its own migration key). A separate function/key from `migrateP5Enablement`
+ * keeps the migrations conflict-free.
+ */
+function migratePiiRedactionEnablement(): void {
+  if (storageGet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const piiRedactionEnabled = storageGet('piiRedactionEnabled')
+
+  if (piiRedactionEnabled === true) disabled.delete(PII_REDACTION_PACK_ID)
+  else disabled.add(PII_REDACTION_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
+}
+
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
 function readPackSettings(packId: string): Record<string, unknown> {
   const raw = storageGet(packSettingsKey(packId))
@@ -305,6 +334,7 @@ export function getPackService(): PackService {
   migrateAdvisorStrategyEnablement()
   migrateOkfMemoriesEnablement()
   migrateCiInvestigatorEnablement()
+  migratePiiRedactionEnablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

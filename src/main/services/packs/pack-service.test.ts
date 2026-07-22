@@ -21,6 +21,7 @@ import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
@@ -31,6 +32,7 @@ const ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY = 'packMigration.roadmapPlansEnable
 const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategyEnablement'
 const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
 const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
+const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -68,6 +70,7 @@ function clearStorage(): void {
   storageDelete(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY)
   storageDelete(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY)
   storageDelete(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY)
+  storageDelete(PII_REDACTION_ENABLEMENT_MIGRATION_KEY)
   storageDelete('postTurnReviewEnabled')
   storageDelete('modelComparisonEnabled')
   storageDelete('longHorizonTasksEnabled')
@@ -75,6 +78,7 @@ function clearStorage(): void {
   storageDelete('advisorStrategyEnabled')
   storageDelete('okfMemoriesEnabled')
   storageDelete('ciInvestigatorEnabled')
+  storageDelete('piiRedactionEnabled')
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -184,6 +188,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), true)
@@ -198,6 +203,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet('postTurnReviewEnabled', false)
     storageSet('modelComparisonEnabled', true)
 
@@ -215,6 +221,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(PACK_DISABLED_KEY, [POST_TURN_REVIEW_PACK_ID])
     storageSet('postTurnReviewEnabled', true)
     storageSet('modelComparisonEnabled', false)
@@ -233,6 +240,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(LONG_HORIZON_TASKS_PACK_ID), false)
@@ -246,6 +254,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet('longHorizonTasksEnabled', true)
 
     const service = getPackService()
@@ -261,6 +270,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(PACK_DISABLED_KEY, [])
     // A stale legacy value must be ignored once the migration key is set.
     storageSet('longHorizonTasksEnabled', false)
@@ -278,6 +288,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(ROADMAP_PLANS_PACK_ID), false)
@@ -291,6 +302,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet('roadmapPlansEnabled', true)
 
     const service = getPackService()
@@ -306,6 +318,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(PACK_DISABLED_KEY, [])
     // A stale legacy value must be ignored once the migration key is set.
     storageSet('roadmapPlansEnabled', false)
@@ -324,6 +337,7 @@ describe('PackService', () => {
     storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(ADVISOR_STRATEGY_PACK_ID), false)
@@ -337,6 +351,7 @@ describe('PackService', () => {
     storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet('advisorStrategyEnabled', true)
 
     const service = getPackService()
@@ -352,6 +367,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(PACK_DISABLED_KEY, [])
     // A stale legacy value must be ignored once the migration key is set.
     storageSet('advisorStrategyEnabled', false)
@@ -370,6 +386,7 @@ describe('PackService', () => {
     storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(OKF_MEMORIES_PACK_ID), false)
@@ -383,6 +400,7 @@ describe('PackService', () => {
     storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet('okfMemoriesEnabled', true)
 
     const service = getPackService()
@@ -398,6 +416,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(PACK_DISABLED_KEY, [])
     // A stale legacy value must be ignored once the migration key is set.
     storageSet('okfMemoriesEnabled', false)
@@ -415,6 +434,7 @@ describe('PackService', () => {
     storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(CI_INVESTIGATOR_PACK_ID), false)
@@ -428,6 +448,7 @@ describe('PackService', () => {
     storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet('ciInvestigatorEnabled', true)
 
     const service = getPackService()
@@ -443,6 +464,7 @@ describe('PackService', () => {
     storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
     storageSet(PACK_DISABLED_KEY, [])
     // A stale legacy value must be ignored once the migration key is set.
     storageSet('ciInvestigatorEnabled', false)
@@ -450,6 +472,54 @@ describe('PackService', () => {
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(CI_INVESTIGATOR_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('migrates PII redaction default-OFF without enabling the previously opt-in tool', () => {
+    // Isolate from sibling migrations (all run in getPackService).
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), false)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [PII_REDACTION_PACK_ID])
+    assert.equal(storageGet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY), true)
+  })
+
+  it('preserves an explicit legacy piiRedactionEnabled=true choice', () => {
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet('piiRedactionEnabled', true)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('does not overwrite pack choices after the PII migration has run', () => {
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PACK_DISABLED_KEY, [])
+    // A stale legacy value must be ignored once the migration key is set.
+    storageSet('piiRedactionEnabled', false)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), true)
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 })

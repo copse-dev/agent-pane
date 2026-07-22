@@ -23,7 +23,7 @@ import {
 import { buildSemanticSearchPromptBlock } from './search/semantic-search.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
   READ_TERMINAL_ENABLED_SETTING,
@@ -61,7 +61,10 @@ export async function buildSystemPrompt(opts: {
   // `syncOkfMemoryTools` reads to register the remember/recall tools, so the
   // prompt block and the registered tools always agree.
   const okfMemoriesEnabled = getDefaultPackRegistry().isEnabled(OKF_MEMORIES_PACK_ID)
-  const piiRedactionEnabled = getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)
+  // Gated by the `copse.pii-redaction` pack — the same enablement that registers
+  // the reveal_pii tool and arms the input rewrite (`pii-redactor.ts`), so the
+  // steering block and the tool never advertise each other out of sync.
+  const piiRedactionEnabled = getDefaultPackRegistry().isEnabled(PII_REDACTION_PACK_ID)
   const readTerminalEnabled =
     getSetting<boolean>(READ_TERMINAL_ENABLED_SETTING, READ_TERMINAL_ENABLED_DEFAULT) &&
     (threadId ? hasTerminalSessions(threadId) : hasTerminalSessions())

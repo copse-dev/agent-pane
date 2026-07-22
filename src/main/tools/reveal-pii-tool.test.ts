@@ -1,12 +1,12 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { setSetting } from '../services/storage/settings.ts'
+import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { runWithActiveRunIdentity, setActiveRunThread } from '../services/thread-models.ts'
 import { setApprovalHandler, type ApprovalRequest } from '../services/approval.ts'
 import {
   redactUserContent,
   setRampartLoaderForTest,
-  PII_REDACTION_ENABLED_SETTING,
   type RampartModule,
   type PiiGuard,
 } from '../services/security/pii-redactor.ts'
@@ -40,14 +40,16 @@ const signal = new AbortController().signal
 describe('reveal_pii tool', () => {
   beforeEach(async () => {
     setRampartLoaderForTest(() => Promise.resolve(fakeModule))
-    await setSetting(PII_REDACTION_ENABLED_SETTING, true)
+    // A fresh first-party registry has the `copse.pii-redaction` pack enabled,
+    // which is what arms the input rewrite below.
+    setDefaultPackRegistry(createFirstPartyPackRegistry())
     await redactUserContent('thread-1', 'email john@example.com')
   })
 
-  afterEach(async () => {
+  afterEach(() => {
     setApprovalHandler(null)
     setRampartLoaderForTest(null)
-    await setSetting(PII_REDACTION_ENABLED_SETTING, false)
+    setDefaultPackRegistry(null)
   })
 
   it('reveals the value after the user approves', async () => {
