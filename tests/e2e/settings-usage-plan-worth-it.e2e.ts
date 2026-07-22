@@ -107,24 +107,35 @@ describe('settings usage plan worth-it', function () {
 
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
+    const worthCard = $('.usage-worth-card[data-verdict="worth_it"]')
     await expect($('.usage-worth-section .usage-worth-heading')).toBeDisplayed()
-    await expect($('.usage-worth-card[data-verdict="worth_it"]')).toBeDisplayed()
+    await expect(worthCard).toBeDisplayed()
     await expect($('.usage-worth-verdict')).toHaveText('Worth it vs inference')
     await expect($('#usage-worth-fee-input')).toHaveValue('100')
 
+    await worthCard.scrollIntoView({ block: 'center' })
     await prepareE2eScreenshot()
-    await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-worth-it.png')
+    await saveElementScreenshot('.usage-worth-section', 'settings-usage-plan-worth-it.png')
 
-    await $('.usage-worth-inference-btn').click()
-    const coverage = await browser.execute(() => {
-      const active = document.querySelector(
-        '.frontier-plan-coverage [data-plan-coverage].active',
-      ) as HTMLElement | null
-      return active?.dataset['planCoverage'] ?? null
-    })
-    assert.equal(coverage, 'inference')
+    const inferenceBtn = $('.usage-worth-inference-btn')
+    await inferenceBtn.scrollIntoView({ block: 'center' })
+    await inferenceBtn.click()
+    await browser.waitUntil(
+      async () => {
+        const coverage = await browser.execute(() => {
+          const active = document.querySelector(
+            '.frontier-plan-coverage [data-plan-coverage].active',
+          ) as HTMLElement | null
+          return active?.dataset['planCoverage'] ?? null
+        })
+        return coverage === 'inference'
+      },
+      { timeout: 5000, timeoutMsg: 'value map did not switch to Inference cost basis' },
+    )
 
+    const frontier = $('.frontier-fieldset')
+    await frontier.scrollIntoView({ block: 'start' })
     await prepareE2eScreenshot()
-    await saveElementScreenshot('#settings-dialog', 'settings-usage-plan-worth-it-inference.png')
+    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-plan-worth-it-inference.png')
   })
 })

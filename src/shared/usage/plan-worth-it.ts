@@ -2,7 +2,6 @@
 // API-equivalent burn (from completed plan windows) against the subscription
 // fee amortized per week. Does not use the Copse-local token ledger.
 
-import type { PlanUsageSnapshot } from '@copse/plan-usage'
 import {
   completedWindowApiDollars,
   type CompletedPlanWindow,
