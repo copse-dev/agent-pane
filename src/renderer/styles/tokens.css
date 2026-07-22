@@ -86,4 +86,7 @@
      16px icon + sm padding + top border (Settings' historical band). */
   --chrome-action-band-height: calc(16px + 2 * var(--spacing-sm) + 1px);
   --chrome-action-band-content-height: 16px;
+  /* Browser Tabs header + URL toolbar share one band so their bottom borders
+     meet across the tree resizer (28px nav buttons + xs pad + bottom border). */
+  --browser-chrome-band-height: calc(28px + 2 * var(--spacing-xs) + 1px);
 }
