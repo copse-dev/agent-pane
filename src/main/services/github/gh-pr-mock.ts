@@ -34,6 +34,9 @@ const MOCK_OTHER_PR: GhPrSummary = {
 }
 
 export const MOCK_GH_WORKSPACE_PR_NUMBER = 88
+/** Merged fixture for sidebar "all merged" thread status (not listed in open pools). */
+export const MOCK_GH_MERGED_PR_NUMBER = 99
+export const MOCK_GH_MERGED_PR_URL = `https://github.com/${MOCK_GH_PR_OWNER}/${MOCK_GH_PR_REPO}/pull/${String(MOCK_GH_MERGED_PR_NUMBER)}`
 
 // An open PR in the current workspace repo authored by someone else, so the
 // "in this repo" section surfaces PRs beyond just the signed-in user's own.
@@ -46,6 +49,17 @@ const MOCK_WORKSPACE_PR: GhPrSummary = {
   state: 'OPEN',
   headRefName: 'chore/workspace-status',
   authorLogin: 'octo-dev',
+}
+
+const MOCK_MERGED_PR: GhPrSummary = {
+  owner: MOCK_GH_PR_OWNER,
+  repo: MOCK_GH_PR_REPO,
+  number: MOCK_GH_MERGED_PR_NUMBER,
+  title: 'Ship sidebar thread PR status',
+  url: MOCK_GH_MERGED_PR_URL,
+  state: 'MERGED',
+  headRefName: 'feature/thread-pr-status',
+  authorLogin: 'mock-user',
 }
 
 const MOCK_PR_DETAILS: GhPrDetails = {
@@ -211,6 +225,28 @@ export function mockGetGhPrDetails(ref: {
           status: 'modified',
           additions: 9,
           deletions: 6,
+        },
+      ],
+    }
+  }
+  if (
+    ref.owner === MOCK_GH_PR_OWNER &&
+    ref.repo === MOCK_GH_PR_REPO &&
+    ref.number === MOCK_MERGED_PR.number
+  ) {
+    return {
+      ...MOCK_MERGED_PR,
+      body: 'Merged fixture for thread sidebar GitHub status.',
+      baseRefName: 'main',
+      additions: 20,
+      deletions: 2,
+      changedFiles: 2,
+      files: [
+        {
+          path: 'src/shared/git/thread-pr-status.ts',
+          status: 'added',
+          additions: 20,
+          deletions: 0,
         },
       ],
     }

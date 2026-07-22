@@ -119,3 +119,17 @@ export function zapIcon(className = DEFAULT): SVGSVGElement {
     className,
   )
 }
+
+/** Lucide git-pull-request — sidebar thread GitHub PR status mark. */
+export function gitPullRequestIcon(className = DEFAULT): SVGSVGElement {
+  return outlineIcon(
+    'git-pull-request',
+    [
+      'M18 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      'M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z',
+      'M13 6h3a2 2 0 0 1 2 2v7',
+      'M6 9v12',
+    ],
+    className,
+  )
+}

@@ -192,6 +192,27 @@ describe('githubApiBackend', () => {
     assert.equal(details.files.length, 1)
   })
 
+  it('promotes REST closed+merged pulls to MERGED state', async () => {
+    router = (_m: string, url: string): RouteResult => {
+      if (url.endsWith('/graphql')) {
+        return { body: { data: { repository: { pullRequest: { reviewDecision: null } } } } }
+      }
+      if (url.endsWith('/files?per_page=100')) return { body: [] }
+      return {
+        body: {
+          number: 7,
+          title: 'Already landed',
+          html_url: 'https://github.com/octo/demo/pull/7',
+          state: 'closed',
+          merged: true,
+        },
+      }
+    }
+    const details = await githubApiBackend.getPrDetails(REF)
+    assert.ok(details)
+    assert.equal(details.state, 'MERGED')
+  })
+
   it('getPrChecksState returns no_checks instead of throwing on a network error', async () => {
     globalThis.fetch = (): Promise<Response> => Promise.reject(new Error('network down'))
     const state = await githubApiBackend.getPrChecksState(REF)

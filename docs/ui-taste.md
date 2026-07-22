@@ -203,6 +203,20 @@ visually distinct. Display re-derives from `project.path` so older basename-only
 names still render correctly (`projectDisplayName` in
 [`projects.ts`](../src/renderer/controller/projects.ts)).
 
+## Thread GitHub PR status icon
+
+Sidebar `.chat-row`s that link to GitHub PRs (chat URLs and/or `remoteAgentLink.prUrl`)
+show a single git-pull-request icon after lifecycle resolves — not text, not a pill:
+
+- open → accent
+- merged → success
+- closed → muted
+
+The tooltip / `aria-label` carries the detail (`#42 is open`, `all merged`, …).
+Logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
+[`projects-pane-pr-status.test.ts`](../src/renderer/views/projects-pane-pr-status.test.ts),
+[`tests/e2e/thread-pr-status.e2e.ts`](../tests/e2e/thread-pr-status.e2e.ts).
+
 ## SSH chrome — plain text, no decorative emoji
 
 The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.
