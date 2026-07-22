@@ -9,6 +9,7 @@ import {
   hasFlag,
   type FleetTags,
   isScalewayQuotaError,
+  isScalewayZoneUnavailableError,
   launchScalewayServers,
   listScalewayFleet,
   nonNegativeInt,
@@ -35,6 +36,8 @@ const DEFAULT_INSTANCES = 10
 const DEFAULT_TYPE = 'BASIC3-X4C-16G'
 const DEFAULT_VOLUME_SIZE_GB = 100
 const DEFAULT_TTL_MINUTES = 360
+const CLEANUP_ATTEMPTS = 3
+const CLEANUP_RETRY_DELAY_MS = 15_000
 const FLEET_TAGS: FleetTags = {
   kind: 'copse-terminal-bench',
   managedBy: 'copse-terminal-bench-fleet',
@@ -304,6 +307,21 @@ function cleanupBatches(batches: readonly LaunchBatch[]): void {
   for (const batch of batches) terminateScalewayServersBestEffort({ zone: batch.zone }, batch.ids)
 }
 
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function terminateHosts(hosts: readonly CloudHost[]): void {
+  const byZone = new Map<string, string[]>()
+  for (const host of hosts) {
+    if (!host.zone) continue
+    const ids = byZone.get(host.zone) ?? []
+    ids.push(host.providerId)
+    byZone.set(host.zone, ids)
+  }
+  for (const [zone, ids] of byZone) terminateScalewayServersBestEffort({ zone }, ids)
+}
+
 async function runFleet(options: Options): Promise<void> {
   requireScalewayTool()
   requireTool('ssh', ['-V'])
@@ -338,6 +356,10 @@ async function runFleet(options: Options): Promise<void> {
         result = launchScalewayServers(spec, remaining, 'Copse Terminal-Bench worker')
       } catch (error) {
         if (isScalewayQuotaError(error)) continue
+        if (isScalewayZoneUnavailableError(error)) {
+          console.log(`==> ${config.type} is unavailable in ${zone}; continuing elsewhere`)
+          continue
+        }
         throw error
       }
       if (result.ids.length > 0) {
@@ -387,19 +409,35 @@ function statusFleet(options: Options): void {
   printHosts(listScalewayFleet({ name: fleetName(options), tags: FLEET_TAGS }, zones(options)))
 }
 
-function downFleet(options: Options): void {
+async function downFleet(options: Options): Promise<void> {
   requireScalewayTool()
   if (!hasFlag(options, 'yes')) throw new Error('down requires --yes')
-  const hosts = listScalewayFleet({ name: fleetName(options), tags: FLEET_TAGS }, zones(options))
-  printHosts(hosts)
-  const byZone = new Map<string, string[]>()
-  for (const host of hosts) {
-    if (!host.zone) continue
-    const ids = byZone.get(host.zone) ?? []
-    ids.push(host.providerId)
-    byZone.set(host.zone, ids)
+  const name = fleetName(options)
+  const configuredZones = zones(options)
+  for (let attempt = 1; attempt <= CLEANUP_ATTEMPTS; attempt += 1) {
+    const hosts = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
+    if (attempt === 1) printHosts(hosts)
+    if (hosts.length === 0) {
+      console.log('==> Fleet teardown verified.')
+      return
+    }
+    terminateHosts(hosts)
+    const remaining = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
+    if (remaining.length === 0) {
+      console.log('==> Fleet teardown verified.')
+      return
+    }
+    if (attempt < CLEANUP_ATTEMPTS) {
+      console.log(
+        `==> ${String(remaining.length)} host(s) still present; retrying teardown in ${String(CLEANUP_RETRY_DELAY_MS / 1000)} seconds`,
+      )
+      await delay(CLEANUP_RETRY_DELAY_MS)
+    }
   }
-  for (const [zone, ids] of byZone) terminateScalewayServersBestEffort({ zone }, ids)
+  const remaining = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
+  throw new Error(
+    `Fleet teardown incomplete: ${String(remaining.length)} host(s) still match ${name}`,
+  )
 }
 
 async function main(): Promise<void> {
@@ -411,7 +449,7 @@ async function main(): Promise<void> {
   const options = parseOptions(process.argv, 3)
   if (selected === 'run') await runFleet(options)
   else if (selected === 'status') statusFleet(options)
-  else downFleet(options)
+  else await downFleet(options)
 }
 
 if (process.argv[1]?.endsWith('run-terminal-bench-fleet.mts')) {
