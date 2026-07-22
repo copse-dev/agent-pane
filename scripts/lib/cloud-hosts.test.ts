@@ -13,6 +13,8 @@ import {
   parseAwsInstances,
   parseOptions,
   parseScalewayServer,
+  parseScalewayVolumeIds,
+  scalewayBlockVolumeDeleteArgs,
   scalewayJsonArgs,
   scalewayServerFromRecord,
   scalewayTagArgs,
@@ -246,6 +248,34 @@ describe('Scaleway helpers', () => {
       'with-block=true',
       'zone=fr-par-1',
     ])
+  })
+
+  it('scalewayBlockVolumeDeleteArgs targets the block volume in the right zone', () => {
+    assert.deepEqual(scalewayBlockVolumeDeleteArgs({ zone: 'fr-par-1' }, 'vol-1'), [
+      'block',
+      'volume',
+      'delete',
+      'vol-1',
+      'zone=fr-par-1',
+    ])
+  })
+
+  it('parseScalewayVolumeIds collects ids from the position-keyed volumes map', () => {
+    const raw = JSON.stringify({
+      id: 'srv-1',
+      volumes: {
+        '0': { id: 'vol-root', volume_type: 'sbs_volume' },
+        '1': { id: 'vol-extra', volume_type: 'sbs_volume' },
+      },
+    })
+    assert.deepEqual(parseScalewayVolumeIds(raw), ['vol-root', 'vol-extra'])
+  })
+
+  it('parseScalewayVolumeIds unwraps the server envelope and tolerates no volumes', () => {
+    const wrapped = JSON.stringify({ server: { id: 'srv-2', volumes: { '0': { id: 'vol-x' } } } })
+    assert.deepEqual(parseScalewayVolumeIds(wrapped), ['vol-x'])
+    assert.deepEqual(parseScalewayVolumeIds(JSON.stringify({ id: 'srv-3' })), [])
+    assert.deepEqual(parseScalewayVolumeIds(JSON.stringify({ server: { volumes: {} } })), [])
   })
 
   it('scalewayJsonArgs appends the zone before the json output flag', () => {
