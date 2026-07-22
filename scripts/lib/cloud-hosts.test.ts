@@ -8,6 +8,7 @@ import {
   hostPrefix,
   isFatalSshProbeError,
   isScalewayQuotaError,
+  isScalewayZoneUnavailableError,
   option,
   optionWithDefault,
   parseAwsInstances,
@@ -214,6 +215,16 @@ describe('userDataScript', () => {
 })
 
 describe('Scaleway helpers', () => {
+  it('recognizes unsupported server types as a zone-local fallback condition', () => {
+    assert.equal(
+      isScalewayZoneUnavailableError(
+        new Error('Server type "BASIC3-X4C-16G" is not available on this zone.'),
+      ),
+      true,
+    )
+    assert.equal(isScalewayZoneUnavailableError(new Error('permission denied')), false)
+  })
+
   it('scalewayTags namespaces by kind, name, and managedBy', () => {
     assert.deepEqual(scalewayTags('fleet', TAGS), [
       'copse-burst',
