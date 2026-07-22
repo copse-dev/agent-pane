@@ -210,10 +210,14 @@ describe('appendPlanWindowSamples prior-provider scan', () => {
     const claudeSample = state.samples[1]
     assert.ok(codexSample)
     assert.ok(claudeSample)
+    const codexWindow = codexSample.windows[0]
+    const claudeWindow = claudeSample.windows[0]
+    assert.ok(codexWindow)
+    assert.ok(claudeWindow)
     assert.equal(codexSample.provider, 'codex')
-    assert.equal(codexSample.windows[0].usedDollars, 10)
+    assert.equal(codexWindow.usedDollars, 10)
     assert.equal(claudeSample.provider, 'claude')
-    assert.equal(claudeSample.windows[0].usedDollars, 55)
+    assert.equal(claudeWindow.usedDollars, 55)
   })
 })
 
