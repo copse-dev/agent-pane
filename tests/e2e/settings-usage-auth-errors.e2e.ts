@@ -39,6 +39,10 @@ describe('settings usage panel plan errors', () => {
       claudeText,
       /HTTP 401|authentication_error|request_id|req_011Cd5RChA2NLVzY1EV634KW/,
     )
+    // A rejected Claude credential offers an inline recovery affordance.
+    const signIn = claude.$('.usage-plan-signin-btn')
+    await expect(signIn).toBeDisplayed()
+    assert.match(await signIn.getText(), /Sign in to Claude/i)
 
     await expect($('.usage-plan-provider[data-provider="codex"][data-status="ok"]')).toBeDisplayed()
 
