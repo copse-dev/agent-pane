@@ -79,6 +79,25 @@ function nudgeFrom(result: HookEmitResult, hookId: string): string | undefined {
   return result.outcomes.find((o) => o.hookId === hookId)?.outcome.injectContext
 }
 
+export interface AppliedNudgeRecord {
+  step: number
+  hookId: string
+  mechanism: 'tool-enabled-message' | 'text-only-turn'
+  text: string
+}
+
+function recordAppliedNudge(
+  sink: ((record: AppliedNudgeRecord) => void) | undefined,
+  record: AppliedNudgeRecord,
+): void {
+  if (!sink) return
+  try {
+    sink(record)
+  } catch (error) {
+    console.warn(`[agent-loop] applied-nudge sink threw for "${record.hookId}":`, error)
+  }
+}
+
 export interface AgentLoopOptions {
   provider: LLMProvider
   messages: LLMMessage[] // mutated in-place as turns are added
@@ -99,10 +118,44 @@ export interface AgentLoopOptions {
   onHistoryTrimmed?: () => void
   /** Called after each provider stream to read per-step token usage. */
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null
+  /** Records the actual step-boundary nudge text and mechanism applied by this host. */
+  recordAppliedNudge?: (record: AppliedNudgeRecord) => void
   /** Model id for usage/cost attribution on this loop's provider calls. */
   usageModel?: string
   /** Max provider.stream calls (main loop + finalize / forced text). */
   maxLlmCalls?: number
+  /**
+   * Per-stream output cap used by the reasoning-runaway guard. Defaults to the
+   * product-wide limit; benchmark hosts may lower it for slower local models.
+   */
+  maxStreamOutputTokens?: number
+  /**
+   * Optional per-stream cap for the single retry after a reasoning-runaway
+   * nudge. Hosts may allow that bounded recovery more room to reach a tool call
+   * while keeping the initial runaway detector tighter.
+   */
+  reasoningRunawayRecoveryOutputTokens?: number
+  /**
+   * Host-specific recovery text after a reasoning-only stream hits the output
+   * cap. The default remains the product's concise final-answer nudge.
+   */
+  reasoningRunawayRecoveryNudge?: string
+  /**
+   * Visible-text allowance when classifying a capped stream as reasoning-only.
+   * Defaults to zero; terminal hosts may ignore a short planning preamble.
+   */
+  reasoningRunawayTextToleranceChars?: number
+  /**
+   * Whether conversation-pressure escalation may force a tool-less answer turn.
+   * Defaults to true; terminal hosts can keep acting until their step budget.
+   */
+  allowForcedTextEscalation?: boolean
+  /**
+   * Tool-enabled recovery text used instead of forced-text escalation when that
+   * mechanism is disabled. Hosts with durable task state can use this to turn
+   * prolonged inspection into a concrete edit without ending the run.
+   */
+  stuckToolRecoveryNudge?: string
   /** Shared sliding-idle deadline. When omitted, one is created from runTimeoutMs. */
   runDeadline?: AgentRunDeadline
   /** Idle timeout when runDeadline is omitted. */
@@ -299,6 +352,7 @@ async function streamTextOnlyTurn(
   getLastUsage?: () => { inputTokens: number; outputTokens: number } | null,
   usageModel?: string,
   coerceTextToolCallArgs?: CoerceToolArgsFn,
+  maxStreamOutputTokens?: number,
   // Resolves the truncation-continue nudge (E1's `truncation-continue` hook) for
   // this text-only turn's stop reason; returns the nudge text when the stream was
   // length-truncated, else undefined. The loop supplies it; absent = no push.
@@ -344,7 +398,7 @@ async function streamTextOnlyTurn(
       }
       // Backstop a runaway finalize/forced-text generation the same way the main
       // loop does, so a local model can't stream indefinitely here either (#489).
-      if (isStreamOutputRunaway(streamOutputChars)) {
+      if (isStreamOutputRunaway(streamOutputChars, maxStreamOutputTokens)) {
         stopReason = 'max_tokens'
         break
       }
@@ -759,6 +813,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     getLastUsage,
     usageModel,
     maxLlmCalls = defaultMaxLlmCallsForSteps(maxSteps),
+    maxStreamOutputTokens,
+    reasoningRunawayRecoveryOutputTokens,
+    reasoningRunawayRecoveryNudge,
+    reasoningRunawayTextToleranceChars = 0,
+    allowForcedTextEscalation = true,
+    stuckToolRecoveryNudge,
     runDeadline,
     runTimeoutMs = AGENT_RUN_IDLE_TIMEOUT_MS,
     runHardMaxMs = AGENT_RUN_HARD_MAX_MS,
@@ -766,6 +826,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     coerceTextToolCallArgs,
     getOpenTodos,
     recordHookRun,
+    recordAppliedNudge: appliedNudgeSink,
     onLlmCall,
     recordStreamCut,
   } = opts
@@ -861,38 +922,63 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
 
         if (preNudges.stuckFinalize !== undefined) {
           forceTextAttempted = true
-          const forced = await streamTextOnlyTurn(
-            provider,
-            messages,
-            onChunk,
-            budget,
-            preNudges.stuckFinalize,
-            getLastUsage,
-            usageModel,
-            coerceTextToolCallArgs,
-            resolveTruncationNudge,
-          )
-          if (forced.pendingToolCalls.length > 0) {
-            await executeToolBatch({
-              pendingToolCalls: forced.pendingToolCalls,
-              messages,
-              executeTool: opts.executeTool,
-              signal,
-              onChunk,
-              recentFingerprints,
-              budget,
+          if (!allowForcedTextEscalation) {
+            if (stuckToolRecoveryNudge !== undefined) {
+              messages.push({ role: 'user', content: stuckToolRecoveryNudge })
+              recordAppliedNudge(appliedNudgeSink, {
+                step: budget.llmCalls,
+                hookId: STUCK_FINALIZE_NUDGE_HOOK_ID,
+                mechanism: 'tool-enabled-message',
+                text: stuckToolRecoveryNudge,
+              })
+            }
+          } else {
+            recordAppliedNudge(appliedNudgeSink, {
+              step: budget.llmCalls,
+              hookId: STUCK_FINALIZE_NUDGE_HOOK_ID,
+              mechanism: 'text-only-turn',
+              text: preNudges.stuckFinalize,
             })
-            toolOnlySteps++
-            continue
-          }
-          if (forced.answerText.trim()) {
-            finishedWithAnswer = true
-            break
+            const forced = await streamTextOnlyTurn(
+              provider,
+              messages,
+              onChunk,
+              budget,
+              preNudges.stuckFinalize,
+              getLastUsage,
+              usageModel,
+              coerceTextToolCallArgs,
+              maxStreamOutputTokens,
+              resolveTruncationNudge,
+            )
+            if (forced.pendingToolCalls.length > 0) {
+              await executeToolBatch({
+                pendingToolCalls: forced.pendingToolCalls,
+                messages,
+                executeTool: opts.executeTool,
+                signal,
+                onChunk,
+                recentFingerprints,
+                budget,
+              })
+              toolOnlySteps++
+              continue
+            }
+            if (forced.answerText.trim()) {
+              finishedWithAnswer = true
+              break
+            }
           }
         }
 
         if (preNudges.loop !== undefined) {
           messages.push({ role: 'user', content: preNudges.loop })
+          recordAppliedNudge(appliedNudgeSink, {
+            step: budget.llmCalls,
+            hookId: LOOP_NUDGE_HOOK_ID,
+            mechanism: 'tool-enabled-message',
+            text: preNudges.loop,
+          })
           loopNudgeSent = true
         }
       }
@@ -924,6 +1010,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let streamReasoningChars = 0
     let streamReasoningText = ''
     let streamCappedAsRunaway = false
+    const effectiveMaxStreamOutputTokens =
+      reasoningRunawayStreak > 0
+        ? (reasoningRunawayRecoveryOutputTokens ?? maxStreamOutputTokens)
+        : maxStreamOutputTokens
 
     budget.deadline.pause()
     try {
@@ -963,7 +1053,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // Backstop against a single runaway generation (common with local
         // OpenAI-compatible servers that ignore output caps): stop consuming and
         // treat the partial turn as truncated so the loop can recover (#489).
-        if (!pendingToolCalls.length && isStreamOutputRunaway(streamOutputChars)) {
+        if (
+          !pendingToolCalls.length &&
+          isStreamOutputRunaway(streamOutputChars, effectiveMaxStreamOutputTokens)
+        ) {
           stopReason = 'max_tokens'
           streamCappedAsRunaway = true
           break
@@ -1011,12 +1104,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       ...(stopReason !== undefined ? { stopReason } : {}),
     })
     const truncationNudge = postNudges.truncation
-    const reasoningRunawayNudge = postNudges.reasoningRunaway
+    const reasoningRunawayNudge =
+      postNudges.reasoningRunaway === undefined
+        ? undefined
+        : (reasoningRunawayRecoveryNudge ?? postNudges.reasoningRunaway)
+    const reasoningDominatedRunaway =
+      streamCappedAsRunaway &&
+      reasoningRunawayNudge !== undefined &&
+      streamReasoningChars > assistantText.length &&
+      assistantText.trim().length <= reasoningRunawayTextToleranceChars
 
     if (streamCappedAsRunaway) {
       emitStreamCutRecord(recordStreamCut, {
         step: budget.llmCalls,
         cutReason: 'reasoning_runaway_cap',
+        streamOutputTokenLimit: effectiveMaxStreamOutputTokens,
         streamOutputChars,
         streamReasoningChars,
         reasoningText: streamReasoningText,
@@ -1038,6 +1140,12 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       })
       if (truncationNudge !== undefined) {
         messages.push({ role: 'user', content: truncationNudge })
+        recordAppliedNudge(appliedNudgeSink, {
+          step: budget.llmCalls,
+          hookId: TRUNCATION_CONTINUE_HOOK_ID,
+          mechanism: 'tool-enabled-message',
+          text: truncationNudge,
+        })
       }
     } else if (isRefusalStopReason(stopReason)) {
       const text = assistantText.trim() || REFUSAL_USER_MESSAGE
@@ -1060,11 +1168,17 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         break
       }
       continue
-    } else if (assistantText.trim()) {
+    } else if (assistantText.trim() && !reasoningDominatedRunaway) {
       reasoningRunawayStreak = 0
       if (truncationNudge !== undefined) {
         messages.push({ role: 'assistant', content: assistantText })
         messages.push({ role: 'user', content: truncationNudge })
+        recordAppliedNudge(appliedNudgeSink, {
+          step: budget.llmCalls,
+          hookId: TRUNCATION_CONTINUE_HOOK_ID,
+          mechanism: 'tool-enabled-message',
+          text: truncationNudge,
+        })
         continue
       }
       messages.push({ role: 'assistant', content: assistantText })
@@ -1090,9 +1204,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
             break
           }
           messages.push({ role: 'user', content: reasoningRunawayNudge })
+          recordAppliedNudge(appliedNudgeSink, {
+            step: budget.llmCalls,
+            hookId: REASONING_RUNAWAY_HOOK_ID,
+            mechanism: 'tool-enabled-message',
+            text: reasoningRunawayNudge,
+          })
           continue
         }
         messages.push({ role: 'user', content: truncationNudge })
+        recordAppliedNudge(appliedNudgeSink, {
+          step: budget.llmCalls,
+          hookId: TRUNCATION_CONTINUE_HOOK_ID,
+          mechanism: 'tool-enabled-message',
+          text: truncationNudge,
+        })
         continue
       }
       if (isContextOverflowStopReason(stopReason)) {
@@ -1181,6 +1307,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         getLastUsage,
         usageModel,
         coerceTextToolCallArgs,
+        maxStreamOutputTokens,
         resolveTruncationNudge,
       )
       while (finalResult.pendingToolCalls.length > 0 && !runBudgetExhausted(budget)) {
@@ -1202,6 +1329,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           getLastUsage,
           usageModel,
           coerceTextToolCallArgs,
+          maxStreamOutputTokens,
           resolveTruncationNudge,
         )
       }

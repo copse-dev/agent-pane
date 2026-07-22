@@ -28,6 +28,8 @@ export interface StreamCutRecord {
   /** 1-based LLM call index within this run (matches hook_run step). */
   step: number
   cutReason: StreamCutReason
+  /** Configured token estimate at which this particular stream was cut. */
+  streamOutputTokenLimit?: number | undefined
   streamOutputChars: number
   streamReasoningChars: number
   reasoningText: string

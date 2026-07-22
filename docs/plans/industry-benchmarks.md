@@ -2,7 +2,7 @@
 
 Tracking: [#752](https://github.com/copse-dev/agent-pane/issues/752)
 
-Status: **Phase 1 landed, Phase 2 scaffolded.** Phase 1's deterministic
+Status: **Phase 1 landed, Phase 2 scaffolded, terminal lane started.** Phase 1's deterministic
 replay corpora are in the per-PR unit tier
 (`tests/fixtures/tool-call-dialect-corpus.json` +
 `parse-text-tool-calls.corpus.test.ts`,
@@ -25,6 +25,45 @@ Phases 2b–4 remain. This doc maps where public agent benchmarks
 (SWE-bench, Terminal-Bench, BFCL, TAU-bench, RULER-style long-context
 suites, MCP conformance suites) plug into the harness we already have,
 and what each one buys the _plumbing_ specifically.
+
+The first local Terminal-Bench adapter is `npm run bench:terminal`. It runs the
+existing headless agent loop on the host, forwards shell calls into Harbor's official
+Docker task environments, keeps the official verifier as the outcome authority, and
+writes a buffered raw trace plus a thread-store-compatible transcript beside each trial.
+The transcript is checkpointed after tool rounds, uses the normal spine/OKF serializers,
+and includes the portable thread JSONL consumed by the existing analyzer. It also records
+the existing function-hook run stream beside the transcript so pressure and runaway nudge
+selection remains attributable during benchmark analysis. A separate applied-nudge stream
+records the exact host-substituted text and whether it was tool-enabled or text-only. The benchmark
+also lowers the per-stream reasoning-runaway guard to 2k output tokens without changing
+the desktop default. The one bounded stream after that recovery nudge may use a 4k cap, giving
+a complex local-model thought one chance to reach a tool call without returning to an unbounded
+runaway. Its host-specific recovery nudge directs a stalled terminal agent to
+take concrete tool action instead of asking for a chat-style final answer. It also replaces
+the pressure-triggered tool-less answer turn for this host with one tool-enabled recovery
+instruction, because terminal success is durable environment state rather than prose; the
+configured output cap still bounds finalization. The recovery also treats available `/tests` as
+the verifier authority instead of accepting an ad hoc smoke check, and requires a best-effort edit
+before any further read-only inspection. The
+terminal host also treats a short visible planning preamble on an otherwise reasoning-dominated
+cut as part of the same bounded runaway streak. The launcher defaults to one task and one attempt
+for local smoke testing. Its prompt also preserves forensic/stateful inputs before potentially
+mutating inspection tools, avoiding accidental evidence loss, and keeps original task inputs
+unchanged while iterative work runs on copies. `--all -k 5` expands it to the
+repeated-attempt lane. The terminal prompt also keeps large inputs in reusable files, bounds
+large file reads and expensive searches before expansion, avoids large optional dependency/model
+downloads when existing lightweight tools can solve the task, and checks the authoritative `/tests` directory before
+implementation rather than accepting similarly named workspace tests. Agent-context usage counters update from each streamed event,
+so infrastructure-invalid and timed-out trials retain partial token/tool/request telemetry for
+postmortem analysis. Full local runs can use `--all --resume`: clean outcomes and agent timeouts
+are excluded, while infrastructure-invalid trials remain eligible. The launcher checks host disk
+space and Docker health before starting, and terminates a suite on fatal daemon/image-extraction
+output so an infrastructure outage cannot silently consume the remainder of the task queue. The
+sequential suite driver additionally verifies that each task wrote a valid new result before
+advancing and can remove that completed task's pinned image to bound local Docker growth. Its
+optional one-image-ahead prefetch overlaps the next pull with inference, guarded by a separate
+30 GiB free-space floor so provisioning latency can be hidden without recreating unbounded disk
+pressure.
 
 ## The framing: benchmarks as harness evals, not model evals
 

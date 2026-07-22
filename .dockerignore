@@ -1,0 +1,14 @@
+.git
+.github
+.tmp
+assets
+bench-results
+ci-runners
+dist
+dist-test
+docs
+node_modules
+release
+site
+tests
+vendor
