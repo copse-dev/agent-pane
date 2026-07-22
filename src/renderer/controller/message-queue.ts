@@ -11,7 +11,6 @@ import {
   setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import { syncAgentActivity } from '../agent-activity.ts'
-import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { canContinue, DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 
 /**
@@ -414,13 +413,9 @@ export function sendQueuedMessageNow(
   store.emit('threads_changed')
 
   if (thread.status === 'running') {
-    // Remote agents run on the provider's servers, where aborting cancels the live
-    // run ("Agent already has an active run" on the next turn). Leave the reordered
-    // message queued — it drains onto the same remote agent once this run finishes,
-    // so a follow-up never kills the agent. Local runs interrupt as before.
-    const model = thread.model ?? store.getState().settings?.model ?? ''
-    if (isRemoteAgentModel(model)) return
-    // Abort the live run; its `done` chunk drains the reordered queue head.
+    // Abort the live run (local or remote); its `done` chunk drains the reordered
+    // queue head. Remote follow-up create retries on `409 agent_busy` until the
+    // cancelled run settles — see `createRemoteRun` in remote-agent-client.ts.
     void api.agent.abort(threadId)
   } else {
     drainMessageQueue(store, api, threadId)
