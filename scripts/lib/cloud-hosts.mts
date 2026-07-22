@@ -734,6 +734,135 @@ export function scalewayJsonArgs(config: { zone: string }, args: string[]): stri
   return [...scalewayArgs(config, args), '-o', 'json']
 }
 
+export function scalewayBlockVolumeDeleteArgs(
+  config: { zone: string },
+  volumeId: string,
+): string[] {
+  return scalewayArgs(config, ['block', 'volume', 'delete', volumeId])
+}
+
+/**
+ * Volume IDs (any type) attached to a Scaleway server, from the JSON of
+ * `scw instance server get`. The server payload carries volumes as a
+ * position-keyed object ({ "0": {...}, "1": {...} }), optionally under a
+ * `server` envelope. Missing/empty volumes yield an empty list.
+ */
+export function parseScalewayVolumeIds(raw: string): string[] {
+  const parsed: unknown = JSON.parse(raw)
+  const envelope = isRecord(parsed) ? parsed : undefined
+  const server = isRecord(envelope?.['server']) ? envelope['server'] : envelope
+  const volumes = server?.['volumes']
+  if (!isRecord(volumes)) return []
+  const ids: string[] = []
+  for (const entry of Object.values(volumes)) {
+    if (!isRecord(entry)) continue
+    const id = stringFromPath(entry['id'])
+    if (id) ids.push(id)
+  }
+  return ids
+}
+
+function scalewayServerVolumeIds(config: { zone: string }, serverId: string): string[] {
+  try {
+    return parseScalewayVolumeIds(
+      capture('scw', scalewayJsonArgs(config, ['instance', 'server', 'get', serverId])),
+    )
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    console.error(
+      `==> Warning: could not read volumes for ${serverId} in ${config.zone}; block storage may leak: ${detail}`,
+    )
+    return []
+  }
+}
+
+/** Number of attempts to delete each detached SBS volume post-terminate. */
+const SCALEWAY_VOLUME_DELETE_ATTEMPTS = 8
+
+function isScalewayNotFound(message: string): boolean {
+  return /not found|not_found|404/i.test(message)
+}
+
+/** Block synchronously without spinning a subprocess or busy-looping the CPU. */
+function sleepSync(seconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000)
+}
+
+/**
+ * Delete the Block Storage (SBS) volumes left behind by a terminate.
+ * `scw instance server terminate with-block=true` deletes only legacy local
+ * (l_ssd) volumes and merely *detaches* SBS roots, so without this each 80 GB
+ * SBS root lingers as an unattached, still-billed volume. A not-found result
+ * means the volume is already gone (or was a local volume the terminate
+ * removed) and counts as done; an "in use" error means the server is still
+ * detaching it, so retry across that window.
+ */
+export function deleteScalewayVolumesBestEffort(
+  config: { zone: string },
+  volumeIds: string[],
+): void {
+  for (const volumeId of volumeIds) {
+    let deleted = false
+    let lastError = ''
+    for (let attempt = 1; attempt <= SCALEWAY_VOLUME_DELETE_ATTEMPTS; attempt += 1) {
+      try {
+        capture('scw', scalewayBlockVolumeDeleteArgs(config, volumeId))
+        deleted = true
+        break
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err)
+        if (isScalewayNotFound(lastError)) {
+          deleted = true
+          break
+        }
+        if (attempt < SCALEWAY_VOLUME_DELETE_ATTEMPTS) sleepSync(attempt * 2)
+      }
+    }
+    if (!deleted) {
+      console.error(
+        `==> Warning: failed to delete block volume ${volumeId} in ${config.zone} after ${String(
+          SCALEWAY_VOLUME_DELETE_ATTEMPTS,
+        )} attempts; it may keep billing: ${lastError}`,
+      )
+    }
+  }
+}
+
+interface ScalewayServerTerminationOperations {
+  deleteVolumes: (config: { zone: string }, volumeIds: string[]) => void
+  readVolumeIds: (config: { zone: string }, serverId: string) => string[]
+  terminate: (config: { zone: string }, serverId: string) => void
+}
+
+const SCALEWAY_SERVER_TERMINATION_OPERATIONS: ScalewayServerTerminationOperations = {
+  deleteVolumes: deleteScalewayVolumesBestEffort,
+  readVolumeIds: scalewayServerVolumeIds,
+  terminate: (config, serverId) => {
+    run('scw', scalewayTerminateArgs(config, serverId))
+  },
+}
+
+/**
+ * Terminate a Scaleway server and delete its Block Storage root volume.
+ * Volume IDs are captured *before* terminate because termination orphans the
+ * SBS root (the CLI detaches but does not delete it) and the server metadata
+ * needed to enumerate volumes disappears once it is gone. Volume deletion is
+ * attempted even when `scw instance server terminate` reports a waiter timeout:
+ * the server may already be gone while its detached SBS root keeps billing.
+ */
+export function terminateScalewayServer(
+  config: { zone: string },
+  serverId: string,
+  operations: ScalewayServerTerminationOperations = SCALEWAY_SERVER_TERMINATION_OPERATIONS,
+): void {
+  const volumeIds = operations.readVolumeIds(config, serverId)
+  try {
+    operations.terminate(config, serverId)
+  } finally {
+    operations.deleteVolumes(config, volumeIds)
+  }
+}
+
 export function isScalewayQuotaError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err)
   return /quota exceeded/i.test(message)
@@ -807,7 +936,7 @@ export function terminateScalewayServersBestEffort(
 ): void {
   for (const id of serverIds) {
     try {
-      run('scw', scalewayTerminateArgs(config, id))
+      terminateScalewayServer(config, id)
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err)
       console.error(`==> Warning: failed to terminate ${id} in ${config.zone}: ${detail}`)
