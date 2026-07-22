@@ -198,18 +198,17 @@ visually distinct. Display re-derives from `project.path` so older basename-only
 names still render correctly (`projectDisplayName` in
 [`projects.ts`](../src/renderer/controller/projects.ts)).
 
-## Thread GitHub PR status chips
+## Thread GitHub PR status icon
 
 Sidebar `.chat-row`s that link to GitHub PRs (chat URLs and/or `remoteAgentLink.prUrl`)
-show a compact plain-text chip — not a pill/card — after lifecycle resolves:
+show a single git-pull-request icon after lifecycle resolves — not text, not a pill:
 
-- single open → `#42` (accent)
-- multiple open → `2 open` (accent)
-- all merged → `merged` / `all merged` (success)
-- otherwise closed → `closed` / `all closed` (muted)
+- open → accent
+- merged → success
+- closed → muted
 
-Keep the chip short so it sits beside the title without shoving the delete control;
-logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
+The tooltip / `aria-label` carries the detail (`#42 is open`, `all merged`, …).
+Logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
 [`projects-pane-pr-status.test.ts`](../src/renderer/views/projects-pane-pr-status.test.ts),
 [`tests/e2e/thread-pr-status.e2e.ts`](../tests/e2e/thread-pr-status.e2e.ts).
 

@@ -1,5 +1,5 @@
-// Sidebar thread rows show a compact GitHub PR lifecycle chip (#42 / 2 open /
-// merged) once linked PR details resolve via the mock/gh backend.
+// Sidebar thread rows show a single GitHub PR icon (color = open / merged /
+// closed) once linked PR details resolve via the mock/gh backend.
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
@@ -83,18 +83,21 @@ describe('projects pane thread PR status (component)', () => {
     )
   }
 
-  async function waitForChip(title: string, text: string): Promise<HTMLElement> {
+  async function waitForIcon(
+    title: string,
+    kind: 'open' | 'merged' | 'closed',
+  ): Promise<HTMLElement> {
     const deadline = Date.now() + 2_000
     while (Date.now() < deadline) {
       const row = rowByTitle(title)
-      const chip = row?.querySelector<HTMLElement>('.chat-pr-status')
-      if (chip?.textContent === text) return chip
+      const icon = row?.querySelector<HTMLElement>(`.chat-pr-status.is-${kind}`)
+      if (icon?.querySelector('svg[data-icon="git-pull-request"]')) return icon
       await new Promise((r) => setTimeout(r, 10))
     }
-    throw new Error(`Timed out waiting for PR chip "${text}" on "${title}"`)
+    throw new Error(`Timed out waiting for PR ${kind} icon on "${title}"`)
   }
 
-  it('shows #N for a single open PR linked from chat', async () => {
+  it('shows an open PR icon for a single open PR linked from chat', async () => {
     const store = createStore({
       projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
       activeProjectId: 'p1',
@@ -115,13 +118,12 @@ describe('projects pane thread PR status (component)', () => {
       ),
     )
 
-    const chip = await waitForChip('Open PR work', `#${String(OPEN_NUMBER)}`)
-    assert.ok(chip.classList.contains('is-open'))
-    assert.match(chip.getAttribute('aria-label') ?? '', /open/i)
+    const icon = await waitForIcon('Open PR work', 'open')
+    assert.match(icon.getAttribute('aria-label') ?? '', /#42.*open/i)
     assert.equal(rowByTitle('No PR')?.querySelector('.chat-pr-status'), null)
   })
 
-  it('shows all merged when every linked PR is merged', async () => {
+  it('shows a merged PR icon when every linked PR is merged', async () => {
     const store = createStore({
       projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
       activeProjectId: 'p1',
@@ -149,11 +151,11 @@ describe('projects pane thread PR status (component)', () => {
       }),
     )
 
-    const chip = await waitForChip('Shipped work', 'all merged')
-    assert.ok(chip.classList.contains('is-merged'))
+    const icon = await waitForIcon('Shipped work', 'merged')
+    assert.match(icon.getAttribute('aria-label') ?? '', /all linked.*merged/i)
   })
 
-  it('counts multiple open PRs as N open', async () => {
+  it('keeps the open icon when multiple PRs are still open', async () => {
     const store = createStore({
       projects: [{ id: 'p1', path: '/proj', name: 'Proj' }],
       activeProjectId: 'p1',
@@ -175,7 +177,7 @@ describe('projects pane thread PR status (component)', () => {
       }),
     )
 
-    const chip = await waitForChip('Multi-PR thread', '2 open')
-    assert.ok(chip.classList.contains('is-open'))
+    const icon = await waitForIcon('Multi-PR thread', 'open')
+    assert.match(icon.getAttribute('aria-label') ?? '', /2 pull requests are open/i)
   })
 })

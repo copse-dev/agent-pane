@@ -4,7 +4,7 @@ import { writeE2eEnv } from './helpers/e2e-env.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedThreadPrStatusFixture } from './helpers/seed-config.ts'
 
-describe('thread GitHub PR status chips', () => {
+describe('thread GitHub PR status icon', () => {
   let openThreadTitle: string
   let mergedThreadTitle: string
   let plainThreadTitle: string
@@ -24,16 +24,17 @@ describe('thread GitHub PR status chips', () => {
     resetUserData()
   })
 
-  it('shows open and merged chips on linked threads', async function () {
+  it('shows open and merged PR icons on linked threads', async function () {
     this.timeout(90_000)
 
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await expect($('.chat-row.selected .chat-title')).toHaveText(openThreadTitle)
 
-    const openChip = await $('.chat-row.selected .chat-pr-status')
-    await openChip.waitForExist({ timeout: 15_000 })
-    await expect(openChip).toHaveText('#42')
-    await expect(openChip).toHaveElementClass('is-open')
+    const openIcon = await $('.chat-row.selected .chat-pr-status')
+    await openIcon.waitForExist({ timeout: 15_000 })
+    await expect(openIcon).toHaveElementClass('is-open')
+    await expect(openIcon.$('svg[data-icon="git-pull-request"]')).toExist()
+    await expect(openIcon).toHaveAttribute('aria-label', expect.stringMatching(/#42.*open/i))
 
     const labels = await browser.execute(
       (openTitle, mergedTitle, plainTitle) => {
@@ -44,11 +45,13 @@ describe('thread GitHub PR status chips', () => {
         const merged = byTitle(mergedTitle)?.querySelector('.chat-pr-status')
         const plain = byTitle(plainTitle)?.querySelector('.chat-pr-status')
         return {
-          openText: open?.textContent ?? null,
-          openKind: open?.className.includes('is-open') ?? false,
-          mergedText: merged?.textContent ?? null,
-          mergedKind: merged?.className.includes('is-merged') ?? false,
-          plainHasChip: Boolean(plain),
+          openKind: open?.classList.contains('is-open') ?? false,
+          openIcon: open?.querySelector('svg')?.getAttribute('data-icon') ?? null,
+          openLabel: open?.getAttribute('aria-label') ?? null,
+          mergedKind: merged?.classList.contains('is-merged') ?? false,
+          mergedIcon: merged?.querySelector('svg')?.getAttribute('data-icon') ?? null,
+          mergedLabel: merged?.getAttribute('aria-label') ?? null,
+          plainHasIcon: Boolean(plain),
         }
       },
       openThreadTitle,
@@ -56,12 +59,14 @@ describe('thread GitHub PR status chips', () => {
       plainThreadTitle,
     )
 
-    await expect(labels.openText).toBe('#42')
     await expect(labels.openKind).toBe(true)
-    await expect(labels.mergedText).toBe('merged')
+    await expect(labels.openIcon).toBe('git-pull-request')
+    await expect(labels.openLabel).toMatch(/#42.*open/i)
     await expect(labels.mergedKind).toBe(true)
-    await expect(labels.plainHasChip).toBe(false)
+    await expect(labels.mergedIcon).toBe('git-pull-request')
+    await expect(labels.mergedLabel).toMatch(/merged/i)
+    await expect(labels.plainHasIcon).toBe(false)
 
-    await saveElementScreenshot('#pane-projects', 'thread-pr-status-chips.png')
+    await saveElementScreenshot('#pane-projects', 'thread-pr-status-icon.png')
   })
 })

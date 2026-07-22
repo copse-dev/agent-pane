@@ -1,5 +1,11 @@
 import { el, clear } from '../dom/helpers.ts'
-import { chevronRightIcon, closeIcon, runningStatusIcon, warningIcon } from '../dom/icons.ts'
+import {
+  chevronRightIcon,
+  closeIcon,
+  gitPullRequestIcon,
+  runningStatusIcon,
+  warningIcon,
+} from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { OrphanProjectStore, Project, Thread } from '@shared/types'
@@ -8,7 +14,6 @@ import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 import {
   collectThreadPrRefs,
   describeThreadPrStatus,
-  formatThreadPrStatus,
   normalizePrLifecycleState,
   summarizeThreadPrStatus,
   type PrLifecycleState,
@@ -76,18 +81,21 @@ function runningStatus(label: string): SVGSVGElement {
   return svg
 }
 
-/** Compact GitHub PR chip on a thread row (`#42` / `2 open` / `merged`). */
+/** Single GitHub PR icon on a thread row; color encodes open / merged / closed. */
 function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
-  const chip = el(
+  const label = describeThreadPrStatus(rollup)
+  const icon = gitPullRequestIcon('ui-icon ui-icon-sm')
+  icon.setAttribute('aria-hidden', 'true')
+  return el(
     'span',
     {
       class: `chat-pr-status is-${rollup.kind}`,
-      'aria-label': describeThreadPrStatus(rollup),
-      title: describeThreadPrStatus(rollup),
+      role: 'img',
+      'aria-label': label,
+      title: label,
     },
-    formatThreadPrStatus(rollup),
+    icon,
   )
-  return chip
 }
 
 function settingsIcon(): SVGSVGElement {
