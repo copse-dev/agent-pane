@@ -13,6 +13,11 @@ on:
         required: true
         default: '10'
         type: string
+      task_names:
+        description: Optional comma-separated exact task names (applied before max_tasks)
+        required: false
+        default: ''
+        type: string
       instances:
         description: Disposable x86 Scaleway workers (1-20)
         required: true
@@ -38,6 +43,16 @@ on:
         required: true
         default: true
         type: boolean
+      max_stream_output_tokens:
+        description: Per-model-response stream cap (512-16384; baseline 2048)
+        required: true
+        default: '2048'
+        type: string
+      max_command_timeout_sec:
+        description: Maximum model-requested shell timeout (120-900; default commands remain 120)
+        required: true
+        default: '600'
+        type: string
 
 concurrency:
   group: terminal-bench-scaleway-fleet
@@ -58,6 +73,8 @@ jobs:
           MAX_TASKS: ${{ inputs.max_tasks }}
           INSTANCES: ${{ inputs.instances }}
           ATTEMPTS: ${{ inputs.attempts }}
+          MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
+          MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
           ANALYST_MODEL: ${{ inputs.analyst_model }}
           BENCH_ANALYST_API_KEY: ${{ secrets.BENCH_ANALYST_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
@@ -81,6 +98,16 @@ jobs:
           fi
           if ! [[ "$ATTEMPTS" =~ ^[1-5]$ ]]; then
             echo "::error::attempts must be an integer from 1 through 5"
+            exit 2
+          fi
+          if ! [[ "$MAX_STREAM_OUTPUT_TOKENS" =~ ^[0-9]+$ ]] || \
+            [ "$MAX_STREAM_OUTPUT_TOKENS" -lt 512 ] || [ "$MAX_STREAM_OUTPUT_TOKENS" -gt 16384 ]; then
+            echo "::error::max_stream_output_tokens must be an integer from 512 through 16384"
+            exit 2
+          fi
+          if ! [[ "$MAX_COMMAND_TIMEOUT_SEC" =~ ^[0-9]+$ ]] || \
+            [ "$MAX_COMMAND_TIMEOUT_SEC" -lt 120 ] || [ "$MAX_COMMAND_TIMEOUT_SEC" -gt 900 ]; then
+            echo "::error::max_command_timeout_sec must be an integer from 120 through 900"
             exit 2
           fi
           required=(
@@ -257,8 +284,11 @@ jobs:
           COPSE_BENCH_AGENT_VERSION: github-${{ github.sha }}
           COPSE_BENCH_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
           COPSE_TERMINAL_WORKSPACE_CAP_MB: '500'
+          COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
+          COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
           INSTANCES: ${{ inputs.instances }}
           MAX_TASKS: ${{ inputs.max_tasks }}
+          TASK_NAMES: ${{ inputs.task_names }}
           ATTEMPTS: ${{ inputs.attempts }}
           SCW_TYPE: ${{ inputs.scw_type }}
           WORKER_IMAGE: ${{ needs.prepare.outputs.worker_image }}
@@ -284,6 +314,7 @@ jobs:
             --object-prefix "$OBJECT_PREFIX"
             --key-path "$SSH_KEY_PATH"
           )
+          if [ -n "$TASK_NAMES" ]; then args+=(--task-names "$TASK_NAMES"); fi
           if [ -n "$SCW_ZONE" ]; then args+=(--zone "$SCW_ZONE"); fi
           if [ -n "$SECURITY_GROUP_ID" ]; then args+=(--security-group-id "$SECURITY_GROUP_ID"); fi
           if [ "$STEERED_RERUN" != true ]; then args+=(--no-steered-rerun); fi

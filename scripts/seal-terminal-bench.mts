@@ -179,6 +179,8 @@ for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
       maxStreamOutputTokens:
         process.env['COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS']?.trim() || '2048',
       commandTimeoutSeconds: process.env['COPSE_TERMINAL_COMMAND_TIMEOUT_SEC']?.trim() || '120',
+      maxCommandTimeoutSeconds:
+        process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim() || '600',
     },
     lineage: {
       parentTrialId: nested(result, 'agent_result', 'metadata', 'parent_trial_id') ?? null,

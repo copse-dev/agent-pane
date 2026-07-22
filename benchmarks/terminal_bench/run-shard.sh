@@ -27,13 +27,19 @@ steered_status=0
 seal_status=0
 upload_status=0
 
-npm run bench:terminal:suite -- \
-  --max-tasks="${COPSE_TERMINAL_MAX_TASKS}" \
-  --shard-count="${COPSE_TERMINAL_SHARD_COUNT}" \
-  --shard-index="${COPSE_TERMINAL_SHARD_INDEX}" \
-  --prune-images \
-  --prefetch-images \
-  -k "${COPSE_TERMINAL_ATTEMPTS}" || benchmark_status=$?
+suite_args=(
+  --max-tasks="${COPSE_TERMINAL_MAX_TASKS}"
+  --shard-count="${COPSE_TERMINAL_SHARD_COUNT}"
+  --shard-index="${COPSE_TERMINAL_SHARD_INDEX}"
+  --prune-images
+  --prefetch-images
+  -k "${COPSE_TERMINAL_ATTEMPTS}"
+)
+if [[ -n "${COPSE_TERMINAL_TASK_NAMES:-}" ]]; then
+  suite_args+=(--task-names="${COPSE_TERMINAL_TASK_NAMES}")
+fi
+
+npm run bench:terminal:suite -- "${suite_args[@]}" || benchmark_status=$?
 
 if [[ -n "${BENCH_ANALYST_MODEL:-}" ]]; then
   npm run bench:terminal:analyze || analysis_status=$?

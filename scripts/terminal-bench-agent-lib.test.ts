@@ -2,17 +2,30 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { formatTerminalResult } from './lib/terminal-bench-protocol.mts'
 import {
+  DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
   DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
   DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS,
   TERMINAL_BENCH_SYSTEM_PROMPT,
   TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE,
   TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
+  terminalCommandTimeoutParameter,
 } from './terminal-bench-agent-lib.mts'
 
 describe('terminal benchmark bridge', () => {
   it('uses an action-oriented local-model stream cap', () => {
     assert.equal(DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS, 2_048)
     assert.equal(DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS, 4_096)
+  })
+
+  it('offers a bounded opt-in timeout for legitimately long commands', () => {
+    assert.equal(DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC, 600)
+    assert.deepEqual(terminalCommandTimeoutParameter(600), {
+      type: 'integer',
+      minimum: 1,
+      maximum: 600,
+      description:
+        'Optional timeout for a command that is expected to run longer than the default, such as a final build, training run, or verifier. Keep the default for inspection and broad searches.',
+    })
   })
 
   it('warns the agent to preserve stateful forensic inputs before inspection', () => {
@@ -41,12 +54,15 @@ describe('terminal benchmark bridge', () => {
   })
 
   it('prevents the reasoning recovery from repeating an existing inspection result', () => {
-    assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /create or modify/)
+    assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /requested deliverable/)
     assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /Do not repeat an inspection command/)
   })
 
   it('requires the stuck recovery to exercise available verifier tests', () => {
-    assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /next run_shell command must create or modify/)
+    assert.match(
+      TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
+      /whether it is code, configuration, data, or a recovered artifact/,
+    )
     assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /do not run another ls, find, grep, sed, cat/)
     assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /verifier tests/)
   })

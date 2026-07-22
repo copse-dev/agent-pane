@@ -33,6 +33,7 @@ import {
   validateTagValue,
   waitForScalewayServers,
 } from './lib/cloud-hosts.mts'
+import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
 
 const DEFAULT_NAME = 'copse-terminal-bench'
 const DEFAULT_INSTANCES = 10
@@ -60,6 +61,7 @@ export interface RunConfig extends SshConfig {
   objectPrefix: string
   securityGroupId: string | undefined
   steeredRerun: boolean
+  taskNames: string[]
   ttlMinutes: number
   type: string
   volumeSizeGb: number
@@ -86,6 +88,7 @@ by Copse burst runners is installed on every host as a backstop.
 Options:
   --instances <n>          Parallel workers (default: ${String(DEFAULT_INSTANCES)}, max: 20)
   --max-tasks <n>          Global task cap (default: same as instances, max: 89)
+  --task-names <a,b,...>   Exact registry tasks to run, in the supplied order
   --attempts <n>           Attempts per task (default: 1, max: 5)
   --scw-type <type>        x86 Instance type (default: ${DEFAULT_TYPE})
   --scw-image <image>      Ubuntu/custom snapshot image (default: ${DEFAULT_SCW_IMAGE})
@@ -132,6 +135,7 @@ export function runConfig(options: Options): RunConfig {
     'max-tasks',
     89,
   )
+  const taskNames = terminalBenchRequestedTaskNames(option(options, 'task-names')) ?? []
   const workerImage = option(options, 'worker-image')
   if (!workerImage || !workerImage.includes('/') || /\s/.test(workerImage)) {
     throw new Error('--worker-image must be a fully qualified registry image reference')
@@ -148,7 +152,7 @@ export function runConfig(options: Options): RunConfig {
   return {
     attempts: boundedInt(optionWithDefault(options, 'attempts', '1'), 'attempts', 5),
     baseImage,
-    instanceCount: Math.min(instanceCount, maxTasks),
+    instanceCount: Math.min(instanceCount, maxTasks, taskNames.length || maxTasks),
     keyPath: optionWithDefault(options, 'key-path', ''),
     maxTasks,
     name: fleetName(options),
@@ -160,6 +164,7 @@ export function runConfig(options: Options): RunConfig {
     securityGroupId,
     sshHost: 'public',
     steeredRerun: !hasFlag(options, 'no-steered-rerun'),
+    taskNames,
     ttlMinutes: nonNegativeInt(
       optionWithDefault(options, 'ttl-minutes', String(DEFAULT_TTL_MINUTES)),
       'ttl-minutes',
@@ -239,6 +244,17 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
     ['GITHUB_SHA', process.env['GITHUB_SHA']?.trim() || 'manual'],
     ['GITHUB_REF', process.env['GITHUB_REF']?.trim() || 'manual'],
   ]
+  if (config.taskNames.length > 0) {
+    values.push(['COPSE_TERMINAL_TASK_NAMES', config.taskNames.join(',')])
+  }
+  const streamOutputTokens = process.env['COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS']?.trim()
+  if (streamOutputTokens) {
+    values.push(['COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS', streamOutputTokens])
+  }
+  const maxCommandTimeout = process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim()
+  if (maxCommandTimeout) {
+    values.push(['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC', maxCommandTimeout])
+  }
   const analystModel = process.env['BENCH_ANALYST_MODEL']?.trim()
   if (analystModel) {
     values.push(
