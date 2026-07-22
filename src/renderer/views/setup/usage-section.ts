@@ -6,6 +6,7 @@ import {
   formatTokenCount,
   formatUsd,
 } from '@shared/usage/format-usage-summary.ts'
+import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
 import type { PlanUsageSnapshot, ProviderPlanResult } from '@copse/plan-usage'
 import { qsRequired } from '../../dom/helpers.ts'
 import { escapeHtml } from '@copse/streaming-markdown'
@@ -13,6 +14,7 @@ import {
   createIntellectFrontierPanel,
   type OpenRouterFrontierSource,
 } from '../intellect-frontier-panel.ts'
+import type { PlanCoverageMode } from '../plan-inclusion.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 
@@ -206,6 +208,128 @@ function renderPlanSection(
   host.append(list)
 }
 
+const VERDICT_LABELS: Record<PlanWorthItPayload['worthIt']['verdict'], string> = {
+  worth_it: 'Worth it vs inference',
+  borderline: 'Close to break-even',
+  not_worth_it: 'Inference may be cheaper',
+  insufficient_history: 'Need more history',
+  needs_fee: 'Enter your plan fee',
+}
+
+/**
+ * Render the Claude plan worth-it card. Exported for unit tests.
+ * `onShowInference` switches the value map to Inference prices.
+ */
+export function renderPlanWorthItSection(
+  host: HTMLElement,
+  payload: PlanWorthItPayload | null,
+  error: string | null,
+  opts: {
+    onFeeChange: (fee: number | null) => void
+    onShowInference: () => void
+    busy?: boolean
+  },
+): void {
+  host.replaceChildren()
+
+  const heading = document.createElement('h3')
+  heading.className = 'usage-worth-heading'
+  heading.textContent = 'Is your plan worth it?'
+  host.append(heading)
+
+  const intro = document.createElement('p')
+  intro.className = 'field-hint'
+  intro.textContent =
+    'Compares your Claude subscription’s account-wide weekly API-equivalent burn (from plan windows, including other apps and devices) to paying catalog inference rates. Copse’s local ledger is not used here.'
+  host.append(intro)
+
+  if (error) {
+    const err = document.createElement('p')
+    err.className = 'usage-plan-status usage-plan-status-error field-hint'
+    err.textContent = error
+    host.append(err)
+    return
+  }
+
+  if (!payload) {
+    const loading = document.createElement('p')
+    loading.className = 'field-hint'
+    loading.textContent = 'Loading plan worth-it…'
+    host.append(loading)
+    return
+  }
+
+  const { worthIt } = payload
+  const card = document.createElement('div')
+  card.className = 'usage-worth-card'
+  card.dataset['verdict'] = worthIt.verdict
+
+  const verdict = document.createElement('p')
+  verdict.className = 'usage-worth-verdict'
+  verdict.textContent = VERDICT_LABELS[worthIt.verdict]
+  card.append(verdict)
+
+  const reason = document.createElement('p')
+  reason.className = 'usage-worth-reason field-hint'
+  reason.textContent = worthIt.reason
+  card.append(reason)
+
+  const feeRow = document.createElement('div')
+  feeRow.className = 'usage-worth-fee-row'
+  const feeLabel = document.createElement('label')
+  feeLabel.className = 'usage-worth-fee-label'
+  feeLabel.htmlFor = 'usage-worth-fee-input'
+  feeLabel.textContent = 'Claude plan monthly fee (USD)'
+  const feeInput = document.createElement('input')
+  feeInput.id = 'usage-worth-fee-input'
+  feeInput.type = 'number'
+  feeInput.min = '1'
+  feeInput.max = '10000'
+  feeInput.step = '1'
+  feeInput.className = 'usage-worth-fee-input'
+  feeInput.placeholder = worthIt.feeHint ? String(worthIt.feeHint.monthlyFeeUsd) : 'e.g. 100'
+  if (worthIt.monthlyFeeUsd !== null) {
+    feeInput.value = String(worthIt.monthlyFeeUsd)
+  }
+  if (worthIt.feeHint && worthIt.monthlyFeeUsd === worthIt.feeHint.monthlyFeeUsd) {
+    feeInput.title = `Hinted from weekly limit (${worthIt.feeHint.label})`
+  }
+  feeInput.disabled = opts.busy === true
+  feeInput.addEventListener('change', () => {
+    const raw = feeInput.value.trim()
+    if (!raw) {
+      opts.onFeeChange(null)
+      return
+    }
+    const n = Number(raw)
+    opts.onFeeChange(Number.isFinite(n) && n > 0 ? n : null)
+  })
+  feeRow.append(feeLabel, feeInput)
+  card.append(feeRow)
+
+  if (worthIt.feeHint && worthIt.monthlyFeeUsd === null) {
+    const hint = document.createElement('p')
+    hint.className = 'field-hint'
+    hint.textContent = `Suggested from weekly limit: ${worthIt.feeHint.label} (~$${String(worthIt.feeHint.monthlyFeeUsd)}/mo).`
+    card.append(hint)
+  }
+
+  const actions = document.createElement('div')
+  actions.className = 'usage-worth-actions'
+  const inferenceBtn = document.createElement('button')
+  inferenceBtn.type = 'button'
+  inferenceBtn.className = 'usage-worth-inference-btn'
+  inferenceBtn.textContent = 'Show inference prices on value map'
+  inferenceBtn.title = 'Plot the cancel-the-plan frontier (catalog API $/MTok)'
+  inferenceBtn.addEventListener('click', () => {
+    opts.onShowInference()
+  })
+  actions.append(inferenceBtn)
+  card.append(actions)
+
+  host.append(card)
+}
+
 function renderModelTable(
   host: HTMLElement,
   title: string,
@@ -329,6 +453,7 @@ export function createUsageSection(
   root.className = 'usage-section-root'
   root.innerHTML = `
     <div class="usage-plan-section" id="usage-plan-section"></div>
+    <div class="usage-worth-section" id="usage-worth-section"></div>
     <div class="usage-ledger-section">
       <h3 class="usage-ledger-heading">Local usage ledger</h3>
       <div class="usage-period-tabs" role="tablist" aria-label="Usage period">
@@ -379,6 +504,7 @@ export function createUsageSection(
   root.append(frontierPanel.root)
 
   const planEl = qsRequired(root, '#usage-plan-section')
+  const worthEl = qsRequired(root, '#usage-worth-section')
   const bodyEl = qsRequired(root, '#usage-period-body')
   const labelEl = qsRequired(root, '#usage-period-label')
   const tabBtns = root.querySelectorAll<HTMLButtonElement>('.usage-period-btn')
@@ -386,6 +512,40 @@ export function createUsageSection(
   let cachedSummary: UsageSummary | null = null
   let cachedPlanSnapshot: PlanUsageSnapshot | null = null
   let ledgerRefreshTimer: ReturnType<typeof setTimeout> | undefined
+  let feeBusy = false
+
+  async function persistPlanFee(fee: number | null): Promise<void> {
+    feeBusy = true
+    try {
+      const next = await api.usage.setClaudePlanMonthlyFee(fee)
+      applyWorthItPayload(next)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to save Claude plan monthly fee.'
+      renderPlanWorthItSection(worthEl, null, message, {
+        onFeeChange: (): void => undefined,
+        onShowInference: (): void => undefined,
+      })
+    } finally {
+      feeBusy = false
+    }
+  }
+
+  function applyWorthItPayload(payload: PlanWorthItPayload): void {
+    const rates = new Map(
+      payload.windowExhaustion.map((row) => [row.windowId, { hit: row.hit, total: row.total }]),
+    )
+    frontierPanel.setWindowExhaustion(rates)
+    renderPlanWorthItSection(worthEl, payload, null, {
+      busy: feeBusy,
+      onFeeChange: (fee: number | null): void => {
+        void persistPlanFee(fee)
+      },
+      onShowInference: (): void => {
+        frontierPanel.setPlanCoverageMode('inference' satisfies PlanCoverageMode)
+        frontierPanel.root.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      },
+    })
+  }
 
   function showPeriod(period: UsagePeriodKey): void {
     activePeriod = period
@@ -425,6 +585,23 @@ export function createUsageSection(
     }
   }
 
+  async function refreshWorthIt(): Promise<void> {
+    renderPlanWorthItSection(worthEl, null, null, {
+      onFeeChange: () => undefined,
+      onShowInference: () => undefined,
+    })
+    try {
+      const payload = await api.usage.getPlanWorthIt()
+      applyWorthItPayload(payload)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load plan worth-it.'
+      renderPlanWorthItSection(worthEl, null, message, {
+        onFeeChange: () => undefined,
+        onShowInference: () => undefined,
+      })
+    }
+  }
+
   async function refreshLedger(): Promise<void> {
     try {
       cachedSummary = await api.usage.getSummary()
@@ -447,7 +624,8 @@ export function createUsageSection(
     if (!cachedSummary) {
       bodyEl.textContent = 'Loading usage…'
     }
-    const planPromise = refreshPlan()
+    // Plan fetch samples window history; worth-it must run after that sample lands.
+    const planThenWorth = refreshPlan().then(() => refreshWorthIt())
     const frontierPromise = frontierPanel.refresh()
     try {
       cachedSummary = await api.usage.getSummary()
@@ -456,7 +634,7 @@ export function createUsageSection(
       bodyEl.textContent =
         err instanceof Error ? `Failed to load usage: ${err.message}` : 'Failed to load usage.'
     }
-    await planPromise
+    await planThenWorth
     await frontierPromise
   }
 

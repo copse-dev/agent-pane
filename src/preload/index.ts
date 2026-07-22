@@ -561,6 +561,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('usage:record', input),
     getSummary: () => ipcRenderer.invoke('usage:getSummary'),
     getPlanUsage: () => ipcRenderer.invoke('usage:getPlanUsage'),
+    getPlanWorthIt: () => ipcRenderer.invoke('usage:getPlanWorthIt'),
+    setClaudePlanMonthlyFee: (fee: number | null) =>
+      ipcRenderer.invoke('usage:setClaudePlanMonthlyFee', fee),
   },
   index: {
     query: (pattern: string) => ipcRenderer.invoke('index:query', pattern),

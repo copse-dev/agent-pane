@@ -66,6 +66,7 @@ describe('resolvePlanInclusion', () => {
     assert.ok(inc)
     assert.equal(inc.exhausted, false)
     // Fable's own weekly cap (65%) is tighter than the pools, so it binds.
+    assert.equal(inc.windowId, 'seven_day_fable')
     assert.equal(inc.windowLabel, 'Weekly Fable')
     assert.equal(inc.usedPercent, 65)
   })
@@ -183,5 +184,56 @@ describe('applyPlanCoverage', () => {
     const snap = snapshot('claude', [{ id: 'seven_day', label: 'Weekly', usedPercent: 10 }])
     const gpt: FrontierCandidate = { id: 'gpt-5.6', intellect: 59, costPerMTok: 8 }
     assert.equal(applyPlanCoverage(gpt, snap), gpt)
+  })
+
+  it('ignores plan coverage in inference mode', () => {
+    const snap = snapshot('claude', [
+      { id: 'seven_day_fable', label: 'Weekly Fable', usedPercent: 10 },
+    ])
+    const out = applyPlanCoverage(candidate, snap, { mode: 'inference' })
+    assert.equal(out, candidate)
+    assert.equal(out.costPerMTok, 12)
+  })
+
+  it('expected mode plots at API price when prior windows usually hit the limit', () => {
+    const snap = snapshot('claude', [
+      {
+        id: 'seven_day_fable',
+        label: 'Weekly Fable',
+        usedPercent: 20,
+        resetsAt: '2026-07-21T00:00:00Z',
+      },
+    ])
+    const exhaustion = new Map([['seven_day_fable', { hit: 2, total: 3 }]])
+    const out = applyPlanCoverage(candidate, snap, {
+      mode: 'expected',
+      windowExhaustion: exhaustion,
+    })
+    assert.equal(out.costPerMTok, 12)
+    assert.equal(out.plan, undefined)
+    assert.deepEqual(out.planLimitReached, {
+      label: 'Weekly Fable',
+      resetsAt: '2026-07-21T00:00:00Z',
+      priorLimitHits: { hit: 2, total: 3 },
+    })
+  })
+
+  it('expected mode stays included when prior exhaustion is rare', () => {
+    const snap = snapshot('claude', [
+      {
+        id: 'seven_day_fable',
+        label: 'Weekly Fable',
+        usedPercent: 20,
+        resetsAt: '2026-07-21T00:00:00Z',
+      },
+    ])
+    const exhaustion = new Map([['seven_day_fable', { hit: 1, total: 4 }]])
+    const out = applyPlanCoverage(candidate, snap, {
+      mode: 'expected',
+      windowExhaustion: exhaustion,
+    })
+    assert.equal(out.costPerMTok, 0)
+    assert.equal(out.plan, 'Weekly Fable')
+    assert.deepEqual(out.planDetail?.priorLimitHits, { hit: 1, total: 4 })
   })
 })
