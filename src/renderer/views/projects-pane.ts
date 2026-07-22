@@ -2,8 +2,18 @@ import { el, clear } from '../dom/helpers.ts'
 import { chevronRightIcon, closeIcon, runningStatusIcon, warningIcon } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { OrphanProjectStore, Project } from '@shared/types'
+import type { OrphanProjectStore, Project, Thread } from '@shared/types'
 import { openNewThread, deleteThread } from '@shared/store/thread-helpers.ts'
+import { githubPrKey, type GithubPrRef } from '@shared/git/github-pr-url.ts'
+import {
+  collectThreadPrRefs,
+  describeThreadPrStatus,
+  formatThreadPrStatus,
+  normalizePrLifecycleState,
+  summarizeThreadPrStatus,
+  type PrLifecycleState,
+  type ThreadPrRollup,
+} from '@shared/git/thread-pr-status.ts'
 import {
   addProject,
   addRemoteProject,
@@ -23,6 +33,9 @@ import { openSettingsDialog } from './settings-dialog.ts'
 import { showErrorToast } from './toast.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
+
+/** Re-fetch PR lifecycle when a cache entry is older than this. */
+const PR_STATUS_CACHE_TTL_MS = 60_000
 
 const ICON_SIZE = '16'
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -61,6 +74,20 @@ function runningStatus(label: string): SVGSVGElement {
   svg.setAttribute('aria-label', label)
   svg.removeAttribute('aria-hidden')
   return svg
+}
+
+/** Compact GitHub PR chip on a thread row (`#42` / `2 open` / `merged`). */
+function chatPrStatus(rollup: ThreadPrRollup): HTMLElement {
+  const chip = el(
+    'span',
+    {
+      class: `chat-pr-status is-${rollup.kind}`,
+      'aria-label': describeThreadPrStatus(rollup),
+      title: describeThreadPrStatus(rollup),
+    },
+    formatThreadPrStatus(rollup),
+  )
+  return chip
 }
 
 function settingsIcon(): SVGSVGElement {
@@ -182,6 +209,56 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
 
   const visibleThreadCounts = new Map<string, number>()
   let orphans: OrphanProjectStore[] = []
+
+  // Session cache of GitHub PR lifecycle for sidebar chips. Keys are
+  // `owner/repo#number`. Fetches are coalesced; a successful (or failed) fetch
+  // re-renders once so chips appear without blocking the first paint.
+  const prLifecycleCache = new Map<string, { state: PrLifecycleState; fetchedAt: number }>()
+  const prFetchInFlight = new Set<string>()
+  let prStatusGeneration = 0
+
+  function cachedPrLifecycle(key: string): PrLifecycleState | undefined {
+    const entry = prLifecycleCache.get(key)
+    if (!entry) return undefined
+    if (Date.now() - entry.fetchedAt > PR_STATUS_CACHE_TTL_MS) return undefined
+    return entry.state
+  }
+
+  function ensurePrLifecycles(refs: GithubPrRef[]): void {
+    const missing = refs.filter((ref) => {
+      const key = githubPrKey(ref)
+      return cachedPrLifecycle(key) === undefined && !prFetchInFlight.has(key)
+    })
+    if (missing.length === 0) return
+    const generation = prStatusGeneration
+    for (const ref of missing) {
+      const key = githubPrKey(ref)
+      prFetchInFlight.add(key)
+      void api.gh
+        .prDetails(ref.owner, ref.repo, ref.number)
+        .then((details) => {
+          const state = details ? normalizePrLifecycleState(details.state) : 'unknown'
+          prLifecycleCache.set(key, { state, fetchedAt: Date.now() })
+        })
+        .catch(() => {
+          prLifecycleCache.set(key, { state: 'unknown', fetchedAt: Date.now() })
+        })
+        .finally(() => {
+          prFetchInFlight.delete(key)
+          if (generation === prStatusGeneration) render()
+        })
+    }
+  }
+
+  function rollupForThread(
+    thread: Pick<Thread, 'messages' | 'remoteAgentLink'>,
+  ): ThreadPrRollup | null {
+    const refs = collectThreadPrRefs(thread)
+    if (refs.length === 0) return null
+    ensurePrLifecycles(refs)
+    const states = refs.map((ref) => cachedPrLifecycle(githubPrKey(ref)) ?? 'unknown')
+    return summarizeThreadPrStatus(states, refs)
+  }
 
   // The quarantine notice shown when a project's folder could not be opened
   // (#997). Its threads are still on disk under ~/.copse/workspace/<id>/; the
@@ -395,6 +472,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
           chatRow.append(attentionBell('This thread needs your attention'))
         }
 
+        const prRollup = rollupForThread(thread)
+        if (prRollup) {
+          chatRow.classList.add('has-pr-status')
+          chatRow.append(chatPrStatus(prRollup))
+        }
+
         const del = el(
           'button',
           { class: 'chat-delete', 'aria-label': 'Delete thread' },
@@ -433,7 +516,14 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     // Status flips on its own event (not threads_changed) so the sidebar can
     // show/hide the running-dots mark without a full thread list rewrite.
     store.on('thread_status_changed', render),
-    store.on('workspace_changed', render),
+    store.on('workspace_changed', () => {
+      // Drop cached PR lifecycles when the workspace changes so we don't paint
+      // another project's GitHub state onto the new sidebar.
+      prStatusGeneration += 1
+      prLifecycleCache.clear()
+      prFetchInFlight.clear()
+      render()
+    }),
     store.on('attention_changed', render),
     // Recovering an orphan or relocating a project changes the project set, which
     // in turn changes which store dirs count as orphaned — re-scan on that.
@@ -443,6 +533,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   render()
   refreshOrphans()
   return () => {
+    prStatusGeneration += 1
     dismissProjectContextMenu?.()
     unsubs.forEach((u) => {
       u()

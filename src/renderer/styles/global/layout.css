@@ -249,6 +249,21 @@
 }
 /* Bell on a background thread/project awaiting the user. Uses the warning
    accent and a gentle pulse so it reads as "needs attention" without shouting. */
+/* Compact GitHub PR lifecycle chip — plain text, not a pill/card. Open work
+   uses the accent; merged uses success so finished threads read at a glance. */
+.chat-pr-status {
+  flex-shrink: 0;
+  margin-left: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.chat-pr-status.is-open {
+  color: var(--accent);
+}
+.chat-pr-status.is-merged {
+  color: var(--success);
+}
 .chat-attention-bell {
   flex-shrink: 0;
   margin-left: 4px;

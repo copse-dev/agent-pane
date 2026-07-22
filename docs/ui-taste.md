@@ -198,6 +198,21 @@ visually distinct. Display re-derives from `project.path` so older basename-only
 names still render correctly (`projectDisplayName` in
 [`projects.ts`](../src/renderer/controller/projects.ts)).
 
+## Thread GitHub PR status chips
+
+Sidebar `.chat-row`s that link to GitHub PRs (chat URLs and/or `remoteAgentLink.prUrl`)
+show a compact plain-text chip — not a pill/card — after lifecycle resolves:
+
+- single open → `#42` (accent)
+- multiple open → `2 open` (accent)
+- all merged → `merged` / `all merged` (success)
+- otherwise closed → `closed` / `all closed` (muted)
+
+Keep the chip short so it sits beside the title without shoving the delete control;
+logic lives in [`thread-pr-status.ts`](../src/shared/git/thread-pr-status.ts). Specs:
+[`projects-pane-pr-status.test.ts`](../src/renderer/views/projects-pane-pr-status.test.ts),
+[`tests/e2e/thread-pr-status.e2e.ts`](../tests/e2e/thread-pr-status.e2e.ts).
+
 ## SSH chrome — plain text, no decorative emoji
 
 The titlebar SSH target is plain `user@host` (`.workspace-ssh-target`), not `⚡ user@host`.
