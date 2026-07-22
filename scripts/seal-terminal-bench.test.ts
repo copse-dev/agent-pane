@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -134,5 +134,34 @@ describe('terminal benchmark capsule sealing', () => {
     assert.notEqual(sealed.status, 0)
     assert.match(String(sealed.stderr), /contains SCW_GENERATIVE_API_KEY/)
     assert.doesNotMatch(String(sealed.stderr), new RegExp(secret))
+  })
+
+  it('numbers attempts independently within each profile', () => {
+    const root = fixture()
+    const source = join(root, 'bench-results', 'terminal-bench', 'job', 'trial')
+    const target = join(root, 'bench-results', 'terminal-bench', 'job', 'trial-product')
+    cpSync(source, target, { recursive: true })
+    const resultPath = join(target, 'result.json')
+    const result = JSON.parse(readFileSync(resultPath, 'utf8')) as Record<string, unknown>
+    const agentResult = result['agent_result'] as Record<string, unknown>
+    const metadata = agentResult['metadata'] as Record<string, unknown>
+    metadata['profile'] = 'product-aligned@1'
+    metadata['profile_hash'] = terminalBenchProfile('product-aligned').contentHash
+    result['started_at'] = '2026-07-21T11:00:00Z'
+    result['finished_at'] = '2026-07-21T11:01:00Z'
+    writeFileSync(resultPath, JSON.stringify(result))
+
+    const sealed = runSeal(root)
+    assert.equal(sealed.status, 0, String(sealed.stderr))
+    const index = JSON.parse(
+      readFileSync(join(root, 'bench-results', 'terminal-bench-capsules', 'index.json'), 'utf8'),
+    ) as { capsules: Array<{ attemptIndex: number; profile: string }> }
+    assert.deepEqual(
+      index.capsules.map((capsule) => [capsule.profile, capsule.attemptIndex]).sort(),
+      [
+        ['main-legacy@1', 1],
+        ['product-aligned@1', 1],
+      ],
+    )
   })
 })

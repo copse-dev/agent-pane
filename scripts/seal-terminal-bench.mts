@@ -187,8 +187,13 @@ for (const { resultPath, result } of storedTrials) {
       ? terminalBenchCanonicalTaskName(rawTaskName)
       : 'unknown-task'
   const taskMetadata = terminalBenchTaskMetadata(taskName)
-  const attemptIndex = (attemptsByTask.get(taskName) ?? 0) + 1
-  attemptsByTask.set(taskName, attemptIndex)
+  const rawProfile = nested(result, 'agent_result', 'metadata', 'profile')
+  const profile = terminalBenchProfile(
+    typeof rawProfile === 'string' ? rawProfile.replace(/@1$/, '') : undefined,
+  )
+  const attemptKey = `${profile.versionedId}:${taskName}`
+  const attemptIndex = (attemptsByTask.get(attemptKey) ?? 0) + 1
+  attemptsByTask.set(attemptKey, attemptIndex)
   const rawStartedAt = nested(result, 'started_at')
   const startedAt = typeof rawStartedAt === 'string' && rawStartedAt ? rawStartedAt : null
   const rawReward = nested(result, 'verifier_result', 'rewards', 'reward')
@@ -197,10 +202,6 @@ for (const { resultPath, result } of storedTrials) {
   const exceptionType =
     typeof rawExceptionType === 'string' && rawExceptionType ? rawExceptionType : undefined
   const outcome = terminalBenchTrialOutcome({ reward, exceptionType })
-  const rawProfile = nested(result, 'agent_result', 'metadata', 'profile')
-  const profile = terminalBenchProfile(
-    typeof rawProfile === 'string' ? rawProfile.replace(/@1$/, '') : undefined,
-  )
   const recordedProfileHash = nested(result, 'agent_result', 'metadata', 'profile_hash')
   if (recordedProfileHash !== profile.contentHash) {
     throw new Error(`Missing or inconsistent profile hash for ${taskName}.`)

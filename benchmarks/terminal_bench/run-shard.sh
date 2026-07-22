@@ -10,7 +10,6 @@ required=(
   COPSE_TERMINAL_SHARD_COUNT
   COPSE_TERMINAL_SHARD_INDEX
   COPSE_TERMINAL_ATTEMPTS
-  COPSE_TERMINAL_PROFILE
   SCW_OBJECT_STORAGE_BUCKET
   SCW_OBJECT_STORAGE_ENDPOINT
   SCW_OBJECT_STORAGE_PREFIX
@@ -22,26 +21,40 @@ for name in "${required[@]}"; do
   fi
 done
 
+profiles_csv="${COPSE_TERMINAL_PROFILES:-${COPSE_TERMINAL_PROFILE:-}}"
+if [[ -z "$profiles_csv" ]]; then
+  echo "terminal-bench worker: missing COPSE_TERMINAL_PROFILES or COPSE_TERMINAL_PROFILE" >&2
+  exit 2
+fi
+IFS=',' read -r -a profiles <<< "$profiles_csv"
+profile_count="${#profiles[@]}"
+
 benchmark_status=0
 analysis_status=0
 steered_status=0
 seal_status=0
 upload_status=0
 
-suite_args=(
-  --max-tasks="${COPSE_TERMINAL_MAX_TASKS}"
-  --shard-count="${COPSE_TERMINAL_SHARD_COUNT}"
-  --shard-index="${COPSE_TERMINAL_SHARD_INDEX}"
-  --prune-images
-  --prefetch-images
-  --profile="${COPSE_TERMINAL_PROFILE}"
-  -k "${COPSE_TERMINAL_ATTEMPTS}"
-)
-if [[ -n "${COPSE_TERMINAL_TASK_NAMES:-}" ]]; then
-  suite_args+=(--task-names="${COPSE_TERMINAL_TASK_NAMES}")
-fi
-
-npm run bench:terminal:suite -- "${suite_args[@]}" || benchmark_status=$?
+for ((profile_offset = 0; profile_offset < profile_count; profile_offset += 1)); do
+  profile="${profiles[$profile_offset]}"
+  export COPSE_TERMINAL_PROFILE="$profile"
+  suite_args=(
+    --max-tasks="${COPSE_TERMINAL_MAX_TASKS}"
+    --shard-count="${COPSE_TERMINAL_SHARD_COUNT}"
+    --shard-index="${COPSE_TERMINAL_SHARD_INDEX}"
+    --prefetch-images
+    --profile="$profile"
+    -k "${COPSE_TERMINAL_ATTEMPTS}"
+  )
+  if (( profile_offset == profile_count - 1 )); then
+    suite_args+=(--prune-images)
+  fi
+  if [[ -n "${COPSE_TERMINAL_TASK_NAMES:-}" ]]; then
+    suite_args+=(--task-names="${COPSE_TERMINAL_TASK_NAMES}")
+  fi
+  echo "terminal-bench worker: profile $((profile_offset + 1))/${profile_count} $profile"
+  npm run bench:terminal:suite -- "${suite_args[@]}" || benchmark_status=$?
+done
 
 if [[ -n "${BENCH_ANALYST_MODEL:-}" ]]; then
   npm run bench:terminal:analyze || analysis_status=$?

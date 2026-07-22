@@ -33,6 +33,11 @@ export interface TerminalBenchRunManifest {
     versionedId: string
     contentHash: string
   }
+  profiles?: Array<{
+    id: string
+    versionedId: string
+    contentHash: string
+  }>
 }
 
 export interface TerminalBenchCapsuleRecord {
@@ -71,6 +76,18 @@ function requiredPositiveInteger(value: unknown, key: string): number {
 function optionalString(value: unknown, key: string): string | undefined {
   const item = property(value, key)
   return typeof item === 'string' && item.length > 0 ? item : undefined
+}
+
+function runProfile(value: unknown): NonNullable<TerminalBenchRunManifest['profile']> {
+  const contentHash = requiredString(value, 'contentHash')
+  if (!/^[a-f0-9]{64}$/.test(contentHash)) {
+    throw new Error('run manifest profile contentHash is invalid')
+  }
+  return {
+    id: requiredString(value, 'id'),
+    versionedId: requiredString(value, 'versionedId'),
+    contentHash,
+  }
 }
 
 export function cleanTerminalBenchObjectPrefix(value: string): string {
@@ -131,10 +148,17 @@ export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunM
   }
   if (schemaVersion === 1) return base
   const dataset = property(value, 'dataset')
-  const profile = property(value, 'profile')
-  const contentHash = requiredString(profile, 'contentHash')
-  if (!/^[a-f0-9]{64}$/.test(contentHash)) {
-    throw new Error('run manifest profile contentHash is invalid')
+  const profileValue = property(value, 'profile')
+  const profilesValue = property(value, 'profiles')
+  const profile = profileValue === undefined ? undefined : runProfile(profileValue)
+  const profiles = Array.isArray(profilesValue)
+    ? profilesValue.map((item) => runProfile(item))
+    : undefined
+  if (!profile && (!profiles || profiles.length === 0)) {
+    throw new Error('run manifest profile provenance is invalid')
+  }
+  if (profiles && new Set(profiles.map((item) => item.id)).size !== profiles.length) {
+    throw new Error('run manifest profiles contain duplicates')
   }
   return {
     ...base,
@@ -143,11 +167,8 @@ export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunM
       version: requiredString(dataset, 'version'),
       revision: requiredString(dataset, 'revision'),
     },
-    profile: {
-      id: requiredString(profile, 'id'),
-      versionedId: requiredString(profile, 'versionedId'),
-      contentHash,
-    },
+    ...(profile ? { profile } : {}),
+    ...(profiles ? { profiles } : {}),
   }
 }
 

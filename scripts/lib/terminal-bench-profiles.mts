@@ -111,6 +111,19 @@ export function parseTerminalBenchProfileId(value: string | undefined): Terminal
   )
 }
 
+export function parseTerminalBenchProfileIds(value: string | undefined): TerminalBenchProfileId[] {
+  if (!value?.trim()) return ['main-legacy']
+  const rawIds = value.split(',').map((item) => item.trim())
+  if (rawIds.some((item) => !item)) {
+    throw new Error('Terminal-Bench profiles must be a comma-separated list without empty items.')
+  }
+  const ids = rawIds.map((item) => parseTerminalBenchProfileId(item))
+  if (new Set(ids).size !== ids.length) {
+    throw new Error('Terminal-Bench profiles must not contain duplicates.')
+  }
+  return ids
+}
+
 export function terminalBenchProfile(
   value: string | undefined = process.env['COPSE_TERMINAL_PROFILE'],
 ): TerminalBenchProfile {

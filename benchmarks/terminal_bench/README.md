@@ -59,6 +59,13 @@ disposable x86 Scaleway Instances, and assigns each host one deterministic task 
 container controls Terminal-Bench's sibling task containers through that host's Docker socket.
 This is ten VMs, not ten containers sharing one fat VM.
 
+For an ablation, set the optional `profiles` input to a comma-separated list such as
+`main-legacy,pr-1149,product-aligned` and set `steered_rerun` to false. The workflow provisions one
+fleet, then each worker runs those profiles sequentially in fresh Harbor task containers. Profile
+order rotates by shard to counterbalance ordering effects; task images remain cached between
+profiles and are pruned only after the worker's final profile. Single-profile runs continue to use
+the `profile` choice input.
+
 Qwen inference stays on Scaleway's hosted Generative API. The worker Instances therefore do not
 need GPUs and the image contains no model weights. The default `BASIC3-X4C-16G` hosts provide Docker
 CPU, memory, and disk while API inference can proceed concurrently. All 89 pinned Terminal-Bench
