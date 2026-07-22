@@ -9,6 +9,7 @@ import {
   isFatalSshProbeError,
   isScalewayQuotaError,
   isScalewayZoneUnavailableError,
+  isTransientSshSessionError,
   option,
   optionWithDefault,
   parseAwsInstances,
@@ -356,10 +357,29 @@ describe('SSH helpers', () => {
     assert.deepEqual(withKey.slice(0, 4), ['-i', '/k.pem', '-o', 'IdentitiesOnly=yes'])
     assert.ok(withKey.includes('BatchMode=yes'))
     assert.ok(withKey.includes('ConnectTimeout=5'))
+    assert.ok(withKey.includes('ServerAliveInterval=30'))
+    assert.ok(withKey.includes('ServerAliveCountMax=4'))
 
     const withoutKey = sshCommonArgs({ keyPath: '', remoteUser: 'u', sshHost: 'public' }, 15)
     assert.equal(withoutKey.includes('-i'), false)
     assert.ok(withoutKey.includes('ConnectTimeout=15'))
+    assert.ok(withoutKey.includes('ServerAliveInterval=30'))
+  })
+
+  it('isTransientSshSessionError matches transport drops, not remote command failures', () => {
+    assert.equal(
+      isTransientSshSessionError(
+        new Error('ssh … root@1.2.3.4 bash -lc … failed with exit code 255'),
+      ),
+      true,
+    )
+    assert.equal(isTransientSshSessionError(new Error('client_loop: send disconnect: Broken pipe')), true)
+    assert.equal(isTransientSshSessionError(new Error('Connection reset by peer')), true)
+    assert.equal(
+      isTransientSshSessionError(new Error('ssh … failed with exit code 1')),
+      false,
+    )
+    assert.equal(isTransientSshSessionError(new Error('Permission denied (publickey).')), false)
   })
 
   it('hostPrefix brackets the provider id', () => {

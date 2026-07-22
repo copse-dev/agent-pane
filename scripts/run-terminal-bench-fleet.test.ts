@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { cleanPrefix, registryHost, runConfig } from './run-terminal-bench-fleet.mts'
+import {
+  cleanPrefix,
+  registryHost,
+  runConfig,
+  workerFollowRemoteScript,
+} from './run-terminal-bench-fleet.mts'
 
 const workerImage = 'rg.fr-par.scw.cloud/example/terminal-bench-worker:abc123'
 
@@ -60,4 +65,20 @@ test('fleet normalizes object prefixes and accepts fully qualified registry host
   assert.equal(cleanPrefix('/terminal-bench/run/'), 'terminal-bench/run')
   assert.equal(registryHost(workerImage), 'rg.fr-par.scw.cloud')
   assert.throws(() => registryHost('ubuntu/worker:latest'), /registry host 'ubuntu' is invalid/)
+})
+
+test('worker follow script reattaches to a still-running container after SSH drops', () => {
+  const script = workerFollowRemoteScript('copse-terminal-shard-6')
+  assert.match(script, /docker inspect -f '\{\{\.State\.Running\}\}' 'copse-terminal-shard-6'/)
+  assert.match(script, /docker logs --follow 'copse-terminal-shard-6'/)
+  assert.match(script, /docker wait 'copse-terminal-shard-6'/)
+  assert.match(script, /exit "\$status"/)
+})
+
+test('worker image ships the Docker Compose CLI plugin for Harbor', () => {
+  const dockerfile = readFileSync('benchmarks/terminal_bench/Dockerfile.worker', 'utf8')
+  assert.match(
+    dockerfile,
+    /COPY --from=docker-cli \/usr\/local\/libexec\/docker\/cli-plugins/,
+  )
 })
