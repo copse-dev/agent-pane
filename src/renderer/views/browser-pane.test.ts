@@ -33,7 +33,7 @@ function mountBrowserHosts(): { list: HTMLElement; viewer: HTMLElement } {
 }
 
 describe('browser pane requested URLs', () => {
-  it('opens a linked Cursor agent thread instead of a new popup browser tab', () => {
+  it('opens Cursor agent run URLs in a browser tab without switching threads', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
@@ -84,11 +84,14 @@ describe('browser pane requested URLs', () => {
       assert.ok(popupHandler)
       popupHandler('https://cursor.com/agents/bc-linked-agent?from=github')
 
-      assert.equal(store.getState().activeThreadId, linkedThreadId)
-      assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
-
-      popupHandler('https://cursor.com/agents/bc-unknown-agent')
+      // Thread handoff is PR-pane only; browser navigation stays on the agents page.
+      assert.equal(store.getState().activeThreadId, activeThreadId)
       assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
+
+      const agentTab = [...list.querySelectorAll('.browser-tabs-tab')].find((tab) =>
+        tab.textContent.includes('cursor.com'),
+      )
+      assert.ok(agentTab)
     } finally {
       globalThis.requestAnimationFrame = raf
       if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor
@@ -97,7 +100,7 @@ describe('browser pane requested URLs', () => {
     }
   })
 
-  it('keeps the active browser tab in place for a requested linked Cursor run', () => {
+  it('loads a requested Cursor agents URL in the active browser tab', () => {
     const raf = globalThis.requestAnimationFrame
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback): number => {
       cb(0)
@@ -140,9 +143,13 @@ describe('browser pane requested URLs', () => {
 
       openBrowserUrl(store, 'https://cursor.com/agents/bc-requested-agent')
 
-      assert.equal(store.getState().activeThreadId, linkedThreadId)
-      assert.equal(webview.src, 'about:blank')
+      assert.equal(store.getState().activeThreadId, activeThreadId)
+      assert.match(webview.src, /cursor\.com\/agents\/bc-requested-agent/)
       assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 1)
+
+      const urlInput = viewer.querySelector<HTMLInputElement>('.browser-url-input')
+      assert.ok(urlInput)
+      assert.match(urlInput.value, /cursor\.com\/agents\/bc-requested-agent/)
     } finally {
       globalThis.requestAnimationFrame = raf
       if (hadResizeObserver) globalThis.ResizeObserver = ResizeObserverCtor

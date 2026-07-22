@@ -36,29 +36,6 @@ export interface RemoteAgentPrIndexEntry {
 }
 
 /**
- * Extract the provider-side agent id from a Cursor cloud-agent web URL.
- * Cursor's Create Agent API currently returns `/agents/<id>` URLs; query and
- * hash suffixes are deliberately ignored, while lookalike hosts and non-HTTPS
- * URLs are rejected so an arbitrary page cannot steer the editor's thread.
- */
-export function cursorAgentIdFromUrl(rawUrl: string): string | null {
-  let url: URL
-  try {
-    url = new URL(rawUrl)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'https:' || url.hostname !== 'cursor.com') return null
-  const match = /^\/agents\/([^/]+)\/?$/.exec(url.pathname)
-  if (!match?.[1]) return null
-  try {
-    return decodeURIComponent(match[1])
-  } catch {
-    return null
-  }
-}
-
-/**
  * Stable key for the `prUrl → thread` reverse index (`owner/repo#number`), or
  * null when the string is not a recognizable GitHub PR URL. The key is derived
  * from owner/repo/number, so the same PR referenced by slightly different URLs
