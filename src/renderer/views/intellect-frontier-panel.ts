@@ -41,7 +41,7 @@ import { compositeIntellect, type CompositeIntellect } from '@copse/llm/composit
 import { getLocalModelCapability, localBenchmarkScore } from '@copse/llm/local-model-catalog.ts'
 import { isNoTrainingModelPath, isZeroRetentionModelPath } from '@copse/llm/data-policies.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
-import { applyPlanCoverage } from './plan-inclusion.ts'
+import { applyPlanCoverage, type PlanCoverageMode } from './plan-inclusion.ts'
 import { el } from '../dom/helpers.ts'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -390,13 +390,28 @@ export function pointTooltipContent(
       ),
       ttRow('tt-muted', `Off-plan you'd pay ${formatPrice(p.planDetail.apiPricePerMTok)} blended.`),
     )
+    if (p.planDetail.priorLimitHits) {
+      const { hit, total } = p.planDetail.priorLimitHits
+      root.append(
+        ttRow(
+          'tt-muted',
+          `Limit hit in ${String(hit)}/${String(total)} prior windows — still treating as included.`,
+        ),
+      )
+    }
   }
   // Plan window spent: it's plotted at its real price now, not as included.
   if (p.planLimitReached) {
+    const prior = p.planLimitReached.priorLimitHits
+    const priorNote = prior
+      ? ` Limit hit in ${String(prior.hit)}/${String(prior.total)} prior windows.`
+      : ''
     root.append(
       ttRow(
         'tt-muted',
-        `${p.planLimitReached.label} plan limit reached${formatReset(p.planLimitReached.resetsAt)} — plotted at its off-plan price.`,
+        prior
+          ? `${p.planLimitReached.label} usually exhausted — plotted at off-plan price.${priorNote}`
+          : `${p.planLimitReached.label} plan limit reached${formatReset(p.planLimitReached.resetsAt)} — plotted at its off-plan price.`,
       ),
     )
   }
@@ -1266,6 +1281,11 @@ function buildAuxLists(
 export interface IntellectFrontierPanel {
   root: HTMLFieldSetElement
   refresh: () => Promise<void>
+  /** Switch plan re-pricing for the value map (Plan / Inference / Expected). */
+  setPlanCoverageMode: (mode: PlanCoverageMode) => void
+  getPlanCoverageMode: () => PlanCoverageMode
+  /** Feed completed-window exhaustion rates for Expected plan mode. */
+  setWindowExhaustion: (rates: ReadonlyMap<string, { hit: number; total: number }>) => void
 }
 
 /**
@@ -1309,6 +1329,9 @@ export function createIntellectFrontierPanel(
   let noTrainingOnly = false
   let hidePlan = false
   let costAxis: FrontierCostAxis = 'blended'
+  let planCoverageMode: PlanCoverageMode = 'plan'
+  let windowExhaustion: ReadonlyMap<string, { hit: number; total: number }> = new Map()
+  let expandPlanCoverageGroup: HTMLElement | null = null
   // The full lists behind the chart, cached so the pop-out can show the same
   // "below the chart" content the inline panel does.
   let lastUnpriced: readonly CanonicalScoredModel[] = []
@@ -1349,6 +1372,15 @@ export function createIntellectFrontierPanel(
     if (costAxis === next) return
     costAxis = next
     render()
+  }
+  function setPlanCoverageMode(next: PlanCoverageMode): void {
+    if (planCoverageMode === next) return
+    planCoverageMode = next
+    render()
+  }
+  function setWindowExhaustion(rates: ReadonlyMap<string, { hit: number; total: number }>): void {
+    windowExhaustion = rates
+    if (planCoverageMode === 'expected') render()
   }
 
   function syncZdrBtn(btn: HTMLButtonElement | null): void {
@@ -1413,6 +1445,59 @@ export function createIntellectFrontierPanel(
     return group
   }
 
+  function makePlanCoverageGroup(): HTMLElement {
+    const group = el('span', {
+      class: 'frontier-cost-axis frontier-plan-coverage',
+      role: 'group',
+      'aria-label': 'Plan cost basis',
+    })
+    const modes: Array<{ mode: PlanCoverageMode; label: string; title: string }> = [
+      {
+        mode: 'plan',
+        label: 'Plan',
+        title: 'Re-price subscription-included models at $0 while their window has headroom',
+      },
+      {
+        mode: 'inference',
+        label: 'Inference',
+        title: 'Ignore the plan — plot every cloud model at catalog API $/MTok',
+      },
+      {
+        mode: 'expected',
+        label: 'Expected',
+        title:
+          'Use prior window history: if a binding window usually hits its limit, plot at API price',
+      },
+    ]
+    for (const { mode, label, title } of modes) {
+      const btn = el(
+        'button',
+        {
+          type: 'button',
+          class: 'frontier-btn frontier-cost-axis-btn',
+          'data-plan-coverage': mode,
+          title,
+        },
+        label,
+      )
+      btn.addEventListener('click', () => {
+        setPlanCoverageMode(mode)
+      })
+      group.append(btn)
+    }
+    return group
+  }
+
+  function syncPlanCoverageGroup(group: HTMLElement | null): void {
+    if (!group) return
+    for (const btn of group.querySelectorAll<HTMLButtonElement>('[data-plan-coverage]')) {
+      const mode = btn.dataset['planCoverage']
+      const active = mode === planCoverageMode
+      btn.classList.toggle('active', active)
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false')
+    }
+  }
+
   const discoverBtn = el('button', {
     type: 'button',
     class: 'frontier-btn frontier-discover',
@@ -1439,6 +1524,7 @@ export function createIntellectFrontierPanel(
   })
   planBtn.addEventListener('click', toggleHidePlan)
   const costAxisGroup = makeCostAxisGroup()
+  const planCoverageGroup = makePlanCoverageGroup()
   const expandBtn = el(
     'button',
     { type: 'button', class: 'frontier-btn frontier-expand' },
@@ -1474,6 +1560,7 @@ export function createIntellectFrontierPanel(
     })
     expandPlanBtn.addEventListener('click', toggleHidePlan)
     expandCostAxisGroup = makeCostAxisGroup()
+    expandPlanCoverageGroup = makePlanCoverageGroup()
     const bigChart = el('div', { class: 'frontier-chart frontier-expand-chart' })
     expandChartHost = bigChart
     expandTooltip = createTooltipLayer(dialog)
@@ -1486,6 +1573,7 @@ export function createIntellectFrontierPanel(
       expandNoTrainingBtn = null
       expandPlanBtn = null
       expandCostAxisGroup = null
+      expandPlanCoverageGroup = null
       dialog.remove()
     }
     close.addEventListener('click', closeDialog)
@@ -1496,6 +1584,7 @@ export function createIntellectFrontierPanel(
         'div',
         { class: 'frontier-expand-controls' },
         expandCostAxisGroup,
+        expandPlanCoverageGroup,
         expandZdrBtn,
         expandNoTrainingBtn,
         expandPlanBtn,
@@ -1525,6 +1614,7 @@ export function createIntellectFrontierPanel(
       'div',
       { class: 'frontier-controls' },
       el('span', { class: 'frontier-control-group' }, costAxisGroup),
+      el('span', { class: 'frontier-control-group' }, planCoverageGroup),
       el('span', { class: 'frontier-control-group' }, zdrBtn, noTrainingBtn, planBtn),
       el('span', { class: 'frontier-control-group' }, discoverBtn, unpricedBtn, expandBtn),
     ),
@@ -1737,7 +1827,10 @@ export function createIntellectFrontierPanel(
     // limit-reached note. Applied per grouped identity inside the frontier.
     const allRouteCandidates = [...baseCandidates, ...livePricedCurated, ...discoveryCandidates]
     const adjustCandidate = (candidate: FrontierCandidate): FrontierCandidate =>
-      applyPlanCoverage(enrichTaskCost(candidate), planUsage)
+      applyPlanCoverage(enrichTaskCost(candidate), planUsage, {
+        mode: planCoverageMode,
+        windowExhaustion,
+      })
     const routePolicy = {
       providers: extraProviders,
       openRouterZdrOnly: openRouter.zdrOnly,
@@ -1800,6 +1893,8 @@ export function createIntellectFrontierPanel(
     if (costAxis === 'perTask' && !taskCostAvailable) costAxis = 'blended'
     syncCostAxisGroup(costAxisGroup, taskCostAvailable)
     syncCostAxisGroup(expandCostAxisGroup, taskCostAvailable)
+    syncPlanCoverageGroup(planCoverageGroup)
+    syncPlanCoverageGroup(expandPlanCoverageGroup)
     let allPoints: FrontierPoint[]
     let missingTaskCost = 0
     if (costAxis === 'perTask') {
@@ -1958,5 +2053,11 @@ export function createIntellectFrontierPanel(
     )
   }
 
-  return { root: fieldset, refresh }
+  return {
+    root: fieldset,
+    refresh,
+    setPlanCoverageMode,
+    getPlanCoverageMode: () => planCoverageMode,
+    setWindowExhaustion,
+  }
 }

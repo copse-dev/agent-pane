@@ -249,7 +249,9 @@ per-role axes can't provide. Pieces:
   agent-level accuracy-vs-cost frontier (issue #752's measured
   solve-rate/cost-per-solve) as the harness-side sibling of this model-side
   frontier. _(Landed: value-map X-axis toggle between blended $/MTok and AA
-  cost-per-Intelligence-Index-task.)_
+  cost-per-Intelligence-Index-task; plan worth-it verdict + Plan / Inference /
+  Expected cost-basis modes on the value map, driven by account-wide plan-window
+  history rather than the Copse-local token ledger.)_
 
 ## Phasing
 

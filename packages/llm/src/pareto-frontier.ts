@@ -59,13 +59,24 @@ export interface FrontierCandidate {
    * blended rate this candidate would otherwise plot at). The renderer sets
    * this from the live usage snapshot; the frontier never interprets it.
    */
-  planDetail?: { usedPercent: number; resetsAt: string | null; apiPricePerMTok: number }
+  planDetail?: {
+    usedPercent: number
+    resetsAt: string | null
+    apiPricePerMTok: number
+    /** Expected-plan mode: prior windows that hit the limit (N/M). */
+    priorLimitHits?: { hit: number; total: number }
+  }
   /**
    * Set instead of `plan` when the governing plan window is spent: the model is
    * plotted at its real price (no `plan` badge), with this note explaining why
    * it stopped being included.
    */
-  planLimitReached?: { label: string; resetsAt: string | null }
+  planLimitReached?: {
+    label: string
+    resetsAt: string | null
+    /** Expected-plan mode: prior windows that hit the limit (N/M). */
+    priorLimitHits?: { hit: number; total: number }
+  }
   /** AA's own cost-per-Intelligence-Index-task in USD, when the feed carries it. */
   costPerTask?: number
   /**

@@ -338,10 +338,15 @@ describe('fetchClaudePlanUsage', () => {
     assert.equal(result.status, 'ok')
     assert.equal(result.usage.plan, 'Weekly $99 / $100')
     assert.deepEqual(
-      result.usage.windows.map((w) => ({ id: w.id, usedPercent: w.usedPercent })),
+      result.usage.windows.map((w) => ({
+        id: w.id,
+        usedPercent: w.usedPercent,
+        usedDollars: w.usedDollars,
+        limitDollars: w.limitDollars,
+      })),
       [
-        { id: 'five_hour', usedPercent: 25 },
-        { id: 'seven_day', usedPercent: 99 },
+        { id: 'five_hour', usedPercent: 25, usedDollars: 5, limitDollars: 20 },
+        { id: 'seven_day', usedPercent: 99, usedDollars: 99, limitDollars: 100 },
       ],
     )
   })

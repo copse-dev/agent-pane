@@ -46,6 +46,10 @@ app's local token ledger is unrelated and unaffected.
 - **No host imports.** Types and helpers live entirely under `packages/plan-usage/`.
 - **Undocumented endpoints.** Gated in the host behind optional UI; degrade to
   “no plan credentials” when auth or response shape breaks.
+- **Dollar fields on windows.** Claude legacy windows may carry optional
+  `usedDollars` / `limitDollars` (API-equivalent accounting). The host samples
+  these into a local `planWindowHistory` ledger for the Settings → Usage
+  “is your plan worth it?” verdict; progress bars still use `usedPercent`.
 
 ## Schema probe CLI
 
