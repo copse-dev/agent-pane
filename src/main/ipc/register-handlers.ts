@@ -41,6 +41,7 @@ import { resolveFileReferences } from '../services/search/file-reference-resolve
 import {
   getWorkspaceIndexStatus,
   onWorkspaceIndexStatusChanged,
+  setSemanticIndexScaleGuarded,
 } from '../services/search/index-status.ts'
 import { startWorkspaceIndexing } from '../services/search/workspace-indexing.ts'
 import { scheduleIndexRebuild } from '../services/search/workspace-index-watcher.ts'
@@ -1765,6 +1766,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       const codex = KNOWN_ACP_AGENTS.find((agent) => agent.id === 'codex')
       if (!codex) throw new IpcValidationError('Codex ACP preset is missing')
       return requestAcpPackageInstallApproval([codex])
+    })
+    ipcMain.handle('test:setSemanticIndexScaleGuard', (event, phase: unknown, reason: unknown) => {
+      assertMainFrameSender(event, win)
+      const [parsedPhase, parsedReason] = parseIpcArgs(
+        z.tuple([z.enum(['limited', 'skipped']), z.string().min(1).max(500)]),
+        [phase, reason],
+      )
+      setSemanticIndexScaleGuarded(parsedPhase, parsedReason)
     })
   }
 }

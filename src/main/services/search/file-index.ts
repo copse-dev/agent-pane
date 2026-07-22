@@ -107,6 +107,15 @@ export function getIndex(): FileIndex | null {
   return index
 }
 
+/**
+ * Scale evidence for the #795 index policy. Path count comes from the bounded
+ * file listing; byte estimate is reserved for a later sampling slice (null today).
+ */
+export function getIndexStats(): { pathCount: number; byteEstimate: number | null } | null {
+  if (!index) return null
+  return { pathCount: index.paths.length, byteEstimate: null }
+}
+
 export function invalidateIndex(): void {
   index = null
 }
