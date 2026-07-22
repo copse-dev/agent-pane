@@ -147,6 +147,26 @@ function reviewPrompt(
   )
 }
 
+/**
+ * Bulk-review order: non-done items keep store order so active work is judged
+ * first; done items trail for a cheap double-check, oldest `createdAt` first.
+ */
+export function orderRoadmapNotesForReview<
+  T extends { id: string; status: string | null; createdAt: string },
+>(notes: readonly T[]): T[] {
+  const active: T[] = []
+  const done: T[] = []
+  for (const note of notes) {
+    if (note.status === 'done') done.push(note)
+    else active.push(note)
+  }
+  done.sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt < b.createdAt ? -1 : 1
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
+  return [...active, ...done]
+}
+
 /** Load review scope: items to judge and commits since the last acknowledged run. */
 export async function prepareRoadmapReview(): Promise<RoadmapReviewPrepareResult> {
   const since = getRoadmapLastReviewAt()
@@ -157,7 +177,9 @@ export async function prepareRoadmapReview(): Promise<RoadmapReviewPrepareResult
   const runId = randomUUID()
   setPendingBulkRun(runId)
   const commits = await getGitLogSinceText(since, BULK_COMMIT_MAX)
-  const notes = loadKnowledgeNotes(ROADMAP_TYPE).filter((n) => n.status !== 'archived')
+  const notes = orderRoadmapNotesForReview(
+    loadKnowledgeNotes(ROADMAP_TYPE).filter((n) => n.status !== 'archived'),
+  )
   return {
     runId,
     since,

@@ -254,13 +254,17 @@ function makeApi(
       },
       prepareReview: async () => {
         calls.prepareReview++
+        // Mirror production: active items first, done items trailing.
+        const scoped = items.filter((i) => i.status !== 'archived')
+        const ordered = [
+          ...scoped.filter((i) => i.status !== 'done'),
+          ...scoped.filter((i) => i.status === 'done'),
+        ]
         return {
           runId: 'bulk-run-1',
           since: null,
           commits: 'abc123 Fix startup flash',
-          items: items
-            .filter((i) => i.status !== 'archived')
-            .map((i) => ({ id: i.id, title: i.title })),
+          items: ordered.map((i) => ({ id: i.id, title: i.title })),
         }
       },
       reviewItem: async (id: string, commits: string, runId?: string) => {
@@ -555,6 +559,9 @@ describe('roadmap pane', () => {
       assert.deepEqual(calls.update, [
         { id: 'a', prompt: 'New prompt', notes: undefined, status: 'done', issue: undefined },
       ])
+      // Done items are filtered from the list until the show-done toggle is on.
+      assert.equal(list.querySelector('.roadmap-row'), null)
+      list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
       const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
       assert.deepEqual(badges, ['done'])
     } finally {
@@ -577,15 +584,40 @@ describe('roadmap pane', () => {
       await flush()
       assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'done' }])
       assert.equal(calls.update.length, 0, 'status-only IPC, not a full update')
-      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
-      assert.deepEqual(badges, ['done'])
       // The toggle click must not select the row into the editor.
       assert.equal(viewer.querySelector<HTMLElement>('.roadmap-empty')?.hidden, false)
-      // The re-rendered row now offers reopen instead.
+      // Done items leave the list by default.
+      assert.equal(list.querySelector('.roadmap-row'), null)
+      assert.match(list.querySelector('.roadmap-list-empty')?.textContent ?? '', /Turn on "done"/i)
+      list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
       assert.equal(
         list.querySelector<HTMLElement>('.roadmap-done-toggle')?.title,
         'Reopen (set ready)',
       )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('hides done items until the show-done toggle is pressed', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api } = makeApi([
+      makeItem('a', 'Open work', 'ready'),
+      makeItem('b', 'Shipped already', 'done'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const showDone = list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')
+      assert.ok(showDone)
+      assert.equal(showDone.getAttribute('aria-pressed'), 'false')
+      let titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
+      assert.deepEqual(titles, ['Open work'])
+      showDone.click()
+      assert.equal(showDone.getAttribute('aria-pressed'), 'true')
+      titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
+      assert.deepEqual(titles, ['Open work', 'Shipped already'])
     } finally {
       unmount()
     }
@@ -598,6 +630,7 @@ describe('roadmap pane', () => {
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
       await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
       list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
       await flush()
       assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'ready' }])

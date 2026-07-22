@@ -7,8 +7,8 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 // Row-level mark-done toggle on the Roadmap pane: ✓ flips a live item to
-// `done` (struck-through title, reopen affordance) without opening the editor;
-// ↺ flips it back to `ready`.
+// `done` without opening the editor. Done rows are filtered out by default;
+// the header "done" toggle reveals them (struck-through title, ↺ reopen).
 describe('roadmap done toggle', () => {
   let workspaceRoot: string
 
@@ -53,6 +53,16 @@ describe('roadmap done toggle', () => {
     await toggle.waitForDisplayed({ timeout: 10_000 })
     assert.equal(await toggle.getAttribute('title'), 'Mark done')
     await toggle.click()
+    // Done items leave the list until the show-done filter is on.
+    await $('.roadmap-list-empty').waitForDisplayed({ timeout: 10_000 })
+    assert.match(await $('.roadmap-list-empty').getText(), /Turn on "done"/i)
+    await saveAppScreenshot('roadmap-done-filtered.png')
+
+    const showDone = $('.roadmap-show-done-btn')
+    await showDone.waitForDisplayed({ timeout: 10_000 })
+    assert.equal(await showDone.getAttribute('aria-pressed'), 'false')
+    await showDone.click()
+    assert.equal(await showDone.getAttribute('aria-pressed'), 'true')
     await browser.waitUntil(
       async () => (await $('.roadmap-status-badge').getText()).toLowerCase() === 'done',
       { timeout: 10_000, timeoutMsg: 'status badge never flipped to done' },
@@ -73,8 +83,8 @@ describe('roadmap done toggle', () => {
     await saveAppScreenshot('roadmap-done-toggle.png')
 
     // The same control now reopens the item.
-    assert.equal(await toggle.getAttribute('title'), 'Reopen (set ready)')
-    await toggle.click()
+    assert.equal(await $('.roadmap-done-toggle').getAttribute('title'), 'Reopen (set ready)')
+    await $('.roadmap-done-toggle').click()
     await browser.waitUntil(
       async () => (await $('.roadmap-status-badge').getText()).toLowerCase() === 'ready',
       { timeout: 10_000, timeoutMsg: 'status badge never flipped back to ready' },

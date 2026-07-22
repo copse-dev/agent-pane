@@ -12,6 +12,16 @@
   gap: var(--spacing-xs);
   flex-shrink: 0;
 }
+/* Show-done filter — pressed means done rows are visible in the list. */
+.roadmap-show-done-btn {
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  font-size: var(--font-size-sm);
+}
+.roadmap-show-done-btn.is-active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 
 /* Roadmap pane (issue #556; #645 Phase 3). The pane reuses the memories pane's
    layout primitives (memories.css) and the git-changes list classes; these rules
