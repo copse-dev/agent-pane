@@ -81,8 +81,11 @@ function nestedExcludePrefix(relativePath: string): string {
  * - `never` always skips both.
  * - Global path/byte caps → `skipped` (hard refuse).
  * - Oversized nested child repos → `limited` + suggested excludes (root never excluded).
- * - Incomplete discovery does not invent a skip; the global cap remains the safety net
- *   when path/byte evidence is present.
+ * - Missing scale evidence (`pathCount === 0` and no byte estimate) with
+ *   `partial`/`failed` discovery → `skipped` (do not treat "listing failed" as
+ *   a tiny workspace and fail open into full semantic/watch work).
+ * - Incomplete discovery with real path/byte evidence under the global cap does
+ *   not invent a skip; the global cap remains the safety net.
  */
 export function decideWorkspaceIndexPolicy(input: WorkspaceIndexPolicyInput): WorkspaceIndexPolicy {
   if (input.override === 'force') {
@@ -104,6 +107,20 @@ export function decideWorkspaceIndexPolicy(input: WorkspaceIndexPolicyInput): Wo
 
   const reasons: string[] = []
   const suggestedExcludes: string[] = []
+  const discoveryIncomplete =
+    input.discoveryConfidence === 'partial' || input.discoveryConfidence === 'failed'
+  const hasScaleEvidence = input.pathCount > 0 || input.byteEstimate !== null
+
+  if (discoveryIncomplete && !hasScaleEvidence) {
+    return {
+      semantic: 'skipped',
+      watch: 'skipped',
+      reasons: [
+        'Scale discovery failed; refusing semantic indexing until path evidence is available',
+      ],
+      suggestedExcludes: [],
+    }
+  }
 
   if (input.pathCount >= WORKSPACE_INDEX_PATH_CAP) {
     reasons.push(
@@ -117,7 +134,7 @@ export function decideWorkspaceIndexPolicy(input: WorkspaceIndexPolicyInput): Wo
   }
 
   if (reasons.length > 0) {
-    if (input.discoveryConfidence === 'partial' || input.discoveryConfidence === 'failed') {
+    if (discoveryIncomplete) {
       reasons.push('Scale evidence is incomplete; applying the global safety cap')
     }
     return {

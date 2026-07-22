@@ -139,6 +139,33 @@ describe('decideWorkspaceIndexPolicy', () => {
     assert.equal(policy.watch, 'full')
   })
 
+  it('skips when discovery failed and there is no path/byte evidence (pathCount 0)', () => {
+    const policy = decideWorkspaceIndexPolicy(
+      base({
+        pathCount: 0,
+        byteEstimate: null,
+        discoveryConfidence: 'failed',
+      }),
+    )
+    assert.equal(policy.semantic, 'skipped')
+    assert.equal(policy.watch, 'skipped')
+    assert.ok(policy.reasons.some((r) => /Scale discovery failed/.test(r)))
+    assert.equal(policyAllowsSemantic(policy), false)
+    assert.equal(policyAllowsWatch(policy), false)
+  })
+
+  it('skips partial discovery with no evidence the same way', () => {
+    const policy = decideWorkspaceIndexPolicy(
+      base({
+        pathCount: 0,
+        byteEstimate: null,
+        discoveryConfidence: 'partial',
+      }),
+    )
+    assert.equal(policy.semantic, 'skipped')
+    assert.equal(policy.watch, 'skipped')
+  })
+
   it('notes incomplete discovery when the global cap still fires', () => {
     const policy = decideWorkspaceIndexPolicy(
       base({
