@@ -207,10 +207,14 @@ describe('appendPlanWindowSamples prior-provider scan', () => {
     assert.equal(state.samples.length, 2)
     state = appendPlanWindowSamples(state, [claudeSoon], t0 + 30_000)
     assert.equal(state.samples.length, 2, 'codex retained; claude gap-folded')
-    assert.equal(state.samples[0]?.provider, 'codex')
-    assert.equal(state.samples[0]?.windows[0]?.usedDollars, 10)
-    assert.equal(state.samples[1]?.provider, 'claude')
-    assert.equal(state.samples[1]?.windows[0]?.usedDollars, 55)
+    const codexSample = state.samples[0]
+    const claudeSample = state.samples[1]
+    assert.ok(codexSample)
+    assert.ok(claudeSample)
+    assert.equal(codexSample.provider, 'codex')
+    assert.equal(codexSample.windows[0].usedDollars, 10)
+    assert.equal(claudeSample.provider, 'claude')
+    assert.equal(claudeSample.windows[0].usedDollars, 55)
   })
 })
 
