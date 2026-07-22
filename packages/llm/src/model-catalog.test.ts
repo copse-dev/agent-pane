@@ -2,7 +2,9 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   CLOUD_MODELS,
+  CLOUD_MODEL_LABELS,
   anthropicMaxOutputTokens,
+  cloudModelDisplayLabel,
   getModelInfo,
   inferCloudModelProvider,
   MODEL_CATALOG,
@@ -55,9 +57,18 @@ describe('model catalog', () => {
       [...TRACKED_MODELS],
     )
     for (const [value, label, provider] of CLOUD_MODELS) {
-      assert.equal(label, value)
+      assert.equal(label, CLOUD_MODEL_LABELS[value])
+      assert.notEqual(label, value, `${value}: picker label should be human-readable`)
+      assert.match(label, /^[A-Z]/, `${value}: label should start with a capital letter`)
       assert.equal(provider, inferCloudModelProvider(value))
     }
+  })
+
+  it('maps tracked cloud ids to friendly display labels', () => {
+    assert.equal(cloudModelDisplayLabel('claude-sonnet-4-6'), 'Claude Sonnet 4.6')
+    assert.equal(cloudModelDisplayLabel('claude-opus-4-8'), 'Claude Opus 4.8')
+    assert.equal(cloudModelDisplayLabel('gpt-4o-mini'), 'GPT-4o mini')
+    assert.equal(cloudModelDisplayLabel('not-a-tracked-model'), 'not-a-tracked-model')
   })
 
   it('infers provider from model id prefix', () => {

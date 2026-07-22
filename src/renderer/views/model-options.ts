@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../preload/api.d.ts'
-import { CLOUD_MODELS } from '@copse/llm/model-catalog.ts'
+import { CLOUD_MODELS, cloudModelDisplayLabel } from '@copse/llm/model-catalog.ts'
 import { localModelRoleHint } from '@copse/llm/local-model-catalog.ts'
 import {
   cloudModelIntellectHint,
@@ -62,7 +62,7 @@ export function modelDisplayLabel(model: string): string {
   // Without the configured-agents list to resolve a title, fall back to the id.
   const acpId = parseAcpModel(model)
   if (acpId) return acpId
-  return model
+  return cloudModelDisplayLabel(model)
 }
 
 // External ACP agents the user has configured. Only enabled agents are offered;
@@ -268,9 +268,15 @@ async function remoteAgentOptions(
       seen.add(value)
       options.push({ value, label, group })
     }
-    // Same Claude ids as the Cloud models group (bare id labels).
+    // Same Claude ids as the Cloud models group, with the shared friendly
+    // labels. Intellect-only hint (subscription-billed, like Cursor).
     for (const id of MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT) {
-      add(remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id), id)
+      const label = cloudModelDisplayLabel(id)
+      const hint = modelIntellectHint(id)
+      add(
+        remoteAgentModelValue(REMOTE_AGENT_PROVIDER_ANTHROPIC, id),
+        hint ? `${label} — ${hint}` : label,
+      )
     }
     const currentSelection = parseRemoteAgentModelSelection(current)
     if (
