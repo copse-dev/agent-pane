@@ -471,7 +471,7 @@ export function createUsageSection(
   return {
     root,
     refresh,
-    detach: () => {
+    detach: (): void => {
       unsubUsage?.()
       if (ledgerRefreshTimer !== undefined) clearTimeout(ledgerRefreshTimer)
     },
