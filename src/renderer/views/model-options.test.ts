@@ -155,7 +155,11 @@ describe('fetchModelOptions visibility', () => {
     const claudeRemote = anthropicOnly.filter((o) => o.group === 'Claude Cloud Agent')
     assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-opus-4-8'))
     assert.ok(claudeRemote.some((o) => o.value === 'remote-agent:anthropic#claude-sonnet-4-6'))
-    assert.ok(claudeRemote.some((o) => o.label === 'claude-sonnet-4-6'))
+    const sonnetRemote = claudeRemote.find(
+      (o) => o.value === 'remote-agent:anthropic#claude-sonnet-4-6',
+    )
+    assert.ok(sonnetRemote)
+    assert.match(sonnetRemote.label, /^Claude Sonnet 4\.6 — intellect /)
     assert.ok(!anthropicOnly.some((o) => o.value.startsWith('remote-agent:cursor')))
 
     // A Cursor key surfaces Default + live catalog under its own heading.
@@ -306,17 +310,17 @@ describe('fetchModelOptions visibility', () => {
     )
     const opus = options.find((o) => o.value === 'claude-opus-4-8')
     assert.ok(opus)
-    assert.equal(opus.label, 'claude-opus-4-8 — intellect 55.7 · $9/MTok · frontier')
+    assert.equal(opus.label, 'Claude Opus 4.8 — intellect 55.7 · $9/MTok · frontier')
     const haiku = options.find((o) => o.value === 'claude-haiku-4-5')
     assert.ok(haiku)
     // Haiku is dominated on the re-baselined frontier (a cheaper model reaches
     // its intellect), so it shows intellect and price without the frontier tag.
-    assert.equal(haiku.label, 'claude-haiku-4-5 — intellect 24 · $1.80/MTok')
+    assert.equal(haiku.label, 'Claude Haiku 4.5 — intellect 24 · $1.80/MTok')
     // gpt-4o is scored (11.2) but dominated, so it shows intellect and price
     // without the frontier tag.
     const gpt4o = options.find((o) => o.value === 'gpt-4o')
     assert.ok(gpt4o)
-    assert.match(gpt4o.label, /intellect 11\.2 · \$[\d.]+\/MTok/)
+    assert.match(gpt4o.label, /^GPT-4o — intellect 11\.2 · \$[\d.]+\/MTok$/)
     assert.doesNotMatch(gpt4o.label, /frontier/)
   })
 

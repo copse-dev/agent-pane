@@ -56,7 +56,7 @@ describe('remote-agent model selection', () => {
     )
     assert.equal(
       remoteAgentDisplayLabel('remote-agent:anthropic#claude-sonnet-4-6'),
-      'Claude Cloud Agent — claude-sonnet-4-6',
+      'Claude Cloud Agent — Claude Sonnet 4.6',
     )
   })
 })

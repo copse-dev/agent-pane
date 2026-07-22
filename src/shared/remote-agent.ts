@@ -3,7 +3,11 @@
 // existing import path and the literal never drifts between the two.
 export { REMOTE_AGENT_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
 import { REMOTE_AGENT_MODEL_PREFIX } from '@copse/llm/reserved-prefixes.ts'
-import { TRACKED_MODELS, inferCloudModelProvider } from '@copse/llm/model-catalog.ts'
+import {
+  TRACKED_MODELS,
+  cloudModelDisplayLabel,
+  inferCloudModelProvider,
+} from '@copse/llm/model-catalog.ts'
 import { DEFAULT_MANAGED_AGENT_MODEL } from './managed-agents.ts'
 
 export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
@@ -110,8 +114,8 @@ export function remoteAgentGroupLabel(provider: RemoteAgentProvider): string {
 
 /**
  * Human label for a remote-agent selection. When a specific model is chosen,
- * prefer a catalog display name (Cursor live list) and otherwise show the id —
- * same bare-id convention the Cloud models group uses for Claude ids.
+ * prefer a catalog display name (Cursor live list, or the shared Claude cloud
+ * labels) and otherwise show the id.
  */
 export function remoteAgentDisplayLabel(
   model: string,
@@ -122,7 +126,7 @@ export function remoteAgentDisplayLabel(
   const title = remoteAgentGroupLabel(selection.provider)
   if (!selection.model) return title
   const catalogLabel = catalog.find((entry) => entry.id === selection.model)?.label
-  return `${title} — ${catalogLabel ?? selection.model}`
+  return `${title} — ${catalogLabel ?? cloudModelDisplayLabel(selection.model)}`
 }
 
 /** Resolve the Anthropic Managed Agents model id for a selection (or the default). */

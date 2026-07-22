@@ -72,10 +72,39 @@ export function inferCloudModelProvider(model: string): CloudModelProvider {
   throw new Error(`Unknown cloud model provider for '${model}'`)
 }
 
+/**
+ * Human picker / badge labels for tracked cloud model ids. Values stay as the
+ * upstream API id (`claude-sonnet-4-6`); only the display string is friendly
+ * (`Claude Sonnet 4.6`), matching OpenRouter / Cursor catalog naming.
+ */
+export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
+  'claude-sonnet-4-6': 'Claude Sonnet 4.6',
+  'claude-fable-5': 'Claude Fable 5',
+  'claude-sonnet-5': 'Claude Sonnet 5',
+  'claude-opus-4-8': 'Claude Opus 4.8',
+  'claude-haiku-4-5': 'Claude Haiku 4.5',
+  'gpt-5.6-sol': 'GPT-5.6 Sol',
+  'gpt-5.6-terra': 'GPT-5.6 Terra',
+  'gpt-5.5': 'GPT-5.5',
+  'gpt-5': 'GPT-5',
+  'gpt-5-mini': 'GPT-5 mini',
+  'gpt-4o': 'GPT-4o',
+  'gpt-4o-mini': 'GPT-4o mini',
+}
+
+/** Friendly label for a tracked cloud id; unknown ids fall back to themselves. */
+export function cloudModelDisplayLabel(model: string): string {
+  return Object.hasOwn(CLOUD_MODEL_LABELS, model)
+    ? CLOUD_MODEL_LABELS[model as TrackedModel]
+    : model
+}
+
 /** Model picker entries derived from {@link TRACKED_MODELS}. */
 export const CLOUD_MODELS: ReadonlyArray<
   readonly [value: TrackedModel, label: string, provider: CloudModelProvider]
-> = TRACKED_MODELS.map((id) => [id, id, inferCloudModelProvider(id)] as const)
+> = TRACKED_MODELS.map(
+  (id) => [id, CLOUD_MODEL_LABELS[id], inferCloudModelProvider(id)] as const,
+)
 
 export function anthropicMaxOutputTokens(model: string): number {
   return getModelInfo(model)?.maxOutputTokens ?? DEFAULT_ANTHROPIC_MAX_OUTPUT
