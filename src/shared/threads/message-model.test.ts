@@ -32,16 +32,19 @@ describe('message-model helpers', () => {
     )
   })
 
-  it('shows labels whenever any assistant turn has model provenance', () => {
-    assert.equal(shouldShowPrimaryChatModelLabels([assistant('a1', 'claude-sonnet-4-6')]), true)
+  it('hides labels for a single primary model (or none)', () => {
+    assert.equal(shouldShowPrimaryChatModelLabels([assistant('a1', 'claude-sonnet-4-6')]), false)
     assert.equal(shouldShowPrimaryChatModelLabels([assistant('a1')]), false)
     assert.equal(
       shouldShowPrimaryChatModelLabels([
         assistant('a1', 'claude-sonnet-4-6'),
         assistant('a2', 'claude-sonnet-4-6'),
       ]),
-      true,
+      false,
     )
+  })
+
+  it('shows labels once two distinct primary models appear', () => {
     assert.equal(
       shouldShowPrimaryChatModelLabels([
         assistant('a1', 'claude-sonnet-4-6'),

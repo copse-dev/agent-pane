@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 describe('primary-chat model labels', () => {
-  it('shows a model label on each assistant turn with provenance (single model)', () => {
+  it('hides model labels when every assistant turn used the same model', () => {
     const store = createStore()
     const threadId = createThread(store)
     addMessage(store, threadId, 'user', 'one')
@@ -32,11 +32,10 @@ describe('primary-chat model labels', () => {
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
-    const labels = [...document.querySelectorAll('.message-model')].map((n) => n.textContent)
-    assert.deepEqual(labels, ['claude-sonnet-4-6', 'claude-sonnet-4-6'])
+    assert.equal(document.querySelectorAll('.message-model').length, 0)
   })
 
-  it('shows a model label on each assistant turn when models differ', () => {
+  it('shows a model label on each assistant turn once two models appear', () => {
     const store = createStore()
     const threadId = createThread(store)
     addMessage(store, threadId, 'user', 'one')
@@ -55,7 +54,7 @@ describe('primary-chat model labels', () => {
     assert.deepEqual(labels, ['Claude Sonnet 4.6', 'qwen/qwen3.6-35b-a3b · local'])
   })
 
-  it('skips assistant turns that lack model provenance', () => {
+  it('does not count missing model provenance toward the multi-model gate', () => {
     const store = createStore()
     const threadId = createThread(store)
     addMessage(store, threadId, 'assistant', 'legacy', undefined, undefined, {
@@ -66,7 +65,6 @@ describe('primary-chat model labels', () => {
     document.body.append(host)
     mountConversation(host, store, fakeApi())
 
-    const labels = [...document.querySelectorAll('.message-model')].map((n) => n.textContent)
-    assert.deepEqual(labels, ['claude-sonnet-4-6'])
+    assert.equal(document.querySelectorAll('.message-model').length, 0)
   })
 })

@@ -49,7 +49,11 @@ import { buildShareTraceIssueUrl } from '@shared/github/share-trace-issue.ts'
 import { formatFooterUsageSummary, resolveFooterUsage } from '@shared/usage/footer-usage-summary.ts'
 import { type ExtraPricing } from '@copse/llm/estimate-cost.ts'
 import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
-import { DEFAULT_APP_CHAT_MODEL, isBestValueChatModel } from '@shared/lm-studio-defaults.ts'
+import {
+  DEFAULT_APP_CHAT_MODEL,
+  FALLBACK_APP_CHAT_MODEL,
+  isBestValueChatModel,
+} from '@shared/lm-studio-defaults.ts'
 import { mountFollowUpSuggestions } from './follow-up-suggestions.ts'
 import {
   threadGitBranchMismatch,
@@ -207,44 +211,33 @@ export function mountInputBar(
   })
   let costVisible = false
 
+  /** Concrete model for footer chrome — never the Settings-only best-value sentinel. */
+  function footerChatModel(): string {
+    const thread = getActiveThread(store)
+    const raw = thread?.model ?? store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
+    return isBestValueChatModel(raw) ? FALLBACK_APP_CHAT_MODEL : raw
+  }
+
   const modelPicker = mountFooterModelPicker(
     modelHost,
     api,
-    () => {
-      const thread = getActiveThread(store)
-      return thread?.model ?? store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
-    },
+    footerChatModel,
     (model) => {
       const thread = getActiveThread(store)
       if (!thread) return
-      const applyModel = (next: string): void => {
-        const active = getActiveThread(store)
-        if (!active || active.id !== thread.id) return
-        const threads = store
-          .getState()
-          .threads.map((t) =>
-            t.id !== thread.id ? t : { ...t, model: next, updatedAt: Date.now() },
-          )
-        store.setState({ threads })
-        modelPicker.refresh()
-        updateFooter()
-        // The context window depends on the model, so re-estimate the footer wheel
-        // against the newly selected model rather than waiting for the next keystroke.
-        void runContextEstimate()
-        void refreshAutomaticCheckoutPreview()
-      }
-      // Best-value is a Settings default mode; picking it in the footer resolves
-      // once to the concrete plan/price winner so the thread shows the real route.
-      if (isBestValueChatModel(model)) {
-        void api.models
-          .bestValueDefault()
-          .then(applyModel)
-          .catch(() => {
-            applyModel(model)
-          })
-        return
-      }
-      applyModel(model)
+      // Best-value is Settings-only; the footer list never offers it. If a stale
+      // value somehow arrives, ignore it — blank-thread resolution owns that mode.
+      if (isBestValueChatModel(model)) return
+      const threads = store
+        .getState()
+        .threads.map((t) => (t.id !== thread.id ? t : { ...t, model, updatedAt: Date.now() }))
+      store.setState({ threads })
+      modelPicker.refresh()
+      updateFooter()
+      // The context window depends on the model, so re-estimate the footer wheel
+      // against the newly selected model rather than waiting for the next keystroke.
+      void runContextEstimate()
+      void refreshAutomaticCheckoutPreview()
     },
     {
       isSshWorkspace: (): boolean => {
@@ -347,9 +340,8 @@ export function mountInputBar(
 
   async function refreshAutomaticCheckoutPreview(): Promise<void> {
     const seq = ++automaticCheckoutPreviewSeq
-    const { activeProjectId, settings } = store.getState()
-    const thread = getActiveThread(store)
-    const model = thread?.model ?? settings?.model ?? DEFAULT_APP_CHAT_MODEL
+    const { activeProjectId } = store.getState()
+    const model = footerChatModel()
     let next: 'shared' | 'worktree' = 'shared'
     if (activeProjectId) {
       try {
@@ -559,9 +551,8 @@ export function mountInputBar(
   function usageSummaryText(): string | null {
     const thread = getActiveThread(store)
     if (!thread) return null
-    // Price against the thread's model so the footer cost matches what the run
-    // will actually use, not the global default.
-    const model = thread.model ?? store.getState().settings?.model ?? DEFAULT_APP_CHAT_MODEL
+    // Price against the concrete footer model so cost matches what the run uses.
+    const model = footerChatModel()
     const display = resolveFooterUsage({
       measured: thread.usage,
       running: thread.status === 'running',

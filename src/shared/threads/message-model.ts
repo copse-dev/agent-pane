@@ -20,12 +20,12 @@ export function primaryChatModels(messages: readonly Message[]): string[] {
 }
 
 /**
- * True when the transcript should show per-message model labels. Any assistant
- * turn with model provenance gets a label — important once the default chat
- * mode auto-picks a plan/price winner, so the user can see which model answered.
+ * True when the transcript should show per-message model labels. Only when the
+ * primary chat has used more than one model — the footer picker already shows
+ * the active route (including best-value auto-picks).
  */
 export function shouldShowPrimaryChatModelLabels(messages: readonly Message[]): boolean {
-  return primaryChatModels(messages).length >= 1
+  return primaryChatModels(messages).length > 1
 }
 
 /** Display label for a primary-chat model id (matches subagent badge local form). */

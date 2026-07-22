@@ -71,8 +71,17 @@ describe('fetchModelOptions visibility', () => {
     )
   })
 
-  it('always offers best-value mode and a guiding message when nothing else is configured', async () => {
+  it('shows a guiding message when nothing is configured (footer / default)', async () => {
     const options = await fetchModelOptions(mockApi(), '')
+    assert.equal(options.length, 1)
+    const [option] = options
+    assert.ok(option)
+    assert.match(option.label, /No models available/)
+    assert.equal(option.disabled, true)
+  })
+
+  it('offers best-value only when includeBestValue is set (Settings chat model)', async () => {
+    const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
     assert.equal(options.length, 2)
     const [bestValue, empty] = options
     assert.ok(bestValue)
@@ -81,6 +90,7 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(empty)
     assert.match(empty.label, /No models available/)
     assert.equal(empty.disabled, true)
+    assert.ok(!(await fetchModelOptions(mockApi(), '')).some((o) => o.value === 'auto:best-value'))
   })
 
   it('omits unconfigured providers entirely (no "add a key" rows)', async () => {

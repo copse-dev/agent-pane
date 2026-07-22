@@ -2226,6 +2226,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         form.elements.namedItem('model') as HTMLSelectElement,
         api,
         model ?? DEFAULT_APP_CHAT_MODEL,
+        { includeBestValue: true },
       )
       const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
       const roleModels =

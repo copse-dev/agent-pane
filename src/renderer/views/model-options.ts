@@ -316,6 +316,11 @@ export interface FetchModelOptionsOpts {
    * models that can execute a task in-process.
    */
   includeAgentModels?: boolean
+  /**
+   * When true, include the Settings-only `auto:best-value` chat default.
+   * The footer picker omits it — new chats resolve to a concrete model instead.
+   */
+  includeBestValue?: boolean
 }
 
 export async function fetchModelOptions(
@@ -323,13 +328,14 @@ export async function fetchModelOptions(
   current: string,
   opts: FetchModelOptionsOpts = {},
 ): Promise<ModelOption[]> {
-  const options: ModelOption[] = [
-    {
+  const options: ModelOption[] = []
+  if (opts.includeBestValue === true) {
+    options.push({
       value: BEST_VALUE_CHAT_MODEL,
       label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
       group: CHAT_DEFAULT_GROUP,
-    },
-  ]
+    })
+  }
   const sshWorkspace = opts.sshWorkspace === true
   const includeAgentModels = opts.includeAgentModels !== false
 
@@ -418,9 +424,10 @@ export async function fetchModelOptions(
     }
   }
 
-  // When nothing concrete is configured beyond the best-value mode, keep a
-  // guiding row so the picker explains how to add a provider.
-  if (options.length === 1) {
+  // Only when nothing at all is configured (no cloud key, no provider, no local
+  // server — and no Settings best-value row) do we surface a guiding message.
+  const concreteCount = options.filter((o) => !isBestValueChatModel(o.value)).length
+  if (concreteCount === 0) {
     options.push({
       value: '',
       label: 'No models available — add a provider or API key in Settings',
@@ -439,6 +446,11 @@ function opt(value: string, label: string, disabled = false): HTMLOptionElement 
   return o
 }
 
+export interface PopulateModelSelectOpts {
+  /** Include Settings-only best-value chat default (chat model select only). */
+  includeBestValue?: boolean
+}
+
 // Fill a <select> with the cloud models plus a local optgroup of the models the
 // configured local server exposes (value `lmstudio:<id>`). Keeps the
 // `current` value selectable even if the server is offline.
@@ -446,9 +458,12 @@ export async function populateModelSelect(
   select: HTMLSelectElement,
   api: ApiClient,
   current: string,
+  opts: PopulateModelSelectOpts = {},
 ): Promise<void> {
   clear(select)
-  const options = await fetchModelOptions(api, current)
+  const options = await fetchModelOptions(api, current, {
+    ...(opts.includeBestValue === true ? { includeBestValue: true } : {}),
+  })
   let lastGroup: string | undefined
   let groupEl: HTMLOptGroupElement | null = null
   for (const item of options) {

@@ -2674,53 +2674,9 @@ export function seedMarkdownTableCodeFirstColumnFixture(workspaceRoot: string): 
 }
 
 /**
- * One assistant turn with model provenance. Labels must appear even when the
- * thread stays on a single model (best-value default makes the route visible).
- */
-export function seedSingleModelChatFixture(workspaceRoot: string): void {
-  const projectId = 'e2e-single-model-chat-project'
-  const threadId = 'e2e-single-model-chat-thread'
-  const now = Date.now()
-  mkdirSync(USER_DATA, { recursive: true })
-  writeSeedConfig({
-    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
-    activeProjectId: projectId,
-    activeThreadId: threadId,
-    [`threads:${projectId}`]: [
-      {
-        id: threadId,
-        title: 'Single-model chat',
-        status: 'idle',
-        model: 'claude-sonnet-4-6',
-        messages: [
-          {
-            id: 'msg-user-1',
-            role: 'user',
-            content: 'What is the chat default?',
-            toolCalls: [],
-            createdAt: now,
-          },
-          {
-            id: 'msg-assistant-1',
-            role: 'assistant',
-            content:
-              'New chats pick the plan/price Pareto winner and route to that provider. This turn ran on Claude Sonnet.',
-            model: 'claude-sonnet-4-6',
-            toolCalls: [],
-            createdAt: now + 1,
-          },
-        ],
-        usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: now,
-        updatedAt: now + 1,
-      },
-    ],
-  })
-}
-
-/**
  * Two assistant turns on different primary-chat models. Labels must appear on
- * both bubbles. Visual eval for per-message model provenance in the transcript.
+ * both bubbles (hidden when a thread stays on one model). Visual eval for
+ * per-message model provenance in the transcript.
  */
 export function seedMultiModelChatFixture(workspaceRoot: string): void {
   const projectId = 'e2e-multi-model-chat-project'
