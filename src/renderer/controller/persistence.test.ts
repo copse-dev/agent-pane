@@ -143,25 +143,42 @@ test('serializedSet does not serialize across different keys', async () => {
   assert.deepEqual([...calls].sort(), ['a', 'b'])
 })
 
-test('debounces a metadata burst into one create for a new thread + a projects save', async () => {
+test('creates a new thread immediately on threads_changed (before prepareCheckout)', async () => {
   __resetPersistenceForTest()
   const { api, calls } = fakeApi()
   const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
   const autosave = attachAutosave(store, api)
 
   store.emit('threads_changed')
-  store.emit('usage_updated', 't1')
-  store.emit('todos_changed', 't1')
-  store.emit('projects_changed')
 
-  assert.equal(calls.creates.length, 0)
-
-  await waitDebounce()
-
+  // Must not wait for AUTOSAVE_DEBOUNCE_MS — first send prepares checkout
+  // against main before any message_added reconcile can create the thread.
   assert.deepEqual(
     calls.creates.map((c) => [c.projectId, c.thread.id]),
     [['p1', 't1']],
   )
+  assert.deepEqual(calls.metas, [])
+  autosave.detach()
+})
+
+test('debounces a metadata burst into one projects save after the immediate create', async () => {
+  __resetPersistenceForTest()
+  const { api, calls } = fakeApi()
+  const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
+  const autosave = attachAutosave(store, api)
+
+  store.emit('threads_changed')
+  assert.equal(calls.creates.length, 1)
+
+  store.emit('usage_updated', 't1')
+  store.emit('todos_changed', 't1')
+  store.emit('projects_changed')
+
+  assert.deepEqual(calls.storageSets.map((c) => c[0]).sort(), [])
+
+  await waitDebounce()
+
+  assert.equal(calls.creates.length, 1)
   assert.deepEqual(calls.metas, [])
   assert.deepEqual(calls.storageSets.map((c) => c[0]).sort(), ['activeProjectId', 'projects'])
   autosave.detach()
@@ -367,7 +384,7 @@ test('skips stale writes for a thread gone after a project switch', async () => 
   autosave.detach()
 })
 
-test('flush() bypasses the debounce timer and awaits the writes', async () => {
+test('flush() awaits an in-flight new-thread create started by threads_changed', async () => {
   __resetPersistenceForTest()
   let resolved = false
   const { api } = fakeApi({
@@ -382,25 +399,32 @@ test('flush() bypasses the debounce timer and awaits the writes', async () => {
   const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
   const autosave = attachAutosave(store, api)
 
-  store.emit('threads_changed')
-  await autosave.flush()
-  assert.equal(resolved, true)
-  autosave.detach()
+  try {
+    store.emit('threads_changed')
+    await autosave.flush()
+    assert.equal(resolved, true)
+  } finally {
+    autosave.detach()
+  }
 })
 
 test('pagehide flush triggers a final reconcile', async () => {
   __resetPersistenceForTest()
+  pagehideHandlers.clear()
   const { api, calls } = fakeApi()
   const store = createStore({ activeProjectId: 'p1', threads: [thread('t1')], projects: [] })
   const autosave = attachAutosave(store, api)
 
-  pagehideHandlers.forEach((h) => {
-    h()
-  })
-  await tick()
-  assert.deepEqual(
-    calls.creates.map((c) => c.thread.id),
-    ['t1'],
-  )
-  autosave.detach()
+  try {
+    pagehideHandlers.forEach((h) => {
+      h()
+    })
+    await tick()
+    assert.deepEqual(
+      calls.creates.map((c) => c.thread.id),
+      ['t1'],
+    )
+  } finally {
+    autosave.detach()
+  }
 })
