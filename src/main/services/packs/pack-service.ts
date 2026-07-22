@@ -35,6 +35,7 @@ import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-task
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
+import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -55,6 +56,9 @@ const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategy
 
 /** One-time bridge from the retired `okfMemoriesEnabled` standalone setting. */
 const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
+
+/** One-time bridge from the retired `ciInvestigatorEnabled` standalone setting. */
+const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -183,6 +187,28 @@ function migrateOkfMemoriesEnablement(): void {
   storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
 }
 
+/**
+ * Preserve the enablement users had before the CI investigator became a pack.
+ * Like model comparison, the feature was previously opt-in (off by default via
+ * the `ciInvestigatorEnabled` setting), so an absent or false value must disable
+ * the new `copse.ci-investigator` pack — otherwise the migration would expose a
+ * previously opt-in experimental tool to every existing user after upgrade. Runs
+ * synchronously before the shared registry is created and is idempotent (guarded
+ * by its own migration key).
+ */
+function migrateCiInvestigatorEnablement(): void {
+  if (storageGet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const ciInvestigatorEnabled = storageGet('ciInvestigatorEnabled')
+
+  if (ciInvestigatorEnabled === true) disabled.delete(CI_INVESTIGATOR_PACK_ID)
+  else disabled.add(CI_INVESTIGATOR_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+}
+
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
 function readPackSettings(packId: string): Record<string, unknown> {
   const raw = storageGet(packSettingsKey(packId))
@@ -278,6 +304,7 @@ export function getPackService(): PackService {
   migrateRoadmapPlansEnablement()
   migrateAdvisorStrategyEnablement()
   migrateOkfMemoriesEnablement()
+  migrateCiInvestigatorEnablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)
