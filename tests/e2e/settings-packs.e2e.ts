@@ -105,6 +105,14 @@ describe('settings packs (about:addons)', function () {
     await expect(okfMemoriesRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await okfMemoriesRow.getAttribute('data-enabled'), 'false')
 
+    // CI investigator pack: listed, default-OFF via the one-time enablement
+    // bridge (absent legacy `ciInvestigatorEnabled` ⇒ disabled).
+    const ciInvestigatorRow = packs.$('.pack-row[data-pack-id="copse.ci-investigator"]')
+    await expect(ciInvestigatorRow).toBeDisplayed()
+    assert.equal(await ciInvestigatorRow.$('.pack-name').getText(), 'copse.ci-investigator')
+    await expect(ciInvestigatorRow.$('.pack-badge-first-party')).toBeDisplayed()
+    assert.equal(await ciInvestigatorRow.getAttribute('data-enabled'), 'false')
+
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
 

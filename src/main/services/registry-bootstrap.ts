@@ -45,7 +45,7 @@ import {
   BROWSER_TOOLS_ENABLED_SETTING,
   BROWSER_TOOLS_DEFAULT_ENABLED,
 } from './browser/browser-origin-policy.ts'
-import { CI_INVESTIGATOR_ENABLED_SETTING } from './github/ci-investigator-service.ts'
+import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { trackLongTaskTool } from '../tools/long-task-tool.ts'
 import { MODEL_CLASSIFIER_ENABLED_SETTING } from './providers/model-classifier.ts'
 import { suggestModelTool } from '../tools/model-classifier-tool.ts'
@@ -113,15 +113,13 @@ export function createRegistry(): ToolRegistry {
   }
   registry.register(runShellTool)
   registry.register(exploreTool)
-  // Experimental CI investigator subagent (off by default). Gates its entry tool
-  // and the deep-log gh_run_* helpers it relies on so the feature is fully inert
-  // unless explicitly opted into via the experimental setting. Also requires `gh`
-  // since the run-log helpers shell out to it.
-  if (ghAvailable && getSetting<boolean>(CI_INVESTIGATOR_ENABLED_SETTING, false)) {
-    registry.register(ghRunListTool)
-    registry.register(ghRunViewTool)
-    registry.register(investigateCiTool)
-  }
+  // Experimental CI investigator subagent (off by default). Gated by the
+  // `copse.ci-investigator` first-party pack — the pack toggle in Settings >
+  // Packs is the atomic master switch. Registration also requires `gh` (the
+  // entry tool and its deep-log gh_run_* helpers shell out to it), so the sync
+  // ANDs pack enablement with `gh` availability. Live toggles route through
+  // {@link syncCiInvestigatorTools} on `packs:setEnabled`.
+  syncCiInvestigatorTools(registry)
   // Experimental OKF memories (off by default). Gated by the
   // `copse.okf-memories` first-party pack — the pack toggle in Settings > Packs
   // is the atomic master switch. Adds remember/recall tools that persist project
@@ -283,6 +281,34 @@ export function syncAdvisorStrategyTools(registry: ToolRegistry): void {
     if (!registry.has('advisor')) registry.register(advisorTool)
   } else {
     registry.unregister('advisor')
+  }
+}
+
+/**
+ * Register or unregister the experimental CI investigator tools — the
+ * `investigate_ci` entry tool and its deep-log `gh_run_list` / `gh_run_view`
+ * helpers — to match the current enablement of the `copse.ci-investigator`
+ * first-party pack. Called at startup (via createRegistry) and again whenever
+ * the pack is toggled from Settings > Packs (see `ipc/register-handlers.ts`
+ * `packs:setEnabled`), so the tools appear or disappear live — the atomic pack
+ * disable drops them from the model tool list in the same flag flip that drops
+ * the pack's `activeToolNames()` entries from the Settings pack list.
+ *
+ * The register direction additionally requires `gh`: the entry tool and the
+ * gh_run_* helpers shell out to it, so advertising them without a usable `gh`
+ * would just surface "gh is not available" on every call. `gh` availability is
+ * recomputed here via the same `isGhAvailable()` probe `createRegistry` uses, so
+ * a live pack enable respects the probed environment.
+ */
+export function syncCiInvestigatorTools(registry: ToolRegistry): void {
+  if (getDefaultPackRegistry().isEnabled(CI_INVESTIGATOR_PACK_ID) && isGhAvailable()) {
+    if (!registry.has('gh_run_list')) registry.register(ghRunListTool)
+    if (!registry.has('gh_run_view')) registry.register(ghRunViewTool)
+    if (!registry.has('investigate_ci')) registry.register(investigateCiTool)
+  } else {
+    registry.unregister('gh_run_list')
+    registry.unregister('gh_run_view')
+    registry.unregister('investigate_ci')
   }
 }
 

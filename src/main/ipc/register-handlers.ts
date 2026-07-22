@@ -100,6 +100,7 @@ import { loadProjectInstructionSources } from '../services/project-instructions.
 import {
   registerSkillTools,
   syncAdvisorStrategyTools,
+  syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
   syncModelComparisonTools,
   syncOkfMemoryTools,
@@ -112,6 +113,7 @@ import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-task
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
+import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE, migrateLegacyMemories } from '../tools/memory-tools.ts'
@@ -1075,6 +1077,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // stops the memory prompt block) without an app restart.
     if (id === OKF_MEMORIES_PACK_ID) {
       syncOkfMemoryTools(registry)
+    }
+    // Same for the `copse.ci-investigator` pack's entry and gh_run_* helper
+    // tools; the register direction still requires `gh` availability.
+    if (id === CI_INVESTIGATOR_PACK_ID) {
+      syncCiInvestigatorTools(registry)
     }
     return { packs: getPackService().list() }
   })
