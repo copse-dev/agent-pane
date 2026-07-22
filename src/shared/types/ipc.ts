@@ -286,7 +286,15 @@ export interface IpcInvokeMap {
     result: { ok: boolean; models?: string[]; error?: string }
   }
   'lmstudio:models': { args: []; result: string[] }
-  'openrouter:models': { args: []; result: Array<{ id: string; name: string }> }
+  'openrouter:models': {
+    args: []
+    result: Array<{
+      id: string
+      name: string
+      inputPricePerMTok: number | null
+      outputPricePerMTok: number | null
+    }>
+  }
   'lmstudio:detect': {
     args: [url?: string, apiKey?: string]
     result: {

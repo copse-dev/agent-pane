@@ -1,22 +1,79 @@
 import assert from 'node:assert/strict'
+import { createServer, type Server } from 'node:http'
 import { $, browser, expect } from '@wdio/globals'
-import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import { resetUserData, seedOpenRouterFixture } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
+const OPENROUTER_FIXTURE_PORT = 51239
+
+async function startOpenRouterServer(): Promise<{ apiBase: string; close: () => Promise<void> }> {
+  const server: Server = createServer((req, res) => {
+    const url = req.url ?? ''
+    if (url.endsWith('/models')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(
+        JSON.stringify({
+          data: [
+            {
+              id: 'openai/gpt-4o',
+              name: 'GPT-4o',
+              context_length: 128000,
+              pricing: { prompt: '0.0000025', completion: '0.00001' },
+              supported_parameters: ['tools'],
+              architecture: { modality: 'text->text', output_modalities: ['text'] },
+            },
+          ],
+        }),
+      )
+      return
+    }
+    if (url.endsWith('/endpoints/zdr')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ data: [{ model_name: 'GPT-4o', name: 'OpenAI | GPT-4o' }] }))
+      return
+    }
+    if (url.endsWith('/key')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ data: { label: 'e2e-key', usage: 0, limit: null } }))
+      return
+    }
+    res.writeHead(404)
+    res.end()
+  })
+  const apiBase = await new Promise<string>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(OPENROUTER_FIXTURE_PORT, '127.0.0.1', () => {
+      resolve(`http://127.0.0.1:${String(OPENROUTER_FIXTURE_PORT)}/api/v1`)
+    })
+  })
+  return {
+    apiBase,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      }),
+  }
+}
+
 describe('settings usage model value map ZDR filter', () => {
+  let fixture: { apiBase: string; close: () => Promise<void> } | null = null
+
   before(async () => {
+    fixture = await startOpenRouterServer()
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-value-map-zdr')
+    seedOpenRouterFixture(process.cwd(), { apiBase: fixture.apiBase })
     await browser.reloadSession()
   })
 
-  after(() => {
+  after(async () => {
     resetUserData()
+    if (fixture) await fixture.close()
   })
 
   it('filters the value map to zero-retention paths and screenshots the result', async () => {
-    // Seed a Fireworks-priced MiniMax so the ZDR filter has something to keep
-    // after Anthropic/OpenAI points are hidden.
+    // Seed two routes to the same priced model. The cheaper DeepSeek route is
+    // allowed normally but trains; privacy filters must choose Fireworks before
+    // grouping equivalent weights, just like OpenRouter vs direct API routes.
     await browser.execute(async () => {
       await window.api.settings.saveExtraProvider({
         slug: 'fireworks',
@@ -25,6 +82,16 @@ describe('settings usage model value map ZDR filter', () => {
             id: 'MiniMaxAI/MiniMax-M3',
             inputPricePerMTok: 0.3,
             outputPricePerMTok: 1.2,
+          },
+        ],
+      })
+      await window.api.settings.saveExtraProvider({
+        slug: 'deepseek',
+        models: [
+          {
+            id: 'MiniMaxAI/MiniMax-M3',
+            inputPricePerMTok: 0.01,
+            outputPricePerMTok: 0.02,
           },
         ],
       })
@@ -55,9 +122,43 @@ describe('settings usage model value map ZDR filter', () => {
     const filteredText = await chart.getText()
     assert.doesNotMatch(filteredText, /claude-opus-4-8|claude-fable-5|gpt-5\.5/)
     assert.match(filteredText, /MiniMax-M3/)
+    assert.match(filteredText, /gpt-4o/)
+    await expect(
+      chart.$('circle.frontier-point[data-model-id="openrouter:openai/gpt-4o"]'),
+    ).toExist()
     assert.match(await fieldset.getText(), /ZDR only: hiding/)
 
     await prepareE2eScreenshot()
     await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-zdr.png')
+
+    const noTrainingBtn = fieldset.$('button.frontier-no-training-toggle')
+    const planBtn = fieldset.$('button.frontier-plan-toggle')
+    await expect(noTrainingBtn).toBeDisplayed()
+    await expect(planBtn).toBeDisplayed()
+
+    // No-training is broader than ZDR: direct Anthropic/OpenAI routes return,
+    // while a training DeepSeek route is replaced by Fireworks for the same model.
+    await zdrBtn.click()
+    await noTrainingBtn.click()
+    await browser.waitUntil(
+      async () => (await noTrainingBtn.getAttribute('aria-pressed')) === 'true',
+      { timeout: 5000, timeoutMsg: 'No training toggle did not activate' },
+    )
+    assert.match(await chart.getText(), /claude-|gpt-/)
+    assert.equal(
+      await chart.$('circle.frontier-point[data-model-id^="deepseek:"]').isExisting(),
+      false,
+    )
+    await expect(chart.$('circle.frontier-point[data-model-id^="fireworks:"]')).toExist()
+
+    await planBtn.click()
+    await browser.waitUntil(async () => (await planBtn.getText()) === 'Show plan', {
+      timeout: 5000,
+      timeoutMsg: 'Hide plan toggle did not activate',
+    })
+    assert.doesNotMatch(await chart.getText(), /· plan/)
+
+    await prepareE2eScreenshot()
+    await saveElementScreenshot('.frontier-fieldset', 'settings-usage-value-map-privacy.png')
   })
 })

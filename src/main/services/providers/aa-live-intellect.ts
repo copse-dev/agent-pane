@@ -14,7 +14,10 @@ import { getApiKey } from '../storage/settings.ts'
 /** Env override for e2e / demos — skips network and the stored AA key. */
 const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
 
-const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/data/llms/models'
+// The legacy `/data/llms/models` response does not carry the Intelligence
+// Index cost-per-task field. The current free-shape endpoint does (for every
+// API tier) and paginates at 200 rows, so request every page below.
+const AA_MODELS_URL = 'https://artificialanalysis.ai/api/v2/language/models/free'
 // AA data moves slowly; refetching each panel open would just burn quota.
 const CACHE_TTL_MS = 6 * 60 * 60_000
 // Failures (bad key, network, unparseable payload) are cached only briefly, so
@@ -57,6 +60,15 @@ interface AaApiModel {
     /** Legacy / alternate spellings — prefer the model-level cost object above. */
     price_per_intelligence_index_task?: number
     cost_per_task?: number
+  }
+}
+
+interface AaApiPayload extends Record<string, unknown> {
+  data?: AaApiModel[]
+  pagination?: {
+    page?: number
+    total_pages?: number
+    has_more?: boolean
   }
 }
 
@@ -139,23 +151,37 @@ export async function requestLiveIntellectModels(
   fetchImpl: typeof fetch = fetch,
 ): Promise<LiveIntellectFetch> {
   try {
-    const res = await fetchImpl(AA_MODELS_URL, {
-      headers: { 'x-api-key': key },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    })
-    if (!res.ok) {
-      const status = `HTTP ${String(res.status)}${res.statusText ? ` ${res.statusText}` : ''}`
-      const hint =
-        res.status === 401 || res.status === 403
-          ? ' — the key was rejected; check the Artificial Analysis key in Settings'
-          : ''
-      return { ok: false, models: [], error: `Artificial Analysis API: ${status}${hint}` }
+    const apiModels: AaApiModel[] = []
+    let firstPayload: AaApiPayload = {}
+    let page = 1
+    let hasMore = true
+    while (hasMore) {
+      const url = new URL(AA_MODELS_URL)
+      url.searchParams.set('page', String(page))
+      const res = await fetchImpl(url, {
+        headers: { 'x-api-key': key },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      })
+      if (!res.ok) {
+        const status = `HTTP ${String(res.status)}${res.statusText ? ` ${res.statusText}` : ''}`
+        const hint =
+          res.status === 401 || res.status === 403
+            ? ' — the key was rejected; check the Artificial Analysis key in Settings'
+            : ''
+        return { ok: false, models: [], error: `Artificial Analysis API: ${status}${hint}` }
+      }
+      const payload = (await res.json()) as AaApiPayload
+      if (page === 1) firstPayload = payload
+      apiModels.push(...(payload.data ?? []))
+      const pagination = payload.pagination
+      hasMore =
+        pagination?.has_more === true ||
+        (typeof pagination?.total_pages === 'number' && page < pagination.total_pages)
+      if (hasMore) page += 1
     }
-    const payload = (await res.json()) as Record<string, unknown> & { data?: AaApiModel[] }
-    const apiModels = payload.data ?? []
     const models = apiModels.map(reduceModel).filter((m): m is LiveAaModel => m !== null)
-    const indexVersion = reportedIndexVersion(payload, apiModels)
+    const indexVersion = reportedIndexVersion(firstPayload, apiModels)
     return { ok: true, models, ...(indexVersion !== undefined ? { indexVersion } : {}) }
   } catch (err) {
     return {

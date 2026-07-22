@@ -159,4 +159,22 @@ describe('frontierForKnownModels', () => {
     assert.equal(first.id, 'lmstudio:test')
     assert.equal(first.onFrontier, true)
   })
+
+  it('filters routes before equivalent model identities are grouped', () => {
+    const score = getIntellectScore('gpt-4o')
+    assert.ok(score)
+    const points = frontierForKnownModels(
+      [
+        {
+          id: 'openrouter:openai/gpt-4o',
+          intellect: score.value,
+          costPerMTok: 12,
+        },
+      ],
+      undefined,
+      (candidate) => candidate.id.startsWith('openrouter:'),
+    )
+    assert.equal(points.length, 1)
+    assert.equal(points[0]?.id, 'openrouter:openai/gpt-4o')
+  })
 })

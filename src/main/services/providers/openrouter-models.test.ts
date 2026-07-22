@@ -87,10 +87,14 @@ describe('parseOpenRouterModelsPayload', () => {
     assert.equal(qwen.free, true)
     assert.equal(qwen.supportsTools, true)
     assert.equal(qwen.contextLength, 262144)
+    assert.equal(qwen.inputPricePerMTok, 0)
+    assert.equal(qwen.outputPricePerMTok, 0)
 
     const claude = models.find((m) => m.id === 'anthropic/claude-3.5-sonnet')
     assert.ok(claude)
     assert.equal(claude.free, false)
+    assert.equal(claude.inputPricePerMTok, 3)
+    assert.equal(claude.outputPricePerMTok, 15)
   })
 })
 
@@ -111,6 +115,10 @@ describe('listFreeOpenRouterModels', () => {
     assert.deepEqual(
       models.map((m) => m.id).sort(),
       ['anthropic/claude-3.5-sonnet', 'qwen/qwen3-235b-a22b:free'].sort(),
+    )
+    assert.equal(
+      models.find((model) => model.id === 'anthropic/claude-3.5-sonnet')?.inputPricePerMTok,
+      3,
     )
   })
 
@@ -178,8 +186,18 @@ describe('listFreeOpenRouterModels', () => {
 
 describe('filterToZdrModels', () => {
   const models = [
-    { id: 'qwen/qwen3-235b-a22b:free', name: 'Qwen3 235B A22B (free)' },
-    { id: 'z-ai/glm-4.5-air:free', name: 'GLM 4.5 Air (free)' },
+    {
+      id: 'qwen/qwen3-235b-a22b:free',
+      name: 'Qwen3 235B A22B (free)',
+      inputPricePerMTok: 0,
+      outputPricePerMTok: 0,
+    },
+    {
+      id: 'z-ai/glm-4.5-air:free',
+      name: 'GLM 4.5 Air (free)',
+      inputPricePerMTok: 0,
+      outputPricePerMTok: 0,
+    },
   ]
 
   it('fails open on an empty identifier set', () => {

@@ -254,7 +254,14 @@ export interface ApiClient {
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
   }
   openRouter: {
-    models: () => Promise<Array<{ id: string; name: string }>>
+    models: () => Promise<
+      Array<{
+        id: string
+        name: string
+        inputPricePerMTok: number | null
+        outputPricePerMTok: number | null
+      }>
+    >
   }
   models: {
     /** Whether any available chat model reaches the recommended context window. */

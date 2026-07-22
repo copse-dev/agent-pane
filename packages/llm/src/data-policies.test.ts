@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   dataPolicyForModelPath,
   dataPolicyForProvider,
+  isNoTrainingModelPath,
   isZeroRetentionModelPath,
   openRouterDataPolicy,
   pickerPrivacyNote,
@@ -188,5 +189,38 @@ describe('isZeroRetentionModelPath', () => {
   it('treats openrouter: paths as ZDR under Copse default routing', () => {
     assert.equal(isZeroRetentionModelPath('openrouter:anthropic/claude-sonnet-4'), true)
     assert.equal(dataPolicyForModelPath('openrouter:x').policy?.retainsPrompts, false)
+    assert.equal(isZeroRetentionModelPath('openrouter:x', { openRouterZdrOnly: false }), false)
+  })
+})
+
+describe('isNoTrainingModelPath', () => {
+  it('keeps local, ZDR, and retained no-training routes', () => {
+    assert.equal(isNoTrainingModelPath('lmstudio:qwen/qwen3'), true)
+    assert.equal(isNoTrainingModelPath('fireworks:accounts/models/qwen'), true)
+    assert.equal(isNoTrainingModelPath('claude-opus-4-8'), true)
+    assert.equal(isNoTrainingModelPath('gpt-5.5'), true)
+  })
+
+  it('fails closed for trainers and unknown routes', () => {
+    assert.equal(isNoTrainingModelPath('deepseek:deepseek-chat'), false)
+    assert.equal(isNoTrainingModelPath('huggingface:org/model:unknown-partner'), false)
+    assert.equal(isNoTrainingModelPath('mystery:model'), false)
+  })
+
+  it('uses the effective OpenRouter training opt-in', () => {
+    assert.equal(
+      isNoTrainingModelPath('openrouter:some/model', {
+        openRouterZdrOnly: false,
+        openRouterAllowTraining: false,
+      }),
+      true,
+    )
+    assert.equal(
+      isNoTrainingModelPath('openrouter:some/model', {
+        openRouterZdrOnly: false,
+        openRouterAllowTraining: true,
+      }),
+      false,
+    )
   })
 })
