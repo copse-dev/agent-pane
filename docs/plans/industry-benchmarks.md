@@ -39,12 +39,15 @@ also lowers the per-stream reasoning-runaway guard to 2k output tokens without c
 the desktop default. The one bounded stream after that recovery nudge may use a 4k cap, giving
 a complex local-model thought one chance to reach a tool call without returning to an unbounded
 runaway. Its host-specific recovery nudge directs a stalled terminal agent to
-take concrete tool action instead of asking for a chat-style final answer. It also replaces
+create the best current deliverable candidate instead of continuing analysis with the requested
+path absent. It also replaces
 the pressure-triggered tool-less answer turn for this host with one tool-enabled recovery
 instruction, because terminal success is durable environment state rather than prose; the
-configured output cap still bounds finalization. The recovery also treats available `/tests` as
-the verifier authority instead of accepting an ad hoc smoke check, and requires a best-effort edit
-before any further read-only inspection. The
+configured output cap still bounds finalization. The recovery probes `/tests` once, treats it as
+the verifier authority when available, and avoids repeatedly searching for hidden verifier files
+when the harness has not mounted them during the agent phase. Task-local checks must be invoked
+with their real runner—a silent script that merely defines tests is not accepted as verification.
+The recovery also requires a best-effort edit before any further read-only inspection. The
 terminal host also treats a short visible planning preamble on an otherwise reasoning-dominated
 cut as part of the same bounded runaway streak. The launcher defaults to one task and one attempt
 for local smoke testing. Its prompt also preserves forensic/stateful inputs before potentially
