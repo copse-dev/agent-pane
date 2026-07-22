@@ -1,5 +1,6 @@
 import { glob, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { terminalBenchTrialOutcome } from './lib/terminal-bench-outcome.mts'
 import { TERMINAL_BENCH_TASK_NAMES } from './lib/terminal-bench-tasks.mts'
 
 interface TrialSummary {
@@ -131,12 +132,6 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
   }
 }
 
-function outcome(trial: TrialSummary): 'pass' | 'zero' | 'timeout' | 'invalid' {
-  if (trial.exceptionType === 'AgentTimeoutError') return 'timeout'
-  if (trial.exceptionType !== undefined) return 'invalid'
-  return trial.reward === 1 ? 'pass' : 'zero'
-}
-
 const trials: TrialSummary[] = []
 for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) {
   const trial = await parseTrial(path)
@@ -148,16 +143,16 @@ for (const trial of trials.sort((a, b) => a.startedAt.localeCompare(b.startedAt)
   latestByTask.set(trial.taskName, trial)
 }
 const latest = [...latestByTask.values()].sort((a, b) => a.taskName.localeCompare(b.taskName))
-const valid = latest.filter((trial) => outcome(trial) !== 'invalid')
+const valid = latest.filter((trial) => terminalBenchTrialOutcome(trial) !== 'invalid')
 const counts = {
   expectedTasks: TERMINAL_BENCH_TASK_NAMES.length,
   reachedTasks: latest.length,
   validTasks: valid.length,
   unseenTasks: TERMINAL_BENCH_TASK_NAMES.length - latest.length,
-  pass: valid.filter((trial) => outcome(trial) === 'pass').length,
-  zero: valid.filter((trial) => outcome(trial) === 'zero').length,
-  timeout: valid.filter((trial) => outcome(trial) === 'timeout').length,
-  invalid: latest.filter((trial) => outcome(trial) === 'invalid').length,
+  pass: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'pass').length,
+  zero: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'zero').length,
+  timeout: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'timeout').length,
+  invalid: latest.filter((trial) => terminalBenchTrialOutcome(trial) === 'invalid').length,
   streamCuts: valid.reduce((sum, trial) => sum + trial.streamCuts, 0),
   appliedNudges: valid.reduce((sum, trial) => sum + trial.appliedNudges, 0),
   modelRequests: valid.reduce((sum, trial) => sum + trial.modelRequests, 0),
@@ -170,7 +165,10 @@ const counts = {
 if (process.argv.slice(2).includes('--json')) {
   console.log(
     JSON.stringify(
-      { counts, tasks: latest.map((trial) => ({ ...trial, outcome: outcome(trial) })) },
+      {
+        counts,
+        tasks: latest.map((trial) => ({ ...trial, outcome: terminalBenchTrialOutcome(trial) })),
+      },
       null,
       2,
     ),
@@ -190,7 +188,7 @@ if (process.argv.slice(2).includes('--json')) {
   for (const trial of latest) {
     const seconds = trial.durationSeconds === undefined ? '?' : trial.durationSeconds.toFixed(0)
     console.log(
-      `${outcome(trial).toUpperCase().padEnd(7)} ${trial.taskName.padEnd(42)} ` +
+      `${terminalBenchTrialOutcome(trial).toUpperCase().padEnd(7)} ${trial.taskName.padEnd(42)} ` +
         `${seconds.padStart(5)}s  llm=${String(trial.modelRequests).padStart(2)} ` +
         `tools=${String(trial.toolCalls).padStart(2)} timeouts=${String(trial.commandTimeouts)} ` +
         `cuts=${String(trial.streamCuts)} nudges=${String(trial.appliedNudges)}`,
