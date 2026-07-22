@@ -1,6 +1,17 @@
+/**
+ * Cursor Cloud Agent HTTP/SSE adapter.
+ *
+ * Intentionally talks to the Cloud Agents REST API directly rather than
+ * depending on `@cursor/sdk` — see docs/remote-agents.md for the trade-off.
+ * Stream resume (`Last-Event-ID`, recoverable `stream_unavailable`) mirrors the
+ * SDK's reconnect loop so a mid-turn SSE drop does not abort a still-running
+ * remote agent.
+ */
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import {
   buildRemoteAgentContextPreamble,
+  formatRemoteGitSummary,
+  isRemoteAgentStreamError,
   parseSseStream,
   promptPayloadFromUserContent,
   remoteStreamEventToChunks,
@@ -46,6 +57,59 @@ const artifactImageDataUrlCache = new LruStringCache(
   MAX_REMOTE_ARTIFACT_IMAGE_CACHE_ENTRIES,
   MAX_REMOTE_ARTIFACT_IMAGE_CACHE_BYTES,
 )
+
+/**
+ * Cursor Cloud run streams can drop mid-turn (`stream_unavailable`, network
+ * blips). The Cloud Agents API documents resume via `Last-Event-ID`; we mirror
+ * `@cursor/sdk`'s reconnect loop rather than depending on the SDK (see
+ * docs/remote-agents.md).
+ */
+const MAX_STREAM_RECONNECT_ATTEMPTS = 6
+const STREAM_RECONNECT_BASE_DELAY_MS = 1_000
+const STREAM_RECONNECT_MAX_DELAY_MS = 30_000
+const STREAM_WAIT_DEADLINE_MS = 2 * 60 * 60 * 1_000
+const STREAM_POLL_INTERVAL_MS = 15_000
+
+type StreamAttemptOutcome = 'received-result' | 'stream-dropped'
+
+let streamReconnectDelayMsForTest: ((attempt: number) => number) | null = null
+
+/** Test-only: force reconnect backoff (use `() => 0` for immediate retries). */
+export function setRemoteStreamReconnectDelayForTest(
+  delayMs: ((attempt: number) => number) | null,
+): void {
+  streamReconnectDelayMsForTest = delayMs
+}
+
+function streamReconnectDelayMs(attempt: number): number {
+  if (streamReconnectDelayMsForTest) return streamReconnectDelayMsForTest(attempt)
+  return Math.min(STREAM_RECONNECT_MAX_DELAY_MS, STREAM_RECONNECT_BASE_DELAY_MS * 2 ** attempt)
+}
+
+async function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0) return
+  if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+function isAbortError(err: unknown): boolean {
+  return (
+    (err instanceof Error && err.name === 'AbortError') ||
+    (typeof DOMException !== 'undefined' &&
+      err instanceof DOMException &&
+      err.name === 'AbortError')
+  )
+}
 
 interface RemoteAgentSession {
   v: 1
@@ -506,6 +570,148 @@ export function formatRemoteArtifactsSummary(input: {
   return `\n\n---\n_Remote agent artifacts:_\n${lines.join('\n')}`
 }
 
+interface CursorRunResponse {
+  id?: string
+  status?: string
+  result?: string
+  git?: {
+    branches?: Array<{ repoUrl?: string; branch?: string; prUrl?: string }>
+  }
+}
+
+function isTerminalRunStatus(status: string | null | undefined): boolean {
+  return (
+    status === 'FINISHED' || status === 'ERROR' || status === 'CANCELLED' || status === 'EXPIRED'
+  )
+}
+
+async function fetchCursorRun(input: {
+  fetchImpl: typeof fetch
+  baseUrl: string
+  apiKey: string
+  agentId: string
+  runId: string
+  signal: AbortSignal
+}): Promise<CursorRunResponse> {
+  const response = await input.fetchImpl(
+    joinUrl(
+      input.baseUrl,
+      `/v1/agents/${encodeURIComponent(input.agentId)}/runs/${encodeURIComponent(input.runId)}`,
+    ),
+    {
+      headers: { Authorization: cursorAuthHeader(input.apiKey) },
+      signal: input.signal,
+    },
+  )
+  return readJsonResponse<CursorRunResponse>(response, 'Remote agent get run')
+}
+
+function applyCursorRunSnapshot(
+  run: CursorRunResponse,
+  state: RemoteStreamState,
+  onChunk: (chunk: StreamChunk) => void,
+): void {
+  if (run.status) state.terminalStatus = run.status
+  if (typeof run.result === 'string') {
+    state.resultText = run.result
+    if (!state.assistantText && run.result) {
+      state.assistantText = run.result
+      onChunk({ type: 'text', text: run.result })
+    }
+  }
+  const gitSummary = formatRemoteGitSummary(run.git)
+  if (gitSummary) onChunk({ type: 'text', text: gitSummary })
+}
+
+/**
+ * One SSE attempt. Returns `received-result` when the run terminal `result`
+ * (or `done` after a terminal status) arrived; `stream-dropped` when the body
+ * ended without a terminal event so the caller should resume.
+ */
+async function streamRemoteRunAttempt(input: {
+  fetchImpl: typeof fetch
+  baseUrl: string
+  apiKey: string
+  agentId: string
+  runId: string
+  lastEventId: string | undefined
+  signal: AbortSignal
+  state: RemoteStreamState
+  seenEventIds: Set<string>
+  onChunk: (chunk: StreamChunk) => void
+  onEventId: (id: string) => void
+}): Promise<StreamAttemptOutcome> {
+  const headers: Record<string, string> = {
+    Authorization: cursorAuthHeader(input.apiKey),
+    Accept: 'text/event-stream',
+  }
+  if (input.lastEventId) headers['Last-Event-ID'] = input.lastEventId
+
+  const response = await input.fetchImpl(
+    joinUrl(
+      input.baseUrl,
+      `/v1/agents/${encodeURIComponent(input.agentId)}/runs/${encodeURIComponent(
+        input.runId,
+      )}/stream`,
+    ),
+    {
+      headers,
+      signal: input.signal,
+    },
+  )
+
+  if (response.status === 410) {
+    // Retention elapsed — fall back to Get A Run instead of retrying the stream.
+    const run = await fetchCursorRun(input)
+    if (isTerminalRunStatus(run.status)) {
+      applyCursorRunSnapshot(run, input.state, input.onChunk)
+      return 'received-result'
+    }
+    throw new Error(
+      `Remote agent stream expired (HTTP 410) while run status is ${run.status ?? 'unknown'}`,
+    )
+  }
+
+  if (!response.ok) {
+    const details = await response.text()
+    // Stale resume cursor — clear and let the outer loop retry from the head.
+    if (response.status === 400 && /invalid_last_event_id/i.test(details)) {
+      throw new RemoteAgentInvalidLastEventIdError(details)
+    }
+    throw new Error(
+      `Remote agent stream failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
+    )
+  }
+  if (!response.body) throw new Error('Remote agent stream response did not include a body')
+
+  let sawTerminal = false
+  for await (const event of parseSseStream(response.body)) {
+    if (input.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (event.id) {
+      input.onEventId(event.id)
+      // Reconnect without Last-Event-ID can replay retained events; skip dupes.
+      if (input.seenEventIds.has(event.id)) continue
+      input.seenEventIds.add(event.id)
+    }
+    for (const chunk of remoteStreamEventToChunks(event, input.state)) input.onChunk(chunk)
+    if (event.event === 'result' || isTerminalRunStatus(input.state.terminalStatus)) {
+      sawTerminal = true
+    }
+    if (event.event === 'done') return sawTerminal ? 'received-result' : 'stream-dropped'
+  }
+
+  return sawTerminal || isTerminalRunStatus(input.state.terminalStatus)
+    ? 'received-result'
+    : 'stream-dropped'
+}
+
+class RemoteAgentInvalidLastEventIdError extends Error {
+  constructor(details: string) {
+    super(details || 'invalid_last_event_id')
+    this.name = 'RemoteAgentInvalidLastEventIdError'
+  }
+}
+
 async function streamRemoteRun(input: {
   fetchImpl: typeof fetch
   baseUrl: string
@@ -515,43 +721,103 @@ async function streamRemoteRun(input: {
   signal: AbortSignal
   onChunk: (chunk: StreamChunk) => void
 }): Promise<RemoteStreamState> {
-  const response = await input.fetchImpl(
-    joinUrl(
-      input.baseUrl,
-      `/v1/agents/${encodeURIComponent(input.agentId)}/runs/${encodeURIComponent(
-        input.runId,
-      )}/stream`,
-    ),
-    {
-      headers: {
-        Authorization: cursorAuthHeader(input.apiKey),
-        Accept: 'text/event-stream',
-      },
-      signal: input.signal,
-    },
-  )
-
-  if (!response.ok) {
-    const details = await response.text()
-    throw new Error(
-      `Remote agent stream failed with HTTP ${String(response.status)}${details ? `: ${details}` : ''}`,
-    )
-  }
-  if (!response.body) throw new Error('Remote agent stream response did not include a body')
-
   const state: RemoteStreamState = {
     seenToolCalls: new Set(),
     assistantText: '',
     resultText: '',
     terminalStatus: null,
   }
+  const seenEventIds = new Set<string>()
+  let lastEventId: string | undefined
+  let attempt = 0
+  const deadline = Date.now() + STREAM_WAIT_DEADLINE_MS
 
-  for await (const event of parseSseStream(response.body)) {
-    for (const chunk of remoteStreamEventToChunks(event, state)) input.onChunk(chunk)
-    if (event.event === 'done') break
+  while (!input.signal.aborted) {
+    const resumeFrom = lastEventId
+    try {
+      const outcome = await streamRemoteRunAttempt({
+        fetchImpl: input.fetchImpl,
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+        agentId: input.agentId,
+        runId: input.runId,
+        lastEventId,
+        signal: input.signal,
+        state,
+        seenEventIds,
+        onChunk: input.onChunk,
+        onEventId: (id) => {
+          lastEventId = id
+        },
+      })
+      if (outcome === 'received-result') return state
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      if (err instanceof RemoteAgentInvalidLastEventIdError) {
+        // Only clear if nothing newer arrived during the failed attempt.
+        if (lastEventId === resumeFrom) lastEventId = undefined
+      } else if (isRemoteAgentStreamError(err)) {
+        if (err.fatal) throw err
+        // Recoverable SSE error (e.g. stream_unavailable) — reconnect below.
+        console.warn('[remote-agent] stream dropped, reconnecting:', err.message)
+      } else {
+        // Network / transient HTTP failures — reconnect if the run is still live.
+        console.warn('[remote-agent] stream attempt failed, reconnecting:', err)
+      }
+    }
+
+    // Prefer Get A Run when the stream is gone but the run may already be terminal.
+    try {
+      const run = await fetchCursorRun({
+        fetchImpl: input.fetchImpl,
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+        agentId: input.agentId,
+        runId: input.runId,
+        signal: input.signal,
+      })
+      if (isTerminalRunStatus(run.status)) {
+        applyCursorRunSnapshot(run, state, input.onChunk)
+        return state
+      }
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      console.warn('[remote-agent] get run during reconnect failed:', err)
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for the remote agent run to finish.')
+    }
+
+    if (attempt >= MAX_STREAM_RECONNECT_ATTEMPTS) {
+      // SDK falls back to polling Get A Run after the reconnect budget.
+      while (Date.now() < deadline) {
+        await sleep(
+          Math.min(STREAM_POLL_INTERVAL_MS, Math.max(0, deadline - Date.now())),
+          input.signal,
+        )
+        const run = await fetchCursorRun({
+          fetchImpl: input.fetchImpl,
+          baseUrl: input.baseUrl,
+          apiKey: input.apiKey,
+          agentId: input.agentId,
+          runId: input.runId,
+          signal: input.signal,
+        })
+        if (isTerminalRunStatus(run.status)) {
+          applyCursorRunSnapshot(run, state, input.onChunk)
+          return state
+        }
+      }
+      throw new Error('Timed out waiting for the remote agent run to finish.')
+    }
+
+    const delay = Math.min(streamReconnectDelayMs(attempt), Math.max(0, deadline - Date.now()))
+    attempt += 1
+    await sleep(delay, input.signal)
   }
 
-  return state
+  throw new DOMException('Aborted', 'AbortError')
 }
 
 export async function runRemoteAgentFromSettings(
