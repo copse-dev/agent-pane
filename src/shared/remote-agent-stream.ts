@@ -19,6 +19,36 @@ export interface RemoteStreamState {
   terminalStatus: string | null
 }
 
+/**
+ * SSE `error` codes that mean stop — do not reconnect. Matches `@cursor/sdk`
+ * Cloud run streaming (`unauthorized` / `forbidden` / `not_found`).
+ * Codes like `stream_unavailable` are recoverable: reopen the same run stream
+ * with `Last-Event-ID`.
+ */
+export const FATAL_REMOTE_STREAM_ERROR_CODES: ReadonlySet<string> = new Set([
+  'unauthorized',
+  'forbidden',
+  'not_found',
+])
+
+/** Thrown from Cursor run SSE `error` events; `fatal` gates reconnect. */
+export class RemoteAgentStreamError extends Error {
+  readonly code: string
+  readonly fatal: boolean
+
+  constructor(code: string, message: string) {
+    const suffix = code ? ` (${code})` : ''
+    super(`Remote agent stream error${suffix}: ${message}`)
+    this.name = 'RemoteAgentStreamError'
+    this.code = code
+    this.fatal = FATAL_REMOTE_STREAM_ERROR_CODES.has(code)
+  }
+}
+
+export function isRemoteAgentStreamError(err: unknown): err is RemoteAgentStreamError {
+  return err instanceof RemoteAgentStreamError
+}
+
 interface CursorToolCallEvent {
   callId?: string
   name?: string
@@ -270,8 +300,7 @@ export function remoteStreamEventToChunks(
 
   if (event.event === 'error') {
     const payload = parseJsonEventData(event) as { code?: string; message?: string }
-    const suffix = payload.code ? ` (${payload.code})` : ''
-    throw new Error(`Remote agent stream error${suffix}: ${payload.message ?? 'unknown error'}`)
+    throw new RemoteAgentStreamError(payload.code ?? 'UNKNOWN', payload.message ?? 'unknown error')
   }
 
   return []
