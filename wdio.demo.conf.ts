@@ -59,7 +59,10 @@ function stopDemoServer(): Promise<void> {
 export const config: Options.Testrunner = {
   runner: 'local',
   specs: ['./tests/demo/**/*.demo.ts'],
-  maxInstances: 2,
+  // Browser-hosted scenarios are materially lighter than Electron sessions.
+  // Four workers keep a growing geometry tier to two startup waves on the
+  // standard check runner without approaching the e2e shard's process load.
+  maxInstances: 4,
   specFileRetries: 0,
   logLevel: 'warn',
   bail: 0,

@@ -35,6 +35,30 @@ const markdownContent = [
 
 const project = (id: string): Project => ({ id, path: '/demo/copse', name: 'copse-demo' })
 
+const semanticSearchSummary = [
+  'Here is the complete summary of how semantic search is classified, routed, and executed:',
+  '',
+  '---',
+  '',
+  "## Search Routing Summary ('search-routing.ts')",
+  '',
+  "### 1. Classification ('classifySearchQuery')",
+  '',
+  '**File:** `src/main/services/search-routing.ts`',
+  '',
+  'The router picks semantic vs grep based on query shape.',
+  '',
+  '- **Semantic path** — embedding search via `search_codebase`',
+  '- **Grep path** — ripgrep via `grep_search`',
+  '',
+  '### 2. Execution',
+  '',
+  'Let me find where this classification function is called.',
+  '',
+  '- Read `search-routing.ts`',
+  '- Search for `classifySearchQuery`',
+].join('\n')
+
 export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   {
     id: 'markdown-list-indent',
@@ -98,6 +122,189 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
           fillRatio: 0.05,
           updatedAt: FIXED_TIME,
         },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'subagent-display',
+    label: 'Subagent display visual reference',
+    project: project('demo-subagent-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-subagent-thread',
+        title: 'Subagent display test',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-subagent-assistant',
+            role: 'assistant',
+            content: 'Here is what the subagent found.',
+            toolCalls: [
+              {
+                id: 'demo-explore-call',
+                name: 'explore',
+                args: { query: 'Find README' },
+                status: 'done',
+                result: 'README describes Copse setup and dev workflow.',
+                subagent: {
+                  id: 'demo-explore-session',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Find README',
+                  summary: 'README describes Copse setup and dev workflow.',
+                  messages: [
+                    {
+                      id: 'demo-explore-message-1',
+                      role: 'assistant',
+                      content: 'Reading **README.md** for project overview.',
+                      toolCalls: [
+                        {
+                          id: 'demo-inner-read',
+                          name: 'read_file',
+                          args: { path: 'README.md' },
+                          status: 'done',
+                          result: '# Copse\n',
+                        },
+                      ],
+                    },
+                    {
+                      id: 'demo-explore-message-2',
+                      role: 'assistant',
+                      content: 'README describes Copse setup and dev workflow.',
+                      toolCalls: [],
+                    },
+                  ],
+                },
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'semantic-search-markdown',
+    label: 'Semantic search subagent markdown',
+    project: project('demo-semantic-search-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-semantic-search-thread',
+        title: 'Mechanism Explained',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-semantic-user',
+            role: 'user',
+            content: 'is there semantic search',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'demo-semantic-assistant',
+            role: 'assistant',
+            content:
+              "Good find — there *is* semantic search in the agent's code search routing. Let me explore it.",
+            toolCalls: [
+              {
+                id: 'demo-semantic-explore',
+                name: 'explore',
+                args: { query: 'How is semantic search routed?' },
+                status: 'done',
+                result: semanticSearchSummary,
+                subagent: {
+                  id: 'demo-semantic-session',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'How is semantic search routed?',
+                  summary: semanticSearchSummary,
+                  messages: [
+                    {
+                      id: 'demo-semantic-summary',
+                      role: 'assistant',
+                      content: semanticSearchSummary,
+                      toolCalls: [],
+                    },
+                  ],
+                },
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'settings-footer',
+    label: 'Settings sticky footer geometry',
+    project: project('demo-settings-footer-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-settings-footer-thread',
+        title: 'Settings footer',
+        status: 'idle',
+        messages: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
+    id: 'chat-layout-styling',
+    label: 'Chat layout styling',
+    project: project('demo-chat-layout-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-chat-layout-thread',
+        title: 'Chat layout styling',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-chat-layout-user',
+            role: 'user',
+            content: 'Check the pane dividers and conversation gradient.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+          {
+            id: 'demo-chat-layout-assistant',
+            role: 'assistant',
+            content: 'The deterministic browser fixture is ready for layout measurement.',
+            toolCalls: [],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: FIXED_TIME,
         updatedAt: FIXED_TIME,
       },
