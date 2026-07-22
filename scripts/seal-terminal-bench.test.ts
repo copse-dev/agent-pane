@@ -63,8 +63,13 @@ describe('terminal benchmark capsule sealing', () => {
       typeof entry === 'object' && entry !== null
         ? (entry as Record<string, unknown>)['sha256']
         : undefined
+    const outcome =
+      typeof entry === 'object' && entry !== null
+        ? (entry as Record<string, unknown>)['outcome']
+        : undefined
     assert.equal(typeof archive, 'string')
     assert.match(String(digest), /^[a-f0-9]{64}$/)
+    assert.equal(outcome, 'zero')
     assert.ok(readFileSync(join(capsules, String(archive))).length > 0)
   })
 

@@ -41,6 +41,7 @@
     "bench:agent": "node scripts/run-bench-agent.mts",
     "bench:terminal": "node scripts/run-terminal-bench.mts",
     "bench:terminal:analyze": "node scripts/analyze-terminal-bench.mts",
+    "bench:terminal:debug": "node scripts/debug-terminal-bench.mts",
     "bench:terminal:fleet": "node scripts/run-terminal-bench-fleet.mts",
     "bench:terminal:report": "node scripts/report-terminal-bench.mts",
     "bench:terminal:seal": "node scripts/seal-terminal-bench.mts",
