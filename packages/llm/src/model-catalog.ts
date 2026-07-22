@@ -102,9 +102,7 @@ export function cloudModelDisplayLabel(model: string): string {
 /** Model picker entries derived from {@link TRACKED_MODELS}. */
 export const CLOUD_MODELS: ReadonlyArray<
   readonly [value: TrackedModel, label: string, provider: CloudModelProvider]
-> = TRACKED_MODELS.map(
-  (id) => [id, CLOUD_MODEL_LABELS[id], inferCloudModelProvider(id)] as const,
-)
+> = TRACKED_MODELS.map((id) => [id, CLOUD_MODEL_LABELS[id], inferCloudModelProvider(id)] as const)
 
 export function anthropicMaxOutputTokens(model: string): number {
   return getModelInfo(model)?.maxOutputTokens ?? DEFAULT_ANTHROPIC_MAX_OUTPUT
