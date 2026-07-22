@@ -50,6 +50,8 @@
     "bench:terminal:steered": "node scripts/run-terminal-bench-steered.mts",
     "bench:terminal:sync-dataset": "node scripts/sync-terminal-bench-dataset.mts",
     "bench:terminal:suite": "node scripts/run-terminal-bench-suite.mts",
+    "bench:skills:build-agent": "node scripts/build-skillsbench-agent.mts",
+    "bench:skills:fleet": "node scripts/run-skillsbench-fleet.mts",
     "bench:swe-tasks": "node scripts/fetch-swe-bench-subset.mts",
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "runners:burst": "node scripts/burst-runners.mts",
