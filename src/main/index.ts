@@ -262,7 +262,7 @@ app
           url,
           apiKey,
         ])
-        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        const baseUrl = parsedUrl ?? 'http://127.0.0.1:1234/v1'
         const result = await downloadLmStudioModel(parsedModelId, baseUrl, parsedApiKey)
         if (result.ok) invalidateLmStudioModelsCache()
         return result
@@ -278,7 +278,7 @@ app
           url,
           apiKey,
         ])
-        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        const baseUrl = parsedUrl ?? 'http://127.0.0.1:1234/v1'
         return getLmStudioDownloadStatus(parsedJobId, baseUrl, parsedApiKey)
       },
     )

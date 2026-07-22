@@ -1,5 +1,5 @@
 import { getLmStudioApiKey } from '../storage/settings.ts'
-import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_LM_STUDIO_URL, preferIpv4LoopbackUrl } from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 
 export interface LmStudioModelInfo {
@@ -162,7 +162,10 @@ export async function fetchLmStudioModels(
   openAiBaseUrl: string,
   apiKey?: string,
 ): Promise<{ ok: boolean; models: LmStudioModelInfo[]; error?: string }> {
-  const base = stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL)
+  // Prefer IPv4 loopback when the URL says `localhost` — on macOS that name
+  // often resolves to ::1 first while local servers (LM Studio, Ollama, …) bind
+  // IPv4 only, and the miss stalls until AbortSignal.timeout fires.
+  const base = preferIpv4LoopbackUrl(stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL))
   const key = lmStudioApiKey(apiKey)
   const origin = lmStudioOrigin(base)
 
@@ -214,7 +217,8 @@ export async function fetchLmStudioModelsCached(
   openAiBaseUrl: string,
   apiKey?: string,
 ): Promise<{ ok: boolean; models: LmStudioModelInfo[]; error?: string }> {
-  const url = stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL)
+  // Normalize before caching so `localhost` and `127.0.0.1` share one entry.
+  const url = preferIpv4LoopbackUrl(stripTrailingSlash(openAiBaseUrl || DEFAULT_LM_STUDIO_URL))
   const key = lmStudioApiKey(apiKey)
   const cacheKey = `${url}${key}`
   const now = Date.now()

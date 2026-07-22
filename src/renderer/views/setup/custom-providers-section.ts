@@ -102,9 +102,9 @@ const CLOUD_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
 // the local "Other" form. Each carries an explicit slug because every loopback
 // host would otherwise collapse to the slug "localhost".
 const LOCAL_KNOWN_ENDPOINTS: readonly KnownEndpoint[] = [
-  { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', slug: 'lmstudio-local' },
-  { label: 'KoboldCpp', baseUrl: 'http://localhost:5001/v1', slug: 'koboldcpp' },
-  { label: 'text-generation-webui', baseUrl: 'http://localhost:5000/v1', slug: 'textgen' },
+  { label: 'LM Studio', baseUrl: 'http://127.0.0.1:1234/v1', slug: 'lmstudio-local' },
+  { label: 'KoboldCpp', baseUrl: 'http://127.0.0.1:5001/v1', slug: 'koboldcpp' },
+  { label: 'text-generation-webui', baseUrl: 'http://127.0.0.1:5000/v1', slug: 'textgen' },
 ]
 
 // ---- Privacy badge -------------------------------------------------------
@@ -730,7 +730,7 @@ export function createCustomProvidersSection(
     })
     const urlInput = el('input', {
       type: 'url',
-      placeholder: isLocal ? 'http://localhost:11434/v1' : 'https://api.example.com/v1',
+      placeholder: isLocal ? 'http://127.0.0.1:11434/v1' : 'https://api.example.com/v1',
       autocomplete: 'off',
     })
     const slugInput = el('input', {

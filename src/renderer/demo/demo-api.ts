@@ -221,7 +221,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       detect: () =>
         resolved({
           serverRunning: false,
-          serverUrl: 'http://localhost:1234/v1',
+          serverUrl: 'http://127.0.0.1:1234/v1',
           installDetected: false,
           models: [],
           modelContexts: {},
