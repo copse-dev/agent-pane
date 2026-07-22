@@ -196,13 +196,20 @@ export function seedThemeBootFixture(workspaceRoot: string, theme: 'light' | 'da
   writeSettings({ theme, uiTintStrength: 'off' })
 }
 
-/** Layout for three-pane todo plan reference screenshots. Call before reloadSession(). */
-export function seedE2eThreePaneLayout(): void {
+/** Layout for three-pane reference screenshots. Call before reloadSession(). */
+export function seedE2eThreePaneLayout(
+  overrides: Partial<{
+    projectsPaneWidth: number
+    filesPaneWidth: number
+    fileTreeWidth: number
+  }> = {},
+): void {
   writeSettings({
     layout: {
       projectsPaneWidth: 260,
       filesPaneWidth: 480,
       fileTreeWidth: 200,
+      ...overrides,
     },
   })
 }
