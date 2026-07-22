@@ -12,6 +12,14 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.match(workflow, /name: Verify fleet teardown\n\s+if: always\(\)/)
 })
 
+test('Scaleway workflow probes Object Storage with PutObject, not HeadBucket', () => {
+  const workflow = readFileSync('.github/workflows/terminal-bench-scaleway.yml', 'utf8')
+  assert.doesNotMatch(workflow, /head-bucket/)
+  assert.match(workflow, /aws s3 cp - "s3:\/\/\$\{BUCKET\}\/\$\{probe_key\}"/)
+  assert.match(workflow, /--sse AES256/)
+  assert.match(workflow, /terminal-bench\/_github_preflight\//)
+})
+
 test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)

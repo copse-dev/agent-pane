@@ -128,7 +128,18 @@ jobs:
             fi
             exit 1
           fi
-          aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT"
+          # Capsule writers are PutObject-scoped (not ListBucket). HeadBucket maps to
+          # s3:ListBucket on Scaleway and fails with 403 for correctly scoped keys, so
+          # probe the same write path workers use for capsule upload.
+          probe_key="terminal-bench/_github_preflight/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/.write-check"
+          if ! printf 'ok\n' | aws s3 cp - "s3://${BUCKET}/${probe_key}" \
+            --sse AES256 \
+            --only-show-errors \
+            --endpoint-url "$ENDPOINT"; then
+            echo "::error::Object Storage PutObject failed for s3://${BUCKET}/${probe_key} via $ENDPOINT"
+            echo "::notice::SCW_OBJECT_STORAGE_* must allow s3:PutObject on the capsule bucket (ListBucket/HeadBucket is not required)."
+            exit 1
+          fi
 
       - name: Log in to Scaleway Container Registry
         env:
