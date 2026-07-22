@@ -126,6 +126,70 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     assert.match(streamAfter.textContent, /Analyzing the code/)
   })
 
+  it('keeps subagent chrome (header + timeline) across a streaming tick', () => {
+    // #788 stopped recreating the streaming message, but populateSubagentCard
+    // still cleared the card and rebuilt the header/timeline shell every token
+    // — visible flicker on the status icon and disclosure chrome.
+    const { store, messageId, host } = mountWithCards()
+
+    const card = host.querySelector('.tool-card-subagent')
+    assert.ok(card)
+    const headerBefore = card.querySelector('.tool-card-header')
+    const timelineBefore = card.querySelector('.subagent-timeline')
+    assert.ok(headerBefore)
+    assert.ok(timelineBefore)
+
+    updateToolCall(store, messageId, 'tc-sub-1', {
+      subagent: subagentSession('Analyzing the repo'),
+    })
+
+    assert.strictEqual(
+      card.querySelector('.tool-card-header'),
+      headerBefore,
+      'header was rebuilt on a streaming tick',
+    )
+    assert.strictEqual(
+      card.querySelector('.subagent-timeline'),
+      timelineBefore,
+      'timeline shell was rebuilt on a streaming tick',
+    )
+  })
+
+  it('keeps a live explore card when a sibling read_file would otherwise group it', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    const messageId = addMessage(store, threadId, 'assistant', 'Working…')
+    addToolCall(store, messageId, runningSubagent('Looking'))
+    addToolCall(store, messageId, {
+      id: 'tc-read-1',
+      name: 'read_file',
+      args: { path: 'README.md' },
+      status: 'done',
+      result: '# Copse',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const cardBefore = host.querySelector('.tool-card-subagent')
+    assert.ok(cardBefore, 'expected an individual subagent card, not a reading group')
+    assert.equal(host.querySelectorAll('.tool-card-group').length, 0)
+
+    updateToolCall(store, messageId, 'tc-sub-1', {
+      subagent: subagentSession('Looking at README'),
+    })
+
+    assert.strictEqual(
+      host.querySelector('.tool-card-subagent'),
+      cardBefore,
+      'subagent card was absorbed into a group (or rebuilt) when a read sibling was present',
+    )
+    assert.match(
+      host.querySelector('.subagent-message-assistant')?.textContent ?? '',
+      /Looking at README/,
+    )
+  })
+
   it('replaces a rebuilt card instead of leaving the stale one behind', () => {
     const { store, messageId, host } = mountWithCards()
 
