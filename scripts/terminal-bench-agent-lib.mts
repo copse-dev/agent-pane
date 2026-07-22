@@ -18,11 +18,11 @@ export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = 2_048
 export const DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS = 4_096
 export const TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE =
   'You spent the entire response planning without taking action, and it was cut off. ' +
-  'Stop planning and use run_shell now to make concrete progress: create or modify the required files, then validate them. ' +
+  'Stop planning and use run_shell now to make concrete progress: produce or update the requested deliverable, then validate it. ' +
   'Do not repeat an inspection command whose result is already above, and do not merely describe the solution.'
 export const TERMINAL_STUCK_TOOL_RECOVERY_NUDGE =
   'You have spent many turns inspecting or experimenting without completing the target. ' +
-  'Stop broad investigation and use the evidence already gathered. Your next run_shell command must create or modify a concrete implementation; ' +
+  'Stop broad investigation and use the evidence already gathered. Your next run_shell command must produce or update the requested deliverable, whether it is code, configuration, data, or a recovered artifact; ' +
   'do not run another ls, find, grep, sed, cat, or other read-only inspection first. ' +
   'After that edit, run the relevant verifier tests from /tests when available and iterate from the result.'
 

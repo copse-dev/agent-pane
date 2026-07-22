@@ -41,12 +41,15 @@ describe('terminal benchmark bridge', () => {
   })
 
   it('prevents the reasoning recovery from repeating an existing inspection result', () => {
-    assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /create or modify/)
+    assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /requested deliverable/)
     assert.match(TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE, /Do not repeat an inspection command/)
   })
 
   it('requires the stuck recovery to exercise available verifier tests', () => {
-    assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /next run_shell command must create or modify/)
+    assert.match(
+      TERMINAL_STUCK_TOOL_RECOVERY_NUDGE,
+      /whether it is code, configuration, data, or a recovered artifact/,
+    )
     assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /do not run another ls, find, grep, sed, cat/)
     assert.match(TERMINAL_STUCK_TOOL_RECOVERY_NUDGE, /verifier tests/)
   })
