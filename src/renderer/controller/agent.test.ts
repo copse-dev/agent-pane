@@ -22,7 +22,7 @@ function requireThread(store: AppStore, id: string): Thread {
 function thread(id: string, messages: Message[] = [], branch?: string): Thread {
   const value: Thread = {
     id,
-    title: id, // not 'New Thread', so auto-naming on `done` is skipped
+    title: id,
     status: 'running',
     messages,
     usage: { inputTokens: 0, outputTokens: 0 },
@@ -91,7 +91,7 @@ function setup(
       },
       onUsage: () => (): void => {},
       onHookQueueMessage: () => (): void => {},
-      suggestTitle: async (text: string) => {
+      suggestTitle: async (text: string): Promise<string | null> => {
         titleCalls.push(text)
         return 'Generated Title'
       },
@@ -407,7 +407,7 @@ test('done finalizes the message, sets the thread idle, and resets stream state'
   assert.equal(at(messages(), 1).content, 'next turn')
 })
 
-test('done auto-names a "New Thread" from its first user message', async () => {
+test('first assistant text kicks off naming without waiting for done', async () => {
   const userMsg: Message = {
     id: 'u1',
     role: 'user',
@@ -415,15 +415,38 @@ test('done auto-names a "New Thread" from its first user message', async () => {
     toolCalls: [],
     createdAt: 1,
   }
-  const named = thread('t-name', [userMsg])
+  const named = thread('t-name-on-text', [userMsg])
   named.title = 'New Thread'
-  const { send, titleCalls, store } = setup([named], 't-name')
+  const { send, titleCalls, store } = setup([named], 't-name-on-text')
 
-  send({ type: 'text', text: 'sure' }, 't-name')
-  send({ type: 'done' }, 't-name')
-  // suggestTitle is awaited inside maybeNameThread; let the microtask settle.
+  send({ type: 'text', text: 'sure' }, 't-name-on-text')
   await new Promise((r) => setTimeout(r, 0))
 
   assert.deepEqual(titleCalls, ['Add a login button'])
-  assert.equal(requireThread(store, 't-name').title, 'Generated Title')
+  assert.equal(requireThread(store, 't-name-on-text').title, 'Generated Title')
+})
+
+test('first tool call kicks off naming without waiting for done', async () => {
+  const userMsg: Message = {
+    id: 'u1',
+    role: 'user',
+    content: 'List the project files',
+    toolCalls: [],
+    createdAt: 1,
+  }
+  const named = thread('t-name-on-tool', [userMsg])
+  named.title = 'New Thread'
+  const { send, titleCalls, store } = setup([named], 't-name-on-tool')
+
+  send(
+    {
+      type: 'tool_call',
+      toolCall: { id: 'tc1', name: 'list_dir', args: { path: '.' } },
+    },
+    't-name-on-tool',
+  )
+  await new Promise((r) => setTimeout(r, 0))
+
+  assert.deepEqual(titleCalls, ['List the project files'])
+  assert.equal(requireThread(store, 't-name-on-tool').title, 'Generated Title')
 })
