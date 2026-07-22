@@ -163,6 +163,11 @@ Fix (in [`src/renderer/styles/global/settings.css`](../src/renderer/styles/globa
   `padding-bottom: calc(var(--spacing-xl) + var(--spacing-lg))`.
 - Roomier buttons: `padding: var(--spacing-md) var(--spacing-xl)`, `gap: var(--spacing-md)`.
 
+The scroll surface (`.settings-content`) stays **full width** beside the nav — do not put
+`max-width` on the scroller itself. Cap and center the form column (sections, search results,
+Save/Cancel) with `width: min(100%, var(--settings-content-max)); margin-inline: auto`, the same
+split chat uses for `.messages-list` / `.msg`.
+
 ## Markdown prose spacing in chat
 
 Symptom: assistant messages look “double spaced” — extra blank lines between headings, paragraphs,
@@ -285,10 +290,11 @@ manual VNC glance.
 - Primary-chat model labels (`.message-model`) appear only when a thread's assistant turns used more
   than one picker model — keep them muted chrome (`--font-size-xs`, tertiary text), never inside
   `.message-text`. Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
-- For the footer fix, [`tests/demo/settings-footer.demo.ts`](../tests/demo/settings-footer.demo.ts)
-  scrolls content beneath the bar and asserts (a) the footer's bottom is flush with the scrollport
-  bottom (gap ≤ 1px) and (b) `elementFromPoint` at the bottom edge resolves to the footer, not
-  scrolled-through content.
+- For the footer / settings-column layout,
+  [`tests/demo/settings-footer.demo.ts`](../tests/demo/settings-footer.demo.ts) asserts (a) the
+  scroll panel fills the body beside the nav while the form column stays at
+  `--settings-content-max`, (b) the footer's bottom is flush with the scrollport bottom (gap ≤ 1px),
+  and (c) `elementFromPoint` at the bottom edge resolves to the footer, not scrolled-through content.
 - Validate a layout-invariant test by confirming it **fails** on the pre-fix CSS, then **passes**
   with the fix. The footer spec failed with `gap=24px` before the fix.
 - Run with the mock LLM and no keys: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY= npm run test:e2e -- --spec <spec>`.
