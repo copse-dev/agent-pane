@@ -2,8 +2,8 @@
 
 Durable, append-only audit trail of **control-plane decisions** introduced in
 [#656](https://github.com/jonathanKingston/agent-pane/issues/656). Where the
-[thread store](./thread-store-format.md) records *what the agent did* (tool calls
-and their results), this records the permission layer *around* those calls —
+[thread store](./thread-store-format.md) records _what the agent did_ (tool calls
+and their results), this records the permission layer _around_ those calls —
 tool approvals/denials, the "remember" (sticky-grant) checkbox, sandbox-vs-
 external scope classifications, and hook allow/block verdicts — so questions like
 "what did I approve, when, at what scope, and did I make it sticky?" survive the
@@ -42,11 +42,12 @@ session.
 | `reasons`    | string[]?                                                                                                             | redacted policy / classifier / hook reasons                                                                                                                                                                              |
 | `threadId`   | string?                                                                                                               | originating thread id (links back to the spine)                                                                                                                                                                          |
 | `source`     | string?                                                                                                               | redacted context: hook event name, classifier model, …                                                                                                                                                                   |
+
 ## Where events come from
 
 - **User approvals/denials** — every `requestApproval`
   ([`approval.ts`](../src/main/services/approval.ts)) is recorded as an `actor:
-  "user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
+"user"` event, so all shell / MCP / web / browser / GitHub-write / custom-tool
   / port-binding / PII / model-compare prompts are captured in one place, along
   with the `remember` grant.
 - **Classifier evidence** — the sandbox-vs-external scope classification

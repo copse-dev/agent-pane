@@ -15,10 +15,7 @@ import {
   setWorkspaceRoot,
   type WorkspaceProjectRef,
 } from '../services/workspace.ts'
-import {
-  exportDecisionLog,
-  readDecisionLog,
-} from '../services/security/decision-log-store.ts'
+import { exportDecisionLog, readDecisionLog } from '../services/security/decision-log-store.ts'
 import {
   assertFsWriteContent,
   isIndexQueryPattern,
