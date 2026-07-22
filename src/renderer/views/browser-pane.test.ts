@@ -89,7 +89,7 @@ describe('browser pane requested URLs', () => {
       assert.equal(list.querySelectorAll('.browser-tabs-tab').length, 2)
 
       const agentTab = [...list.querySelectorAll('.browser-tabs-tab')].find((tab) =>
-        (tab.textContent ?? '').includes('cursor.com'),
+        tab.textContent.includes('cursor.com'),
       )
       assert.ok(agentTab)
     } finally {
