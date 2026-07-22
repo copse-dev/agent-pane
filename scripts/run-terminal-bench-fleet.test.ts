@@ -25,6 +25,17 @@ test('Scaleway workflow probes Object Storage with PutObject, not HeadBucket', (
   assert.match(workflow, /terminal-bench\/_github_preflight\//)
 })
 
+test('worker image ships Docker CLI plugins Harbor needs for compose', () => {
+  const dockerfile = readFileSync('benchmarks/terminal_bench/Dockerfile.worker', 'utf8')
+  // Harbor drives each task with `docker compose --project-name …`. Copying only
+  // the docker binary leaves compose unresolved and fails every shard as
+  // infrastructure-invalid (`unknown flag: --project-name`).
+  assert.match(
+    dockerfile,
+    /COPY --from=docker-cli \/usr\/local\/libexec\/docker\/cli-plugins \/usr\/local\/libexec\/docker\/cli-plugins/,
+  )
+})
+
 test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)
