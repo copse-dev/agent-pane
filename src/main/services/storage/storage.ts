@@ -26,6 +26,20 @@ export const storageDelete = (key: string): void => {
   cached.delete(key)
 }
 
+/** Every key currently in the persistent store (for migrations). */
+export const storageListKeys = (): string[] => cached.listKeys()
+
+/**
+ * Delete many keys in a single config.json rewrite. Prefer this over looping
+ * `storageDelete` when finishing a bulk migration (#993).
+ */
+export const storageDeleteKeys = (keys: string[]): void => {
+  cached.deleteKeys(keys)
+}
+
+/** Test/diagnostic: how many write/delete ops reached the backing store. */
+export const storageBackingWrites = (): number => cached.backingWrites()
+
 /**
  * Serialized read-modify-write against a single key. The `update` callback gets
  * the current value and returns the next value to persist. Calls for the same

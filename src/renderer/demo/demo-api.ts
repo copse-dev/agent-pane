@@ -90,7 +90,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       },
       prepareCheckout: unsupported,
       previewCheckout: unsupported,
-      estimateContext: (_threadId: string, payload: string) =>
+      estimateContext: (_projectId: string, _threadId: string, payload: string) =>
         resolved({
           segments: [
             { key: 'message', label: 'Your message', tokens: Math.ceil(payload.length / 4) },

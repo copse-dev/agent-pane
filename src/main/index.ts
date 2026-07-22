@@ -59,7 +59,7 @@ import {
 } from './services/providers/lm-studio-setup.ts'
 import { estimateContextBreakdown } from './services/context-estimate.ts'
 import { suggestFollowUps } from './services/follow-up-service.ts'
-import { storageGet, storageSet } from './services/storage/storage.ts'
+import { clearAgentHistory, loadAgentHistory, saveAgentHistory } from './services/thread-store.ts'
 import { getMainWindow } from './windows/create-main-window.ts'
 import { setHookQueueMessageSender } from './services/hooks/hook-queue-channel.ts'
 import { initProjectSandbox, shutdownProjectSandbox } from './project-sandbox/index.ts'
@@ -182,6 +182,18 @@ app
       )
     }
 
+    // Move provider-format history out of electron-store into per-thread
+    // sidecars (issue #993). Must run after legacy thread dirs exist so
+    // ownership can be resolved, and before the first window.
+    recordStartupPhase('llm-history-migration')
+    const { migrateLlmHistory } = await import('./services/llm-history-migration.ts')
+    const historyMigration = await migrateLlmHistory()
+    if (historyMigration.scanned > 0) {
+      console.log(
+        `[llm-history-migration] scanned ${String(historyMigration.scanned)}, migrated ${String(historyMigration.migrated)}, removed ${String(historyMigration.legacyKeysRemoved)} legacy key(s)`,
+      )
+    }
+
     recordStartupPhase('window-create')
     const win = createMainWindow()
     applyAppIcon([win])
@@ -273,7 +285,10 @@ app
     // Register before async bootstrap (skills/MCP) so the renderer, which loads
     // concurrently and fires a context estimate on first paint, never races a
     // missing handler. The registry these close over is populated lazily below.
+    // In-memory provider history, keyed by projectId + threadId so a thread id
+    // is never treated as globally unique (issue #993).
     const messageHistory = new Map<string, LLMMessage[]>()
+    const historyKey = (projectId: string, threadId: string): string => `${projectId}\0${threadId}`
 
     ipcMain.handle(
       'agent:previewCheckout',
@@ -342,15 +357,13 @@ app
           continuationBudgetUsed,
         } = parseAgentRunPayload(rawPrompt)
 
-        // Hydrate from persisted storage on first use after a restart
-        if (!messageHistory.has(threadId)) {
-          const stored = storageGet(`llm-history:${threadId}`)
-          if (Array.isArray(stored)) {
-            messageHistory.set(threadId, stored as LLMMessage[])
-          }
+        // Hydrate from the per-thread sidecar on first use after a restart
+        const cacheKey = historyKey(projectId, threadId)
+        if (!messageHistory.has(cacheKey)) {
+          messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
         }
 
-        const priorMessages = messageHistory.get(threadId) ?? []
+        const priorMessages = messageHistory.get(cacheKey) ?? []
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
         if (!executionContext) return
         const result = await runWithThreadExecutionContext(executionContext, () =>
@@ -365,15 +378,16 @@ app
             }),
           ),
         )
-        messageHistory.set(threadId, result.messages)
-        storageSet(`llm-history:${threadId}`, result.messages)
+        messageHistory.set(cacheKey, result.messages)
+        await saveAgentHistory(projectId, threadId, result.messages)
       },
     )
 
     ipcMain.handle(
       'agent:estimateContext',
-      async (event, threadIdArg: unknown, payloadJson: string) => {
+      async (event, projectIdArg: unknown, threadIdArg: unknown, payloadJson: string) => {
         assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         let rawPayload: unknown
         try {
@@ -386,11 +400,11 @@ app
           throw new Error('agent:estimateContext: payload failed validation')
         }
         const { draftText = '', invokedSkills = [], imageCount = 0, model } = parsed.data
-        if (!messageHistory.has(threadId)) {
-          const stored = storageGet(`llm-history:${threadId}`)
-          if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
+        const cacheKey = historyKey(projectId, threadId)
+        if (!messageHistory.has(cacheKey)) {
+          messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
         }
-        const priorMessages = messageHistory.get(threadId) ?? []
+        const priorMessages = messageHistory.get(cacheKey) ?? []
         return estimateContextBreakdown(registry, {
           draftText,
           invokedSkills,
@@ -401,13 +415,17 @@ app
       },
     )
 
-    ipcMain.handle('agent:clearHistory', (event, threadIdArg: unknown) => {
-      assertMainFrameSender(event, win)
-      const threadId = parseIpcArgs(zThreadId, [threadIdArg])
-      messageHistory.delete(threadId)
-      storageSet(`llm-history:${threadId}`, null)
-      clearRemoteAgentSession(threadId)
-    })
+    ipcMain.handle(
+      'agent:clearHistory',
+      async (event, projectIdArg: unknown, threadIdArg: unknown) => {
+        assertMainFrameSender(event, win)
+        const projectId = parseIpcArgs(zProjectId, [projectIdArg])
+        const threadId = parseIpcArgs(zThreadId, [threadIdArg])
+        messageHistory.delete(historyKey(projectId, threadId))
+        await clearAgentHistory(projectId, threadId)
+        clearRemoteAgentSession(threadId)
+      },
+    )
 
     // Opening a new chat drops the cached model catalogs so the next context
     // estimate re-fetches the provider's current window (e.g. an LM Studio model
@@ -448,12 +466,12 @@ app
         ...(parsed.data.model !== undefined ? { model: parsed.data.model } : {}),
       }
     }
-    const hydrateHistory = (threadId: string): LLMMessage[] => {
-      if (!messageHistory.has(threadId)) {
-        const stored = storageGet(`llm-history:${threadId}`)
-        if (Array.isArray(stored)) messageHistory.set(threadId, stored as LLMMessage[])
+    const hydrateHistory = async (projectId: string, threadId: string): Promise<LLMMessage[]> => {
+      const cacheKey = historyKey(projectId, threadId)
+      if (!messageHistory.has(cacheKey)) {
+        messageHistory.set(cacheKey, await loadAgentHistory(projectId, threadId))
       }
-      return messageHistory.get(threadId) ?? []
+      return messageHistory.get(cacheKey) ?? []
     }
 
     ipcMain.handle(
@@ -464,15 +482,10 @@ app
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
         if (!executionContext) return
+        const prior = await hydrateHistory(projectId, threadId)
         await runWithThreadExecutionContext(executionContext, () =>
           runWithActiveRunIdentity(threadId, () =>
-            retryPostTurnReview(
-              threadId,
-              hydrateHistory(threadId),
-              agentHost,
-              registry,
-              parseRetryPayload(payload),
-            ),
+            retryPostTurnReview(threadId, prior, agentHost, registry, parseRetryPayload(payload)),
           ),
         )
       },
@@ -486,15 +499,10 @@ app
         const threadId = parseIpcArgs(zThreadId, [threadIdArg])
         const executionContext = await prepareThreadExecutionContext(projectId, threadId, agentHost)
         if (!executionContext) return
+        const prior = await hydrateHistory(projectId, threadId)
         await runWithThreadExecutionContext(executionContext, () =>
           runWithActiveRunIdentity(threadId, () =>
-            retryModelComparison(
-              threadId,
-              hydrateHistory(threadId),
-              agentHost,
-              registry,
-              parseRetryPayload(payload),
-            ),
+            retryModelComparison(threadId, prior, agentHost, registry, parseRetryPayload(payload)),
           ),
         )
       },

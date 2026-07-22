@@ -4,13 +4,20 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
-import type { Message, Thread, ThreadCatalogEntry, ThreadCatalogHit } from '@shared/types'
+import type {
+  LLMMessage,
+  Message,
+  Thread,
+  ThreadCatalogEntry,
+  ThreadCatalogHit,
+} from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
 import {
   attachHookCards,
@@ -43,11 +50,12 @@ import { runSerialized } from './storage/write-queue.ts'
  * Filesystem-native thread store (issue #644). Each thread is a self-contained
  * directory under `~/.copse/workspace/<projectId>/<threadId>/`:
  *
- *   meta.json      mutable thread metadata (everything except messages)
- *   events.jsonl   append-only spine, one line per finalized message
- *   messages/*.md  OKF prose (message content + reasoning)
- *   blobs/*        verbatim tool results and images
- *   subagents/**   nested subagent sessions, same structure recursively
+ *   meta.json           mutable thread metadata (everything except messages)
+ *   events.jsonl        append-only spine, one line per finalized message
+ *   agent-history.json  provider-format LLM resume snapshot (issue #993)
+ *   messages/*.md       OKF prose (message content + reasoning)
+ *   blobs/*             verbatim tool results and images
+ *   subagents/**        nested subagent sessions, same structure recursively
  *
  * A per-project `catalog.jsonl` indexes threads for fast cross-thread lookup
  * (rebuildable from the thread dirs). Prose/blob split, 1:1 fidelity, and the
@@ -60,6 +68,8 @@ import { runSerialized } from './storage/write-queue.ts'
 
 const EVENTS_FILE = 'events.jsonl'
 const META_FILE = 'meta.json'
+const AGENT_HISTORY_FILE = 'agent-history.json'
+const AGENT_HISTORY_VERSION = 1
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
@@ -102,6 +112,40 @@ function metaOf(thread: Thread): ThreadMeta {
 function writeFileEnsuringDir(fullPath: string, contents: string): void {
   mkdirSync(dirname(fullPath), { recursive: true })
   writeFileSync(fullPath, contents)
+}
+
+/** Atomic replace so a crash never leaves a half-written sidecar. */
+function atomicWriteFile(path: string, data: string): void {
+  const tmp = `${path}.copse-${String(process.pid)}.tmp`
+  writeFileSync(tmp, data)
+  renameSync(tmp, path)
+}
+
+function isAgentHistoryMessage(value: unknown): value is LLMMessage {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { role?: unknown }).role === 'string'
+  )
+}
+
+/**
+ * Parse `agent-history.json`. Corrupt JSON, missing fields, or a future
+ * `v` fail closed to `null` (callers treat that as fresh provider history)
+ * without touching the human transcript.
+ */
+function parseAgentHistoryFile(raw: string): LLMMessage[] | null {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null) return null
+    const record = parsed as { v?: unknown; messages?: unknown }
+    if (record.v !== AGENT_HISTORY_VERSION) return null
+    if (!Array.isArray(record.messages)) return null
+    if (!record.messages.every(isAgentHistoryMessage)) return null
+    return record.messages
+  } catch {
+    return null
+  }
 }
 
 /** Every file under `dir`, as thread-relative posix paths (excludes directories). */
@@ -711,6 +755,74 @@ export function deleteProjectThread(projectId: string, threadId: string): Promis
       const index = readAgentPrIndex(projectId)
       if (removeThreadFromIndex(index, threadId)) writeAgentPrIndex(projectId, index)
     }
+  })
+}
+
+// --- Provider-format agent history sidecar (issue #993) ---------------------
+//
+// Snapshot (not append-only): context trimming replaces the whole history.
+// Always addressed by trusted `(projectId, threadId)` — never by a globally
+// unique threadId assumption.
+
+function agentHistoryPath(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), AGENT_HISTORY_FILE)
+}
+
+/** Load provider history for a thread. Missing/corrupt/future-version → `[]`. */
+export function loadAgentHistory(projectId: string, threadId: string): Promise<LLMMessage[]> {
+  return runSerialized(queueKey(projectId), () => {
+    const raw = safeRead(agentHistoryPath(projectId, threadId))
+    if (raw === null) return []
+    return parseAgentHistoryFile(raw) ?? []
+  })
+}
+
+/** Atomically replace the provider-history snapshot for a thread. */
+export function saveAgentHistory(
+  projectId: string,
+  threadId: string,
+  messages: LLMMessage[],
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    const body = `${JSON.stringify({ v: AGENT_HISTORY_VERSION, messages })}\n`
+    atomicWriteFile(join(dir, AGENT_HISTORY_FILE), body)
+  })
+}
+
+/** Remove the provider-history sidecar (clear-history / fresh resume). */
+export function clearAgentHistory(projectId: string, threadId: string): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const path = agentHistoryPath(projectId, threadId)
+    if (!existsSync(path)) return
+    try {
+      unlinkSync(path)
+    } catch {
+      // Best-effort: a missing file is the desired end state.
+    }
+  })
+}
+
+/** True when an `agent-history.json` sidecar already exists for the thread. */
+export function agentHistoryExists(projectId: string, threadId: string): Promise<boolean> {
+  return runSerialized(queueKey(projectId), () => existsSync(agentHistoryPath(projectId, threadId)))
+}
+
+/**
+ * Project store ids that own a thread directory for `threadId` (have
+ * `meta.json`). Used by the #993 legacy `llm-history:*` migration to resolve
+ * exactly one owner before writing a sidecar.
+ */
+export function findThreadOwners(threadId: string): Promise<string[]> {
+  return runSerialized('thread-store:owners', () => {
+    const owners: string[] = []
+    for (const projectId of listProjectStoreIds()) {
+      if (existsSync(join(threadDir(projectId, threadId), META_FILE))) {
+        owners.push(projectId)
+      }
+    }
+    return owners
   })
 }
 

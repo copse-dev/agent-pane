@@ -23,5 +23,18 @@ export function openPersistentStore(options: PersistentStoreOptions = {}): Cache
     delete: (key) => {
       store.delete(key)
     },
+    listKeys: () => Object.keys(store.store),
+    deleteKeys: (keys) => {
+      if (keys.length === 0) return
+      // Assigning `.store` replaces the whole config in one atomic write (Conf /
+      // electron-store). Looping `delete` would rewrite config.json once per key
+      // and recreate the multi-MB startup amplification #993 removes.
+      const drop = new Set(keys)
+      const next: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(store.store)) {
+        if (!drop.has(key)) next[key] = value
+      }
+      store.store = next
+    },
   })
 }

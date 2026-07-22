@@ -637,11 +637,13 @@ export function mountInputBar(
       }
       return
     }
+    const projectId = store.getState().activeProjectId
+    if (!projectId) return
     const seq = ++estimateSeq
     const payload = composeEstimatePayload()
     let breakdown: ContextBreakdown
     try {
-      breakdown = await api.agent.estimateContext(id, payload)
+      breakdown = await api.agent.estimateContext(projectId, id, payload)
     } catch {
       return
     }

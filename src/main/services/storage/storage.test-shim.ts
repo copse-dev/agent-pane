@@ -14,6 +14,18 @@ export function storageDelete(key: string): void {
   mem.delete(key)
 }
 
+export function storageListKeys(): string[] {
+  return [...mem.keys()]
+}
+
+export function storageDeleteKeys(keys: string[]): void {
+  for (const key of keys) mem.delete(key)
+}
+
+export function storageBackingWrites(): number {
+  return 0
+}
+
 export function storageUpdate(key: string, update: (current: unknown) => unknown): Promise<void> {
   return runSerialized(key, () => {
     mem.set(key, update(mem.get(key)))
