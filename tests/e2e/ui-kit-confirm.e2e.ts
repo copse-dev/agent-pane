@@ -1,11 +1,9 @@
 import { mkdirSync } from 'node:fs'
 import { $, browser, expect } from '@wdio/globals'
-import { Key } from 'webdriverio'
 import { resetUserData, seedE2eViewport, writeSeedConfig } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-ui-kit-confirm'
-const CONTROL_KEY = Key.Ctrl
 
 /**
  * Visual eval for the first UI-kit slice: confirm dialog buttons/actions use
@@ -20,12 +18,21 @@ describe('UI kit confirm dialog', () => {
     writeSeedConfig({
       projects: [{ id: PROJECT_ID, path: process.cwd(), name: 'workspace' }],
       activeProjectId: PROJECT_ID,
+      activeThreadId: 'thread-b',
       [`threads:${PROJECT_ID}`]: [
         {
           id: 'thread-a',
           title: 'Keep me',
           status: 'idle',
-          messages: [],
+          messages: [
+            {
+              id: 'msg-a',
+              role: 'user',
+              content: 'Stay around.',
+              toolCalls: [],
+              createdAt: now,
+            },
+          ],
           usage: { inputTokens: 0, outputTokens: 0 },
           createdAt: now,
           updatedAt: now,
@@ -34,7 +41,15 @@ describe('UI kit confirm dialog', () => {
           id: 'thread-b',
           title: 'Delete candidate',
           status: 'idle',
-          messages: [],
+          messages: [
+            {
+              id: 'msg-b',
+              role: 'user',
+              content: 'Candidate for delete.',
+              toolCalls: [],
+              createdAt: now + 1,
+            },
+          ],
           usage: { inputTokens: 0, outputTokens: 0 },
           createdAt: now + 1,
           updatedAt: now + 1,
@@ -44,6 +59,7 @@ describe('UI kit confirm dialog', () => {
     seedE2eViewport()
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 60_000 })
+    await expect($('.chat-row.selected .chat-title')).toHaveText('Delete candidate')
   })
 
   after(() => {
@@ -53,7 +69,18 @@ describe('UI kit confirm dialog', () => {
   it('renders kit buttons in the confirm dialog', async function () {
     this.timeout(60_000)
 
-    await browser.action('key').down(CONTROL_KEY).down('w').up('w').up(CONTROL_KEY).perform()
+    await browser.waitUntil(
+      async () => (await $$('.chats-list .chat-row')).length >= 2,
+      { timeout: 15_000, timeoutMsg: 'expected two seeded chat rows' },
+    )
+
+    // Dispatch in-page (same pattern as file-search-palette): Electron may
+    // swallow a real Ctrl/Cmd+W before the renderer shortcut handler runs.
+    await browser.execute(() => {
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'w', metaKey: true, ctrlKey: true, bubbles: true }),
+      )
+    })
 
     const dialog = await $('#confirm-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
