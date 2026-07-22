@@ -888,7 +888,8 @@
   gap: var(--spacing-xs);
 }
 .pr-open-external-btn,
-.pr-open-thread-btn {
+.pr-open-thread-btn,
+.pr-new-thread-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -897,7 +898,8 @@
   padding: 2px 0;
 }
 .pr-open-external-btn:hover,
-.pr-open-thread-btn:hover {
+.pr-open-thread-btn:hover,
+.pr-new-thread-btn:hover {
   color: var(--text-primary);
 }
 .pr-action-btn {

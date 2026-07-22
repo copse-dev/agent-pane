@@ -48,6 +48,12 @@ export interface StoreEvents {
   comparison_changed: [threadId: string]
   git_branch_changed: []
   composer_draft_flush: []
+  /**
+   * Prefer a checkout mode on the active blank thread (e.g. PR viewer "New
+   * thread" spins off with shared checkout). Consumed by the composer footer;
+   * ignored once the thread has already committed a worktree choice.
+   */
+  composer_checkout_preferred: ['shared' | 'worktree']
   // Terminal tab: the user selected an agent task to view (id) or cleared it
   // (null). Lets the shells list drop its active highlight while a task panel
   // takes over the viewer, and vice versa.
