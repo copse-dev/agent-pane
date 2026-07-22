@@ -12,9 +12,11 @@ function fakeFetch(response: {
   statusText?: string
   body?: unknown
   throwErr?: Error
-}): { fetch: typeof fetch; calls: RequestInit[] } {
+}): { fetch: typeof fetch; calls: RequestInit[]; urls: string[] } {
   const calls: RequestInit[] = []
-  const fn = (async (_url: string | URL | Request, init?: RequestInit) => {
+  const urls: string[] = []
+  const fn = (async (url: string | URL | Request, init?: RequestInit) => {
+    urls.push(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url)
     calls.push(init ?? {})
     if (response.throwErr) throw response.throwErr
     const status = response.status ?? 200
@@ -25,7 +27,7 @@ function fakeFetch(response: {
       json: async () => response.body ?? {},
     } as Response
   }) as typeof fetch
-  return { fetch: fn, calls }
+  return { fetch: fn, calls, urls }
 }
 
 const AA_MODEL = (slug: string, idx: number, priceIn?: number): Record<string, unknown> => ({
@@ -41,6 +43,12 @@ describe('requestLiveIntellectModels', () => {
     const { fetch, calls } = fakeFetch({ body: { data: [] } })
     await requestLiveIntellectModels('key', fetch)
     assert.equal(calls[0]?.redirect, 'follow')
+  })
+
+  it('uses the current free-shape language endpoint that carries task cost', async () => {
+    const { fetch, urls } = fakeFetch({ body: { data: [] } })
+    await requestLiveIntellectModels('key', fetch)
+    assert.match(urls[0] ?? '', /\/api\/v2\/language\/models\/free\?page=1$/)
   })
 
   it('sends the key as the x-api-key header', async () => {
@@ -67,6 +75,35 @@ describe('requestLiveIntellectModels', () => {
     assert.equal(result.models[0]?.id, 'claude-opus-4-8')
     assert.equal(result.models[0].intellect, 55.7)
     assert.equal(result.models[0].inputPricePerMTok, 5)
+  })
+
+  it('loads every page of a paginated response', async () => {
+    const pages: Record<number, unknown> = {
+      1: {
+        intelligence_index_version: 4.1,
+        pagination: { page: 1, total_pages: 2, has_more: true },
+        data: [AA_MODEL('page-one', 20, 1)],
+      },
+      2: {
+        intelligence_index_version: 4.1,
+        pagination: { page: 2, total_pages: 2, has_more: false },
+        data: [AA_MODEL('page-two', 30, 2)],
+      },
+    }
+    const urls: string[] = []
+    const fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      urls.push(url)
+      const page = Number(new URL(url).searchParams.get('page'))
+      return { ok: true, status: 200, statusText: '', json: async () => pages[page] } as Response
+    }) as typeof globalThis.fetch
+    const result = await requestLiveIntellectModels('key', fetch)
+    assert.deepEqual(
+      result.models.map((model) => model.id),
+      ['page-one', 'page-two'],
+    )
+    assert.equal(result.indexVersion, 4.1)
+    assert.equal(urls.length, 2)
   })
 
   it('extracts costPerTask from artificial_analysis_intelligence_index_cost (documented AA shape)', async () => {

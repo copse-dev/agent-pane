@@ -456,6 +456,74 @@ describe('createIntellectFrontierPanel', () => {
     assert.match(panel.root.textContent || '', /ZDR only: hiding/)
   })
 
+  it('keeps a configured OpenRouter route when ZDR hides the direct route', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      undefined,
+      undefined,
+      undefined,
+      async () => ({
+        zdrOnly: true,
+        allowTraining: false,
+        models: [
+          {
+            id: 'openai/gpt-4o',
+            name: 'GPT-4o',
+            inputPricePerMTok: 3,
+            outputPricePerMTok: 12,
+          },
+        ],
+      }),
+    )
+    await panel.refresh()
+    panel.root.querySelector<HTMLButtonElement>('button.frontier-zdr-toggle')?.click()
+    const svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.match(svg.textContent || '', /gpt-4o/)
+    assert.doesNotMatch(svg.textContent || '', /gpt-5\.5/)
+    const point = svg.querySelector<SVGElement>('circle.frontier-point')
+    assert.ok(point)
+  })
+
+  it('No training excludes training and unknown routes but keeps retained API routes', async () => {
+    const panel = createIntellectFrontierPanel(
+      async () => [],
+      async () => [
+        {
+          id: 'deepseek',
+          label: 'DeepSeek',
+          prefix: 'deepseek:',
+          baseUrl: 'https://api.deepseek.com/v1',
+          builtin: true,
+          local: false,
+          keyLabel: 'DeepSeek',
+          keyPlaceholder: '',
+          keyHint: '',
+          fallbackContextWindow: 128_000,
+          models: [
+            {
+              id: 'MiniMaxAI/MiniMax-M3',
+              inputPricePerMTok: 0.3,
+              outputPricePerMTok: 1.2,
+            },
+          ],
+        },
+      ],
+    )
+    await panel.refresh()
+    let svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.match(svg.textContent || '', /MiniMax-M3/)
+    const button = panel.root.querySelector<HTMLButtonElement>('button.frontier-no-training-toggle')
+    assert.ok(button)
+    button.click()
+    svg = panel.root.querySelector('.frontier-chart svg')
+    assert.ok(svg)
+    assert.doesNotMatch(svg.textContent || '', /MiniMax-M3/)
+    assert.match(svg.textContent || '', /claude-|gpt-/)
+    assert.match(panel.root.textContent || '', /No training: hiding/)
+  })
+
   it('toggles the cost axis between $/MTok and $/task when live task costs exist', async () => {
     const panel = createIntellectFrontierPanel(
       async () => [],
@@ -589,6 +657,16 @@ describe('plan coverage on the map', () => {
     // And a label carries the "· plan" suffix.
     const labels = [...panel.root.querySelectorAll('text.frontier-label')].map((t) => t.textContent)
     assert.ok(labels.some((l) => l.includes('· plan')))
+
+    const hidePlan = panel.root.querySelector<HTMLButtonElement>('button.frontier-plan-toggle')
+    assert.ok(hidePlan)
+    hidePlan.click()
+    const hiddenLabels = [
+      ...panel.root.querySelectorAll<SVGTextElement>('text.frontier-label'),
+    ].map((label) => label.textContent)
+    assert.ok(hiddenLabels.every((label) => !label.includes('· plan')))
+    assert.equal(hidePlan.textContent, 'Show plan')
+    assert.equal(hidePlan.getAttribute('aria-pressed'), 'true')
   })
 
   it('does not badge a model whose plan window is spent', async () => {
