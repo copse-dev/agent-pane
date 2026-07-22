@@ -38,7 +38,13 @@ function errorCode(value: unknown): string | undefined {
 
 function git(args: readonly string[]): string {
   try {
-    return execFileSync('git', args, { encoding: 'utf8' }).trim()
+    // stderr is ignored so that running outside a git checkout (e.g. the
+    // worker image, where sources are COPYed rather than cloned) records
+    // 'unavailable' quietly instead of leaking git's error text and usage.
+    return execFileSync('git', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
   } catch {
     return 'unavailable'
   }
