@@ -90,8 +90,10 @@ against an in-memory `ApiClient` in ordinary headless Chrome, so geometry/comput
 do not need Electron can be evaluated without main-process or window lifecycle cost.
 
 CI runs it from the existing build job and collects its reference screenshots alongside Electron
-screenshots. `footer-compact` and `markdown-list-indent` are the first migrated specs. Keep further
-migrations small while their runner-scale soak accumulates. The tier boundary is:
+screenshots. After the initial `footer-compact` / `markdown-list-indent` soak, the next focused batch
+moved deterministic subagent, settings-footer, and chat-layout rendering into this tier. Continue
+to move specs in measured batches rather than treating every screenshot as browser-portable. The
+tier boundary is:
 
 | Question the test answers                              | Tier           |
 | ------------------------------------------------------ | -------------- |

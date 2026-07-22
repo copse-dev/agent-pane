@@ -19,7 +19,7 @@ Chrome without Electron.
   projects and threads.
 - The composer works through the real renderer controller. The mock decodes the existing
   `AgentRunPayload` with `parseAgentRunPayload` and emits `agent.onChunk` events.
-- `npm run test:demo` serves `dist/demo/` locally and runs two WebdriverIO Chrome workers in
+- `npm run test:demo` serves `dist/demo/` locally and runs up to four WebdriverIO Chrome workers in
   parallel. It checks computed geometry and saves deterministic screenshots.
 - CI builds and runs this tier in the existing build job, then feeds changed browser screenshots
   into the same review/commit pipeline as Electron screenshots.
