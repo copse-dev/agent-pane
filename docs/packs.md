@@ -2,9 +2,14 @@
 
 A **pack** is a manifest-bundled feature. It extends the `plugin.json` shape Copse
 already loads (skills + MCP) with the remaining slots, and the pack registry owns
-its lifecycle. This document describes the landed **P1 + P2** layer: the
-manifest shape, the registry, atomic enable/disable, and the level-2 declarative
-panel contribution. The design source of truth is
+its lifecycle. This document describes the landed pack layer: the manifest shape,
+the registry, atomic enable/disable, and the level-2 declarative panel
+contribution.
+
+**Want to install or author a pack?** Start with
+[`docs/adding-a-pack.md`](adding-a-pack.md) — Settings → Packs links there.
+
+The design source of truth is
 [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md)
 ("Feature packs" + decisions 15 & 17); on conflict, that plan wins — update it in
 the same PR.
@@ -39,8 +44,10 @@ user pack can never smuggle code through its `plugin.json`.
 `PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
 fields fold into the pack slots (`mcpServers` → `tools.mcpServers`). The
 Settings pack list that renders `settings` landed in P3 (see
-[Pack list UI](#pack-list-ui-p3) below); host disk-discovery of user packs
-still lands with the pilot pack in P4.
+[Pack list UI](#pack-list-ui-p3) below). Host disk-discovery that feeds user
+packs into the registry is **not wired yet** — until it is, skills/MCP from a
+`plugin.json` still load via Cursor plugin discovery (see
+[`docs/adding-a-pack.md`](adding-a-pack.md)).
 
 ## Registry and lifecycle
 
@@ -177,10 +184,11 @@ disable is pinned by
   (`electron-store` under `packDisabled` and `pack.<packId>.settings`), the
   shared `PackRegistry` singleton, and the Settings pack list UI landed in P3
   (`src/main/services/packs/pack-service.ts` + `src/renderer/views/settings-dialog.ts`).
-  Host disk-discovery of user packs still lands with the pilot pack in P4.
+  Host disk-discovery of user packs into that registry is still outstanding.
 
 ## Related
 
+- [`docs/adding-a-pack.md`](adding-a-pack.md) — practical install / authoring guide (linked from Settings → Packs)
 - [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) — design source of truth (Feature packs, decisions 15 & 17)
 - [`docs/cursor-plugins.md`](cursor-plugins.md) — the plugin manifest the pack manifest extends
 - [`docs/hooks.md`](hooks.md) — the hook registry a pack's hooks register through

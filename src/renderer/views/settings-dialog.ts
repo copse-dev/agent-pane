@@ -832,8 +832,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               contributes. Turning a pack off drops all of its contributions from new work in one
               action; its stored data is left in place so re-enabling it picks up where it stopped.
               Old conversations still render a disabled pack's history. See
-              <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/packs.md" target="_blank" rel="noopener noreferrer">the pack manifest docs</a>
-              for the schema.
+              <a href="https://github.com/copse-dev/agent-pane/blob/main/docs/adding-a-pack.md" target="_blank" rel="noopener noreferrer">how to add a pack</a>
+              for authoring and install steps.
             </p>
             <div class="lmstudio-test-row">
               <button type="button" id="packs-reload-btn">Reload</button>
