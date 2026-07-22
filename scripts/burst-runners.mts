@@ -53,11 +53,11 @@ import {
   selectScaleDownHosts,
   type ScalewayLaunchSpec,
   scalewayArgs,
-  scalewayTerminateArgs,
   shellQuote,
   sshRunAsync,
   sshTarget,
   terminateAwsInstances,
+  terminateScalewayServer,
   validateTagValue,
   waitForAwsInstances,
   waitForScalewayServers,
@@ -665,7 +665,7 @@ function scalewayDown(options: Options): void {
     const zone = host.zone
     if (!zone) die(`host ${host.providerId} is missing zone metadata; pass --zone explicitly`)
     console.log(`==> Terminating ${host.providerId} in ${zone}`)
-    run('scw', scalewayTerminateArgs({ zone }, host.providerId))
+    terminateScalewayServer({ zone }, host.providerId)
   }
   if (hasFlag(options, 'wait')) {
     for (const host of hosts) {
