@@ -278,13 +278,10 @@ check-node:
 # doesn't touch your global config. See the "Hardened npm profiles" section of
 # the README.
 #
-# On macOS, `npm ci` after a lockfile change (e.g. switching branches) can die
-# with ENOTEMPTY/EBUSY/EPERM while pruning stale packages — Spotlight, Finder,
-# or an editor briefly holds a file inside a directory npm is rmdir-ing. The
-# tree it leaves behind is half-pruned, so every rerun fails the same way until
-# node_modules is removed by hand. Detect that failure class from npm's output,
-# wipe node_modules, and retry once; any other failure (or a second one) still
-# aborts loudly.
+# On macOS, npm's own stale-tree pruning can fail with ENOTEMPTY/EBUSY/EPERM.
+# This target only runs when dependencies need reinstalling, so remove the old
+# tree first and give `npm ci` an empty destination instead of retrying after it
+# has already left node_modules half-pruned.
 NPM_CI := npm ci --ignore-scripts=false
 
 .PHONY: deps
@@ -292,21 +289,8 @@ deps: $(DEPS_STAMP)
 
 $(DEPS_STAMP): package-lock.json package.json | $(STAMP_DIR) check-node
 	@echo "==> Dependencies out of date — running 'npm ci' (scripts forced on)…"
-	@$(USE_NVM); \
-	log="$(STAMP_DIR)/npm-ci.log"; \
-	if $(NPM_CI) 2>&1 | tee "$$log"; \
-	  npm_ci_status="$${PIPESTATUS[0]}"; \
-	  [ "$$npm_ci_status" -eq 0 ]; then \
-	  :; \
-	else \
-	  if grep -qE 'code (ENOTEMPTY|EBUSY|EPERM)' "$$log"; then \
-	    echo "==> npm ci hit a filesystem race pruning node_modules — wiping it and retrying…"; \
-	    rm -rf node_modules; \
-	    if ! $(NPM_CI); then exit 1; fi; \
-	  else \
-	    exit 1; \
-	  fi; \
-	fi
+	rm -rf node_modules
+	@$(USE_NVM); $(NPM_CI)
 	touch $(DEPS_STAMP)
 
 # --- build ------------------------------------------------------------------

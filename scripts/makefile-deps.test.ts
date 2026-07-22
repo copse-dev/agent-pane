@@ -43,20 +43,14 @@ afterEach(() => {
 })
 
 describe('Makefile dependency install', { skip: !makeAvailable }, () => {
-  it('removes a half-pruned tree and retries a retryable npm failure', () => {
+  it('removes the old dependency tree before invoking npm', () => {
     const root = makeFixture(`#!/usr/bin/env bash
 set -eu
-attempts=.npm-attempts
-attempt=$(( $(cat "$attempts" 2>/dev/null || echo 0) + 1 ))
-echo "$attempt" > "$attempts"
-if [ "$attempt" -eq 1 ]; then
-  echo 'npm error code ENOTEMPTY'
-  exit 1
-fi
 if [ -e node_modules/stale-package ]; then
   echo 'stale node_modules survived cleanup' >&2
   exit 2
 fi
+echo ran > .npm-attempts
 mkdir -p node_modules/esbuild
 echo '{}' > node_modules/esbuild/package.json
 `)
@@ -65,11 +59,10 @@ echo '{}' > node_modules/esbuild/package.json
     const result = runDeps(root)
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
-    assert.equal(readFileSync(join(root, '.npm-attempts'), 'utf8'), '2\n')
+    assert.equal(readFileSync(join(root, '.npm-attempts'), 'utf8'), 'ran\n')
     assert.equal(existsSync(join(root, 'node_modules', 'stale-package')), false)
     assert.equal(existsSync(join(root, 'node_modules', 'esbuild', 'package.json')), true)
     assert.equal(existsSync(join(root, '.tmp', 'deps.stamp')), true)
-    assert.match(result.stdout, /wiping it and retrying/)
   })
 
   it('fails without writing the stamp when npm reports a non-retryable error', () => {
@@ -81,22 +74,6 @@ exit 23
     const result = runDeps(root)
 
     assert.notEqual(result.status, 0, result.stdout)
-    assert.equal(existsSync(join(root, '.tmp', 'deps.stamp')), false)
-  })
-
-  it('fails without writing the stamp when the clean retry also fails', () => {
-    const root = makeFixture(`#!/usr/bin/env bash
-attempts=.npm-attempts
-attempt=$(( $(cat "$attempts" 2>/dev/null || echo 0) + 1 ))
-echo "$attempt" > "$attempts"
-echo 'npm error code ENOTEMPTY'
-exit 1
-`)
-
-    const result = runDeps(root)
-
-    assert.notEqual(result.status, 0, result.stdout)
-    assert.equal(readFileSync(join(root, '.npm-attempts'), 'utf8'), '2\n')
     assert.equal(existsSync(join(root, '.tmp', 'deps.stamp')), false)
   })
 
