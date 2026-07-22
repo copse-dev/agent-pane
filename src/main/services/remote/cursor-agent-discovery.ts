@@ -5,8 +5,9 @@
  * an agent to the open project therefore requires a follow-up `GET /v1/agents/{id}`
  * per candidate — acceptable for a small page (≤100) while we prove the path.
  *
- * Not wired into the sidebar yet; call {@link discoverExternalCursorAgents} (or the
- * `remoteAgent:discoverExternal` IPC) then reload project threads.
+ * The renderer also runs a periodic sync for the active project (see
+ * `external-cursor-agent-sync.ts`) — first tick after one interval, never on
+ * editor open. Manual: `remoteAgent:discoverExternal` then reload threads.
  */
 import { randomUUID } from 'node:crypto'
 import type { Message, Thread } from '@shared/types'
@@ -18,10 +19,16 @@ import {
 } from '@shared/remote-agent.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
-import { getActiveProjectId } from '../workspace.ts'
+import {
+  getActiveProjectId,
+  getActiveProjectRoot,
+  getProjectRoot,
+  getWorkspaceRoot,
+} from '../workspace.ts'
+import { getGithubRepoSlug } from '../github/git-service.ts'
 import { createThread, loadProjectThreads } from '../thread-store.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import { parseGithubOwnerRepo, resolveRemoteAgentRepository } from './remote-agent-shared.ts'
+import { parseGithubOwnerRepo } from './remote-agent-shared.ts'
 import { seedRemoteAgentSession } from './remote-agent-client.ts'
 
 /** Default page size for the spike (Cursor max is 100). */
@@ -311,6 +318,12 @@ export async function getCursorAgent(input: {
   return detail
 }
 
+async function resolveRepositoryForProject(projectId: string): Promise<string | null> {
+  const root = getProjectRoot(projectId) ?? getActiveProjectRoot() ?? getWorkspaceRoot()
+  const slug = await getGithubRepoSlug(root)
+  return slug ? `https://github.com/${slug}` : null
+}
+
 /**
  * List recent Cursor cloud agents, keep those for this project's repo that are
  * not already linked, and materialize local stub threads + remote sessions.
@@ -325,7 +338,7 @@ export async function discoverExternalCursorAgents(
 
   const repositoryUrl =
     options.repositoryUrl === undefined
-      ? await resolveRemoteAgentRepository()
+      ? await resolveRepositoryForProject(projectId)
       : options.repositoryUrl
   if (!repositoryUrl) {
     throw new Error(

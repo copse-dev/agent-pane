@@ -1580,12 +1580,17 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return listCursorCloudModels()
   })
   /**
-   * Spike: import Cursor cloud agents launched outside Copse as local thread
-   * stubs for the active project. Caller should reload project threads after.
+   * Import Cursor cloud agents launched outside Copse as local thread stubs.
+   * Prefer passing the renderer’s active `projectId` so sync stays scoped to the
+   * open project. Caller should reload/merge project threads after imports.
    */
-  ipcMain.handle('remoteAgent:discoverExternal', (event) => {
+  ipcMain.handle('remoteAgent:discoverExternal', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
-    return discoverExternalCursorAgents()
+    if (projectId === undefined || projectId === null) {
+      return discoverExternalCursorAgents()
+    }
+    const id = parseIpcArgs(zProjectId, [projectId])
+    return discoverExternalCursorAgents({ projectId: id })
   })
   ipcMain.handle('acp:detectAgents', (event) => {
     assertMainFrameSender(event, win)
