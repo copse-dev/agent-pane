@@ -114,7 +114,7 @@ import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
-import { PII_REDACTION_ENABLED_SETTING } from '../services/security/pii-redactor.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE, migrateLegacyMemories } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -769,10 +769,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       await initSkillsRegistry()
       registerSkillTools(registry)
     }
-    // Same for the experimental PII redaction reveal tool.
-    if (k === PII_REDACTION_ENABLED_SETTING) {
-      syncPiiTools(registry)
-    }
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
     }
@@ -1082,6 +1078,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // tools; the register direction still requires `gh` availability.
     if (id === CI_INVESTIGATOR_PACK_ID) {
       syncCiInvestigatorTools(registry)
+    }
+    // Same for the `copse.pii-redaction` pack's `reveal_pii` tool — toggling the
+    // pack also arms/disarms the input rewrite and steering block, which read
+    // the same pack enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
+    if (id === PII_REDACTION_PACK_ID) {
+      syncPiiTools(registry)
     }
     return { packs: getPackService().list() }
   })

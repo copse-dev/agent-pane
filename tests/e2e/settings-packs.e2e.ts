@@ -80,7 +80,6 @@ describe('settings packs (about:addons)', function () {
     assert.equal(await longHorizonRow.$('.pack-name').getText(), 'copse.long-horizon-tasks')
     await expect(longHorizonRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
-
     // Roadmap plans pack (#556 → pack migration): listed, default-OFF via the
     // one-time enablement bridge (absent legacy setting ⇒ disabled).
     const roadmapPlansRow = packs.$('.pack-row[data-pack-id="copse.roadmap-plans"]')
@@ -112,6 +111,13 @@ describe('settings packs (about:addons)', function () {
     assert.equal(await ciInvestigatorRow.$('.pack-name').getText(), 'copse.ci-investigator')
     await expect(ciInvestigatorRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await ciInvestigatorRow.getAttribute('data-enabled'), 'false')
+
+    // PII redaction pack: listed, default-OFF via the one-time enablement bridge (absent legacy `piiRedactionEnabled` ⇒ disabled).
+    const packRow = packs.$('.pack-row[data-pack-id="copse.pii-redaction"]')
+    await expect(packRow).toBeDisplayed()
+    assert.equal(await packRow.$('.pack-name').getText(), 'copse.pii-redaction')
+    await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
+    assert.equal(await packRow.getAttribute('data-enabled'), 'false')
 
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()

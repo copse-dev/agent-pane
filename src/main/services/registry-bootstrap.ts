@@ -37,7 +37,6 @@ import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
 import { browserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
-import { PII_REDACTION_ENABLED_SETTING } from './security/pii-redactor.ts'
 import { listSkills } from './skills/skills-registry.ts'
 import { getSetting } from './storage/settings.ts'
 import { isGhAvailable } from './tool-availability.ts'
@@ -59,6 +58,7 @@ import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pa
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
 import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
@@ -174,10 +174,13 @@ export function createRegistry(): ToolRegistry {
   // User Shells → agent read (on by default). The tool is still withheld per
   // turn when no shell is open for the chat thread (see parentTools).
   syncReadTerminalTools(registry)
-  // Experimental PII redaction (off by default). Adds the reveal_pii tool that
-  // turns a redacted placeholder back into its real value, gated by user
-  // approval. Only registered when redaction is on — otherwise no placeholders
-  // exist to reveal.
+  // Experimental PII redaction (off by default). Gated by the
+  // `copse.pii-redaction` first-party pack — the pack toggle in Settings > Packs
+  // is the atomic master switch that also arms the input rewrite
+  // (`pii-redactor.ts`) and the steering prompt block. Adds the reveal_pii tool
+  // that turns a redacted placeholder back into its real value, gated by user
+  // approval. Live toggles route through {@link syncPiiTools} on
+  // `packs:setEnabled`.
   syncPiiTools(registry)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
@@ -313,14 +316,18 @@ export function syncCiInvestigatorTools(registry: ToolRegistry): void {
 }
 
 /**
- * Register or unregister the experimental PII reveal tool to match the current
- * `piiRedactionEnabled` setting. Called at startup (via createRegistry) and again
- * whenever the setting is toggled, so the tool appears or disappears live — and
- * stays in sync with the redaction system-prompt block, which is rebuilt every
- * turn from the same setting.
+ * Register or unregister the experimental `reveal_pii` tool to match the current
+ * enablement of the `copse.pii-redaction` first-party pack. Called at startup
+ * (via createRegistry) and again whenever the pack is toggled from Settings >
+ * Packs (see `ipc/register-handlers.ts` `packs:setEnabled`), so the tool appears
+ * or disappears live — and stays in sync with the redaction system-prompt block
+ * (`agent-system-prompt.ts`) and the input rewrite (`pii-redactor.ts`), which
+ * are gated on the same pack enablement. The atomic pack disable drops the tool
+ * from the model tool list in the same flag flip that drops the pack's
+ * `activeToolNames()` entry from the Settings pack list.
  */
 export function syncPiiTools(registry: ToolRegistry): void {
-  if (getSetting<boolean>(PII_REDACTION_ENABLED_SETTING, false)) {
+  if (getDefaultPackRegistry().isEnabled(PII_REDACTION_PACK_ID)) {
     if (!registry.has('reveal_pii')) registry.register(revealPiiTool)
   } else {
     registry.unregister('reveal_pii')

@@ -169,7 +169,6 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'piiRedactionEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
@@ -1071,24 +1070,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 time per project and relaxes the sandbox only to allow binding on localhost.
                 Otherwise a task stays fully sandboxed (workspace-only, no network). Tasks are
                 stopped when the app quits. While off, the tool is not registered.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>PII redaction (on-device)</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="piiRedactionEnabled" />
-                Redact personal data in my messages before they are sent
-              </label>
-              <p class="field-hint">
-                Uses <a href="https://github.com/nationaldesignstudio/rampart" target="_blank" rel="noreferrer">Rampart</a>
-                (National Design Studio, CC BY 4.0) to replace personal data you type — names, emails,
-                phone numbers, SSNs, card numbers, addresses — with stable placeholders like
-                <code>[EMAIL_1]</code> before your message leaves the device for any model provider. The
-                real values stay in memory on this machine and never cross the wire. When the agent
-                genuinely needs a value it calls <code>reveal_pii</code>, which prompts you to approve
-                each reveal. Best-effort and Latin-script only — not a guarantee. The first run downloads
-                a small (~15&nbsp;MB) model; while off, nothing is loaded.
               </p>
             </fieldset>
 
