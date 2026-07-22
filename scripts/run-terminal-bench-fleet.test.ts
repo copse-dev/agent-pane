@@ -9,12 +9,29 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   const workflow = readFileSync('.github/workflows/terminal-bench-scaleway.yml', 'utf8')
   assert.match(workflow, /default: qwen3\.6-35b-a3b/)
   assert.doesNotMatch(workflow, /qwen\/qwen3\.6-35b-a3b:(?:fp8|bf16)/)
+  assert.match(workflow, /name: Verify fleet teardown\n\s+if: always\(\)/)
 })
 
 test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)
   assert.equal(config.maxTasks, 3)
+})
+
+test('fleet falls back across Scaleway regions when no zone is pinned', () => {
+  const config = runConfig({ instances: '10', 'worker-image': workerImage })
+  assert.deepEqual(config.zones, [
+    'fr-par-1',
+    'fr-par-2',
+    'fr-par-3',
+    'nl-ams-1',
+    'nl-ams-2',
+    'nl-ams-3',
+    'pl-waw-1',
+    'pl-waw-2',
+    'pl-waw-3',
+    'it-mil-1',
+  ])
 })
 
 test('fleet requires a zone for zonal Scaleway resources', () => {
