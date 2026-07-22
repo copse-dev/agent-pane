@@ -49,7 +49,8 @@ ten repetitions are too few to estimate a low flake rate.
   conversation, composer, and markdown styles render in Chrome. Both headings are followed by
   sibling lists, bullets are consistently indented, and list rows are compact.
 - `footer-compact-{wide,narrow,overflow-open}.png`: the responsive footer preserves the wide state,
-  hides secondary information at 360px, keeps context visible, and exposes Export in overflow.
+  hides secondary information at 360px, keeps context visible, and exposes Export / Share trace
+  (download JSONL + open a prefilled GitHub issue) in overflow.
 
 The screenshots contain only fixed fixture data. No clock, host path, live git state, or provider
 response is rendered.
