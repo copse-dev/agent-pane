@@ -334,12 +334,19 @@ export function exitCodeForOutcome(
 
 // ── Canonical event envelope ─────────────────────────────────────────────────
 
-// Every event is a versioned line: `v` is the envelope version (mirrors the
-// thread-store spine's forward-compat rule — a reader tolerates unknown `v` and
-// unknown fields and skips line types it doesn't recognise). In `jsonl` output
-// mode one JSON object is written per line to stdout; `text` mode renders the
-// same events human-readably. stderr is reserved for diagnostics and never
+// Every event is a versioned line: `v` is the envelope version. In `jsonl`
+// output mode one JSON object is written per line to stdout; `text` mode renders
+// the same events human-readably. stderr is reserved for diagnostics and never
 // carries contract events.
+//
+// Forward-compatibility is a *reader* behavior, not a schema-openness claim: a
+// lenient reader (like the thread-store spine's `parseSpine`) skips lines whose
+// `type`/`v` it does not recognise and ignores unknown fields — and the zod
+// parser here strips unknown keys the same way. The published JSON Schema, by
+// contrast, pins the exact closed v1 shape (`additionalProperties: false`,
+// `v: const 1`); strict validation against it is deliberately NOT
+// forward-tolerant, so a consumer that must accept future versions parses
+// leniently rather than strict-validating. See {@link headlessContractJsonSchema}.
 const eventBase = { v: z.literal(1) }
 
 export const headlessTurnStartEventSchema = z.object({
@@ -518,6 +525,19 @@ export type HeadlessCapabilities = z.infer<typeof headlessCapabilitiesSchema>
  * inferred from — the single-source-of-truth guarantee. `scripts/gen-headless-schema.mts`
  * writes this to `schemas/headless-contract.schema.json`; a test asserts the
  * committed file matches so the two never drift.
+ *
+ * Consumer rules the published schema commits to:
+ *
+ * - **`runRequest` is an INPUT contract**, generated with `io: 'input'` so a
+ *   zod-defaulted field (`outputMode`, `permissionProfile`) is *optional* in the
+ *   JSON Schema — the runtime fills the default. Generating it as an output
+ *   schema would mark those `required` and make an external validator reject a
+ *   minimal `{ kind, cwd, input }` request the canonical parser accepts.
+ * - **`event` / `capabilities` are OUTPUT contracts** (what the runtime emits),
+ *   generated as output schemas.
+ * - Every definition pins the exact **closed** v1 shape. Forward-compatibility is
+ *   a lenient-reader behavior (see the event-envelope note above), not something
+ *   strict validation against these schemas provides.
  */
 export function headlessContractJsonSchema(): Record<string, unknown> {
   return {
@@ -525,9 +545,9 @@ export function headlessContractJsonSchema(): Record<string, unknown> {
     title: 'Copse headless automation contract',
     version: HEADLESS_PROTOCOL_VERSION,
     definitions: {
-      runRequest: z.toJSONSchema(headlessRunRequestSchema),
+      runRequest: z.toJSONSchema(headlessRunRequestSchema, { io: 'input' }),
       event: z.toJSONSchema(headlessEventSchema),
-      permissionProfile: z.toJSONSchema(headlessPermissionProfileSchema),
+      permissionProfile: z.toJSONSchema(headlessPermissionProfileSchema, { io: 'input' }),
       capabilities: z.toJSONSchema(headlessCapabilitiesSchema),
     },
   }

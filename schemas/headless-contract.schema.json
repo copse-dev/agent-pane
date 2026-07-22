@@ -46,11 +46,8 @@
           "required": [
             "kind",
             "cwd",
-            "input",
-            "outputMode",
-            "permissionProfile"
-          ],
-          "additionalProperties": false
+            "input"
+          ]
         },
         {
           "type": "object",
@@ -98,11 +95,8 @@
             "kind",
             "threadId",
             "cwd",
-            "input",
-            "outputMode",
-            "permissionProfile"
-          ],
-          "additionalProperties": false
+            "input"
+          ]
         },
         {
           "type": "object",
@@ -155,11 +149,8 @@
             "kind",
             "sourceThreadId",
             "cwd",
-            "input",
-            "outputMode",
-            "permissionProfile"
-          ],
-          "additionalProperties": false
+            "input"
+          ]
         }
       ]
     },
@@ -519,8 +510,7 @@
       "required": [
         "id",
         "default"
-      ],
-      "additionalProperties": false
+      ]
     },
     "capabilities": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

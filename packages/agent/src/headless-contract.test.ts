@@ -261,4 +261,31 @@ describe('headless-contract: published JSON Schema', () => {
     const committed = JSON.parse(readFileSync(committedPath, 'utf8')) as Record<string, unknown>
     assert.deepEqual(committed, headlessContractJsonSchema())
   })
+
+  it('publishes runRequest as an input contract: zod-defaulted fields are optional', () => {
+    // Regression for the JSON-Schema/parser divergence: `outputMode` and
+    // `permissionProfile` are zod-defaulted, so the parser accepts a minimal
+    // `{ kind, cwd, input }` request. The published schema must not list them as
+    // `required`, or an external JSON-Schema validator would reject a request the
+    // canonical parser accepts.
+    const schema = headlessContractJsonSchema()
+    const definitions = schema['definitions'] as Record<
+      string,
+      { oneOf?: unknown[]; anyOf?: unknown[] }
+    >
+    const runRequest = definitions['runRequest']
+    assert.ok(runRequest)
+    const members = (runRequest.oneOf ?? runRequest.anyOf ?? []) as Array<{
+      properties?: { kind?: { const?: string } }
+      required?: string[]
+    }>
+    const newMember = members.find((m) => m.properties?.kind?.const === 'new')
+    assert.ok(newMember, 'runRequest schema exposes a "new" member')
+    const required = newMember.required ?? []
+    assert.deepEqual([...required].sort(), ['cwd', 'input', 'kind'])
+    assert.ok(!required.includes('outputMode'))
+    assert.ok(!required.includes('permissionProfile'))
+    // And the parser genuinely accepts that minimal request.
+    assert.doesNotThrow(() => parseHeadlessRunRequest({ kind: 'new', cwd: '/repo', input: 'x' }))
+  })
 })

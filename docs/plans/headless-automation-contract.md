@@ -2,10 +2,16 @@
 
 Tracking: [#1079](https://github.com/copse-dev/agent-pane/issues/1079)
 
-Status: **Active — Phases 0–1 landed.** The canonical contract module, its
-published JSON Schema, and the conformance scaffold are on the feature branch, and
-the benchmark harness is wired as the contract's first conformance consumer; the
-spine projection, ACP, and CLI adapters follow in later phases.
+Status: **Active — Phases 0–1 in draft [#1111](https://github.com/copse-dev/agent-pane/pull/1111)** (not yet
+on `main`). The canonical contract module, its published JSON Schema, and the
+conformance scaffold are on the feature branch, and the benchmark harness is
+wired as the contract's first conformance consumer; the spine projection, ACP,
+and CLI adapters follow in later phases.
+
+> **Naming overlap:** [#1095](https://github.com/copse-dev/agent-pane/pull/1095) is a design-only draft
+> proposing `headless-runtime-contract.md` for the same [#1079](https://github.com/copse-dev/agent-pane/issues/1079).
+> This doc carries the same design plus the implementation; which filename is
+> binding (and whether #1095 folds in or closes) is pending consolidation.
 
 Investigation and trade-offs:
 [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md)
@@ -73,7 +79,7 @@ different ways, with no schema reconciling them:
   (checkout / transcript / patch / verifier / model / config / feature-flag /
   attempt / stop-reason).
 
-## What landed in Phase 0
+## What Phase 0 delivers
 
 - **Single source of truth** — `packages/agent/src/headless-contract.ts`. Authored
   as zod schemas so the TypeScript types (`z.infer`) and the published JSON Schema
@@ -109,6 +115,24 @@ different ways, with no schema reconciling them:
   coverage over every outcome the schema enumerates, event validation, the
   `projectStreamChunk` mapping, and a drift assertion that the committed JSON
   Schema equals the generated one.
+
+## JSON Schema consumer rules
+
+The published `schemas/headless-contract.schema.json` and the zod parser are one
+source of truth, so they must agree on what a consumer may send or expect:
+
+- **`runRequest` is an input contract.** It is generated with zod's `io: 'input'`,
+  so a defaulted field (`outputMode`, `permissionProfile`) is _optional_ in the
+  JSON Schema — the runtime fills the default. Generating it as an output schema
+  would mark those `required` and make an external validator reject a minimal
+  `{ kind, cwd, input }` request the parser accepts. A regression test pins this.
+- **`event` / `capabilities` are output contracts** (what the runtime emits).
+- **The schemas pin the exact closed v1 shape.** Forward-compatibility is a
+  lenient-reader behavior — skip unrecognised event `type`/`v`, ignore unknown
+  fields (the zod parser strips them; the thread-store spine's `parseSpine` skips
+  unknown line types) — and is deliberately _not_ provided by strict validation
+  against these schemas. A consumer that must accept future versions parses
+  leniently rather than strict-validating v1.
 
 ## Boundaries
 
