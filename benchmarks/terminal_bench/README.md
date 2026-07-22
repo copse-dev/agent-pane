@@ -75,8 +75,12 @@ Configure these GitHub Actions settings:
 
 Optional variables are `SCW_GENERATIVE_API_URL`, `SCW_TERMINAL_ZONE`,
 `SCW_TERMINAL_SECURITY_GROUP_ID`, and `SCW_TERMINAL_BASE_IMAGE`. The workflow tries multiple AZs
-when `SCW_TERMINAL_ZONE` is unset because Instance quota is per AZ. A custom image UUID and a
-security group are zone-specific, so either requires `SCW_TERMINAL_ZONE`.
+when `SCW_TERMINAL_ZONE` is unset because Instance quota is per AZ. It starts in Paris, skips
+quota-exhausted or unsupported zones, then falls back through Amsterdam, Warsaw, and Milan until
+the requested fleet is full. The registry and retained capsules remain in their configured region
+(Paris by default), but transient worker disks and task execution reside in each worker's zone. Set
+`SCW_TERMINAL_ZONE` when compute must remain in one AZ. A custom image UUID and a security group are
+zone-specific, so either requires `SCW_TERMINAL_ZONE`.
 
 Optionally add `BENCH_ANALYST_API_KEY` and `BENCH_ANALYST_API_URL` for a stronger OpenAI-compatible
 analyst. When the analyst uses the same Scaleway endpoint, the workflow falls back to the

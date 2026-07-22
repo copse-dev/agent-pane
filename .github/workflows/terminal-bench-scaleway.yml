@@ -249,3 +249,13 @@ jobs:
           if [ "$STEERED_RERUN" != true ]; then args+=(--no-steered-rerun); fi
           npm run bench:terminal:fleet -- "${args[@]}"
           echo "Capsules: s3://${SCW_OBJECT_STORAGE_BUCKET}/${OBJECT_PREFIX}/" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify fleet teardown
+        if: always()
+        env:
+          FLEET_NAME: terminal-bench-${{ github.run_id }}-${{ github.run_attempt }}
+          SCW_ZONE: ${{ vars.SCW_TERMINAL_ZONE }}
+        run: |
+          args=(down --yes --name "$FLEET_NAME")
+          if [ -n "$SCW_ZONE" ]; then args+=(--zone "$SCW_ZONE"); fi
+          npm run bench:terminal:fleet -- "${args[@]}"
