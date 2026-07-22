@@ -194,6 +194,67 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
     ],
   },
   {
+    // #728: a subagent-backed explore must stay its own card when a sibling
+    // read_file would otherwise fold both into a "Reading files" group.
+    id: 'subagent-ungrouped',
+    label: 'Subagent stays ungrouped beside reading tools',
+    project: project('demo-subagent-ungrouped-project'),
+    settings: {
+      onboardingCompleted: true,
+      theme: 'dark',
+      uiTintStrength: 'off',
+    },
+    threads: [
+      {
+        id: 'demo-subagent-ungrouped-thread',
+        title: 'Subagent ungrouped',
+        status: 'idle',
+        messages: [
+          {
+            id: 'demo-subagent-ungrouped-assistant',
+            role: 'assistant',
+            content: 'Explored the repo and read the README.',
+            toolCalls: [
+              {
+                id: 'demo-ungrouped-explore',
+                name: 'explore',
+                args: { query: 'Find README' },
+                status: 'done',
+                result: 'README describes Copse setup.',
+                subagent: {
+                  id: 'demo-ungrouped-session',
+                  kind: 'explore',
+                  status: 'done',
+                  prompt: 'Find README',
+                  summary: 'README describes Copse setup.',
+                  messages: [
+                    {
+                      id: 'demo-ungrouped-msg',
+                      role: 'assistant',
+                      content: 'Found **README.md**.',
+                      toolCalls: [],
+                    },
+                  ],
+                },
+              },
+              {
+                id: 'demo-ungrouped-read',
+                name: 'read_file',
+                args: { path: 'README.md' },
+                status: 'done',
+                result: '# Copse\n',
+              },
+            ],
+            createdAt: FIXED_TIME,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: FIXED_TIME,
+        updatedAt: FIXED_TIME,
+      },
+    ],
+  },
+  {
     id: 'semantic-search-markdown',
     label: 'Semantic search subagent markdown',
     project: project('demo-semantic-search-project'),

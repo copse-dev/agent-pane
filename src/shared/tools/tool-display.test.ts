@@ -164,6 +164,29 @@ describe('tool-display', () => {
     assert.equal(items[0].toolCalls.length, 2)
   })
 
+  it('keeps a subagent-backed explore as its own card next to reading tools', () => {
+    // A live explore carries a streaming timeline; grouping it with read_file
+    // would replace that card with a plain group row (#728).
+    const explore: ToolCall = {
+      ...tc('1', 'explore', 'running'),
+      result: null,
+      subagent: {
+        id: 'sub-1',
+        kind: 'explore',
+        status: 'running',
+        prompt: 'Find README',
+        summary: null,
+        messages: [{ id: 'm1', role: 'assistant', content: 'Looking…', toolCalls: [] }],
+      },
+    }
+    const items = buildToolCallDisplayItems([explore, tc('2', 'read_file')])
+    assert.equal(items.length, 2)
+    assert.equal(items[0]?.type, 'individual')
+    assert.equal(items[0].toolCall.id, '1')
+    assert.equal(items[1]?.type, 'individual')
+    assert.equal(items[1].toolCall.id, '2')
+  })
+
   it('groups multiple successful reading tools', () => {
     const items = buildToolCallDisplayItems([
       tc('1', 'read_file'),

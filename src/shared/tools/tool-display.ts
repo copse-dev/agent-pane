@@ -268,6 +268,10 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
 
   const groupMembers = new Map<string, ToolCall[]>()
   for (const tc of toolCalls) {
+    // Subagent-backed calls keep a streaming timeline card. Absorbing them into
+    // a group would replace that card with a plain group row and drop the
+    // live transcript on every regroup (#728).
+    if (tc.subagent) continue
     const groupKey = getToolGroupKey(tc.name, tc.kind)
     if (!groupKey) continue
     const key = bucketKey(groupKey, tc.status === 'error')
@@ -281,7 +285,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
 
   for (const tc of toolCalls) {
     const groupKey = getToolGroupKey(tc.name, tc.kind)
-    if (!groupKey) {
+    if (tc.subagent || !groupKey) {
       result.push({ type: 'individual', toolCall: tc, label: getToolCallLabel(tc) })
       continue
     }
