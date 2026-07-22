@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { cleanPrefix, registryHost, runConfig } from './run-terminal-bench-fleet.mts'
 
 const workerImage = 'rg.fr-par.scw.cloud/example/terminal-bench-worker:abc123'
+
+test('Scaleway workflow defaults to a Serverless model ID', () => {
+  const workflow = readFileSync('.github/workflows/terminal-bench-scaleway.yml', 'utf8')
+  assert.match(workflow, /default: qwen3\.6-35b-a3b/)
+  assert.doesNotMatch(workflow, /qwen\/qwen3\.6-35b-a3b:(?:fp8|bf16)/)
+})
 
 test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })

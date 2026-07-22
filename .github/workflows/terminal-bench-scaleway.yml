@@ -4,13 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       model:
-        description: Scaleway Qwen model variant
+        description: Scaleway Generative APIs Serverless model ID
         required: true
-        default: qwen/qwen3.6-35b-a3b:fp8
-        type: choice
-        options:
-          - qwen/qwen3.6-35b-a3b:fp8
-          - qwen/qwen3.6-35b-a3b:bf16
+        default: qwen3.6-35b-a3b
+        type: string
       max_tasks:
         description: Total Terminal-Bench tasks across the fleet (1-89)
         required: true
@@ -125,6 +122,10 @@ jobs:
           if [ "$status" != 200 ] || ! jq --exit-status --arg model "$MODEL" \
             '.data[] | select(.id == $model)' "$response" >/dev/null; then
             echo "::error::Model $MODEL is not available from $API_URL (HTTP $status)"
+            if [ "$status" = 200 ]; then
+              available="$(jq --raw-output '[.data[].id] | sort | join(", ")' "$response")"
+              echo "::notice::Available Serverless model IDs: $available"
+            fi
             exit 1
           fi
           aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$ENDPOINT"
