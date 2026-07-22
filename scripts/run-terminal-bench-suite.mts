@@ -7,6 +7,7 @@ import {
   terminalBenchCompletedTaskNames,
   terminalBenchDiskSpaceError,
   terminalBenchPrefetchMinimumFreeDiskBytes,
+  terminalBenchRequestedTaskNames,
   terminalBenchShard,
 } from './lib/terminal-bench.mts'
 
@@ -79,6 +80,9 @@ const resume = rawArgs.includes('--resume')
 const pruneImages = rawArgs.includes('--prune-images')
 const prefetchImages = rawArgs.includes('--prefetch-images')
 const maxTasks = parseMaxTasks(rawArgs)
+const requestedTaskNames = terminalBenchRequestedTaskNames(
+  rawArgs.find((arg) => arg.startsWith('--task-names='))?.slice('--task-names='.length),
+)
 const shardCount = parsePositiveFlag(rawArgs, '--shard-count', 1)
 const shardIndex = parseNonNegativeFlag(rawArgs, '--shard-index', 0)
 const harborArgs = rawArgs.filter(
@@ -87,6 +91,7 @@ const harborArgs = rawArgs.filter(
     arg !== '--prune-images' &&
     arg !== '--prefetch-images' &&
     !arg.startsWith('--max-tasks=') &&
+    !arg.startsWith('--task-names=') &&
     !arg.startsWith('--shard-count=') &&
     !arg.startsWith('--shard-index='),
 )
@@ -94,7 +99,8 @@ const beforeSuite = await storedResults()
 const completed = new Set(
   resume ? terminalBenchCompletedTaskNames(beforeSuite.map((r) => r.value)) : [],
 )
-const eligible = TERMINAL_BENCH_TASK_NAMES.filter((taskName) => !completed.has(taskName))
+const selected = requestedTaskNames ?? TERMINAL_BENCH_TASK_NAMES
+const eligible = selected.filter((taskName) => !completed.has(taskName))
 const pending = terminalBenchShard(eligible, maxTasks, shardCount, shardIndex)
 
 console.log(

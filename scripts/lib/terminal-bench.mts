@@ -1,4 +1,5 @@
 import { delimiter, resolve } from 'node:path'
+import { TERMINAL_BENCH_TASK_NAMES } from './terminal-bench-tasks.mts'
 
 export const HARBOR_VERSION = '0.16.1'
 export const TERMINAL_BENCH_DATASET = 'terminal-bench@2.0'
@@ -49,6 +50,23 @@ export function terminalBenchShard<T>(
   }
   const selected = maxTasks === undefined ? values : values.slice(0, maxTasks)
   return selected.filter((_, index) => index % shardCount === shardIndex)
+}
+
+export function terminalBenchRequestedTaskNames(raw: string | undefined): string[] | undefined {
+  if (raw === undefined || !raw.trim()) return undefined
+  const names = raw.split(',').map((name) => name.trim())
+  if (names.some((name) => !name)) {
+    throw new Error('task names must be a comma-separated list without empty entries')
+  }
+  if (new Set(names).size !== names.length) {
+    throw new Error('task names must not contain duplicates')
+  }
+  const known = new Set<string>(TERMINAL_BENCH_TASK_NAMES)
+  const unknown = names.filter((name) => !known.has(name))
+  if (unknown.length > 0) {
+    throw new Error(`unknown Terminal-Bench task names: ${unknown.join(', ')}`)
+  }
+  return names
 }
 
 function terminalBenchFreeDiskBytes(
