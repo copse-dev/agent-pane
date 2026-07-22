@@ -2633,6 +2633,95 @@ export function seedHeldQueueFixture(workspaceRoot: string): void {
 }
 
 /**
+ * Sidebar threads with open + merged GitHub PRs for the thread PR-status chip
+ * eval. Relies on `COPSE_PANEL_MOCK_GH=1` fixtures (#42 open, #99 merged).
+ */
+export function seedThreadPrStatusFixture(workspaceRoot: string): {
+  openThreadTitle: string
+  mergedThreadTitle: string
+  plainThreadTitle: string
+} {
+  const projectId = 'e2e-thread-pr-status-project'
+  const openThreadTitle = 'Open PR thread'
+  const mergedThreadTitle = 'Merged PR thread'
+  const plainThreadTitle = 'No PR thread'
+  const openPrUrl = 'https://github.com/copse-dev/copse-panel/pull/42'
+  const mergedPrUrl = 'https://github.com/copse-dev/copse-panel/pull/99'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: 'e2e-pr-open-thread',
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-pr-open-thread',
+        title: openThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-open-pr',
+            role: 'assistant',
+            content: `Opened [PR #42](${openPrUrl}) for review.`,
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'e2e-open-agent',
+          prUrl: openPrUrl,
+          repo: 'copse-dev/copse-panel',
+          createdAt: now,
+        },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'e2e-pr-merged-thread',
+        title: mergedThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-assistant-merged-pr',
+            role: 'assistant',
+            content: `Landed [PR #99](${mergedPrUrl}).`,
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        remoteAgentLink: {
+          provider: 'cursor',
+          agentId: 'e2e-merged-agent',
+          prUrl: mergedPrUrl,
+          repo: 'copse-dev/copse-panel',
+          createdAt: now - 1000,
+        },
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
+      },
+      {
+        id: 'e2e-pr-plain-thread',
+        title: plainThreadTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-plain',
+            role: 'user',
+            content: 'No pull request here.',
+            createdAt: now - 2000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 2000,
+        updatedAt: now - 2000,
+      },
+    ],
+  })
+  return { openThreadTitle, mergedThreadTitle, plainThreadTitle }
+}
+
+/**
  * Two idle threads for the running-status sidebar eval. A live mock turn flips
  * the selected thread to `running` — persisted `running` is cleared on load by
  * `resumePendingQueues`.

@@ -120,6 +120,8 @@ interface RestPull {
   state?: string
   body?: string | null
   draft?: boolean
+  /** True once the PR has been merged (REST reports these as state=closed). */
+  merged?: boolean
   node_id?: string
   additions?: number
   deletions?: number
@@ -132,6 +134,12 @@ interface RestPull {
   user?: { login?: string }
   head?: { ref?: string; sha?: string }
   base?: { ref?: string; sha?: string }
+}
+
+/** REST uses open/closed; promote closed+merged to MERGED so callers match gh CLI. */
+function restPullState(pull: RestPull): string {
+  if (pull.merged) return 'MERGED'
+  return (pull.state ?? 'open').toUpperCase()
 }
 
 function mapMergeable(pull: RestPull): string | undefined {
@@ -161,7 +169,7 @@ function pullToSummary(ref: PrRef, pull: RestPull): GhPrSummary | null {
     number: ref.number,
     title: pull.title?.trim() || `PR #${String(ref.number)}`,
     url: pull.html_url,
-    state: (pull.state ?? 'open').toUpperCase(),
+    state: restPullState(pull),
   }
   if (pull.head?.ref) summary.headRefName = pull.head.ref
   if (pull.user?.login) summary.authorLogin = pull.user.login
@@ -432,7 +440,7 @@ export const githubApiBackend: GitHubBackend = {
       number: ref.number,
       title: pull.title?.trim() || `PR #${String(ref.number)}`,
       url: pull.html_url,
-      state: (pull.state ?? 'open').toUpperCase(),
+      state: restPullState(pull),
       body: pull.body?.trim() ?? '',
       files,
     }
