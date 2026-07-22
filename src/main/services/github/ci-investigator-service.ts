@@ -18,10 +18,11 @@ import { runWithAgentRunReadFileLimits } from '../agent-run-read-limits.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { subagentHookCallbacks } from '../hooks/subagent.ts'
 
-// Experimental, opt-in feature flag for the CI investigator subagent (off by
-// default). Read in registry-bootstrap (tool registration) and follow-up-service
-// (the "Investigate CI failure" suggestion) so both surfaces stay gated together.
-export const CI_INVESTIGATOR_ENABLED_SETTING = 'ciInvestigatorEnabled'
+// The CI investigator subagent is experimental and off by default. It is gated
+// by the `copse.ci-investigator` first-party pack (Settings > Packs): the pack
+// enablement drives both tool registration (registry-bootstrap's
+// `syncCiInvestigatorTools`) and the "Investigate CI failure" follow-up pointer
+// (follow-up-service), so both surfaces stay gated together.
 
 export interface RunCiInvestigatorSubagentOptions {
   parentToolCallId: string
