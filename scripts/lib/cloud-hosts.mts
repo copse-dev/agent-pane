@@ -739,6 +739,11 @@ export function isScalewayQuotaError(err: unknown): boolean {
   return /quota exceeded/i.test(message)
 }
 
+export function isScalewayZoneUnavailableError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  return /server type .* is not available on this zone/i.test(message)
+}
+
 export function scalewayTags(name: string, tags: FleetTags): string[] {
   return [tags.kind, `${tags.kind}-${name}`, tags.managedBy]
 }
