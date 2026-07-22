@@ -960,12 +960,18 @@ export function sshTarget(config: SshConfig, host: CloudHost): string {
 export function sshCommonArgs(config: SshConfig, connectTimeoutSeconds: number): string[] {
   // Burst hosts recycle public IPs; ignore known_hosts so a replaced VM does not
   // get stuck on "REMOTE HOST IDENTIFICATION HAS CHANGED".
+  // ServerAlive* keeps long `docker logs --follow` / benchmark SSH sessions from
+  // being dropped by idle NAT/firewall timeouts during quiet model turns.
   return [
     ...(config.keyPath ? ['-i', config.keyPath, '-o', 'IdentitiesOnly=yes'] : []),
     '-o',
     'BatchMode=yes',
     '-o',
     `ConnectTimeout=${String(connectTimeoutSeconds)}`,
+    '-o',
+    'ServerAliveInterval=30',
+    '-o',
+    'ServerAliveCountMax=4',
     '-o',
     'StrictHostKeyChecking=no',
     '-o',
@@ -975,6 +981,16 @@ export function sshCommonArgs(config: SshConfig, connectTimeoutSeconds: number):
     '-o',
     'LogLevel=ERROR',
   ]
+}
+
+/** True when an ssh child died from a transport drop rather than a remote command. */
+export function isTransientSshSessionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return (
+    /\bfailed with exit code 255\b/.test(message) ||
+    /broken pipe/i.test(message) ||
+    /connection reset/i.test(message)
+  )
 }
 
 function sshBaseArgs(config: SshConfig, host: CloudHost): string[] {

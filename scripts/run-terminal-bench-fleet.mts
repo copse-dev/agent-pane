@@ -23,7 +23,10 @@ import {
   requireTool,
   SCALEWAY_ZONES,
   type ScalewayLaunchSpec,
+  hostPrefix,
+  isTransientSshSessionError,
   shellQuote,
+  sleepAsync,
   type SshConfig,
   sshRunAsync,
   terminateScalewayServersBestEffort,
@@ -38,6 +41,9 @@ const DEFAULT_VOLUME_SIZE_GB = 100
 const DEFAULT_TTL_MINUTES = 360
 const CLEANUP_ATTEMPTS = 3
 const CLEANUP_RETRY_DELAY_MS = 15_000
+/** Reconnects after SSH transport drops during long quiet Harbor turns. */
+const WORKER_FOLLOW_ATTEMPTS = 6
+const WORKER_FOLLOW_RETRY_SECONDS = 2
 const FLEET_TAGS: FleetTags = {
   kind: 'copse-terminal-bench',
   managedBy: 'copse-terminal-bench-fleet',
@@ -257,6 +263,56 @@ export function registryHost(workerImage: string): string {
   return host
 }
 
+/** Remote script that streams logs and returns the worker container exit code. */
+export function workerFollowRemoteScript(container: string): string {
+  const name = shellQuote(container)
+  return [
+    'set -uo pipefail',
+    // Re-attach after an SSH drop: follow only while still running, then wait.
+    `if sudo docker inspect -f '{{.State.Running}}' ${name} 2>/dev/null | grep -qx true; then sudo docker logs --follow ${name} || true; fi`,
+    `status=$(sudo docker wait ${name})`,
+    `sudo docker rm ${name} >/dev/null || true`,
+    'exit "$status"',
+  ].join('; ')
+}
+
+async function containerStillPresent(
+  config: RunConfig,
+  host: CloudHost,
+  container: string,
+): Promise<boolean> {
+  try {
+    await sshRunAsync(config, host, `sudo docker inspect ${shellQuote(container)} >/dev/null`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function followWorkerContainer(
+  config: RunConfig,
+  host: CloudHost,
+  container: string,
+): Promise<void> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= WORKER_FOLLOW_ATTEMPTS; attempt += 1) {
+    try {
+      await sshRunAsync(config, host, workerFollowRemoteScript(container))
+      return
+    } catch (error) {
+      lastError = error
+      if (!isTransientSshSessionError(error) || attempt === WORKER_FOLLOW_ATTEMPTS) throw error
+      if (!(await containerStillPresent(config, host, container))) throw error
+      console.log(
+        `${hostPrefix(host)}==> SSH session dropped; reconnecting to worker logs ` +
+          `(attempt ${String(attempt + 1)}/${String(WORKER_FOLLOW_ATTEMPTS)})`,
+      )
+      await sleepAsync(WORKER_FOLLOW_RETRY_SECONDS)
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
 async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number): Promise<void> {
   await awaitHostReady(config, host)
   const registry = registryHost(config.workerImage)
@@ -284,23 +340,26 @@ async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number)
     workerEnvironment(config, shardIndex),
   )
   const container = `copse-terminal-shard-${String(shardIndex)}`
-  await sshRunAsync(
-    config,
-    host,
-    [
-      'set -uo pipefail',
-      `trap 'sudo rm -f ${shellQuote(envPath)}' EXIT`,
-      `sudo docker rm -f ${container} >/dev/null 2>&1 || true`,
-      `sudo docker run --detach --name ${container} --env-file ${envPath} ` +
-        '--volume /var/run/docker.sock:/var/run/docker.sock ' +
-        '--volume /opt/copse/bench-results:/opt/copse/bench-results ' +
-        `${shellQuote(config.workerImage)} >/dev/null`,
-      `sudo docker logs --follow ${container} || true`,
-      `status=$(sudo docker wait ${container})`,
-      `sudo docker rm ${container} >/dev/null || true`,
-      'exit "$status"',
-    ].join('; '),
-  )
+  try {
+    await sshRunAsync(
+      config,
+      host,
+      [
+        `sudo docker rm -f ${container} >/dev/null 2>&1 || true`,
+        `sudo docker run --detach --name ${container} --env-file ${shellQuote(envPath)} ` +
+          '--volume /var/run/docker.sock:/var/run/docker.sock ' +
+          '--volume /opt/copse/bench-results:/opt/copse/bench-results ' +
+          `${shellQuote(config.workerImage)} >/dev/null`,
+      ].join('; '),
+    )
+    await followWorkerContainer(config, host, container)
+  } finally {
+    try {
+      await sshRunAsync(config, host, `sudo rm -f ${shellQuote(envPath)}`)
+    } catch {
+      // Host may already be unreachable during teardown; env is on a disposable VM.
+    }
+  }
 }
 
 function cleanupBatches(batches: readonly LaunchBatch[]): void {
