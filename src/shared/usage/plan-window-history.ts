@@ -305,7 +305,14 @@ export function appendPlanWindowSamples(
   const samples = [...state.samples]
   let completed = [...state.completed]
   for (const sample of incoming) {
-    const priorIndex = samples.findLastIndex((s) => s.provider === sample.provider)
+    // Reverse scan (not Array#findLastIndex) — tsconfig lib is ES2022.
+    let priorIndex = -1
+    for (let i = samples.length - 1; i >= 0; i--) {
+      if (samples[i]?.provider === sample.provider) {
+        priorIndex = i
+        break
+      }
+    }
     const priorForProvider = priorIndex >= 0 ? samples[priorIndex] : undefined
     const isReset = sampleShowsReset(priorForProvider, sample)
     if (

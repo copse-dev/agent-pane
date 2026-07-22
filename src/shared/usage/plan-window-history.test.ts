@@ -166,6 +166,54 @@ describe('appendPlanWindowSamples', () => {
   })
 })
 
+
+describe('appendPlanWindowSamples prior-provider scan', () => {
+  it('folds into the latest matching provider when older providers are present', () => {
+    const t0 = 2_000_000
+    const codex: PlanWindowHistorySample = {
+      ...sample(t0, [
+        {
+          id: 'seven_day',
+          label: 'Weekly',
+          usedPercent: 10,
+          resetsAt: '2026-07-20T00:00:00Z',
+          usedDollars: 10,
+          limitDollars: 100,
+        },
+      ]),
+      provider: 'codex',
+    }
+    const claude = sample(t0 + 1_000, [
+      {
+        id: 'seven_day',
+        label: 'Weekly',
+        usedPercent: 40,
+        resetsAt: '2026-07-20T00:00:00Z',
+        usedDollars: 40,
+        limitDollars: 100,
+      },
+    ])
+    const claudeSoon = sample(t0 + 30_000, [
+      {
+        id: 'seven_day',
+        label: 'Weekly',
+        usedPercent: 55,
+        resetsAt: '2026-07-20T00:00:00Z',
+        usedDollars: 55,
+        limitDollars: 100,
+      },
+    ])
+    let state = appendPlanWindowSamples({ samples: [], completed: [] }, [codex, claude], t0 + 1_000)
+    assert.equal(state.samples.length, 2)
+    state = appendPlanWindowSamples(state, [claudeSoon], t0 + 30_000)
+    assert.equal(state.samples.length, 2, 'codex retained; claude gap-folded')
+    assert.equal(state.samples[0]?.provider, 'codex')
+    assert.equal(state.samples[0]?.windows[0]?.usedDollars, 10)
+    assert.equal(state.samples[1]?.provider, 'claude')
+    assert.equal(state.samples[1]?.windows[0]?.usedDollars, 55)
+  })
+})
+
 describe('completedWindowApiDollars / windowExhaustionRates', () => {
   it('prefers usedDollars then percent×limit', () => {
     assert.equal(
