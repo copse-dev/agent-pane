@@ -1,6 +1,6 @@
 import { el, qs } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { uiActions, uiButton } from '../ui/index.ts'
+import { uiActions } from '../ui/index.ts'
 import { showToast } from './toast.ts'
 
 interface UpdatePromptRequest {
@@ -53,11 +53,16 @@ export function mountUpdatePromptDialog(api: ApiClient): void {
     buttonsEl.replaceChildren(
       ...active.buttons.map((label, index) => {
         const isPrimary = index === defaultIndex
-        const button = uiButton({
+        const button = el(
+          'button',
+          {
+            type: 'button',
+            class: isPrimary
+              ? 'ui-btn ui-btn-primary update-prompt-primary'
+              : 'ui-btn ui-btn-secondary update-prompt-secondary',
+          },
           label,
-          variant: isPrimary ? 'primary' : 'secondary',
-          className: isPrimary ? 'update-prompt-primary' : 'update-prompt-secondary',
-        })
+        )
         button.addEventListener('click', () => {
           finish(index)
         })

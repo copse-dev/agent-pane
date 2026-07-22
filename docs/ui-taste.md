@@ -27,13 +27,13 @@ can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }
 ## UI kit primitives (buttons, fields, action rows)
 
 When building dialogs, settings forms, or labelled controls, prefer the shared kit in
-[`src/renderer/ui/`](../src/renderer/ui/) (`uiButton`, `uiActions`, `uiField`) and the styles in
-[`ui.css`](../src/renderer/styles/global/ui.css). Do **not** invent another `*-btn-primary` /
-screen-local field stack. Only add a new kit primitive once **two product call sites** need it
-(tests/docs do not count). Prefer extracting repeated **panel shells** (tabs+content,
-list+viewer chrome) over inventing more atom variants — see the “panel structure” section in
-[`docs/plans/ui-kit.md`](plans/ui-kit.md). Design rationale and non-goals (no Shadow DOM yet)
-live in that plan.
+[`src/renderer/ui/`](../src/renderer/ui/) (`uiActions`, `uiField`) and the styles in
+[`ui.css`](../src/renderer/styles/global/ui.css) (including `.ui-btn*`). Buttons are **CSS
+classes on native `<button>`s**, not a factory — do not invent another `*-btn-primary` stack.
+Only add a new kit primitive once **two product call sites** need it and it does more than
+class-name sugar (tests/docs do not count). Prefer extracting repeated **panel shells**
+(tabs+content, list+viewer chrome) over inventing more atom variants — see
+[`docs/plans/ui-kit.md`](plans/ui-kit.md).
 
 ## Design tokens, not magic numbers
 

@@ -1,5 +1,5 @@
 import { el, qs } from '../dom/helpers.ts'
-import { uiActions, uiButton } from '../ui/index.ts'
+import { uiActions } from '../ui/index.ts'
 
 export interface ConfirmDialogRequest {
   message: string
@@ -56,16 +56,22 @@ export function mountConfirmDialog(): void {
 
     const cancelLabel = active.cancelLabel ?? 'Cancel'
     const confirmLabel = active.confirmLabel ?? 'OK'
-    const cancelBtn = uiButton({
-      label: cancelLabel,
-      variant: 'secondary',
-      className: 'confirm-dialog-cancel',
-    })
-    const confirmBtn = uiButton({
-      label: confirmLabel,
-      variant: active.danger ? 'danger' : 'primary',
-      className: 'confirm-dialog-confirm',
-    })
+    // Kit value for buttons is the shared `.ui-btn*` CSS, not a factory wrapper.
+    const cancelBtn = el(
+      'button',
+      { type: 'button', class: 'ui-btn ui-btn-secondary confirm-dialog-cancel' },
+      cancelLabel,
+    )
+    const confirmBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: active.danger
+          ? 'ui-btn ui-btn-danger confirm-dialog-confirm'
+          : 'ui-btn ui-btn-primary confirm-dialog-confirm',
+      },
+      confirmLabel,
+    )
     cancelBtn.addEventListener('click', () => {
       finish(false)
     })

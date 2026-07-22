@@ -40,10 +40,10 @@ and the same `mountX(listRoot, viewerRoot, store, api)` signature.
 
 Under `src/renderer/ui/`:
 
-1. **`uiButton`** — native `<button class="ui-btn ui-btn-{variant}">` factory (not a custom
-   element; keeps submit/focus/form behaviour honest).
-2. **`<copse-ui-actions>` + `uiActions`** — light-DOM action row host.
-3. **`<copse-ui-field>` + `uiField`** — light-DOM labelled field + optional hint.
+1. **`.ui-btn*` CSS** — shared button look. No factory: `el('button', { class: 'ui-btn ui-btn-primary' }, …)`
+   is enough until a button needs real behaviour (icons, loading, busy).
+2. **`<copse-ui-actions>` + `uiActions`** — light-DOM action row host (align + gap convention).
+3. **`<copse-ui-field>` + `uiField`** — light-DOM labelled field + optional hint (assembles structure).
 
 CSS lives in [`src/renderer/styles/global/ui.css`](../../src/renderer/styles/global/ui.css) and is
 imported from `global.css`. Elements register via `registerUiKit()` (idempotent; also runs on
@@ -51,8 +51,8 @@ module import).
 
 ### Initial call sites
 
-- `confirm-dialog.ts` + `update-prompt-dialog.ts` — buttons + actions (**2 sites**)
-- `setup/model-routing-section.ts` + `setup/gh-cli-section.ts` — fields (**2 sites**)
+- `confirm-dialog.ts` + `update-prompt-dialog.ts` — `.ui-btn*` + `uiActions` (**2 sites**)
+- `setup/model-routing-section.ts` + `setup/gh-cli-section.ts` — `uiField` (**2 sites**)
 
 Legacy screen classes (e.g. `.confirm-dialog-confirm`) stay as **additional** selectors so existing
 tests keep working while styles consolidate onto `.ui-btn*`.
@@ -122,8 +122,8 @@ navigation, orphans, attention, pagination. Treat as product chrome, not a pane 
 1. **Two-call-site rule.** Do not promote a primitive into the kit until at least two real
    product call sites use it (tests/docs do not count). Prefer migrating a second site over
    inventing an unused abstraction.
-2. Prefer a factory that returns a native element (`HTMLButtonElement`, etc.) when the browser
-   already has the right primitive.
+2. Prefer **CSS + `el()`** when the primitive is only class-name sugar. Add a factory/CE only when
+   it assembles structure or behaviour `el()` would otherwise repeat.
 3. Use a light-DOM custom element only when a **tag name** helps enforce structure or shared
    behaviour across call sites.
 4. Style with `.ui-*` classes and design tokens — never hardcode spacing/colour.
@@ -134,8 +134,9 @@ navigation, orphans, attention, pagination. Treat as product chrome, not a pane 
 
 1. **Kit yes, Shadow DOM no (2026-07-22).** Start with factories + light-DOM hosts under
    `src/renderer/ui/`, extending the existing `ui-*` naming.
-2. **Buttons stay native.** `uiButton` returns `<button>`, never a custom element wrapper, so form
-   submit and focus behaviour stay standard.
+2. **Buttons are CSS, not a component (2026-07-22).** A `uiButton` factory was only class-name
+   sugar over `el('button', …)`. Dropped; keep `.ui-btn*` styles. Reintroduce a helper only if
+   buttons gain real shared behaviour (icons, loading).
 3. **Structural hosts may be custom elements.** `<copse-ui-actions>` and `<copse-ui-field>` are
    light-DOM only; they add kit classes and (for fields) assemble label/control/hint.
 4. **Two call sites minimum (2026-07-22).** A kit primitive ships only once two product call
