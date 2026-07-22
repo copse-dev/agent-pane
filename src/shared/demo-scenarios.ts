@@ -316,7 +316,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     id: 'settings-footer',
-    label: 'Settings sticky footer geometry',
+    label: 'Settings scroll + sticky footer geometry',
     project: project('demo-settings-footer-project'),
     settings: {
       onboardingCompleted: true,

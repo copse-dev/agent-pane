@@ -139,13 +139,23 @@ dialog.settings-overlay::backdrop {
 
 .settings-content {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   /* No bottom padding: a sticky footer cannot extend past its containing
      block's content box, so bottom padding here would leave a gap below the
      sticky .settings-buttons bar that scrolled content shows through. The
-     footer carries its own bottom padding instead. */
+     footer carries its own bottom padding instead.
+     Scroll surface is full width of the pane (beside the nav); the form
+     column self-limits via --settings-content-max, matching chat's
+     .messages-list / .msg split. */
   padding: var(--spacing-xl) var(--spacing-xl) 0;
-  max-width: 720px;
+}
+.settings-section,
+.settings-search-results,
+.settings-search-empty,
+.settings-buttons {
+  width: min(100%, var(--settings-content-max));
+  margin-inline: auto;
 }
 .settings-section {
   display: none;
