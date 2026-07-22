@@ -15,6 +15,7 @@ import {
   terminalBenchMinimumFreeDiskBytes,
   terminalBenchModel,
   terminalBenchPrefetchMinimumFreeDiskBytes,
+  terminalBenchRequestedTaskNames,
   terminalBenchShard,
 } from './terminal-bench.mts'
 
@@ -110,6 +111,20 @@ describe('terminal benchmark launcher', () => {
     assert.deepEqual(terminalBenchShard(values, 5, 3, 1), ['b', 'e'])
     assert.deepEqual(terminalBenchShard(values, 5, 3, 2), ['c'])
     assert.throws(() => terminalBenchShard(values, 5, 3, 3), /shard index/)
+  })
+
+  it('validates exact targeted task lists without reordering them', () => {
+    assert.deepEqual(
+      terminalBenchRequestedTaskNames('circuit-fibsqrt, break-filter-js-from-html'),
+      ['circuit-fibsqrt', 'break-filter-js-from-html'],
+    )
+    assert.equal(terminalBenchRequestedTaskNames(''), undefined)
+    assert.throws(
+      () => terminalBenchRequestedTaskNames('circuit-fibsqrt,circuit-fibsqrt'),
+      /duplicates/,
+    )
+    assert.throws(() => terminalBenchRequestedTaskNames('not-a-task'), /unknown/)
+    assert.throws(() => terminalBenchRequestedTaskNames('circuit-fibsqrt,'), /empty/)
   })
 
   it('guards enough host disk for large task images', () => {

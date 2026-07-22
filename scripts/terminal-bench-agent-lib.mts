@@ -16,6 +16,9 @@ import { TerminalBenchTranscript } from './lib/terminal-bench-transcript.mts'
 const TRACE_EVENT_BATCH_SIZE = 128
 export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = 2_048
 export const DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS = 4_096
+export const DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC = 600
+const TERMINAL_COMMAND_TIMEOUT_DESCRIPTION =
+  'Optional timeout for a command that is expected to run longer than the default, such as a final build, training run, or verifier. Keep the default for inspection and broad searches.'
 export const TERMINAL_REASONING_RUNAWAY_RECOVERY_NUDGE =
   'You spent the entire response planning without taking action, and it was cut off. ' +
   'Stop planning and use run_shell now to make concrete progress: produce or update the requested deliverable, then validate it. ' +
@@ -35,17 +38,34 @@ interface StartMessage {
 
 type InputMessage = StartMessage | TerminalToolResult
 
-const RUN_SHELL_TOOL: LLMTool = {
-  name: 'run_shell',
-  description:
-    'Run a shell command inside the persistent benchmark task environment and return its exit code, stdout, and stderr.',
-  parameters: {
-    type: 'object',
-    properties: {
-      command: { type: 'string', description: 'Shell command to execute' },
+export function terminalCommandTimeoutParameter(maxCommandTimeoutSec: number): {
+  type: 'integer'
+  minimum: number
+  maximum: number
+  description: string
+} {
+  return {
+    type: 'integer',
+    minimum: 1,
+    maximum: maxCommandTimeoutSec,
+    description: TERMINAL_COMMAND_TIMEOUT_DESCRIPTION,
+  }
+}
+
+function runShellTool(maxCommandTimeoutSec: number): LLMTool {
+  return {
+    name: 'run_shell',
+    description:
+      'Run a shell command inside the persistent benchmark task environment and return its exit code, stdout, and stderr.',
+    parameters: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'Shell command to execute' },
+        timeout_sec: terminalCommandTimeoutParameter(maxCommandTimeoutSec),
+      },
+      required: ['command'],
     },
-    required: ['command'],
-  },
+  }
 }
 
 export const TERMINAL_BENCH_SYSTEM_PROMPT = `You are an autonomous terminal agent working inside a persistent task environment.
@@ -94,6 +114,10 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const reasoningRunawayRecoveryOutputTokens = envPositiveInt(
     'COPSE_TERMINAL_REASONING_RECOVERY_MAX_STREAM_OUTPUT_TOKENS',
     DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS,
+  )
+  const maxCommandTimeoutSec = envPositiveInt(
+    'COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC',
+    DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC,
   )
   if (typeof parsed.threadDir !== 'string' || !parsed.threadDir.trim()) {
     throw new Error('Terminal agent bridge expected a thread transcript directory.')
@@ -145,7 +169,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
     await runAgentLoop({
       provider,
       messages,
-      tools: [RUN_SHELL_TOOL],
+      tools: [runShellTool(maxCommandTimeoutSec)],
       maxSteps,
       maxLlmCalls,
       maxContextTokens,
@@ -187,8 +211,28 @@ export async function runTerminalBenchAgent(): Promise<void> {
         if (typeof command !== 'string' || !command.trim()) {
           throw new Error('run_shell requires a non-empty command.')
         }
+        const timeoutSec =
+          typeof args === 'object' && args !== null && 'timeout_sec' in args
+            ? args.timeout_sec
+            : undefined
+        if (
+          timeoutSec !== undefined &&
+          (typeof timeoutSec !== 'number' ||
+            !Number.isInteger(timeoutSec) ||
+            timeoutSec <= 0 ||
+            timeoutSec > maxCommandTimeoutSec)
+        ) {
+          throw new Error(
+            `run_shell timeout_sec must be an integer from 1 through ${String(maxCommandTimeoutSec)}.`,
+          )
+        }
         flushTraceEvents()
-        writeProtocol({ type: 'tool_request', id, command })
+        writeProtocol({
+          type: 'tool_request',
+          id,
+          command,
+          ...(timeoutSec !== undefined ? { timeoutSec } : {}),
+        })
         const next = await input.next()
         if (next.done) throw new Error(`Terminal bridge closed while tool '${id}' was running.`)
         const response: unknown = JSON.parse(next.value)

@@ -98,6 +98,13 @@ ten hosts, each host then processes its deterministic shard sequentially. `insta
 capacity is available. Use the Serverless model ID from Scaleway's `/models` catalogue (for
 example `qwen3.6-35b-a3b`), not an LM Studio or dedicated-deployment identifier.
 
+For a targeted experiment, set `task_names` to a comma-separated list of exact registry names.
+Selection preserves that order, applies `max_tasks`, then shards the cohort; the fleet also limits
+its host count to the number of selected tasks. `max_stream_output_tokens` changes only the
+benchmark response cap (baseline `2048`). `max_command_timeout_sec` caps the optional timeout an
+agent may request for an expected long build, training run, or verifier; ordinary commands keep
+the 120-second default. Both values are retained in each trial capsule.
+
 ### Pre-baked images and repeat-run speed
 
 The workflow tags the worker image with the source commit and reuses it when it already exists.
@@ -204,7 +211,8 @@ most one future image and only starts a pull with at least 30 GiB free. Override
 with `COPSE_TERMINAL_PREFETCH_MIN_FREE_DISK_GIB`; pair prefetching with `--prune-images` to keep
 Docker growth bounded.
 
-Use `--max-tasks=N` for a bounded batch. The suite stops on a launcher failure or an
+Use `--max-tasks=N` for a bounded batch, and `--task-names=a,b` to select exact registry tasks in
+the supplied order. The suite stops on a launcher failure or an
 infrastructure-invalid result; rerunning the same resumable command starts at that task.
 
 Inspect current coverage and lifecycle telemetry at any time without Docker:
@@ -299,6 +307,8 @@ Optional tuning variables:
   single nudged recovery stream)
 - `COPSE_TERMINAL_COMMAND_TIMEOUT_SEC` (default `120`; a timeout is returned to the agent as
   exit code `124` so it can recover, including Harbor's wrapped Docker timeout)
+- `COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC` (default `600`; upper bound for an optional
+  model-requested timeout on an expected long build, training run, or verifier)
 - `COPSE_TERMINAL_WORKSPACE_CAP_MB` (default `500`; retain a complete compressed final workspace
   when it fits, while always attempting to retain the file manifest; `0` disables capture)
 - `COPSE_BENCH_AGENT_VERSION` (label recorded in results; default `local`)

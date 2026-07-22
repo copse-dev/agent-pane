@@ -15,6 +15,10 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.match(workflow, /default: qwen3\.6-35b-a3b/)
   assert.doesNotMatch(workflow, /qwen\/qwen3\.6-35b-a3b:(?:fp8|bf16)/)
   assert.match(workflow, /name: Verify fleet teardown\n\s+if: always\(\)/)
+  assert.match(workflow, /task_names:/)
+  assert.match(workflow, /default: '2048'/)
+  assert.match(workflow, /default: '600'/)
+  assert.match(workflow, /--task-names "\$TASK_NAMES"/)
 })
 
 test('Scaleway workflow probes Object Storage with PutObject, not HeadBucket', () => {
@@ -40,6 +44,25 @@ test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)
   assert.equal(config.maxTasks, 3)
+})
+
+test('fleet accepts only exact registry task names and limits workers to that cohort', () => {
+  const config = runConfig({
+    instances: '10',
+    'max-tasks': '10',
+    'task-names': 'circuit-fibsqrt,break-filter-js-from-html',
+    'worker-image': workerImage,
+  })
+  assert.equal(config.instanceCount, 2)
+  assert.deepEqual(config.taskNames, ['circuit-fibsqrt', 'break-filter-js-from-html'])
+  assert.throws(
+    () =>
+      runConfig({
+        'task-names': 'not-a-terminal-bench-task',
+        'worker-image': workerImage,
+      }),
+    /unknown Terminal-Bench task names/,
+  )
 })
 
 test('fleet falls back across Scaleway regions when no zone is pinned', () => {

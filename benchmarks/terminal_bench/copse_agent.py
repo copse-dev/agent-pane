@@ -17,6 +17,7 @@ from harbor.models.agent.context import AgentContext
 
 _MAX_TOOL_OUTPUT_CHARS = 40_000
 _DEFAULT_COMMAND_TIMEOUT_SEC = 120
+_DEFAULT_MAX_COMMAND_TIMEOUT_SEC = 600
 _TRACE_BUFFER_MAX_LINES = 256
 _TRACE_BUFFER_MAX_CHARS = 64_000
 _DEFAULT_WORKSPACE_CAP_MB = 500
@@ -169,6 +170,17 @@ class CopseTerminalAgent(BaseAgent):
         )
         if command_timeout <= 0:
             raise ValueError("COPSE_TERMINAL_COMMAND_TIMEOUT_SEC must be positive.")
+        max_command_timeout = int(
+            os.environ.get(
+                "COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC",
+                str(_DEFAULT_MAX_COMMAND_TIMEOUT_SEC),
+            )
+        )
+        if max_command_timeout < command_timeout:
+            raise ValueError(
+                "COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC must be at least "
+                "COPSE_TERMINAL_COMMAND_TIMEOUT_SEC."
+            )
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         trace_path = self.logs_dir / "copse-trace.jsonl"
         workspace_result = await environment.exec("pwd", timeout_sec=30)
@@ -278,10 +290,25 @@ class CopseTerminalAgent(BaseAgent):
                         tool_id = message.get("id")
                         if not isinstance(command, str) or not isinstance(tool_id, str):
                             raise RuntimeError("Terminal agent sent an invalid tool request.")
+                        requested_timeout = message.get("timeoutSec")
+                        if requested_timeout is None:
+                            effective_timeout = command_timeout
+                        elif (
+                            isinstance(requested_timeout, bool)
+                            or not isinstance(requested_timeout, int)
+                            or requested_timeout <= 0
+                        ):
+                            raise RuntimeError(
+                                "Terminal agent sent an invalid command timeout."
+                            )
+                        else:
+                            effective_timeout = min(
+                                requested_timeout, max_command_timeout
+                            )
                         try:
                             shell_result = await environment.exec(
                                 command,
-                                timeout_sec=command_timeout,
+                                timeout_sec=effective_timeout,
                             )
                         except (TimeoutError, RuntimeError) as error:
                             if not _is_command_timeout(error):
@@ -295,7 +322,7 @@ class CopseTerminalAgent(BaseAgent):
                                     "stdout": "",
                                     "stderr": (
                                         "Command timed out after "
-                                        f"{command_timeout} seconds. Narrow the work to a "
+                                        f"{effective_timeout} seconds. Narrow the work to a "
                                         "bounded subset or use a different approach; do not "
                                         "rerun an equivalent command unchanged."
                                     ),
