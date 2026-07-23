@@ -827,7 +827,12 @@ export function mountInputBar(
     }
     hideBranchMismatch()
 
-    const skills = skillsCache ?? (await api.skills.list())
+    // Always re-fetch on submit. The slash picker calls `api.skills.list()` on
+    // its own and can show a skill (e.g. built-in `/checkup`) while
+    // `skillsCache` is still stale — including `[]` from an earlier empty/failed
+    // load, which is truthy and would skip the `??` refetch. Authorizing an
+    // invocation against a lagging cache surfaces a false "Unknown skill" toast.
+    const skills = await api.skills.list()
     skillsCache = skills
     const skillNames = skills.map((skill) => skill.name)
     const invocation = resolveSkillInvocation(rawText, skillNames)
@@ -1148,7 +1153,9 @@ export function mountInputBar(
         skillsCache = skills
       },
       () => {
-        skillsCache = []
+        // Leave null so the next read/refetch is not short-circuited by a
+        // sticky empty array (`[]` is truthy for `skillsCache ?? …`).
+        skillsCache = null
       },
     )
   }
@@ -1166,11 +1173,20 @@ export function mountInputBar(
   const skillPicker = initSkillPicker({
     input: composer,
     inputBar: root,
-    listSkills: () => api.skills.list(),
+    // Keep the submit-time cache aligned with whatever the picker just showed.
+    listSkills: async () => {
+      const skills = await api.skills.list()
+      skillsCache = skills
+      return skills
+    },
   })
 
   const unsubs = [
+    // Main fires this after `initSkillsRegistry` (including the background
+    // rescan on `workspace:set`). Refresh the cache so `/checkup` and friends
+    // are visible to context estimates before the next picker open/submit.
     api.agent.onRefreshContextEstimate(() => {
+      refreshSkillsCache()
       scheduleContextEstimate(0)
     }),
     store.on('new_thread_opened', () => {

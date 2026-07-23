@@ -101,4 +101,55 @@ describe('MockLLMProvider', () => {
       clearMockScript()
     }
   })
+
+  it('steers run_checkup when skill_content includes a trust attribute', async () => {
+    const provider = new MockLLMProvider()
+    const tools: LLMTool[] = [
+      { name: 'list_dir', description: 'list', parameters: {} },
+      { name: 'run_checkup', description: 'checkup', parameters: {} },
+    ]
+    const chunks = await collectChunks(
+      provider,
+      [
+        {
+          role: 'system',
+          content:
+            '<skill_content name="checkup" trust="trusted">\nRun the checkup.\n</skill_content>',
+        },
+        { role: 'user', content: '/checkup' },
+      ],
+      tools,
+    )
+    assert.ok(
+      chunks.some((c) => c.type === 'tool_call' && c.toolCall.name === 'run_checkup'),
+      'expected run_checkup when skill_content carries trust=',
+    )
+    assert.ok(
+      !chunks.some((c) => c.type === 'tool_call' && c.toolCall.name === 'list_dir'),
+      'must not fall back to list_dir when checkup skill is loaded',
+    )
+  })
+
+  it('detects demo-skill when skill_content includes a trust attribute', async () => {
+    const provider = new MockLLMProvider()
+    const tools: LLMTool[] = [{ name: 'list_dir', description: 'list', parameters: {} }]
+    const chunks = await collectChunks(
+      provider,
+      [
+        {
+          role: 'system',
+          content:
+            '<skill_content name="demo-skill" trust="untrusted">\nDo the demo.\n</skill_content>',
+        },
+        { role: 'user', content: '/demo-skill validate' },
+      ],
+      tools,
+    )
+    const text = chunks
+      .filter((c) => c.type === 'text')
+      .map((c) => c.text)
+      .join('')
+    assert.match(text, /Demo skill active/)
+    assert.ok(!chunks.some((c) => c.type === 'tool_call'))
+  })
 })

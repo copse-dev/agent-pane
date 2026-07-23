@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
+import type { SkillSummary } from '@shared/types/skills.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -50,6 +51,7 @@ function createApi(options: {
   onCheckoutBranch?: (branch: string) => Promise<void>
   onPrepareCheckout?: () => Promise<PreparedThreadCheckout>
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
+  listSkills?: () => Promise<SkillSummary[]>
 }): ApiClient {
   return {
     agent: {
@@ -97,7 +99,7 @@ function createApi(options: {
       setSetting: async () => ({ packs: [] }),
     },
     skills: {
-      list: async () => [],
+      list: options.listSkills ?? (async (): Promise<SkillSummary[]> => []),
     },
     index: {
       status: async () => ({
@@ -603,5 +605,76 @@ describe('input bar two-step stop', () => {
     assert.equal(aborts, 1)
     assert.equal(runs, 0)
     assert.equal(stopBtn.classList.contains('stop-pending'), false)
+  })
+})
+
+describe('input bar skill invocation', () => {
+  it('invokes /checkup even when the skills cache was primed empty', async () => {
+    let runs = 0
+    let listCalls = 0
+    const checkup = {
+      name: 'checkup',
+      description: 'Run a Copse setup health check',
+      source: 'bundled' as const,
+      skillPath: '/app/assets/skills/checkup/SKILL.md',
+      externalLinks: [] as string[],
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      // Non-blank thread so submit skips checkout preparation.
+      threads: [
+        {
+          ...thread(),
+          messages: [{ id: 'm1', role: 'user', content: 'hi', toolCalls: [], createdAt: 1 }],
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        listSkills: async () => {
+          listCalls += 1
+          // First call primes the mount-time cache as empty (registry still
+          // scanning). Later calls — picker open / submit — see checkup.
+          return listCalls === 1 ? [] : [checkup]
+        },
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submitBtn = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submitBtn)
+
+    // Open the slash picker the way a user would: type `/checkup`.
+    composer.textContent = '/checkup'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    const picker = host.querySelector<HTMLElement>('.skill-picker')
+    assert.ok(picker)
+    assert.equal(picker.hidden, false)
+    assert.equal(picker.querySelector('.skill-item-name')?.textContent, '/checkup')
+
+    submitBtn.click()
+    await flush()
+
+    assert.equal(
+      document.querySelector('.toast-error')?.textContent ?? '',
+      '',
+      'must not toast Unknown skill when checkup is registered',
+    )
+    assert.equal(runs, 1)
   })
 })
