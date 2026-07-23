@@ -27,7 +27,13 @@ import { bindBrowserLinkClicks } from '../markdown/browser-links.ts'
 import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { hydrateRemoteArtifactImages } from '../markdown/remote-artifact-images.ts'
 import { stripTextToolCallBlocks } from '@copse/agent/parse-text-tool-calls.ts'
-import type { Message, SubagentSession, ToolCall, TranscriptAttachment } from '@shared/types'
+import type {
+  Message,
+  SubagentSession,
+  Thread,
+  ToolCall,
+  TranscriptAttachment,
+} from '@shared/types'
 import {
   formatPrimaryChatModelLabel,
   shouldShowPrimaryChatModelLabels,
@@ -489,7 +495,35 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
   return card
 }
 
+/**
+ * One quiet summary row for a turn's tooling (`Used 12 tools` / `Read files`).
+ * Nested cards stay available on expand but don't each paint their own chrome.
+ */
+function createRollupToolCard(
+  item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
+  api: ApiClient,
+): HTMLElement {
+  const status = aggregateToolStatus(item.toolCalls)
+  const card = el('details', {
+    class: 'tool-card tool-card-rollup',
+    'data-rollup-key': item.key,
+    'data-status': status,
+    'data-tool-count': String(item.toolCalls.length),
+  })
+  const count =
+    item.children.length === 1 && item.children[0]?.type === 'group'
+      ? item.toolCalls.length
+      : undefined
+  const body = el('div', { class: 'tool-rollup-body' })
+  for (const child of item.children) {
+    body.append(createToolCard(child, api))
+  }
+  card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
+  return card
+}
+
 function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLElement {
+  if (item.type === 'rollup') return createRollupToolCard(item, api)
   if (item.type === 'group') return createGroupToolCard(item)
   return createIndividualToolCard(item.toolCall, item.label, api)
 }
@@ -501,7 +535,9 @@ const toolCardKeys = new WeakMap<HTMLElement, string>()
 const toolCardSignatures = new WeakMap<HTMLElement, string>()
 
 function toolCardKey(item: ToolCallDisplayItem): string {
-  return item.type === 'group' ? `g:${item.key}` : `t:${item.toolCall.id}`
+  if (item.type === 'rollup') return `r:${item.key}`
+  if (item.type === 'group') return `g:${item.key}`
+  return `t:${item.toolCall.id}`
 }
 
 // Everything that determines a card's rendered output. When it is unchanged
@@ -681,15 +717,16 @@ function appendMessageContent(
     attachments?: TranscriptAttachment[]
   },
   api: ApiClient,
+  opts?: { nestReasoningInTools?: boolean },
 ): void {
   if (msg.role === 'user' && msg.images?.length) {
     body.append(createMessageImages(msg.images))
   }
-  // Reasoning disclosure sits above the answer so the "Thinking" trail reads
-  // top-to-bottom. Collapsed once the answer has arrived; the live handler keeps
-  // it open while it is still streaming and the answer is empty.
-  if (msg.role === 'assistant' && msg.reasoning) {
-    body.append(buildReasoningEl(msg.reasoning, !msg.content.trim()))
+  // Reasoning usually sits above the answer. When this segment also has tools,
+  // it nests inside the tool rollup instead — collapsed view is just the italic
+  // summary heading. History renders as settled ("Reasoned").
+  if (msg.role === 'assistant' && msg.reasoning && opts?.nestReasoningInTools !== true) {
+    body.append(buildReasoningEl(msg.reasoning, !msg.content.trim(), false))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
   if (msg.role === 'assistant' && msg.content) {
@@ -700,6 +737,31 @@ function appendMessageContent(
     textEl.textContent = msg.content
   }
   body.append(textEl)
+}
+
+/** True when reasoning should fold into the tool rollup for this message. */
+function shouldNestReasoningInTools(toolCalls: ToolCall[]): boolean {
+  return toolCalls.some((tc) => !tc.subagent)
+}
+
+/** Progressive while this bubble is the live step; past once settled. */
+function reasoningDisclosureTitle(live: boolean): string {
+  return live ? 'Reasoning' : 'Reasoned'
+}
+
+function setReasoningDisclosureTitle(details: HTMLDetailsElement, live: boolean): void {
+  const title = details.querySelector('.message-reasoning-title')
+  if (title) title.textContent = reasoningDisclosureTitle(live)
+}
+
+/** Live = running thread, this is the latest bubble, and no answer text yet. */
+function isReasoningDisclosureLive(
+  thread: Thread | undefined,
+  msg: { id: string; content: string },
+): boolean {
+  if (!thread || thread.status !== 'running') return false
+  if (msg.content.trim()) return false
+  return thread.messages[thread.messages.length - 1]?.id === msg.id
 }
 
 /** A display-only transcript chip: an outline icon + its (clipped) label. */
@@ -742,17 +804,18 @@ function renderUserTranscript(
 
 /**
  * A `<details>` disclosure holding the model's reasoning trail. `open` reflects
- * whether the answer is still pending so live thinking is visible by default but
- * past turns stay collapsed. A click on the summary marks it user-controlled so
- * later streaming updates never fight the user's choice.
+ * whether the answer is still pending so live reasoning is visible by default but
+ * past turns stay collapsed. Title tense follows status (`Reasoning` / `Reasoned`).
+ * A click on the summary marks it user-controlled so later streaming updates
+ * never fight the user's choice.
  */
-function buildReasoningEl(reasoning: string, open: boolean): HTMLDetailsElement {
+function buildReasoningEl(reasoning: string, open: boolean, live: boolean): HTMLDetailsElement {
   const details = el('details', { class: 'message-reasoning', open })
   const summary = el(
     'summary',
     { class: 'message-reasoning-summary' },
     el('span', { class: 'message-reasoning-icon', 'aria-hidden': 'true' }),
-    el('span', { class: 'message-reasoning-title' }, 'Thinking'),
+    el('span', { class: 'message-reasoning-title' }, reasoningDisclosureTitle(live)),
   )
   const text = el('div', { class: 'message-reasoning-text' })
   renderReasoningText(text, reasoning)
@@ -775,25 +838,71 @@ function renderReasoningText(el: HTMLElement, text: string): void {
 /**
  * Create or update the reasoning disclosure for a streaming assistant message.
  * Reuses the existing element so re-entrant reasoning events keep the user's
- * open/closed choice and avoid rebuilding the DOM each token.
+ * open/closed choice and avoid rebuilding the DOM each token. Prefers a nested
+ * home inside the tool rollup when tools have already arrived on this message.
  */
-function syncReasoningEl(msgEl: HTMLElement, msg: { content: string; reasoning?: string }): void {
+function syncReasoningEl(
+  msgEl: HTMLElement,
+  msg: { content: string; reasoning?: string },
+  live: boolean,
+): void {
   const body = msgEl.querySelector('.message-body')
   if (!body) return
-  let details = body.querySelector<HTMLDetailsElement>('.message-reasoning')
+  const rollupBody = msgEl.querySelector<HTMLElement>(
+    ':scope > .tool-card-rollup > .tool-rollup-body',
+  )
+  const host = rollupBody ?? body
+  let details = msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
   if (!msg.reasoning) {
     details?.remove()
     return
   }
   if (!details) {
-    details = buildReasoningEl(msg.reasoning, true)
-    body.prepend(details)
+    details = buildReasoningEl(msg.reasoning, true, live)
+    host.prepend(details)
   } else {
-    const textEl = body.querySelector<HTMLElement>('.message-reasoning-text')
+    if (details.parentElement !== host) host.prepend(details)
+    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
     if (textEl) renderReasoningText(textEl, msg.reasoning)
+    setReasoningDisclosureTitle(details, live)
   }
   // Keep the trail open while it is still live, unless the user collapsed it.
   if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
+}
+
+/**
+ * Keep reasoning nested at the top of a turn rollup (and strip any leftover
+ * body-level trail) so the collapsed chrome is only the italic summary.
+ */
+function syncNestedRollupReasoning(
+  card: HTMLElement,
+  msgEl: HTMLElement,
+  reasoning: string | undefined,
+  live: boolean,
+): void {
+  const rollupBody = card.querySelector<HTMLElement>(':scope > .tool-rollup-body')
+  if (!rollupBody) return
+  const body = msgEl.querySelector('.message-body')
+  let details =
+    rollupBody.querySelector<HTMLDetailsElement>(':scope > .message-reasoning') ??
+    msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
+  if (!reasoning?.trim()) {
+    details?.remove()
+    return
+  }
+  if (!details) {
+    details = buildReasoningEl(reasoning, true, live)
+  } else {
+    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
+    if (textEl) renderReasoningText(textEl, reasoning)
+    setReasoningDisclosureTitle(details, live)
+  }
+  if (details.parentElement !== rollupBody) rollupBody.prepend(details)
+  // Orphaned body-level trail (streamed before tools arrived) is the same node
+  // after prepend — also drop any duplicate left behind.
+  body?.querySelectorAll<HTMLElement>(':scope > .message-reasoning').forEach((node) => {
+    if (node !== details) node.remove()
+  })
 }
 
 const SCROLL_PIN_THRESHOLD_PX = 48
@@ -828,7 +937,7 @@ export function mountConversation(
     activityLabel,
   )
   // Clicking the activity row jumps to and opens the latest reasoning trail so the
-  // "Thinking…" indicator is itself the way in to watching the model think.
+  // "Reasoning…" indicator is itself the way in to watching the model reason.
   activityBar.addEventListener('click', () => {
     const trails = list.querySelectorAll('.msg-assistant .message-reasoning')
     const details = trails[trails.length - 1] as HTMLDetailsElement | undefined
@@ -1207,11 +1316,115 @@ export function mountConversation(
     updateScrollButton()
   }
 
+  function applyRollupSummaries(
+    item: ToolCallDisplayItem,
+    opts: { commandSummary?: string; toolSummary?: string },
+  ): void {
+    const { commandSummary, toolSummary } = opts
+    // LLM polish for the turn rollup: replaces the canned `Used N tools` /
+    // category label when ready. Failures stay visible on the collapsed line.
+    if (item.type === 'rollup') {
+      if (toolSummary?.trim()) {
+        const failed = item.toolCalls.filter((tc) => tc.status === 'error').length
+        item.label =
+          failed > 0 ? `${toolSummary.trim()} · ${String(failed)} failed` : toolSummary.trim()
+      }
+      for (const child of item.children) applyRollupSummaries(child, opts)
+      // Legacy shell-only path: when no toolSummary yet, a commandSummary can
+      // still label a pure shell turn.
+      if (
+        !toolSummary?.trim() &&
+        commandSummary &&
+        item.children.length === 1 &&
+        item.children[0]?.type === 'group' &&
+        item.children[0].key === 'shell'
+      ) {
+        item.label = commandSummary
+      }
+      // When the polish lands on a single shell group, keep the nested header
+      // in sync so expand doesn't revert to the canned "Ran commands".
+      if (
+        toolSummary?.trim() &&
+        item.children.length === 1 &&
+        item.children[0]?.type === 'group' &&
+        item.children[0].key === 'shell'
+      ) {
+        item.children[0].label = toolSummary.trim()
+      }
+      return
+    }
+    // LLM-only rollup: a small-model summary, when ready, replaces the generic
+    // "Ran commands" header for the shell group.
+    if (item.type === 'group' && item.key === 'shell' && commandSummary) {
+      item.label = commandSummary
+    }
+  }
+
+  function applyToolCardOpenState(
+    card: HTMLElement,
+    item: ToolCallDisplayItem,
+    userExpandedRollups: Set<string>,
+    userExpandedGroups: Set<string>,
+    userExpandedTools: Set<string>,
+  ): void {
+    if (item.type === 'rollup') {
+      const status = aggregateToolStatus(item.toolCalls)
+      ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedRollups.has(item.key)
+      const nestedCards = card.querySelectorAll<HTMLElement>(
+        ':scope > .tool-rollup-body > .tool-card',
+      )
+      item.children.forEach((child, index) => {
+        const nested = nestedCards[index]
+        if (nested) {
+          applyToolCardOpenState(
+            nested,
+            child,
+            userExpandedRollups,
+            userExpandedGroups,
+            userExpandedTools,
+          )
+        }
+      })
+      return
+    }
+    if (item.type === 'group') {
+      const status = aggregateToolStatus(item.toolCalls)
+      ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedGroups.has(item.key)
+      // A changed group card is rebuilt from scratch with every item collapsed;
+      // reapply the per-item expansion captured above so an item the user
+      // opened (or an expanded individual card absorbed into this group)
+      // survives the per-step rebuild.
+      card
+        .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
+        .forEach((entry) => {
+          const id = entry.dataset['toolId']
+          if (id && userExpandedTools.has(id)) entry.open = true
+        })
+      return
+    }
+    const tc = item.toolCall
+    const running = tc.status === 'running' || tc.subagent?.status === 'running'
+    ;(card as HTMLDetailsElement).open = running || userExpandedTools.has(tc.id)
+  }
+
   function renderToolCards(
     msgEl: HTMLElement,
     toolCalls: ToolCall[],
-    commandSummary?: string,
+    opts: {
+      commandSummary?: string
+      toolSummary?: string
+      reasoning?: string
+      reasoningLive?: boolean
+    } = {},
   ): void {
+    const userExpandedRollups = new Set<string>()
+    msgEl.querySelectorAll('.tool-card-rollup[open]').forEach((node) => {
+      const el = node as HTMLElement
+      const key = el.dataset['rollupKey']
+      // Running rollups are auto-expanded; don't treat that as a user preference.
+      if (key && el.dataset['status'] !== 'running') userExpandedRollups.add(key)
+    })
+
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
       const el = node as HTMLElement
@@ -1230,14 +1443,11 @@ export function mountConversation(
         if (id) userExpandedTools.add(id)
       })
 
-    const items = buildToolCallDisplayItems(toolCalls)
-    for (const item of items) {
-      // LLM-only rollup: a small-model summary, when ready, replaces the generic
-      // "Running commands" header for the shell group.
-      if (item.type === 'group' && item.key === 'shell' && commandSummary) {
-        item.label = commandSummary
-      }
-    }
+    const nestReasoning = Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
+    const items = buildToolCallDisplayItems(toolCalls, {
+      ...(nestReasoning ? { forceRollup: true } : {}),
+    })
+    for (const item of items) applyRollupSummaries(item, opts)
 
     // Index the cards already in the DOM by their stable key so unchanged ones
     // are reused wholesale instead of torn down and rebuilt on every tick — the
@@ -1279,24 +1489,9 @@ export function mountConversation(
         toolCardSignatures.set(card, sig)
       }
 
-      if (item.type === 'group') {
-        const status = aggregateToolStatus(item.toolCalls)
-        ;(card as HTMLDetailsElement).open =
-          status === 'running' || userExpandedGroups.has(item.key)
-        // A changed group card is rebuilt from scratch with every item collapsed;
-        // reapply the per-item expansion captured above so an item the user
-        // opened (or an expanded individual card absorbed into this group)
-        // survives the per-step rebuild.
-        card
-          .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
-          .forEach((entry) => {
-            const id = entry.dataset['toolId']
-            if (id && userExpandedTools.has(id)) entry.open = true
-          })
-      } else {
-        const tc = item.toolCall
-        const running = tc.status === 'running' || tc.subagent?.status === 'running'
-        ;(card as HTMLDetailsElement).open = running || userExpandedTools.has(tc.id)
+      applyToolCardOpenState(card, item, userExpandedRollups, userExpandedGroups, userExpandedTools)
+      if (item.type === 'rollup' && nestReasoning) {
+        syncNestedRollupReasoning(card, msgEl, opts.reasoning, opts.reasoningLive === true)
       }
       desired.push(card)
     }
@@ -1306,6 +1501,15 @@ export function mountConversation(
     existing.forEach((node) => {
       node.remove()
     })
+    // No rollup this tick (tools cleared) — leave body-level reasoning alone;
+    // when tools exist without nested reasoning, strip any orphan nested trail.
+    if (!nestReasoning) {
+      msgEl
+        .querySelectorAll<HTMLElement>('.tool-card-rollup .message-reasoning')
+        .forEach((node) => {
+          node.remove()
+        })
+    }
     // Move/insert only when a card is out of place. Blind `append` of an
     // already-correct child still remove+reinserts it and can flash siblings
     // whenever any other tool on the message ticks (#728).
@@ -1342,7 +1546,11 @@ export function mountConversation(
     if (hookOrigin) msgEl.setAttribute('data-hook-id', hookOrigin.hookId)
     const body = el('div', { class: 'message-body' })
     if (hookOrigin) body.append(buildHookOriginMarker(hookOrigin, msg.editedByUser === true))
-    appendMessageContent(body, msg, api)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls ?? [])
+    appendMessageContent(body, msg, api, {
+      ...(nestReasoning ? { nestReasoningInTools: true } : {}),
+    })
     msgEl.append(body)
 
     // Copy only when there is reply text — tool-only bubbles stay compact.
@@ -1360,7 +1568,11 @@ export function mountConversation(
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
+    renderToolCards(msgEl, msg.toolCalls ?? [], {
+      ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
+      ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
+      ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
+    })
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
@@ -1495,10 +1707,8 @@ export function mountConversation(
   }
 
   function refreshToolCards(msgId: string): void {
-    const msg = store
-      .getState()
-      .threads.flatMap((t) => t.messages)
-      .find((m) => m.id === msgId)
+    const thread = store.getState().threads.find((t) => t.messages.some((m) => m.id === msgId))
+    const msg = thread?.messages.find((m) => m.id === msgId)
     const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
     // renderToolCards tears down and rebuilds every tool card, which destroys the
@@ -1508,7 +1718,12 @@ export function mountConversation(
     const prevScrollTop = list.scrollTop
     const wasPinned = pinnedToBottom
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], {
+      ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
+      ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
+      ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
+      reasoningLive: isReasoningDisclosureLive(thread, msg),
+    })
     if (wasPinned) {
       scrollToBottom()
     } else if (list.scrollTop !== prevScrollTop) {
@@ -1529,9 +1744,16 @@ export function mountConversation(
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
-      const textEl = list.querySelector(`[data-message-id="${mid}"] .message-text`)
+      const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
+      const textEl = msgEl?.querySelector('.message-text')
       if (textEl && msg?.role === 'assistant') {
         setAssistantMarkdown(textEl as HTMLElement, msg.content, true, api)
+        // Answer started — disclosure flips to past tense even while tokens stream.
+        if (msg.content.trim()) {
+          msgEl?.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
+            setReasoningDisclosureTitle(details, false)
+          })
+        }
         scrollToBottom()
       }
     }),
@@ -1540,7 +1762,7 @@ export function mountConversation(
       const msg = thread?.messages.find((m) => m.id === mid)
       const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
       if (msg?.role === 'assistant' && msgEl) {
-        syncReasoningEl(msgEl as HTMLElement, msg)
+        syncReasoningEl(msgEl as HTMLElement, msg, isReasoningDisclosureLive(thread, msg))
         activityBar.classList.add('agent-activity-clickable')
         scrollToBottom()
       }
@@ -1554,12 +1776,21 @@ export function mountConversation(
         setAssistantMarkdown(textEl as HTMLElement, msg.content, false, api)
         hydrateRemoteArtifactImages(list, api)
       }
+      if (msg?.role === 'assistant' && msgEl) {
+        // Segment settled — past-tense the disclosure title even for tool-only bubbles.
+        msgEl.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
+          setReasoningDisclosureTitle(details, false)
+        })
+      }
       if (msg?.role === 'assistant' && msg.content.trim()) {
         const body = msgEl?.querySelector('.message-body')
         if (body && !body.querySelector('.msg-copy'))
           attachCopyButton(body as HTMLElement, mid, store)
-        // Answer is in: tuck the reasoning trail away unless the user opened it.
-        const reasoning = body?.querySelector('.message-reasoning') as HTMLDetailsElement | null
+        // Answer is in: tuck a body-level reasoning trail away unless the user
+        // opened it. Nested trails inside a tool rollup stay with that rollup.
+        const reasoning = body?.querySelector(
+          ':scope > .message-reasoning',
+        ) as HTMLDetailsElement | null
         if (reasoning && !reasoning.dataset['userToggled']) reasoning.open = false
       }
     }),

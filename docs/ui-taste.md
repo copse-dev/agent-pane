@@ -293,6 +293,37 @@ reachable without a crowded titlebar:
   or scrolling. Spec:
   [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
 
+## Tool actions: past when settled, progressive while running, one rollup per turn
+
+Tool-call chrome in the transcript should stay quiet — muted inline text, not a stack of
+elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
+
+- **Tense follows status.** Progressive while any member is `running` (`Reading files`,
+  `Using 3 tools`, activity line `Listing directory…`); past once settled (`Read files`,
+  `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
+  tool, and do not keep progressive wording on a completed card.
+- **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
+  `.tool-card-rollup`. The collapsed summary is **italic muted text** (like reasoning) — click
+  to expand nested category groups and individuals. Subagent cards stay outside the rollup.
+- **Reasoning nests with its tools.** When a segment has both `reasoning` and tools, do **not**
+  render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
+  body (above the tool rows) so the collapsed view is only the italic heading. Standalone
+  Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
+  `Reasoning` while live, `Reasoned` when settled.
+- **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
+  `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
+  `reasoning` field / provider events.
+- **Canned first, small-model polish later.** Show the deterministic label immediately
+  (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
+  `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
+  that call. Keep failure callouts (`· N failed`) even after polish.
+- **No card chrome by default.** Collapsed tool rows drop fill/border; nested items inside an
+  expanded rollup stay flat under a hairline indent. Reach for `--text-muted` / italics on the
+  rollup summary, not `--bg-elevated` panels.
+
+Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display.test.ts`,
+`tests/e2e/tool-display-rollup.e2e.ts`, `tests/e2e/browser-tools.e2e.ts`.
+
 ## Hook cards are a distinct card family — right-aligned, blue, not a user message
 
 Hook executions, deny/ask decisions, and halts (decision 10 of

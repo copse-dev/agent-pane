@@ -48,6 +48,7 @@ interface MessageLike {
   reasoning?: string
   images?: string[]
   commandSummary?: string
+  toolSummary?: string
   attachments?: TranscriptAttachment[]
   model?: string
   review?: ThreadReview
@@ -166,6 +167,7 @@ function explodeOne(msg: MessageLike, hash: HashFn): ExplodedMessage {
   }
 
   if (msg.commandSummary !== undefined) line.commandSummary = msg.commandSummary
+  if (msg.toolSummary !== undefined) line.toolSummary = msg.toolSummary
   if (msg.attachments !== undefined && msg.attachments.length > 0)
     line.attachments = msg.attachments
   if (msg.model !== undefined) line.model = msg.model
@@ -312,6 +314,7 @@ function foldOne(
   }
 
   if (line.commandSummary !== undefined) msg.commandSummary = line.commandSummary
+  if (line.toolSummary !== undefined) msg.toolSummary = line.toolSummary
   if (line.attachments !== undefined) msg.attachments = line.attachments
   if (line.model !== undefined) msg.model = line.model
   if (line.review !== undefined) msg.review = line.review
@@ -336,6 +339,7 @@ export function foldMessage(
     ...(m.reasoning !== undefined ? { reasoning: m.reasoning } : {}),
     ...(m.images !== undefined ? { images: m.images } : {}),
     ...(m.commandSummary !== undefined ? { commandSummary: m.commandSummary } : {}),
+    ...(m.toolSummary !== undefined ? { toolSummary: m.toolSummary } : {}),
     ...(m.attachments !== undefined ? { attachments: m.attachments } : {}),
     ...(m.model !== undefined ? { model: m.model } : {}),
     ...(m.review !== undefined ? { review: m.review } : {}),

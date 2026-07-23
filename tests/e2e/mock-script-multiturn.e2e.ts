@@ -65,7 +65,7 @@ describe('mock script multi-turn', () => {
 
     const listCard = await $('.tool-card[data-status="done"]')
     await listCard.waitForDisplayed({ timeout: 30_000 })
-    await expect(listCard.$('.tool-name')).toHaveText('List directory')
+    await expect(listCard.$('.tool-name')).toHaveText('Listed directory')
     await waitForAgentIdle()
 
     await waitForPromptReady()

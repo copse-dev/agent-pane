@@ -313,6 +313,21 @@ export function setMessageCommandSummary(
   store.emit('tool_call_updated', messageId, '')
 }
 
+export function setMessageToolSummary(
+  store: AppStore,
+  messageId: string,
+  toolSummary: string,
+): void {
+  const { threads } = store.getState()
+  const updated = threads.map((t) => ({
+    ...t,
+    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, toolSummary })),
+  }))
+  store.setState({ threads: updated })
+  // Re-uses the tool-card refresh path so the turn rollup label updates in place.
+  store.emit('tool_call_updated', messageId, '')
+}
+
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
   const { threads } = store.getState()
   const updated = threads.map((t) => ({

@@ -223,10 +223,12 @@ least one screenshot that reviewers can inspect.
 3. Launch with mock LLM: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
 4. Run: `npm run test:e2e -- --spec tests/e2e/tool-display-live-mock.e2e.ts`
 5. Screenshots land in `tests/e2e/screenshots/`:
-   - `tool-display-live-mock.png` — live mock turn shows `List directory` (not `list_dir`)
+   - `tool-display-live-mock.png` — live mock turn shows `Listed directory` (not `list_dir`)
 
-Assertions to mirror: `.tool-card-group .tool-name` = group label; `.tool-count` = `×N`;
-failed tools stay `.tool-card[data-status=error]` with individual `getToolDisplayName` labels.
+Assertions to mirror: a turn with ≥2 tools collapses to `.tool-card-rollup` (`Used N tools` /
+category past-tense like `Read files`); expand for nested `.tool-card-group` / individuals;
+`.tool-count` = `×N` when the rollup is a single category; failed tools stay outside their
+success group with individual past-tense labels. Labels are progressive while `running`.
 The seeded tool-card DOM assertions now run without Electron in the component test
 `src/renderer/views/tool-display.test.ts`; grouping logic in `src/shared/tools/tool-display.test.ts`.
 

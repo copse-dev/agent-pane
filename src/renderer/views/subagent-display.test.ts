@@ -15,7 +15,7 @@ import { mountConversation } from './conversation.ts'
 // Component-level port of the former seeded `subagent display` e2e coverage.
 // Its live-mock describe OOM-crashed the constrained runner, while the seeded
 // describe asserted pure DOM
-// structure of the rendered subagent card — collapsed "Explore files" header,
+// structure of the rendered subagent card — collapsed "Explored files" header,
 // and on expand the inner explore-message markdown + nested tool label — none of
 // which needs Electron. happy-dom holds the whole `<details>` timeline in the DOM
 // regardless of open state (there is no layout/`display:none` to reveal), so the
@@ -146,17 +146,17 @@ afterEach(() => {
 })
 
 describe('subagent display (component)', () => {
-  it('renders a collapsed Explore files subagent card', () => {
+  it('renders a collapsed Explored files subagent card', () => {
     mountWithSubagent()
 
     const card = document.querySelector('.tool-card-subagent')
     assert.ok(card, 'expected a subagent tool card')
     // e2e: card not to have attribute 'open' (collapsed by default)
     assert.equal(card.hasAttribute('open'), false)
-    // e2e: summary .tool-name === 'Explore files'
+    // e2e: summary .tool-name === 'Explored files'
     assert.equal(
       card.querySelector('summary.tool-card-header .tool-name')?.textContent,
-      'Explore files',
+      'Explored files',
     )
   })
 

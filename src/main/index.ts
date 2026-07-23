@@ -43,6 +43,7 @@ import {
   suggestThreadTitle,
   suggestTerminalTitle,
   suggestCommandSummary,
+  suggestToolTurnSummary,
   testLmStudio,
   listLmStudioModels,
   invalidateLmStudioModelsCache,
@@ -521,6 +522,11 @@ app
     ipcMain.handle('agent:suggestCommandSummary', (event, commands: string[]) => {
       assertMainFrameSender(event, win)
       return suggestCommandSummary(commands)
+    })
+
+    ipcMain.handle('agent:suggestToolTurnSummary', (event, actions: string[]) => {
+      assertMainFrameSender(event, win)
+      return suggestToolTurnSummary(actions)
     })
 
     ipcMain.handle('agent:suggestFollowUps', (event, contextJson: string) => {
