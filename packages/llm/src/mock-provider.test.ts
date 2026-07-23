@@ -113,7 +113,8 @@ describe('MockLLMProvider', () => {
       [
         {
           role: 'system',
-          content: '<skill_content name="checkup" trust="trusted">\nRun the checkup.\n</skill_content>',
+          content:
+            '<skill_content name="checkup" trust="trusted">\nRun the checkup.\n</skill_content>',
         },
         { role: 'user', content: '/checkup' },
       ],
