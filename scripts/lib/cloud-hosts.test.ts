@@ -14,14 +14,18 @@ import {
   optionWithDefault,
   parseAwsInstances,
   parseOptions,
+  parseScalewayBlockVolumes,
   parseScalewayServer,
   parseScalewayVolumeIds,
   scalewayBlockVolumeDeleteArgs,
+  scalewayBlockVolumeListArgs,
+  scalewayBlockVolumeTagArgs,
   scalewayJsonArgs,
   scalewayServerFromRecord,
   scalewayTagArgs,
   scalewayTags,
   scalewayTerminateArgs,
+  selectScalewayManagedOrphans,
   selectScaleDownHosts,
   shellQuote,
   sshCommonArgs,
@@ -215,6 +219,7 @@ describe('userDataScript', () => {
     assert.match(script, /\/instance\/v1\/zones\/\$ZONE\/ips\/\$IP_ID/)
     // terminate only detaches SBS; TTL must delete volumes explicitly.
     assert.match(script, /\/block\/v1alpha1\/zones\/\$ZONE\/volumes\//)
+    assert.match(script, /product_resource_id=\$SERVER_ID/)
   })
 })
 
@@ -273,6 +278,28 @@ describe('Scaleway helpers', () => {
     ])
   })
 
+  it('tags root volumes with the same ownership namespace as their server', () => {
+    assert.deepEqual(scalewayBlockVolumeTagArgs({ zone: 'fr-par-1' }, 'vol-1', 'fleet', TAGS), [
+      'block',
+      'volume',
+      'update',
+      'vol-1',
+      'tags.0=copse-burst',
+      'tags.1=copse-burst-fleet',
+      'tags.2=copse-burst-runners',
+      'zone=fr-par-1',
+    ])
+    assert.deepEqual(scalewayBlockVolumeListArgs({ zone: 'nl-ams-2' }, TAGS.managedBy), [
+      'block',
+      'volume',
+      'list',
+      'tags.0=copse-burst-runners',
+      'zone=nl-ams-2',
+      '-o',
+      'json',
+    ])
+  })
+
   it('parseScalewayVolumeIds collects ids from the position-keyed volumes map', () => {
     const raw = JSON.stringify({
       id: 'srv-1',
@@ -289,6 +316,60 @@ describe('Scaleway helpers', () => {
     assert.deepEqual(parseScalewayVolumeIds(wrapped), ['vol-x'])
     assert.deepEqual(parseScalewayVolumeIds(JSON.stringify({ id: 'srv-3' })), [])
     assert.deepEqual(parseScalewayVolumeIds(JSON.stringify({ server: { volumes: {} } })), [])
+  })
+
+  it('selects only old, unattached volumes with every required ownership tag', () => {
+    const volumes = parseScalewayBlockVolumes(
+      JSON.stringify([
+        {
+          id: 'old-managed',
+          created_at: '2026-07-20T00:00:00Z',
+          last_detached_at: '2026-07-21T00:00:00Z',
+          references: [],
+          size: 80_000_000_000,
+          status: 'available',
+          tags: ['copse-burst', 'copse-burst-fleet', 'copse-burst-runners'],
+          zone: 'fr-par-1',
+        },
+        {
+          id: 'recent-managed',
+          created_at: '2026-07-22T20:00:00Z',
+          last_detached_at: '2026-07-23T00:30:00Z',
+          references: [],
+          size: 80_000_000_000,
+          status: 'available',
+          tags: ['copse-burst', 'copse-burst-fleet', 'copse-burst-runners'],
+        },
+        {
+          id: 'attached-managed',
+          created_at: '2026-07-20T00:00:00Z',
+          last_detached_at: null,
+          references: [{ id: 'ref-1' }],
+          size: 80_000_000_000,
+          status: 'in_use',
+          tags: ['copse-burst', 'copse-burst-fleet', 'copse-burst-runners'],
+        },
+        {
+          id: 'old-unmanaged',
+          created_at: '2026-07-20T00:00:00Z',
+          last_detached_at: '2026-07-21T00:00:00Z',
+          references: [],
+          size: 80_000_000_000,
+          status: 'available',
+          tags: [],
+        },
+      ]),
+      'fr-par-1',
+    )
+    assert.deepEqual(
+      selectScalewayManagedOrphans(
+        volumes,
+        ['copse-burst', 'copse-burst-fleet', 'copse-burst-runners'],
+        new Date('2026-07-23T00:00:00Z'),
+      ).map((volume) => volume.id),
+      ['old-managed'],
+    )
+    assert.equal(volumes[1]?.zone, 'fr-par-1')
   })
 
   it('deletes captured volumes when server termination times out', () => {

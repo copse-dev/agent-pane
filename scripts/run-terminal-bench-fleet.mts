@@ -19,6 +19,7 @@ import {
   parseOptions,
   positiveInt,
   printHosts,
+  reconcileScalewayManagedVolumes,
   requireScalewayTool,
   requireTool,
   SCALEWAY_ZONES,
@@ -411,8 +412,18 @@ async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number)
   }
 }
 
-function cleanupBatches(batches: readonly LaunchBatch[]): void {
+function cleanupBatches(
+  name: string,
+  zones: readonly string[],
+  batches: readonly LaunchBatch[],
+): void {
   for (const batch of batches) terminateScalewayServersBestEffort({ zone: batch.zone }, batch.ids)
+  const result = reconcileScalewayManagedVolumes({ name, tags: FLEET_TAGS }, zones, new Date())
+  if (result.failedIds.length > 0) {
+    console.error(
+      `==> Warning: failed to reconcile ${String(result.failedIds.length)} Terminal-Bench volume(s)`,
+    )
+  }
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -443,7 +454,7 @@ async function runFleet(options: Options): Promise<void> {
   const cleanup = (): void => {
     if (cleaned) return
     cleaned = true
-    cleanupBatches(batches)
+    cleanupBatches(config.name, config.zones, batches)
   }
   const interrupted = (): never => {
     console.error('terminal-bench fleet interrupted; terminating launched instances')
@@ -525,26 +536,34 @@ async function downFleet(options: Options): Promise<void> {
   for (let attempt = 1; attempt <= CLEANUP_ATTEMPTS; attempt += 1) {
     const hosts = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
     if (attempt === 1) printHosts(hosts)
-    if (hosts.length === 0) {
-      console.log('==> Fleet teardown verified.')
-      return
-    }
-    terminateHosts(hosts)
+    if (hosts.length > 0) terminateHosts(hosts)
+    const volumes = reconcileScalewayManagedVolumes(
+      { name, tags: FLEET_TAGS },
+      configuredZones,
+      new Date(),
+    )
     const remaining = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
-    if (remaining.length === 0) {
+    if (remaining.length === 0 && volumes.remaining.length === 0) {
       console.log('==> Fleet teardown verified.')
       return
     }
     if (attempt < CLEANUP_ATTEMPTS) {
       console.log(
-        `==> ${String(remaining.length)} host(s) still present; retrying teardown in ${String(CLEANUP_RETRY_DELAY_MS / 1000)} seconds`,
+        `==> ${String(remaining.length)} host(s) and ${String(volumes.remaining.length)} volume(s) still present; ` +
+          `retrying teardown in ${String(CLEANUP_RETRY_DELAY_MS / 1000)} seconds`,
       )
       await delay(CLEANUP_RETRY_DELAY_MS)
     }
   }
   const remaining = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
+  const remainingVolumes = reconcileScalewayManagedVolumes(
+    { name, tags: FLEET_TAGS },
+    configuredZones,
+    new Date(),
+  ).remaining
   throw new Error(
-    `Fleet teardown incomplete: ${String(remaining.length)} host(s) still match ${name}`,
+    `Fleet teardown incomplete: ${String(remaining.length)} host(s) and ` +
+      `${String(remainingVolumes.length)} volume(s) still match ${name}`,
   )
 }
 

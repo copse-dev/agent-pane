@@ -66,6 +66,7 @@ import {
   positiveInt,
   printHosts,
   requiredOption,
+  reconcileScalewayManagedVolumes,
   requireScalewayTool,
   requireTool,
   resolveAmiId,
@@ -1263,6 +1264,16 @@ function downCommand(options: Options): void {
         console.log(`==> Terminating ${host.providerId} in ${zone}`)
         terminateScalewayServer({ zone }, host.providerId)
         terminated += 1
+      }
+      const volumes = reconcileScalewayManagedVolumes(
+        { name, tags: TAGS },
+        [...SCALEWAY_ZONES],
+        new Date(),
+      )
+      if (volumes.failedIds.length > 0) {
+        throw new Error(
+          `failed to reconcile ${String(volumes.failedIds.length)} remote-e2e volume(s)`,
+        )
       }
     } catch (err) {
       if (record?.provider === 'scaleway') throw err
