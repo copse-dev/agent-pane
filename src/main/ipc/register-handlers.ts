@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
+import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
   getActiveProjectSshHost,
@@ -1304,13 +1305,22 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return openWorkspaceInExternalEditor(parsedId, root)
   })
 
-  ipcMain.handle('panes:popout', (event, mode: unknown) => {
+  ipcMain.handle('panes:popout', (event, mode: unknown, seed: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(
       z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
       [mode],
     )
-    createPanePopoutWindow(parsed)
+    createPanePopoutWindow(parsed, seed)
+  })
+
+  ipcMain.handle('panes:takePopoutSeed', (event, mode: unknown) => {
+    assertMainFrameSender(event, win)
+    const parsed = parseIpcArgs(
+      z.enum(['explorer', 'terminal', 'changes', 'prs', 'memories', 'roadmap', 'browser']),
+      [mode],
+    )
+    return takePopoutSeed(parsed)
   })
 
   ipcMain.handle('mcp:list', (event) => {

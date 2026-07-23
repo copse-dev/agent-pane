@@ -88,8 +88,11 @@ import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { registerPanelKeyboardShortcuts, matchFindInChatShortcut } from './keyboard-shortcuts.ts'
+import { loadInitialUiScale, registerUiScaleController } from './ui-scale-controller.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
+import { mountPopoutPanelBar } from './popout/popout-panel-bar.ts'
+import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
   isThemePreference,
@@ -166,6 +169,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
+let unmountPopoutPanelBar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
@@ -206,6 +210,7 @@ async function boot(): Promise<void> {
     typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
       ? savedFontSize
       : store.getState().fontSize
+  const uiScale = loadInitialUiScale(await api.settings.get('uiScale'))
   applyThemeToDocument(theme)
   // When the preference is `system`, follow OS light/dark flips live so the app
   // re-themes without a relaunch. Reads the preference from the store each time,
@@ -234,6 +239,7 @@ async function boot(): Promise<void> {
     theme,
     themePreference,
     fontSize,
+    uiScale,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
@@ -334,8 +340,7 @@ async function boot(): Promise<void> {
   // In a pop-out window, force the detached pane open once the workspace is
   // restored; popout.css collapses everything else to a single-pane window.
   if (popoutMode && store.getState().workspaceRoot) {
-    ensureLayout()
-    openRightPanel(store, popoutMode)
+    await activatePopoutPane(popoutMode)
     return
   }
 
@@ -356,6 +361,28 @@ function ensureLayout(): void {
   updateFilesPane()
   registerKeyboardShortcuts()
   registerPanelKeyboardShortcuts(store, api)
+  registerUiScaleController(store, api)
+  if (popoutMode) {
+    const paneFiles = document.getElementById('pane-files')
+    if (paneFiles && !unmountPopoutPanelBar) {
+      unmountPopoutPanelBar = mountPopoutPanelBar(paneFiles, store, api)
+    }
+  }
+}
+
+async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
+  ensureLayout()
+  openRightPanel(store, mode)
+  document.documentElement.setAttribute('data-popout-mode', mode)
+  const seed = await api.panes.takePopoutSeed(mode)
+  await applyPopoutSeed(mode, seed)
+}
+
+if (popoutMode) {
+  api.panes.onSwitchMode((mode) => {
+    if (!POPOUT_MODES.has(mode)) return
+    void activatePopoutPane(mode)
+  })
 }
 
 function mountFullLayout(): void {

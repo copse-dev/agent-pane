@@ -33,6 +33,17 @@
   background: var(--bg-elevated);
   gap: var(--spacing-sm);
 }
+.ui-scale-badge {
+  -webkit-app-region: no-drag;
+  margin-left: auto;
+  margin-right: var(--spacing-md);
+  padding: 2px var(--spacing-sm);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
 .titlebar-left {
   display: flex;
   align-items: center;

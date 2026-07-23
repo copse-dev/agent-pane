@@ -5,6 +5,7 @@ import type { FrontierCandidate } from '@copse/llm/pareto-frontier.ts'
 import {
   applyPlanCoverage,
   claudeGoverningWindowIds,
+  codexGoverningWindowIds,
   planInclusionHint,
   planProviderForModel,
   resolvePlanInclusion,
@@ -55,6 +56,30 @@ describe('claudeGoverningWindowIds', () => {
   })
 })
 
+describe('codexGoverningWindowIds', () => {
+  it('includes primary/secondary plus a metered window when the label names the model', () => {
+    const windows: PlanWindow[] = [
+      { id: 'primary', label: '5-hour', usedPercent: 10, resetsAt: null },
+      { id: 'secondary', label: 'Weekly', usedPercent: 5, resetsAt: null },
+      {
+        id: 'codex-bengalfox_primary',
+        label: 'GPT-5.3-Codex-Spark 5-hour',
+        usedPercent: 40,
+        resetsAt: null,
+      },
+    ]
+    assert.deepEqual(codexGoverningWindowIds('gpt-5.3-codex-spark', windows), [
+      'primary',
+      'secondary',
+      'codex-bengalfox_primary',
+    ])
+  })
+
+  it('falls back to the shared pools when there is no per-model window', () => {
+    assert.deepEqual(codexGoverningWindowIds('gpt-5.6-sol'), ['primary', 'secondary'])
+  })
+})
+
 describe('resolvePlanInclusion', () => {
   it('returns included with the tightest governing window as the binding one', () => {
     const snap = snapshot('claude', [
@@ -100,6 +125,18 @@ describe('resolvePlanInclusion', () => {
     assert.match(planInclusionHint(inc), /plan included · 5-hour 90% used/)
   })
 
+  it('binds Codex coverage to the tightest primary/secondary pool', () => {
+    const snap = snapshot('codex', [
+      { id: 'primary', label: '5-hour', usedPercent: 22 },
+      { id: 'secondary', label: 'Weekly', usedPercent: 8 },
+    ])
+    const inc = resolvePlanInclusion('codex', 'gpt-5.6-sol', snap)
+    assert.ok(inc)
+    assert.equal(inc.windowLabel, '5-hour')
+    assert.equal(inc.usedPercent, 22)
+    assert.equal(inc.exhausted, false)
+  })
+
   it('binds Cursor coverage to its included pool windows', () => {
     const snap = snapshot('cursor', [
       { id: 'total', label: 'Total included', usedPercent: 55 },
@@ -126,13 +163,14 @@ describe('resolvePlanInclusion', () => {
 })
 
 describe('planProviderForModel', () => {
-  it('maps Claude models to the Claude plan and Grok to Cursor', () => {
+  it('maps Claude models to the Claude plan, GPT to Codex, and Grok to Cursor', () => {
     assert.equal(planProviderForModel('claude-fable-5'), 'claude')
     assert.equal(planProviderForModel('anthropic/claude-opus-4-8'), 'claude')
+    assert.equal(planProviderForModel('gpt-5.6-sol'), 'codex')
+    assert.equal(planProviderForModel('openai/gpt-5.6-sol'), 'codex')
     assert.equal(planProviderForModel('grok-4.5'), 'cursor')
   })
   it('leaves unmapped models with no plan provider', () => {
-    assert.equal(planProviderForModel('gpt-5.6'), null)
     assert.equal(planProviderForModel('lmstudio:qwen/qwen2.5-coder-32b'), null)
   })
 })
@@ -181,7 +219,27 @@ describe('applyPlanCoverage', () => {
   it('passes through unchanged with no snapshot or an unmapped model', () => {
     assert.equal(applyPlanCoverage(candidate, null), candidate)
     const snap = snapshot('claude', [{ id: 'seven_day', label: 'Weekly', usedPercent: 10 }])
-    const gpt: FrontierCandidate = { id: 'gpt-5.6', intellect: 59, costPerMTok: 8 }
-    assert.equal(applyPlanCoverage(gpt, snap), gpt)
+    const local: FrontierCandidate = {
+      id: 'lmstudio:qwen/qwen2.5-coder-32b',
+      intellect: 40,
+      costPerMTok: 0,
+    }
+    assert.equal(applyPlanCoverage(local, snap), local)
+  })
+
+  it('drops a covered GPT model to $0 when Codex plan windows have headroom', () => {
+    const gpt: FrontierCandidate = { id: 'gpt-5.6-sol', intellect: 59, costPerMTok: 18 }
+    const snap = snapshot('codex', [
+      { id: 'primary', label: '5-hour', usedPercent: 11, resetsAt: '2026-07-21T00:00:00Z' },
+      { id: 'secondary', label: 'Weekly', usedPercent: 7, resetsAt: '2026-07-28T00:00:00Z' },
+    ])
+    const out = applyPlanCoverage(gpt, snap)
+    assert.equal(out.costPerMTok, 0)
+    assert.equal(out.plan, '5-hour')
+    assert.deepEqual(out.planDetail, {
+      usedPercent: 11,
+      resetsAt: '2026-07-21T00:00:00Z',
+      apiPricePerMTok: 18,
+    })
   })
 })

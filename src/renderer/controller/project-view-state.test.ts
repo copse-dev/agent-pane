@@ -29,6 +29,7 @@ function stateWith(partial: Partial<AppState>): AppState {
     theme: 'dark',
     themePreference: 'system',
     fontSize: 14,
+    uiScale: 1,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
     openLinksInBuiltInBrowser: true,

@@ -155,9 +155,27 @@ export function buildAppMenu(win: BrowserWindow): void {
         },
         { role: 'toggleDevTools' as const },
         { type: 'separator' as const },
-        { role: 'resetZoom' as const },
-        { role: 'zoomIn' as const },
-        { role: 'zoomOut' as const },
+        {
+          label: 'Zoom In',
+          accelerator: 'CmdOrCtrl+=',
+          click: (): void => {
+            win.webContents.send('menu:zoomIn')
+          },
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: 'CmdOrCtrl+-',
+          click: (): void => {
+            win.webContents.send('menu:zoomOut')
+          },
+        },
+        {
+          label: 'Actual Size',
+          accelerator: 'CmdOrCtrl+0',
+          click: (): void => {
+            win.webContents.send('menu:resetZoom')
+          },
+        },
         { type: 'separator' as const },
         { role: 'togglefullscreen' as const },
       ],

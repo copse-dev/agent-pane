@@ -304,6 +304,39 @@ window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
 [`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
 
+## Roadmap list rows — title first, badges only when exceptional
+
+The Roadmap sidebar list (`roadmap-pane.ts`) should read like a backlog of titles,
+not a wall of green pills. Conventions:
+
+- **`ready` is silent.** The default lifecycle state earns no badge — the title is
+  the signal. Only exceptional states (`blocked`, `conflicts`, `archived`) get a
+  lowercase status chip in the trailing column.
+- **`done` is silent too.** A struck-through title (`.roadmap-row[data-status='done']`)
+  is enough when the show-done filter is on; no "done" pill.
+- **Single-line rows.** Title flexes on the left; trailing indicators (status,
+  attachments, linked thread, mark-done) sit inline on the right — no second meta
+  row beneath every title.
+- **Icons, not labels.** Linked threads use `messageSquareIcon` with tooltip /
+  `aria-label` (same pattern as sidebar PR status). Attachments are a muted
+  paperclip + count without a pill background. Mark-done is a check icon, visible
+  on row hover/focus.
+- **Quick-open palette** (`file-search-dialog.ts`) follows the same hide-ready
+  rule. Specs: [`roadmap-pane.test.ts`](../src/renderer/views/roadmap-pane.test.ts),
+  [`tests/e2e/roadmap-done-toggle.e2e.ts`](../tests/e2e/roadmap-done-toggle.e2e.ts).
+
+## Pane pop-out windows
+
+Detached pane windows (`?popout=<mode>`, `html.is-popout`) are **landscape auxiliary workspaces**,
+not tall portrait strips:
+
+- Default size is landscape (~1024×720). Portrait right-panel stacking and
+  `.is-portrait-chrome` never apply in pop-out mode — one pane fills the window.
+- A **bottom-left** `.popout-panel-bar` switches panel modes inside the same pop-out window.
+- Popping out captures the active pane snapshot (browser tabs, explorer file, etc.) so the
+  detached window opens on the same content. Eval:
+  [`tests/e2e/pane-popout.e2e.ts`](../tests/e2e/pane-popout.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the

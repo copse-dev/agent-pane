@@ -2,6 +2,7 @@ import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -26,6 +27,7 @@ import {
   observeDiffHostLayout,
   setGitFileDiffModel,
 } from '../monaco/git-diff-viewer.ts'
+import { editorFontSizeFromState, updateDiffEditorFontSize } from '../monaco/editor-font-size.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 
 function isImageDiff(diff: GitFileDiff): boolean {
@@ -219,7 +221,12 @@ export function mountGitChangesPane(
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
-      diffEditor = createGitChangesDiffEditor(diffWrap, monaco, store.getState().fontSize, theme)
+      diffEditor = createGitChangesDiffEditor(
+        diffWrap,
+        monaco,
+        editorFontSizeFromState(store.getState()),
+        theme,
+      )
       registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () => {
         if (selection?.kind === 'proposed') {
           return { path: selection.path, detail: 'before' }
@@ -666,6 +673,10 @@ export function mountGitChangesPane(
     store.on('theme_changed', (theme) => {
       monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
+    store.on('settings_changed', () => {
+      if (diffEditor)
+        updateDiffEditorFontSize(diffEditor, editorFontSizeFromState(store.getState()))
+    }),
     store.on('staged_diffs_changed', () => {
       const queue = store.getState().stagedDiffs
       if (queue.length === 0) conflictBanner.hidden = true
@@ -690,7 +701,18 @@ export function mountGitChangesPane(
   // catch up to the current state here, or the diff never renders. See #459.
   if (changesModeActive(store)) void refresh()
 
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('changes', {
+    capture: () => selection,
+    apply: (seed) => {
+      if (!seed || typeof seed !== 'object') return
+      const next = seed as ChangeSelection
+      if (next.kind === 'proposed') void selectProposed(next.path)
+      else void selectGitChange(next.path, next.staged)
+    },
+  })
+
   return () => {
+    unregisterPopoutSeed()
     if (refreshTimer) clearTimeout(refreshTimer)
     stopObservingLayout()
     unsubDiffConflict()

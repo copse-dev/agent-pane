@@ -424,7 +424,7 @@ describe('roadmap pane', () => {
       const titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
       assert.deepEqual(titles, ['Refactor the settings dialog', 'Port e2e specs'])
       const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
-      assert.deepEqual(badges, ['ready', 'blocked'])
+      assert.deepEqual(badges, ['blocked'], 'ready is the default — no badge')
       assert.ok(list.querySelector('.roadmap-status-badge.is-blocked'), 'status styles the badge')
     } finally {
       unmount()
@@ -563,7 +563,7 @@ describe('roadmap pane', () => {
       assert.equal(list.querySelector('.roadmap-row'), null)
       list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
       const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
-      assert.deepEqual(badges, ['done'])
+      assert.deepEqual(badges, [], 'done uses strikethrough, not a badge')
     } finally {
       unmount()
     }
@@ -635,7 +635,7 @@ describe('roadmap pane', () => {
       await flush()
       assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'ready' }])
       const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
-      assert.deepEqual(badges, ['ready'])
+      assert.deepEqual(badges, [], 'reopened ready items have no status badge')
     } finally {
       unmount()
     }
@@ -822,7 +822,7 @@ describe('roadmap pane', () => {
       assert.ok(threadId)
       assert.deepEqual(calls.setThread, [{ id: 'a', threadId }], 'stamps the new thread id')
       assert.equal(reopenBtn.hidden, false, 'the tracked thread can now be reopened')
-      assert.ok(list.querySelector('.roadmap-thread-chip'), 'the row shows a thread chip')
+      assert.ok(list.querySelector('.roadmap-thread-indicator'), 'the row shows a thread indicator')
     } finally {
       unmount()
     }
@@ -871,7 +871,7 @@ describe('roadmap pane', () => {
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
       await flush()
-      assert.equal(list.querySelector('.roadmap-thread-chip'), null)
+      assert.equal(list.querySelector('.roadmap-thread-indicator'), null)
       list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
       assert.equal(viewer.querySelector<HTMLButtonElement>('.roadmap-reopen-btn')?.hidden, true)
     } finally {
@@ -894,7 +894,7 @@ describe('roadmap pane', () => {
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
       await flush()
-      const chip = list.querySelector<HTMLElement>('.roadmap-thread-chip')
+      const chip = list.querySelector<HTMLElement>('.roadmap-thread-indicator')
       assert.ok(chip)
       assert.equal(chip.tabIndex, 0, 'the nested row link must be keyboard focusable')
       chip.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -1154,10 +1154,10 @@ describe('roadmap pane', () => {
       ])
       // The saved item's chips render from the store, and the list shows a count.
       await waitFor(
-        () => list.querySelector('.roadmap-attachment-badge') !== null,
-        'expected an attachment-count badge on the list row',
+        () => list.querySelector('.roadmap-attachment-indicator') !== null,
+        'expected an attachment-count indicator on the list row',
       )
-      const badge = list.querySelector('.roadmap-attachment-badge')
+      const badge = list.querySelector('.roadmap-attachment-indicator')
       assert.ok(badge)
       assert.equal(badge.textContent, '2')
       // Iconography is the shared paperclip SVG, not an emoji glyph.
@@ -1325,6 +1325,83 @@ describe('roadmap pane', () => {
       assert.equal(
         viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
         'Half-typed new prompt',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('auto-saves and restores a partial edit when switching items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([
+      makeItem('a', 'First prompt', 'ready'),
+      makeItem('b', 'Second prompt', 'ready'),
+    ])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const rows = [...list.querySelectorAll<HTMLButtonElement>('.roadmap-row')]
+      assert.equal(rows.length, 2)
+      rows[0]?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.ok(prompt)
+      prompt.value = 'First prompt — still editing'
+      rows[1]?.click()
+      await flush()
+      assert.deepEqual(calls.update, [
+        {
+          id: 'a',
+          prompt: 'First prompt — still editing',
+          notes: undefined,
+          status: 'ready',
+          issue: undefined,
+        },
+      ])
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Second prompt',
+      )
+      rows[0]?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'First prompt — still editing',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('retains a new-item draft when switching to an existing item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Existing prompt', 'ready')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      const notes = viewer.querySelector<HTMLInputElement>('.roadmap-notes-input')
+      assert.ok(prompt && notes)
+      prompt.value = 'Brand-new idea'
+      notes.value = 'jot while thinking'
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      await flush()
+      assert.equal(calls.create.length, 0, 'partial new items are not created until Save')
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Existing prompt',
+      )
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Brand-new idea',
+      )
+      assert.equal(
+        viewer.querySelector<HTMLInputElement>('.roadmap-notes-input')?.value,
+        'jot while thinking',
       )
     } finally {
       unmount()

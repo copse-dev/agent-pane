@@ -363,6 +363,9 @@ export interface ApiClient {
     onShowChanges: (handler: () => void) => () => void
     onShowBrowser: (handler: () => void) => () => void
     onKeyboardShortcuts: (handler: () => void) => () => void
+    onZoomIn: (handler: () => void) => () => void
+    onZoomOut: (handler: () => void) => () => void
+    onResetZoom: (handler: () => void) => () => void
   }
   settings: {
     get: (key: string) => Promise<unknown>
@@ -629,7 +632,11 @@ export interface ApiClient {
   }
   panes: {
     /** Detach a right-panel pane into its own window. */
-    popout: (mode: RightPanelMode) => Promise<void>
+    popout: (mode: RightPanelMode, seed?: unknown) => Promise<void>
+    /** Read (once) the pane snapshot stashed when this pop-out was opened. */
+    takePopoutSeed: (mode: RightPanelMode) => Promise<unknown>
+    /** When an existing pop-out is re-focused for a different pane mode. */
+    onSwitchMode: (handler: (mode: RightPanelMode) => void) => () => void
   }
 }
 

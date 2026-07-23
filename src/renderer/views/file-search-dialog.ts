@@ -124,6 +124,13 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
     const icon = el('span', { class: 'file-search-icon file-search-roadmap-icon' })
     icon.append(outlineIcon('roadmap', ROADMAP_ICON_PATHS, 'file-search-roadmap-svg'))
     const status = item.status ?? 'ready'
+    const rowChildren: HTMLElement[] = [
+      icon,
+      el('span', { class: 'file-search-name' }, item.title || '(untitled)'),
+    ]
+    if (status !== 'ready' && status !== 'done') {
+      rowChildren.push(el('span', { class: `roadmap-status-badge is-${status}` }, status))
+    }
     return el(
       'div',
       {
@@ -131,9 +138,7 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
         role: 'option',
         title: item.body,
       },
-      icon,
-      el('span', { class: 'file-search-name' }, item.title || '(untitled)'),
-      el('span', { class: `roadmap-status-badge is-${status}` }, status),
+      ...rowChildren,
     )
   }
 

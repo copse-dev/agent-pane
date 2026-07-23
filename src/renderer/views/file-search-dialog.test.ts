@@ -231,9 +231,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
         requireQuery(at(rows, 0), '.file-search-name').textContent,
         'Polish the onboarding flow',
       )
-      const badge = requireQuery(at(rows, 0), '.roadmap-status-badge')
-      assert.equal(badge.textContent, 'ready')
-      assert.ok(badge.classList.contains('is-ready'))
+      assert.equal(at(rows, 0).querySelector('.roadmap-status-badge'), null, 'ready has no badge')
       // The section sits after the file rows: file first in the flat list.
       const all = dialog.querySelectorAll('.file-search-item')
       assert.equal(all.length, 3)
