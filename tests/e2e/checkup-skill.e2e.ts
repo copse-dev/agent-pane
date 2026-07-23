@@ -16,14 +16,16 @@ describe('checkup skill', () => {
   it('picks /checkup from the slash picker and runs without Unknown skill', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    // Type a prefix so the skill picker opens (same path as a user picking
-    // `/checkup` from autocomplete), then confirm the built-in skill is listed.
-    await setComposerValue('/check')
+    // Type the full skill name so workspace skills that only share a looser
+    // "check" substring (name/description) cannot outrank `/checkup` at idx 0.
+    await setComposerValue('/checkup')
     const picker = $('.skill-picker')
     await picker.waitForDisplayed({ timeout: 10_000 })
-    await expect(picker.$('.skill-item-name')).toHaveText('/checkup')
+    const checkupRow = picker.$('.skill-item*=/checkup')
+    await checkupRow.waitForExist({ timeout: 5_000 })
+    await expect(checkupRow.$('.skill-item-name')).toHaveText('/checkup')
 
-    // Pick the highlighted row (Enter inserts `/checkup ` and closes the picker).
+    // Enter inserts `/checkup ` for the highlighted (only) match and closes.
     await browser.keys('Enter')
     await browser.waitUntil(async () => !(await picker.isDisplayed()), {
       timeout: 5_000,
