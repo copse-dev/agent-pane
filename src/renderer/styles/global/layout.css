@@ -181,10 +181,12 @@
   align-items: center;
   justify-content: space-between;
   width: auto;
-  margin-inline: var(--spacing-xs);
+  margin-inline: 0;
   border-radius: 0;
   text-align: left;
-  padding: 4px var(--spacing-sm) 4px 28px;
+  /* Left 28px keeps the running-status gutter; roomier vertical/trailing
+     padding so dense thread lists don't feel cramped. */
+  padding: var(--spacing-md) var(--spacing-md) var(--spacing-md) 28px;
   font-size: var(--font-size-sm);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -197,7 +199,9 @@
 .chat-row.selected {
   background: var(--bg-selected);
   color: var(--text-primary);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  /* Trailing-edge accent rail — selection fill is full-bleed, so the marker
+     sits on the sidebar's right edge rather than inset on the left. */
+  box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);
 }
 .chat-title {
   flex: 1 1 auto;
@@ -291,13 +295,12 @@
     opacity: 0.7;
   }
 }
-/* Match .chat-row inset (margin-inline + left padding) so "Show more" lines up
-   with thread titles instead of sitting ~--spacing-xs further left. */
+/* Match .chat-row left padding so "Show more" lines up with thread titles. */
 .chats-show-more {
   width: auto;
-  margin-inline: var(--spacing-xs);
+  margin-inline: 0;
   text-align: left;
-  padding: 4px var(--spacing-sm) 4px 28px;
+  padding: var(--spacing-md) var(--spacing-md) var(--spacing-md) 28px;
   font-size: var(--font-size-sm);
   color: var(--text-muted);
 }

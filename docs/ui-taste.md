@@ -372,13 +372,17 @@ buttons unreadable. Do not introduce one-off component blues that bypass these t
 
 ## Sidebar selections
 
-Chat rows use flat, square selection and hover fills with a slim inset accent rail. Avoid rounded
-row highlights here: they read like detached pills instead of a selection within a continuous
-sidebar list.
+Chat rows use flat, square, full-bleed selection and hover fills with a slim inset accent rail on
+the **trailing (right) edge**. Avoid rounded row highlights here: they read like detached pills
+instead of a selection within a continuous sidebar list. Don't reintroduce horizontal
+`margin-inline` on `.chat-row` — the selection wash should span the sidebar edge-to-edge.
 
 Thread rows and the paginated **Show more** control share the same horizontal inset
 (`margin-inline: var(--spacing-xs)` plus `padding-left: 28px`). Don't give Show more `width: 100%`
 without that margin — the label drifts left of the titles above it.
+
+Settings nav (`.settings-nav-btn.active`) keeps a **leading** accent rail — that list sits on the
+dialog's left edge, so the marker belongs there, not on the trailing side.
 
 ## Settings → Usage worth-it card
 
