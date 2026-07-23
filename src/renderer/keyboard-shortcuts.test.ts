@@ -5,6 +5,7 @@ import {
   matchNewThreadShortcut,
   matchPanelShortcut,
   matchFindInChatShortcut,
+  matchUiScaleShortcut,
 } from './keyboard-shortcuts.ts'
 
 function keyEvent(init: KeyboardEventInit): KeyboardEvent {
@@ -73,6 +74,19 @@ describe('keyboard-shortcuts', () => {
       false,
     )
     assert.equal(matchFindInChatShortcut(keyEvent({ ctrlKey: true, key: 'p' })), false)
+  })
+
+  it('matchUiScaleShortcut matches Cmd/Ctrl+=/−/0', () => {
+    assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, key: '=' })), 'in')
+    assert.equal(matchUiScaleShortcut(keyEvent({ metaKey: true, key: '+' })), 'in')
+    assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, key: '-' })), 'out')
+    assert.equal(matchUiScaleShortcut(keyEvent({ metaKey: true, key: '0' })), 'reset')
+  })
+
+  it('matchUiScaleShortcut ignores modified or unrelated chords', () => {
+    assert.equal(matchUiScaleShortcut(keyEvent({ key: '=' })), null)
+    assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, shiftKey: true, key: '=' })), null)
+    assert.equal(matchUiScaleShortcut(keyEvent({ ctrlKey: true, key: 'f' })), null)
   })
 
   it('isTypingTarget detects editable fields', () => {

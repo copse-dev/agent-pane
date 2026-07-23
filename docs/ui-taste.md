@@ -31,9 +31,16 @@ All spacing, radii, colors, and fonts come from CSS custom properties in
 [`src/renderer/styles/tokens.css`](../src/renderer/styles/tokens.css). Reach for a token before
 typing a raw pixel value; if you find yourself writing `padding: 8px 20px`, that's a smell.
 
-| Token          | Value | Token              | Value |
+Interface scale (`--ui-scale`, Settings → Appearance, ⌘+/−/0, trackpad pinch) multiplies the
+font-size and spacing tokens (and chrome band heights) via `calc(… * var(--ui-scale))`. Radii,
+layout max-widths, and `--traffic-light-inset` stay unscaled so OS chrome alignment does not drift.
+Prefer tokens over hardcoded `px` so scale reaches the surface. Helpers live in
+[`src/shared/ui-scale.ts`](../src/shared/ui-scale.ts); the renderer applies the var through
+[`src/renderer/dom/ui-scale.ts`](../src/renderer/dom/ui-scale.ts).
+
+| Token          | Base  | Token              | Base  |
 | -------------- | ----- | ------------------ | ----- |
-| `--spacing-xs` | 4px   | `--radius`         | 4px   |
+| `--spacing-xs` | 4px   | `--radius`         | 6px   |
 | `--spacing-sm` | 8px   | `--radius-lg`      | 8px   |
 | `--spacing-md` | 12px  | `--font-size-sm`   | 12px  |
 | `--spacing-lg` | 16px  | `--font-size-base` | 14px  |
