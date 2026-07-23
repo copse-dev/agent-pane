@@ -4,6 +4,10 @@ import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs'
 import { extname, join, resolve, sep } from 'node:path'
 import type { Options } from '@wdio/types'
 import { browser } from '@wdio/globals'
+import { installDeleteSessionSafety, withTimeout } from './tests/e2e/helpers/after-test-safety.ts'
+
+/** Cap how long afterTest may talk to a possibly-dead Chrome session. */
+const AFTER_TEST_SESSION_BUDGET_MS = 5_000
 
 const DEMO_PORT = 4173
 const DEMO_ROOT = resolve('dist/demo')
@@ -90,11 +94,25 @@ export const config: Options.Testrunner = {
   mochaOpts: { ui: 'bdd', timeout: 30_000 },
   onPrepare: startDemoServer,
   onComplete: stopDemoServer,
+  before() {
+    // Demo Chrome can wedge on session DELETE the same way Electron e2e does
+    // (#1134 tip b21d7f73 / markdown-list-indent.demo.ts). Cap + swallow so
+    // teardown cannot flip a green demo suite red.
+    installDeleteSessionSafety(browser)
+  },
   afterTest: async (_test, _context, result) => {
     if (!result?.passed) {
-      const failureDir = join(process.cwd(), 'e2e-failure-artifacts')
-      mkdirSync(failureDir, { recursive: true })
-      await browser.saveScreenshot(join(failureDir, 'demo-failure.png'))
+      try {
+        const failureDir = join(process.cwd(), 'e2e-failure-artifacts')
+        mkdirSync(failureDir, { recursive: true })
+        await withTimeout(
+          browser.saveScreenshot(join(failureDir, 'demo-failure.png')),
+          AFTER_TEST_SESSION_BUDGET_MS,
+          'demo afterTest failure screenshot',
+        )
+      } catch {
+        // session/runner likely already dead — nothing to capture
+      }
     }
   },
 }
