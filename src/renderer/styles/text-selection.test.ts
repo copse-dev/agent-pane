@@ -42,7 +42,7 @@ describe('text-selection policy', () => {
     const selectors = selectableSelectors()
     for (const selector of [
       '.message-text', // rendered markdown answers
-      '.message-reasoning-text', // rendered "Thinking" markdown
+      '.message-reasoning-text', // rendered Reasoning markdown
       '.tool-result', // tool output
       '.tool-args pre', // tool arguments
       '.terminal-container', // terminal output

@@ -83,6 +83,8 @@ export interface SpineMessageLine {
   reasoning?: ContentRef
   images?: ImageRef[]
   commandSummary?: string
+  /** Small-model polish for the turn tool rollup; optional, display-only. */
+  toolSummary?: string
   /** Display-only transcript attachment chips (user messages); short, inlined here. */
   attachments?: TranscriptAttachment[]
   /**

@@ -84,6 +84,37 @@ export async function suggestCommandSummary(commands: string[]): Promise<string 
   }
 }
 
+/**
+ * Polish a turn's canned tool rollup (`Used 12 tools` / `Read files`) into a
+ * short past-tense phrase. Non-blocking caller: returns null when the
+ * small-tasks model is unavailable or fewer than two actions are supplied.
+ */
+export async function suggestToolTurnSummary(actions: string[]): Promise<string | null> {
+  if (!Array.isArray(actions) || actions.length < 2) return null
+  const provider = await resolveSmallTasksProvider()
+  if (!provider) return null
+  const model = resolveSmallTasksModelId()
+
+  const list = actions
+    .slice(0, 16)
+    .map((a, i) => `${String(i + 1)}. ${a}`)
+    .join('\n')
+    .slice(0, 1500)
+  const prompt =
+    'An agent just finished these tool actions in one turn. Reply with ONLY a concise ' +
+    '3-8 word past-tense phrase in sentence case summarizing what was done ' +
+    '(e.g. "Read the settings UI" or "Searched code and ran tests"). ' +
+    'No quotes, no trailing punctuation, no tool counts.\n\nActions:\n' +
+    list
+  try {
+    const { text, usage } = await completeTextWithUsage(provider, prompt, 20_000)
+    recordSmallTasksUsage(model, usage)
+    return cleanPhrase(text, 72)
+  } catch {
+    return null
+  }
+}
+
 // Generate a short label for a terminal session from its recent output. Uses
 // the configured small-tasks model; returns null on failure so the caller can
 // keep the default "Terminal N" label.

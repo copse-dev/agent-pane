@@ -151,6 +151,7 @@ export {
   suggestThreadTitle,
   suggestTerminalTitle,
   suggestCommandSummary,
+  suggestToolTurnSummary,
 } from './title-generator.ts'
 
 const abortMap = new Map<string, AbortController>()

@@ -106,6 +106,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       suggestTitle: () => resolved(null),
       suggestTerminalTitle: () => resolved(null),
       suggestCommandSummary: () => resolved(null),
+      suggestToolTurnSummary: () => resolved(null),
       suggestFollowUps: emptyArray,
       onChunk: (handler: (threadId: string, chunk: StreamChunk) => void) => {
         chunkHandlers.add(handler)

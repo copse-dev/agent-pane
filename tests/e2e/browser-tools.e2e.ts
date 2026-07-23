@@ -17,18 +17,19 @@ describe('browser tool display', () => {
     resetUserData()
   })
 
-  it('groups browser tool calls under a Browser card', async () => {
+  it('rolls browser tool calls into one Used browser summary', async () => {
     await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
 
-    const groupCard = await $('.tool-card-group')
-    await expect(groupCard).toBeDisplayed()
-    await expect(groupCard.$('.tool-name')).toHaveText('Browser')
-    await expect(groupCard.$('.tool-count')).toHaveText('×3')
+    const rollup = await $('.tool-card-rollup')
+    await expect(rollup).toBeDisplayed()
+    await expect(rollup.$('summary.tool-card-header .tool-name')).toHaveText('Used browser')
+    await expect(rollup.$('summary.tool-card-header .tool-count')).toHaveText('×3')
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-tools-collapsed.png'))
 
-    await groupCard.$('summary.tool-card-header').click()
-    await expect(groupCard).toHaveAttribute('open')
+    await rollup.$('summary.tool-card-header').click()
+    await expect(rollup).toHaveAttribute('open')
+    await expect(rollup.$('.tool-card-group .tool-name')).toHaveText('Used browser')
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-tools-expanded.png'))
   })
 })
