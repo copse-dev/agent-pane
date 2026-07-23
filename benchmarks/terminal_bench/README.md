@@ -61,17 +61,25 @@ This is ten VMs, not ten containers sharing one fat VM.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
 `main-legacy,pr-1149,product-aligned` and set `steered_rerun` to false. The workflow provisions one
-fleet, then each worker runs those profiles sequentially in fresh Harbor task containers. Profile
-order rotates by shard to counterbalance ordering effects; task images remain cached between
-profiles and are pruned only after the worker's final profile. Single-profile runs continue to use
-the `profile` choice input.
+fleet, then each worker runs one task across every profile before advancing to its next task. The
+profile order rotates by the task's global cohort position to counterbalance ordering effects:
+task 1 runs A/B/C, task 2 runs B/C/A, and task 3 runs C/A/B. All requested attempts for that
+task/profile pair run while the pinned image is resident; the image is pruned after the complete
+task block. Single-profile runs continue to use the `profile` choice input.
 
-Every completed profile is sealed and uploaded before the worker starts its next profile, so a
-later failure does not discard earlier full-shard evidence. The workflow concurrency group uses a
-FIFO queue; repeated workflow dispatches run one fleet at a time instead of canceling an older
-pending run. For large shards, increase `volume_size_gb` so pinned task images can stay cached
-between profiles. `ttl_minutes` is only a self-delete backstop; the controller still tears each
-fleet down immediately on completion.
+Every completed task block is sealed and uploaded before the worker starts its next task, so a
+later failure does not discard earlier paired evidence. An infrastructure-invalid profile is
+recorded and does not censor the remaining profiles or tasks on that worker; the worker reports a
+failure only after attempting its whole shard. The workflow concurrency group uses a FIFO queue;
+repeated workflow dispatches run one fleet at a time instead of canceling an older pending run.
+Because only the current and one prefetched task image need to coexist, the 100 GiB default volume
+is normally sufficient. `ttl_minutes` is only a self-delete backstop; the controller still tears
+each fleet down immediately on completion.
+
+As a fleet-health circuit breaker, a worker stops after three consecutive task blocks in which no
+profile produces a valid result. Isolated invalid profiles and tasks still continue; the threshold
+is intended for systemic Docker, provider, or host failures where further spend cannot add paired
+evidence.
 
 Qwen inference stays on Scaleway's hosted Generative API. The worker Instances therefore do not
 need GPUs and the image contains no model weights. The default `BASIC3-X4C-16G` hosts provide Docker
@@ -137,6 +145,11 @@ ten hosts, each host then processes its deterministic shard sequentially. `insta
 20 and attempts at five. Hosted-model rate limits can still throttle the fleet even when Docker
 capacity is available. Use the Serverless model ID from Scaleway's `/models` catalogue (for
 example `qwen3.6-35b-a3b`), not an LM Studio or dedicated-deployment identifier.
+
+For a fast full-suite three-profile pass, use 18 workers, 89 tasks, and one attempt. This assigns at
+most five task blocks (15 trials) to a worker while preserving exact task-level pairing. Increasing
+`attempts` repeats each task/profile pair before the image is pruned; it improves within-task
+replication but increases wall time approximately linearly.
 
 For a targeted experiment, set `task_names` to a comma-separated list of exact registry names.
 Selection preserves that order, applies `max_tasks`, then shards the cohort; the fleet also limits
@@ -274,10 +287,12 @@ exceptions are retried:
 npm run bench:terminal -- --all --resume -n 1
 ```
 
-For long local runs, the sequential suite driver is safer: it checks that each task wrote a new
-valid result before advancing. `--resume` preserves valid prior outcomes, and `--prune-images`
-removes only the completed task's pinned benchmark image after Harbor has stopped its container
-and written the result. Shared Docker layers remain while another image references them.
+For long local runs, the sequential suite driver checks that each profile wrote a new result before
+advancing. With `--profiles=a,b,c`, it uses the same task-major rotation as the fleet and continues
+past infrastructure-invalid trials so the paired cohort is not censored. `--resume` preserves valid
+prior outcomes, and `--prune-images` removes only the completed task's pinned benchmark image after
+Harbor has stopped its containers and written the results. Shared Docker layers remain while
+another image references them.
 
 ```bash
 npm run bench:terminal:suite -- --resume --prune-images --prefetch-images
@@ -289,8 +304,10 @@ with `COPSE_TERMINAL_PREFETCH_MIN_FREE_DISK_GIB`; pair prefetching with `--prune
 Docker growth bounded.
 
 Use `--max-tasks=N` for a bounded batch, and `--task-names=a,b` to select exact registry tasks in
-the supplied order. The suite stops on a launcher failure or an
-infrastructure-invalid result; rerunning the same resumable command starts at that task.
+the supplied order. `--checkpoint-after-task` seals and uploads the accumulated capsules after each
+task when the worker Object Storage environment is configured. Launcher and infrastructure-invalid
+results make the suite exit nonzero after the shard, but do not prevent later task blocks from
+running.
 
 Inspect current coverage and lifecycle telemetry at any time without Docker:
 

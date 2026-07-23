@@ -164,4 +164,34 @@ describe('terminal benchmark capsule sealing', () => {
       ],
     )
   })
+
+  it('seals an infrastructure-invalid trial under its retained profile', () => {
+    const root = fixture()
+    const trial = join(root, 'bench-results', 'terminal-bench', 'job', 'trial')
+    const resultPath = join(trial, 'result.json')
+    const result = JSON.parse(readFileSync(resultPath, 'utf8')) as Record<string, unknown>
+    result['agent_result'] = null
+    result['exception_info'] = { exception_type: 'RuntimeError', message: 'container failed' }
+    result['verifier_result'] = null
+    writeFileSync(resultPath, JSON.stringify(result))
+    const profile = terminalBenchProfile('product-aligned')
+    writeFileSync(
+      join(trial, 'terminal-bench-profile.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        profile: profile.versionedId,
+        contentHash: profile.contentHash,
+      }),
+    )
+
+    const sealed = runSeal(root, { COPSE_TERMINAL_PROFILE: 'main-legacy' })
+    assert.equal(sealed.status, 0, String(sealed.stderr))
+    const index = JSON.parse(
+      readFileSync(join(root, 'bench-results', 'terminal-bench-capsules', 'index.json'), 'utf8'),
+    ) as { capsules: Array<{ outcome: string; profile: string }> }
+    assert.deepEqual(
+      index.capsules.map(({ outcome, profile: id }) => [id, outcome]),
+      [['product-aligned@1', 'invalid']],
+    )
+  })
 })

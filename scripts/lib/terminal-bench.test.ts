@@ -23,7 +23,9 @@ import {
   terminalBenchPrefetchMinimumFreeDiskBytes,
   terminalBenchRequestedTaskNames,
   terminalBenchShard,
+  terminalBenchShardEntries,
 } from './terminal-bench.mts'
+import { rotateTerminalBenchProfiles } from './terminal-bench-profiles.mts'
 
 const env = { LM_STUDIO_MODEL: 'local/test-model', LM_STUDIO_API_KEY: 'test-key' }
 
@@ -147,6 +149,25 @@ describe('terminal benchmark launcher', () => {
     assert.deepEqual(terminalBenchShard(values, 5, 3, 1), ['b', 'e'])
     assert.deepEqual(terminalBenchShard(values, 5, 3, 2), ['c'])
     assert.throws(() => terminalBenchShard(values, 5, 3, 3), /shard index/)
+    assert.deepEqual(terminalBenchShardEntries(values, 5, 3, 1), [
+      { globalIndex: 1, value: 'b' },
+      { globalIndex: 4, value: 'e' },
+    ])
+  })
+
+  it('rotates profile order by global task position', () => {
+    const profiles = ['main-legacy', 'pr-1149', 'product-aligned'] as const
+    assert.deepEqual(rotateTerminalBenchProfiles(profiles, 0), [...profiles])
+    assert.deepEqual(rotateTerminalBenchProfiles(profiles, 1), [
+      'pr-1149',
+      'product-aligned',
+      'main-legacy',
+    ])
+    assert.deepEqual(rotateTerminalBenchProfiles(profiles, 5), [
+      'product-aligned',
+      'main-legacy',
+      'pr-1149',
+    ])
   })
 
   it('validates exact targeted task lists without reordering them', () => {

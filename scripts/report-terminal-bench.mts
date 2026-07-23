@@ -6,6 +6,7 @@ import {
   TERMINAL_BENCH_TASK_NAMES,
   terminalBenchCanonicalTaskName,
 } from './lib/terminal-bench-tasks.mts'
+import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
 
 interface TrialSummary {
   profile: string
@@ -178,12 +179,14 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
       ? Math.max(0, (finishedMs - startedMs) / 1_000)
       : undefined
   const metadata = nested(value, 'agent_result', 'metadata')
+  const retainedProfile = await readTerminalBenchTrialProfile(path)
   const agentDirectory = join(dirname(path), 'agent')
   const trace = await traceMetrics(join(agentDirectory, 'copse-trace.jsonl'))
 
   return {
-    profile: stringValue(nested(metadata, 'profile')) ?? 'main-legacy@1',
-    profileHash: stringValue(nested(metadata, 'profile_hash')),
+    profile:
+      stringValue(nested(metadata, 'profile')) ?? retainedProfile?.versionedId ?? 'main-legacy@1',
+    profileHash: stringValue(nested(metadata, 'profile_hash')) ?? retainedProfile?.contentHash,
     model:
       stringValue(nested(value, 'config', 'model')) ??
       stringValue(nested(value, 'config', 'agent', 'model_name')),

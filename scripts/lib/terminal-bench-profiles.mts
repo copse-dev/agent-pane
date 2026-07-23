@@ -124,6 +124,20 @@ export function parseTerminalBenchProfileIds(value: string | undefined): Termina
   return ids
 }
 
+export function rotateTerminalBenchProfiles(
+  profiles: readonly TerminalBenchProfileId[],
+  offset: number,
+): TerminalBenchProfileId[] {
+  if (profiles.length === 0) throw new Error('at least one Terminal-Bench profile is required')
+  if (!Number.isInteger(offset) || offset < 0) {
+    throw new Error(
+      `profile rotation offset must be a non-negative integer, received '${String(offset)}'`,
+    )
+  }
+  const normalized = offset % profiles.length
+  return [...profiles.slice(normalized), ...profiles.slice(0, normalized)]
+}
+
 export function terminalBenchProfile(
   value: string | undefined = process.env['COPSE_TERMINAL_PROFILE'],
 ): TerminalBenchProfile {
