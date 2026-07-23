@@ -47,8 +47,16 @@ describe('thread + terminal rename / archive', () => {
     // class in one selector (that would look for the literal text "... .chat-title").
     const keepRow = await $(`.chat-row*=${keepTitle}`)
     await keepRow.waitForExist({ timeout: 10_000 })
-    const keepTitleEl = await keepRow.$('.chat-title')
-    await keepTitleEl.doubleClick()
+    // Electron/WDIO `doubleClick()` often does not synthesize a DOM `dblclick`
+    // on the title; dispatch the event the component listens for.
+    await browser.execute((title) => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>('.chat-row')).find((r) =>
+        (r.querySelector('.chat-title')?.textContent ?? '').includes(title),
+      )
+      const el = row?.querySelector('.chat-title')
+      if (!(el instanceof HTMLElement)) throw new Error(`chat title not found for ${title}`)
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }))
+    }, keepTitle)
     const renameInput = await $('.chat-title-rename')
     await renameInput.waitForExist({ timeout: 5_000 })
     await renameInput.setValue('Renamed keep thread')

@@ -28,10 +28,26 @@ export function showContextMenu(
       item.label,
     )
     if (item.disabled) btn.disabled = true
+    // Prefer mousedown + preventDefault (same pattern as the skill picker) so
+    // selecting an item that mounts a focused rename input does not lose that
+    // focus to the activating click/blur sequence before onSelect runs.
+    // Keep a click fallback for jsdom/component tests that call `button.click()`.
+    let selected = false
+    const select = (): void => {
+      if (selected || item.disabled) return
+      selected = true
+      dismiss()
+      item.onSelect()
+    }
+    btn.addEventListener('mousedown', (e) => {
+      if (item.disabled) return
+      e.preventDefault()
+      e.stopPropagation()
+      select()
+    })
     btn.addEventListener('click', (e) => {
       e.stopPropagation()
-      dismiss()
-      if (!item.disabled) item.onSelect()
+      select()
     })
     return btn
   })

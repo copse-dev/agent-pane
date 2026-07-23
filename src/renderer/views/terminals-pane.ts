@@ -211,7 +211,12 @@ export function mountTerminalsPane(
       }
     })
     input.addEventListener('blur', () => {
-      finish(true)
+      // Defer so a focus() that races the activating click still wins before we
+      // tear the input down (WDIO / xterm focus fighting).
+      queueMicrotask(() => {
+        if (done || document.activeElement === input) return
+        finish(true)
+      })
     })
     for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
       input.addEventListener(evt, (e) => {
