@@ -419,4 +419,3 @@ Optional tuning variables:
 
 The launcher pins Harbor so the custom-agent API and result shape do not drift between
 runs. Change that pin deliberately and revalidate the adapter before comparing results.
-
