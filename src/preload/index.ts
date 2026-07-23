@@ -75,6 +75,8 @@ contextBridge.exposeInMainWorld('api', {
     suggestTerminalTitle: (text: string) => ipcRenderer.invoke('agent:suggestTerminalTitle', text),
     suggestCommandSummary: (commands: string[]) =>
       ipcRenderer.invoke('agent:suggestCommandSummary', commands),
+    suggestToolTurnSummary: (actions: string[]) =>
+      ipcRenderer.invoke('agent:suggestToolTurnSummary', actions),
     suggestFollowUps: (contextJson: string) =>
       ipcRenderer.invoke('agent:suggestFollowUps', contextJson),
     onChunk: (handler: (threadId: string, chunk: unknown) => void) => {

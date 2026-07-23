@@ -18,13 +18,23 @@ describe('tool call turn rollup', () => {
     resetUserData()
   })
 
-  it('collapses a mixed tool turn into one past-tense summary without boxed chrome', async () => {
+  it('collapses a mixed tool turn into one italic polished summary without boxed chrome', async () => {
     await $('.tool-card-rollup').waitForExist({ timeout: 30_000 })
 
     const rollup = await $('.tool-card-rollup')
     await expect(rollup).toBeDisplayed()
     await expect(rollup).not.toHaveAttribute('open')
-    await expect(rollup.$('.tool-card-header .tool-name')).toHaveText('Used 3 tools · 1 failed')
+    // Seeded toolSummary polishes the canned "Used 3 tools"; failures stay.
+    await expect(rollup.$('.tool-card-header .tool-name')).toHaveText(
+      'Inspected the repo layout · 1 failed',
+    )
+    const nameStyle = await browser.execute(() => {
+      const el = document.querySelector('.tool-card-rollup > .tool-card-header .tool-name')
+      if (!el) return null
+      const style = getComputedStyle(el)
+      return { fontStyle: style.fontStyle, fontWeight: style.fontWeight }
+    })
+    expect(nameStyle?.fontStyle).toBe('italic')
 
     await saveAppScreenshot('tool-display-rollup-collapsed.png')
 

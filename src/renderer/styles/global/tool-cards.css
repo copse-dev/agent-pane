@@ -86,9 +86,22 @@
   color: #f07178;
 }
 
-/* Turn rollup: one summary line for the whole tool burst. */
+/* Turn rollup: italic muted summary — click to expand the flat tool list. */
+.tool-card-rollup > .tool-card-header {
+  color: var(--text-muted);
+}
 .tool-card-rollup > .tool-card-header .tool-name {
-  font-weight: 500;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.tool-card-rollup > .tool-card-header:hover,
+.tool-card-rollup > .tool-card-header:hover .tool-name {
+  color: var(--text-secondary);
+}
+.tool-card-rollup > .tool-card-header .tool-status-icon {
+  /* Summary line stays quiet; status lives on expanded rows. */
+  display: none;
 }
 .tool-rollup-body {
   display: flex;
@@ -102,7 +115,19 @@
   display: none;
 }
 .tool-card-rollup[data-status='running'] > .tool-card-header .tool-name {
-  color: var(--text-primary);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+/* Nested cards inside a rollup stay unboxed rows — no second layer of chrome. */
+.tool-rollup-body > .tool-card {
+  background: transparent;
+  border: none;
+  padding-inline: 0;
+}
+.tool-rollup-body > .tool-card > .tool-card-header .tool-name {
+  font-weight: 400;
+  font-style: normal;
+  color: var(--text-secondary);
 }
 
 .tool-card-group > .tool-group-items {

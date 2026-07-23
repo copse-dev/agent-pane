@@ -6,6 +6,7 @@ import {
   addMessage,
   addToolCall,
   createThread,
+  setMessageToolSummary,
   updateToolCall,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -56,6 +57,8 @@ function mountWithTools(): {
     status: 'error',
     result: 'Error: ENOENT',
   })
+  // Mirror seedToolDisplayFixture: polished summary already on the message.
+  setMessageToolSummary(store, messageId, 'Inspected the repo layout')
   const host = document.createElement('div')
   document.body.append(host)
   mountConversation(host, store, fakeApi())
@@ -67,17 +70,17 @@ afterEach(() => {
 })
 
 describe('tool call display (component)', () => {
-  it('rolls the turn into one collapsed summary with past-tense wording', () => {
+  it('rolls the turn into one collapsed italic summary with polished wording', () => {
     mountWithTools()
 
     const rollup = document.querySelector('.tool-card-rollup')
     assert.ok(rollup, 'expected a turn rollup card')
     // Collapsed by default once settled; expand to inspect nested groups.
     assert.equal(rollup.hasAttribute('open'), false)
-    // Mixed success + failure → quiet count with failure callout.
+    // toolSummary polish + failure callout (not the canned "Used 3 tools").
     assert.equal(
       rollup.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
-      'Used 3 tools · 1 failed',
+      'Inspected the repo layout · 1 failed',
     )
   })
 

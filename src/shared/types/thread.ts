@@ -238,6 +238,12 @@ export interface Message {
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
   /**
+   * Small-model polish for the turn's tool rollup (`.tool-card-rollup`). The
+   * deterministic canned label shows immediately; this replaces it when ready
+   * and never blocks delivery.
+   */
+  toolSummary?: string
+  /**
    * Primary-chat model that produced this assistant message (picker id for the
    * turn). Surfaced in the transcript only when the thread used more than one
    * primary model — subagent models live on {@link SubagentSession.model}.

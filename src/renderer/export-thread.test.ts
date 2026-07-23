@@ -111,6 +111,7 @@ describe('export thread', () => {
           role: 'assistant',
           content: 'done',
           commandSummary: 'ran 3 shell commands',
+          toolSummary: 'Inspected the repo layout',
           toolCalls: [
             {
               id: 'tool-1',
@@ -137,12 +138,14 @@ describe('export thread', () => {
 
     const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as {
       commandSummary: string
+      toolSummary: string
       toolCalls: Array<{
         editStats: { additions: number; deletions: number }
         subagent: { usage: { inputTokens: number; outputTokens: number } }
       }>
     }
     assert.equal(line.commandSummary, 'ran 3 shell commands')
+    assert.equal(line.toolSummary, 'Inspected the repo layout')
     const toolCall = at(line.toolCalls, 0)
     assert.deepEqual(toolCall.editStats, { additions: 5, deletions: 2 })
     assert.deepEqual(toolCall.subagent.usage, { inputTokens: 10, outputTokens: 4 })

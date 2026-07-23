@@ -2093,6 +2093,9 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
             id: 'msg-assistant-1',
             role: 'assistant',
             content: 'Here is what I found in the repo.',
+            // Small-model polish already applied — e2e asserts the italic rollup
+            // shows this instead of the canned "Used 3 tools".
+            toolSummary: 'Inspected the repo layout',
             toolCalls: [
               {
                 id: 'tc-read-1',

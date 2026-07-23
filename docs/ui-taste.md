@@ -293,12 +293,15 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
   `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
   tool, and do not keep progressive wording on a completed card.
 - **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
-  `.tool-card-rollup` (`Used N tools`, or a single-category label like `Read files` / `Used
-browser`). Expand to inspect nested category groups and individuals. Subagent cards stay
-  outside the rollup — they have their own timeline.
+  `.tool-card-rollup`. The collapsed summary is **italic muted text** (like reasoning) — click
+  to expand nested category groups and individuals. Subagent cards stay outside the rollup.
+- **Canned first, small-model polish later.** Show the deterministic label immediately
+  (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
+  `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
+  that call. Keep failure callouts (`· N failed`) even after polish.
 - **No card chrome by default.** Collapsed tool rows drop fill/border; nested items inside an
-  expanded rollup stay flat under a hairline indent. Reach for `--text-secondary` and
-  `--bg-hover` on the summary, not `--bg-elevated` panels.
+  expanded rollup stay flat under a hairline indent. Reach for `--text-muted` / italics on the
+  rollup summary, not `--bg-elevated` panels.
 
 Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display.test.ts`,
 `tests/e2e/tool-display-rollup.e2e.ts`, `tests/e2e/browser-tools.e2e.ts`.

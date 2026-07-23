@@ -1237,17 +1237,24 @@ export function mountConversation(
     updateScrollButton()
   }
 
-  function applyCommandSummary(item: ToolCallDisplayItem, commandSummary?: string): void {
-    // LLM-only rollup: a small-model summary, when ready, replaces the generic
-    // "Ran commands" header for the shell group.
-    if (item.type === 'group' && item.key === 'shell' && commandSummary) {
-      item.label = commandSummary
-      return
-    }
+  function applyRollupSummaries(
+    item: ToolCallDisplayItem,
+    opts: { commandSummary?: string; toolSummary?: string },
+  ): void {
+    const { commandSummary, toolSummary } = opts
+    // LLM polish for the turn rollup: replaces the canned `Used N tools` /
+    // category label when ready. Failures stay visible on the collapsed line.
     if (item.type === 'rollup') {
-      for (const child of item.children) applyCommandSummary(child, commandSummary)
-      // Keep the turn summary in sync when the only child is the shell group.
+      if (toolSummary?.trim()) {
+        const failed = item.toolCalls.filter((tc) => tc.status === 'error').length
+        item.label =
+          failed > 0 ? `${toolSummary.trim()} · ${String(failed)} failed` : toolSummary.trim()
+      }
+      for (const child of item.children) applyRollupSummaries(child, opts)
+      // Legacy shell-only path: when no toolSummary yet, a commandSummary can
+      // still label a pure shell turn.
       if (
+        !toolSummary?.trim() &&
         commandSummary &&
         item.children.length === 1 &&
         item.children[0]?.type === 'group' &&
@@ -1255,6 +1262,22 @@ export function mountConversation(
       ) {
         item.label = commandSummary
       }
+      // When the polish lands on a single shell group, keep the nested header
+      // in sync so expand doesn't revert to the canned "Ran commands".
+      if (
+        toolSummary?.trim() &&
+        item.children.length === 1 &&
+        item.children[0]?.type === 'group' &&
+        item.children[0].key === 'shell'
+      ) {
+        item.children[0].label = toolSummary.trim()
+      }
+      return
+    }
+    // LLM-only rollup: a small-model summary, when ready, replaces the generic
+    // "Ran commands" header for the shell group.
+    if (item.type === 'group' && item.key === 'shell' && commandSummary) {
+      item.label = commandSummary
     }
   }
 
@@ -1308,7 +1331,7 @@ export function mountConversation(
   function renderToolCards(
     msgEl: HTMLElement,
     toolCalls: ToolCall[],
-    commandSummary?: string,
+    opts: { commandSummary?: string; toolSummary?: string } = {},
   ): void {
     const userExpandedRollups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-rollup[open]').forEach((node) => {
@@ -1337,7 +1360,7 @@ export function mountConversation(
       })
 
     const items = buildToolCallDisplayItems(toolCalls)
-    for (const item of items) applyCommandSummary(item, commandSummary)
+    for (const item of items) applyRollupSummaries(item, opts)
 
     // Index the cards already in the DOM by their stable key so unchanged ones
     // are reused wholesale instead of torn down and rebuilt on every tick — the
@@ -1442,7 +1465,10 @@ export function mountConversation(
     hydrateRemoteArtifactImages(list, api)
     // Re-render any tool cards this message already carries (restored threads).
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl, msg.toolCalls ?? [], msg.commandSummary)
+    renderToolCards(msgEl, msg.toolCalls ?? [], {
+      ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
+      ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
+    })
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
     // Render any hook cards folded onto this message's turn (decision 10).
@@ -1590,7 +1616,10 @@ export function mountConversation(
     const prevScrollTop = list.scrollTop
     const wasPinned = pinnedToBottom
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], msg.commandSummary)
+    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], {
+      ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
+      ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
+    })
     if (wasPinned) {
       scrollToBottom()
     } else if (list.scrollTop !== prevScrollTop) {
