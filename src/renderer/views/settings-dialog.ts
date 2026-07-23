@@ -782,8 +782,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <fieldset>
               <legend>Skills</legend>
               <p class="settings-fieldset-desc">
-                Skills discovered on disk, tagged by where they came from. Manage inclusion of
-                bundled Cursor skills under General → Skills.
+                Skills discovered on disk, tagged by where they came from. Hover a row to see its
+                path. Manage inclusion of bundled Cursor skills under General → Skills.
               </p>
               <div id="sources-skills-list" class="sources-group">
                 <span class="sources-empty">Loading…</span>
@@ -1346,10 +1346,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       badgeClass?: string | undefined
       /** Extra badges rendered after the scope badge (e.g. unsupported / error). */
       extraBadges?: Array<{ text: string; className: string }>
+      /** Native tooltip (also used when hover-detail CSS is unavailable). */
+      titleAttr?: string | undefined
+      /** Path/origin shown only while the row is hovered or focused. */
+      hoverDetail?: string | undefined
     } = {},
   ): HTMLElement {
     const row = document.createElement('div')
     row.className = 'sources-row'
+    if (opts.titleAttr) row.title = opts.titleAttr
     const header = document.createElement('div')
     header.className = 'sources-row-header'
     const titleEl = document.createElement('span')
@@ -1374,6 +1379,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       detailEl.className = 'sources-row-detail'
       detailEl.textContent = detail
       row.append(detailEl)
+    }
+    if (opts.hoverDetail) {
+      const hoverEl = document.createElement('div')
+      hoverEl.className = 'sources-row-hover-detail'
+      hoverEl.textContent = opts.hoverDetail
+      row.append(hoverEl)
     }
     return row
   }
@@ -1606,8 +1617,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       fillSourceList(
         '#sources-skills-list',
         skills.map((s) =>
-          makeSourceRow(s.name, s.source, s.description || s.skillPath, {
+          makeSourceRow(s.name, s.source, s.description || null, {
             badgeClass: s.source === 'project' ? 'sources-badge-project' : undefined,
+            // Keep the resting list uncluttered: path lives on hover (and as a
+            // native tooltip fallback). Description stays as the always-visible
+            // detail; when a skill has none, the hover line is the only path.
+            titleAttr: s.skillPath,
+            hoverDetail: s.skillPath,
           }),
         ),
         'No skills discovered.',

@@ -324,6 +324,15 @@ window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
 [`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
 
+## Sources lists: origin on hover, not in the resting row
+
+Settings → Sources rows already carry a coarse source badge (`bundled`, `project`, …). When the
+useful origin is a long filesystem path, keep it out of the resting list: put it in
+`.sources-row-hover-detail` (revealed on `:hover` / `:focus-within`) and mirror it on the row's
+`title` for the native tooltip. Skills use this so every bundled principle isn't visually buried
+under identical path chrome. Spec:
+[`tests/e2e/settings-sources-skills.e2e.ts`](../tests/e2e/settings-sources-skills.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the
