@@ -18,13 +18,13 @@ describe('tool call turn rollup', () => {
     resetUserData()
   })
 
-  it('shows a multi-segment turn of italic rollups between Thinking blocks', async () => {
+  it('nests Thinking inside italic tool rollups across a multi-segment turn', async () => {
     await $('.tool-card-rollup').waitForExist({ timeout: 30_000 })
 
     const rollups = await $$('.tool-card-rollup')
     await expect(rollups).toBeElementsArrayOfSize(3)
 
-    // Each assistant tool segment keeps its own polished italic summary.
+    // Each tool segment collapses to one italic heading — no standalone Thinking above.
     await expect(rollups[0]!.$('.tool-card-header .tool-name')).toHaveText(
       'Searched the settings UI',
     )
@@ -34,10 +34,7 @@ describe('tool call turn rollup', () => {
     await expect(rollups[2]!.$('.tool-card-header .tool-name')).toHaveText(
       'Read settings template paths',
     )
-
-    // Tool-only segments leave Thinking open (empty message body).
-    const openThinking = await $$('.msg-assistant .message-reasoning[open]')
-    expect(openThinking.length).toBeGreaterThanOrEqual(2)
+    await expect($$('.msg-assistant .message-body > .message-reasoning')).toBeElementsArrayOfSize(1)
 
     const nameStyle = await browser.execute(() => {
       const el = document.querySelector('.tool-card-rollup > .tool-card-header .tool-name')
@@ -46,24 +43,24 @@ describe('tool call turn rollup', () => {
     })
     expect(nameStyle).toBe('italic')
 
-    // Pin the viewport to the start of the multi-segment turn so the overview
-    // shows the user bug + Thinking / rollup pairs (not only the final answer).
     await browser.execute(() => {
       const list = document.querySelector('.messages-list')
       if (list) list.scrollTop = 0
     })
     await saveAppScreenshot('tool-display-rollup-collapsed.png')
 
-    // Expand the mixed-success segment (second rollup) and capture detail.
+    // Expand the mixed-success segment: Thinking + flat tool rows live inside.
     const mixed = rollups[1]!
     await mixed.scrollIntoView()
     await mixed.$('summary.tool-card-header').click()
     await expect(mixed).toHaveAttribute('open')
+    await expect(mixed.$('.tool-rollup-body > .message-reasoning')).toExist()
+    await expect(mixed.$('.message-reasoning-text')).toHaveText(
+      'Reading key files to diagnose the settings flicker and missing button text.',
+    )
     await expect(mixed.$('.tool-card-group .tool-name')).toHaveText('Read files')
     await expect(mixed.$('.tool-card-group .tool-count')).toHaveText('×2')
-    await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"] .tool-name')).toHaveText(
-      'Read file',
-    )
+    await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"] .tool-name')).toHaveText('Read file')
     await expect(mixed.$('.tool-card[data-tool-id="tc-read-2"]')).toHaveAttribute(
       'data-status',
       'error',

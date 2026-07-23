@@ -711,14 +711,15 @@ function appendMessageContent(
     attachments?: TranscriptAttachment[]
   },
   api: ApiClient,
+  opts?: { nestReasoningInTools?: boolean },
 ): void {
   if (msg.role === 'user' && msg.images?.length) {
     body.append(createMessageImages(msg.images))
   }
-  // Reasoning disclosure sits above the answer so the "Thinking" trail reads
-  // top-to-bottom. Collapsed once the answer has arrived; the live handler keeps
-  // it open while it is still streaming and the answer is empty.
-  if (msg.role === 'assistant' && msg.reasoning) {
+  // Reasoning usually sits above the answer. When this segment also has tools,
+  // Thinking nests inside the tool rollup instead — collapsed view is just the
+  // italic summary heading.
+  if (msg.role === 'assistant' && msg.reasoning && opts?.nestReasoningInTools !== true) {
     body.append(buildReasoningEl(msg.reasoning, !msg.content.trim()))
   }
   const textEl = el('div', { class: 'message-text streaming-markdown' })
@@ -730,6 +731,11 @@ function appendMessageContent(
     textEl.textContent = msg.content
   }
   body.append(textEl)
+}
+
+/** True when Thinking should fold into the tool rollup for this message. */
+function shouldNestReasoningInTools(toolCalls: ToolCall[]): boolean {
+  return toolCalls.some((tc) => !tc.subagent)
 }
 
 /** A display-only transcript chip: an outline icon + its (clipped) label. */
@@ -805,25 +811,64 @@ function renderReasoningText(el: HTMLElement, text: string): void {
 /**
  * Create or update the reasoning disclosure for a streaming assistant message.
  * Reuses the existing element so re-entrant reasoning events keep the user's
- * open/closed choice and avoid rebuilding the DOM each token.
+ * open/closed choice and avoid rebuilding the DOM each token. Prefers a nested
+ * home inside the tool rollup when tools have already arrived on this message.
  */
 function syncReasoningEl(msgEl: HTMLElement, msg: { content: string; reasoning?: string }): void {
   const body = msgEl.querySelector('.message-body')
   if (!body) return
-  let details = body.querySelector<HTMLDetailsElement>('.message-reasoning')
+  const rollupBody = msgEl.querySelector<HTMLElement>(
+    ':scope > .tool-card-rollup > .tool-rollup-body',
+  )
+  const host = rollupBody ?? body
+  let details = msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
   if (!msg.reasoning) {
     details?.remove()
     return
   }
   if (!details) {
     details = buildReasoningEl(msg.reasoning, true)
-    body.prepend(details)
+    host.prepend(details)
   } else {
-    const textEl = body.querySelector<HTMLElement>('.message-reasoning-text')
+    if (details.parentElement !== host) host.prepend(details)
+    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
     if (textEl) renderReasoningText(textEl, msg.reasoning)
   }
   // Keep the trail open while it is still live, unless the user collapsed it.
   if (!details.dataset['userToggled'] && !msg.content.trim()) details.open = true
+}
+
+/**
+ * Keep Thinking nested at the top of a turn rollup (and strip any leftover
+ * body-level trail) so the collapsed chrome is only the italic summary.
+ */
+function syncNestedRollupReasoning(
+  card: HTMLElement,
+  msgEl: HTMLElement,
+  reasoning?: string,
+): void {
+  const rollupBody = card.querySelector<HTMLElement>(':scope > .tool-rollup-body')
+  if (!rollupBody) return
+  const body = msgEl.querySelector('.message-body')
+  let details =
+    rollupBody.querySelector<HTMLDetailsElement>(':scope > .message-reasoning') ??
+    msgEl.querySelector<HTMLDetailsElement>('.message-reasoning')
+  if (!reasoning?.trim()) {
+    details?.remove()
+    return
+  }
+  if (!details) {
+    details = buildReasoningEl(reasoning, true)
+  } else {
+    const textEl = details.querySelector<HTMLElement>('.message-reasoning-text')
+    if (textEl) renderReasoningText(textEl, reasoning)
+  }
+  if (details.parentElement !== rollupBody) rollupBody.prepend(details)
+  // Orphaned body-level trail (streamed before tools arrived) is the same node
+  // after prepend — also drop any duplicate left behind.
+  body?.querySelectorAll<HTMLElement>(':scope > .message-reasoning').forEach((node) => {
+    if (node !== details) node.remove()
+  })
 }
 
 const SCROLL_PIN_THRESHOLD_PX = 48
@@ -1331,7 +1376,7 @@ export function mountConversation(
   function renderToolCards(
     msgEl: HTMLElement,
     toolCalls: ToolCall[],
-    opts: { commandSummary?: string; toolSummary?: string } = {},
+    opts: { commandSummary?: string; toolSummary?: string; reasoning?: string } = {},
   ): void {
     const userExpandedRollups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-rollup[open]').forEach((node) => {
@@ -1359,7 +1404,10 @@ export function mountConversation(
         if (id) userExpandedTools.add(id)
       })
 
-    const items = buildToolCallDisplayItems(toolCalls)
+    const nestThinking = Boolean(opts.reasoning?.trim()) && shouldNestReasoningInTools(toolCalls)
+    const items = buildToolCallDisplayItems(toolCalls, {
+      ...(nestThinking ? { forceRollup: true } : {}),
+    })
     for (const item of items) applyRollupSummaries(item, opts)
 
     // Index the cards already in the DOM by their stable key so unchanged ones
@@ -1403,6 +1451,9 @@ export function mountConversation(
       }
 
       applyToolCardOpenState(card, item, userExpandedRollups, userExpandedGroups, userExpandedTools)
+      if (item.type === 'rollup' && nestThinking) {
+        syncNestedRollupReasoning(card, msgEl, opts.reasoning)
+      }
       desired.push(card)
     }
 
@@ -1411,6 +1462,15 @@ export function mountConversation(
     existing.forEach((node) => {
       node.remove()
     })
+    // No rollup this tick (tools cleared) — leave body-level Thinking alone;
+    // when tools exist without nested reasoning, strip any orphan nested trail.
+    if (!nestThinking) {
+      msgEl
+        .querySelectorAll<HTMLElement>('.tool-card-rollup .message-reasoning')
+        .forEach((node) => {
+          node.remove()
+        })
+    }
     // Move/insert only when a card is out of place. Blind `append` of an
     // already-correct child still remove+reinserts it and can flash siblings
     // whenever any other tool on the message ticks (#728).
@@ -1447,7 +1507,11 @@ export function mountConversation(
     if (hookOrigin) msgEl.setAttribute('data-hook-id', hookOrigin.hookId)
     const body = el('div', { class: 'message-body' })
     if (hookOrigin) body.append(buildHookOriginMarker(hookOrigin, msg.editedByUser === true))
-    appendMessageContent(body, msg, api)
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
+    const nestReasoning = shouldNestReasoningInTools(msg.toolCalls ?? [])
+    appendMessageContent(body, msg, api, {
+      ...(nestReasoning ? { nestReasoningInTools: true } : {}),
+    })
     msgEl.append(body)
 
     // Copy only when there is reply text — tool-only bubbles stay compact.
@@ -1468,6 +1532,7 @@ export function mountConversation(
     renderToolCards(msgEl, msg.toolCalls ?? [], {
       ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
       ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
+      ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
     })
     // Restore an inline review this message already carries (rebuilt threads).
     if (msg.review) renderMessageReview(threadId, msgId)
@@ -1619,6 +1684,7 @@ export function mountConversation(
     renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], {
       ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
       ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
+      ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
     })
     if (wasPinned) {
       scrollToBottom()
@@ -1669,8 +1735,11 @@ export function mountConversation(
         const body = msgEl?.querySelector('.message-body')
         if (body && !body.querySelector('.msg-copy'))
           attachCopyButton(body as HTMLElement, mid, store)
-        // Answer is in: tuck the reasoning trail away unless the user opened it.
-        const reasoning = body?.querySelector('.message-reasoning') as HTMLDetailsElement | null
+        // Answer is in: tuck a body-level reasoning trail away unless the user
+        // opened it. Nested trails inside a tool rollup stay with that rollup.
+        const reasoning = body?.querySelector(
+          ':scope > .message-reasoning',
+        ) as HTMLDetailsElement | null
         if (reasoning && !reasoning.dataset['userToggled']) reasoning.open = false
       }
     }),

@@ -129,6 +129,16 @@
   font-style: normal;
   color: var(--text-secondary);
 }
+/* Thinking that belongs to this tool burst lives inside the rollup — not as a
+   separate transcript block above it. */
+.tool-rollup-body > .message-reasoning {
+  margin: 0 0 var(--spacing-xs);
+  border-left: 0;
+  padding-left: 0;
+}
+.tool-rollup-body > .message-reasoning > .message-reasoning-summary {
+  margin-inline: calc(-1 * var(--spacing-xs));
+}
 
 .tool-card-group > .tool-group-items {
   display: flex;

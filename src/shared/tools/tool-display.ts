@@ -391,8 +391,14 @@ export function summarizeToolTurn(toolCalls: ToolCall[], items: ToolCallDisplayI
  * cards (they have their own timeline). Everything else collapses into one
  * quiet turn rollup when there are two or more calls — including Cursor cloud /
  * ACP titles that never map onto a built-in group.
+ *
+ * `forceRollup` wraps even a single regular tool so a co-located Thinking trail
+ * can nest inside the italic summary (rather than floating above it).
  */
-export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDisplayItem[] {
+export function buildToolCallDisplayItems(
+  toolCalls: ToolCall[],
+  opts?: { forceRollup?: boolean },
+): ToolCallDisplayItem[] {
   if (toolCalls.length === 0) return []
 
   const subagents: ToolCall[] = []
@@ -404,7 +410,7 @@ export function buildToolCallDisplayItems(toolCalls: ToolCall[]): ToolCallDispla
 
   const result: ToolCallDisplayItem[] = []
   const grouped = buildGroupedDisplayItems(regular)
-  if (regular.length >= 2) {
+  if (regular.length >= 2 || (opts?.forceRollup === true && regular.length >= 1)) {
     result.push({
       type: 'rollup',
       key: TURN_ROLLUP_KEY,

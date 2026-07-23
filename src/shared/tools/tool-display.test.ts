@@ -209,6 +209,15 @@ describe('tool-display', () => {
     assert.equal(items[0].label, 'Read file')
   })
 
+  it('forceRollup wraps a single tool so Thinking can nest inside', () => {
+    const items = buildToolCallDisplayItems([tc('1', 'read_file')], { forceRollup: true })
+    assert.equal(items.length, 1)
+    assert.equal(items[0]?.type, 'rollup')
+    assert.equal(items[0].label, 'Read file')
+    assert.equal(items[0].children.length, 1)
+    assert.equal(items[0].children[0]?.type, 'individual')
+  })
+
   it('rolls up mixed tools with a Used N tools summary', () => {
     const tools = [tc('1', 'read_file'), tc('2', 'search_code'), tc('3', 'run_shell')]
     const items = buildToolCallDisplayItems(tools)
