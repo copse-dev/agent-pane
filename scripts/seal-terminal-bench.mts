@@ -4,6 +4,12 @@ import { glob, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promis
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { c as createTar } from 'tar'
 import { terminalBenchTrialOutcome } from './lib/terminal-bench-outcome.mts'
+import {
+  TERMINAL_BENCH_DATASET_DESCRIPTOR,
+  terminalBenchCanonicalTaskName,
+  terminalBenchTaskMetadata,
+} from './lib/terminal-bench-tasks.mts'
+import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 
 const RESULTS_ROOT = resolve('bench-results/terminal-bench')
 const CAPSULES_ROOT = resolve('bench-results/terminal-bench-capsules')
@@ -120,6 +126,43 @@ function safeName(value: unknown): string {
   return text.replaceAll(/[^a-zA-Z0-9._-]+/g, '-').replaceAll(/^-|-$/g, '') || 'unknown-task'
 }
 
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function elapsedSeconds(startedAt: unknown, finishedAt: unknown): number | null {
+  if (typeof startedAt !== 'string' || typeof finishedAt !== 'string') return null
+  const started = Date.parse(startedAt)
+  const finished = Date.parse(finishedAt)
+  return Number.isFinite(started) && Number.isFinite(finished)
+    ? Math.max(0, (finished - started) / 1_000)
+    : null
+}
+
+interface StoredTrial {
+  resultPath: string
+  result: unknown
+}
+
+const storedTrials: StoredTrial[] = []
+for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
+  try {
+    storedTrials.push({ resultPath, result: JSON.parse(await readFile(resultPath, 'utf8')) })
+  } catch (error) {
+    console.warn(`bench:terminal:seal: ignoring unreadable result ${resultPath}: ${String(error)}`)
+  }
+}
+storedTrials.sort((a, b) => {
+  const taskDifference = String(nested(a.result, 'task_name')).localeCompare(
+    String(nested(b.result, 'task_name')),
+  )
+  if (taskDifference !== 0) return taskDifference
+  const timeDifference = String(nested(a.result, 'started_at')).localeCompare(
+    String(nested(b.result, 'started_at')),
+  )
+  return timeDifference || a.resultPath.localeCompare(b.resultPath)
+})
+
 await mkdir(CAPSULES_ROOT, { recursive: true })
 const capsules: Array<{
   trialId: string
@@ -129,20 +172,28 @@ const capsules: Array<{
   sha256: string
   startedAt: string | null
   outcome: ReturnType<typeof terminalBenchTrialOutcome>
+  attemptIndex: number
+  profile: string
+  profileHash: string
 }> = []
+const attemptsByTask = new Map<string, number>()
 
-for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
+for (const { resultPath, result } of storedTrials) {
   const directory = dirname(resultPath)
-  let result: unknown
-  try {
-    result = JSON.parse(await readFile(resultPath, 'utf8'))
-  } catch (error) {
-    console.warn(`bench:terminal:seal: ignoring unreadable result ${resultPath}: ${String(error)}`)
-    continue
-  }
   const id = trialId(resultPath, result)
   const rawTaskName = nested(result, 'task_name')
-  const taskName = typeof rawTaskName === 'string' && rawTaskName ? rawTaskName : 'unknown-task'
+  const taskName =
+    typeof rawTaskName === 'string' && rawTaskName
+      ? terminalBenchCanonicalTaskName(rawTaskName)
+      : 'unknown-task'
+  const taskMetadata = terminalBenchTaskMetadata(taskName)
+  const rawProfile = nested(result, 'agent_result', 'metadata', 'profile')
+  const profile = terminalBenchProfile(
+    typeof rawProfile === 'string' ? rawProfile.replace(/@1$/, '') : undefined,
+  )
+  const attemptKey = `${profile.versionedId}:${taskName}`
+  const attemptIndex = (attemptsByTask.get(attemptKey) ?? 0) + 1
+  attemptsByTask.set(attemptKey, attemptIndex)
   const rawStartedAt = nested(result, 'started_at')
   const startedAt = typeof rawStartedAt === 'string' && rawStartedAt ? rawStartedAt : null
   const rawReward = nested(result, 'verifier_result', 'rewards', 'reward')
@@ -151,21 +202,74 @@ for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
   const exceptionType =
     typeof rawExceptionType === 'string' && rawExceptionType ? rawExceptionType : undefined
   const outcome = terminalBenchTrialOutcome({ reward, exceptionType })
+  const recordedProfileHash = nested(result, 'agent_result', 'metadata', 'profile_hash')
+  if (recordedProfileHash !== profile.contentHash) {
+    throw new Error(`Missing or inconsistent profile hash for ${taskName}.`)
+  }
   const manifestPath = join(directory, 'run-manifest.json')
+  const imageMetadataPath = join(directory, 'task-image.json')
+  let imageMetadata: unknown
+  try {
+    imageMetadata = JSON.parse(await readFile(imageMetadataPath, 'utf8'))
+  } catch (error) {
+    throw new Error(`Missing or invalid task image metadata for ${taskName}: ${String(error)}`, {
+      cause: error,
+    })
+  }
+  if (
+    nested(imageMetadata, 'datasetId') !== TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId ||
+    nested(imageMetadata, 'datasetRevision') !==
+      TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision ||
+    nested(imageMetadata, 'reference') !== taskMetadata.image ||
+    nested(imageMetadata, 'taskConfigSha256') !== taskMetadata.configSha256
+  ) {
+    throw new Error(`Task image metadata does not match the pinned descriptor for ${taskName}.`)
+  }
+  const imageId = nested(imageMetadata, 'imageId')
+  const repoDigests = nested(imageMetadata, 'repoDigests')
+  if (
+    typeof imageId !== 'string' ||
+    !/^sha256:[a-f0-9]{64}$/.test(imageId) ||
+    !Array.isArray(repoDigests) ||
+    repoDigests.length === 0 ||
+    repoDigests.some(
+      (digest) => typeof digest !== 'string' || !/@sha256:[a-f0-9]{64}$/.test(digest),
+    )
+  ) {
+    throw new Error(`Task image metadata lacks an immutable digest for ${taskName}.`)
+  }
+  const rawStarted = nested(result, 'started_at')
+  const rawFinished = nested(result, 'finished_at')
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     trialId: id,
     suiteRunId: process.env['COPSE_BENCH_RUN_ID']?.trim() || 'local',
     createdAt: new Date().toISOString(),
     task: {
-      name: nested(result, 'task_name') ?? null,
-      dataset: nested(result, 'config', 'dataset') ?? 'terminal-bench@2.0',
-      startedAt: nested(result, 'started_at') ?? null,
-      finishedAt: nested(result, 'finished_at') ?? null,
+      name: taskName,
+      attemptIndex,
+      startedAt: rawStarted ?? null,
+      finishedAt: rawFinished ?? null,
       reward: nested(result, 'verifier_result', 'rewards', 'reward') ?? null,
       exception: nested(result, 'exception_info') ?? null,
     },
     model: process.env['LM_STUDIO_MODEL']?.trim() || nested(result, 'config', 'model') || null,
+    dataset: {
+      id: TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId,
+      version: TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetVersion,
+      revision: TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision,
+      taskConfigSha256: taskMetadata.configSha256,
+      harborTaskChecksum: nested(result, 'task_checksum') ?? null,
+      imageReference: taskMetadata.image,
+      imageId,
+      imageDigest: String(repoDigests[0]).slice(String(repoDigests[0]).indexOf('@') + 1),
+      imageDigests: repoDigests,
+    },
+    profile: {
+      id: profile.id,
+      versionedId: profile.versionedId,
+      contentHash: profile.contentHash,
+    },
     source: {
       repository: process.env['GITHUB_REPOSITORY']?.trim() || null,
       commit: process.env['GITHUB_SHA']?.trim() || git(['rev-parse', 'HEAD']),
@@ -181,6 +285,14 @@ for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
       commandTimeoutSeconds: process.env['COPSE_TERMINAL_COMMAND_TIMEOUT_SEC']?.trim() || '120',
       maxCommandTimeoutSeconds:
         process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim() || '600',
+    },
+    metrics: {
+      elapsedSeconds: elapsedSeconds(rawStarted, rawFinished),
+      inputTokens: finiteNumber(nested(result, 'agent_result', 'n_input_tokens')),
+      outputTokens: finiteNumber(nested(result, 'agent_result', 'n_output_tokens')),
+      toolCalls: finiteNumber(nested(result, 'agent_result', 'metadata', 'tool_calls')),
+      modelRequests: finiteNumber(nested(result, 'agent_result', 'metadata', 'model_requests')),
+      commandTimeouts: finiteNumber(nested(result, 'agent_result', 'metadata', 'command_timeouts')),
     },
     lineage: {
       parentTrialId: nested(result, 'agent_result', 'metadata', 'parent_trial_id') ?? null,
@@ -202,6 +314,9 @@ for await (const resultPath of glob(join(RESULTS_ROOT, '*/*/result.json'))) {
     sha256: await sha256File(archivePath),
     startedAt,
     outcome,
+    attemptIndex,
+    profile: profile.versionedId,
+    profileHash: profile.contentHash,
   })
   console.log(
     `bench:terminal:seal ${relative(process.cwd(), directory)} -> ${archiveName} (${String(archiveInfo.size)} bytes)`,
@@ -224,7 +339,7 @@ try {
   if (errorCode(error) !== 'ENOENT') throw error
 }
 const index = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   suiteRunId: process.env['COPSE_BENCH_RUN_ID']?.trim() || 'local',
   createdAt: new Date().toISOString(),
   source: {
@@ -234,6 +349,14 @@ const index = {
     patch: 'source.patch',
   },
   analysisPlan,
+  profiles: [
+    ...new Map(
+      capsules.map((capsule) => [
+        capsule.profile,
+        { versionedId: capsule.profile, contentHash: capsule.profileHash },
+      ]),
+    ).values(),
+  ],
   capsules,
 }
 await writeFile(join(CAPSULES_ROOT, 'index.json'), `${JSON.stringify(index, null, 2)}\n`)

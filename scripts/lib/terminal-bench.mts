@@ -1,8 +1,14 @@
 import { delimiter, resolve } from 'node:path'
-import { TERMINAL_BENCH_TASK_NAMES } from './terminal-bench-tasks.mts'
+import {
+  TERMINAL_BENCH_DATASET_DESCRIPTOR,
+  TERMINAL_BENCH_TASK_NAMES,
+  terminalBenchCanonicalTaskName,
+  terminalBenchQualifiedTaskName,
+} from './terminal-bench-tasks.mts'
+import { terminalBenchProfile } from './terminal-bench-profiles.mts'
 
 export const HARBOR_VERSION = '0.16.1'
-export const TERMINAL_BENCH_DATASET = 'terminal-bench@2.0'
+export const TERMINAL_BENCH_DATASET = TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetId
 export const TERMINAL_BENCH_AGENT = 'benchmarks.terminal_bench.copse_agent:CopseTerminalAgent'
 export const DEFAULT_TERMINAL_BENCH_MIN_FREE_DISK_GIB = 15
 export const DEFAULT_TERMINAL_BENCH_PREFETCH_MIN_FREE_DISK_GIB = 30
@@ -28,7 +34,7 @@ export function terminalBenchCompletedTaskNames(records: readonly unknown[]): st
     // An agent timeout is a valid benchmark outcome. Other exceptions are
     // infrastructure-invalid and remain eligible when a suite is resumed.
     if (exceptionInfo === null || exceptionType(exceptionInfo) === 'AgentTimeoutError') {
-      completed.add(taskName)
+      completed.add(terminalBenchCanonicalTaskName(taskName))
     }
   }
   return [...completed].sort()
@@ -136,6 +142,31 @@ function hasFlag(args: readonly string[], long: string, short?: string): boolean
   )
 }
 
+function qualifyTaskSelectors(args: readonly string[]): string[] {
+  const qualified: string[] = []
+  let qualifyNext = false
+  for (const arg of args) {
+    if (qualifyNext) {
+      qualified.push(terminalBenchQualifiedTaskName(arg))
+      qualifyNext = false
+      continue
+    }
+    if (arg === '--include-task-name' || arg === '--exclude-task-name') {
+      qualified.push(arg)
+      qualifyNext = true
+      continue
+    }
+    const selector = ['--include-task-name=', '--exclude-task-name='].find((prefix) =>
+      arg.startsWith(prefix),
+    )
+    qualified.push(
+      selector ? `${selector}${terminalBenchQualifiedTaskName(arg.slice(selector.length))}` : arg,
+    )
+  }
+  if (qualifyNext) throw new Error('A Terminal-Bench task selector is missing its value.')
+  return qualified
+}
+
 export function terminalBenchModel(env: NodeJS.ProcessEnv): string {
   const model = env['LM_STUDIO_MODEL']?.trim()
   if (!model) {
@@ -149,7 +180,19 @@ export function buildTerminalBenchLaunch(
   env: NodeJS.ProcessEnv = process.env,
 ): TerminalBenchLaunch {
   const fullSuite = rawArgs.includes('--all')
-  const args = rawArgs.filter((arg) => arg !== '--all' && arg !== '--dry-run')
+  const explicitProfiles = rawArgs
+    .filter((arg) => arg.startsWith('--profile='))
+    .map((arg) => arg.slice('--profile='.length))
+  if (explicitProfiles.length > 1) throw new Error('Pass --profile at most once.')
+  if (rawArgs.includes('--profile')) {
+    throw new Error('Pass the Terminal-Bench profile as --profile=<id>.')
+  }
+  const profile = terminalBenchProfile(explicitProfiles[0] ?? env['COPSE_TERMINAL_PROFILE'])
+  const args = qualifyTaskSelectors(
+    rawArgs.filter(
+      (arg) => arg !== '--all' && arg !== '--dry-run' && !arg.startsWith('--profile='),
+    ),
+  )
   const model = terminalBenchModel(env)
   const repositoryRoot = resolve()
   const jobsDir = resolve('bench-results/terminal-bench')
@@ -186,6 +229,8 @@ export function buildTerminalBenchLaunch(
     env: {
       ...env,
       COPSE_TERMINAL_AGENT_BUNDLE: agentBundle,
+      COPSE_TERMINAL_PROFILE: profile.id,
+      COPSE_TERMINAL_PROFILE_HASH: profile.contentHash,
       PYTHONPATH: pythonPath ? `${repositoryRoot}${delimiter}${pythonPath}` : repositoryRoot,
     },
   }

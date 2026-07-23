@@ -1,8 +1,15 @@
 import { spawn, spawnSync } from 'node:child_process'
 import { glob, readFile, statfs } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
-import { TERMINAL_BENCH_TASK_NAMES, terminalBenchTaskImage } from './lib/terminal-bench-tasks.mts'
+import {
+  inspectTerminalBenchTaskImage,
+  recordTerminalBenchTaskImage,
+} from './lib/terminal-bench-task-image.mts'
+import {
+  TERMINAL_BENCH_TASK_NAMES,
+  terminalBenchCanonicalTaskName,
+  terminalBenchTaskImage,
+} from './lib/terminal-bench-tasks.mts'
 import {
   terminalBenchCompletedTaskNames,
   terminalBenchDiskSpaceError,
@@ -30,7 +37,9 @@ async function storedResults(): Promise<StoredResult[]> {
 
 function resultTaskName(value: unknown): string | undefined {
   if (typeof value !== 'object' || value === null || !('task_name' in value)) return undefined
-  return typeof value.task_name === 'string' ? value.task_name : undefined
+  return typeof value.task_name === 'string'
+    ? terminalBenchCanonicalTaskName(value.task_name)
+    : undefined
 }
 
 function parseMaxTasks(args: readonly string[]): number | undefined {
@@ -116,34 +125,33 @@ for (const [index, taskName] of pending.entries()) {
       .filter((result) => resultTaskName(result.value) === taskName)
       .map((result) => result.path),
   )
-  if (prefetchImages) {
-    const stats = await statfs(process.cwd())
-    const diskError = terminalBenchDiskSpaceError(stats.bavail * stats.bsize)
-    if (diskError) {
-      console.error(`bench:terminal:suite: refusing to prepare ${taskName}: ${diskError}`)
+  const stats = await statfs(process.cwd())
+  const diskError = terminalBenchDiskSpaceError(stats.bavail * stats.bsize)
+  if (diskError) {
+    console.error(`bench:terminal:suite: refusing to prepare ${taskName}: ${diskError}`)
+    process.exit(1)
+  }
+  const currentImage = terminalBenchTaskImage(taskName)
+  const currentPresent =
+    spawnSync('docker', ['image', 'inspect', currentImage], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: 'ignore',
+    }).status === 0
+  if (!currentPresent) {
+    console.log(`bench:terminal:suite preparing ${currentImage}`)
+    const pull = spawnSync('docker', ['image', 'pull', currentImage], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: 'inherit',
+    })
+    if (pull.error || pull.status !== 0) {
+      const detail = pull.error?.message ?? `docker exited ${String(pull.status)}`
+      console.error(`bench:terminal:suite: unable to prepare ${currentImage}: ${detail}`)
       process.exit(1)
     }
-    const currentImage = terminalBenchTaskImage(taskName)
-    const currentPresent =
-      spawnSync('docker', ['image', 'inspect', currentImage], {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: 'ignore',
-      }).status === 0
-    if (!currentPresent) {
-      console.log(`bench:terminal:suite preparing ${currentImage}`)
-      const pull = spawnSync('docker', ['image', 'pull', currentImage], {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: 'inherit',
-      })
-      if (pull.error || pull.status !== 0) {
-        const detail = pull.error?.message ?? `docker exited ${String(pull.status)}`
-        console.error(`bench:terminal:suite: unable to prepare ${currentImage}: ${detail}`)
-        process.exit(1)
-      }
-    }
   }
+  inspectTerminalBenchTaskImage(taskName)
   const nextTaskName = pending[index + 1]
   let prefetchDone: Promise<void> | undefined
   if (prefetchImages && nextTaskName !== undefined) {

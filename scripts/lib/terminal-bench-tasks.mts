@@ -1,96 +1,96 @@
-/** Task names pinned by terminal-bench@2.0 (89 tasks). */
-export const TERMINAL_BENCH_TASK_NAMES = [
-  'adaptive-rejection-sampler',
-  'bn-fit-modify',
-  'break-filter-js-from-html',
-  'build-cython-ext',
-  'build-pmars',
-  'build-pov-ray',
-  'caffe-cifar-10',
-  'cancel-async-tasks',
-  'chess-best-move',
-  'circuit-fibsqrt',
-  'cobol-modernization',
-  'code-from-image',
-  'compile-compcert',
-  'configure-git-webserver',
-  'constraints-scheduling',
-  'count-dataset-tokens',
-  'crack-7z-hash',
-  'custom-memory-heap-crash',
-  'db-wal-recovery',
-  'distribution-search',
-  'dna-assembly',
-  'dna-insert',
-  'extract-elf',
-  'extract-moves-from-video',
-  'feal-differential-cryptanalysis',
-  'feal-linear-cryptanalysis',
-  'filter-js-from-html',
-  'financial-document-processor',
-  'fix-code-vulnerability',
-  'fix-git',
-  'fix-ocaml-gc',
-  'gcode-to-text',
-  'git-leak-recovery',
-  'git-multibranch',
-  'gpt2-codegolf',
-  'headless-terminal',
-  'hf-model-inference',
-  'install-windows-3.11',
-  'kv-store-grpc',
-  'large-scale-text-editing',
-  'largest-eigenval',
-  'llm-inference-batching-scheduler',
-  'log-summary-date-ranges',
-  'mailman',
-  'make-doom-for-mips',
-  'make-mips-interpreter',
-  'mcmc-sampling-stan',
-  'merge-diff-arc-agi-task',
-  'model-extraction-relu-logits',
-  'modernize-scientific-stack',
-  'mteb-leaderboard',
-  'mteb-retrieve',
-  'multi-source-data-merger',
-  'nginx-request-logging',
-  'openssl-selfsigned-cert',
-  'overfull-hbox',
-  'password-recovery',
-  'path-tracing',
-  'path-tracing-reverse',
-  'polyglot-c-py',
-  'polyglot-rust-c',
-  'portfolio-optimization',
-  'protein-assembly',
-  'prove-plus-comm',
-  'pypi-server',
-  'pytorch-model-cli',
-  'pytorch-model-recovery',
-  'qemu-alpine-ssh',
-  'qemu-startup',
-  'query-optimize',
-  'raman-fitting',
-  'regex-chess',
-  'regex-log',
-  'reshard-c4-data',
-  'rstan-to-pystan',
-  'sam-cell-seg',
-  'sanitize-git-repo',
-  'schemelike-metacircular-eval',
-  'sparql-university',
-  'sqlite-db-truncate',
-  'sqlite-with-gcov',
-  'torch-pipeline-parallelism',
-  'torch-tensor-parallelism',
-  'train-fasttext',
-  'tune-mjcf',
-  'video-processing',
-  'vulnerable-secret',
-  'winning-avg-corewars',
-  'write-compressor',
-] as const
+import rawDescriptor from '../../benchmarks/terminal_bench/datasets/terminal-bench-2.1.json' with { type: 'json' }
+
+export interface TerminalBenchTaskMetadata {
+  name: string
+  image: string
+  configSha256: string
+}
+
+export interface TerminalBenchDatasetDescriptor {
+  schemaVersion: 1
+  datasetId: string
+  datasetVersion: string
+  upstreamRepository: string
+  upstreamRevision: string
+  tasks: TerminalBenchTaskMetadata[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function stringProperty(value: unknown, key: string): string {
+  if (!isRecord(value)) throw new Error('Invalid dataset descriptor.')
+  const property = value[key]
+  if (typeof property !== 'string' || !property) {
+    throw new Error(`Dataset descriptor ${key} is invalid.`)
+  }
+  return property
+}
+
+function parseTask(value: unknown): TerminalBenchTaskMetadata {
+  const task = {
+    name: stringProperty(value, 'name'),
+    image: stringProperty(value, 'image'),
+    configSha256: stringProperty(value, 'configSha256'),
+  }
+  if (!/^[a-f0-9]{64}$/.test(task.configSha256)) {
+    throw new Error(`Dataset task ${task.name} has an invalid config checksum.`)
+  }
+  if (!task.image.includes(':')) {
+    throw new Error(`Dataset task ${task.name} has an invalid image reference.`)
+  }
+  return task
+}
+
+function parseDescriptor(value: unknown): TerminalBenchDatasetDescriptor {
+  if (!isRecord(value) || value['schemaVersion'] !== 1) {
+    throw new Error('Unsupported Terminal-Bench dataset descriptor.')
+  }
+  const rawTasks = value['tasks']
+  if (!Array.isArray(rawTasks)) throw new Error('Dataset descriptor tasks are invalid.')
+  const tasks = rawTasks.map(parseTask)
+  if (tasks.length !== 89 || new Set(tasks.map((task) => task.name)).size !== tasks.length) {
+    throw new Error('Terminal-Bench 2.1 descriptor must contain 89 unique tasks.')
+  }
+  return {
+    schemaVersion: 1,
+    datasetId: stringProperty(value, 'datasetId'),
+    datasetVersion: stringProperty(value, 'datasetVersion'),
+    upstreamRepository: stringProperty(value, 'upstreamRepository'),
+    upstreamRevision: stringProperty(value, 'upstreamRevision'),
+    tasks,
+  }
+}
+
+export const TERMINAL_BENCH_DATASET_DESCRIPTOR = parseDescriptor(rawDescriptor)
+
+export const TERMINAL_BENCH_TASK_NAMESPACE = 'terminal-bench'
+
+export const TERMINAL_BENCH_TASK_NAMES = TERMINAL_BENCH_DATASET_DESCRIPTOR.tasks.map(
+  (task) => task.name,
+)
+
+const TASKS_BY_NAME = new Map(
+  TERMINAL_BENCH_DATASET_DESCRIPTOR.tasks.map((task) => [task.name, task]),
+)
+
+export function terminalBenchCanonicalTaskName(taskName: string): string {
+  const trimmed = taskName.trim()
+  const prefix = `${TERMINAL_BENCH_TASK_NAMESPACE}/`
+  return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : trimmed
+}
+
+export function terminalBenchQualifiedTaskName(taskName: string): string {
+  return `${TERMINAL_BENCH_TASK_NAMESPACE}/${terminalBenchCanonicalTaskName(taskName)}`
+}
+
+export function terminalBenchTaskMetadata(taskName: string): TerminalBenchTaskMetadata {
+  const task = TASKS_BY_NAME.get(terminalBenchCanonicalTaskName(taskName))
+  if (!task) throw new Error(`Unknown Terminal-Bench 2.1 task '${taskName}'.`)
+  return task
+}
 
 export function terminalBenchTaskImage(taskName: string): string {
-  return `alexgshaw/${taskName}:20251031`
+  return terminalBenchTaskMetadata(taskName).image
 }
