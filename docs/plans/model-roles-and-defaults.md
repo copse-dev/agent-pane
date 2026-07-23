@@ -259,7 +259,7 @@ per-role axes can't provide. Pieces:
   (role registry) and `local-model-catalog.ts` (capability catalog + benchmark
   structure + `recommendLocalModelsForRole`), with tests. Additive; each module
   wired to a consumer so `check:dead-code` stays green.
-- **Phase 1 — role indirection: _backend done; UI reframed._** `role-models.ts`
+- **Phase 1 — role indirection: _done._** `role-models.ts`
   resolves a role assignment (the renderer-writable `roleModels` setting) ahead
   of the legacy per-feature setting, with a fallback so behaviour is unchanged
   until a role is assigned. Wired into the coder / small-tasks / research
@@ -268,14 +268,14 @@ per-role axes can't provide. Pieces:
   (they stay on the guarded security IPC).
 
   **UI principle — roles _replace_ the granular controls, they don't stack on
-  top.** The indirection only simplifies if the default view shrinks: the
-  Settings routing section is now "Local model roles" with the two primary roles
-  (Coder, Research) visible and the finer routes (safety, review) collapsed under
-  "Advanced routes", so nothing is shown twice. `readValues()` is unchanged, so
-  the save flow is untouched. _Note:_ this changes the settings screenshot —
-  regenerate `settings-general-model-routing.png` (needs a runnable Electron env;
-  couldn't be done in the container this landed from). _Remaining:_ let a role
-  feed multiple features (the real payoff), and cloud-capable roles.
+  top.** Chat, small tasks, and task roles now share one Settings → General
+  “Models” card. Coder and Research remain visible, while safety and review stay
+  under “Advanced routes”. Role pickers accept any connected in-process cloud or
+  on-device provider model; remote / ACP agents stay chat-only because they own a
+  whole session. Auto role choices remain on-device-first. The save flow writes
+  canonical provider selections to both the role map and legacy keys so older
+  settings migrate without a one-shot rewrite. _Remaining:_ let a role feed more
+  features (the broader indirection payoff).
 
 - **Phase 2 — picker classifications: _first cut done._** Local models in the
   picker now carry a compact role hint from the catalog (e.g. "qwen/qwen2.5-coder-32b

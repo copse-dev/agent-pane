@@ -37,12 +37,11 @@ function usageFromChunk(chunk: Extract<StreamChunk, { type: 'usage' }>): ModelUs
 }
 
 /** Run a one-shot provider stream and return text plus accumulated token usage. */
-export async function completeTextWithUsage(
+export async function completeMessagesWithUsage(
   provider: LLMProvider,
-  prompt: string,
+  messages: LLMMessage[],
   timeoutMs: number,
 ): Promise<{ text: string; usage: ModelUsage }> {
-  const messages: LLMMessage[] = [{ role: 'user', content: prompt }]
   let text = ''
   let usage = { ...EMPTY_USAGE }
   const controller = new AbortController()
@@ -61,4 +60,13 @@ export async function completeTextWithUsage(
     clearTimeout(timer)
   }
   return { text, usage }
+}
+
+/** Convenience wrapper for the common single-user-prompt case. */
+export function completeTextWithUsage(
+  provider: LLMProvider,
+  prompt: string,
+  timeoutMs: number,
+): Promise<{ text: string; usage: ModelUsage }> {
+  return completeMessagesWithUsage(provider, [{ role: 'user', content: prompt }], timeoutMs)
 }

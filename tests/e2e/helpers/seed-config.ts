@@ -289,6 +289,10 @@ export function seedEmptyProject(
     localServerUrl?: string
     localDefaultModel?: string
     subagentModel?: string
+    smallTasksModel?: string
+    safetyModel?: string
+    reviewModel?: string
+    roleModels?: Record<string, string>
     localSubagentsEnabled?: boolean
     autoPortraitRightPanel?: boolean
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
@@ -393,6 +397,18 @@ export function seedEmptyProject(
   }
   if (options?.subagentModel) {
     settings.subagentModel = options.subagentModel
+  }
+  if (options?.smallTasksModel !== undefined) {
+    settings.smallTasksModel = options.smallTasksModel
+  }
+  if (options?.safetyModel !== undefined) {
+    settings.safetyModel = options.safetyModel
+  }
+  if (options?.reviewModel !== undefined) {
+    settings.reviewModel = options.reviewModel
+  }
+  if (options?.roleModels !== undefined) {
+    settings.roleModels = options.roleModels
   }
   if (options?.localSubagentsEnabled !== undefined) {
     settings.localSubagentsEnabled = options.localSubagentsEnabled

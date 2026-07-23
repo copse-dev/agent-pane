@@ -14,8 +14,19 @@ const DEFAULT_CLOUD_CONTEXT = 128_000
 
 function localModelId(model: string): string | null {
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
-  if (model === 'lm-studio')
-    return getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat) || null
+  if (model === 'lm-studio') {
+    const configured = getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
+    if (configured.startsWith('lmstudio:')) return configured.slice('lmstudio:'.length)
+    // Provider-prefixed / cloud role choices must not be sent to LM Studio.
+    if (
+      configured.includes(':') ||
+      configured.startsWith('claude-') ||
+      configured.startsWith('gpt-')
+    ) {
+      return LM_STUDIO_MODEL_IDS.chat
+    }
+    return configured || null
+  }
   return null
 }
 
