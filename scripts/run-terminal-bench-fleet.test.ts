@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   cleanPrefix,
   registryHost,
+  rotateTerminalBenchProfiles,
   runConfig,
   workerFollowRemoteScript,
 } from './run-terminal-bench-fleet.mts'
@@ -16,9 +17,18 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.doesNotMatch(workflow, /qwen\/qwen3\.6-35b-a3b:(?:fp8|bf16)/)
   assert.match(workflow, /name: Verify fleet teardown\n\s+if: always\(\)/)
   assert.match(workflow, /task_names:/)
+  assert.match(workflow, /profile:/)
+  assert.match(workflow, /profiles:/)
+  assert.match(workflow, /ttl_minutes:/)
+  assert.match(workflow, /volume_size_gb:/)
+  assert.match(workflow, /queue: max/)
+  assert.match(workflow, /default: main-legacy/)
   assert.match(workflow, /default: '2048'/)
   assert.match(workflow, /default: '600'/)
   assert.match(workflow, /--task-names "\$TASK_NAMES"/)
+  assert.match(workflow, /--profiles "\$PROFILES"/)
+  assert.match(workflow, /--ttl-minutes "\$TTL_MINUTES"/)
+  assert.match(workflow, /--volume-size-gb "\$VOLUME_SIZE_GB"/)
 })
 
 test('Scaleway workflow probes Object Storage with PutObject, not HeadBucket', () => {
@@ -55,6 +65,72 @@ test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)
   assert.equal(config.maxTasks, 3)
+  assert.deepEqual(config.profiles, ['main-legacy'])
+})
+
+test('fleet validates and carries an explicit ablation profile', () => {
+  assert.deepEqual(runConfig({ profile: 'pr-1149', 'worker-image': workerImage }).profiles, [
+    'pr-1149',
+  ])
+  assert.throws(
+    () => runConfig({ profile: 'unknown', 'worker-image': workerImage }),
+    /profile must be/,
+  )
+})
+
+test('fleet runs unique profiles sequentially and rotates their order by shard', () => {
+  const config = runConfig({
+    profiles: 'main-legacy,pr-1149,product-aligned',
+    'no-steered-rerun': true,
+    'worker-image': workerImage,
+  })
+  assert.deepEqual(config.profiles, ['main-legacy', 'pr-1149', 'product-aligned'])
+  assert.deepEqual(rotateTerminalBenchProfiles(config.profiles, 0), [
+    'main-legacy',
+    'pr-1149',
+    'product-aligned',
+  ])
+  assert.deepEqual(rotateTerminalBenchProfiles(config.profiles, 1), [
+    'pr-1149',
+    'product-aligned',
+    'main-legacy',
+  ])
+  assert.deepEqual(rotateTerminalBenchProfiles(config.profiles, 2), [
+    'product-aligned',
+    'main-legacy',
+    'pr-1149',
+  ])
+  assert.throws(
+    () =>
+      runConfig({
+        profiles: 'main-legacy,main-legacy',
+        'no-steered-rerun': true,
+        'worker-image': workerImage,
+      }),
+    /must not contain duplicates/,
+  )
+  assert.throws(
+    () => runConfig({ profiles: 'main-legacy,pr-1149', 'worker-image': workerImage }),
+    /require --no-steered-rerun/,
+  )
+  assert.throws(
+    () =>
+      runConfig({
+        profile: 'main-legacy',
+        profiles: 'pr-1149',
+        'worker-image': workerImage,
+      }),
+    /only one of --profile or --profiles/,
+  )
+})
+
+test('worker checkpoints each profile and prunes task images only after the final profile', () => {
+  const script = readFileSync('benchmarks/terminal_bench/run-shard.sh', 'utf8')
+  assert.match(script, /COPSE_TERMINAL_PROFILES/)
+  assert.match(script, /profile_offset < profile_count/)
+  assert.match(script, /profile_offset == profile_count - 1/)
+  assert.match(script, /checkpoint_results "profile/)
+  assert.doesNotMatch(script, /--prune-images\n\s+--prefetch-images/)
 })
 
 test('fleet accepts only exact registry task names and limits workers to that cohort', () => {

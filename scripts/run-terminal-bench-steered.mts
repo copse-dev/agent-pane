@@ -3,8 +3,16 @@ import { glob, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { loadTerminalBenchSteering } from './lib/terminal-bench-steering.mts'
 import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
+import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
 
 const PLAN_PATH = resolve('bench-results/terminal-bench-analysis-plan.json')
+const rawArgs = process.argv.slice(2)
+const profileArgs = rawArgs.filter((arg) => arg.startsWith('--profile='))
+if (profileArgs.length > 1 || rawArgs.some((arg) => !arg.startsWith('--profile='))) {
+  throw new Error('Usage: npm run bench:terminal:steered -- [--profile=<id>]')
+}
+const profile = terminalBenchProfile(profileArgs[0]?.slice('--profile='.length))
 
 function stringField(value: unknown, key: string): string | undefined {
   if (typeof value !== 'object' || value === null) return undefined
@@ -20,7 +28,8 @@ async function resultPaths(): Promise<Set<string>> {
 
 async function resultTaskName(path: string): Promise<string | undefined> {
   const result: unknown = JSON.parse(await readFile(path, 'utf8'))
-  return stringField(result, 'task_name')
+  const taskName = stringField(result, 'task_name')
+  return taskName ? terminalBenchCanonicalTaskName(taskName) : undefined
 }
 
 const parsed: unknown = JSON.parse(await readFile(PLAN_PATH, 'utf8'))
@@ -52,7 +61,14 @@ for (const entry of entries) {
   const beforePaths = await resultPaths()
   const run = spawnSync(
     process.execPath,
-    [resolve('scripts/run-terminal-bench.mts'), '--include-task-name', taskName, '-k', '1'],
+    [
+      resolve('scripts/run-terminal-bench.mts'),
+      '--include-task-name',
+      taskName,
+      '-k',
+      '1',
+      `--profile=${profile.id}`,
+    ],
     {
       cwd: process.cwd(),
       env: {
@@ -60,6 +76,8 @@ for (const entry of entries) {
         COPSE_TERMINAL_STEERING_FILE: steeringPath,
         COPSE_TERMINAL_PARENT_TRIAL_ID: parentTrialId,
         COPSE_TERMINAL_INTERVENTION_ID: interventionId,
+        COPSE_TERMINAL_PROFILE: profile.id,
+        COPSE_TERMINAL_PROFILE_HASH: profile.contentHash,
         ...(steering.recommended_step_budget !== undefined
           ? { COPSE_TERMINAL_MAX_STEPS: String(steering.recommended_step_budget) }
           : {}),

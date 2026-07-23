@@ -28,6 +28,20 @@ on:
         required: true
         default: '1'
         type: string
+      profile:
+        description: Versioned Copse Terminal-Bench behavior profile
+        required: true
+        default: main-legacy
+        type: choice
+        options:
+          - main-legacy
+          - pr-1149
+          - product-aligned
+      profiles:
+        description: Optional comma-separated profiles to run sequentially on one fleet
+        required: false
+        default: ''
+        type: string
       scw_type:
         description: Scaleway x86 Instance type
         required: true
@@ -53,10 +67,21 @@ on:
         required: true
         default: '600'
         type: string
+      ttl_minutes:
+        description: Instance self-delete backstop (60-1440 minutes)
+        required: true
+        default: '420'
+        type: string
+      volume_size_gb:
+        description: Worker root volume for cached task images (100-500 GiB)
+        required: true
+        default: '100'
+        type: string
 
 concurrency:
   group: terminal-bench-scaleway-fleet
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
@@ -73,8 +98,13 @@ jobs:
           MAX_TASKS: ${{ inputs.max_tasks }}
           INSTANCES: ${{ inputs.instances }}
           ATTEMPTS: ${{ inputs.attempts }}
+          PROFILE: ${{ inputs.profile }}
+          PROFILES: ${{ inputs.profiles }}
+          STEERED_RERUN: ${{ inputs.steered_rerun }}
           MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
           MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
+          TTL_MINUTES: ${{ inputs.ttl_minutes }}
+          VOLUME_SIZE_GB: ${{ inputs.volume_size_gb }}
           ANALYST_MODEL: ${{ inputs.analyst_model }}
           BENCH_ANALYST_API_KEY: ${{ secrets.BENCH_ANALYST_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
@@ -100,6 +130,24 @@ jobs:
             echo "::error::attempts must be an integer from 1 through 5"
             exit 2
           fi
+          profile_csv="${PROFILES:-$PROFILE}"
+          IFS=',' read -r -a profile_ids <<< "$profile_csv"
+          declare -A seen_profiles=()
+          for profile_id in "${profile_ids[@]}"; do
+            case "$profile_id" in
+              main-legacy|pr-1149|product-aligned) ;;
+              *) echo "::error::unsupported Terminal-Bench profile: $profile_id"; exit 2 ;;
+            esac
+            if [ -n "${seen_profiles[$profile_id]:-}" ]; then
+              echo "::error::Terminal-Bench profiles must not contain duplicates: $profile_id"
+              exit 2
+            fi
+            seen_profiles[$profile_id]=1
+          done
+          if [ "${#profile_ids[@]}" -gt 1 ] && [ "$STEERED_RERUN" = true ]; then
+            echo "::error::multi-profile runs require steered_rerun=false"
+            exit 2
+          fi
           if ! [[ "$MAX_STREAM_OUTPUT_TOKENS" =~ ^[0-9]+$ ]] || \
             [ "$MAX_STREAM_OUTPUT_TOKENS" -lt 512 ] || [ "$MAX_STREAM_OUTPUT_TOKENS" -gt 16384 ]; then
             echo "::error::max_stream_output_tokens must be an integer from 512 through 16384"
@@ -108,6 +156,16 @@ jobs:
           if ! [[ "$MAX_COMMAND_TIMEOUT_SEC" =~ ^[0-9]+$ ]] || \
             [ "$MAX_COMMAND_TIMEOUT_SEC" -lt 120 ] || [ "$MAX_COMMAND_TIMEOUT_SEC" -gt 900 ]; then
             echo "::error::max_command_timeout_sec must be an integer from 120 through 900"
+            exit 2
+          fi
+          if ! [[ "$TTL_MINUTES" =~ ^[0-9]+$ ]] || \
+            [ "$TTL_MINUTES" -lt 60 ] || [ "$TTL_MINUTES" -gt 1440 ]; then
+            echo "::error::ttl_minutes must be an integer from 60 through 1440"
+            exit 2
+          fi
+          if ! [[ "$VOLUME_SIZE_GB" =~ ^[0-9]+$ ]] || \
+            [ "$VOLUME_SIZE_GB" -lt 100 ] || [ "$VOLUME_SIZE_GB" -gt 500 ]; then
+            echo "::error::volume_size_gb must be an integer from 100 through 500"
             exit 2
           fi
           required=(
@@ -252,6 +310,8 @@ jobs:
           COPSE_TERMINAL_MAX_TASKS: ${{ inputs.max_tasks }}
           COPSE_TERMINAL_INSTANCES: ${{ inputs.instances }}
           COPSE_TERMINAL_ATTEMPTS: ${{ inputs.attempts }}
+          COPSE_TERMINAL_PROFILE: ${{ inputs.profile }}
+          COPSE_TERMINAL_PROFILES: ${{ inputs.profiles || inputs.profile }}
           LM_STUDIO_MODEL: ${{ inputs.model }}
         run: |
           manifest="$RUNNER_TEMP/terminal-bench-run.json"
@@ -286,10 +346,13 @@ jobs:
           COPSE_TERMINAL_WORKSPACE_CAP_MB: '500'
           COPSE_TERMINAL_MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
           COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
+          COPSE_TERMINAL_PROFILE: ${{ inputs.profile }}
           INSTANCES: ${{ inputs.instances }}
           MAX_TASKS: ${{ inputs.max_tasks }}
           TASK_NAMES: ${{ inputs.task_names }}
           ATTEMPTS: ${{ inputs.attempts }}
+          PROFILE: ${{ inputs.profile }}
+          PROFILES: ${{ inputs.profiles }}
           SCW_TYPE: ${{ inputs.scw_type }}
           WORKER_IMAGE: ${{ needs.prepare.outputs.worker_image }}
           FLEET_NAME: terminal-bench-${{ github.run_id }}-${{ github.run_attempt }}
@@ -299,6 +362,8 @@ jobs:
           SCW_ZONE: ${{ vars.SCW_TERMINAL_ZONE }}
           SECURITY_GROUP_ID: ${{ vars.SCW_TERMINAL_SECURITY_GROUP_ID }}
           STEERED_RERUN: ${{ inputs.steered_rerun }}
+          TTL_MINUTES: ${{ inputs.ttl_minutes }}
+          VOLUME_SIZE_GB: ${{ inputs.volume_size_gb }}
         run: |
           args=(
             run
@@ -307,13 +372,18 @@ jobs:
             --attempts "$ATTEMPTS"
             --scw-type "$SCW_TYPE"
             --scw-image "$BASE_IMAGE"
-            --volume-size-gb 100
-            --ttl-minutes 420
+            --volume-size-gb "$VOLUME_SIZE_GB"
+            --ttl-minutes "$TTL_MINUTES"
             --worker-image "$WORKER_IMAGE"
             --name "$FLEET_NAME"
             --object-prefix "$OBJECT_PREFIX"
             --key-path "$SSH_KEY_PATH"
           )
+          if [ -n "$PROFILES" ]; then
+            args+=(--profiles "$PROFILES")
+          else
+            args+=(--profile "$PROFILE")
+          fi
           if [ -n "$TASK_NAMES" ]; then args+=(--task-names "$TASK_NAMES"); fi
           if [ -n "$SCW_ZONE" ]; then args+=(--zone "$SCW_ZONE"); fi
           if [ -n "$SECURITY_GROUP_ID" ]; then args+=(--security-group-id "$SECURITY_GROUP_ID"); fi

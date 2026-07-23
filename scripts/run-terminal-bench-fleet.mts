@@ -34,6 +34,11 @@ import {
   waitForScalewayServers,
 } from './lib/cloud-hosts.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
+import {
+  parseTerminalBenchProfileId,
+  parseTerminalBenchProfileIds,
+  type TerminalBenchProfileId,
+} from './lib/terminal-bench-profiles.mts'
 
 const DEFAULT_NAME = 'copse-terminal-bench'
 const DEFAULT_INSTANCES = 10
@@ -59,6 +64,7 @@ export interface RunConfig extends SshConfig {
   maxTasks: number
   name: string
   objectPrefix: string
+  profiles: TerminalBenchProfileId[]
   securityGroupId: string | undefined
   steeredRerun: boolean
   taskNames: string[]
@@ -90,6 +96,8 @@ Options:
   --max-tasks <n>          Global task cap (default: same as instances, max: 89)
   --task-names <a,b,...>   Exact registry tasks to run, in the supplied order
   --attempts <n>           Attempts per task (default: 1, max: 5)
+  --profile <id>           main-legacy, pr-1149, or product-aligned (default: main-legacy)
+  --profiles <a,b,...>     Run unique profiles sequentially on each worker (overrides --profile)
   --scw-type <type>        x86 Instance type (default: ${DEFAULT_TYPE})
   --scw-image <image>      Ubuntu/custom snapshot image (default: ${DEFAULT_SCW_IMAGE})
   --volume-size-gb <n>     SBS root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB)})
@@ -149,6 +157,16 @@ export function runConfig(options: Options): RunConfig {
   if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(baseImage) && configuredZones.length !== 1) {
     throw new Error('a custom Scaleway image ID is zone-specific; also pass --zone')
   }
+  const profile = option(options, 'profile')
+  const profiles = option(options, 'profiles')
+  if (profile && profiles) throw new Error('pass only one of --profile or --profiles')
+  const parsedProfiles = profiles
+    ? parseTerminalBenchProfileIds(profiles)
+    : [parseTerminalBenchProfileId(profile)]
+  const steeredRerun = !hasFlag(options, 'no-steered-rerun')
+  if (parsedProfiles.length > 1 && steeredRerun) {
+    throw new Error('multi-profile fleet runs require --no-steered-rerun')
+  }
   return {
     attempts: boundedInt(optionWithDefault(options, 'attempts', '1'), 'attempts', 5),
     baseImage,
@@ -160,10 +178,11 @@ export function runConfig(options: Options): RunConfig {
       option(options, 'object-prefix') ??
       process.env['SCW_OBJECT_STORAGE_PREFIX']?.trim() ??
       `terminal-bench/manual/${Date.now().toString(36)}`,
+    profiles: parsedProfiles,
     remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_SCW_REMOTE_USER),
     securityGroupId,
     sshHost: 'public',
-    steeredRerun: !hasFlag(options, 'no-steered-rerun'),
+    steeredRerun,
     taskNames,
     ttlMinutes: nonNegativeInt(
       optionWithDefault(options, 'ttl-minutes', String(DEFAULT_TTL_MINUTES)),
@@ -177,6 +196,15 @@ export function runConfig(options: Options): RunConfig {
     workerImage,
     zones: configuredZones,
   }
+}
+
+export function rotateTerminalBenchProfiles(
+  profiles: readonly TerminalBenchProfileId[],
+  shardIndex: number,
+): TerminalBenchProfileId[] {
+  if (profiles.length === 0) throw new Error('at least one Terminal-Bench profile is required')
+  const offset = shardIndex % profiles.length
+  return [...profiles.slice(offset), ...profiles.slice(0, offset)]
 }
 
 function launchSpec(config: RunConfig, zone: string): ScalewayLaunchSpec {
@@ -205,6 +233,9 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
   const generativeKey = envValue('SCW_GENERATIVE_API_KEY')
   const objectRegion = process.env['SCW_OBJECT_STORAGE_REGION']?.trim() || 'fr-par'
   const runId = process.env['COPSE_BENCH_RUN_ID']?.trim() || `manual-${Date.now().toString(36)}`
+  const profiles = rotateTerminalBenchProfiles(config.profiles, shardIndex)
+  const firstProfile = profiles[0]
+  if (!firstProfile) throw new Error('at least one Terminal-Bench profile is required')
   const values: Array<[string, string]> = [
     [
       'LM_STUDIO_URL',
@@ -222,6 +253,8 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
     ['COPSE_TERMINAL_SHARD_COUNT', String(config.instanceCount)],
     ['COPSE_TERMINAL_SHARD_INDEX', String(shardIndex)],
     ['COPSE_TERMINAL_ATTEMPTS', String(config.attempts)],
+    ['COPSE_TERMINAL_PROFILE', firstProfile],
+    ['COPSE_TERMINAL_PROFILES', profiles.join(',')],
     ['COPSE_TERMINAL_STEERED_RERUN', config.steeredRerun ? '1' : '0'],
     [
       'COPSE_TERMINAL_WORKSPACE_CAP_MB',
