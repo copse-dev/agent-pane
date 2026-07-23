@@ -113,6 +113,7 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
   theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
+  uiScale: z.number().min(0.85).max(1.35),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   // Interaction colour for links, primary actions, selections, and chat

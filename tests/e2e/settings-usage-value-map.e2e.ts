@@ -3,7 +3,9 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { prepareE2eScreenshot, saveElementScreenshot } from './helpers/screenshot.ts'
 
-describe('settings usage model value map cost axis', () => {
+describe('settings usage model value map cost axis', function () {
+  this.timeout(90_000)
+
   before(async () => {
     resetUserData()
     seedEmptyProject(process.cwd(), 'e2e-value-map-cost')
@@ -17,6 +19,7 @@ describe('settings usage model value map cost axis', () => {
   it('toggles the value map between $/MTok and AA $/task and screenshots both', async () => {
     await $('[aria-label="Settings"]').click()
     await $('.settings-nav-btn[data-section="usage"]').click()
+    await expect($('.usage-plan-provider[data-provider="codex"][data-status="ok"]')).toBeDisplayed()
     const fieldset = $('.frontier-fieldset')
     await expect(fieldset).toBeDisplayed()
     await expect(fieldset.$('legend')).toHaveText('Model value map')
@@ -30,6 +33,18 @@ describe('settings usage model value map cost axis', () => {
     const chart = fieldset.$('.frontier-chart svg')
     await expect(chart).toBeDisplayed()
     assert.equal(await chart.getAttribute('data-cost-axis'), 'blended')
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelectorAll('circle.frontier-point.plan[data-model-id^="gpt-"]').length >
+            0,
+        ),
+      {
+        timeout: 20_000,
+        timeoutMsg: 'expected a GPT cloud model to plot with Codex plan coverage',
+      },
+    )
     assert.match(await chart.getText(), /blended price/)
 
     await prepareE2eScreenshot()
@@ -37,13 +52,13 @@ describe('settings usage model value map cost axis', () => {
 
     await taskBtn.click()
     await browser.waitUntil(
-      async () => (await chart.getAttribute('data-cost-axis')) === 'perTask',
+      async () =>
+        (await fieldset.$('.frontier-chart svg').getAttribute('data-cost-axis')) === 'perTask',
       { timeout: 5000, timeoutMsg: 'value map did not switch to $/task axis' },
     )
-    const taskChartText = await chart.getText()
+    const taskChartText = await fieldset.$('.frontier-chart svg').getText()
     assert.match(taskChartText, /AA cost per Intelligence Index task/)
-    // Non-plan models (GPT) must spread across the task-cost axis — not collapse
-    // to the $0 plan column alone.
+    // Plan-covered GPT models still appear on the task axis at ~$0 marginal cost.
     assert.match(taskChartText, /gpt-5\.6-sol|gpt-5\.5|gpt-5-mini/)
     assert.equal(await taskBtn.getAttribute('aria-pressed'), 'true')
 

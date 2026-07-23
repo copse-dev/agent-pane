@@ -199,8 +199,8 @@ export async function requestLiveIntellectModels(
  */
 function mockLiveIntellectFetch(): LiveIntellectFetch {
   // Canonical-scale anchors (pass the live gate) plus GPT rows with task costs
-  // so the $/task axis shows non-plan spread under COPSE_PLAN_USAGE_MOCK (Claude
-  // models plot at $0 when their plan window still has headroom).
+  // so the $/task axis stays exercisable when plan coverage is hidden in e2e
+  // (Claude and GPT models plot at $0 while their plan windows have headroom).
   const models: LiveAaModel[] = [
     {
       id: 'claude-fable-5',

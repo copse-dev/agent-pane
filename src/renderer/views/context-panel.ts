@@ -12,6 +12,11 @@ import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
+import {
+  editorFontSizeFromState,
+  updateCodeEditorFontSize,
+  updateDiffEditorFontSize,
+} from '../monaco/editor-font-size.ts'
 import { createGitChangesDiffEditor, setGitFileDiffModel } from '../monaco/git-diff-viewer.ts'
 import { showErrorToast } from './toast.ts'
 
@@ -105,7 +110,7 @@ export function mountContextPanel(
           diffEditor = createGitChangesDiffEditor(
             diffContainer,
             monaco,
-            store.getState().fontSize,
+            editorFontSizeFromState(store.getState()),
             store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
           )
           registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () => {
@@ -199,7 +204,7 @@ export function mountContextPanel(
     readOnly: false,
     automaticLayout: true,
     scrollBeyondLastLine: false,
-    fontSize: store.getState().fontSize,
+    fontSize: editorFontSizeFromState(store.getState()),
     theme: store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
   })
 
@@ -277,6 +282,11 @@ export function mountContextPanel(
     }),
     store.on('theme_changed', (theme) => {
       monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
+    }),
+    store.on('settings_changed', () => {
+      const fontSize = editorFontSizeFromState(store.getState())
+      updateCodeEditorFontSize(fileEditor, fontSize)
+      if (diffEditor) updateDiffEditorFontSize(diffEditor, fontSize)
     }),
   ]
 

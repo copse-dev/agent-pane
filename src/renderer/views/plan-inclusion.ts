@@ -34,6 +34,11 @@ export interface PlanInclusion {
   exhausted: boolean
 }
 
+/** Collapse a model id or plan-window label to alphanumerics for fuzzy matching. */
+function normalizePlanToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
 /** Lower-cased model family Claude's per-model weekly windows are keyed by. */
 function claudeModelFamily(modelId: string): string | null {
   const id = modelId.toLowerCase()
@@ -58,8 +63,44 @@ export function claudeGoverningWindowIds(modelId: string): string[] {
   return ids
 }
 
+/**
+ * Window ids that govern a ChatGPT / Codex model: the shared primary/secondary
+ * pools plus any metered-feature window whose label names this model (e.g.
+ * GPT-5.3-Codex-Spark's own 5-hour cap). All present ones apply; the tightest
+ * binds.
+ */
+export function codexGoverningWindowIds(
+  modelId: string | undefined,
+  windows?: readonly PlanWindow[],
+): string[] {
+  const ids: string[] = ['primary', 'secondary']
+  if (!modelId || !windows) return ids
+  const modelKey = normalizePlanToken(modelId)
+  if (!modelKey) return ids
+  for (const window of windows) {
+    if (window.id === 'primary' || window.id === 'secondary') continue
+    const labelKey = normalizePlanToken(window.label)
+    if (!labelKey) continue
+    if (labelKey.includes(modelKey) || modelKey.includes(labelKey)) ids.push(window.id)
+  }
+  return ids
+}
+
+/** True when a resolved model id is billed on the ChatGPT / Codex subscription. */
+function isCodexPlanModel(resolvedId: string): boolean {
+  const id = resolvedId.toLowerCase()
+  if (id.includes('grok')) return false
+  if (id.includes('gpt') || id.includes('codex') || id.includes('chatgpt')) return true
+  if (/\bo[134](?:-|$)/.test(id)) return true
+  return false
+}
+
 /** Window ids (in preference order) that govern a model for a given provider. */
-function governingWindowIds(provider: PlanProviderId, modelId: string | undefined): string[] {
+function governingWindowIds(
+  provider: PlanProviderId,
+  modelId: string | undefined,
+  windows?: readonly PlanWindow[],
+): string[] {
   switch (provider) {
     case 'claude':
       return modelId ? claudeGoverningWindowIds(modelId) : ['seven_day', 'five_hour']
@@ -69,7 +110,7 @@ function governingWindowIds(provider: PlanProviderId, modelId: string | undefine
       // present; the tightest binds.
       return ['total', 'auto']
     case 'codex':
-      return ['primary', 'secondary']
+      return codexGoverningWindowIds(modelId, windows)
     case 'huggingface':
       return ['inference_providers']
   }
@@ -97,7 +138,7 @@ export function resolvePlanInclusion(
 ): PlanInclusion | null {
   const windows = providerWindows(snapshot, provider)
   if (!windows || windows.length === 0) return null
-  const govern = new Set(governingWindowIds(provider, modelId))
+  const govern = new Set(governingWindowIds(provider, modelId, windows))
   const applicable = windows.filter((w) => govern.has(w.id))
   if (applicable.length === 0) return null
   // The tightest window (highest used-percent) is the real constraint.
@@ -116,14 +157,16 @@ export function resolvePlanInclusion(
 /**
  * Which subscription plan (if any) can bill a model, keyed off the model's
  * identity. Conservative on purpose — only the paths the user confirmed run on a
- * plan: Claude models on the Claude plan, and Grok on the Cursor plan (Cursor
- * includes it). The mapping only ever *activates* when the snapshot actually
- * carries that provider's windows, so an unused mapping is harmless.
+ * plan: Claude models on the Claude plan, GPT-family models on the ChatGPT /
+ * Codex plan, and Grok on the Cursor plan (Cursor includes it). The mapping
+ * only ever *activates* when the snapshot actually carries that provider's
+ * windows, so an unused mapping is harmless.
  */
 export function planProviderForModel(id: string): PlanProviderId | null {
   const rid = (resolveIntellectModelId(id) ?? id).toLowerCase()
   if (rid.includes('claude') || /\b(opus|sonnet|haiku|fable)\b/.test(rid)) return 'claude'
   if (rid.includes('grok')) return 'cursor'
+  if (isCodexPlanModel(rid)) return 'codex'
   return null
 }
 

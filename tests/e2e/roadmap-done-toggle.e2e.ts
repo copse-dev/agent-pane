@@ -64,8 +64,8 @@ describe('roadmap done toggle', () => {
     await showDone.click()
     assert.equal(await showDone.getAttribute('aria-pressed'), 'true')
     await browser.waitUntil(
-      async () => (await $('.roadmap-status-badge').getText()).toLowerCase() === 'done',
-      { timeout: 10_000, timeoutMsg: 'status badge never flipped to done' },
+      async () => (await $('.roadmap-row[data-status="done"]').isExisting()) === true,
+      { timeout: 10_000, timeoutMsg: 'done row never appeared after show-done' },
     )
 
     const doneStyles = await browser.execute(() => {
@@ -86,8 +86,8 @@ describe('roadmap done toggle', () => {
     assert.equal(await $('.roadmap-done-toggle').getAttribute('title'), 'Reopen (set ready)')
     await $('.roadmap-done-toggle').click()
     await browser.waitUntil(
-      async () => (await $('.roadmap-status-badge').getText()).toLowerCase() === 'ready',
-      { timeout: 10_000, timeoutMsg: 'status badge never flipped back to ready' },
+      async () => (await $('.roadmap-row[data-status="ready"]').isExisting()) === true,
+      { timeout: 10_000, timeoutMsg: 'item never reopened to ready' },
     )
   })
 })

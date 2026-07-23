@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -77,8 +78,11 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
     expect(rows.length).toBe(1)
     const name = await $('.file-search-roadmap-item .file-search-name')
     await expect(name).toHaveText('Polish the quokka onboarding flow')
-    const badge = await $('.file-search-roadmap-item .roadmap-status-badge')
-    await expect(badge).toHaveText('ready', { ignoreCase: true })
+    assert.equal(
+      await $('.file-search-roadmap-item .roadmap-status-badge').isExisting(),
+      false,
+      'ready items have no status badge in the palette',
+    )
 
     await saveAppScreenshot('roadmap-search-palette.png')
 

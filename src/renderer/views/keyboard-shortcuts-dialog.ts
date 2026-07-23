@@ -65,6 +65,14 @@ const SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    title: 'View',
+    shortcuts: [
+      { label: 'Zoom in', keys: ['Mod', '+'] },
+      { label: 'Zoom out', keys: ['Mod', '-'] },
+      { label: 'Reset zoom', keys: ['Mod', '0'] },
+    ],
+  },
+  {
     title: 'Panels',
     shortcuts: [
       { label: 'Toggle side panel', keys: ['Mod', 'B'] },
