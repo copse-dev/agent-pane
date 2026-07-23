@@ -2,9 +2,13 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
+import {
+  E2E_SCREENSHOT_DIR,
+  prepareE2eScreenshot,
+  saveElementScreenshot,
+} from './helpers/screenshot.ts'
 
 const PROJECT_ID = 'e2e-browser-display-project'
-const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
 async function waitForComposer(): Promise<void> {
   await $('.prompt-input').waitForExist({ timeout: 30_000 })
@@ -59,7 +63,7 @@ async function waitForWebviewTitle(expected: string, timeoutMs = 25_000): Promis
 
 describe('browser panel display', () => {
   before(async () => {
-    mkdirSync(SCREENSHOT_DIR, { recursive: true })
+    mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
     seedEmptyProject(process.cwd(), PROJECT_ID)
     await browser.reloadSession()
@@ -79,12 +83,71 @@ describe('browser panel display', () => {
     await expect($('.browser-nav-btn[aria-label="Back"]')).toBeDisplayed()
     await expect($('.browser-go-btn')).toBeDisplayed()
 
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-mode-empty.png'))
+    // Tabs header + URL toolbar share `--browser-chrome-band-height` so their
+    // bottom borders form one continuous line across the tree resizer.
+    const chromeAlign = await browser.execute(() => {
+      const header = document.querySelector('.browser-tabs-list-header')
+      const toolbar = document.querySelector('.browser-toolbar')
+      if (!header || !toolbar) throw new Error('missing browser chrome')
+      const headerRect = header.getBoundingClientRect()
+      const toolbarRect = toolbar.getBoundingClientRect()
+      const headerStyle = getComputedStyle(header)
+      const toolbarStyle = getComputedStyle(toolbar)
+      return {
+        headerTop: headerRect.top,
+        headerBottom: headerRect.bottom,
+        headerHeight: headerRect.height,
+        toolbarTop: toolbarRect.top,
+        toolbarBottom: toolbarRect.bottom,
+        toolbarHeight: toolbarRect.height,
+        headerCssHeight: headerStyle.height,
+        toolbarCssHeight: toolbarStyle.height,
+        viewerBorderTop: getComputedStyle(document.getElementById('browser-viewer-host')!)
+          .borderTopWidth,
+      }
+    })
+    expect(chromeAlign.headerCssHeight).toBe(chromeAlign.toolbarCssHeight)
+    expect(Math.abs(chromeAlign.headerHeight - chromeAlign.toolbarHeight)).toBeLessThanOrEqual(1)
+    expect(Math.abs(chromeAlign.headerTop - chromeAlign.toolbarTop)).toBeLessThanOrEqual(1)
+    expect(Math.abs(chromeAlign.headerBottom - chromeAlign.toolbarBottom)).toBeLessThanOrEqual(1)
+    expect(chromeAlign.viewerBorderTop).toBe('0px')
+
+    await saveElementScreenshot('#pane-files', 'browser-mode-empty.png')
+    // Crop the Tabs | toolbar seam so band alignment is reviewable.
+    await prepareE2eScreenshot()
+    await browser.execute(() => {
+      const header = document.querySelector('.browser-tabs-list-header')
+      const toolbar = document.querySelector('.browser-toolbar')
+      const pane = document.getElementById('pane-files')
+      if (!header || !toolbar || !pane) throw new Error('missing browser chrome')
+      const top =
+        Math.min(header.getBoundingClientRect().top, toolbar.getBoundingClientRect().top) - 8
+      const bottom =
+        Math.max(header.getBoundingClientRect().bottom, toolbar.getBoundingClientRect().bottom) + 48
+      const left = pane.getBoundingClientRect().left
+      const right = pane.getBoundingClientRect().right
+      const host = document.createElement('div')
+      host.id = 'e2e-browser-chrome-seam'
+      host.style.cssText = [
+        'position:fixed',
+        `left:${String(left)}px`,
+        `width:${String(right - left)}px`,
+        `top:${String(top)}px`,
+        `height:${String(bottom - top)}px`,
+        'z-index:9999',
+        'pointer-events:none',
+      ].join(';')
+      document.body.append(host)
+    })
+    const seam = await $('#e2e-browser-chrome-seam')
+    await seam.waitForExist({ timeout: 5_000 })
+    await seam.saveScreenshot(join(E2E_SCREENSHOT_DIR, 'browser-chrome-tabs-toolbar-seam.png'))
+    await browser.execute(() => document.getElementById('e2e-browser-chrome-seam')?.remove())
 
     await navigateActiveTab('https://example.com')
     await waitForWebviewTitle('Example Domain')
     await browser.pause(500)
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-mode-example-com.png'))
+    await saveElementScreenshot('#pane-files', 'browser-mode-example-com.png')
 
     const newTabBtn = await $('.browser-tabs-new-btn')
     await newTabBtn.click()
@@ -92,6 +155,6 @@ describe('browser panel display', () => {
       timeout: 5_000,
       timeoutMsg: 'expected second browser tab after clicking +',
     })
-    await browser.saveScreenshot(join(SCREENSHOT_DIR, 'browser-mode-two-tabs.png'))
+    await saveElementScreenshot('#pane-files', 'browser-mode-two-tabs.png')
   })
 })

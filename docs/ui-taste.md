@@ -29,6 +29,9 @@ typing a raw pixel value; if you find yourself writing `padding: 8px 20px`, that
 | `--spacing-lg` | 16px  | `--font-size-base` | 14px  |
 | `--spacing-xl` | 24px  | `--font-size-lg`   | 16px  |
 
+Chrome band tokens (not spacing, but reach for these before inventing heights):
+`--chrome-action-band-height`, `--browser-chrome-band-height`.
+
 - There is no spacing token larger than `--spacing-xl` (24px). When you genuinely need more, compose
   with `calc()` from existing tokens (e.g. `calc(var(--spacing-xl) + var(--spacing-lg))`) rather than
   introducing a new magic number. This mirrors what `onboarding.css` already does.
@@ -250,6 +253,15 @@ real CSS `border: 1px solid var(--border)`; the centered variant must **clear th
 (`border: none`) and paint its perimeter only with `box-shadow: 0 0 0 1px var(--border)`. Clearing
 just `border-top` leaves left/right/bottom borders stacked under that ring — a thicker, uneven
 outline. Specs: `modern-css.test.ts`, `tests/demo/chat-layout-styling.demo.ts`.
+
+## Browser Tabs header and URL toolbar share one chrome band
+
+In browser mode the left `.browser-tabs-list-header` ("Tabs") and the right `.browser-toolbar`
+(URL bar) sit side by side across the tree resizer. Their **bottom borders must meet as one
+continuous line** — same shared `--browser-chrome-band-height` token, no extra
+`border-top` on `.browser-viewer-host` (that hairline framed an L against the sidebar and
+pushed the toolbar out of band; same trap as `.terminals-viewer-host`). Spec:
+[`tests/e2e/browser-display.e2e.ts`](../tests/e2e/browser-display.e2e.ts).
 
 ## Portrait / vertical chrome (narrow tall windows)
 
