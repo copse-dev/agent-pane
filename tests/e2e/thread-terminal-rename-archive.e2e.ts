@@ -59,6 +59,13 @@ describe('thread + terminal rename / archive', () => {
     }, keepTitle)
     const renameInput = await $('.chat-title-rename')
     await renameInput.waitForExist({ timeout: 5_000 })
+    // Reclaim focus explicitly — WDIO can steal it between mount and setValue.
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>('.chat-title-rename')
+      if (!input) throw new Error('rename input missing before focus')
+      input.focus()
+      input.select()
+    })
     await renameInput.setValue('Renamed keep thread')
     await browser.keys('Enter')
 
@@ -142,9 +149,25 @@ describe('thread + terminal rename / archive', () => {
       await firstTab.click({ button: 'right' })
       await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
     }
-    await $('.context-menu-item*=Rename').click()
+    // Prefer mousedown in-page — WDIO `.click()` can blur the rename input in
+    // the same turn as mount (menu already dismisses on mousedown).
+    await browser.execute(() => {
+      const item = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
+      ).find((i) => i.textContent === 'Rename')
+      if (!item) throw new Error('Rename menu item missing')
+      item.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 }),
+      )
+    })
     const renameInput = await $('.terminals-tab-rename')
     await renameInput.waitForExist({ timeout: 5_000 })
+    await browser.execute(() => {
+      const input = document.querySelector<HTMLInputElement>('.terminals-tab-rename')
+      if (!input) throw new Error('terminal rename input missing before focus')
+      input.focus()
+      input.select()
+    })
     await renameInput.setValue('Build shell')
     await browser.keys('Enter')
 

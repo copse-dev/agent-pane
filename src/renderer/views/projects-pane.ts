@@ -1,5 +1,6 @@
 import { el, clear } from '../dom/helpers.ts'
 import { dismissContextMenu, showContextMenu } from '../dom/context-menu.ts'
+import { bindRenameBlur } from '../dom/rename-blur.ts'
 import {
   chevronRightIcon,
   closeIcon,
@@ -466,14 +467,9 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               finishThreadRename(false)
             }
           })
-          input.addEventListener('blur', () => {
-            // Defer so focus() after render() wins races against the click that
-            // opened rename (context-menu / WDIO) before we commit and unmount.
-            queueMicrotask(() => {
-              if (renaming?.threadId !== thread.id) return
-              if (document.activeElement === input) return
-              finishThreadRename(true)
-            })
+          bindRenameBlur(input, () => {
+            if (renaming?.threadId !== thread.id) return
+            finishThreadRename(true)
           })
           for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
             input.addEventListener(evt, (e) => {

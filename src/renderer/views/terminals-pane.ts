@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
 import { showContextMenu } from '../dom/context-menu.ts'
+import { bindRenameBlur } from '../dom/rename-blur.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -210,13 +211,9 @@ export function mountTerminalsPane(
         finish(false)
       }
     })
-    input.addEventListener('blur', () => {
-      // Defer so a focus() that races the activating click still wins before we
-      // tear the input down (WDIO / xterm focus fighting).
-      queueMicrotask(() => {
-        if (done || document.activeElement === input) return
-        finish(true)
-      })
+    bindRenameBlur(input, () => {
+      if (done) return
+      finish(true)
     })
     for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
       input.addEventListener(evt, (e) => {

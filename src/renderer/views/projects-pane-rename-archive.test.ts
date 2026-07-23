@@ -164,4 +164,37 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.ok(input)
     assert.equal(input.value, 'Editable')
   })
+
+  it('keeps the rename input mounted when blur races focus() after open', async () => {
+    const store = createStore({
+      projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
+      activeProjectId: 'a',
+      expandedProjectId: 'a',
+      workspaceRoot: '/a',
+      threads: [thread('t1', 'Race me')],
+      activeThreadId: 't1',
+    })
+    mount(store, makeApi())
+
+    const title = rowFor('Race me').querySelector('.chat-title')
+    assert.ok(title)
+    title.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+
+    const input = document.querySelector<HTMLInputElement>('.chat-title-rename')
+    assert.ok(input)
+
+    const other = document.createElement('button')
+    document.body.append(other)
+    other.focus()
+    input.dispatchEvent(new window.FocusEvent('blur', { bubbles: true }))
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0)
+    })
+
+    assert.ok(
+      document.querySelector('.chat-title-rename'),
+      'rename input must survive an immediate blur after open',
+    )
+    assert.equal(store.getState().threads.find((t) => t.id === 't1')?.title, 'Race me')
+  })
 })
