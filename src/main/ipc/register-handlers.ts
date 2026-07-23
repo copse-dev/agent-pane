@@ -171,6 +171,7 @@ import {
 import { parseIssueRef, issueRefToUrl } from '@shared/git/issue-ref.ts'
 import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
+import { matchOpenIssuesToRoadmapItems } from '../services/roadmap-issue-coverage.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
 import { buildRoadmapExport } from '../services/roadmap-export.ts'
@@ -733,6 +734,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
     return importIssuesAsRoadmapItems(issues, undefined, undefined, notifyRoadmapChanged)
+  })
+
+  // Semantic coverage for the import picker: which open issues already have a
+  // roadmap prompt (even without a pin)? Pin matches stay client-side; this
+  // only asks the small-tasks model about the unpinned remainder.
+  ipcMain.handle('roadmap:matchOpenIssues', async (event, rawIssues: unknown) => {
+    assertMainFrameSender(event, win)
+    const issues = parseIpcArgs(zRoadmapImportIssues, [rawIssues])
+    return matchOpenIssuesToRoadmapItems(issues)
   })
 
   // Track the chat thread started from an item ("Start thread" in the pane) in

@@ -10,6 +10,7 @@ import {
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
+import type { RoadmapIssueCoverageMatch } from '@shared/roadmap/coverage.ts'
 import {
   ATTACHMENTS_FIELD,
   MAX_NOTE_ATTACHMENTS,
@@ -174,6 +175,9 @@ export function mountRoadmapPane(
       }
     | undefined
   let openIssues: OpenIssue[] = []
+  /** Model-judged coverage of open issues by existing (unpinned) roadmap items. */
+  let issueCoverage = new Map<number, RoadmapIssueCoverageMatch>()
+  let coverageToken = 0
   // While a fit check runs, its progress/error text owns the fit box and
   // renderEditor must not overwrite it from the store.
   let fitCheckInFlight = false
@@ -1283,23 +1287,49 @@ export function mountRoadmapPane(
     return items.some((i) => itemIssue(i) === short || itemIssue(i) === full)
   }
 
+  function coverageFor(issue: OpenIssue): RoadmapIssueCoverageMatch | undefined {
+    return issueCoverage.get(issue.number)
+  }
+
   function renderImportList(): void {
     clear(importList)
     for (const issue of openIssues) {
       const pinned = issueAlreadyPinned(issue)
+      const covered = !pinned ? coverageFor(issue) : undefined
+      // Pin and likely coverage both block re-import; partial stays selectable
+      // so the user can still add a tighter prompt when overlap is incomplete.
+      const blocked = pinned || covered?.verdict === 'likely'
       const checkbox = el('input', {
         type: 'checkbox',
         class: 'roadmap-import-check',
         'data-number': String(issue.number),
-        disabled: pinned,
+        disabled: blocked,
       })
+      const rowClass =
+        'roadmap-import-row' +
+        (pinned ? ' is-pinned' : '') +
+        (covered?.verdict === 'likely' ? ' is-covered' : '')
       const label = el(
         'label',
-        { class: `roadmap-import-row${pinned ? ' is-pinned' : ''}` },
+        { class: rowClass },
         checkbox,
         el('span', { class: 'roadmap-import-title' }, `#${String(issue.number)} ${issue.title}`),
       )
-      if (pinned) label.append(el('span', { class: 'memories-meta' }, 'already on roadmap'))
+      if (pinned) {
+        label.append(el('span', { class: 'roadmap-import-coverage' }, 'already on roadmap'))
+      } else if (covered) {
+        const prefix = covered.verdict === 'likely' ? 'covered by' : 'maybe covered by'
+        label.append(
+          el(
+            'span',
+            {
+              class: 'roadmap-import-coverage',
+              title: `${prefix}: ${covered.itemTitle}`,
+            },
+            `${prefix}: ${covered.itemTitle}`,
+          ),
+        )
+      }
       importList.append(label)
     }
   }
@@ -1311,6 +1341,8 @@ export function mountRoadmapPane(
     creating = false
     selectedId = null
     openIssues = []
+    issueCoverage = new Map()
+    const matchToken = ++coverageToken
     clear(importList)
     importConfirmBtn.disabled = false
     importStatus.textContent = 'Loading open issues…'
@@ -1319,13 +1351,30 @@ export function mountRoadmapPane(
     void api.roadmap
       .openIssues()
       .then(({ slug, issues }) => {
-        if (!importing) return
+        if (!importing || matchToken !== coverageToken) return
         openIssues = issues
         // Naming the queried repo surfaces a stale or fork origin at a glance.
         importStatus.textContent = issues.length
           ? `Pick the issues to turn into roadmap prompts (${slug}).`
           : `No open issues found in ${slug}.`
         renderImportList()
+        if (issues.length === 0) return
+        // Pin badges are immediate; semantic coverage lands when the model
+        // answers (or silently stays empty when no model / unparseable).
+        importStatus.textContent = `Checking existing roadmap coverage (${slug})…`
+        return api.roadmap
+          .matchOpenIssues(issues.map((i) => ({ number: i.number, title: i.title, body: i.body })))
+          .then((matches) => {
+            if (!importing || matchToken !== coverageToken) return
+            issueCoverage = new Map(matches.map((m) => [m.issueNumber, m]))
+            importStatus.textContent = `Pick the issues to turn into roadmap prompts (${slug}).`
+            renderImportList()
+          })
+          .catch(() => {
+            // Coverage is advisory — a failed match must not strand the picker.
+            if (!importing || matchToken !== coverageToken) return
+            importStatus.textContent = `Pick the issues to turn into roadmap prompts (${slug}).`
+          })
       })
       .catch((err: unknown) => {
         if (!importing) return
@@ -1368,6 +1417,8 @@ export function mountRoadmapPane(
 
   function cancelImport(): void {
     importing = false
+    coverageToken++
+    issueCoverage = new Map()
     renderEditor()
   }
 
