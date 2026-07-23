@@ -30,8 +30,10 @@ export class MockLLMProvider implements LLMProvider {
       .filter((m) => m.role === 'system')
       .map((m) => (typeof m.content === 'string' ? m.content : ''))
       .join('\n')
-    const demoSkillLoaded = systemText.includes('<skill_content name="demo-skill">')
-    const checkupSkillLoaded = systemText.includes('<skill_content name="checkup">')
+    // Skill prompts emit `<skill_content name="…" trust="…">` (see skill-prompt.ts).
+    // Match on the name attribute prefix so the trust attribute does not break detection.
+    const demoSkillLoaded = systemText.includes('<skill_content name="demo-skill"')
+    const checkupSkillLoaded = systemText.includes('<skill_content name="checkup"')
 
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
     const fullUserText = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : ''
