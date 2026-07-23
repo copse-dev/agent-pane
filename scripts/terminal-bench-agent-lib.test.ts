@@ -19,6 +19,7 @@ import {
   terminalStuckToolRecoveryNudge,
   terminalValidationBoundaryWarning,
   terminalWriteFileCommand,
+  terminalWorkspaceWriteFileCommand,
 } from './terminal-bench-agent-lib.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 
@@ -34,12 +35,12 @@ describe('terminal benchmark bridge', () => {
       {
         'main-legacy@1': main.contentHash,
         'pr-1149@1': pr.contentHash,
-        'product-aligned@1': aligned.contentHash,
+        'product-aligned@2': aligned.contentHash,
       },
       {
         'main-legacy@1': '4c79ddf0b404ea906d6b136fcc874253c5353ca4987e6d5fc5f8910ce67db65b',
         'pr-1149@1': '9f482024cb1d5ad879e285f96dd1c73f8ae7c57ae48fcab8476d79598aa0a460',
-        'product-aligned@1': '9880c6ed0d8fac7b93eb5a8d842ce813ae1aeaa430110dc2eb394ab482774aaa',
+        'product-aligned@2': 'bb72d92ff108556d25660492cdf6bfd0e165b45db13aebcfb9d1e3132461dd23',
       },
     )
     assert.equal(new Set([main.contentHash, pr.contentHash, aligned.contentHash]).size, 3)
@@ -48,6 +49,11 @@ describe('terminal benchmark bridge', () => {
     assert.equal(aligned.forcesRequestedOutputRecovery, false)
     assert.equal(pr.warnsOnValidationEvidence, true)
     assert.equal(aligned.warnsOnValidationEvidence, false)
+    assert.equal(aligned.writeFilePolicy, 'workspace-relative')
+    assert.equal(
+      terminalBenchProfile('product-aligned@1').contentHash,
+      '9880c6ed0d8fac7b93eb5a8d842ce813ae1aeaa430110dc2eb394ab482774aaa',
+    )
   })
 
   it('marks nonzero shell exits as errors only in the product-aligned profile', () => {
@@ -158,6 +164,25 @@ describe('terminal benchmark bridge', () => {
     )
     assert.throws(() => terminalWriteFileCommand('/tests/result.txt', 'nope'), /under \/app/)
     assert.throws(() => terminalWriteFileCommand('/app/../tests/result.txt', 'nope'), /under \/app/)
+  })
+
+  it('writes product-aligned files relative to the actual task workspace', () => {
+    assert.equal(
+      terminalWorkspaceWriteFileCommand('src/result.txt', 'first\nsecond\n', '/workspace'),
+      "mkdir -p -- '/workspace/src' && printf '%s' 'Zmlyc3QKc2Vjb25kCg==' | base64 -d > '/workspace/src/result.txt'",
+    )
+    assert.equal(
+      terminalWorkspaceWriteFileCommand('/workspace/result.txt', 'done', '/workspace'),
+      "mkdir -p -- '/workspace' && printf '%s' 'ZG9uZQ==' | base64 -d > '/workspace/result.txt'",
+    )
+    assert.throws(
+      () => terminalWorkspaceWriteFileCommand('../tests/result.txt', 'nope', '/workspace'),
+      /remain inside the workspace/,
+    )
+    assert.throws(
+      () => terminalWorkspaceWriteFileCommand('/app/result.txt', 'nope', '/workspace'),
+      /remain inside the workspace/,
+    )
   })
 
   it('retains #1149 validation warnings as profile-local mechanisms', () => {

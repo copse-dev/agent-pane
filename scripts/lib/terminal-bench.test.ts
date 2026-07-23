@@ -74,6 +74,7 @@ describe('terminal benchmark launcher', () => {
     assert.deepEqual(launch.args.slice(-2), ['--n-tasks', '1'])
     assert.match(launch.env['COPSE_TERMINAL_AGENT_BUNDLE'] ?? '', /terminal-bench-agent\.cjs$/)
     assert.equal(launch.env['COPSE_TERMINAL_PROFILE'], 'main-legacy')
+    assert.equal(launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'main-legacy@1')
     assert.match(launch.env['COPSE_TERMINAL_PROFILE_HASH'] ?? '', /^[a-f0-9]{64}$/)
     assert.equal(launch.env['PYTHONPATH'], process.cwd())
   })
@@ -81,6 +82,7 @@ describe('terminal benchmark launcher', () => {
   it('selects profiles without forwarding the harness-only flag to Harbor', () => {
     const launch = buildTerminalBenchLaunch(['--profile=product-aligned'], env)
     assert.equal(launch.env['COPSE_TERMINAL_PROFILE'], 'product-aligned')
+    assert.equal(launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@2')
     assert.equal(
       launch.args.some((arg) => arg.startsWith('--profile=')),
       false,

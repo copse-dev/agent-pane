@@ -21,6 +21,9 @@ _DEFAULT_MAX_COMMAND_TIMEOUT_SEC = 600
 _TRACE_BUFFER_MAX_LINES = 256
 _TRACE_BUFFER_MAX_CHARS = 64_000
 _DEFAULT_WORKSPACE_CAP_MB = 500
+# asyncio's subprocess StreamReader otherwise inherits the 64 KiB default.
+# Tool calls can legitimately exceed that when write_file carries a complete file.
+_BRIDGE_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
 
 def _bounded_output(value: str | None) -> str:
@@ -188,7 +191,9 @@ class CopseTerminalAgent(BaseAgent):
         context.n_input_tokens = 0
         context.n_output_tokens = 0
         profile_id = os.environ.get("COPSE_TERMINAL_PROFILE", "main-legacy")
-        profile = profile_id if "@" in profile_id else f"{profile_id}@1"
+        profile = os.environ.get("COPSE_TERMINAL_PROFILE_VERSIONED_ID") or (
+            profile_id if "@" in profile_id else f"{profile_id}@1"
+        )
         context.metadata = {
             "tool_calls": 0,
             "model_requests": 0,
@@ -215,6 +220,7 @@ class CopseTerminalAgent(BaseAgent):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=os.environ.copy(),
+            limit=_BRIDGE_STREAM_LIMIT_BYTES,
         )
         if process.stdin is None or process.stdout is None or process.stderr is None:
             raise RuntimeError("Failed to open terminal agent bridge pipes.")
@@ -239,6 +245,7 @@ class CopseTerminalAgent(BaseAgent):
                     "instruction": instruction,
                     "model": self.model_name,
                     "threadDir": str(self.logs_dir / "thread"),
+                    "workspaceRoot": workspace_root,
                 }
             )
             with trace_path.open("w", encoding="utf-8") as trace:

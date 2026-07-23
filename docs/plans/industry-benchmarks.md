@@ -65,13 +65,16 @@ optional one-image-ahead prefetch overlaps the next pull with inference, guarded
 30 GiB free-space floor so provisioning latency can be hidden without recreating unbounded disk
 pressure.
 
-The adapter now targets Terminal-Bench 2.1 and exposes three versioned experiment profiles:
+The adapter now targets Terminal-Bench 2.1 and exposes three experiment profiles:
 `main-legacy@1` (the unchanged original adapter), `pr-1149@1` (the exact constrained-write and
-validation-warning experiment), and `product-aligned@1` (regular shell error semantics without
-task-specific recovery). `main-legacy` remains the default. Dataset revision, task configuration
+validation-warning experiment), and `product-aligned@2` (workspace-aware regular shell/write
+semantics without task-specific recovery). Historical `product-aligned@1` capsules remain readable.
+`main-legacy` remains the default. Dataset revision, task configuration
 checksum, resolved image digest, profile ID, and profile content hash are retained with every
 trial. The complete negative and protocol-progress evidence behind `pr-1149@1` is preserved in
 [`docs/spikes/terminal-bench-pr-1149.md`](../spikes/terminal-bench-pr-1149.md).
+The two-attempt 2.1 result, adapter defects, and targeted follow-up are recorded in
+[`docs/spikes/terminal-bench-2.1-profile-ablation.md`](../spikes/terminal-bench-2.1-profile-ablation.md).
 
 The ablation is precommitted in code: the four #1149 tasks form a one-attempt diagnostic cohort,
 while the held-out cohort excludes them and selects 12 tasks by sorting

@@ -248,6 +248,7 @@ export function buildTerminalBenchLaunch(
       ...env,
       COPSE_TERMINAL_AGENT_BUNDLE: agentBundle,
       COPSE_TERMINAL_PROFILE: profile.id,
+      COPSE_TERMINAL_PROFILE_VERSIONED_ID: profile.versionedId,
       COPSE_TERMINAL_PROFILE_HASH: profile.contentHash,
       PYTHONPATH: pythonPath ? `${repositoryRoot}${delimiter}${pythonPath}` : repositoryRoot,
     },

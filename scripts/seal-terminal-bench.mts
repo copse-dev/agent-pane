@@ -272,7 +272,7 @@ for (const { resultPath, result } of storedTrials) {
   const retainedProfile = await readTerminalBenchTrialProfile(resultPath)
   const profile =
     typeof rawProfile === 'string'
-      ? terminalBenchProfile(rawProfile.replace(/@1$/, ''))
+      ? terminalBenchProfile(rawProfile)
       : (retainedProfile ?? terminalBenchProfile())
   if (retainedProfile && retainedProfile.versionedId !== profile.versionedId) {
     throw new Error(`Retained profile metadata does not match agent metadata for ${taskName}.`)

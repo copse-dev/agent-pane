@@ -53,7 +53,7 @@ export async function readTerminalBenchTrialProfile(
   if (field(value, 'schemaVersion') !== 1 || typeof rawProfile !== 'string') {
     throw new Error(`Invalid retained Terminal-Bench profile metadata for ${resultPath}`)
   }
-  const profile = terminalBenchProfile(rawProfile.replace(/@1$/, ''))
+  const profile = terminalBenchProfile(rawProfile)
   if (rawProfile !== profile.versionedId || rawHash !== profile.contentHash) {
     throw new Error(`Inconsistent retained Terminal-Bench profile metadata for ${resultPath}`)
   }

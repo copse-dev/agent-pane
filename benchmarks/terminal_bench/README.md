@@ -15,13 +15,16 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
   and recovery behavior.
 - `pr-1149@1` retains PR #1149's constrained recovery writes and validation warnings as historical
   experimental behavior.
-- `product-aligned@1` exposes `run_shell` and an unconstrained `/app` `write_file`, reports nonzero
+- `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
   exits as tool errors, and contains no requested-path, forced-write, SIGINT, or task-specific
-  recovery logic.
+  recovery logic. Historical `product-aligned@1` capsules remain readable; the unversioned CLI and
+  workflow selection resolves to v2.
 
 The four diagnostic tasks are a development cohort, not evidence of general improvement, and
 their historical 2.0 rewards are not comparable with 2.1 rewards. The frozen evidence and run
 links are in [`docs/spikes/terminal-bench-pr-1149.md`](../../docs/spikes/terminal-bench-pr-1149.md).
+The complete two-attempt 2.1 result and v2 follow-up rationale are in
+[`docs/spikes/terminal-bench-2.1-profile-ablation.md`](../../docs/spikes/terminal-bench-2.1-profile-ablation.md).
 
 ## Prerequisites
 
