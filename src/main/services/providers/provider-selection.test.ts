@@ -8,7 +8,9 @@ import {
   invalidateLmStudioModelsCache,
   isLocalChatModel,
   buildSubagentRoute,
+  buildReviewRoute,
   buildProvider,
+  normalizeRoleModelSelection,
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
@@ -48,13 +50,22 @@ describe('lm-studio-models source integrity', () => {
 describe('subagent local model routing', () => {
   let restoreFetch: (() => void) | undefined
 
+  beforeEach(() => {
+    setApiKey('anthropic', 'sk-ant-routing-test')
+    setApiKey('openai', 'sk-routing-test')
+  })
+
   afterEach(() => {
     restoreFetch?.()
     restoreFetch = undefined
     setSetting('localSubagentsEnabled', true)
     setSetting('subagentModel', '')
     setSetting('localDefaultModel', '')
+    setSetting('reviewModel', '')
+    setSetting('roleModels', {})
     setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
+    setApiKey('anthropic', '')
+    setApiKey('openai', '')
   })
 
   it('detects local chat models', () => {
@@ -64,7 +75,8 @@ describe('subagent local model routing', () => {
     assert.equal(isLocalChatModel('gpt-4o'), false)
   })
 
-  it('returns null when the parent chat model is already local', async () => {
+  it('returns null when the selected research model matches the parent', async () => {
+    setSetting('subagentModel', 'local-model')
     const route = await buildSubagentRoute('lmstudio:local-model')
     assert.equal(route, null)
   })
@@ -95,6 +107,14 @@ describe('subagent local model routing', () => {
     assert.equal(route.toolSchemaReserve, 2_500)
   })
 
+  it('routes research through a configured cloud model', async () => {
+    setSetting('subagentModel', 'claude-haiku-4-5')
+    const route = await buildSubagentRoute('gpt-5')
+    assert.ok(route)
+    assert.equal(route.usageModel, 'claude-haiku-4-5')
+    assert.equal(route.toolSchemaReserve, 1_000)
+  })
+
   it('falls back to the default local model when subagent model is auto', async () => {
     setSetting('localDefaultModel', 'default-local')
     restoreFetch = stubFetch(
@@ -110,6 +130,40 @@ describe('subagent local model routing', () => {
     const route = await buildSubagentRoute('gpt-4o')
     assert.ok(route)
     assert.equal(route.contextWindow, 8192)
+  })
+
+  it('defaults review to an on-device model', async () => {
+    restoreFetch = stubFetch(
+      async () =>
+        ({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          json: async () => ({ data: [{ id: 'default-local' }] }),
+        }) as Response,
+    )
+    setSetting('localDefaultModel', 'default-local')
+    const route = await buildReviewRoute()
+    assert.ok(route)
+    assert.equal(route.usageModel, 'lmstudio:default-local')
+  })
+
+  it('routes review through a configured cloud model', async () => {
+    setSetting('reviewModel', 'gpt-5-mini')
+    const route = await buildReviewRoute()
+    assert.ok(route)
+    assert.equal(route.usageModel, 'gpt-5-mini')
+    assert.equal(route.toolSchemaReserve, 1_000)
+  })
+
+  it('upgrades legacy bare role ids without rewriting canonical provider choices', () => {
+    assert.equal(normalizeRoleModelSelection('qwen/local-coder'), 'lmstudio:qwen/local-coder')
+    assert.equal(
+      normalizeRoleModelSelection('lmstudio:qwen/local-coder'),
+      'lmstudio:qwen/local-coder',
+    )
+    assert.equal(normalizeRoleModelSelection('claude-haiku-4-5'), 'claude-haiku-4-5')
+    assert.equal(normalizeRoleModelSelection('gpt-5-mini'), 'gpt-5-mini')
   })
 })
 

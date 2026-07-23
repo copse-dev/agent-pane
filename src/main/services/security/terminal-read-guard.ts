@@ -1,14 +1,10 @@
-import { getSetting, getLmStudioApiKey } from '../storage/settings.ts'
-import {
-  DEFAULT_LM_STUDIO_URL,
-  LM_STUDIO_MODEL_IDS,
-  lmStudioChatModelValue,
-} from '@shared/lm-studio-defaults.ts'
-import { resolveLocalModelId } from '../providers/provider-selection.ts'
-import { stripTrailingSlash } from '../providers/lm-studio-models.ts'
+import { getSetting, getSettingTrimmed } from '../storage/settings.ts'
+import { LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-defaults.ts'
+import { buildProvider, normalizeRoleModelSelection } from '../providers/provider-selection.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { recordUsageEvent } from '../storage/usage-ledger.ts'
 import { requestApproval } from '../approval.ts'
+import { completeMessagesWithUsage } from '../providers/llm-complete-text.ts'
 import {
   parseTerminalReadVerdict,
   terminalReadNeedsApproval,
@@ -37,7 +33,7 @@ Mark "risky" if the output appears to contain: secrets or credentials (API keys,
 Mark "safe" only when you are confident it is ordinary command output with none of the above.
 When uncertain, use "risky" with lower confidence.`
 
-// Local safety models have small context windows; screen the trailing slice of
+// Safety models may have small context windows; screen the trailing slice of
 // the snapshot (the most recent output, which is also what the agent asked
 // for). A secret scrolled beyond this window is still covered by the approval
 // fallback whenever the classifier cannot vouch for the visible tail.
@@ -46,43 +42,26 @@ const CLASSIFIER_INPUT_MAX_CHARS = 6_000
 export async function classifyTerminalSnapshot(text: string): Promise<TerminalReadVerdict | null> {
   if (!getSetting<boolean>('safetyClassifierEnabled', true)) return null
 
-  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
-  const model = await resolveLocalModelId('safetyModel', url, LM_STUDIO_MODEL_IDS.safety)
+  const model = normalizeRoleModelSelection(
+    getSettingTrimmed('safetyModel', LM_STUDIO_MODEL_IDS.safety),
+  )
   if (!model) return null
 
-  const base = stripTrailingSlash(url)
   try {
-    const res = await fetch(`${base}/chat/completions`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(FETCH_TIMEOUTS.safetyClassification),
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getLmStudioApiKey()}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        max_tokens: 200,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: text.slice(-CLASSIFIER_INPUT_MAX_CHARS) },
-        ],
-      }),
-    })
-    if (!res.ok) return null
-    const json = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>
-      usage?: { prompt_tokens?: number; completion_tokens?: number }
-    }
-    const content = json.choices?.[0]?.message?.content ?? ''
-    const promptTokens = json.usage?.prompt_tokens ?? 0
-    const completionTokens = json.usage?.completion_tokens ?? 0
-    if (promptTokens || completionTokens) {
+    const provider = await buildProvider(model)
+    const { text: content, usage } = await completeMessagesWithUsage(
+      provider,
+      [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: text.slice(-CLASSIFIER_INPUT_MAX_CHARS) },
+      ],
+      FETCH_TIMEOUTS.safetyClassification,
+    )
+    if (usage.inputTokens || usage.outputTokens) {
       recordUsageEvent({
-        model: lmStudioChatModelValue(model),
+        model,
         source: 'safety-classifier',
-        inputTokens: promptTokens,
-        outputTokens: completionTokens,
+        ...usage,
       })
     }
     return parseTerminalReadVerdict(content)
@@ -118,8 +97,8 @@ async function gateImpl(
   if (!terminalReadNeedsApproval(verdict)) return { allowed: true }
 
   const why = verdict
-    ? `The local safety model flagged it: ${verdict.reason}`
-    : 'The local safety model could not screen it.'
+    ? `The safety model flagged it: ${verdict.reason}`
+    : 'The safety model could not screen it.'
   const decision = await requestApproval({
     type: 'shell',
     title: 'Share terminal output with the agent?',

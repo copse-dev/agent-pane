@@ -7,6 +7,7 @@ import { LM_STUDIO_MODEL_IDS, lmStudioChatModelValue } from '@shared/lm-studio-d
 describe('resolveSmallTasksModelId', () => {
   beforeEach(async () => {
     await setSetting('smallTasksModel', '')
+    await setSetting('roleModels', {})
   })
 
   it('returns the configured smallTasksModel when set', async () => {
@@ -16,5 +17,10 @@ describe('resolveSmallTasksModelId', () => {
 
   it('defaults to the recommended local small-tasks model when unset', () => {
     assert.equal(resolveSmallTasksModelId(), lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.smallTasks))
+  })
+
+  it('uses a provider-wide small-tasks role assignment', async () => {
+    await setSetting('roleModels', { 'small-tasks': 'gpt-5-mini' })
+    assert.equal(resolveSmallTasksModelId(), 'gpt-5-mini')
   })
 })

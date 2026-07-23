@@ -62,6 +62,27 @@ export function isLocalChatModel(model: string): boolean {
 }
 
 /**
+ * Role settings historically stored bare LM Studio ids. New role pickers store
+ * canonical provider selections, so retain cloud / provider-prefixed values and
+ * upgrade every remaining bare value to LM Studio on read.
+ */
+export function normalizeRoleModelSelection(model: string): string {
+  const value = model.trim()
+  if (!value) return ''
+  if (
+    value === 'lm-studio' ||
+    value.startsWith('lmstudio:') ||
+    isOpenRouterModel(value) ||
+    extraProviderForModel(getResolvedExtraProviders(), value) !== null ||
+    value.startsWith('claude-') ||
+    value.startsWith('gpt-')
+  ) {
+    return value
+  }
+  return `lmstudio:${value}`
+}
+
+/**
  * True when running `model` costs money: not an LM Studio / local model and not
  * an OpenAI-compatible *local* extra provider (Ollama, llama.cpp, …). Used to
  * decide whether a model-comparison run needs a spend approval.
@@ -89,15 +110,35 @@ export async function resolveLocalModelId(
   url: string,
   roleDefault = '',
 ): Promise<string | null> {
-  const configured = routedModelSetting(roleKey, roleDefault)
-  if (configured) return configured
-  const fallback = routedModelSetting('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
-  if (fallback) return fallback
+  const configured = normalizeRoleModelSelection(routedModelSetting(roleKey, roleDefault))
+  if (configured.startsWith('lmstudio:')) return configured.slice('lmstudio:'.length)
+  const fallback = normalizeRoleModelSelection(
+    getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat),
+  )
+  if (fallback.startsWith('lmstudio:')) return fallback.slice('lmstudio:'.length)
   return fetchFirstLocalModel(url)
 }
 
-function resolveSubagentLocalModelId(url: string): Promise<string | null> {
-  return resolveLocalModelId('subagentModel', url)
+function defaultOnDeviceModelSelection(): string {
+  const configured = normalizeRoleModelSelection(
+    getSettingTrimmed('localDefaultModel', LM_STUDIO_MODEL_IDS.chat),
+  )
+  return configured.startsWith('lmstudio:') ? configured : `lmstudio:${LM_STUDIO_MODEL_IDS.chat}`
+}
+
+function routedRoleModelSelection(roleKey: string): string {
+  const configured = normalizeRoleModelSelection(routedModelSetting(roleKey))
+  return configured || defaultOnDeviceModelSelection()
+}
+
+async function buildTaskRoleRoute(model: string): Promise<SubagentRoute> {
+  const contextWindow = await resolveContextWindow(model)
+  return {
+    provider: await buildProvider(model),
+    usageModel: model,
+    contextWindow,
+    toolSchemaReserve: isLocalChatModel(model) ? 2_500 : 1_000,
+  }
 }
 
 export interface SubagentRoute {
@@ -107,45 +148,20 @@ export interface SubagentRoute {
   toolSchemaReserve: number
 }
 
-/** When the parent chat uses a cloud model, route explore subagents to the local server. */
+/** Route exploration through its selected task-role model. */
 export async function buildSubagentRoute(parentModel: string): Promise<SubagentRoute | null> {
-  if (isLocalChatModel(parentModel)) return null
   if (!getSetting<boolean>('localSubagentsEnabled', true)) return null
-
-  const url = localServerUrl()
-  const modelId = await resolveSubagentLocalModelId(url)
-  if (!modelId) return null
-
-  const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
-  return {
-    provider: createLocalOpenAIProvider(url, modelId, getLmStudioApiKey()),
-    usageModel: `lmstudio:${modelId}`,
-    contextWindow,
-    toolSchemaReserve: 2_500,
-  }
+  const model = routedRoleModelSelection('subagentModel')
+  if (model === parentModel) return null
+  return buildTaskRoleRoute(model)
 }
 
 /**
- * Route for the post-turn review subagent. Returns a distinct route ONLY when
- * the user has explicitly configured a `reviewModel`; otherwise returns null so
- * the caller reuses the parent chat model (reviewing a diff is judgment work, so
- * the capable chat model is the sensible default rather than a weak local one).
+ * Route for the post-turn review subagent. Auto uses the on-device default;
+ * users can explicitly choose any connected provider model in Settings.
  */
 export async function buildReviewRoute(): Promise<SubagentRoute | null> {
-  const configured = getSettingTrimmed('reviewModel', '')
-  if (!configured) return null
-
-  const url = getSetting<string>('localServerUrl', DEFAULT_LM_STUDIO_URL)
-  const modelId = await resolveLocalModelId('reviewModel', url)
-  if (!modelId) return null
-
-  const contextWindow = await resolveContextWindow(`lmstudio:${modelId}`)
-  return {
-    provider: createLocalOpenAIProvider(url, modelId, getLmStudioApiKey()),
-    usageModel: `lmstudio:${modelId}`,
-    contextWindow,
-    toolSchemaReserve: 2_500,
-  }
+  return buildTaskRoleRoute(routedRoleModelSelection('reviewModel'))
 }
 
 // Builds the provider for the main agent loop. LM Studio models are encoded as
@@ -161,9 +177,14 @@ export async function buildProvider(model: string, promptCacheKey?: string): Pro
   if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') return createProvider(model)
   if (model === 'lm-studio' || model.startsWith('lmstudio:')) {
     const url = localServerUrl()
+    const savedLocalDefault = normalizeRoleModelSelection(
+      getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat),
+    )
     let id = model.startsWith('lmstudio:')
       ? model.slice('lmstudio:'.length)
-      : getSetting<string>('localDefaultModel', LM_STUDIO_MODEL_IDS.chat)
+      : savedLocalDefault.startsWith('lmstudio:')
+        ? savedLocalDefault.slice('lmstudio:'.length)
+        : LM_STUDIO_MODEL_IDS.chat
     if (!id) id = (await fetchFirstLocalModel(url)) ?? ''
     if (!id) {
       throw new Error(

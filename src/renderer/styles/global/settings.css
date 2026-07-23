@@ -291,6 +291,23 @@ dialog.settings-overlay::backdrop {
 .settings-content fieldset label:last-child {
   margin-bottom: 0;
 }
+/* Chat, lightweight prompts, and task-role routing are one decision surface.
+   Keep the roles visibly nested inside the Models card without introducing a
+   second card / nested fieldset. */
+#settings-model-routing-host {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--border);
+}
+.model-role-heading {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: 600;
+}
+.model-role-fields > .settings-fieldset-desc {
+  margin-bottom: var(--spacing-lg);
+}
 /* A hint explains the control right above it, so pull it in close and, for a
    checkbox, indent it under the label text it belongs to. */
 .settings-content .checkbox-label + .field-hint,

@@ -278,6 +278,30 @@ describe('fetchModelOptions visibility', () => {
     assert.match(row.label, /Opus 4\.8 — intellect 55\.7/)
   })
 
+  it('omits whole-session agents from task-role model options', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { anthropic: true, cursor: true },
+        cursorCloudModels: [{ id: 'opus-4-8', label: 'Opus 4.8' }],
+        acpAgents: [
+          {
+            id: 'claude-code',
+            title: 'Claude Code',
+            command: 'claude',
+            args: [],
+            enabled: true,
+          },
+        ],
+      }),
+      '',
+      { includeAgentModels: false },
+    )
+
+    assert.ok(options.some((option) => option.value === 'claude-haiku-4-5'))
+    assert.ok(!options.some((option) => option.value.startsWith('remote-agent:')))
+    assert.ok(!options.some((option) => option.value.startsWith('acp:')))
+  })
+
   it('groups hosted cloud models under a heading', async () => {
     const options = await fetchModelOptions(mockApi({ available: { anthropic: true } }), '')
     const cloud = options.filter((o) => o.group === 'Cloud models')
