@@ -35,7 +35,10 @@ describe('preferIpv4LoopbackUrl', () => {
 
   it('leaves non-bare-localhost hosts alone', () => {
     assert.equal(preferIpv4LoopbackUrl('http://127.0.0.1:1234/v1'), 'http://127.0.0.1:1234/v1')
-    assert.equal(preferIpv4LoopbackUrl('http://foo.localhost:1234/v1'), 'http://foo.localhost:1234/v1')
+    assert.equal(
+      preferIpv4LoopbackUrl('http://foo.localhost:1234/v1'),
+      'http://foo.localhost:1234/v1',
+    )
     assert.equal(preferIpv4LoopbackUrl('http://example.com/v1'), 'http://example.com/v1')
   })
 })
