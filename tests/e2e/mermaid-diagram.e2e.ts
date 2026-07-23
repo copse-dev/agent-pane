@@ -90,5 +90,20 @@ describe('mermaid diagram rendering', () => {
     await expect($('.mermaid-expand-viewport')).toExist()
     await expect($('.mermaid-expand-toolbar')).toExist()
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'mermaid-diagram-agent-loop.png'))
+
+    await $('.mermaid-expand-close').click()
+    const closed = $('dialog.mermaid-expand-dialog')
+    await browser.waitUntil(
+      async () => {
+        if (!(await closed.isExisting())) return true
+        if ((await closed.getAttribute('open')) != null) return false
+        return !(await closed.isDisplayed())
+      },
+      {
+        timeout: 5_000,
+        timeoutMsg: 'expected mermaid expand dialog to close and leave the page',
+      },
+    )
+    await expect(closed).not.toBeDisplayed()
   })
 })

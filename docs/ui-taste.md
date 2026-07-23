@@ -15,6 +15,16 @@ Thread message images (`.message-image`) and roadmap plan image chips
 `attachImageExpand` rather than inventing a second overlay. Visual eval:
 [`tests/e2e/image-expand.e2e.ts`](../tests/e2e/image-expand.e2e.ts).
 
+### Native `<dialog>` and `display`
+
+Never set `display: flex` (or any `display`) on a `<dialog>` without scoping it to
+`dialog[open]`. Author `display` outranks the UA `dialog { display: none }`, so
+`close()` exits the top layer but the node stays painted in the page — typically a
+ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and Close.
+`forms.css` forces `dialog:not([open]) { display: none !important; }` as a backstop
+(same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
+can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
