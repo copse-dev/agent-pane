@@ -10,6 +10,7 @@ import {
   terminalBenchTaskMetadata,
 } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
 
 const RESULTS_ROOT = resolve('bench-results/terminal-bench')
 const CAPSULES_ROOT = resolve('bench-results/terminal-bench-capsules')
@@ -188,9 +189,14 @@ for (const { resultPath, result } of storedTrials) {
       : 'unknown-task'
   const taskMetadata = terminalBenchTaskMetadata(taskName)
   const rawProfile = nested(result, 'agent_result', 'metadata', 'profile')
-  const profile = terminalBenchProfile(
-    typeof rawProfile === 'string' ? rawProfile.replace(/@1$/, '') : undefined,
-  )
+  const retainedProfile = await readTerminalBenchTrialProfile(resultPath)
+  const profile =
+    typeof rawProfile === 'string'
+      ? terminalBenchProfile(rawProfile.replace(/@1$/, ''))
+      : (retainedProfile ?? terminalBenchProfile())
+  if (retainedProfile && retainedProfile.versionedId !== profile.versionedId) {
+    throw new Error(`Retained profile metadata does not match agent metadata for ${taskName}.`)
+  }
   const attemptKey = `${profile.versionedId}:${taskName}`
   const attemptIndex = (attemptsByTask.get(attemptKey) ?? 0) + 1
   attemptsByTask.set(attemptKey, attemptIndex)
@@ -202,7 +208,8 @@ for (const { resultPath, result } of storedTrials) {
   const exceptionType =
     typeof rawExceptionType === 'string' && rawExceptionType ? rawExceptionType : undefined
   const outcome = terminalBenchTrialOutcome({ reward, exceptionType })
-  const recordedProfileHash = nested(result, 'agent_result', 'metadata', 'profile_hash')
+  const recordedProfileHash =
+    nested(result, 'agent_result', 'metadata', 'profile_hash') ?? retainedProfile?.contentHash
   if (recordedProfileHash !== profile.contentHash) {
     throw new Error(`Missing or inconsistent profile hash for ${taskName}.`)
   }
