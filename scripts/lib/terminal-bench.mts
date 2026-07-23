@@ -46,6 +46,22 @@ export function terminalBenchShard<T>(
   shardCount: number,
   shardIndex: number,
 ): T[] {
+  return terminalBenchShardEntries(values, maxTasks, shardCount, shardIndex).map(
+    (entry) => entry.value,
+  )
+}
+
+export interface TerminalBenchShardEntry<T> {
+  globalIndex: number
+  value: T
+}
+
+export function terminalBenchShardEntries<T>(
+  values: readonly T[],
+  maxTasks: number | undefined,
+  shardCount: number,
+  shardIndex: number,
+): Array<TerminalBenchShardEntry<T>> {
   if (!Number.isInteger(shardCount) || shardCount <= 0) {
     throw new Error(`shard count must be a positive integer, received '${String(shardCount)}'`)
   }
@@ -55,7 +71,9 @@ export function terminalBenchShard<T>(
     )
   }
   const selected = maxTasks === undefined ? values : values.slice(0, maxTasks)
-  return selected.filter((_, index) => index % shardCount === shardIndex)
+  return selected
+    .map((value, globalIndex) => ({ globalIndex, value }))
+    .filter((entry) => entry.globalIndex % shardCount === shardIndex)
 }
 
 export function terminalBenchRequestedTaskNames(raw: string | undefined): string[] | undefined {

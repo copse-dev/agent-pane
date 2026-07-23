@@ -4,10 +4,10 @@ import test from 'node:test'
 import {
   cleanPrefix,
   registryHost,
-  rotateTerminalBenchProfiles,
   runConfig,
   workerFollowRemoteScript,
 } from './run-terminal-bench-fleet.mts'
+import { rotateTerminalBenchProfiles } from './lib/terminal-bench-profiles.mts'
 
 const workerImage = 'rg.fr-par.scw.cloud/example/terminal-bench-worker:abc123'
 
@@ -78,7 +78,7 @@ test('fleet validates and carries an explicit ablation profile', () => {
   )
 })
 
-test('fleet runs unique profiles sequentially and rotates their order by shard', () => {
+test('fleet carries unique profiles for task-major rotation', () => {
   const config = runConfig({
     profiles: 'main-legacy,pr-1149,product-aligned',
     'no-steered-rerun': true,
@@ -124,13 +124,21 @@ test('fleet runs unique profiles sequentially and rotates their order by shard',
   )
 })
 
-test('worker checkpoints each profile and prunes task images only after the final profile', () => {
+test('worker runs task-major profiles with per-task checkpoints and pruning', () => {
   const script = readFileSync('benchmarks/terminal_bench/run-shard.sh', 'utf8')
+  const checkpoint = readFileSync('benchmarks/terminal_bench/checkpoint-results.sh', 'utf8')
+  const suite = readFileSync('scripts/run-terminal-bench-suite.mts', 'utf8')
   assert.match(script, /COPSE_TERMINAL_PROFILES/)
-  assert.match(script, /profile_offset < profile_count/)
-  assert.match(script, /profile_offset == profile_count - 1/)
-  assert.match(script, /checkpoint_results "profile/)
-  assert.doesNotMatch(script, /--prune-images\n\s+--prefetch-images/)
+  assert.match(script, /--profiles="\$profiles_csv"/)
+  assert.match(script, /--checkpoint-after-task/)
+  assert.match(script, /--prune-images/)
+  assert.doesNotMatch(script, /profile_offset/)
+  assert.match(checkpoint, /bench:terminal:seal/)
+  assert.match(checkpoint, /aws s3 cp/)
+  assert.match(checkpoint, /--sse AES256/)
+  assert.match(suite, /rotateTerminalBenchProfiles\(profiles, entry\.globalIndex\)/)
+  assert.match(suite, /MAX_CONSECUTIVE_FULLY_INVALID_TASKS = 3/)
+  assert.match(suite, /continuing the paired cohort/)
 })
 
 test('fleet accepts only exact registry task names and limits workers to that cohort', () => {
