@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
+import type { SkillSummary } from '@shared/types/skills.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -50,15 +51,7 @@ function createApi(options: {
   onCheckoutBranch?: (branch: string) => Promise<void>
   onPrepareCheckout?: () => Promise<PreparedThreadCheckout>
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
-  listSkills?: () => Promise<
-    Array<{
-      name: string
-      description: string
-      source: 'bundled' | 'project' | 'user' | 'plugin' | 'plugin-path'
-      skillPath: string
-      externalLinks: string[]
-    }>
-  >
+  listSkills?: () => Promise<SkillSummary[]>
 }): ApiClient {
   return {
     agent: {
@@ -106,7 +99,7 @@ function createApi(options: {
       setSetting: async () => ({ packs: [] }),
     },
     skills: {
-      list: options.listSkills ?? (async () => []),
+      list: options.listSkills ?? (async (): Promise<SkillSummary[]> => []),
     },
     index: {
       status: async () => ({
