@@ -50,6 +50,7 @@ export const SCALEWAY_ZONES = [
 ] as const
 export const DEFAULT_TTL_MINUTES = 240
 export const DEFAULT_VOLUME_SIZE_GB = 80
+export const DEFAULT_SCW_VOLUME_PRUNE_AGE_HOURS = 24
 const SSH_READY_POLL_SECONDS = 5
 const SSH_READY_TIMEOUT_MS = 10 * 60 * 1000
 
@@ -109,6 +110,24 @@ export interface ScalewayLaunchSpec extends ScalewayFleetConfig {
   ttlMinutes: number
   type: string
   volumeSizeGb: number
+}
+
+export interface ScalewayBlockVolume {
+  createdAt: string
+  id: string
+  lastDetachedAt: string
+  referenceCount: number
+  sizeBytes: number
+  status: string
+  tags: string[]
+  zone: string
+}
+
+export interface ScalewayVolumeReconcileResult {
+  candidates: number
+  deleted: number
+  failedIds: string[]
+  remaining: ScalewayBlockVolume[]
 }
 
 /** The subset of a CLI's config that SSH plumbing needs. */
@@ -429,10 +448,6 @@ ZONE=$(cat /opt/copse-burst/scw-zone)
 META=$(curl -fsS --max-time 15 http://169.254.42.42/conf?format=json)
 SERVER_ID=$(printf '%s' "$META" | jq -r '.id // empty')
 IP_ID=$(printf '%s' "$META" | jq -r '.public_ip.id // .public_ips[0].id // empty')
-# API terminate deletes l_ssd but only detaches SBS — capture ids before the server vanishes.
-mapfile -t VOLUME_IDS < <(printf '%s' "$META" | jq -r '
-  (.volumes // {}) | to_entries[] | .value | select(type == "object") | .id // empty
-')
 if [[ -z "$SERVER_ID" ]]; then
   echo "copse TTL: could not read server id from Scaleway metadata" >&2
   exit 1
@@ -452,6 +467,17 @@ api() {
   fi
   curl "\${args[@]}"
 }
+# Instance metadata has not consistently exposed SBS ids. Query Block Storage
+# by its server reference before terminate removes that relationship.
+volume_code=$(api GET "/block/v1alpha1/zones/$ZONE/volumes?product_resource_id=$SERVER_ID" || true)
+if [[ "$volume_code" =~ ^2 ]]; then
+  mapfile -t VOLUME_IDS < <(jq -r '(.volumes // [])[] | .id // empty' /tmp/copse-ttl-api.body)
+else
+  echo "copse TTL: could not list SBS volumes (HTTP $volume_code); using metadata fallback" >&2
+  mapfile -t VOLUME_IDS < <(printf '%s' "$META" | jq -r '
+    (.volumes // {}) | to_entries[] | .value | select(type == "object") | .id // empty
+  ')
+fi
 echo "copse TTL: terminating $SERVER_ID in $ZONE"
 code=000
 for attempt in 1 2 3 4 5 6 7 8; do
@@ -741,6 +767,25 @@ export function scalewayBlockVolumeDeleteArgs(
   return scalewayArgs(config, ['block', 'volume', 'delete', volumeId])
 }
 
+export function scalewayBlockVolumeTagArgs(
+  config: { zone: string },
+  volumeId: string,
+  name: string,
+  tags: FleetTags,
+): string[] {
+  return scalewayArgs(config, [
+    'block',
+    'volume',
+    'update',
+    volumeId,
+    ...scalewayTagArgs(name, tags),
+  ])
+}
+
+export function scalewayBlockVolumeListArgs(config: { zone: string }, managedBy: string): string[] {
+  return scalewayJsonArgs(config, ['block', 'volume', 'list', `tags.0=${managedBy}`])
+}
+
 /**
  * Volume IDs (any type) attached to a Scaleway server, from the JSON of
  * `scw instance server get`. The server payload carries volumes as a
@@ -760,6 +805,98 @@ export function parseScalewayVolumeIds(raw: string): string[] {
     if (id) ids.push(id)
   }
   return ids
+}
+
+export function parseScalewayBlockVolumes(raw: string, defaultZone: string): ScalewayBlockVolume[] {
+  const parsed: unknown = JSON.parse(raw)
+  const values = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed['volumes'])
+      ? parsed['volumes']
+      : undefined
+  if (values === undefined) throw new Error('Scaleway block volume response was not an array')
+  return values.map((value) => {
+    if (!isRecord(value)) throw new Error('Scaleway block volume row was not an object')
+    const references = value['references']
+    const tags = value['tags']
+    const size = value['size']
+    return {
+      createdAt: stringFromPath(value['created_at']),
+      id: stringFromPath(value['id']),
+      lastDetachedAt: stringFromPath(value['last_detached_at']),
+      referenceCount: Array.isArray(references) ? references.length : -1,
+      sizeBytes: typeof size === 'number' ? size : 0,
+      status: stringFromPath(value['status']),
+      tags: Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      zone: stringFromPath(value['zone']) || defaultZone,
+    }
+  })
+}
+
+export function selectScalewayManagedOrphans(
+  volumes: readonly ScalewayBlockVolume[],
+  requiredTags: readonly string[],
+  cutoff: Date,
+): ScalewayBlockVolume[] {
+  const cutoffMs = cutoff.getTime()
+  return volumes.filter((volume) => {
+    const unusedSince = volume.lastDetachedAt || volume.createdAt
+    const unusedSinceMs = Date.parse(unusedSince)
+    return (
+      volume.status === 'available' &&
+      volume.referenceCount === 0 &&
+      requiredTags.every((tag) => volume.tags.includes(tag)) &&
+      Number.isFinite(unusedSinceMs) &&
+      unusedSinceMs <= cutoffMs
+    )
+  })
+}
+
+export function listScalewayManagedVolumes(
+  base: { name?: string; tags: FleetTags },
+  zones: readonly string[],
+): ScalewayBlockVolume[] {
+  const requiredTags = base.name
+    ? scalewayTags(base.name, base.tags)
+    : [base.tags.kind, base.tags.managedBy]
+  const volumes = zones.flatMap((zone) =>
+    parseScalewayBlockVolumes(
+      capture('scw', scalewayBlockVolumeListArgs({ zone }, base.tags.managedBy)),
+      zone,
+    ),
+  )
+  return volumes.filter((volume) => requiredTags.every((tag) => volume.tags.includes(tag)))
+}
+
+export function reconcileScalewayManagedVolumes(
+  base: { name?: string; tags: FleetTags },
+  zones: readonly string[],
+  cutoff: Date,
+): ScalewayVolumeReconcileResult {
+  const requiredTags = base.name
+    ? scalewayTags(base.name, base.tags)
+    : [base.tags.kind, base.tags.managedBy]
+  const before = listScalewayManagedVolumes(base, zones)
+  const candidates = selectScalewayManagedOrphans(before, requiredTags, cutoff)
+  const failedIds: string[] = []
+  for (const volume of candidates) {
+    try {
+      capture('scw', scalewayBlockVolumeDeleteArgs({ zone: volume.zone }, volume.id))
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      if (!isScalewayNotFound(detail)) {
+        failedIds.push(volume.id)
+        console.error(`==> Warning: failed to prune block volume ${volume.id}: ${detail}`)
+      }
+    }
+  }
+  const remaining = listScalewayManagedVolumes(base, zones)
+  return {
+    candidates: candidates.length,
+    deleted: candidates.length - failedIds.length,
+    failedIds,
+    remaining,
+  }
 }
 
 function scalewayServerVolumeIds(config: { zone: string }, serverId: string): string[] {
@@ -988,6 +1125,16 @@ export function launchScalewayServers(
         const id = parseScalewayServer(raw).providerId
         if (!id) die(`Scaleway create did not return a server id: ${raw}`)
         ids.push(id)
+        const volumeIds = parseScalewayVolumeIds(raw)
+        if (volumeIds.length === 0) {
+          volumeIds.push(...scalewayServerVolumeIds(config, id))
+        }
+        if (volumeIds.length === 0) {
+          throw new Error(`Scaleway did not return a root volume id for server ${id}`)
+        }
+        for (const volumeId of volumeIds) {
+          capture('scw', scalewayBlockVolumeTagArgs(config, volumeId, config.name, config.tags))
+        }
       } catch (err) {
         if (isScalewayQuotaError(err)) {
           if (ids.length > 0) {

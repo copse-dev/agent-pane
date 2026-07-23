@@ -44,6 +44,7 @@ import {
   parseOptions,
   positiveInt,
   printHosts,
+  reconcileScalewayManagedVolumes,
   requiredOption,
   requireScalewayTool,
   requireTool,
@@ -651,28 +652,33 @@ async function scalewayDrain(options: Options): Promise<void> {
 function scalewayDown(options: Options): void {
   requireScalewayTool()
   if (!hasFlag(options, 'yes')) die('down requires --yes')
-  const fleet = listScalewayFleet(
-    { name: fleetName(options), tags: BURST_TAGS },
-    scalewayZonesForOptions(options),
-  ).filter((host) => host.state !== 'terminated')
+  const name = fleetName(options)
+  const zones = scalewayZonesForOptions(options)
+  const fleet = listScalewayFleet({ name, tags: BURST_TAGS }, zones).filter(
+    (host) => host.state !== 'terminated',
+  )
   if (fleet.length === 0) {
     console.log('No Scaleway burst instances to terminate.')
-    return
-  }
-  const hosts = scaleDownHosts(fleet, options)
-  printHosts(hosts)
-  for (const host of hosts) {
-    const zone = host.zone
-    if (!zone) die(`host ${host.providerId} is missing zone metadata; pass --zone explicitly`)
-    console.log(`==> Terminating ${host.providerId} in ${zone}`)
-    terminateScalewayServer({ zone }, host.providerId)
-  }
-  if (hasFlag(options, 'wait')) {
+  } else {
+    const hosts = scaleDownHosts(fleet, options)
+    printHosts(hosts)
     for (const host of hosts) {
       const zone = host.zone
-      if (!zone) continue
-      run('scw', scalewayArgs({ zone }, ['instance', 'server', 'wait', host.providerId]))
+      if (!zone) die(`host ${host.providerId} is missing zone metadata; pass --zone explicitly`)
+      console.log(`==> Terminating ${host.providerId} in ${zone}`)
+      terminateScalewayServer({ zone }, host.providerId)
     }
+    if (hasFlag(options, 'wait')) {
+      for (const host of hosts) {
+        const zone = host.zone
+        if (!zone) continue
+        run('scw', scalewayArgs({ zone }, ['instance', 'server', 'wait', host.providerId]))
+      }
+    }
+  }
+  const volumes = reconcileScalewayManagedVolumes({ name, tags: BURST_TAGS }, zones, new Date())
+  if (volumes.failedIds.length > 0) {
+    throw new Error(`failed to reconcile ${String(volumes.failedIds.length)} burst volume(s)`)
   }
 }
 

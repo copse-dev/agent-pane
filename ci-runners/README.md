@@ -146,6 +146,11 @@ Scaleway sizing guidance:
 - `--volume-size-gb` defaults to 80 (Scaleway SBS root). The default PLAY2 image
   disk is too small for `docker compose build` + dep bake; omit the flag to get
   80 GB, or raise it if builds still hit `no space left on device`.
+- Scaleway root SBS volumes receive the same fleet ownership tags as their
+  server. Normal teardown deletes and verifies those volumes; the daily
+  `Prune Scaleway Volumes` workflow is a backstop that deletes only tagged,
+  unattached Copse volumes after 24 hours. Run the same guard manually with
+  `npm run scaleway:prune-volumes -- --yes --older-than-hours 24`.
 - With `--instances N` (N>1), hosts are provisioned **in parallel** after create
   (SSH wait + Docker build). Pass `--serial` for one-at-a-time logs.
 
