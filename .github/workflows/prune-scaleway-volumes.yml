@@ -1,0 +1,45 @@
+name: Prune Scaleway Volumes
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      older_than_hours:
+        description: Minimum time a managed volume must be unattached before deletion
+        required: true
+        default: '24'
+        type: string
+
+concurrency:
+  group: prune-scaleway-volumes
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    name: Delete managed orphan volumes
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install Scaleway CLI
+        uses: scaleway/action-scw@v0.0.3
+        with:
+          version: v2.56.1
+          access-key: ${{ secrets.SCW_ACCESS_KEY }}
+          secret-key: ${{ secrets.SCW_SECRET_KEY }}
+          default-project-id: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          default-organization-id: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
+          export-config: true
+
+      - name: Prune tagged unattached volumes
+        env:
+          AGE_HOURS: ${{ inputs.older_than_hours || '24' }}
+        run: npm run scaleway:prune-volumes -- --yes --older-than-hours "$AGE_HOURS"
