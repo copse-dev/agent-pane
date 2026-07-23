@@ -38,13 +38,13 @@ Prefer tokens over hardcoded `px` so scale reaches the surface. Helpers live in
 [`src/shared/ui-scale.ts`](../src/shared/ui-scale.ts); the renderer applies the var through
 [`src/renderer/dom/ui-scale.ts`](../src/renderer/dom/ui-scale.ts).
 
-| Token          | Base  | Token              | Base  |
-| -------------- | ----- | ------------------ | ----- |
-| `--spacing-xs` | 4px   | `--radius`         | 6px   |
-| `--spacing-sm` | 8px   | `--radius-lg`      | 8px   |
-| `--spacing-md` | 12px  | `--font-size-sm`   | 12px  |
-| `--spacing-lg` | 16px  | `--font-size-base` | 14px  |
-| `--spacing-xl` | 24px  | `--font-size-lg`   | 16px  |
+| Token          | Base | Token              | Base |
+| -------------- | ---- | ------------------ | ---- |
+| `--spacing-xs` | 4px  | `--radius`         | 6px  |
+| `--spacing-sm` | 8px  | `--radius-lg`      | 8px  |
+| `--spacing-md` | 12px | `--font-size-sm`   | 12px |
+| `--spacing-lg` | 16px | `--font-size-base` | 14px |
+| `--spacing-xl` | 24px | `--font-size-lg`   | 16px |
 
 Chrome band tokens (not spacing, but reach for these before inventing heights):
 `--chrome-action-band-height`, `--browser-chrome-band-height`.

@@ -1,11 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { AppStore } from '@shared/store/store.ts'
-import {
-  DEFAULT_UI_SCALE,
-  clampUiScale,
-  normalizeUiScale,
-  stepUiScale,
-} from '@shared/ui-scale.ts'
+import { DEFAULT_UI_SCALE, clampUiScale, normalizeUiScale, stepUiScale } from '@shared/ui-scale.ts'
 
 /** Push the interface scale onto `:root` so every token that multiplies it updates. */
 export function applyUiScale(scale: number): void {

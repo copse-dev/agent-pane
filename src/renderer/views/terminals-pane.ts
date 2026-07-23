@@ -113,10 +113,7 @@ export function mountTerminalsPane(
   function createXterm(): { term: Terminal; fitAddon: FitAddon } {
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: scaledEditorFontSize(
-        store.getState().fontSize,
-        store.getState().uiScale,
-      ),
+      fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: XTERM_THEME[store.getState().theme],
     })
