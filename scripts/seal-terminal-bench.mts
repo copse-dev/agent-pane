@@ -131,6 +131,11 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function environmentNonNegativeInteger(name: string): number | null {
+  const raw = process.env[name]?.trim()
+  return raw && /^(0|[1-9][0-9]*)$/.test(raw) ? Number(raw) : null
+}
+
 function elapsedSeconds(startedAt: unknown, finishedAt: unknown): number | null {
   if (typeof startedAt !== 'string' || typeof finishedAt !== 'string') return null
   const started = Date.parse(startedAt)
@@ -143,6 +148,91 @@ function elapsedSeconds(startedAt: unknown, finishedAt: unknown): number | null 
 interface StoredTrial {
   resultPath: string
   result: unknown
+}
+
+type CapsuleOutcome = ReturnType<typeof terminalBenchTrialOutcome>
+
+interface CapsuleEntry {
+  trialId: string
+  taskName: string
+  archive: string
+  bytes: number
+  sha256: string
+  startedAt: string | null
+  outcome: CapsuleOutcome
+  attemptIndex: number
+  profile: string
+  profileHash: string
+}
+
+function reusableCapsuleEntry(
+  value: unknown,
+  expected: {
+    archive: string
+    attemptIndex: number
+    profile: string
+    profileHash: string
+    taskName: string
+    trialId: string
+  },
+): CapsuleEntry | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const entry = value as Record<string, unknown>
+  const outcome = entry['outcome']
+  if (
+    entry['trialId'] !== expected.trialId ||
+    entry['taskName'] !== expected.taskName ||
+    entry['archive'] !== expected.archive ||
+    entry['attemptIndex'] !== expected.attemptIndex ||
+    entry['profile'] !== expected.profile ||
+    entry['profileHash'] !== expected.profileHash ||
+    typeof entry['bytes'] !== 'number' ||
+    typeof entry['sha256'] !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(entry['sha256']) ||
+    (entry['startedAt'] !== null && typeof entry['startedAt'] !== 'string') ||
+    (outcome !== 'pass' && outcome !== 'zero' && outcome !== 'timeout' && outcome !== 'invalid')
+  ) {
+    return undefined
+  }
+  return {
+    trialId: expected.trialId,
+    taskName: expected.taskName,
+    archive: expected.archive,
+    bytes: entry['bytes'],
+    sha256: entry['sha256'],
+    startedAt: entry['startedAt'],
+    outcome,
+    attemptIndex: expected.attemptIndex,
+    profile: expected.profile,
+    profileHash: expected.profileHash,
+  }
+}
+
+async function existingCapsulesByTrialId(): Promise<Map<string, unknown>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(join(CAPSULES_ROOT, 'index.json'), 'utf8'))
+    const values = nested(parsed, 'capsules')
+    if (!Array.isArray(values)) return new Map()
+    return new Map(
+      values.flatMap((value): Array<[string, unknown]> => {
+        const id = nested(value, 'trialId')
+        return typeof id === 'string' ? [[id, value]] : []
+      }),
+    )
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return new Map()
+    throw error
+  }
+}
+
+async function existingArchiveMatches(entry: CapsuleEntry): Promise<boolean> {
+  try {
+    const info = await lstat(join(CAPSULES_ROOT, entry.archive))
+    return info.isFile() && info.size === entry.bytes
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return false
+    throw error
+  }
 }
 
 const storedTrials: StoredTrial[] = []
@@ -165,18 +255,8 @@ storedTrials.sort((a, b) => {
 })
 
 await mkdir(CAPSULES_ROOT, { recursive: true })
-const capsules: Array<{
-  trialId: string
-  taskName: string
-  archive: string
-  bytes: number
-  sha256: string
-  startedAt: string | null
-  outcome: ReturnType<typeof terminalBenchTrialOutcome>
-  attemptIndex: number
-  profile: string
-  profileHash: string
-}> = []
+const existingCapsules = await existingCapsulesByTrialId()
+const capsules: CapsuleEntry[] = []
 const attemptsByTask = new Map<string, number>()
 
 for (const { resultPath, result } of storedTrials) {
@@ -212,6 +292,20 @@ for (const { resultPath, result } of storedTrials) {
     nested(result, 'agent_result', 'metadata', 'profile_hash') ?? retainedProfile?.contentHash
   if (recordedProfileHash !== profile.contentHash) {
     throw new Error(`Missing or inconsistent profile hash for ${taskName}.`)
+  }
+  const archiveName = `${safeName(taskName)}-${id}.tar.gz`
+  const reusable = reusableCapsuleEntry(existingCapsules.get(id), {
+    archive: archiveName,
+    attemptIndex,
+    profile: profile.versionedId,
+    profileHash: profile.contentHash,
+    taskName,
+    trialId: id,
+  })
+  if (reusable && (await existingArchiveMatches(reusable))) {
+    capsules.push(reusable)
+    console.log(`bench:terminal:seal reused ${archiveName} (${String(reusable.bytes)} bytes)`)
+    continue
   }
   const manifestPath = join(directory, 'run-manifest.json')
   const imageMetadataPath = join(directory, 'task-image.json')
@@ -293,6 +387,14 @@ for (const { resultPath, result } of storedTrials) {
       maxCommandTimeoutSeconds:
         process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim() || '600',
     },
+    infrastructure: {
+      instanceType: process.env['COPSE_TERMINAL_INSTANCE_TYPE']?.trim() || null,
+      instanceCount: environmentNonNegativeInteger('COPSE_TERMINAL_INSTANCE_COUNT'),
+      workersPerInstance: environmentNonNegativeInteger('COPSE_TERMINAL_WORKERS_PER_INSTANCE'),
+      volumeSizeGb: environmentNonNegativeInteger('COPSE_TERMINAL_VOLUME_SIZE_GB'),
+      shardCount: environmentNonNegativeInteger('COPSE_TERMINAL_SHARD_COUNT'),
+      shardIndex: environmentNonNegativeInteger('COPSE_TERMINAL_SHARD_INDEX'),
+    },
     metrics: {
       elapsedSeconds: elapsedSeconds(rawStarted, rawFinished),
       inputTokens: finiteNumber(nested(result, 'agent_result', 'n_input_tokens')),
@@ -309,7 +411,6 @@ for (const { resultPath, result } of storedTrials) {
   }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
-  const archiveName = `${safeName(taskName)}-${id}.tar.gz`
   const archivePath = join(CAPSULES_ROOT, archiveName)
   await createTar({ cwd: directory, file: archivePath, gzip: true, portable: true }, ['.'])
   const archiveInfo = await lstat(archivePath)

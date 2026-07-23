@@ -19,9 +19,14 @@ on:
         default: ''
         type: string
       instances:
-        description: Disposable x86 Scaleway workers (1-20)
+        description: Disposable x86 Scaleway hosts (1-20)
         required: true
         default: '10'
+        type: string
+      workers_per_instance:
+        description: Concurrent logical shard workers per host (1-8; start with 1)
+        required: true
+        default: '1'
         type: string
       attempts:
         description: Attempts per task (1-5)
@@ -45,7 +50,7 @@ on:
       scw_type:
         description: Scaleway x86 Instance type
         required: true
-        default: BASIC3-X4C-16G
+        default: PRO2-XS
         type: string
       analyst_model:
         description: Optional stronger OpenAI-compatible model ID
@@ -97,6 +102,7 @@ jobs:
         env:
           MAX_TASKS: ${{ inputs.max_tasks }}
           INSTANCES: ${{ inputs.instances }}
+          WORKERS_PER_INSTANCE: ${{ inputs.workers_per_instance }}
           ATTEMPTS: ${{ inputs.attempts }}
           PROFILE: ${{ inputs.profile }}
           PROFILES: ${{ inputs.profiles }}
@@ -124,6 +130,10 @@ jobs:
           fi
           if ! [[ "$INSTANCES" =~ ^[1-9][0-9]?$ ]] || [ "$INSTANCES" -gt 20 ]; then
             echo "::error::instances must be an integer from 1 through 20"
+            exit 2
+          fi
+          if ! [[ "$WORKERS_PER_INSTANCE" =~ ^[1-8]$ ]]; then
+            echo "::error::workers_per_instance must be an integer from 1 through 8"
             exit 2
           fi
           if ! [[ "$ATTEMPTS" =~ ^[1-5]$ ]]; then
@@ -308,7 +318,11 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
           COPSE_BENCH_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
           COPSE_TERMINAL_MAX_TASKS: ${{ inputs.max_tasks }}
+          COPSE_TERMINAL_TASK_NAMES: ${{ inputs.task_names }}
           COPSE_TERMINAL_INSTANCES: ${{ inputs.instances }}
+          COPSE_TERMINAL_WORKERS_PER_INSTANCE: ${{ inputs.workers_per_instance }}
+          COPSE_TERMINAL_INSTANCE_TYPE: ${{ inputs.scw_type }}
+          COPSE_TERMINAL_VOLUME_SIZE_GB: ${{ inputs.volume_size_gb }}
           COPSE_TERMINAL_ATTEMPTS: ${{ inputs.attempts }}
           COPSE_TERMINAL_PROFILE: ${{ inputs.profile }}
           COPSE_TERMINAL_PROFILES: ${{ inputs.profiles || inputs.profile }}
@@ -348,6 +362,7 @@ jobs:
           COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
           COPSE_TERMINAL_PROFILE: ${{ inputs.profile }}
           INSTANCES: ${{ inputs.instances }}
+          WORKERS_PER_INSTANCE: ${{ inputs.workers_per_instance }}
           MAX_TASKS: ${{ inputs.max_tasks }}
           TASK_NAMES: ${{ inputs.task_names }}
           ATTEMPTS: ${{ inputs.attempts }}
@@ -368,6 +383,7 @@ jobs:
           args=(
             run
             --instances "$INSTANCES"
+            --workers-per-instance "$WORKERS_PER_INSTANCE"
             --max-tasks "$MAX_TASKS"
             --attempts "$ATTEMPTS"
             --scw-type "$SCW_TYPE"

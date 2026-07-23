@@ -29,7 +29,22 @@ fi
 benchmark_status=0
 analysis_status=0
 steered_status=0
+checkpoint_status=0
 checkpoint_script="benchmarks/terminal_bench/checkpoint-results.sh"
+metrics_path="bench-results/terminal-bench-host-metrics.jsonl"
+metrics_pid=""
+stop_metrics() {
+  if [[ -n "$metrics_pid" ]] && kill -0 "$metrics_pid" 2>/dev/null; then
+    kill -TERM "$metrics_pid" 2>/dev/null || true
+    wait "$metrics_pid" 2>/dev/null || true
+  fi
+  metrics_pid=""
+}
+trap stop_metrics EXIT
+trap 'stop_metrics; exit 130' INT
+trap 'stop_metrics; exit 143' TERM
+node scripts/sample-terminal-bench-host.mts "$metrics_path" &
+metrics_pid=$!
 suite_args=(
   --max-tasks="${COPSE_TERMINAL_MAX_TASKS}"
   --shard-count="${COPSE_TERMINAL_SHARD_COUNT}"
@@ -51,11 +66,14 @@ if [[ -n "${BENCH_ANALYST_MODEL:-}" ]]; then
   if [[ "${COPSE_TERMINAL_STEERED_RERUN:-1}" == "1" && "$analysis_status" == "0" ]]; then
     npm run bench:terminal:steered || steered_status=$?
   fi
-  bash "$checkpoint_script" "analysis" || analysis_status=$?
 fi
 
-if (( benchmark_status != 0 || analysis_status != 0 || steered_status != 0 )); then
-  echo "terminal-bench worker: benchmark=$benchmark_status analysis=$analysis_status steered=$steered_status" >&2
+stop_metrics
+bash "$checkpoint_script" "final" || checkpoint_status=$?
+trap - EXIT INT TERM
+
+if (( benchmark_status != 0 || analysis_status != 0 || steered_status != 0 || checkpoint_status != 0 )); then
+  echo "terminal-bench worker: benchmark=$benchmark_status analysis=$analysis_status steered=$steered_status checkpoint=$checkpoint_status" >&2
   exit 1
 fi
 
