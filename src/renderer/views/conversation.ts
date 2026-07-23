@@ -489,7 +489,35 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
   return card
 }
 
+/**
+ * One quiet summary row for a turn's tooling (`Used 12 tools` / `Read files`).
+ * Nested cards stay available on expand but don't each paint their own chrome.
+ */
+function createRollupToolCard(
+  item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
+  api: ApiClient,
+): HTMLElement {
+  const status = aggregateToolStatus(item.toolCalls)
+  const card = el('details', {
+    class: 'tool-card tool-card-rollup',
+    'data-rollup-key': item.key,
+    'data-status': status,
+    'data-tool-count': String(item.toolCalls.length),
+  })
+  const count =
+    item.children.length === 1 && item.children[0]?.type === 'group'
+      ? item.toolCalls.length
+      : undefined
+  const body = el('div', { class: 'tool-rollup-body' })
+  for (const child of item.children) {
+    body.append(createToolCard(child, api))
+  }
+  card.append(createToolHeader(item.label, status, 'tool-card-header', count), body)
+  return card
+}
+
 function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLElement {
+  if (item.type === 'rollup') return createRollupToolCard(item, api)
   if (item.type === 'group') return createGroupToolCard(item)
   return createIndividualToolCard(item.toolCall, item.label, api)
 }
@@ -501,7 +529,9 @@ const toolCardKeys = new WeakMap<HTMLElement, string>()
 const toolCardSignatures = new WeakMap<HTMLElement, string>()
 
 function toolCardKey(item: ToolCallDisplayItem): string {
-  return item.type === 'group' ? `g:${item.key}` : `t:${item.toolCall.id}`
+  if (item.type === 'rollup') return `r:${item.key}`
+  if (item.type === 'group') return `g:${item.key}`
+  return `t:${item.toolCall.id}`
 }
 
 // Everything that determines a card's rendered output. When it is unchanged
@@ -1207,11 +1237,87 @@ export function mountConversation(
     updateScrollButton()
   }
 
+  function applyCommandSummary(item: ToolCallDisplayItem, commandSummary?: string): void {
+    // LLM-only rollup: a small-model summary, when ready, replaces the generic
+    // "Ran commands" header for the shell group.
+    if (item.type === 'group' && item.key === 'shell' && commandSummary) {
+      item.label = commandSummary
+      return
+    }
+    if (item.type === 'rollup') {
+      for (const child of item.children) applyCommandSummary(child, commandSummary)
+      // Keep the turn summary in sync when the only child is the shell group.
+      if (
+        commandSummary &&
+        item.children.length === 1 &&
+        item.children[0]?.type === 'group' &&
+        item.children[0].key === 'shell'
+      ) {
+        item.label = commandSummary
+      }
+    }
+  }
+
+  function applyToolCardOpenState(
+    card: HTMLElement,
+    item: ToolCallDisplayItem,
+    userExpandedRollups: Set<string>,
+    userExpandedGroups: Set<string>,
+    userExpandedTools: Set<string>,
+  ): void {
+    if (item.type === 'rollup') {
+      const status = aggregateToolStatus(item.toolCalls)
+      ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedRollups.has(item.key)
+      const nestedCards = card.querySelectorAll<HTMLElement>(
+        ':scope > .tool-rollup-body > .tool-card',
+      )
+      item.children.forEach((child, index) => {
+        const nested = nestedCards[index]
+        if (nested) {
+          applyToolCardOpenState(
+            nested,
+            child,
+            userExpandedRollups,
+            userExpandedGroups,
+            userExpandedTools,
+          )
+        }
+      })
+      return
+    }
+    if (item.type === 'group') {
+      const status = aggregateToolStatus(item.toolCalls)
+      ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedGroups.has(item.key)
+      // A changed group card is rebuilt from scratch with every item collapsed;
+      // reapply the per-item expansion captured above so an item the user
+      // opened (or an expanded individual card absorbed into this group)
+      // survives the per-step rebuild.
+      card
+        .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
+        .forEach((entry) => {
+          const id = entry.dataset['toolId']
+          if (id && userExpandedTools.has(id)) entry.open = true
+        })
+      return
+    }
+    const tc = item.toolCall
+    const running = tc.status === 'running' || tc.subagent?.status === 'running'
+    ;(card as HTMLDetailsElement).open = running || userExpandedTools.has(tc.id)
+  }
+
   function renderToolCards(
     msgEl: HTMLElement,
     toolCalls: ToolCall[],
     commandSummary?: string,
   ): void {
+    const userExpandedRollups = new Set<string>()
+    msgEl.querySelectorAll('.tool-card-rollup[open]').forEach((node) => {
+      const el = node as HTMLElement
+      const key = el.dataset['rollupKey']
+      // Running rollups are auto-expanded; don't treat that as a user preference.
+      if (key && el.dataset['status'] !== 'running') userExpandedRollups.add(key)
+    })
+
     const userExpandedGroups = new Set<string>()
     msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
       const el = node as HTMLElement
@@ -1231,13 +1337,7 @@ export function mountConversation(
       })
 
     const items = buildToolCallDisplayItems(toolCalls)
-    for (const item of items) {
-      // LLM-only rollup: a small-model summary, when ready, replaces the generic
-      // "Running commands" header for the shell group.
-      if (item.type === 'group' && item.key === 'shell' && commandSummary) {
-        item.label = commandSummary
-      }
-    }
+    for (const item of items) applyCommandSummary(item, commandSummary)
 
     // Index the cards already in the DOM by their stable key so unchanged ones
     // are reused wholesale instead of torn down and rebuilt on every tick — the
@@ -1279,25 +1379,7 @@ export function mountConversation(
         toolCardSignatures.set(card, sig)
       }
 
-      if (item.type === 'group') {
-        const status = aggregateToolStatus(item.toolCalls)
-        ;(card as HTMLDetailsElement).open =
-          status === 'running' || userExpandedGroups.has(item.key)
-        // A changed group card is rebuilt from scratch with every item collapsed;
-        // reapply the per-item expansion captured above so an item the user
-        // opened (or an expanded individual card absorbed into this group)
-        // survives the per-step rebuild.
-        card
-          .querySelectorAll<HTMLDetailsElement>('.tool-group-item[data-tool-id]')
-          .forEach((entry) => {
-            const id = entry.dataset['toolId']
-            if (id && userExpandedTools.has(id)) entry.open = true
-          })
-      } else {
-        const tc = item.toolCall
-        const running = tc.status === 'running' || tc.subagent?.status === 'running'
-        ;(card as HTMLDetailsElement).open = running || userExpandedTools.has(tc.id)
-      }
+      applyToolCardOpenState(card, item, userExpandedRollups, userExpandedGroups, userExpandedTools)
       desired.push(card)
     }
 

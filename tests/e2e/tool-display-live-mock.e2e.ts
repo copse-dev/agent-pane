@@ -31,7 +31,7 @@ describe('tool call display live mock', () => {
     await setComposerValue('list files please')
     await $('.submit-btn').click()
 
-    await expect($('.tool-card .tool-name')).toHaveText('List directory', { wait: 30_000 })
+    await expect($('.tool-card .tool-name')).toHaveText('Listed directory', { wait: 30_000 })
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'tool-display-live-mock.png'))
   })

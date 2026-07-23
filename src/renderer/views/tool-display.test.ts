@@ -11,15 +11,11 @@ import {
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 
-// Component-level port of tests/e2e/tool-display.e2e.ts. The grouping LOGIC
-// (which tool calls fold into a "Reading files" group, the human-readable
-// labels) is already covered in src/shared/tools/tool-display.test.ts; what the
-// e2e uniquely exercised is the conversation VIEW rendering of that logic — the
-// collapsed group card with its ×2 count, and the failed tool surfaced as its
-// own card outside the group. That render is pure DOM/structure (no geometry),
-// so it ports cleanly to happy-dom. The seeded thread mirrors
-// seedToolDisplayFixture(): two successful reads (read_file + list_dir → the
-// "reading" group) plus one errored read_file.
+// Component-level port of tests/e2e/tool-display-rollup.e2e.ts. The grouping /
+// tense / turn-rollup LOGIC is covered in src/shared/tools/tool-display.test.ts;
+// this file asserts the conversation VIEW: one collapsed `.tool-card-rollup`,
+// nested "Read files ×2", and the failed read as its own card outside that
+// group. Seeded thread mirrors seedToolDisplayFixture().
 
 function fakeApi(): ApiClient {
   return {
@@ -71,24 +67,34 @@ afterEach(() => {
 })
 
 describe('tool call display (component)', () => {
-  it('groups the successful reads into one collapsed card with a ×2 count', () => {
+  it('rolls the turn into one collapsed summary with past-tense wording', () => {
     mountWithTools()
 
-    const group = document.querySelector('.tool-card-group')
-    assert.ok(group, 'expected a grouped tool card')
-    // e2e: groupCard not to have attribute 'open' (collapsed by default)
-    assert.equal(group.hasAttribute('open'), false)
-    // e2e: group .tool-name === 'Reading files', .tool-count === '×2'
-    assert.equal(group.querySelector('.tool-name')?.textContent, 'Reading files')
-    assert.equal(group.querySelector('.tool-count')?.textContent, '×2')
+    const rollup = document.querySelector('.tool-card-rollup')
+    assert.ok(rollup, 'expected a turn rollup card')
+    // Collapsed by default once settled; expand to inspect nested groups.
+    assert.equal(rollup.hasAttribute('open'), false)
+    // Mixed success + failure → quiet count with failure callout.
+    assert.equal(
+      rollup.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
+      'Used 3 tools · 1 failed',
+    )
   })
 
-  it('renders the failed read as its own card outside the group, with error status', () => {
+  it('keeps the successful reads grouped inside the rollup and surfaces the error outside that group', () => {
     mountWithTools()
 
-    const failed = document.querySelector('.tool-card[data-tool-id="tc-read-2"]')
+    const rollup = document.querySelector('.tool-card-rollup') as HTMLDetailsElement
+    assert.ok(rollup)
+    rollup.open = true
+
+    const group = rollup.querySelector('.tool-card-group')
+    assert.ok(group, 'expected a grouped tool card inside the rollup')
+    assert.equal(group.querySelector('.tool-name')?.textContent, 'Read files')
+    assert.equal(group.querySelector('.tool-count')?.textContent, '×2')
+
+    const failed = rollup.querySelector('.tool-card[data-tool-id="tc-read-2"]')
     assert.ok(failed, 'expected the errored read to render as an individual card')
-    // e2e: failed .tool-name === 'Read file', data-status === 'error'
     assert.equal(failed.querySelector('.tool-name')?.textContent, 'Read file')
     assert.equal(failed.getAttribute('data-status'), 'error')
     // The errored read must NOT be folded into the reading group.
@@ -98,8 +104,10 @@ describe('tool call display (component)', () => {
   it('keeps a user-expanded group item open across a tool update rebuild', () => {
     const { store, messageId } = mountWithTools()
 
-    const group = document.querySelector('.tool-card-group') as HTMLDetailsElement
+    const rollup = document.querySelector('.tool-card-rollup') as HTMLDetailsElement
+    const group = rollup.querySelector('.tool-card-group') as HTMLDetailsElement
     const item = group.querySelector('[data-tool-id="tc-read-1"]') as HTMLDetailsElement
+    rollup.open = true
     group.open = true
     item.open = true
 
@@ -108,7 +116,11 @@ describe('tool call display (component)', () => {
     // to snap shut on every agent step.
     updateToolCall(store, messageId, 'tc-list-1', { result: 'd main\nf index.ts\nf util.ts' })
 
-    const groups = document.querySelectorAll('.tool-card-group')
+    const rollups = document.querySelectorAll('.tool-card-rollup')
+    assert.equal(rollups.length, 1, 'rebuild must replace the rollup, not duplicate it')
+    const rollupAfter = rollups[0] as HTMLDetailsElement
+    assert.equal(rollupAfter.hasAttribute('open'), true, 'rollup should stay open')
+    const groups = rollupAfter.querySelectorAll('.tool-card-group')
     assert.equal(groups.length, 1, 'rebuild must replace the group card, not duplicate it')
     const groupAfter = groups[0] as HTMLDetailsElement
     assert.ok(groupAfter, 'expected the group card to still render')

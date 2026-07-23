@@ -21,9 +21,11 @@ describe('markdown ordered list spacing', () => {
   })
 
   it('renders git summary as a compact ordered list after tool cards', async () => {
-    await $('.tool-card-group .tool-name').waitForExist({ timeout: 30_000 })
-    await expect($('.tool-card-group .tool-name')).toHaveText('Git')
-    await expect($('.tool-card-group .tool-count')).toHaveText('×2')
+    await $('.tool-card-rollup .tool-name').waitForExist({ timeout: 30_000 })
+    await expect($('.tool-card-rollup summary.tool-card-header .tool-name')).toHaveText(
+      'Checked git',
+    )
+    await expect($('.tool-card-rollup summary.tool-card-header .tool-count')).toHaveText('×2')
 
     const summary = await $('[data-message-id="msg-assistant-git-summary"] .message-text')
     await summary.waitForExist({ timeout: 30_000 })

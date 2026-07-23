@@ -283,6 +283,26 @@ reachable without a crowded titlebar:
   or scrolling. Spec:
   [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
 
+## Tool actions: past when settled, progressive while running, one rollup per turn
+
+Tool-call chrome in the transcript should stay quiet — muted inline text, not a stack of
+elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
+
+- **Tense follows status.** Progressive while any member is `running` (`Reading files`,
+  `Using 3 tools`, activity line `Listing directory…`); past once settled (`Read files`,
+  `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
+  tool, and do not keep progressive wording on a completed card.
+- **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
+  `.tool-card-rollup` (`Used N tools`, or a single-category label like `Read files` / `Used
+browser`). Expand to inspect nested category groups and individuals. Subagent cards stay
+  outside the rollup — they have their own timeline.
+- **No card chrome by default.** Collapsed tool rows drop fill/border; nested items inside an
+  expanded rollup stay flat under a hairline indent. Reach for `--text-secondary` and
+  `--bg-hover` on the summary, not `--bg-elevated` panels.
+
+Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display.test.ts`,
+`tests/e2e/tool-display-rollup.e2e.ts`, `tests/e2e/browser-tools.e2e.ts`.
+
 ## Hook cards are a distinct card family — right-aligned, blue, not a user message
 
 Hook executions, deny/ask decisions, and halts (decision 10 of
