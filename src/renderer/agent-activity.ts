@@ -34,7 +34,7 @@ export function agentActivityLabel(thread: Thread | undefined, writing: boolean)
     return todoLabel ? `${base} (${todoLabel})` : base
   }
   if (writing) return todoLabel ? `Writing… (${todoLabel})` : 'Writing…'
-  return todoLabel ? `Thinking… (${todoLabel})` : 'Thinking…'
+  return todoLabel ? `Reasoning… (${todoLabel})` : 'Reasoning…'
 }
 
 export function syncAgentActivity(store: AppStore, threadId: string, writing: boolean): void {

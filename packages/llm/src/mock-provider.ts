@@ -63,7 +63,7 @@ export class MockLLMProvider implements LLMProvider {
       }
 
       // `[[mock:reasoning <text>]]` streams reasoning tokens before the answer so
-      // e2e/evals can exercise the live "Thinking" disclosure without a real model.
+      // e2e/evals can exercise the live Reasoning disclosure without a real model.
       const reasoningDirective = fullUserText.match(/\[\[mock:reasoning\s+([^\]]+)\]\]/)
       const reasoningText = reasoningDirective?.[1]
       if (reasoningText && awaitingAssistantReply) {

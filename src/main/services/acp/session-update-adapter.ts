@@ -157,7 +157,7 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
       return update.content.type === 'text' ? { type: 'text', text: update.content.text } : null
-    // Reasoning renders in the "Thinking" disclosure and — unlike `text` — never
+    // Reasoning renders in the Reasoning disclosure and — unlike `text` — never
     // joins the assistant's answer, thread history, or the next turn's replayed
     // transcript (buildAcpPrompt).
     case 'agent_thought_chunk':

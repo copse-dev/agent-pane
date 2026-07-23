@@ -57,7 +57,7 @@ function mountWithTools(): {
     status: 'error',
     result: 'Error: ENOENT',
   })
-  // Mirror seedToolDisplayFixture: polished summary + Thinking on the segment.
+  // Mirror seedToolDisplayFixture: polished summary + reasoning on the segment.
   setMessageToolSummary(store, messageId, 'Inspected the repo layout')
   const thread = store.getState().threads.find((t) => t.id === threadId)
   const msg = thread?.messages.find((m) => m.id === messageId)
@@ -75,7 +75,7 @@ afterEach(() => {
 })
 
 describe('tool call display (component)', () => {
-  it('rolls the turn into one collapsed italic summary with Thinking nested inside', () => {
+  it('rolls the turn into one collapsed italic summary with reasoning nested inside', () => {
     mountWithTools()
 
     const rollup = document.querySelector('.tool-card-rollup')
@@ -87,7 +87,7 @@ describe('tool call display (component)', () => {
       rollup.querySelector(':scope > .tool-card-header .tool-name')?.textContent,
       'Inspected the repo layout · 1 failed',
     )
-    // Thinking belongs inside the rollup — not as a standalone body trail.
+    // Reasoning belongs inside the rollup — not as a standalone body trail.
     assert.equal(document.querySelector('.message-body > .message-reasoning'), null)
     assert.ok(rollup.querySelector('.tool-rollup-body > .message-reasoning'))
   })
@@ -101,7 +101,7 @@ describe('tool call display (component)', () => {
 
     assert.ok(
       rollup.querySelector('.tool-rollup-body > .message-reasoning .message-reasoning-text'),
-      'expected Thinking nested in the expanded rollup',
+      'expected reasoning nested in the expanded rollup',
     )
     const group = rollup.querySelector('.tool-card-group')
     assert.ok(group, 'expected a grouped tool card inside the rollup')

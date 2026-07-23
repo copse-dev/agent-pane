@@ -2076,7 +2076,7 @@ export function seedQueuedMessageFixture(workspaceRoot: string): {
 
 /**
  * Multi-segment tool-display fixture: a user bug report followed by several
- * assistant bubbles (text-after-tools splits), each with Thinking + a rolled-up
+ * assistant bubbles (text-after-tools splits), each with Reasoning + a rolled-up
  * tool burst — the shape Cursor cloud agent turns take in Copse.
  */
 export function seedToolDisplayFixture(workspaceRoot: string): void {
@@ -2104,7 +2104,7 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
             createdAt: now,
           },
           {
-            // Segment 1: search burst (empty body → Thinking stays open).
+            // Segment 1: search burst (empty body → Reasoning stays open).
             id: 'msg-assistant-search',
             role: 'assistant',
             content: '',

@@ -392,7 +392,7 @@ export function summarizeToolTurn(toolCalls: ToolCall[], items: ToolCallDisplayI
  * quiet turn rollup when there are two or more calls — including Cursor cloud /
  * ACP titles that never map onto a built-in group.
  *
- * `forceRollup` wraps even a single regular tool so a co-located Thinking trail
+ * `forceRollup` wraps even a single regular tool so a co-located reasoning trail
  * can nest inside the italic summary (rather than floating above it).
  */
 export function buildToolCallDisplayItems(

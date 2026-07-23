@@ -209,7 +209,7 @@ describe('tool-display', () => {
     assert.equal(items[0].label, 'Read file')
   })
 
-  it('forceRollup wraps a single tool so Thinking can nest inside', () => {
+  it('forceRollup wraps a single tool so reasoning can nest inside', () => {
     const items = buildToolCallDisplayItems([tc('1', 'read_file')], { forceRollup: true })
     assert.equal(items.length, 1)
     assert.equal(items[0]?.type, 'rollup')

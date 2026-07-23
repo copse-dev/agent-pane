@@ -129,7 +129,7 @@
   font-style: normal;
   color: var(--text-secondary);
 }
-/* Thinking that belongs to this tool burst lives inside the rollup — not as a
+/* Reasoning that belongs to this tool burst lives inside the rollup — not as a
    separate transcript block above it. */
 .tool-rollup-body > .message-reasoning {
   margin: 0 0 var(--spacing-xs);

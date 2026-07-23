@@ -295,10 +295,14 @@ elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
 - **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
   `.tool-card-rollup`. The collapsed summary is **italic muted text** (like reasoning) — click
   to expand nested category groups and individuals. Subagent cards stay outside the rollup.
-- **Thinking nests with its tools.** When a segment has both `reasoning` and tools, do **not**
-  render a standalone Thinking block above the rollup. Put Thinking inside the expanded rollup
+- **Reasoning nests with its tools.** When a segment has both `reasoning` and tools, do **not**
+  render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
   body (above the tool rows) so the collapsed view is only the italic heading. Standalone
-  Thinking remains for answer-only / no-tool segments.
+  Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
+  `Reasoning` while live, `Reasoned` when settled.
+- **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
+  `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
+  `reasoning` field / provider events.
 - **Canned first, small-model polish later.** Show the deterministic label immediately
   (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
   `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on

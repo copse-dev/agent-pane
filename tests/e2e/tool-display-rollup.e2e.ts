@@ -18,13 +18,13 @@ describe('tool call turn rollup', () => {
     resetUserData()
   })
 
-  it('nests Thinking inside italic tool rollups across a multi-segment turn', async () => {
+  it('nests Reasoning inside italic tool rollups across a multi-segment turn', async () => {
     await $('.tool-card-rollup').waitForExist({ timeout: 30_000 })
 
     const rollups = await $$('.tool-card-rollup')
     await expect(rollups).toBeElementsArrayOfSize(3)
 
-    // Each tool segment collapses to one italic heading — no standalone Thinking above.
+    // Each tool segment collapses to one italic heading — no standalone Reasoning above.
     await expect(rollups[0]!.$('.tool-card-header .tool-name')).toHaveText(
       'Searched the settings UI',
     )
@@ -49,12 +49,13 @@ describe('tool call turn rollup', () => {
     })
     await saveAppScreenshot('tool-display-rollup-collapsed.png')
 
-    // Expand the mixed-success segment: Thinking + flat tool rows live inside.
+    // Expand the mixed-success segment: Reasoning + flat tool rows live inside.
     const mixed = rollups[1]!
     await mixed.scrollIntoView()
     await mixed.$('summary.tool-card-header').click()
     await expect(mixed).toHaveAttribute('open')
     await expect(mixed.$('.tool-rollup-body > .message-reasoning')).toExist()
+    await expect(mixed.$('.message-reasoning-title')).toHaveText('Reasoned')
     await expect(mixed.$('.message-reasoning-text')).toHaveText(
       'Reading key files to diagnose the settings flicker and missing button text.',
     )
@@ -77,7 +78,9 @@ describe('tool call turn rollup', () => {
       return {
         success: success ? getComputedStyle(success).color : null,
         failure: failure ? getComputedStyle(failure).color : null,
-        successToken: getComputedStyle(document.documentElement).getPropertyValue('--success').trim(),
+        successToken: getComputedStyle(document.documentElement)
+          .getPropertyValue('--success')
+          .trim(),
         errorToken: getComputedStyle(document.documentElement).getPropertyValue('--error').trim(),
       }
     })

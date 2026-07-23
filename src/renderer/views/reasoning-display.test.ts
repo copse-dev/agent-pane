@@ -8,14 +8,15 @@ import {
   appendReasoning,
   appendToken,
   createThread,
+  setThreadStatus,
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 
-// Component eval for the live "Thinking" reasoning disclosure. Reasoning tokens
-// stream in via `appendReasoning` (which emits `message_reasoning`); the view
-// should surface them in a collapsible <details> above the answer, keep it open
-// while the answer is still empty, and tuck it away once the answer lands. The
+// Component eval for the live "Reasoning" disclosure. Reasoning tokens stream
+// in via `appendReasoning` (which emits `message_reasoning`); the view should
+// surface them in a collapsible <details> above the answer, keep it open while
+// the answer is still empty, and tuck it away once the answer lands. The
 // activity row doubles as a click target that opens the latest trail.
 
 function fakeApi(): ApiClient {
@@ -40,16 +41,17 @@ afterEach(() => {
 
 describe('reasoning display (component)', () => {
   it('streams reasoning into an open disclosure above the answer', () => {
-    const { store, messageId } = mountWithReasoning()
+    const { store, threadId, messageId } = mountWithReasoning()
+    setThreadStatus(store, threadId, 'running')
 
     appendReasoning(store, messageId, 'Let me ')
     appendReasoning(store, messageId, 'check the file.')
 
     const details = document.querySelector<HTMLDetailsElement>('.message-reasoning')
     assert.ok(details, 'expected a reasoning disclosure')
-    // Live (no answer yet): open by default so the user sees the thinking.
+    // Live (no answer yet): open by default; progressive title.
     assert.equal(details.open, true)
-    assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Thinking')
+    assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoning')
     assert.equal(
       details.querySelector('.message-reasoning-text')?.innerHTML,
       // @copse/streaming-markdown ≥0.2 wraps a single prose line in <p> (styled
@@ -82,19 +84,20 @@ describe('reasoning display (component)', () => {
 
   it('collapses the trail once the answer arrives, unless the user opened it', () => {
     const { store, messageId } = mountWithReasoning()
-    appendReasoning(store, messageId, 'thinking…')
+    appendReasoning(store, messageId, 'reasoning…')
     appendToken(store, messageId, 'Here is the answer.')
     store.emit('message_done', messageId)
 
     const details = document.querySelector('.message-reasoning') as HTMLDetailsElement
     assert.equal(details.open, false)
+    assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoned')
   })
 
   it('makes the activity row open the latest reasoning trail on click', () => {
     const { store, threadId, messageId } = mountWithReasoning()
-    appendReasoning(store, messageId, 'thinking…')
+    appendReasoning(store, messageId, 'reasoning…')
     // The agent controller emits this label while the model reasons.
-    store.emit('agent_activity', threadId, 'Thinking…')
+    store.emit('agent_activity', threadId, 'Reasoning…')
 
     const activity = document.querySelector('.agent-activity') as HTMLElement
     assert.ok(activity.classList.contains('agent-activity-clickable'))
