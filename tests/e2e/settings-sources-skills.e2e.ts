@@ -60,6 +60,7 @@ describe('settings sources skills origin hover', () => {
       for (const row of list?.querySelectorAll<HTMLElement>('.sources-row') ?? []) {
         const title = row.querySelector('.sources-row-title')?.textContent
         if (title !== name) continue
+        const header = row.querySelector('.sources-row-header')
         const hover = row.querySelector<HTMLElement>('.sources-row-hover-detail')
         return {
           badge: row.querySelector('.sources-badge')?.textContent ?? '',
@@ -67,6 +68,8 @@ describe('settings sources skills origin hover', () => {
           titleAttr: row.title,
           hoverPath: hover?.textContent ?? '',
           hoverDisplay: hover ? getComputedStyle(hover).display : 'missing',
+          hoverInHeader: Boolean(header && hover && header.contains(hover)),
+          restingHeight: row.getBoundingClientRect().height,
         }
       }
       return null
@@ -78,6 +81,7 @@ describe('settings sources skills origin hover', () => {
     assert.equal(rowInfo.titleAttr, skillPath)
     assert.equal(rowInfo.hoverPath, skillPath)
     assert.equal(rowInfo.hoverDisplay, 'none', 'path stays hidden until hover')
+    assert.equal(rowInfo.hoverInHeader, true, 'path lives in the header gutter')
 
     // Resting list: path chrome stays out of the way.
     await browser.execute((name: string) => {
@@ -95,7 +99,7 @@ describe('settings sources skills origin hover', () => {
       'settings-sources-skills-origin-resting.png',
     )
 
-    // Hover: reveal the on-disk path under the description.
+    // Hover: reveal the on-disk path in the title→badge gutter (same row height).
     await browser.execute((name: string) => {
       const list = document.querySelector('#sources-skills-list')
       for (const row of list?.querySelectorAll<HTMLElement>('.sources-row') ?? []) {
@@ -104,24 +108,63 @@ describe('settings sources skills origin hover', () => {
         row.setAttribute('data-e2e-skill-origin', 'hover')
         row.classList.add('sources-row-hover-force')
         const style = document.createElement('style')
-        style.textContent =
-          '.sources-row-hover-force .sources-row-hover-detail { display: block !important; }'
+        style.textContent = `
+          .sources-row-hover-force .sources-row-hover-detail { display: block !important; }
+          .sources-row-hover-force .sources-row-title {
+            flex: 0 1 auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            word-break: normal;
+          }
+        `
         document.head.append(style)
         row.scrollIntoView({ block: 'center' })
         return
       }
     }, SKILL_NAME)
 
-    const hoverVisible = await browser.execute((name: string) => {
+    const hoverMetrics = await browser.execute((name: string) => {
       const list = document.querySelector('#sources-skills-list')
       for (const row of list?.querySelectorAll<HTMLElement>('.sources-row') ?? []) {
         if (row.querySelector('.sources-row-title')?.textContent !== name) continue
         const hover = row.querySelector<HTMLElement>('.sources-row-hover-detail')
-        return hover ? getComputedStyle(hover).display : 'missing'
+        if (!hover) return null
+        const style = getComputedStyle(hover)
+        return {
+          display: style.display,
+          height: row.getBoundingClientRect().height,
+          truncated: hover.scrollWidth > hover.clientWidth + 1,
+          overflow: style.overflow,
+          textOverflow: style.textOverflow,
+          direction: style.direction,
+        }
       }
-      return 'missing'
+      return null
     }, SKILL_NAME)
-    assert.equal(hoverVisible, 'block')
+    assert.ok(hoverMetrics)
+    assert.equal(hoverMetrics.display, 'block')
+    assert.equal(
+      Math.round(hoverMetrics.height),
+      Math.round(rowInfo.restingHeight),
+      'hover must not grow the row',
+    )
+    assert.equal(hoverMetrics.overflow, 'hidden')
+    assert.equal(hoverMetrics.textOverflow, 'ellipsis')
+    assert.equal(hoverMetrics.direction, 'rtl', 'left-elide long paths')
+
+    // Narrow the row so the path must ellipsize — proves truncation in the
+    // reference shot (full-width settings often fit short /tmp paths).
+    const truncated = await browser.execute(() => {
+      const row = document.querySelector<HTMLElement>(
+        '#sources-skills-list .sources-row[data-e2e-skill-origin="hover"]',
+      )
+      const hover = row?.querySelector<HTMLElement>('.sources-row-hover-detail')
+      if (!row || !hover) return false
+      row.style.maxWidth = '420px'
+      return hover.scrollWidth > hover.clientWidth + 1
+    })
+    assert.equal(truncated, true, 'path ellipsizes when the header gutter is tight')
 
     await browser.pause(100)
     await saveElementScreenshot(

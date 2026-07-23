@@ -1361,6 +1361,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     titleEl.className = 'sources-row-title'
     titleEl.textContent = title
     header.append(titleEl)
+    // Origin sits in the header gutter (title → badge) on hover so the row
+    // height never grows; long paths ellipsize from the left. `<bdi>` keeps
+    // the path LTR so a leading `/` doesn't flip to the end under `direction:
+    // rtl` (same left-elide trick as `.git-change-path`).
+    if (opts.hoverDetail) {
+      const hoverEl = document.createElement('span')
+      hoverEl.className = 'sources-row-hover-detail'
+      const pathEl = document.createElement('bdi')
+      pathEl.textContent = opts.hoverDetail
+      hoverEl.append(pathEl)
+      header.append(hoverEl)
+    }
     if (badge) {
       const badgeEl = document.createElement('span')
       badgeEl.className = opts.badgeClass ? `sources-badge ${opts.badgeClass}` : 'sources-badge'
@@ -1379,12 +1391,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       detailEl.className = 'sources-row-detail'
       detailEl.textContent = detail
       row.append(detailEl)
-    }
-    if (opts.hoverDetail) {
-      const hoverEl = document.createElement('div')
-      hoverEl.className = 'sources-row-hover-detail'
-      hoverEl.textContent = opts.hoverDetail
-      row.append(hoverEl)
     }
     return row
   }

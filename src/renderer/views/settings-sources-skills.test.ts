@@ -71,16 +71,20 @@ describe('settings sources → skills list', () => {
     assert.equal(list.querySelectorAll('.sources-row').length, 0)
   })
 
-  it('renders source badge, description, and hover-only path origin', async () => {
+  it('renders source badge, description, and hover-only path in the header', async () => {
     const list = await openSkillsList([BUNDLED_SKILL])
     const row = list.querySelector<HTMLElement>('.sources-row')
     assert.ok(row)
+    const header = row.querySelector('.sources-row-header')
+    assert.ok(header)
     assert.equal(row.querySelector('.sources-row-title')?.textContent, BUNDLED_SKILL.name)
     assert.equal(row.querySelector('.sources-badge')?.textContent, 'bundled')
     assert.equal(row.querySelector('.sources-row-detail')?.textContent, BUNDLED_SKILL.description)
     const hover = row.querySelector('.sources-row-hover-detail')
     assert.ok(hover)
+    assert.ok(header.contains(hover), 'path belongs in the header gutter')
     assert.equal(hover.textContent, BUNDLED_SKILL.skillPath)
+    assert.ok(hover.querySelector('bdi'), 'bdi keeps the path LTR under rtl elision')
     assert.equal(row.title, BUNDLED_SKILL.skillPath)
   })
 
@@ -91,10 +95,10 @@ describe('settings sources → skills list', () => {
     assert.equal(row.querySelector('.sources-badge')?.textContent, 'project')
     assert.ok(row.querySelector('.sources-badge-project'))
     assert.equal(row.querySelector('.sources-row-detail'), null)
-    assert.equal(
-      row.querySelector('.sources-row-hover-detail')?.textContent,
-      PROJECT_SKILL.skillPath,
-    )
+    const hover = row.querySelector('.sources-row-hover-detail')
+    assert.ok(hover)
+    assert.ok(row.querySelector('.sources-row-header')?.contains(hover))
+    assert.equal(hover.textContent, PROJECT_SKILL.skillPath)
     assert.equal(row.title, PROJECT_SKILL.skillPath)
   })
 })

@@ -328,9 +328,10 @@ window blur. First use: project rows → **Remove from sidebar**
 
 Settings → Sources rows already carry a coarse source badge (`bundled`, `project`, …). When the
 useful origin is a long filesystem path, keep it out of the resting list: put it in
-`.sources-row-hover-detail` (revealed on `:hover` / `:focus-within`) and mirror it on the row's
-`title` for the native tooltip. Skills use this so every bundled principle isn't visually buried
-under identical path chrome. Spec:
+`.sources-row-hover-detail` inside the header gutter (between title and badge), revealed on
+`:hover` / `:focus-within` without growing the row. Truncate with left-elision
+(`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so the leaf
+stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
 [`tests/e2e/settings-sources-skills.e2e.ts`](../tests/e2e/settings-sources-skills.e2e.ts).
 
 ## Prove visual changes with a focused e2e eval

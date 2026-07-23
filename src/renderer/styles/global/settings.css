@@ -1154,12 +1154,23 @@ dialog.settings-overlay::backdrop {
   display: flex;
   align-items: baseline;
   gap: var(--spacing-sm);
+  min-width: 0;
 }
 .sources-row-title {
   font-weight: 600;
   flex: 1;
   min-width: 0;
   word-break: break-word;
+}
+/* When a hover origin is showing, keep the title to content width so the path
+   can claim the header gutter without wrapping the row taller. */
+.sources-row:hover:has(.sources-row-hover-detail) .sources-row-title,
+.sources-row:focus-within:has(.sources-row-hover-detail) .sources-row-title {
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
 }
 .sources-badge {
   flex: none;
@@ -1213,14 +1224,20 @@ dialog.settings-overlay::backdrop {
   word-break: break-word;
   margin-top: 2px;
 }
-/* Skills (and similar): filesystem origin kept out of the resting list. */
+/* Skills (and similar): filesystem origin in the header gutter on hover —
+   never a second line. Elide from the left so the leaf stays readable. */
 .sources-row-hover-detail {
   display: none;
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 11px;
   font-family: var(--font-mono);
   color: var(--text-muted);
-  word-break: break-all;
-  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
 }
 .sources-row:hover .sources-row-hover-detail,
 .sources-row:focus-within .sources-row-hover-detail {
