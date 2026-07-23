@@ -43,7 +43,11 @@ describe('thread + terminal rename / archive', () => {
     await browser.keys('Escape')
     await expect($('.context-menu')).not.toBeExisting()
 
-    const keepTitleEl = await $(`.chat-row*=${keepTitle} .chat-title`)
+    // Nested lookup — WDIO `*=` text match cannot be chained with a descendant
+    // class in one selector (that would look for the literal text "... .chat-title").
+    const keepRow = await $(`.chat-row*=${keepTitle}`)
+    await keepRow.waitForExist({ timeout: 10_000 })
+    const keepTitleEl = await keepRow.$('.chat-title')
     await keepTitleEl.doubleClick()
     const renameInput = await $('.chat-title-rename')
     await renameInput.waitForExist({ timeout: 5_000 })
@@ -65,12 +69,7 @@ describe('thread + terminal rename / archive', () => {
     const toArchive = await $(`.chat-row*=${archiveTitle}`)
     await toArchive.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
-    await browser.execute(() => {
-      const item = Array.from(
-        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
-      ).find((i) => i.textContent === 'Archive')
-      item?.click()
-    })
+    await $('.context-menu-item*=Archive').click()
 
     await browser.waitUntil(
       async () => {
@@ -128,14 +127,14 @@ describe('thread + terminal rename / archive', () => {
       Array.from(document.querySelectorAll('.context-menu-item')).map((i) => i.textContent ?? ''),
     )
     expect(labels).toEqual(['Rename', 'Archive'])
-    await saveAppScreenshot('terminal-context-menu-rename-archive.png')
-
-    await browser.execute(() => {
-      const item = Array.from(
-        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
-      ).find((i) => i.textContent === 'Rename')
-      item?.click()
-    })
+    // Prefer element capture — full-app screenshots can blur the window and
+    // dismiss the menu (context-menu listens for window `blur`).
+    await saveElementScreenshot('.context-menu', 'terminal-context-menu-rename-archive.png')
+    if (!(await $('.context-menu').isExisting())) {
+      await firstTab.click({ button: 'right' })
+      await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
+    }
+    await $('.context-menu-item*=Rename').click()
     const renameInput = await $('.terminals-tab-rename')
     await renameInput.waitForExist({ timeout: 5_000 })
     await renameInput.setValue('Build shell')
@@ -158,12 +157,7 @@ describe('thread + terminal rename / archive', () => {
     const buildTab = await $(`.terminals-tab*=Build shell`)
     await buildTab.click({ button: 'right' })
     await $('.context-menu').waitForDisplayed({ timeout: 5_000 })
-    await browser.execute(() => {
-      const item = Array.from(
-        document.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
-      ).find((i) => i.textContent === 'Archive')
-      item?.click()
-    })
+    await $('.context-menu-item*=Archive').click()
 
     await browser.waitUntil(
       async () => (await $$('.terminals-tab')).length === tabCountBefore - 1,
