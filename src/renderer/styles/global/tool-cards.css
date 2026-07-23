@@ -189,10 +189,14 @@
   color: var(--text-muted);
   margin-left: auto;
 }
-.tool-card[data-status='done'] .tool-status-icon {
+/* Color only this row's icon — never cascade from an ancestor rollup/group
+   with mixed status (a green check inside an error rollup was turning red). */
+.tool-card[data-status='done'] > .tool-card-header > .tool-status-icon,
+.tool-group-item[data-status='done'] > .tool-group-item-header > .tool-status-icon {
   color: var(--success);
 }
-.tool-card[data-status='error'] .tool-status-icon {
+.tool-card[data-status='error'] > .tool-card-header > .tool-status-icon,
+.tool-group-item[data-status='error'] > .tool-group-item-header > .tool-status-icon {
   color: var(--error);
 }
 .tool-result {

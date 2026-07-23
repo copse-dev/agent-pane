@@ -66,6 +66,25 @@ describe('tool call turn rollup', () => {
       'error',
     )
 
+    // Nested success rows keep their own color even when the rollup is mixed.
+    const iconColors = await browser.execute(() => {
+      const success = document.querySelector(
+        '.tool-card-rollup[data-status="error"] .tool-card-group[data-status="done"] > .tool-card-header > .tool-status-icon',
+      )
+      const failure = document.querySelector(
+        '.tool-card-rollup[data-status="error"] .tool-card[data-status="error"] > .tool-card-header > .tool-status-icon',
+      )
+      return {
+        success: success ? getComputedStyle(success).color : null,
+        failure: failure ? getComputedStyle(failure).color : null,
+        successToken: getComputedStyle(document.documentElement).getPropertyValue('--success').trim(),
+        errorToken: getComputedStyle(document.documentElement).getPropertyValue('--error').trim(),
+      }
+    })
+    expect(iconColors.success).toBeTruthy()
+    expect(iconColors.failure).toBeTruthy()
+    expect(iconColors.success).not.toBe(iconColors.failure)
+
     await saveAppScreenshot('tool-display-rollup-expanded.png')
   })
 })
