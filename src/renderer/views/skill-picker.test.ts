@@ -59,4 +59,47 @@ describe('skill picker', () => {
     assert.equal(input.value, '/demo-skill ')
     assert.equal(picker.hidden, true)
   })
+
+  it('ranks name-prefix matches ahead of description-only hits for Enter', async () => {
+    const inputBar = document.createElement('div')
+    const input = mountComposerEditor()
+    inputBar.append(input.el)
+    document.body.append(inputBar)
+    initSkillPicker({
+      input,
+      inputBar,
+      listSkills: async () => [
+        {
+          // Alphabetically first, and description contains the query — without
+          // name-prefix ranking, Enter would insert this instead of `/checkup`.
+          name: 'agent-run-eval',
+          description: 'Drive checkup-style regression evals',
+          source: 'project',
+          skillPath: '/repo/.cursor/skills/agent-run-eval/SKILL.md',
+          externalLinks: [],
+        },
+        {
+          name: 'checkup',
+          description: 'Run a Copse setup health check',
+          source: 'bundled',
+          skillPath: '/app/assets/skills/checkup/SKILL.md',
+          externalLinks: [],
+        },
+      ],
+    })
+
+    input.value = '/checkup'
+    input.setSelectionRange(input.value.length, input.value.length)
+    input.el.dispatchEvent(new Event('input', { bubbles: true }))
+    await settle()
+
+    const picker = inputBar.querySelector<HTMLElement>('.skill-picker')
+    assert.ok(picker)
+    assert.equal(picker.hidden, false)
+    const names = [...picker.querySelectorAll('.skill-item-name')].map((el) => el.textContent)
+    assert.deepEqual(names, ['/checkup', '/agent-run-eval'])
+
+    input.el.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    assert.equal(input.value, '/checkup ')
+  })
 })

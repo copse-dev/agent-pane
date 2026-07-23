@@ -1,7 +1,7 @@
 import { $, browser, expect } from '@wdio/globals'
 import { seedProjectConfig } from './helpers.ts'
 import { assertNoErrorToasts, collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
-import { setComposerValue } from './helpers/composer.ts'
+import { composerText, setComposerValue } from './helpers/composer.ts'
 import { resetUserData } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
@@ -34,12 +34,22 @@ describe('checkup skill', () => {
     await checkupRow.waitForExist({ timeout: 5_000 })
     await expect(checkupRow.$('.skill-item-name')).toHaveText('/checkup')
 
-    // Enter inserts `/checkup ` for the highlighted (only) match and closes.
-    await browser.keys('Enter')
+    // Select the `/checkup` row by name — do not rely on Enter/selectedIdx 0.
+    // When the composer caret sits just after `/` (empty filter query), the
+    // picker lists every skill alphabetically and Enter inserts the first row
+    // (`/agent-run-eval` in this workspace) instead of `/checkup`.
+    await browser.execute(() => {
+      const row = [...document.querySelectorAll('.skill-picker .skill-item')].find(
+        (el) => el.querySelector('.skill-item-name')?.textContent === '/checkup',
+      )
+      if (!(row instanceof HTMLElement)) throw new Error('/checkup skill row not found')
+      row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    })
     await browser.waitUntil(async () => !(await picker.isDisplayed()), {
       timeout: 5_000,
       timeoutMsg: 'skill picker should close after picking /checkup',
     })
+    await expect(await composerText()).toMatch(/^\/checkup\b/)
 
     await $('.submit-btn').click()
 
