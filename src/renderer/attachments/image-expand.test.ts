@@ -83,6 +83,11 @@ describe('image expand lightbox', () => {
       new window.MouseEvent('click', { bubbles: true }),
     )
     assert.equal(dialog.open, false)
+    // close handler clears src so a leaked open paint would show broken-image alt
+    // ("Expanded attachment"). CSS must keep closed dialogs display:none.
+    const expanded = qsRequired<HTMLImageElement>(dialog, '.image-expand-image')
+    assert.equal(expanded.getAttribute('src'), null)
+    assert.equal(expanded.alt, 'Expanded attachment')
 
     openImageExpand(PNG)
     assert.equal(dialog.open, true)

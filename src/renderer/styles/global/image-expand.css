@@ -8,9 +8,13 @@
   padding: var(--spacing-md);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
+  box-sizing: border-box;
+}
+/* Flex only while open — an unconditional `display: flex` overrides the UA
+   closed-dialog `display: none` (see `dialog:not([open])` in forms.css). */
+.image-expand-dialog[open] {
   display: flex;
   flex-direction: column;
-  box-sizing: border-box;
 }
 .image-expand-dialog-body {
   min-width: min(280px, 80vw);

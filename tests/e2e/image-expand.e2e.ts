@@ -8,6 +8,7 @@ import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
 const PROJECT_WORKSPACE_PREFIX = 'copse-image-expand-'
 const THREAD_SHOT = 'image-expand-thread.png'
+const THREAD_DISMISSED_SHOT = 'image-expand-thread-dismissed.png'
 const ROADMAP_SHOT = 'image-expand-roadmap.png'
 
 /** 64×40 teal checker PNG so the modal has visible content for visual review. */
@@ -68,13 +69,23 @@ describe('Screenshot click-to-expand', () => {
     await saveAppScreenshot(THREAD_SHOT)
 
     await $('.image-expand-close').click()
+    const closed = $('dialog.image-expand-dialog')
     await browser.waitUntil(
-      async () => !(await dialog.isExisting()) || !(await dialog.getAttribute('open')),
+      async () => {
+        if (!(await closed.isExisting())) return true
+        const open = await closed.getAttribute('open')
+        if (open != null) return false
+        // Author `display: flex` used to outrank UA closed-dialog hiding and leave
+        // a ghost modal (broken-image alt + Close). Assert it is actually gone.
+        return !(await closed.isDisplayed())
+      },
       {
         timeout: 5_000,
-        timeoutMsg: 'expected the image expand dialog to close',
+        timeoutMsg: 'expected the image expand dialog to close and leave the page',
       },
     )
+    await expect(closed).not.toBeDisplayed()
+    await saveAppScreenshot(THREAD_DISMISSED_SHOT)
   })
 
   it('expands a roadmap plan attachment thumb in the same modal', async () => {
