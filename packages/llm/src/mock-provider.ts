@@ -30,14 +30,19 @@ export class MockLLMProvider implements LLMProvider {
       .filter((m) => m.role === 'system')
       .map((m) => (typeof m.content === 'string' ? m.content : ''))
       .join('\n')
-    const demoSkillLoaded = systemText.includes('<skill_content name="demo-skill">')
+    // Skill prompts emit `<skill_content name="…" trust="…">` (see skill-prompt.ts).
+    // Match on the name attribute prefix so the trust attribute does not break detection.
+    const demoSkillLoaded = systemText.includes('<skill_content name="demo-skill"')
+    const checkupSkillLoaded = systemText.includes('<skill_content name="checkup"')
 
     const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
     const fullUserText = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : ''
     const userText = fullUserText ? fullUserText.slice(0, 40) : '(complex input)'
     const text = demoSkillLoaded
       ? 'Demo skill active — Copse skills support is working.'
-      : `Mock response to: ${userText}`
+      : checkupSkillLoaded
+        ? 'Ran a checkup — mock health check complete.'
+        : `Mock response to: ${userText}`
 
     const isFirstTurn = messages.filter((m) => m.role === 'assistant').length === 0
     let lastUserIdx = -1
@@ -78,7 +83,7 @@ export class MockLLMProvider implements LLMProvider {
       // to exercise the MCP path). Real prompts never contain it. Only honor it
       // for the current user turn — not on later agent-loop passes that still see
       // the same user message in history.
-      if (awaitingAssistantReply && !demoSkillLoaded) {
+      if (awaitingAssistantReply && !demoSkillLoaded && !checkupSkillLoaded) {
         const step = takeMockScriptStep(fullUserText, tools)
         if (step) {
           if (signal?.aborted) return
@@ -125,6 +130,19 @@ export class MockLLMProvider implements LLMProvider {
     // mock doesn't trip the tool's argument validation.
     if (tools.length > 0 && isFirstTurn && !demoSkillLoaded) {
       if (signal?.aborted) return
+      // Prefer the checkup tool when that skill was invoked so /checkup e2e
+      // exercises the real doctor path instead of a generic list_dir call.
+      const runCheckup = checkupSkillLoaded
+        ? tools.find((t) => t.name === 'run_checkup')
+        : undefined
+      if (runCheckup) {
+        yield {
+          type: 'tool_call',
+          toolCall: { id: randomUUID(), name: 'run_checkup', args: {} },
+        }
+        yield { type: 'done' }
+        return
+      }
       const explore = tools.find((t) => t.name === 'explore')
       const listDir = tools.find((t) => t.name === 'list_dir')
       const toolCall = explore

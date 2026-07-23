@@ -48,6 +48,14 @@ export async function resolveContextWindow(model: string): Promise<number> {
   const cloud = getModelInfo(model)
   if (cloud) return cloud.contextWindow
 
+  // Mock LLM ignores provider context limits. Without a live LM Studio server the
+  // local path falls back to 8192, which is narrower than system + tool schemas +
+  // a mid-size skill body (e.g. /checkup) and trips the oversized-turn gate in
+  // e2e/dev even though the mock would answer fine.
+  if (process.env['COPSE_PANEL_MOCK_LLM'] === '1') {
+    return DEFAULT_CLOUD_CONTEXT
+  }
+
   if (isOpenRouterModel(model)) {
     const ctx = await openRouterModelContextLength(openRouterModelId(model))
     return ctx ?? DEFAULT_CLOUD_CONTEXT
