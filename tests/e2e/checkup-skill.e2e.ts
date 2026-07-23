@@ -2,15 +2,24 @@ import { $, browser, expect } from '@wdio/globals'
 import { seedProjectConfig } from './helpers.ts'
 import { assertNoErrorToasts, collectErrorToasts } from './helpers/assert-no-error-toasts.ts'
 import { setComposerValue } from './helpers/composer.ts'
+import { resetUserData } from './helpers/seed-config.ts'
 import { saveAppScreenshot } from './helpers/screenshot.ts'
 
 describe('checkup skill', () => {
   before(async () => {
+    // seedProjectConfig only writes config.json — reset settings so a stale
+    // onboardingCompleted:false (or missing settings) cannot leave the wizard
+    // overlay intercepting the composer submit click.
+    resetUserData()
     await seedProjectConfig(process.cwd(), {
       projectId: 'checkup-skill-project',
       threadId: 'checkup-skill-thread',
     })
     await browser.reloadSession()
+  })
+
+  after(() => {
+    resetUserData()
   })
 
   it('picks /checkup from the slash picker and runs without Unknown skill', async () => {
