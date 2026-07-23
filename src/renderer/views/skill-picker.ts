@@ -31,10 +31,25 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
     const skills = allSkills ?? []
     const q = query.toLowerCase()
     if (!q) return skills
-    return skills.filter(
+    const matched = skills.filter(
       (skill) =>
         skill.name.toLowerCase().includes(q) || skill.description.toLowerCase().includes(q),
     )
+    // Prefer name prefix matches, then other name hits, then description-only.
+    // Keeps Enter (selectedIdx 0) on `/checkup` when the query is `checkup`
+    // even if many description hits exist.
+    return matched.sort((a, b) => {
+      const aName = a.name.toLowerCase()
+      const bName = b.name.toLowerCase()
+      const rank = (name: string): number => {
+        if (name.startsWith(q)) return 0
+        if (name.includes(q)) return 1
+        return 2
+      }
+      const diff = rank(aName) - rank(bName)
+      if (diff !== 0) return diff
+      return aName.localeCompare(bName)
+    })
   }
 
   function renderPicker(): void {
