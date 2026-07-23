@@ -28,6 +28,12 @@ export interface TerminalBenchRunManifest {
     version: string
     revision: string
   }
+  infrastructure?: {
+    instanceType: string
+    instanceCount: number
+    workersPerInstance: number
+    volumeSizeGb: number
+  }
   profile?: {
     id: string
     versionedId: string
@@ -160,6 +166,16 @@ export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunM
   if (profiles && new Set(profiles.map((item) => item.id)).size !== profiles.length) {
     throw new Error('run manifest profiles contain duplicates')
   }
+  const infrastructureValue = property(value, 'infrastructure')
+  const infrastructure =
+    infrastructureValue === undefined
+      ? undefined
+      : {
+          instanceType: requiredString(infrastructureValue, 'instanceType'),
+          instanceCount: requiredPositiveInteger(infrastructureValue, 'instanceCount'),
+          workersPerInstance: requiredPositiveInteger(infrastructureValue, 'workersPerInstance'),
+          volumeSizeGb: requiredPositiveInteger(infrastructureValue, 'volumeSizeGb'),
+        }
   return {
     ...base,
     dataset: {
@@ -169,6 +185,7 @@ export function parseTerminalBenchRunManifest(value: unknown): TerminalBenchRunM
     },
     ...(profile ? { profile } : {}),
     ...(profiles ? { profiles } : {}),
+    ...(infrastructure ? { infrastructure } : {}),
   }
 }
 

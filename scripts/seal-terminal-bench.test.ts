@@ -74,7 +74,14 @@ function runSeal(root: string, extraEnv: NodeJS.ProcessEnv = {}): ReturnType<typ
 describe('terminal benchmark capsule sealing', () => {
   it('writes a per-trial archive and a digest-bearing suite index', () => {
     const root = fixture()
-    const sealed = runSeal(root)
+    const sealed = runSeal(root, {
+      COPSE_TERMINAL_INSTANCE_TYPE: 'PRO2-S',
+      COPSE_TERMINAL_INSTANCE_COUNT: '1',
+      COPSE_TERMINAL_WORKERS_PER_INSTANCE: '2',
+      COPSE_TERMINAL_VOLUME_SIZE_GB: '200',
+      COPSE_TERMINAL_SHARD_COUNT: '2',
+      COPSE_TERMINAL_SHARD_INDEX: '1',
+    })
     assert.equal(sealed.status, 0, String(sealed.stderr))
 
     const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
@@ -116,6 +123,10 @@ describe('terminal benchmark capsule sealing', () => {
     const dataset = (trialManifest as Record<string, unknown>)['dataset'] as Record<string, unknown>
     const profile = (trialManifest as Record<string, unknown>)['profile'] as Record<string, unknown>
     const metrics = (trialManifest as Record<string, unknown>)['metrics'] as Record<string, unknown>
+    const infrastructure = (trialManifest as Record<string, unknown>)['infrastructure'] as Record<
+      string,
+      unknown
+    >
     assert.equal(dataset['revision'], TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision)
     assert.equal(
       dataset['taskConfigSha256'],
@@ -125,6 +136,66 @@ describe('terminal benchmark capsule sealing', () => {
     assert.match(String(profile['contentHash']), /^[a-f0-9]{64}$/)
     assert.equal(metrics['elapsedSeconds'], 60)
     assert.equal(metrics['toolCalls'], 4)
+    assert.deepEqual(infrastructure, {
+      instanceType: 'PRO2-S',
+      instanceCount: 1,
+      workersPerInstance: 2,
+      volumeSizeGb: 200,
+      shardCount: 2,
+      shardIndex: 1,
+    })
+  })
+
+  it('reuses an unchanged capsule on later checkpoints', () => {
+    const root = fixture()
+    const first = runSeal(root)
+    assert.equal(first.status, 0, String(first.stderr))
+    const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
+    const firstIndex = JSON.parse(readFileSync(join(capsules, 'index.json'), 'utf8')) as {
+      capsules: Array<{ archive: string; sha256: string }>
+    }
+    const archive = firstIndex.capsules[0]
+    assert.ok(archive)
+
+    const second = runSeal(root)
+    assert.equal(second.status, 0, String(second.stderr))
+    assert.match(String(second.stdout), new RegExp(`bench:terminal:seal reused ${archive.archive}`))
+    assert.doesNotMatch(String(second.stdout), /bench:terminal:seal bench-results\//)
+    const secondIndex = JSON.parse(readFileSync(join(capsules, 'index.json'), 'utf8')) as {
+      capsules: Array<{ archive: string; sha256: string }>
+    }
+    assert.deepEqual(secondIndex.capsules, firstIndex.capsules)
+  })
+
+  it('lists only capsules without a matching local upload receipt', () => {
+    const root = fixture()
+    const sealed = runSeal(root)
+    assert.equal(sealed.status, 0, String(sealed.stderr))
+    const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
+    const indexPath = join(capsules, 'index.json')
+    const receiptPath = join(capsules, '.uploaded-capsules.tsv')
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
+      capsules: Array<{ archive: string; sha256: string }>
+    }
+    const capsule = index.capsules[0]
+    assert.ok(capsule)
+
+    const pending = spawnSync(
+      process.execPath,
+      [resolve('scripts/list-terminal-bench-pending-capsules.mts'), indexPath, receiptPath],
+      { encoding: 'utf8' },
+    )
+    assert.equal(pending.status, 0, pending.stderr)
+    assert.equal(pending.stdout, `${capsule.sha256}\t${capsule.archive}\n`)
+
+    writeFileSync(receiptPath, pending.stdout)
+    const uploaded = spawnSync(
+      process.execPath,
+      [resolve('scripts/list-terminal-bench-pending-capsules.mts'), indexPath, receiptPath],
+      { encoding: 'utf8' },
+    )
+    assert.equal(uploaded.status, 0, uploaded.stderr)
+    assert.equal(uploaded.stdout, '')
   })
 
   it('refuses to seal a trial that leaked a configured secret', () => {

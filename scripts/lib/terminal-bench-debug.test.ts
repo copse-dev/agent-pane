@@ -236,7 +236,11 @@ describe('Terminal-Bench post-run debugging', () => {
           GITHUB_SHA: 'abc123',
           COPSE_BENCH_RUN_ID: 'github-12345-2',
           COPSE_TERMINAL_MAX_TASKS: '3',
+          COPSE_TERMINAL_TASK_NAMES: 'cancel-async-tasks,circuit-fibsqrt',
           COPSE_TERMINAL_INSTANCES: '10',
+          COPSE_TERMINAL_WORKERS_PER_INSTANCE: '2',
+          COPSE_TERMINAL_INSTANCE_TYPE: 'PRO2-S',
+          COPSE_TERMINAL_VOLUME_SIZE_GB: '200',
           COPSE_TERMINAL_ATTEMPTS: '1',
           LM_STUDIO_MODEL: 'model-id',
           COPSE_TERMINAL_PROFILE: 'product-aligned',
@@ -245,7 +249,13 @@ describe('Terminal-Bench post-run debugging', () => {
     )
     assert.equal(written.status, 0, written.stderr)
     const manifest = parseTerminalBenchRunManifest(JSON.parse(written.stdout))
-    assert.equal(manifest.shardCount, 3)
+    assert.equal(manifest.shardCount, 2)
+    assert.deepEqual(manifest.infrastructure, {
+      instanceType: 'PRO2-S',
+      instanceCount: 1,
+      workersPerInstance: 2,
+      volumeSizeGb: 200,
+    })
     assert.equal(manifest.schemaVersion, 2)
     assert.equal(manifest.dataset?.id, 'terminal-bench/terminal-bench-2-1')
     assert.equal(manifest.profile?.versionedId, 'product-aligned@1')

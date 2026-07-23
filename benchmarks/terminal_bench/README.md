@@ -51,13 +51,14 @@ npm run bench:terminal:sync-dataset -- --source /path/to/terminal-bench-2-1
 
 Review every descriptor diff, especially image tags and task configuration checksums.
 
-## Run on a ten-instance Scaleway fleet
+## Run on a Scaleway fleet
 
 The manual `Terminal-Bench (Scaleway Fleet)` workflow uses GitHub only as the controller. It builds
-one immutable worker image, pushes it to a private Scaleway Container Registry, launches ten
-disposable x86 Scaleway Instances, and assigns each host one deterministic task shard. Each worker
-container controls Terminal-Bench's sibling task containers through that host's Docker socket.
-This is ten VMs, not ten containers sharing one fat VM.
+one immutable worker image, pushes it to a private Scaleway Container Registry, and launches
+disposable x86 Scaleway Instances. `instances` is the physical host cap;
+`workers_per_instance` controls how many logical task shards share each host. Each worker container
+uses an isolated result directory while controlling Terminal-Bench's sibling task containers
+through the shared host Docker socket.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
 `main-legacy,pr-1149,product-aligned` and set `steered_rerun` to false. The workflow provisions one
@@ -67,14 +68,19 @@ task 1 runs A/B/C, task 2 runs B/C/A, and task 3 runs C/A/B. All requested attem
 task/profile pair run while the pinned image is resident; the image is pruned after the complete
 task block. Single-profile runs continue to use the `profile` choice input.
 
-Every completed task block is sealed and uploaded before the worker starts its next task, so a
-later failure does not discard earlier paired evidence. An infrastructure-invalid profile is
-recorded and does not censor the remaining profiles or tasks on that worker; the worker reports a
-failure only after attempting its whole shard. The workflow concurrency group uses a FIFO queue;
+Every completed task block is checkpointed before the worker starts its next task. Previously
+sealed trial archives are reused, and a local digest receipt makes each checkpoint upload only new
+or changed capsules by exact Object Storage key. This keeps the worker credentials PutObject-only
+and makes checkpoint cost grow linearly instead of repeatedly recompressing and uploading the whole
+shard. A later failure therefore does not discard earlier paired evidence. An infrastructure-invalid
+profile is recorded and does not censor the remaining profiles or tasks on that worker; the worker
+reports a failure only after attempting its whole shard. The workflow concurrency group uses a FIFO queue;
 repeated workflow dispatches run one fleet at a time instead of canceling an older pending run.
-Because only the current and one prefetched task image need to coexist, the 100 GiB default volume
-is normally sufficient. `ttl_minutes` is only a self-delete backstop; the controller still tears
-each fleet down immediately on completion.
+With one worker per host, only the current and one prefetched task image need to coexist, so the
+100 GiB default volume is normally sufficient. Packed hosts can hold twice that many live images;
+increase the volume until recorded disk telemetry demonstrates a smaller size is safe.
+`ttl_minutes` is only a self-delete backstop; the controller terminates each host as soon as all of
+that host's logical workers finish, then retains fleet-wide cleanup as a failure backstop.
 
 As a fleet-health circuit breaker, a worker stops after three consecutive task blocks in which no
 profile produces a valid result. Isolated invalid profiles and tasks still continue; the threshold
@@ -82,11 +88,19 @@ is intended for systemic Docker, provider, or host failures where further spend 
 evidence.
 
 Qwen inference stays on Scaleway's hosted Generative API. The worker Instances therefore do not
-need GPUs and the image contains no model weights. The default `BASIC3-X4C-16G` hosts provide Docker
+need GPUs and the image contains no model weights. The default `PRO2-XS` hosts provide Docker
 CPU, memory, and disk while API inference can proceed concurrently. All 89 pinned Terminal-Bench
 task images are AMD64, so the fleet deliberately uses x86 Instances.
 
-The controller terminates every VM in a `finally` path. Every host also receives a 420-minute
+Each logical worker uploads `host-metrics.jsonl` with 30-second host memory, load, disk, and Docker
+container samples. Use it to compare one-worker and packed runs without inferring utilisation from
+wall time alone. A conservative same-resource packing trial is 9 × `PRO2-S`, two workers per host,
+and a 200 GiB volume: it provides 18 logical shards while halving VM and public-IP count. Keep
+`workers_per_instance=1` for official comparisons until the packed smoke shows no increase in
+infrastructure-invalid trials or timeouts.
+
+The controller terminates every VM in a `finally` path if its immediate host teardown did not
+complete. Every host also receives a 420-minute
 self-termination timer which deletes the server, root SBS volume, and flexible IP if GitHub loses
 contact with it. Run evidence never becomes a GitHub artifact: each worker seals and uploads its
 own capsules before it exits.
@@ -141,13 +155,17 @@ PutObject-only keys.
 
 Open **Actions → Terminal-Bench (Scaleway Fleet) → Run workflow**. The default launches ten hosts
 and runs ten tasks, one on each host. Raise `max_tasks` to process more of the 89-task suite; with
-ten hosts, each host then processes its deterministic shard sequentially. `instances` is capped at
-20 and attempts at five. Hosted-model rate limits can still throttle the fleet even when Docker
-capacity is available. Use the Serverless model ID from Scaleway's `/models` catalogue (for
-example `qwen3.6-35b-a3b`), not an LM Studio or dedicated-deployment identifier.
+ten hosts and one worker per host, each worker then processes its deterministic shard sequentially.
+`instances` is capped at 20, `workers_per_instance` at eight, and attempts at five. The effective
+logical shard count is `min(max_tasks, instances × workers_per_instance)` and excess physical hosts
+are not provisioned. Hosted-model rate limits can still throttle the fleet even when Docker
+capacity is available. Use the Serverless model ID from Scaleway's `/models` catalogue (for example
+`qwen3.6-35b-a3b`), not an LM Studio or dedicated-deployment identifier.
 
-For a fast full-suite three-profile pass, use 18 workers, 89 tasks, and one attempt. This assigns at
-most five task blocks (15 trials) to a worker while preserving exact task-level pairing. Increasing
+For a fast full-suite three-profile pass with the proven topology, use 18 `PRO2-XS` hosts, one
+worker per host, 89 tasks, and one attempt. This assigns at most five task blocks (15 trials) to a
+worker while preserving exact task-level pairing. For a packing smoke with the same nominal
+resources per logical worker, use nine `PRO2-S` hosts and two workers per host. Increasing
 `attempts` repeats each task/profile pair before the image is pruned; it improves within-task
 replication but increases wall time approximately linearly.
 
@@ -189,6 +207,7 @@ export SCW_OBJECT_STORAGE_BUCKET='...'
 
 npm run bench:terminal:fleet -- run \
   --instances 10 \
+  --workers-per-instance 1 \
   --max-tasks 10 \
   --worker-image rg.fr-par.scw.cloud/example/terminal-bench-worker:COMMIT \
   --key-path /path/to/scaleway-ssh-key
