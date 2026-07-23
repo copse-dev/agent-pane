@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnPtyInProjectSandbox } from './project-sandbox/index.ts'
-import { runReleaseSmokeTest } from './release-smoke.ts'
+import { decidePtySmokeAfterExit, runReleaseSmokeTest } from './release-smoke.ts'
 
 async function ptySpawnAvailable(): Promise<boolean> {
   const shell = process.env['SHELL'] || '/bin/bash'
@@ -22,6 +22,29 @@ async function ptySpawnAvailable(): Promise<boolean> {
     return false
   }
 }
+
+describe('decidePtySmokeAfterExit', () => {
+  const marker = 'copse-release-smoke-pty'
+
+  it('resolves when the marker already arrived', () => {
+    assert.deepEqual(decidePtySmokeAfterExit({ output: `ok ${marker}\n`, marker, exitCode: 0 }), {
+      action: 'resolve',
+    })
+  })
+
+  it('rejects on non-zero exit without a marker', () => {
+    assert.deepEqual(decidePtySmokeAfterExit({ output: '', marker, exitCode: 1 }), {
+      action: 'reject',
+      message: 'Packaged PTY smoke test exited 1',
+    })
+  })
+
+  it('waits on clean exit without a marker (late onData race)', () => {
+    assert.deepEqual(decidePtySmokeAfterExit({ output: '', marker, exitCode: 0 }), {
+      action: 'wait',
+    })
+  })
+})
 
 describe('runReleaseSmokeTest', () => {
   let workspaceDir: string | undefined

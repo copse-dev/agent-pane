@@ -1,6 +1,43 @@
 import { spawnPtyInProjectSandbox } from './project-sandbox/index.ts'
 import { loadProjectThreads, saveProjectThread } from './services/thread-store.ts'
 
+/** Hard deadline for the packaged PTY marker to appear. */
+const PTY_SMOKE_TIMEOUT_MS = 15_000
+/** Delay before the first write so a cold login shell can attach under CI load. */
+const PTY_SMOKE_WRITE_DELAY_MS = 500
+/**
+ * Grace after `onExit` before deciding the stream is done. node-pty can deliver
+ * the final `onData` after `onExit` under CI load.
+ */
+const PTY_SMOKE_EXIT_GRACE_MS = 500
+
+export type PtySmokeExitDecision =
+  { action: 'resolve' } | { action: 'reject'; message: string } | { action: 'wait' }
+
+/**
+ * Pure settlement rule used after the PTY process exits.
+ *
+ * - Marker seen → success.
+ * - Non-zero exit without marker → fail immediately.
+ * - Clean exit without marker → keep waiting for late `onData` (or the outer
+ *   timeout). Resolving empty output here is what raced under CI load and
+ *   surfaced as "did not receive its command output".
+ */
+export function decidePtySmokeAfterExit(opts: {
+  output: string
+  marker: string
+  exitCode: number
+}): PtySmokeExitDecision {
+  if (opts.output.includes(opts.marker)) return { action: 'resolve' }
+  if (opts.exitCode !== 0) {
+    return {
+      action: 'reject',
+      message: `Packaged PTY smoke test exited ${String(opts.exitCode)}`,
+    }
+  }
+  return { action: 'wait' }
+}
+
 /**
  * Exercise the two runtime facilities that are easy to miss in a packaged app:
  * the native node-pty binding and the filesystem-native thread store. This is
@@ -35,7 +72,7 @@ async function smokeTestPty(): Promise<void> {
       finish(() => {
         reject(new Error('Packaged PTY smoke test timed out'))
       })
-    }, 15_000)
+    }, PTY_SMOKE_TIMEOUT_MS)
     const resolveIfMarked = (): void => {
       if (!data.includes(marker)) return
       finish(() => {
@@ -48,31 +85,29 @@ async function smokeTestPty(): Promise<void> {
       resolveIfMarked()
     })
     child.onExit(({ exitCode }) => {
-      // node-pty can deliver the final onData after onExit under CI load; wait a
-      // beat so the marker is not lost when the shell exits cleanly.
       setTimeout(() => {
-        if (data.includes(marker)) {
+        const decision = decidePtySmokeAfterExit({
+          output: data,
+          marker,
+          exitCode,
+        })
+        if (decision.action === 'resolve') {
           finish(() => {
             resolve(data)
           })
           return
         }
-        if (exitCode !== 0) {
+        if (decision.action === 'reject') {
           finish(() => {
-            reject(new Error(`Packaged PTY smoke test exited ${String(exitCode)}`))
+            reject(new Error(decision.message))
           })
-          return
         }
-        finish(() => {
-          resolve(data)
-        })
-      }, 100)
+        // `wait`: leave the outer timeout as the deadline for late onData.
+      }, PTY_SMOKE_EXIT_GRACE_MS)
     })
-    // Give the login shell a beat to attach before the first write — avoids a
-    // race where the command is dropped on cold PTY startup in CI.
     setTimeout(() => {
       child.write(`printf '${marker}\n'; exit\n`)
-    }, 250)
+    }, PTY_SMOKE_WRITE_DELAY_MS)
   })
   if (!output.includes(marker)) {
     throw new Error('Packaged PTY smoke test did not receive its command output')
