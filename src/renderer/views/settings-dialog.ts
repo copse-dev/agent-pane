@@ -379,7 +379,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <div id="settings-model-routing-host"></div>
             </fieldset>
-            </fieldset>
 
             <fieldset>
               <legend>Remote agents</legend>
