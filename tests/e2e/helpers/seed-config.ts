@@ -2074,9 +2074,15 @@ export function seedQueuedMessageFixture(workspaceRoot: string): {
   return { threadId, queuedMessageId, queuedText }
 }
 
+/**
+ * Multi-segment tool-display fixture: a user bug report followed by several
+ * assistant bubbles (text-after-tools splits), each with Thinking + a rolled-up
+ * tool burst — the shape Cursor cloud agent turns take in Copse.
+ */
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
+  const now = Date.now()
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -2090,26 +2096,67 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
         status: 'idle',
         messages: [
           {
-            id: 'msg-assistant-1',
+            id: 'msg-user-flicker',
+            role: 'user',
+            content:
+              'When I open settings the chat model select flickers away and takes a while to come back. Same for the usage graph buttons — they show the button with no text. If we need to delay, hide the whole button, not just the label.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            // Segment 1: search burst (empty body → Thinking stays open).
+            id: 'msg-assistant-search',
             role: 'assistant',
-            content: 'Here is what I found in the repo.',
-            // Small-model polish already applied — e2e asserts the italic rollup
-            // shows this instead of the canned "Used 3 tools".
+            content: '',
+            reasoning: 'Searching for where settings model selects and usage buttons render.',
+            toolSummary: 'Searched the settings UI',
+            toolCalls: [
+              {
+                id: 'tc-search-1',
+                name: 'search_code',
+                args: { pattern: 'model-select|chatModel', path: 'src/renderer' },
+                status: 'done',
+                result: 'src/renderer/views/settings-dialog.ts:120',
+              },
+              {
+                id: 'tc-search-2',
+                name: 'search_code',
+                args: { pattern: 'usage-graph|unpricedBtn', path: 'src/renderer' },
+                status: 'done',
+                result: 'src/renderer/views/usage-panel.ts:40',
+              },
+              {
+                id: 'tc-search-3',
+                name: 'find_files',
+                args: { glob: '**/settings*.ts' },
+                status: 'done',
+                result: 'src/renderer/views/settings-dialog.ts',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            // Segment 2: mixed reads with one failure — polished rollup + expand target.
+            id: 'msg-assistant-reads',
+            role: 'assistant',
+            content: '',
+            reasoning:
+              'Reading key files to diagnose the settings flicker and missing button text.',
             toolSummary: 'Inspected the repo layout',
             toolCalls: [
               {
                 id: 'tc-read-1',
                 name: 'read_file',
-                args: { path: 'README.md' },
+                args: { path: 'src/renderer/views/settings-dialog.ts' },
                 status: 'done',
-                result: '# Copse\n',
+                result: 'export function openSettings() { /* … */ }\n',
               },
               {
                 id: 'tc-list-1',
                 name: 'list_dir',
-                args: { path: 'src' },
+                args: { path: 'src/renderer/views' },
                 status: 'done',
-                result: 'd main\nf index.ts',
+                result: 'f settings-dialog.ts\nf usage-panel.ts',
               },
               {
                 id: 'tc-read-2',
@@ -2119,12 +2166,62 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
                 result: 'Error: ENOENT',
               },
             ],
-            createdAt: Date.now(),
+            createdAt: now + 2,
+          },
+          {
+            // Segment 3: dig into HTML/template + more reads.
+            id: 'msg-assistant-html',
+            role: 'assistant',
+            content: '',
+            reasoning:
+              'Checking the settings HTML around the model selects and usage section loading patterns.',
+            toolSummary: 'Read settings template paths',
+            toolCalls: [
+              {
+                id: 'tc-grep-html',
+                name: 'search_code',
+                args: { pattern: 'syncZdrBtn|unpricedBtn', path: 'src/renderer' },
+                status: 'done',
+                result: 'src/renderer/views/usage-panel.ts:88',
+              },
+              {
+                id: 'tc-read-html-1',
+                name: 'read_file',
+                args: { path: 'src/renderer/views/usage-panel.ts' },
+                status: 'done',
+                result: 'function syncZdrBtn() {}\n',
+              },
+              {
+                id: 'tc-read-html-2',
+                name: 'read_file',
+                args: { path: 'src/renderer/styles/global/settings.css' },
+                status: 'done',
+                result: '.settings-model-select { opacity: 1; }\n',
+              },
+              {
+                id: 'tc-read-html-3',
+                name: 'read_file',
+                args: { path: 'src/renderer/views/settings-dialog.ts' },
+                status: 'done',
+                result: 'async function refreshModelOptions() {}\n',
+              },
+            ],
+            createdAt: now + 3,
+          },
+          {
+            // Final answer segment (no tools) — outcome text after the trace.
+            id: 'msg-assistant-answer',
+            role: 'assistant',
+            content:
+              'The selects clear too early while key-status refresh is still in flight. Delay clearing options until data is ready, and hide the whole usage button row until `render()` finishes — not just the label.',
+            reasoning: 'Planning a three-part fix for load ordering and placeholder chrome.',
+            toolCalls: [],
+            createdAt: now + 4,
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: now,
+        updatedAt: now + 4,
       },
     ],
   })
