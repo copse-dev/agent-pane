@@ -19,11 +19,16 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.match(workflow, /task_names:/)
   assert.match(workflow, /profile:/)
   assert.match(workflow, /profiles:/)
+  assert.match(workflow, /ttl_minutes:/)
+  assert.match(workflow, /volume_size_gb:/)
+  assert.match(workflow, /queue: max/)
   assert.match(workflow, /default: main-legacy/)
   assert.match(workflow, /default: '2048'/)
   assert.match(workflow, /default: '600'/)
   assert.match(workflow, /--task-names "\$TASK_NAMES"/)
   assert.match(workflow, /--profiles "\$PROFILES"/)
+  assert.match(workflow, /--ttl-minutes "\$TTL_MINUTES"/)
+  assert.match(workflow, /--volume-size-gb "\$VOLUME_SIZE_GB"/)
 })
 
 test('Scaleway workflow probes Object Storage with PutObject, not HeadBucket', () => {
@@ -119,11 +124,12 @@ test('fleet runs unique profiles sequentially and rotates their order by shard',
   )
 })
 
-test('worker loops profiles in-place and prunes task images only after the final profile', () => {
+test('worker checkpoints each profile and prunes task images only after the final profile', () => {
   const script = readFileSync('benchmarks/terminal_bench/run-shard.sh', 'utf8')
   assert.match(script, /COPSE_TERMINAL_PROFILES/)
   assert.match(script, /profile_offset < profile_count/)
   assert.match(script, /profile_offset == profile_count - 1/)
+  assert.match(script, /checkpoint_results "profile/)
   assert.doesNotMatch(script, /--prune-images\n\s+--prefetch-images/)
 })
 

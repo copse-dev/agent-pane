@@ -66,6 +66,13 @@ order rotates by shard to counterbalance ordering effects; task images remain ca
 profiles and are pruned only after the worker's final profile. Single-profile runs continue to use
 the `profile` choice input.
 
+Every completed profile is sealed and uploaded before the worker starts its next profile, so a
+later failure does not discard earlier full-shard evidence. The workflow concurrency group uses a
+FIFO queue; repeated workflow dispatches run one fleet at a time instead of canceling an older
+pending run. For large shards, increase `volume_size_gb` so pinned task images can stay cached
+between profiles. `ttl_minutes` is only a self-delete backstop; the controller still tears each
+fleet down immediately on completion.
+
 Qwen inference stays on Scaleway's hosted Generative API. The worker Instances therefore do not
 need GPUs and the image contains no model weights. The default `BASIC3-X4C-16G` hosts provide Docker
 CPU, memory, and disk while API inference can proceed concurrently. All 89 pinned Terminal-Bench

@@ -35,6 +35,25 @@ steered_status=0
 seal_status=0
 upload_status=0
 
+checkpoint_results() {
+  local label="$1"
+  npm run bench:terminal:report || true
+  npm run bench:terminal:seal || seal_status=$?
+
+  if [[ -d bench-results/terminal-bench-capsules ]]; then
+    aws s3 cp bench-results/terminal-bench-capsules/ \
+      "s3://${SCW_OBJECT_STORAGE_BUCKET}/${SCW_OBJECT_STORAGE_PREFIX}/" \
+      --recursive \
+      --sse AES256 \
+      --only-show-errors \
+      --endpoint-url "${SCW_OBJECT_STORAGE_ENDPOINT}" || upload_status=$?
+  else
+    echo "terminal-bench worker: capsule directory was not created" >&2
+    upload_status=1
+  fi
+  echo "terminal-bench worker: checkpointed ${label}"
+}
+
 for ((profile_offset = 0; profile_offset < profile_count; profile_offset += 1)); do
   profile="${profiles[$profile_offset]}"
   export COPSE_TERMINAL_PROFILE="$profile"
@@ -53,7 +72,16 @@ for ((profile_offset = 0; profile_offset < profile_count; profile_offset += 1));
     suite_args+=(--task-names="${COPSE_TERMINAL_TASK_NAMES}")
   fi
   echo "terminal-bench worker: profile $((profile_offset + 1))/${profile_count} $profile"
-  npm run bench:terminal:suite -- "${suite_args[@]}" || benchmark_status=$?
+  npm run bench:terminal:suite -- "${suite_args[@]}"
+  suite_status=$?
+  checkpoint_results "profile $((profile_offset + 1))/${profile_count} $profile"
+  if (( suite_status != 0 )); then
+    benchmark_status=$suite_status
+    break
+  fi
+  if (( seal_status != 0 )); then
+    break
+  fi
 done
 
 if [[ -n "${BENCH_ANALYST_MODEL:-}" ]]; then
@@ -61,21 +89,7 @@ if [[ -n "${BENCH_ANALYST_MODEL:-}" ]]; then
   if [[ "${COPSE_TERMINAL_STEERED_RERUN:-1}" == "1" && "$analysis_status" == "0" ]]; then
     npm run bench:terminal:steered || steered_status=$?
   fi
-fi
-
-npm run bench:terminal:report || true
-npm run bench:terminal:seal || seal_status=$?
-
-if [[ -d bench-results/terminal-bench-capsules ]]; then
-  aws s3 cp bench-results/terminal-bench-capsules/ \
-    "s3://${SCW_OBJECT_STORAGE_BUCKET}/${SCW_OBJECT_STORAGE_PREFIX}/" \
-    --recursive \
-    --sse AES256 \
-    --only-show-errors \
-    --endpoint-url "${SCW_OBJECT_STORAGE_ENDPOINT}" || upload_status=$?
-else
-  echo "terminal-bench worker: capsule directory was not created" >&2
-  upload_status=1
+  checkpoint_results "analysis"
 fi
 
 if (( benchmark_status != 0 || analysis_status != 0 || steered_status != 0 || seal_status != 0 || upload_status != 0 )); then

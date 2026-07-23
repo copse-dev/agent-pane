@@ -67,10 +67,21 @@ on:
         required: true
         default: '600'
         type: string
+      ttl_minutes:
+        description: Instance self-delete backstop (60-1440 minutes)
+        required: true
+        default: '420'
+        type: string
+      volume_size_gb:
+        description: Worker root volume for cached task images (100-500 GiB)
+        required: true
+        default: '100'
+        type: string
 
 concurrency:
   group: terminal-bench-scaleway-fleet
   cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
@@ -92,6 +103,8 @@ jobs:
           STEERED_RERUN: ${{ inputs.steered_rerun }}
           MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
           MAX_COMMAND_TIMEOUT_SEC: ${{ inputs.max_command_timeout_sec }}
+          TTL_MINUTES: ${{ inputs.ttl_minutes }}
+          VOLUME_SIZE_GB: ${{ inputs.volume_size_gb }}
           ANALYST_MODEL: ${{ inputs.analyst_model }}
           BENCH_ANALYST_API_KEY: ${{ secrets.BENCH_ANALYST_API_KEY || secrets.SCW_GENERATIVE_API_KEY }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
@@ -143,6 +156,16 @@ jobs:
           if ! [[ "$MAX_COMMAND_TIMEOUT_SEC" =~ ^[0-9]+$ ]] || \
             [ "$MAX_COMMAND_TIMEOUT_SEC" -lt 120 ] || [ "$MAX_COMMAND_TIMEOUT_SEC" -gt 900 ]; then
             echo "::error::max_command_timeout_sec must be an integer from 120 through 900"
+            exit 2
+          fi
+          if ! [[ "$TTL_MINUTES" =~ ^[0-9]+$ ]] || \
+            [ "$TTL_MINUTES" -lt 60 ] || [ "$TTL_MINUTES" -gt 1440 ]; then
+            echo "::error::ttl_minutes must be an integer from 60 through 1440"
+            exit 2
+          fi
+          if ! [[ "$VOLUME_SIZE_GB" =~ ^[0-9]+$ ]] || \
+            [ "$VOLUME_SIZE_GB" -lt 100 ] || [ "$VOLUME_SIZE_GB" -gt 500 ]; then
+            echo "::error::volume_size_gb must be an integer from 100 through 500"
             exit 2
           fi
           required=(
@@ -339,6 +362,8 @@ jobs:
           SCW_ZONE: ${{ vars.SCW_TERMINAL_ZONE }}
           SECURITY_GROUP_ID: ${{ vars.SCW_TERMINAL_SECURITY_GROUP_ID }}
           STEERED_RERUN: ${{ inputs.steered_rerun }}
+          TTL_MINUTES: ${{ inputs.ttl_minutes }}
+          VOLUME_SIZE_GB: ${{ inputs.volume_size_gb }}
         run: |
           args=(
             run
@@ -347,8 +372,8 @@ jobs:
             --attempts "$ATTEMPTS"
             --scw-type "$SCW_TYPE"
             --scw-image "$BASE_IMAGE"
-            --volume-size-gb 100
-            --ttl-minutes 420
+            --volume-size-gb "$VOLUME_SIZE_GB"
+            --ttl-minutes "$TTL_MINUTES"
             --worker-image "$WORKER_IMAGE"
             --name "$FLEET_NAME"
             --object-prefix "$OBJECT_PREFIX"
