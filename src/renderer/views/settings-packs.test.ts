@@ -110,6 +110,30 @@ const demoPack: PackSummary = {
   ],
 }
 
+const modelFieldPack: PackSummary = {
+  id: 'copse.model-demo',
+  trust: 'first-party',
+  name: 'copse.model-demo',
+  enabled: true,
+  contributions: {
+    toolNames: [],
+    blockingHooks: [],
+    asyncHooks: [],
+    commandHooks: [],
+    promptBlocks: [],
+    ui: [],
+  },
+  settings: [
+    {
+      id: 'advisorModel',
+      kind: 'model',
+      title: 'Advisor model',
+      value: 'claude-opus-4-8',
+      default: 'claude-opus-4-8',
+    },
+  ],
+}
+
 const disabledUserPack: PackSummary = {
   id: 'sample.user',
   trust: 'user',
@@ -236,6 +260,38 @@ describe('settings → packs list', () => {
     const stringInput = list.querySelector<HTMLInputElement>('.pack-setting-string')
     assert.ok(stringInput)
     assert.equal(stringInput.value, 'hi')
+  })
+
+  it('renders a model setting field as the grouped model picker (a select, not a plain text/enum input)', async () => {
+    const list = await openPacks({ packs: [modelFieldPack] }, spy)
+    const modelSelect = list.querySelector<HTMLSelectElement>('.pack-setting-model')
+    assert.ok(modelSelect, 'a model field must render as a <select> (grouped model picker)')
+    assert.equal(modelSelect.tagName, 'SELECT')
+    assert.equal(modelSelect.dataset['settingKey'], 'advisorModel')
+    // It is not misrendered as the plain string/enum inputs.
+    assert.equal(list.querySelector('.pack-setting-string'), null)
+    assert.equal(list.querySelector('.pack-setting-enum'), null)
+  })
+
+  it('editing a model field persists the chosen id via packs:setSetting', async () => {
+    const list = await openPacks({ packs: [modelFieldPack] }, spy)
+    const modelSelect = list.querySelector<HTMLSelectElement>('.pack-setting-model')
+    assert.ok(modelSelect)
+    // The live catalogue is fetched async (and never resolves under the stub api),
+    // so add the target option ourselves before selecting it — the change handler
+    // reads select.value regardless of how the option got there.
+    const option = document.createElement('option')
+    option.value = 'lmstudio:qwen3-32b'
+    option.textContent = 'qwen3-32b'
+    modelSelect.append(option)
+    modelSelect.value = 'lmstudio:qwen3-32b'
+    modelSelect.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(spy.lastSetSetting, {
+      id: 'copse.model-demo',
+      key: 'advisorModel',
+      value: 'lmstudio:qwen3-32b',
+    })
   })
 
   it('toggling calls packs:setEnabled with the flipped state', async () => {

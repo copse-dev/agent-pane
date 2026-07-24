@@ -56,16 +56,34 @@ export interface PackPromptBlock {
   trust: 'trusted' | 'untrusted'
 }
 
-/** Field kinds a pack-scoped setting can declare (rendered generically in P3). */
-export type PackSettingKind = 'boolean' | 'string' | 'number' | 'enum'
+/**
+ * Field kinds a pack-scoped setting can declare (rendered generically in P3).
+ *
+ * A `model` field resolves the live configured-model catalogue *host-side* at
+ * read time and renders as the grouped model picker (Settings → Packs), so a
+ * model-parameterised pack owns its own model configuration instead of leaving
+ * hand-written `<select>` blocks stranded in the settings dialog. Its value is a
+ * model id string with an optional `default`; unlike `enum` it carries no static
+ * `options` array — the option list is dynamic and injected by the renderer from
+ * the same catalogue the footer/settings model pickers use.
+ *
+ * (A future `role` field kind — resolving a role registry — is a deliberate
+ * extension seam here; this phase ships only `model`.)
+ */
+export type PackSettingKind = 'boolean' | 'string' | 'number' | 'enum' | 'model'
 
 /** One pack-scoped setting, rendered generically in Settings (P3). */
 export interface PackSettingField {
   kind: PackSettingKind
   title: string
   description?: string
+  /** Default value (a model id string for `kind: 'model'`). */
   default?: boolean | string | number
-  /** Allowed values for an `enum` field. */
+  /**
+   * Allowed values for an `enum` field. NOT used by `model` (its option list is
+   * the dynamic model catalogue, resolved host-side at read time — never baked
+   * into the manifest).
+   */
   options?: readonly string[]
 }
 

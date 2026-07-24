@@ -118,6 +118,13 @@ export function normalizePackSettingValue(
     case 'string':
       if (typeof raw === 'string') return raw
       return typeof field.default === 'string' ? field.default : ''
+    case 'model':
+      // A model id is a string; normalize exactly like `string` (any stored id
+      // is honoured — the renderer keeps an offline/unknown id selectable — with
+      // the declared default model id, or blank, as the fallback). The dynamic
+      // catalogue is resolved renderer-side, so there is no `options` gate here.
+      if (typeof raw === 'string') return raw
+      return typeof field.default === 'string' ? field.default : ''
     case 'enum': {
       const options = field.options ?? []
       if (typeof raw === 'string' && options.includes(raw)) return raw

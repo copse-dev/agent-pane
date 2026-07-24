@@ -29,11 +29,19 @@ import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-summary.ts'
-import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
+import {
+  MODEL_COMPARISON_PACK_ID,
+  COMPARISON_MODEL_A_SETTING_ID,
+  COMPARISON_MODEL_B_SETTING_ID,
+  COMPARISON_JUDGE_MODEL_SETTING_ID,
+} from '@copse/agent/packs/model-comparison-pack.ts'
 import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
-import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import {
+  ADVISOR_STRATEGY_PACK_ID,
+  ADVISOR_MODEL_SETTING_ID,
+} from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
@@ -63,6 +71,9 @@ const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEn
 
 /** One-time bridge from the retired `piiRedactionEnabled` standalone setting. */
 const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
+
+/** One-time bridge from the retired top-level model settings now owned by packs. */
+const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -246,6 +257,70 @@ function readPackSettings(packId: string): Record<string, unknown> {
 }
 
 /**
+ * Read one pack-scoped setting value directly from storage, without constructing
+ * (or booting) the pack service. Exposed so host read sites that previously read
+ * a top-level model setting — `advisor-runner.ts`, `model-comparison-runner.ts` —
+ * can read the pack-owned value with no init-order coupling. Returns the raw
+ * persisted value (the caller coerces/trims); `undefined` when unset.
+ */
+export function readPackSettingValue(packId: string, key: string): unknown {
+  return readPackSettings(packId)[key]
+}
+
+/**
+ * Preserve the model choices users had before `advisorModel` /
+ * `comparisonModelA` / `comparisonModelB` / `comparisonJudgeModel` moved from
+ * top-level store keys onto their packs' `model` setting fields. Copies any
+ * existing top-level value into the owning pack's settings bag (without
+ * clobbering a value already written there), so the Settings → Packs picker and
+ * the runtime read sites agree and no user loses their configured models on
+ * upgrade. Idempotent (guarded by its own migration key); a role assignment in
+ * `roleModels` still takes precedence at read time and is left untouched.
+ */
+function migratePackModelSettings(): void {
+  if (storageGet(PACK_MODEL_SETTINGS_MIGRATION_KEY) === true) return
+
+  const moves: Array<{ packId: string; key: string; legacyKey: string }> = [
+    { packId: ADVISOR_STRATEGY_PACK_ID, key: ADVISOR_MODEL_SETTING_ID, legacyKey: 'advisorModel' },
+    {
+      packId: MODEL_COMPARISON_PACK_ID,
+      key: COMPARISON_MODEL_A_SETTING_ID,
+      legacyKey: 'comparisonModelA',
+    },
+    {
+      packId: MODEL_COMPARISON_PACK_ID,
+      key: COMPARISON_MODEL_B_SETTING_ID,
+      legacyKey: 'comparisonModelB',
+    },
+    {
+      packId: MODEL_COMPARISON_PACK_ID,
+      key: COMPARISON_JUDGE_MODEL_SETTING_ID,
+      legacyKey: 'comparisonJudgeModel',
+    },
+  ]
+
+  const bags = new Map<string, Record<string, unknown>>()
+  const bagFor = (packId: string): Record<string, unknown> => {
+    let bag = bags.get(packId)
+    if (!bag) {
+      bag = { ...readPackSettings(packId) }
+      bags.set(packId, bag)
+    }
+    return bag
+  }
+
+  for (const move of moves) {
+    const legacy = storageGet(move.legacyKey)
+    if (typeof legacy !== 'string' || legacy.trim() === '') continue
+    const bag = bagFor(move.packId)
+    if (bag[move.key] === undefined) bag[move.key] = legacy
+  }
+
+  for (const [packId, bag] of bags) storageSet(packSettingsKey(packId), bag)
+  storageSet(PACK_MODEL_SETTINGS_MIGRATION_KEY, true)
+}
+
+/**
  * The singleton pack service. Constructed lazily on first `getPackService()` so
  * host boot order (electron-store availability) is respected without an
  * explicit init call, and unit tests can create their own via `createPackService`.
@@ -335,6 +410,7 @@ export function getPackService(): PackService {
   migrateOkfMemoriesEnablement()
   migrateCiInvestigatorEnablement()
   migratePiiRedactionEnablement()
+  migratePackModelSettings()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

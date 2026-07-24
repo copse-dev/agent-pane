@@ -132,14 +132,15 @@
         "additionalProperties": false,
         "required": ["kind", "title"],
         "properties": {
-          "kind": { "enum": ["boolean", "string", "number", "enum"] },
+          "kind": { "enum": ["boolean", "string", "number", "enum", "model"] },
           "title": { "type": "string" },
           "description": { "type": "string" },
           "default": {
+            "description": "Default value. For a `model` field this is an optional default model id (string).",
             "type": ["boolean", "string", "number"]
           },
           "options": {
-            "description": "Allowed values for an `enum` field.",
+            "description": "Allowed values for an `enum` field. A `model` field takes no static options — its list is the live model catalogue resolved host-side at read time.",
             "type": "array",
             "items": { "type": "string" }
           }

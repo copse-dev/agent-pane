@@ -21,8 +21,13 @@ export type PackTrustLevel = 'first-party' | 'user'
 /** UI contribution levels from the plan (1 = card, 2 = named panel, 3 = real view). */
 export type PackUiLevel = 1 | 2 | 3
 
-/** Kind of value a pack-scoped setting field carries (rendered generically). */
-export type PackSettingKind = 'boolean' | 'string' | 'number' | 'enum'
+/**
+ * Kind of value a pack-scoped setting field carries (rendered generically). Kept
+ * in lockstep with `PackSettingKind` on the agent side. A `model` field is a
+ * model-id string rendered as the grouped model picker; its option list is the
+ * live model catalogue resolved by the renderer, never shipped in the manifest.
+ */
+export type PackSettingKind = 'boolean' | 'string' | 'number' | 'enum' | 'model'
 
 /** One pack-scoped setting field, mirrors `PackSettingField` on the agent side. */
 export interface PackSettingFieldSummary {
@@ -31,9 +36,9 @@ export interface PackSettingFieldSummary {
   kind: PackSettingKind
   title: string
   description?: string
-  /** Default value used when nothing is persisted for this pack + key. */
+  /** Default value used when nothing is persisted for this pack + key (a model id for `kind: 'model'`). */
   default?: boolean | string | number
-  /** Options for an `enum` field (`kind: 'enum'` only). */
+  /** Options for an `enum` field (`kind: 'enum'` only; a `model` field's options are resolved live). */
   options?: readonly string[]
   /** The current persisted value, or the default when nothing is stored yet. */
   value: boolean | string | number
