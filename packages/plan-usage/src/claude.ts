@@ -126,12 +126,11 @@ function parseLimitsArray(raw: unknown, nowMs: number): PlanWindow[] {
     const kind = typeof entry['kind'] === 'string' ? entry['kind'] : null
     const resetsAt = toIsoTimestamp(entry['resets_at'] ?? entry['resetsAt'], nowMs)
     const severity = parseSeverity(entry['severity'])
-    const inactive = entry['is_active'] === false
 
     if (kind === 'session') {
       windows.push({
         id: 'five_hour',
-        label: inactive ? '5-hour (inactive)' : '5-hour',
+        label: '5-hour',
         usedPercent,
         resetsAt,
         severity,
@@ -141,7 +140,7 @@ function parseLimitsArray(raw: unknown, nowMs: number): PlanWindow[] {
     if (kind === 'weekly_all') {
       windows.push({
         id: 'seven_day',
-        label: inactive ? 'Weekly (inactive)' : 'Weekly',
+        label: 'Weekly',
         usedPercent,
         resetsAt,
         severity,
@@ -156,9 +155,8 @@ function parseLimitsArray(raw: unknown, nowMs: number): PlanWindow[] {
           ? model['display_name'].trim()
           : ''
       const base = name ? `Weekly ${name}` : 'Weekly (scoped)'
-      const label = inactive ? `${base} (inactive)` : base
       const id = name ? `seven_day_${slug(name)}` : 'seven_day_scoped'
-      windows.push({ id, label, usedPercent, resetsAt, severity })
+      windows.push({ id, label: base, usedPercent, resetsAt, severity })
     }
   }
   return windows
