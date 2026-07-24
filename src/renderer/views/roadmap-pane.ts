@@ -1,6 +1,7 @@
 import { el, clear, scrollIntoViewIfNeeded } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
 import {
@@ -1712,7 +1713,17 @@ export function mountRoadmapPane(
   // fired before this pane existed — so catch up here.
   if (roadmapModeActive(store)) void refresh()
 
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('roadmap', {
+    capture: () => ({ selectedId }),
+    apply: (seed) => {
+      if (!seed || typeof seed !== 'object') return
+      const next = seed as { selectedId?: string | null }
+      if (next.selectedId) store.emit('roadmap_reveal', next.selectedId)
+    },
+  })
+
   return () => {
+    unregisterPopoutSeed()
     unsubs.forEach((u) => {
       u()
     })
