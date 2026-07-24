@@ -2,7 +2,7 @@
 
 **Status: In progress (Phase 1).** Lets Copse drive an external **ACP agent on
 the remote host** of an SSH workspace, instead of blocking ACP entirely there.
-The agent process runs where the code lives; Copse stays the ACP *Client* (UI,
+The agent process runs where the code lives; Copse stays the ACP _Client_ (UI,
 approvals, diff queue) locally. Gated behind a single opt-in — `acpOverSshEnabled`
 — in Settings → ACP agents.
 
@@ -25,8 +25,8 @@ possible, and the evidence points hard at one of them:
      revealing one. Zed launches the ACP agent **locally** and rewrites the
      agent's MCP server command into an SSH tunnel
      (`"command": "ssh", "args": ["-o","ControlMaster=no", …, "coder@remote", …]`).
-     The reporter: *"This would be great if the agent was running locally and
-     just communicating over the SSH connection, but it's not"* — and the
+     The reporter: _"This would be great if the agent was running locally and
+     just communicating over the SSH connection, but it's not"_ — and the
      proxying breaks. Their proposed fix: **run the agent on the remote host and
      pass raw MCP config so the agent launches MCP itself, remotely.**
    - [zed#47910](https://github.com/zed-industries/zed/issues/47910) (S1, "many
@@ -40,7 +40,7 @@ possible, and the evidence points hard at one of them:
    and its MCP servers launch remotely. This is the direction Zed's community is
    pushing toward.
 
-Zed also confirms the *protocol-native* remote transport (Streamable
+Zed also confirms the _protocol-native_ remote transport (Streamable
 HTTP/WebSocket) is still WIP — "every ACP agent currently runs as a local
 subprocess." So there is no shipped reference to copy; we take the lessons, not
 the code.
