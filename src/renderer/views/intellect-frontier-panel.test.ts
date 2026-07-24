@@ -69,10 +69,9 @@ describe('renderFrontierSvg', () => {
 
     const poly = svg.querySelector('polyline.frontier-line')
     assert.ok(poly)
-    const linePts = poly
-      .getAttribute('points')
-      .split(' ')
-      .map((pair) => pair.split(',').map(Number))
+    const pointsAttr = poly.getAttribute('points')
+    assert.ok(pointsAttr)
+    const linePts = pointsAttr.split(' ').map((pair) => pair.split(',').map(Number))
     const lineYAt = (px: number): number | null => {
       for (let i = 0; i + 1 < linePts.length; i++) {
         const [ax, ay] = linePts[i] as [number, number]
@@ -87,10 +86,12 @@ describe('renderFrontierSvg', () => {
     // Every frontier point keeps its label — lifting must not drop any.
     assert.equal(labels.length, 5)
     for (const label of labels) {
+      const text = label.textContent
+      assert.ok(text)
       const lx = Number(label.getAttribute('x'))
       const ly = Number(label.getAttribute('y'))
       const anchor = label.getAttribute('text-anchor')
-      const w = 10 + label.textContent.length * 5.2
+      const w = 10 + text.length * 5.2
       const x0 = anchor === 'end' ? lx - w : lx
       const x1 = anchor === 'end' ? lx : lx + w
       // Sample the line across the label's horizontal extent; it must never fall
@@ -98,10 +99,7 @@ describe('renderFrontierSvg', () => {
       for (let sx = x0; sx <= x1; sx += 2) {
         const lineY = lineYAt(sx)
         if (lineY === null) continue
-        assert.ok(
-          lineY <= ly - 8 || lineY >= ly + 2,
-          `frontier line runs through label "${label.textContent}"`,
-        )
+        assert.ok(lineY <= ly - 8 || lineY >= ly + 2, `frontier line runs through label "${text}"`)
       }
     }
   })
