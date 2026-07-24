@@ -42,6 +42,8 @@ on:
           - main-legacy
           - pr-1149
           - product-aligned
+          - product-aligned@2
+          - product-aligned@3
       profiles:
         description: Optional comma-separated profiles to run sequentially on one fleet
         required: false
@@ -145,7 +147,7 @@ jobs:
           declare -A seen_profiles=()
           for profile_id in "${profile_ids[@]}"; do
             case "$profile_id" in
-              main-legacy|pr-1149|product-aligned) ;;
+              main-legacy|pr-1149|product-aligned|main-legacy@1|pr-1149@1|product-aligned@1|product-aligned@2|product-aligned@3) ;;
               *) echo "::error::unsupported Terminal-Bench profile: $profile_id"; exit 2 ;;
             esac
             if [ -n "${seen_profiles[$profile_id]:-}" ]; then

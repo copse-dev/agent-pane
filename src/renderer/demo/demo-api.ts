@@ -262,6 +262,9 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       onShowChanges: subscribe,
       onShowBrowser: subscribe,
       onKeyboardShortcuts: subscribe,
+      onUiScaleZoomIn: subscribe,
+      onUiScaleZoomOut: subscribe,
+      onUiScaleReset: subscribe,
     },
     settings: {
       get: (key: string) => resolved(settings.get(key)),

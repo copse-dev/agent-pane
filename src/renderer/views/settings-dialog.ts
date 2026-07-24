@@ -6,6 +6,8 @@ import {
   DEFAULT_THEME_PREFERENCE,
 } from '@shared/types/state.ts'
 import { resolveTheme } from '../dom/theme.ts'
+import { applyUiScale } from '../dom/ui-scale.ts'
+import { clampUiScale, normalizeUiScale } from '@shared/ui-scale.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   APP_ICON_VARIANTS,
@@ -138,6 +140,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
+  { name: 'preferAcpOverCloudAgent', kind: 'checkbox', default: true, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   {
     name: 'subagentsEnabled',
@@ -419,6 +422,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
                 Push directly to the current branch instead of a new branch
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="preferAcpOverCloudAgent" />
+                Prefer ACP agent over Cloud Agent (uses subscription instead of API key billing)
               </label>
             </fieldset>
 
@@ -852,7 +859,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
           <section class="settings-section" data-section="appearance">
             <h3>Appearance</h3>
-            <p class="settings-section-desc">Theme, app icon, editor font size, and window layout.</p>
+            <p class="settings-section-desc">
+              Theme, app icon, interface scale, editor font size, and window layout.
+            </p>
 
             <fieldset>
               <legend>Display</legend>
@@ -865,9 +874,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 </select>
               </label>
               <label>
-                Font size
+                Interface scale
+                <input type="number" name="uiScale" min="0.75" max="1.5" step="0.05" />
+              </label>
+              <p class="field-hint">
+                Scales UI type and spacing (0.75–1.5). Also adjustable with ⌘+/- (Ctrl+/-), ⌘0, or a
+                trackpad pinch.
+              </p>
+              <label>
+                Editor &amp; terminal font size
                 <input type="number" name="fontSize" min="12" max="20" step="1" />
               </label>
+              <p class="field-hint">
+                Monaco and terminal font size in pixels, applied on top of interface scale.
+              </p>
               <label>
                 Right panel position
                 <select name="rightPanelPosition">
@@ -2289,6 +2309,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
       )
+      ;(form.elements.namedItem('uiScale') as HTMLInputElement).value = String(
+        store.getState().uiScale,
+      )
       ;(form.elements.namedItem('autoPortraitRightPanel') as HTMLInputElement).checked =
         store.getState().autoPortraitRightPanel
       ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
@@ -2360,6 +2383,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // `theme` is the concrete value panes render; `system` resolves against the OS.
       const theme = resolveTheme(themePreference)
       const fontSize = parseInt(data.get('fontSize') as string, 10)
+      const uiScaleRaw = parseFloat(data.get('uiScale') as string)
+      const uiScale = Number.isFinite(uiScaleRaw)
+        ? clampUiScale(uiScaleRaw)
+        : normalizeUiScale(store.getState().uiScale)
       const autoPortraitRightPanel = data.get('autoPortraitRightPanel') === 'on'
       const rightPanelPositionRaw = data.get('rightPanelPosition')
       const rightPanelPosition = isRightPanelPosition(rightPanelPositionRaw)
@@ -2400,6 +2427,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await saveSimpleFields(data, api)
       await api.settings.set('theme', themePreference)
       await api.settings.set('fontSize', fontSize)
+      await api.settings.set('uiScale', uiScale)
       await api.settings.set('autoPortraitRightPanel', autoPortraitRightPanel)
       await api.settings.set('rightPanelPosition', rightPanelPosition)
       await api.settings.set('uiAccentColor', uiAccentColor)
@@ -2440,6 +2468,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         theme,
         themePreference,
         fontSize,
+        uiScale,
         autoPortraitRightPanel,
         rightPanelPosition,
         openLinksInBuiltInBrowser: data.get('openLinksInBuiltInBrowser') === 'on',
@@ -2451,6 +2480,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       document.documentElement.dataset['theme'] = theme
       applyUiAccent(uiAccentColor)
       applyUiTint(uiTintColor, uiTintStrength)
+      applyUiScale(uiScale)
       closeSettingsDialog()
     })()
   })

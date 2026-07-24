@@ -113,6 +113,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
   theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
+  // Whole-UI multiplier for design tokens (--ui-scale). Independent of
+  // fontSize (editor/terminal); see src/shared/ui-scale.ts.
+  uiScale: z.number().min(0.75).max(1.5),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   // Interaction colour for links, primary actions, selections, and chat
@@ -185,6 +188,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
+  // When true (default) and the user selects Claude Cloud Agent
+  // (remote-agent:anthropic, API-key-billed), redirect to an enabled ACP Claude
+  // agent if one is registered — routing through the subscription login instead
+  // of the API key so turns count against plan headroom, not API credit.
+  preferAcpOverCloudAgent: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),

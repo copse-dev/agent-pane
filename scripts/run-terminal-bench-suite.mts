@@ -19,6 +19,7 @@ import {
   terminalBenchDiskSpaceError,
   terminalBenchPrefetchMinimumFreeDiskBytes,
   terminalBenchRequestedTaskNames,
+  terminalBenchResultsRoot,
   terminalBenchShardEntries,
 } from './lib/terminal-bench.mts'
 
@@ -31,7 +32,7 @@ const MAX_CONSECUTIVE_FULLY_INVALID_TASKS = 3
 
 async function storedResults(): Promise<StoredResult[]> {
   const results: StoredResult[] = []
-  for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) {
+  for await (const path of glob(resolve(terminalBenchResultsRoot(), '*/*/result.json'))) {
     try {
       results.push({ path, value: JSON.parse(await readFile(path, 'utf8')) })
     } catch (error) {

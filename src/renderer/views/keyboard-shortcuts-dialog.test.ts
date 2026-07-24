@@ -56,6 +56,9 @@ describe('keyboard shortcuts dialog (Cmd/Ctrl+/)', () => {
     )
     assert.ok(labels.includes('Keyboard shortcuts'))
     assert.ok(labels.includes('New thread'))
+    assert.ok(labels.includes('Zoom interface in'))
+    assert.ok(labels.includes('Zoom interface out'))
+    assert.ok(labels.includes('Reset interface zoom'))
   })
 
   it('opens and closes via the exported helpers', () => {

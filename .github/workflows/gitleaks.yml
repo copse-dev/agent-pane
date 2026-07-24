@@ -42,6 +42,13 @@ jobs:
           echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
           tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
           "${RUNNER_TEMP}/gitleaks" version
+      # Default `gitleaks git` implies `--all --full-history`, which also walks
+      # every ref fetched by `fetch-depth: 0` — including machine-managed branches
+      # like `demo-previews` whose minified bundles trip entropy heuristics and
+      # fail unrelated PR tips (seen on #1192 via commit 22623c71). Keep the same
+      # history/diff filters, but limit the walk to the checked-out tip (PR merge
+      # commit or `main`) so preview artifacts cannot poison other scans.
       - name: Scan repository history
         run: |
-          "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner .
+          "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner \
+            --log-opts="--full-history --diff-filter=tuxdb HEAD" .
