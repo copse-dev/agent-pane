@@ -35,7 +35,7 @@ describe('primary-chat model labels', () => {
     assert.equal(document.querySelectorAll('.message-model').length, 0)
   })
 
-  it('shows a model label on each assistant turn once two models appear', () => {
+  it('shows a model label at each model-segment boundary once two models appear', () => {
     const store = createStore()
     const threadId = createThread(store)
     addMessage(store, threadId, 'user', 'one')
@@ -52,6 +52,46 @@ describe('primary-chat model labels', () => {
 
     const labels = [...document.querySelectorAll('.message-model')].map((n) => n.textContent)
     assert.deepEqual(labels, ['Claude Sonnet 4.6', 'qwen/qwen3.6-35b-a3b · local'])
+  })
+
+  it('omits labels on same-model continuations after a switch', () => {
+    const store = createStore()
+    const threadId = createThread(store)
+    addMessage(store, threadId, 'user', 'one')
+    addMessage(store, threadId, 'assistant', 'sonnet a', undefined, undefined, {
+      model: 'claude-sonnet-4-6',
+    })
+    addMessage(store, threadId, 'user', 'two')
+    addMessage(store, threadId, 'assistant', 'sonnet b', undefined, undefined, {
+      model: 'claude-sonnet-4-6',
+    })
+    addMessage(store, threadId, 'user', 'three')
+    addMessage(store, threadId, 'assistant', 'local a', undefined, undefined, {
+      model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+    })
+    addMessage(store, threadId, 'user', 'four')
+    addMessage(store, threadId, 'assistant', 'local b', undefined, undefined, {
+      model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+    })
+    addMessage(store, threadId, 'user', 'five')
+    addMessage(store, threadId, 'assistant', 'sonnet again', undefined, undefined, {
+      model: 'claude-sonnet-4-6',
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountConversation(host, store, fakeApi())
+
+    const labeled = [...document.querySelectorAll('.msg-assistant')].map((msgEl) => {
+      const label = msgEl.querySelector('.message-model')
+      return label?.textContent ?? null
+    })
+    assert.deepEqual(labeled, [
+      'Claude Sonnet 4.6',
+      null,
+      'qwen/qwen3.6-35b-a3b · local',
+      null,
+      'Claude Sonnet 4.6',
+    ])
   })
 
   it('does not count missing model provenance toward the multi-model gate', () => {
