@@ -258,6 +258,25 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
     }
   }
 
+  // The active project's threads straight from the store — instantly available
+  // and authoritative for that project (it may hold a brand-new thread the
+  // on-disk catalog hasn't recorded yet). `updatedAt` is 0 because the store
+  // Thread carries no timestamp; the catalog supplies real ones for ordering.
+  function storeThreadHits(): ThreadHit[] {
+    const { projects, threads, activeProjectId } = store.getState()
+    const active = projects.find((p) => p.id === activeProjectId)
+    if (!active) return []
+    return threads.map((t) => ({
+      threadId: t.id,
+      projectId: active.id,
+      projectName: projectDisplayName(active),
+      title: t.title,
+      updatedAt: 0,
+    }))
+  }
+
+  const threadKey = (h: ThreadHit): string => `${h.projectId} ${h.threadId}`
+
   async function loadThreads(): Promise<void> {
     const token = ++threadToken
     const { projects } = store.getState()
@@ -270,7 +289,7 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
       ),
     )
     if (token !== threadToken) return // superseded by a newer open
-    threadHits = perProject
+    const catalogHits = perProject
       .flatMap(({ project, hits }) =>
         hits.map((hit): ThreadHit => ({
           threadId: hit.id,
@@ -281,6 +300,12 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
         })),
       )
       .sort((a, b) => b.updatedAt - a.updatedAt)
+    // Merge rather than replace: keep the catalog's timestamp-sorted set, then
+    // append any live active-project thread the catalog hasn't recorded yet, so
+    // known threads never vanish while the catalog is empty or still rebuilding.
+    const seen = new Set(catalogHits.map(threadKey))
+    const extras = storeThreadHits().filter((h) => !seen.has(threadKey(h)))
+    threadHits = [...catalogHits, ...extras]
     if (dialog.open) runQuery(input.value)
   }
 
@@ -315,18 +340,8 @@ export function mountCommandPalette(store: AppStore, api: ApiClient): void {
     selectedIdx = 0
     // Seed threads synchronously from what the store already holds so the
     // palette is useful on the first frame; the cross-project catalog fetch
-    // then replaces this with the full, timestamp-sorted set.
-    const { projects, threads } = store.getState()
-    const activeProject = projects.find((p) => p.id === store.getState().activeProjectId)
-    threadHits = activeProject
-      ? threads.map((t): ThreadHit => ({
-          threadId: t.id,
-          projectId: activeProject.id,
-          projectName: projectDisplayName(activeProject),
-          title: t.title,
-          updatedAt: 0,
-        }))
-      : []
+    // then folds in every other project's threads (timestamp-sorted).
+    threadHits = storeThreadHits()
     dialog.showModal()
     input.focus()
     runQuery('')
