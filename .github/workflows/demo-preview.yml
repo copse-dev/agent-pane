@@ -103,6 +103,9 @@ jobs:
           rm -rf "previews-branch/pr-${PR}"
           mkdir -p "previews-branch/pr-${PR}"
           cp -R dist/demo/. "previews-branch/pr-${PR}/"
+          # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
+          # and high-entropy map contents fail Secret scan on unrelated tips.
+          find "previews-branch/pr-${PR}" -type f -name '*.map' -delete
           printf '%s\n' "$SHA" > "previews-branch/pr-${PR}/.head-sha"
           git -C previews-branch add "pr-${PR}"
           if git -C previews-branch diff --cached --quiet; then
