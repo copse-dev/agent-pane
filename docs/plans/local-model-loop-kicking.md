@@ -33,9 +33,11 @@ Three gaps show up specifically with small local weights:
    that loops on step 3 of a near-empty context gets no loop nudge and no
    force-finalize — only the reasoning-runaway path can fire, and only if the
    stream actually hits the token cap.
-2. **No repeated-_reasoning_ detection.** Duplicate _tool calls_ are
-   fingerprinted; repeated near-identical _reasoning/assistant text_ — a classic
-   small-model failure — is not caught except indirectly via the per-stream cap.
+2. **No reasoning-churn detection.** Duplicate _tool calls_ are fingerprinted,
+   but nothing watches the _reasoning stream itself_ — not the volume of thinking
+   before the model acts, not the backtrack/restart phrasing that dominates
+   small-model loops, not near-duplicate reasoning blocks. It is caught only
+   indirectly, once the per-stream output cap trips.
 3. **Thresholds and streak limits are global constants.** `run-agent-loop.ts`
    already accepts per-run recovery knobs (`reasoningRunawayRecoveryOutputTokens`,
    `reasoningRunawayRecoveryNudge`, `reasoningRunawayTextToleranceChars`) but
@@ -55,8 +57,29 @@ Add an optional field to `LocalModelCapability` in
 export interface LoopKickingProfile {
   /** Multiplier on the pressure-gated step thresholds (<1 = kick sooner). */
   stepThresholdScale?: number
-  /** Fire the loop nudge on N identical-reasoning repeats, independent of pressure. */
+
+  // Signal A — pre-action reasoning budget (volume, not wall-clock).
+  /**
+   * Kick once cumulative reasoning tokens since the last *productive* step
+   * (a tool call OR a final answer) exceed this. Hardware-independent: a model
+   * that thinks this much without acting is stuck whether it took 5s or 5min.
+   */
+  reasoningBudgetTokens?: number
+
+  // Signal B — backtrack-marker density (lexical, model-family specific).
+  /**
+   * Restart/backtrack phrases this family emits while circling, matched
+   * case-insensitively (e.g. "wait", "but wait", "let me reconsider").
+   */
+  backtrackMarkers?: readonly string[]
+  /** Kick once marker hits within the rolling reasoning window reach this. */
+  backtrackMarkerLimit?: number
+
+  // Signal C — near-duplicate reasoning (structural backstop).
+  /** Kick on N near-identical reasoning blocks (verbatim churn only). */
   reasoningRepeatLimit?: number
+
+  // Escalation + recovery.
   /** Override MAX_REASONING_RUNAWAY_STREAK for this model. */
   maxReasoningRunawayStreak?: number
   /** Per-run recovery knobs forwarded to runAgentLoop. */
@@ -72,19 +95,62 @@ Seed conservative values for the Qwen / DeepSeek-Coder entries already in
 A pure helper `loopKickingProfile(modelId): LoopKickingProfile | null` (sibling to
 `localModelRoleHint`) resolves it, data-driven, no id matching in logic.
 
-### 2. Early-firing repeated-reasoning detector
+### 2. What "circling" looks like, and the signals we detect
 
-New primitive in `agent-loop-guards.ts`, symmetric with the tool fingerprint:
+Circling on small local models is rarely verbatim repetition — it is _semantic
+churn_: the model re-opens a decision it already made, thinks at length, and
+never acts. So the detector is three complementary signals, evaluated at the
+step boundary and during the reasoning stream. All are cheap (string/counter
+ops, no extra LLM calls), and for a profiled model **any one** tripping fires
+the loop nudge regardless of pressure.
 
-- `reasoningFingerprint(text)` — normalized (whitespace-collapsed, lowercased,
-  length-capped) hash of an assistant/reasoning chunk.
-- A short rolling window on the loop state (reuse the `recentFingerprints`
-  pattern). When the same reasoning fingerprint recurs `reasoningRepeatLimit`
-  times, the `loopNudgeHook` fires **regardless of pressure**.
+Each signal maps to a new `StreamCutReason` (extending
+`packages/agent/src/stream-cut-record.ts`, which today has only
+`reasoning_runaway_cap`), so every kick is persisted to `stream-stats.jsonl`
+via the existing `recordStreamCut` path — reusing the cut-reasoning-to-stream-
+stats infra that landed with #489. The measurement substrate already exists;
+this plan adds detectors + cut reasons on top of it, and they become observable
+for eval for free.
 
-This makes the loop nudge reachable early — closing gap #1 and #2 together —
-without touching the frontier-model path, because `reasoningRepeatLimit` is only
-set from a local profile.
+**Signal A — pre-action reasoning budget** (answers _"how much reasoning before
+a tool call"_). New loop counter `reasoningTokensSinceAction`, reset to 0 on
+every _productive_ step (a tool call **or** a final answer) and incremented each
+stream by `streamReasoningChars`→tokens (the same estimate `StreamCutRecord`
+already carries). When it crosses `reasoningBudgetTokens`, kick
+(`cutReason: 'reasoning_budget'`). This is a **volume** budget, deliberately not
+a timer — see below.
+
+**Signal B — backtrack-marker density** (answers _"common terms Qwen uses when
+it's circling"_). Qwen / QwQ / Qwen3-thinking / R1-family loops are dominated by
+restart markers. Per-profile `backtrackMarkers` counted case-insensitively over
+the rolling reasoning window; when hits reach `backtrackMarkerLimit`, kick
+(`cutReason: 'backtrack_churn'`). Seed set for the Qwen entries: `wait`,
+`but wait`, `hold on`, `actually`, `let me reconsider`, `let me re-examine`,
+`alternatively`, `on second thought`, `hmm`. Markers are profile _data_, so
+frontier models (no profile) are untouched and the list is tunable per family
+with no code change. This catches the churn fingerprinting misses — lexically
+varied but marker-dense.
+
+**Signal C — near-duplicate reasoning** (structural backstop). The original
+idea, demoted: `reasoningFingerprint(text)` — a normalized (whitespace-collapsed,
+lowercased, length-capped) hash of a reasoning chunk over a short rolling window
+(reuse the `recentFingerprints` pattern). N repeats → kick
+(`cutReason: 'reasoning_repeat'`). Kept only for literal paragraph re-emission;
+**insufficient alone**, because real circling seldom repeats verbatim.
+
+**Escalation.** First trip → `loopNudgeHook` (soft kick, pushed as a user turn).
+Repeated trips within the run reuse the existing reasoning-runaway streak /
+give-up machinery, capped by `maxReasoningRunawayStreak`, ending in a forced
+text answer.
+
+**Why not a wall-clock timer.** Rejected. Local models are legitimately slow
+(low tok/s on large weights), so wall-clock conflates "slow hardware" with
+"stuck" and would false-kick a model making steady progress. Every signal above
+is token / step / lexical — hardware-independent. The only time bound stays the
+existing `runDeadline`.
+
+Together these close gaps #1 and #2 without touching the frontier-model path,
+because every threshold above is set only from a local profile.
 
 ### 3. Wire the profile through the call site
 
@@ -108,12 +174,17 @@ populating the currently-dead recovery knobs.
 
 ## Testing
 
-- Unit: `loopKickingProfile` resolution; `reasoningFingerprint` normalization
-  (near-identical texts collide, distinct ones don't); `shouldInjectLoopNudge`
-  with `thresholdScale` and with `reasoningRepeatLimit` at zero pressure.
-- Loop: extend `run-agent-loop.test.ts` / `agent-loop-escalation.test.ts` — a
-  local profile kicks on repeated reasoning at low fill ratio; a frontier model
-  (no profile) stays byte-identical to current fixtures.
+- Unit — `loopKickingProfile` resolution; and one test per signal:
+  - **A**: `reasoningTokensSinceAction` resets on a tool call and on a final
+    answer, and crossing `reasoningBudgetTokens` kicks.
+  - **B**: marker counter is case-insensitive over the window; distinct-but-
+    marker-dense text kicks, clean prose of the same length does not.
+  - **C**: `reasoningFingerprint` normalization — near-identical texts collide,
+    distinct ones don't; N repeats kick.
+- Loop — extend `run-agent-loop.test.ts` / `agent-loop-escalation.test.ts`: each
+  signal fires at low fill ratio for a profiled model and emits the matching
+  `StreamCutReason`; a frontier model (no profile) stays byte-identical to
+  current fixtures.
 
 ## Rollout
 
