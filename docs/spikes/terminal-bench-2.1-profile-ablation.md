@@ -1,7 +1,8 @@
 # Terminal-Bench 2.1 profile ablation
 
-Status: two complete attempts collated; `main-legacy@1` retained as the default. A corrected
-`product-aligned@2` targeted follow-up is the next experiment.
+Status: two complete full-suite attempts and the corrected `product-aligned@2` targeted follow-up
+are collated. `main-legacy@1` remains the default; product-aligned v2 is the only candidate worth
+carrying into a broader screen.
 
 ## Evidence set
 
@@ -100,6 +101,20 @@ The corrected `product-aligned@2`:
 Historical `product-aligned@1` profile metadata and hashes remain loadable. The unversioned
 `product-aligned` CLI/workflow selection now resolves to v2.
 
+## Relationship to PR #1149
+
+Product-aligned v2 reused one capability hypothesis from #1149: exposing `write_file` alongside
+`run_shell` so output finalization does not depend on shell quoting. It did not reuse the #1149
+implementation or its benchmark-specific control policy. V2 changed the tool to accept
+workspace-relative or contained absolute paths under Harbor's discovered working directory;
+#1149's retained tool is rooted at `/app`.
+
+Product-aligned v2 deliberately excludes #1149's requested-output extraction, provider-forced
+constrained write, one-call recovery gate, validation-evidence warnings, and SIGINT/cancellation
+warnings. Its other distinguishing behavior comes from regular-product semantics: nonzero shell
+exits are error tool results, recovery nudges remain generic, and the prompt asks only for brief
+inspection, concrete edits, and focused verification.
+
 ## Targeted follow-up
 
 Run `code-from-image`, `fix-code-vulnerability`, `prove-plus-comm`, and `query-optimize` with
@@ -118,8 +133,53 @@ inspected `product-aligned@2` trajectory did write and compile the requested Coq
 actual `/workspace`, which validates the path diagnosis but is not benchmark evidence.
 
 The corrected fleet retains a shared host results parent at the same absolute path inside every
-worker and selects a shard-specific `COPSE_TERMINAL_RESULTS_ROOT` below it. A one-task oracle smoke
-must produce reward 1 before redispatching the targeted matrix.
+worker and selects a shard-specific `COPSE_TERMINAL_RESULTS_ROOT` below it. The one-task
+[reward smoke 30057935988](https://github.com/copse-dev/agent-pane/actions/runs/30057935988)
+produced official reward 1 before the matrix was redispatched.
+
+### Corrected v2 result
+
+[Run 30058297595](https://github.com/copse-dev/agent-pane/actions/runs/30058297595) completed all
+24 trials, retained every capsule, and verified fleet teardown. All trials had an official reward
+and none timed out or failed infrastructure.
+
+| Profile             | Passed attempts | Tasks solved | Macro reward | Median total tokens | Median elapsed | Median tool calls |
+| ------------------- | --------------: | -----------: | -----------: | ------------------: | -------------: | ----------------: |
+| `main-legacy@1`     |             5/8 |          3/4 |        0.625 |             106,501 |           96 s |              25.5 |
+| `pr-1149@1`         |             4/8 |          3/4 |        0.500 |             355,508 |          209 s |                39 |
+| `product-aligned@2` |         **7/8** |      **4/4** |    **0.875** |             126,648 |       **90 s** |              26.5 |
+
+| Task                     | `main-legacy@1` | `pr-1149@1` | `product-aligned@2` |
+| ------------------------ | --------------: | ----------: | ------------------: |
+| `code-from-image`        |             1/2 |         1/2 |             **2/2** |
+| `fix-code-vulnerability` |             2/2 |         2/2 |                 2/2 |
+| `prove-plus-comm`        |             2/2 |         1/2 |             **2/2** |
+| `query-optimize`         |             0/2 |         0/2 |             **1/2** |
+
+Against main, the task-level reward difference was -0.125 for #1149 with bootstrap 95% CI
+`[-0.375, 0]`, and +0.250 for product-aligned v2 with CI `[0, 0.5]`. V2 used 18.9% more median
+tokens than main but 6.4% less median elapsed time. The interval still includes zero and this is a
+post-selected development cohort, so the result is directional evidence rather than a default
+change.
+
+The mechanisms are nevertheless informative. Product-aligned was the only profile without a
+missing `code-from-image` output. The #1149 validation bundle still produced an unfinished Coq
+proof. Five of six `query-optimize` trials produced correct but insufficiently fast SQL; the sole
+v2 solve restricted the synset aggregation to qualifying words, but required 841,223 tokens,
+84 tool calls, and 1,063 seconds. That is a real solve and a useful trajectory, not evidence that
+the expensive search pattern should become normal agent behavior.
+
+### Recommended next comparison
+
+Drop `pr-1149@1` from further broad runs. A one-attempt `product-aligned@2` screen over the other
+85 tasks can be compared descriptively with the existing two-attempt main corpus to locate likely
+wins and regressions without paying for another baseline immediately. Because those runs differ in
+source commit and time, that screen must not be used for the default-selection confidence claim.
+
+If the broad screen remains positive, run `main-legacy@1` and `product-aligned@2` contemporaneously
+on the precommitted 12-task cohort for the confirmatory comparison. Re-running both arms is the
+cleanest design; reusing the two historical main attempts is acceptable only as a cheaper
+exploratory shortcut because the legacy profile hash did not cover every shared adapter detail.
 
 The next factorial should separate four hypotheses instead of changing them as a bundle:
 
@@ -130,3 +190,16 @@ The next factorial should separate four hypotheses instead of changing them as a
 
 Requested-path extraction, provider-forced recovery, and SIGINT-specific warnings remain frozen in
 `pr-1149@1`. They should not enter the regular agent without new held-out official-reward evidence.
+
+## Compact evidence retention
+
+This note is the canonical human-readable findings record for the 2.1 study. It retains run and
+commit links, fixed configuration, profile hashes through the linked manifests, aggregate rewards
+and costs, confidence intervals, infrastructure exclusions, and mechanism-level conclusions. It
+does not duplicate full transcripts or verifier logs in git.
+
+Object Storage currently remains the reproducibility layer for complete capsules. For later runs,
+retain the run manifest, shard indexes, machine-readable comparison report, and this findings note
+indefinitely. After analysis is reproduced, redundant raw capsules with the same task/profile/outcome
+may be expired while keeping discordant outcomes, infrastructure failures, and representative
+pass/failure trajectories. No existing capsule deletion or lifecycle change is part of this study.

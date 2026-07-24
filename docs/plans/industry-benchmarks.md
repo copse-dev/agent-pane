@@ -73,7 +73,8 @@ semantics without task-specific recovery). Historical `product-aligned@1` capsul
 checksum, resolved image digest, profile ID, and profile content hash are retained with every
 trial. The complete negative and protocol-progress evidence behind `pr-1149@1` is preserved in
 [`docs/spikes/terminal-bench-pr-1149.md`](../spikes/terminal-bench-pr-1149.md).
-The two-attempt 2.1 result, adapter defects, and targeted follow-up are recorded in
+The two-attempt 2.1 result, adapter defects, corrected v2 targeted follow-up, and compact evidence
+retention policy are recorded in the canonical findings note
 [`docs/spikes/terminal-bench-2.1-profile-ablation.md`](../spikes/terminal-bench-2.1-profile-ablation.md).
 
 The ablation is precommitted in code: the four #1149 tasks form a one-attempt diagnostic cohort,
