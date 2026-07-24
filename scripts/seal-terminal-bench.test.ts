@@ -262,7 +262,7 @@ describe('terminal benchmark capsule sealing', () => {
     ) as { capsules: Array<{ outcome: string; profile: string }> }
     assert.deepEqual(
       index.capsules.map(({ outcome, profile: id }) => [id, outcome]),
-      [['product-aligned@2', 'invalid']],
+      [['product-aligned@3', 'invalid']],
     )
   })
 })

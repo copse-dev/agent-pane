@@ -2,6 +2,8 @@ import { createInterface } from 'node:readline'
 import { copyFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
+import type { ReasoningCheckpointPolicy } from '../packages/agent/src/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import { OpenAIProvider } from '@copse/llm/openai-provider.ts'
@@ -48,6 +50,17 @@ export function terminalStuckToolRecoveryNudge(instruction: string): string {
     terminalBenchProfile('pr-1149').stuckToolRecoveryNudge,
     instruction,
   )
+}
+
+export function terminalReasoningCheckpointPolicy(
+  profile: TerminalBenchProfile,
+): ReasoningCheckpointPolicy | undefined {
+  if (profile.reasoningPolicy !== 'circle-gated-2k-checkpoints-v1') return undefined
+  return {
+    intervalTokens: DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
+    maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
+    maxRecoveryTokens: DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS,
+  }
 }
 
 export function terminalRequestedOutputPaths(instruction: string): string[] {
@@ -334,7 +347,10 @@ export async function runTerminalBenchAgent(): Promise<void> {
   if (typeof parsed.workspaceRoot !== 'string' || !parsed.workspaceRoot.trim()) {
     throw new Error('Terminal agent bridge expected a workspace root.')
   }
-  const profile = terminalBenchProfile()
+  const profile = terminalBenchProfile(
+    process.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'] ?? process.env['COPSE_TERMINAL_PROFILE'],
+  )
+  const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
   const agentDirectory = dirname(parsed.threadDir)
   const baseProvider = profile.forcesRequestedOutputRecovery
     ? new OpenAIProvider(parsed.model, { baseURL: baseUrl, apiKey, includeUsage: true })
@@ -417,6 +433,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
         ? withOriginalTerminalTask(profile.reasoningRunawayRecoveryNudge, parsed.instruction)
         : profile.reasoningRunawayRecoveryNudge,
       reasoningRunawayTextToleranceChars: 256,
+      ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
       allowForcedTextEscalation: false,
       stuckToolRecoveryNudge: profile.forcesRequestedOutputRecovery
         ? withOriginalTerminalTask(profile.stuckToolRecoveryNudge, parsed.instruction)
@@ -443,6 +460,9 @@ export async function runTerminalBenchAgent(): Promise<void> {
       },
       recordStreamCut: (record) => {
         transcript.recordStreamCut(record)
+      },
+      recordReasoningCheckpoint: (record) => {
+        transcript.recordReasoningCheckpoint(record)
       },
       onChunk: (chunk: AgentStreamChunk) => {
         if (chunk.type === 'tool_call') usage.toolCalls += 1

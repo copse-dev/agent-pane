@@ -4,13 +4,16 @@ export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-al
 
 export type TerminalBenchProfileId = (typeof TERMINAL_BENCH_PROFILE_IDS)[number]
 export type TerminalBenchProfileVersionedId =
-  'main-legacy@1' | 'pr-1149@1' | 'product-aligned@1' | 'product-aligned@2'
+  'main-legacy@1' | 'pr-1149@1' | 'product-aligned@1' | 'product-aligned@2' | 'product-aligned@3'
+export type TerminalBenchProfileSelectionId =
+  TerminalBenchProfileId | TerminalBenchProfileVersionedId
 
 export type TerminalBenchWriteFilePolicy = 'none' | 'app-absolute' | 'workspace-relative'
+export type TerminalBenchReasoningPolicy = 'fixed-cap' | 'circle-gated-2k-checkpoints-v1'
 
 export interface TerminalBenchProfile {
   id: TerminalBenchProfileId
-  version: 1 | 2
+  version: 1 | 2 | 3
   versionedId: TerminalBenchProfileVersionedId
   contentHash: string
   systemPrompt: string
@@ -21,6 +24,7 @@ export interface TerminalBenchProfile {
   forcesRequestedOutputRecovery: boolean
   warnsOnValidationEvidence: boolean
   nonzeroShellResultIsError: boolean
+  reasoningPolicy: TerminalBenchReasoningPolicy
 }
 
 export const MAIN_LEGACY_REASONING_RUNAWAY_RECOVERY_NUDGE =
@@ -84,7 +88,12 @@ function legacyDefinition(
   definition: LegacyHashDefinition,
   writeFilePolicy: TerminalBenchWriteFilePolicy,
 ): ProfileDefinition {
-  return { ...definition, writeFilePolicy, hashPayload: definition }
+  return {
+    ...definition,
+    writeFilePolicy,
+    reasoningPolicy: 'fixed-cap',
+    hashPayload: definition,
+  }
 }
 
 const MAIN_LEGACY_V1 = legacyDefinition(
@@ -151,6 +160,7 @@ const PRODUCT_ALIGNED_V2_BASE = {
 
 const PRODUCT_ALIGNED_V2: ProfileDefinition = {
   ...PRODUCT_ALIGNED_V2_BASE,
+  reasoningPolicy: 'fixed-cap',
   hashPayload: {
     hashSchema: 2,
     profile: PRODUCT_ALIGNED_V2_BASE,
@@ -164,17 +174,42 @@ const PRODUCT_ALIGNED_V2: ProfileDefinition = {
   },
 }
 
+const PRODUCT_ALIGNED_V3_BASE = {
+  ...PRODUCT_ALIGNED_V2_BASE,
+  version: 3 as const,
+  versionedId: 'product-aligned@3' as const,
+  reasoningPolicy: 'circle-gated-2k-checkpoints-v1' as const,
+}
+
+const PRODUCT_ALIGNED_V3: ProfileDefinition = {
+  ...PRODUCT_ALIGNED_V3_BASE,
+  hashPayload: {
+    hashSchema: 3,
+    profile: PRODUCT_ALIGNED_V3_BASE,
+    implementation: {
+      bridgeProtocol: 'newline-delimited-json-v1',
+      runShellTool: 'persistent-shell-with-bounded-timeout-v1',
+      writeFileTool: 'workspace-relative-or-contained-absolute-path-base64-write-v1',
+      shellResult: 'nonzero-exit-is-tool-error-v1',
+      recovery: 'generic-agent-loop-nudges-no-forced-tool-v1',
+      reasoning:
+        '2k-checkpoints-high-confidence-self-report-repeat-structure-list100-max32k-recovery4k-v1',
+    },
+  },
+}
+
 const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = {
   'main-legacy@1': MAIN_LEGACY_V1,
   'pr-1149@1': PR_1149_V1,
   'product-aligned@1': PRODUCT_ALIGNED_V1,
   'product-aligned@2': PRODUCT_ALIGNED_V2,
+  'product-aligned@3': PRODUCT_ALIGNED_V3,
 }
 
 const CURRENT_PROFILE_VERSIONS: Record<TerminalBenchProfileId, TerminalBenchProfileVersionedId> = {
   'main-legacy': 'main-legacy@1',
   'pr-1149': 'pr-1149@1',
-  'product-aligned': 'product-aligned@2',
+  'product-aligned': 'product-aligned@3',
 }
 
 function profileHash(definition: ProfileDefinition): string {
@@ -191,23 +226,34 @@ export function parseTerminalBenchProfileId(value: string | undefined): Terminal
   )
 }
 
-export function parseTerminalBenchProfileIds(value: string | undefined): TerminalBenchProfileId[] {
+export function parseTerminalBenchProfileIds(
+  value: string | undefined,
+): TerminalBenchProfileSelectionId[] {
   if (!value?.trim()) return ['main-legacy']
   const rawIds = value.split(',').map((item) => item.trim())
   if (rawIds.some((item) => !item)) {
     throw new Error('Terminal-Bench profiles must be a comma-separated list without empty items.')
   }
-  const ids = rawIds.map((item) => parseTerminalBenchProfileId(item))
-  if (new Set(ids).size !== ids.length) {
+  const ids = rawIds.map((item) => parseTerminalBenchProfileSelectionId(item))
+  const versions = ids.map((id) => terminalBenchProfile(id).versionedId)
+  if (new Set(versions).size !== versions.length) {
     throw new Error('Terminal-Bench profiles must not contain duplicates.')
   }
   return ids
 }
 
+export function parseTerminalBenchProfileSelectionId(
+  value: string | undefined,
+): TerminalBenchProfileSelectionId {
+  const candidate = value?.trim() || 'main-legacy'
+  if (isVersionedProfileId(candidate)) return candidate
+  return parseTerminalBenchProfileId(candidate)
+}
+
 export function rotateTerminalBenchProfiles(
-  profiles: readonly TerminalBenchProfileId[],
+  profiles: readonly TerminalBenchProfileSelectionId[],
   offset: number,
-): TerminalBenchProfileId[] {
+): TerminalBenchProfileSelectionId[] {
   if (profiles.length === 0) throw new Error('at least one Terminal-Bench profile is required')
   if (!Number.isInteger(offset) || offset < 0) {
     throw new Error(

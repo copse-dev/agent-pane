@@ -83,12 +83,20 @@ describe('terminal benchmark launcher', () => {
   it('selects profiles without forwarding the harness-only flag to Harbor', () => {
     const launch = buildTerminalBenchLaunch(['--profile=product-aligned'], env)
     assert.equal(launch.env['COPSE_TERMINAL_PROFILE'], 'product-aligned')
-    assert.equal(launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@2')
+    assert.equal(launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@3')
     assert.equal(
       launch.args.some((arg) => arg.startsWith('--profile=')),
       false,
     )
     assert.throws(() => buildTerminalBenchLaunch(['--profile=unknown'], env), /profile must be/)
+  })
+
+  it('keeps product v2 and v3 separately selectable for paired studies', () => {
+    const v2 = buildTerminalBenchLaunch(['--profile=product-aligned@2'], env)
+    const v3 = buildTerminalBenchLaunch(['--profile=product-aligned@3'], env)
+    assert.equal(v2.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@2')
+    assert.equal(v3.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@3')
+    assert.notEqual(v2.env['COPSE_TERMINAL_PROFILE_HASH'], v3.env['COPSE_TERMINAL_PROFILE_HASH'])
   })
 
   it('uses a shard-specific absolute results root for Harbor and retained artifacts', () => {

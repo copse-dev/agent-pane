@@ -1,10 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import {
-  terminalBenchProfile,
-  type TerminalBenchProfile,
-  type TerminalBenchProfileId,
-} from './terminal-bench-profiles.mts'
+import { terminalBenchProfile, type TerminalBenchProfile } from './terminal-bench-profiles.mts'
 
 const PROFILE_METADATA_FILE = 'terminal-bench-profile.json'
 
@@ -18,7 +14,7 @@ function isMissingFile(error: unknown): boolean {
 
 export async function recordTerminalBenchTrialProfile(
   resultPath: string,
-  profileId: TerminalBenchProfileId,
+  profileId: string | undefined,
 ): Promise<void> {
   const profile = terminalBenchProfile(profileId)
   await writeFile(

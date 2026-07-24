@@ -191,6 +191,22 @@ The next factorial should separate four hypotheses instead of changing them as a
 Requested-path extraction, provider-forced recovery, and SIGINT-specific warnings remain frozen in
 `pr-1149@1`. They should not enter the regular agent without new held-out official-reward evidence.
 
+### Product-aligned v3 reasoning checkpoint study
+
+PR #1195 and a captured Qwen trace motivated a narrower reasoning experiment. The trace repeatedly
+re-emitted the same headings, three-item restoration plan, and long prose blocks, while explicitly
+observing that it was overcomplicating or confusing itself. Broad lexical markers such as
+`actually`, `wait`, and `I need to` were rejected: an offline replay over the 49 valid capsules
+available locally would have fired a six-marker-per-4k threshold on 29 trials, including 22 passes.
+
+`product-aligned@3` therefore keeps v2's behavior except for a checkpointed reasoning cap. Every 2k
+tokens, a reasoning-dominated stream is checked for first-person self-diagnosis, an exact long block
+or heading repeated at least three times, a three-item plan repeated at least three times, or 100
+list items. A clean stream continues to another checkpoint up to the product's 32k absolute limit.
+A detected circle is recorded and enters the existing recovery path; its one retry remains capped
+at 4k. `product-aligned@2` remains selectable for a paired targeted comparison, and checkpoint
+decisions are retained separately from stream cuts.
+
 ## Compact evidence retention
 
 This note is the canonical human-readable findings record for the 2.1 study. It retains run and

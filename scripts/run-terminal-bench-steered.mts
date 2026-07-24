@@ -70,7 +70,7 @@ for (const entry of entries) {
       taskName,
       '-k',
       '1',
-      `--profile=${profile.id}`,
+      `--profile=${profile.versionedId}`,
     ],
     {
       cwd: process.cwd(),
@@ -80,6 +80,7 @@ for (const entry of entries) {
         COPSE_TERMINAL_PARENT_TRIAL_ID: parentTrialId,
         COPSE_TERMINAL_INTERVENTION_ID: interventionId,
         COPSE_TERMINAL_PROFILE: profile.id,
+        COPSE_TERMINAL_PROFILE_VERSIONED_ID: profile.versionedId,
         COPSE_TERMINAL_PROFILE_HASH: profile.contentHash,
         ...(steering.recommended_step_budget !== undefined
           ? { COPSE_TERMINAL_MAX_STEPS: String(steering.recommended_step_budget) }

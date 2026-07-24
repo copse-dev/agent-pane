@@ -37,9 +37,9 @@ import {
 } from './lib/cloud-hosts.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
 import {
-  parseTerminalBenchProfileId,
   parseTerminalBenchProfileIds,
-  type TerminalBenchProfileId,
+  parseTerminalBenchProfileSelectionId,
+  type TerminalBenchProfileSelectionId,
 } from './lib/terminal-bench-profiles.mts'
 
 const DEFAULT_NAME = 'copse-terminal-bench'
@@ -69,7 +69,7 @@ export interface RunConfig extends SshConfig {
   maxTasks: number
   name: string
   objectPrefix: string
-  profiles: TerminalBenchProfileId[]
+  profiles: TerminalBenchProfileSelectionId[]
   securityGroupId: string | undefined
   steeredRerun: boolean
   taskNames: string[]
@@ -104,7 +104,7 @@ Options:
   --max-tasks <n>          Global task cap (default: same as instances, max: 89)
   --task-names <a,b,...>   Exact registry tasks to run, in the supplied order
   --attempts <n>           Attempts per task (default: 1, max: 5)
-  --profile <id>           main-legacy, pr-1149, or product-aligned (default: main-legacy)
+  --profile <id>           Base or versioned profile id (default: main-legacy)
   --profiles <a,b,...>     Run task-major profile blocks with order rotated by task
   --scw-type <type>        x86 Instance type (default: ${DEFAULT_TYPE})
   --scw-image <image>      Ubuntu/custom snapshot image (default: ${DEFAULT_SCW_IMAGE})
@@ -175,7 +175,7 @@ export function runConfig(options: Options): RunConfig {
   if (profile && profiles) throw new Error('pass only one of --profile or --profiles')
   const parsedProfiles = profiles
     ? parseTerminalBenchProfileIds(profiles)
-    : [parseTerminalBenchProfileId(profile)]
+    : [parseTerminalBenchProfileSelectionId(profile)]
   const steeredRerun = !hasFlag(options, 'no-steered-rerun')
   if (parsedProfiles.length > 1 && steeredRerun) {
     throw new Error('multi-profile fleet runs require --no-steered-rerun')

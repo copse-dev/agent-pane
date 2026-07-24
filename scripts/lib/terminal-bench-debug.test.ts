@@ -258,7 +258,7 @@ describe('Terminal-Bench post-run debugging', () => {
     })
     assert.equal(manifest.schemaVersion, 2)
     assert.equal(manifest.dataset?.id, 'terminal-bench/terminal-bench-2-1')
-    assert.equal(manifest.profile?.versionedId, 'product-aligned@2')
+    assert.equal(manifest.profile?.versionedId, 'product-aligned@3')
     assert.equal(manifest.objectPrefix, 'terminal-bench/copse-dev/agent-pane/12345/2')
   })
 
@@ -288,7 +288,7 @@ describe('Terminal-Bench post-run debugging', () => {
     assert.equal(manifest.profile, undefined)
     assert.deepEqual(
       manifest.profiles?.map((profile) => profile.versionedId),
-      ['main-legacy@1', 'pr-1149@1', 'product-aligned@2'],
+      ['main-legacy@1', 'pr-1149@1', 'product-aligned@3'],
     )
   })
 })

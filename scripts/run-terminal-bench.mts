@@ -12,7 +12,6 @@ import {
 } from './lib/terminal-bench.mts'
 import { buildTerminalBenchAgentBundle } from './build-terminal-bench-agent.mts'
 import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
-import { parseTerminalBenchProfileId } from './lib/terminal-bench-profiles.mts'
 import { recordTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
 
 async function terminalBenchResultPaths(): Promise<Set<string>> {
@@ -152,7 +151,7 @@ for (const path of await terminalBenchResultPaths()) {
     await recordTerminalBenchTaskImage(taskName, path)
     await recordTerminalBenchTrialProfile(
       path,
-      parseTerminalBenchProfileId(launch.env['COPSE_TERMINAL_PROFILE']),
+      launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'] ?? launch.env['COPSE_TERMINAL_PROFILE'],
     )
   } catch (error) {
     console.error(`bench:terminal: unable to retain trial metadata: ${String(error)}`)

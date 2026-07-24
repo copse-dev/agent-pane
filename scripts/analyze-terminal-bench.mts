@@ -117,6 +117,7 @@ async function analysisInput(trial: Trial, maxChars: number): Promise<string> {
     'agent/applied-nudges.jsonl',
     'agent/hook-runs.jsonl',
     'agent/stream-stats.jsonl',
+    'agent/reasoning-checkpoints.jsonl',
     'agent/workspace-files.tsv',
     'agent/copse-trace.jsonl',
   ]
