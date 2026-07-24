@@ -458,6 +458,30 @@ jobs:
         if: needs.precheck.outputs.mode != 'skip'
       - run: npm run test:demo
         if: needs.precheck.outputs.mode != 'skip'
+      # Stage the browser demo as a per-PR preview artifact. The trusted
+      # demo-preview.yml workflow (workflow_run) publishes it to the
+      # demo-previews branch and deploys it live at copse.dev/pr-<n>/. Same-repo
+      # PRs only — the whole build job is already guarded to same-repo above, so
+      # fork branches never produce this artifact. pr-number.txt is kept out of
+      # the served tree (site/) so it is not published alongside the demo.
+      - name: Stage demo preview artifact
+        if: >-
+          success() && github.event_name == 'pull_request' &&
+          needs.precheck.outputs.mode != 'skip'
+        run: |
+          rm -rf demo-preview
+          mkdir -p demo-preview/site
+          cp -R dist/demo/. demo-preview/site/
+          echo "${{ github.event.pull_request.number }}" > demo-preview/pr-number.txt
+      - uses: actions/upload-artifact@v7
+        if: >-
+          success() && github.event_name == 'pull_request' &&
+          needs.precheck.outputs.mode != 'skip'
+        with:
+          name: demo-preview
+          path: demo-preview/
+          if-no-files-found: error
+          retention-days: 3
       - name: Collect changed browser reference screenshots
         if: >-
           success() && github.event_name == 'pull_request' &&
