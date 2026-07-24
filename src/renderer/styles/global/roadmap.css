@@ -27,20 +27,31 @@
    layout primitives (memories.css) and the git-changes list classes; these rules
    only add what is roadmap-specific — the per-item lifecycle status badge and
    the status select. */
+.roadmap-row-main {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.roadmap-row-title {
+  flex: 1;
+  min-width: 0;
+}
+.roadmap-row-trailing {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: var(--text-muted);
+}
 .roadmap-status-badge {
-  align-self: flex-start;
-  font-size: 10px;
+  font-size: var(--font-size-xs, 11px);
   line-height: 1.4;
-  padding: 0 6px;
+  padding: 0 var(--spacing-xs);
   border-radius: var(--radius);
   background: var(--bg-hover);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.roadmap-status-badge.is-ready {
-  background: color-mix(in srgb, var(--success, #3fb950) 18%, transparent);
-  color: var(--success, #3fb950);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
 }
 .roadmap-status-badge.is-blocked {
   background: color-mix(in srgb, var(--warning, #d29922) 18%, transparent);
@@ -50,26 +61,35 @@
   background: color-mix(in srgb, var(--danger, #f14c4c) 16%, transparent);
   color: var(--danger, #f14c4c);
 }
-/* done keeps the neutral chip but strikes the title; archived fades the row. */
-.roadmap-row:has(.roadmap-status-badge.is-done) .roadmap-row-title {
+.roadmap-status-badge.is-archived {
+  color: var(--text-muted);
+}
+/* done keeps no badge — the struck title is enough; archived fades the row. */
+.roadmap-row[data-status='done'] .roadmap-row-title {
   color: var(--text-muted);
   text-decoration: line-through;
 }
-.roadmap-row:has(.roadmap-status-badge.is-archived) .roadmap-row-title {
+.roadmap-row[data-status='archived'] .roadmap-row-title {
   color: var(--text-muted);
 }
-/* Row-level mark-done/reopen toggle — a chip-sized span (rows are <button>s,
-   so no nested button), matching the issue chip beside it. */
+/* Row-level mark-done/reopen toggle — icon-only, muted until the row is hovered
+   or the control is focused (rows are <button>s, so no nested button). */
 .roadmap-done-toggle {
-  font-size: 10px;
-  line-height: 1.4;
-  padding: 0 6px;
-  border-radius: var(--radius);
-  background: var(--bg-hover);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
   color: var(--text-muted);
   cursor: pointer;
+  opacity: 0;
 }
-.roadmap-done-toggle:hover {
+.roadmap-row:hover .roadmap-done-toggle,
+.roadmap-done-toggle:hover,
+.roadmap-done-toggle:focus-visible {
+  opacity: 1;
+}
+.roadmap-done-toggle:hover,
+.roadmap-done-toggle:focus-visible {
   color: var(--success, #3fb950);
 }
 .roadmap-status-select {
@@ -96,13 +116,13 @@
 .roadmap-row-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--spacing-xs);
   align-items: center;
 }
 .roadmap-issue-chip {
-  font-size: 10px;
+  font-size: var(--font-size-xs, 11px);
   line-height: 1.4;
-  padding: 0 6px;
+  padding: 0 var(--spacing-xs);
   border-radius: var(--radius);
   background: var(--bg-hover);
   color: var(--accent);
@@ -111,19 +131,16 @@
 .roadmap-issue-chip:hover {
   text-decoration: underline;
 }
-/* Started-thread chip — shown while the thread tracked on the item still
-   exists; clicking it reopens that thread. */
-.roadmap-thread-chip {
-  font-size: 10px;
-  line-height: 1.4;
-  padding: 0 6px;
-  border-radius: var(--radius);
-  background: var(--bg-hover);
+/* Linked-thread indicator — icon only; tooltip / aria-label carry the detail. */
+.roadmap-thread-indicator {
+  display: inline-flex;
+  align-items: center;
   color: var(--accent);
   cursor: pointer;
 }
-.roadmap-thread-chip:hover {
-  text-decoration: underline;
+.roadmap-thread-indicator:hover,
+.roadmap-thread-indicator:focus-visible {
+  color: var(--text-primary);
 }
 
 /* Complexity badge — stamped on save by the small-tasks model (or heuristic). */
@@ -233,20 +250,16 @@
   outline-offset: -4px;
 }
 /* Paperclip + count in the list row (shared attachment-icons.ts SVG). */
-.roadmap-attachment-badge {
+.roadmap-attachment-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  font-size: 10px;
-  line-height: 1.4;
-  padding: 0 6px;
-  border-radius: var(--radius);
-  background: var(--bg-hover);
+  gap: 2px;
+  font-size: var(--font-size-xs, 11px);
+  line-height: 1;
   color: var(--text-muted);
 }
-.roadmap-attachment-badge-icon {
-  width: 10px;
-  height: 10px;
+.roadmap-attachment-indicator-count {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Review verdict — on-demand resolution judgement across the backlog. */

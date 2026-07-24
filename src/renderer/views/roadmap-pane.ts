@@ -20,6 +20,7 @@ import { knowledgeDate } from './knowledge-date.ts'
 import { createThread, getThreadById, switchThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { checkIcon, messageSquareIcon, refreshIcon } from '../dom/icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -64,6 +65,18 @@ interface PendingAttachment {
   mimeType: string
   dataUrl: string
 }
+
+/** Unsaved editor state stashed when switching items or leaving a new-item form. */
+interface EditorDraft {
+  prompt: string
+  notes: string
+  issue: string
+  status: RoadmapStatus
+  pendingAttachments: PendingAttachment[]
+  removedAttachmentIds: string[]
+}
+
+const NEW_ITEM_DRAFT_KEY = '__new__'
 
 // Base64-encode via arrayBuffer() rather than FileReader so the same path runs
 // in Chromium and in the happy-dom component tests.
@@ -115,6 +128,11 @@ function itemStatus(item: RoadmapItem): RoadmapStatus {
   return (STATUS_OPTIONS as readonly string[]).includes(item.status ?? '')
     ? (item.status as RoadmapStatus)
     : 'ready'
+}
+
+/** Only exceptional lifecycle states earn a list-row badge — ready is the default. */
+function statusBadgeVisible(status: RoadmapStatus): boolean {
+  return status !== 'ready' && status !== 'done'
 }
 
 /**
@@ -172,6 +190,10 @@ export function mountRoadmapPane(
   let searchQuery = ''
   // Done items are hidden by default; the header toggle reveals them.
   let showDone = false
+  /** In-progress edits keyed by item id, or {@link NEW_ITEM_DRAFT_KEY} for a new item. */
+  const editorDrafts = new Map<string, EditorDraft>()
+  /** Ignores stale auto-save responses when the user leaves and re-enters quickly. */
+  const autoSaveToken = new Map<string, number>()
 
   // --- list column ----------------------------------------------------------
   const listHeader = el('div', { class: 'git-changes-header' })
@@ -528,6 +550,107 @@ export function mountRoadmapPane(
     return (selectedId && items.find((m) => m.id === selectedId)) || null
   }
 
+  function currentDraftKey(): string | null {
+    if (creating) return NEW_ITEM_DRAFT_KEY
+    return selectedId
+  }
+
+  function hasNewItemContent(): boolean {
+    return (
+      promptInput.value !== '' ||
+      notesInput.value !== '' ||
+      issueInput.value !== '' ||
+      pendingAttachments.length > 0
+    )
+  }
+
+  function captureEditorDraft(): EditorDraft | null {
+    const key = currentDraftKey()
+    if (!key) return null
+    const item = currentItem()
+    const dirty = creating ? hasNewItemContent() : isEditorDirty(item)
+    if (!dirty) {
+      editorDrafts.delete(key)
+      return null
+    }
+    const draft: EditorDraft = {
+      prompt: promptInput.value,
+      notes: notesInput.value,
+      issue: issueInput.value,
+      status: statusSelect.value as RoadmapStatus,
+      pendingAttachments: pendingAttachments.map((p) => ({ ...p })),
+      removedAttachmentIds: [...removedAttachmentIds],
+    }
+    editorDrafts.set(key, draft)
+    return draft
+  }
+
+  function applyEditorDraft(draft: EditorDraft): void {
+    promptInput.value = draft.prompt
+    notesInput.value = draft.notes
+    issueInput.value = draft.issue
+    statusSelect.value = draft.status
+    pendingAttachments = draft.pendingAttachments.map((p) => ({ ...p }))
+    removedAttachmentIds.clear()
+    for (const id of draft.removedAttachmentIds) removedAttachmentIds.add(id)
+  }
+
+  function draftsMatch(a: EditorDraft, b: EditorDraft): boolean {
+    return (
+      a.prompt === b.prompt &&
+      a.notes === b.notes &&
+      a.issue === b.issue &&
+      a.status === b.status &&
+      a.pendingAttachments.length === b.pendingAttachments.length &&
+      a.removedAttachmentIds.length === b.removedAttachmentIds.length &&
+      a.removedAttachmentIds.every((id) => b.removedAttachmentIds.includes(id))
+    )
+  }
+
+  async function autoSaveDraft(id: string, draft: EditorDraft): Promise<void> {
+    const prompt = draft.prompt.trim()
+    if (!prompt) return
+    const token = (autoSaveToken.get(id) ?? 0) + 1
+    autoSaveToken.set(id, token)
+    const addAttachments = draft.pendingAttachments.map(({ name, mimeType, dataUrl }) => ({
+      name,
+      mimeType,
+      dataUrl,
+    }))
+    const removeIds = draft.removedAttachmentIds
+    try {
+      const updated = await api.roadmap.update(
+        id,
+        prompt,
+        draft.notes.trim() || undefined,
+        draft.status,
+        draft.issue.trim() || undefined,
+        addAttachments.length > 0 ? addAttachments : undefined,
+        removeIds.length > 0 ? removeIds : undefined,
+      )
+      if (autoSaveToken.get(id) !== token) return
+      if (!updated) return
+      const idx = items.findIndex((m) => m.id === id)
+      if (idx >= 0) items[idx] = updated
+      const current = editorDrafts.get(id)
+      if (current && draftsMatch(current, draft)) {
+        editorDrafts.delete(id)
+      }
+      if (selectedId !== id) renderList()
+    } catch {
+      // The in-memory draft already captured on leave — keep it for restore.
+    }
+  }
+
+  /** Stash or persist the open editor before navigating to another item or form. */
+  function leaveCurrentEditor(): void {
+    const key = currentDraftKey()
+    if (!key) return
+    const draft = captureEditorDraft()
+    if (!draft || creating || !selectedId) return
+    if (draft.prompt.trim()) void autoSaveDraft(selectedId, draft)
+  }
+
   function resetAttachmentEdits(): void {
     pendingAttachments = []
     removedAttachmentIds.clear()
@@ -659,11 +782,17 @@ export function mountRoadmapPane(
     emptyState.hidden = true
     form.hidden = false
     if (!(opts?.preserveDirty && dirty)) {
-      promptInput.value = item?.body ?? ''
-      notesInput.value = item ? itemNotes(item) : ''
-      issueInput.value = item ? itemIssue(item) : ''
-      statusSelect.value = item ? itemStatus(item) : 'ready'
-      resetAttachmentEdits()
+      const draftKey = creating ? NEW_ITEM_DRAFT_KEY : selectedId
+      const draft = draftKey ? editorDrafts.get(draftKey) : undefined
+      if (draft) {
+        applyEditorDraft(draft)
+      } else {
+        promptInput.value = item?.body ?? ''
+        notesInput.value = item ? itemNotes(item) : ''
+        issueInput.value = item ? itemIssue(item) : ''
+        statusSelect.value = item ? itemStatus(item) : 'ready'
+        resetAttachmentEdits()
+      }
     }
     renderAttachments()
     statusLabel.hidden = !item
@@ -770,19 +899,19 @@ export function mountRoadmapPane(
       const row = el('button', {
         type: 'button',
         class: `git-change-row memories-row roadmap-row${isSelected ? ' is-selected' : ''}`,
+        'data-status': status,
       })
-      const main = el('div', { class: 'memories-row-main' })
-      const meta = el(
-        'div',
-        { class: 'roadmap-row-meta' },
-        el('span', { class: `roadmap-status-badge is-${status}` }, status),
-      )
+      const main = el('div', { class: 'memories-row-main roadmap-row-main' })
+      const trailing = el('div', { class: 'roadmap-row-trailing' })
+      if (statusBadgeVisible(status)) {
+        trailing.append(el('span', { class: `roadmap-status-badge is-${status}` }, status))
+      }
       // Complexity is stamped in the background shortly after a save
       // (roadmap-complexity.ts); freshly saved items and older items that
       // predate stamping simply have no badge yet.
       const complexity = item.fields['complexity']
       if (isRoadmapComplexity(complexity)) {
-        meta.append(
+        trailing.append(
           el(
             'span',
             {
@@ -797,7 +926,7 @@ export function mountRoadmapPane(
       // path drops stale ones).
       const fit = item.fields['fit']
       if (isRoadmapFit(fit)) {
-        meta.append(
+        trailing.append(
           el(
             'span',
             {
@@ -810,7 +939,7 @@ export function mountRoadmapPane(
       }
       const review = item.fields['reviewVerdict']
       if (isRoadmapReviewVerdict(review)) {
-        meta.append(
+        trailing.append(
           el(
             'span',
             {
@@ -839,21 +968,20 @@ export function mountRoadmapPane(
             if (url) void api.shell.openExternal(url)
           })
         })
-        meta.append(chip)
+        trailing.append(chip)
       }
       const attachmentCount = itemAttachments(item).length
       if (attachmentCount > 0) {
-        meta.append(
+        trailing.append(
           el(
             'span',
             {
-              class: 'roadmap-attachment-badge',
+              class: 'roadmap-attachment-indicator',
               title: `${String(attachmentCount)} attachment${attachmentCount === 1 ? '' : 's'}`,
+              'aria-label': `${String(attachmentCount)} attachment${attachmentCount === 1 ? '' : 's'}`,
             },
-            // The shared paperclip SVG (attachment-icons.ts) — theme-aware
-            // `currentColor` stroke, never an emoji glyph.
-            attachmentIcon('file', 'ui-icon roadmap-attachment-badge-icon'),
-            String(attachmentCount),
+            attachmentIcon('file', 'ui-icon ui-icon-sm roadmap-attachment-indicator-icon'),
+            el('span', { class: 'roadmap-attachment-indicator-count' }, String(attachmentCount)),
           ),
         )
       }
@@ -864,12 +992,13 @@ export function mountRoadmapPane(
         const threadChip = el(
           'span',
           {
-            class: 'roadmap-thread-chip',
+            class: 'roadmap-thread-indicator',
             role: 'link',
             tabindex: '0',
             title: `Reopen thread "${trackedThread.title}"`,
+            'aria-label': `Reopen thread "${trackedThread.title}"`,
           },
-          'thread',
+          messageSquareIcon('ui-icon ui-icon-sm'),
         )
         threadChip.addEventListener('click', (e) => {
           // The row itself selects the item; the chip only reopens the thread.
@@ -884,25 +1013,24 @@ export function mountRoadmapPane(
           switchThread(store, trackedThread.id)
           getPromptAttachmentHandlers()?.focusComposer?.()
         })
-        meta.append(threadChip)
+        trailing.append(threadChip)
       }
 
-      // One-click status flip without opening the editor: ✓ marks a live item
-      // done, ↺ reopens a done one. Archived items keep the editor-only flow.
-      // A span with role=button, like the issue chip — rows are <button>s and
+      // One-click status flip without opening the editor. Archived items keep
+      // the editor-only flow. A span with role=button — rows are <button>s and
       // buttons cannot nest.
       if (status !== 'archived') {
         const isDone = status === 'done'
         const toggle = el(
           'span',
           {
-            class: 'roadmap-done-toggle',
+            class: `roadmap-done-toggle${isDone ? ' is-done' : ''}`,
             role: 'button',
             tabindex: '0',
             title: isDone ? 'Reopen (set ready)' : 'Mark done',
             'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
           },
-          isDone ? '↺' : '✓',
+          isDone ? refreshIcon('ui-icon ui-icon-sm') : checkIcon('ui-icon ui-icon-sm'),
         )
         toggle.addEventListener('click', (e) => {
           // The row itself selects the item; the toggle only flips status.
@@ -915,16 +1043,18 @@ export function mountRoadmapPane(
           e.stopPropagation()
           void setStatus(item, isDone ? 'ready' : 'done')
         })
-        meta.append(toggle)
+        trailing.append(toggle)
       }
       main.append(
         el('span', { class: 'memories-row-title roadmap-row-title' }, item.title || '(untitled)'),
-        meta,
+        trailing,
       )
       row.append(main)
       row.addEventListener('click', () => {
         if (reviewing || importing) return
-        if (item.id !== selectedId) cancelResolutionCheckUi()
+        if (item.id === selectedId) return
+        leaveCurrentEditor()
+        cancelResolutionCheckUi()
         selectedId = item.id
         creating = false
         renderList()
@@ -972,6 +1102,7 @@ export function mountRoadmapPane(
   }
 
   function startNew(): void {
+    leaveCurrentEditor()
     cancelResolutionCheckUi()
     selectedId = null
     creating = true
@@ -1008,6 +1139,7 @@ export function mountRoadmapPane(
         )
         selectedId = created.id
         creating = false
+        editorDrafts.delete(NEW_ITEM_DRAFT_KEY)
       } else {
         const updated = await api.roadmap.update(
           selectedId,
@@ -1024,6 +1156,7 @@ export function mountRoadmapPane(
           creating = false
         }
       }
+      if (selectedId) editorDrafts.delete(selectedId)
       await refresh()
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Could not save roadmap item.')
@@ -1046,8 +1179,10 @@ export function mountRoadmapPane(
     }
     deleteBtn.disabled = true
     try {
-      await api.roadmap.delete(selectedId)
-      if (reviewPeekId === selectedId) {
+      const id = selectedId
+      await api.roadmap.delete(id)
+      editorDrafts.delete(id)
+      if (reviewPeekId === id) {
         reviewPeekId = null
       }
       selectedId = null
@@ -1066,6 +1201,8 @@ export function mountRoadmapPane(
       returnToReview()
       return
     }
+    const key = currentDraftKey()
+    if (key) editorDrafts.delete(key)
     creating = false
     selectedId = null
     renderList()
@@ -1343,6 +1480,7 @@ export function mountRoadmapPane(
   }
 
   function openReviewItem(id: string): void {
+    if (id !== selectedId) leaveCurrentEditor()
     cancelResolutionCheckUi()
     selectedId = id
     creating = false
@@ -1352,6 +1490,7 @@ export function mountRoadmapPane(
   }
 
   function returnToReview(): void {
+    leaveCurrentEditor()
     cancelResolutionCheckUi()
     reviewPeekId = null
     selectedId = null
@@ -1675,6 +1814,7 @@ export function mountRoadmapPane(
     // The quick-open palette (Cmd/Ctrl+P) lands here after opening the pane:
     // select the chosen item and load fresh so its editor shows immediately.
     store.on('roadmap_reveal', (itemId) => {
+      if (itemId !== selectedId) leaveCurrentEditor()
       selectedId = itemId
       creating = false
       importing = false
@@ -1695,6 +1835,8 @@ export function mountRoadmapPane(
       importing = false
       reviewing = false
       items = []
+      editorDrafts.clear()
+      autoSaveToken.clear()
       resetAttachmentEdits()
       attachmentDataCache.clear()
       if (roadmapModeActive(store)) void refresh()
