@@ -37,7 +37,13 @@ import {
   remoteAgentGroupLabel,
   remoteAgentModelValue,
 } from '@shared/remote-agent.ts'
-import { ACP_MODEL_PREFIX, acpGroupLabel, acpModelValue, parseAcpModel } from '@shared/acp.ts'
+import {
+  ACP_MODEL_PREFIX,
+  acpGroupLabel,
+  acpModelValue,
+  enabledClaudeAcpAgent,
+  parseAcpModel,
+} from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { clear } from '../dom/helpers.ts'
 
@@ -67,14 +73,9 @@ export function modelDisplayLabel(model: string): string {
 
 // External ACP agents the user has configured. Only enabled agents are offered;
 // a stale `acp:<id>` selection for a removed/disabled agent is surfaced via the
-// "(not configured)" fallback below rather than silently vanishing.
-async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
-  let agents: AcpAgentConfig[] = []
-  try {
-    agents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
-  } catch {
-    /* none configured */
-  }
+// "(not configured)" fallback below rather than silently vanishing. The agents
+// are fetched once by the caller (also used to decide the ACP-over-API ordering).
+function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
   const options: ModelOption[] = []
   for (const agent of agents.filter((agent) => agent.enabled)) {
     // Each agent gets its own heading ("<Title> Client (ACP)"), so models list
@@ -218,6 +219,10 @@ async function remoteAgentOptions(
   api: ApiClient,
   isAvailable: (provider: string) => boolean,
   current: string,
+  // When the user has an enabled Claude ACP agent, flag the Claude Cloud Agent
+  // group as API-billed so the ACP alternative (their own `claude` login) reads
+  // as the preferred option. Ordering is handled by the caller.
+  preferAcpForClaude = false,
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
@@ -261,7 +266,11 @@ async function remoteAgentOptions(
   }
 
   if (isAvailable(REMOTE_AGENT_PROVIDER_ANTHROPIC)) {
-    const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC)
+    const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC)
+    // Claude Managed Agents bill against the Anthropic API key. When a Claude ACP
+    // agent is configured, note that in the heading so the user sees the ACP
+    // option (their own login) is the cheaper alternative.
+    const group = preferAcpForClaude ? `${baseGroup} — API-billed (ACP available)` : baseGroup
     const seen = new Set<string>()
     const add = (value: string, label: string): void => {
       if (seen.has(value)) return
@@ -349,15 +358,32 @@ export async function fetchModelOptions(
     options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
-  // Remote agents (Cursor Cloud, Claude Cloud): expand into per-provider groups
-  // with concrete model rows — same pattern as ACP agents.
-  if (includeAgentModels) {
-    options.push(...(await remoteAgentOptions(api, isAvailable, current)))
-  }
-
-  // ACP agents (external coding agents Copse drives): local stdio only — hide on SSH.
+  // Configured ACP agents, fetched once: used both to build their picker rows
+  // and to decide whether to prefer ACP over the API-billed Claude Cloud agent.
+  // ACP agents are local stdio processes, so they are never offered on an SSH
+  // workspace — leave the list empty there (a stale `acp:*` selection is still
+  // surfaced as disabled by the fallback below).
+  let acpAgents: AcpAgentConfig[] = []
   if (includeAgentModels && !sshWorkspace) {
-    options.push(...(await acpAgentOptions(api)))
+    try {
+      acpAgents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
+    } catch {
+      /* none configured */
+    }
+  }
+  // An enabled Claude ACP agent drives Claude through the user's own `claude`
+  // login; prefer it over the API-billed Claude Cloud Agent by listing ACP first
+  // and flagging the Cloud Agent as API-billed.
+  const preferAcpForClaude = enabledClaudeAcpAgent(acpAgents) !== undefined
+
+  // Remote agents (Cursor Cloud, Claude Cloud) expand into per-provider groups
+  // with concrete model rows — same pattern as ACP agents. When ACP is preferred
+  // its agents lead; otherwise the remote agents keep their original position
+  // ahead of ACP.
+  if (includeAgentModels) {
+    const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude)
+    const acp = acpAgentOptions(acpAgents)
+    options.push(...(preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]))
   }
 
   // Local models: only listed when a local server is reachable and exposes some.
