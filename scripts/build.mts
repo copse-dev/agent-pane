@@ -44,7 +44,7 @@ async function writeDemoScenarioManifest(outPath: string): Promise<void> {
     const imported: unknown = await import(pathToFileURL(tempModule).href)
     const list =
       imported !== null && typeof imported === 'object' && 'DEMO_SCENARIOS' in imported
-        ? (imported as { DEMO_SCENARIOS: unknown }).DEMO_SCENARIOS
+        ? imported.DEMO_SCENARIOS
         : undefined
     const manifest: { id: string; label: string }[] = []
     if (Array.isArray(list)) {
