@@ -1,4 +1,5 @@
 import type { AcpAgentConfig } from './types/acp.ts'
+import { KNOWN_ACP_AGENTS } from './acp-known-agents.ts'
 
 /**
  * Model-picker plumbing for the ACP **client** role: Copse drives an external,
@@ -67,6 +68,37 @@ export function isAcpModel(model: string): boolean {
  */
 export function acpGroupLabel(title: string): string {
   return `${title} Client (ACP)`
+}
+
+/**
+ * Commands from the known-agents catalog whose parent client is Claude
+ * (`claude-agent-acp`, `claude-code-acp`). A configured agent that spawns one of
+ * these drives Claude through the user's *own* `claude` login (or ANTHROPIC_API_KEY)
+ * over ACP, rather than the API-billed Claude Cloud (managed) agent.
+ */
+const CLAUDE_ACP_COMMANDS: ReadonlySet<string> = new Set(
+  KNOWN_ACP_AGENTS.filter((agent) => agent.requiresClient === 'claude').map(
+    (agent) => agent.command,
+  ),
+)
+
+/** Whether a configured ACP agent wraps Claude, matched by its spawn command. */
+export function isClaudeAcpAgent(agent: Pick<AcpAgentConfig, 'command'>): boolean {
+  return CLAUDE_ACP_COMMANDS.has(agent.command)
+}
+
+/**
+ * The first enabled Claude ACP agent, or `undefined`. When one is present the
+ * user can drive Claude through their own `claude` login (ACP) instead of the
+ * API-billed Claude Cloud (managed) agent — so the model picker prefers ACP:
+ * it lists the ACP agent ahead of the Claude Cloud Agent and flags that option
+ * as API-billed. Only enabled agents count; a disabled Claude ACP agent does
+ * not change the ordering.
+ */
+export function enabledClaudeAcpAgent(
+  agents: readonly AcpAgentConfig[],
+): AcpAgentConfig | undefined {
+  return agents.find((agent) => agent.enabled && isClaudeAcpAgent(agent))
 }
 
 /**
