@@ -208,7 +208,7 @@ auto-continuation budget (the [unified auto-continuation budget decision](./plan
 clamp (`clampLoopLimit` in `packages/agent/src/hooks/continuation-budget.ts`) exists and is
 contract-tested, waiting for the drain-path wiring.
 
-| `loop_limit` value          | Intended enforcement ([async/budget phase](./plans/hooks-and-feature-packs.md#phase-c--async-executor-output-channel-budget))     |
+| `loop_limit` value          | Intended enforcement ([async/budget phase](./plans/hooks-and-feature-packs.md#phase-c--async-executor-output-channel-budget))    |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | a non-negative integer `n`  | `min(n, global remaining)` — the script may contribute at most `n` machine turns, and never more than the shared budget has left |
 | `null` (Cursor "unlimited") | **clamped to the global remaining, with a warning** — the "unlimited" intent is refused; the shared cap is the ceiling           |
