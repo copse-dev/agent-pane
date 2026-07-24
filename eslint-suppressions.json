@@ -1012,6 +1012,11 @@
       "count": 1
     }
   },
+  "src/renderer/dom/context-menu.ts": {
+    "@typescript-eslint/no-unsafe-type-assertion": {
+      "count": 1
+    }
+  },
   "src/renderer/dom/helpers.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 2
@@ -1381,12 +1386,12 @@
       "count": 1
     }
   },
-  "src/renderer/views/projects-pane-running.test.ts": {
+  "src/renderer/views/projects-pane-rename-archive.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
   },
-  "src/renderer/views/projects-pane.ts": {
+  "src/renderer/views/projects-pane-running.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
