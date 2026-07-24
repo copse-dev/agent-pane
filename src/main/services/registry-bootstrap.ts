@@ -60,7 +60,7 @@ import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { roadmapPlanTool } from '../tools/roadmap-tools.ts'
-import { BACKGROUND_TASKS_ENABLED_SETTING } from './exec/background-process.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { runBackgroundTool } from '../tools/background-process-tool.ts'
 import {
   READ_TERMINAL_ENABLED_DEFAULT,
@@ -163,14 +163,16 @@ export function createRegistry(): ToolRegistry {
   // is the atomic master switch (it also gates the renderer's Roadmap pane).
   // Live toggles route through {@link syncRoadmapPlanTools} on `packs:setEnabled`.
   syncRoadmapPlanTools(registry)
-  // Experimental background tasks (off by default, issue #691). Lets the agent
-  // run a long-lived command (dev server, watcher, build) that stays alive
-  // across turns. A task may opt into loopback port binding, which prompts for a
-  // per-workspace grant (permission-gate) and escalates the sandbox to allow
-  // binding for that process's lifetime; without it the task stays contained.
-  if (getSetting<boolean>(BACKGROUND_TASKS_ENABLED_SETTING, false)) {
-    registry.register(runBackgroundTool)
-  }
+  // Experimental background tasks (off by default, issue #691). Gated by the
+  // `copse.background-tasks` first-party pack — the pack toggle in Settings >
+  // Packs is the atomic master switch. Lets the agent run a long-lived command
+  // (dev server, watcher, build) that stays alive across turns. A task may opt
+  // into loopback port binding, which the pack DECLARES as its `loopback-bind`
+  // permission relaxation (issue #1190): the permission-gate only grants it
+  // while the pack is enabled, prompting for a per-project grant and escalating
+  // the sandbox to allow binding for that process's lifetime. Live toggles route
+  // through {@link syncBackgroundTasksTools} on `packs:setEnabled`.
+  syncBackgroundTasksTools(registry)
   // User Shells → agent read (on by default). The tool is still withheld per
   // turn when no shell is open for the chat thread (see parentTools).
   syncReadTerminalTools(registry)
@@ -331,6 +333,25 @@ export function syncPiiTools(registry: ToolRegistry): void {
     if (!registry.has('reveal_pii')) registry.register(revealPiiTool)
   } else {
     registry.unregister('reveal_pii')
+  }
+}
+
+/**
+ * Register or unregister the experimental `run_background` tool to match the
+ * current enablement of the `copse.background-tasks` first-party pack (issue
+ * #691). Called at startup (via createRegistry) and again whenever the pack is
+ * toggled from Settings > Packs (see `ipc/register-handlers.ts`
+ * `packs:setEnabled`), so the tool appears or disappears live — the atomic pack
+ * disable drops the tool from the model tool list in the same flag flip that
+ * drops the pack's `activeToolNames()` entry from the Settings pack list AND
+ * revokes the pack's declared `loopback-bind` sandbox relaxation (the
+ * permission-gate reads `isPermissionDeclared('loopback-bind')`, issue #1190).
+ */
+export function syncBackgroundTasksTools(registry: ToolRegistry): void {
+  if (getDefaultPackRegistry().isEnabled(BACKGROUND_TASKS_PACK_ID)) {
+    if (!registry.has('run_background')) registry.register(runBackgroundTool)
+  } else {
+    registry.unregister('run_background')
   }
 }
 

@@ -232,7 +232,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   comparisonModelA: z.string().max(256),
   comparisonModelB: z.string().max(256),
   comparisonJudgeModel: z.string().max(256),
-  backgroundTasksEnabled: z.boolean(),
+  // Background tasks moved to the `copse.background-tasks` first-party pack
+  // (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
+  // relaxation (issue #1190), so the former `backgroundTasksEnabled` top-level
+  // boolean is retired — the pack toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
   // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party

@@ -63,6 +63,14 @@
 //    `isCapabilityActive('devtools-shortcut')` instead of the retired
 //    `devtoolsShortcutEnabled` setting, so the pack toggle atomically
 //    registers/unregisters the global Ctrl+Shift+I shortcut. Default DISABLED.
+//  - `backgroundTasksPack` — the first-party pack for the experimental
+//    background tasks feature (issue #691). Declares the `run_background` tool
+//    AND the `loopback-bind` **permission / sandbox relaxation** (issue #1190):
+//    the pack toggle atomically drops the tool from the model tool list
+//    (`registry-bootstrap.ts` reads the pack registry) and the permission-gate
+//    only grants the loopback port-binding relaxation while the pack declares it
+//    (`permission-gate.ts` reads `isPermissionDeclared('loopback-bind')`).
+//    Default DISABLED.
 import type { RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
@@ -76,6 +84,7 @@ import { ciInvestigatorPack } from './ci-investigator-pack.ts'
 import { piiRedactionPack } from './pii-redaction-pack.ts'
 import { mcpUiCanvasPack } from './mcp-ui-canvas-pack.ts'
 import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
+import { backgroundTasksPack } from './background-tasks-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
@@ -83,7 +92,8 @@ import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
  * feature packs (post-turn review + model comparison), then long-horizon
  * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
  * the CI investigator, then PII redaction, then the two capability-only packs
- * (MCP-UI canvas + DevTools shortcut).
+ * (MCP-UI canvas + DevTools shortcut), then the background-tasks pack (which
+ * declares a permission / sandbox relaxation, issue #1190).
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -97,6 +107,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   piiRedactionPack,
   mcpUiCanvasPack,
   devtoolsShortcutPack,
+  backgroundTasksPack,
 ]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */

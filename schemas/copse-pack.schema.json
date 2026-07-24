@@ -148,6 +148,34 @@
         }
       }
     },
+    "permissions": {
+      "description": "Permission / sandbox relaxations the pack DECLARES it may request (issue #1190) — the authority it opens. The permission-gate only grants a declared relaxation while the owning pack is enabled; disabling the pack revokes it atomically. Enumerated in Settings and exposed for the install-time capability/permission review (#1082).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "title"],
+        "properties": {
+          "name": {
+            "description": "Stable relaxation id the permission-gate resolves via isPermissionDeclared.",
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "description": "Human title for the Settings pack-list enumeration.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Optional human description of the authority the relaxation opens.",
+            "type": "string"
+          },
+          "scope": {
+            "description": "Granularity of the permission grant that gates the relaxation (defaults to project).",
+            "enum": ["project", "workspace"]
+          }
+        }
+      }
+    },
     "settings": {
       "description": "Pack-scoped settings schema, keyed by setting id, rendered generically in Settings (P3).",
       "type": "object",

@@ -103,6 +103,7 @@ import {
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
   syncModelComparisonTools,
+  syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncPiiTools,
   syncReadTerminalTools,
@@ -116,6 +117,7 @@ import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE, migrateLegacyMemories } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -1099,6 +1101,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // without an app restart (mirrors the tool syncs above).
     if (id === DEVTOOLS_SHORTCUT_PACK_ID) {
       syncDevtoolsShortcut(win)
+    }
+    // Same for the `copse.background-tasks` pack's `run_background` tool — the
+    // atomic pack-disable also revokes the pack's declared `loopback-bind`
+    // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
+    if (id === BACKGROUND_TASKS_PACK_ID) {
+      syncBackgroundTasksTools(registry)
     }
     return { packs: getPackService().list() }
   })

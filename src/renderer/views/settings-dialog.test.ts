@@ -144,11 +144,10 @@ describe('settings search (cross-section block filter)', () => {
   })
 
   it('matches text in a label or hint, not just the heading', () => {
-    // "watchers" appears only in the Background tasks label/hint, not in any
-    // legend, so a hit proves the search reaches label/hint body copy — not just
-    // headings.
-    search('watchers')
-    assert.deepEqual(resultLegends(), ['Background tasks'])
+    // "verdicts" appears only in the Model comparison hint, not in any legend, so
+    // a hit proves the search reaches label/hint body copy — not just headings.
+    search('verdicts')
+    assert.deepEqual(resultLegends(), ['Model comparison'])
   })
 
   it('ranks a heading (legend) match above a body-only match', () => {

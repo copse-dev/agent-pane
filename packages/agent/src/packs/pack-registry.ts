@@ -20,6 +20,7 @@
 import type {
   PackCapabilityDecl,
   PackContributions,
+  PackPermissionDecl,
   PackUiContribution,
   PackPromptBlock,
   RegisteredPack,
@@ -212,6 +213,28 @@ export class PackRegistry {
    */
   isCapabilityActive(name: string): boolean {
     return this.activeCapabilities().some((capability) => capability.name === name)
+  }
+
+  /**
+   * Permission / sandbox relaxations declared right now — every relaxation a
+   * still-enabled pack contributes (enabled packs only). Disabling the owning
+   * pack drops its relaxations from this getter in the same atomic flag flip
+   * that drops its tools/hooks (issue #1190), so the permission-gate stops
+   * honouring the declared authority the moment the pack is off.
+   */
+  activePermissions(): readonly PackPermissionDecl[] {
+    return this.collectActive((c) => c.permissions)
+  }
+
+  /**
+   * Whether a named permission / sandbox relaxation is declared by an enabled
+   * pack — the seam the permission-gate consults before offering or honouring a
+   * declared relaxation (issue #1190). A relaxation is grantable iff some
+   * *enabled* pack declares it, so disabling that pack revokes the authority
+   * atomically (mirrors {@link isCapabilityActive}).
+   */
+  isPermissionDeclared(name: string): boolean {
+    return this.activePermissions().some((permission) => permission.name === name)
   }
 
   /**

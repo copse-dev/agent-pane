@@ -36,6 +36,7 @@ function pilotPack(): RegisteredPack {
       promptBlocks: [{ id: 'pilot-steer', text: 'plan your work', trust: 'trusted' }],
       uiContributions: [{ id: 'pilot-plan-panel', level: 3, slot: 'plan' }],
       capabilities: [{ name: 'pilot-flag', title: 'Pilot flag' }],
+      permissions: [{ name: 'pilot-bind', title: 'Pilot bind', scope: 'project' }],
     },
   )
 }
@@ -48,6 +49,7 @@ function activeCounts(registry: PackRegistry): Record<string, number> {
     prompt: registry.activePromptBlocks().length,
     ui: registry.activeUiContributions().length,
     capabilities: registry.activeCapabilities().length,
+    permissions: registry.activePermissions().length,
   }
 }
 
@@ -63,9 +65,11 @@ describe('atomic enable/disable', () => {
       prompt: 1,
       ui: 1,
       capabilities: 1,
+      permissions: 1,
     })
-    // The capability is active while the owning pack is enabled.
+    // The capability + declared permission are active while the owning pack is enabled.
     assert.equal(registry.isCapabilityActive('pilot-flag'), true)
+    assert.equal(registry.isPermissionDeclared('pilot-bind'), true)
 
     registry.disable('pilot')
 
@@ -78,10 +82,15 @@ describe('atomic enable/disable', () => {
       prompt: 0,
       ui: 0,
       capabilities: 0,
+      permissions: 0,
     })
     // Disabling drops the capability in the same flag flip (mirrors the tool-name
     // assertion): `isCapabilityActive` is the single seam subsystems consult.
     assert.equal(registry.isCapabilityActive('pilot-flag'), false)
+    // The declared permission drops in the SAME flag flip: the permission-gate
+    // resolves a relaxation through `isPermissionDeclared`, so disabling the pack
+    // revokes the authority atomically (issue #1190).
+    assert.equal(registry.isPermissionDeclared('pilot-bind'), false)
   })
 
   it('restores every contribution kind on re-enable', () => {
@@ -98,8 +107,10 @@ describe('atomic enable/disable', () => {
       prompt: 1,
       ui: 1,
       capabilities: 1,
+      permissions: 1,
     })
     assert.equal(registry.isCapabilityActive('pilot-flag'), true)
+    assert.equal(registry.isPermissionDeclared('pilot-bind'), true)
   })
 
   it('leaves only the disabled pack removed from a mixed registry', () => {

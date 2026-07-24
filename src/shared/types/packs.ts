@@ -78,6 +78,25 @@ export interface PackCapabilitySummary {
 }
 
 /**
+ * One permission / sandbox relaxation a pack DECLARES it may request (issue
+ * #1190) — the authority the pack opens. The permission-gate only grants a
+ * declared relaxation while the owning pack is enabled; disabling the pack
+ * revokes it atomically. Enumerated in Settings so the user sees what a pack can
+ * request, and exposed for the future install-time capability/permission review
+ * (#1082).
+ */
+export interface PackPermissionSummary {
+  /** Stable relaxation id resolved by the permission-gate. */
+  name: string
+  /** Human title for the Settings enumeration. */
+  title: string
+  /** Optional human description of the authority the relaxation opens. */
+  description?: string
+  /** The granularity of the permission grant that gates the relaxation. */
+  scope?: 'project' | 'workspace'
+}
+
+/**
  * Everything a pack contributes, enumerated for the Settings pack list. Both
  * first-party and user packs surface here (decision 15). Function hooks and
  * native tool wiring stay on the host side — the renderer only sees ids and
@@ -98,6 +117,8 @@ export interface PackContributionsSummary {
   ui: readonly PackUiContributionSummary[]
   /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
   capabilities: readonly PackCapabilitySummary[]
+  /** Permission / sandbox relaxations the pack may request while enabled (#1190). */
+  permissions: readonly PackPermissionSummary[]
   /** Namespaced storage bag the pack owns (survives disable — decision 17). */
   storageNamespace?: string
 }

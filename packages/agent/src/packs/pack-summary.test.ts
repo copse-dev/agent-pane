@@ -61,6 +61,14 @@ function demoPack(id: string): RegisteredPack {
       capabilities: [
         { name: `${id}-cap`, title: 'Demo capability', description: 'a pure behaviour flag' },
       ],
+      permissions: [
+        {
+          name: `${id}-bind`,
+          title: 'Demo bind',
+          description: 'a sandbox relaxation',
+          scope: 'project',
+        },
+      ],
     },
   )
 }
@@ -88,6 +96,14 @@ describe('packToSummary', () => {
     assert.deepEqual(summary.contributions.capabilities, [
       { name: 'alpha-cap', title: 'Demo capability', description: 'a pure behaviour flag' },
     ])
+    assert.deepEqual(summary.contributions.permissions, [
+      {
+        name: 'alpha-bind',
+        title: 'Demo bind',
+        description: 'a sandbox relaxation',
+        scope: 'project',
+      },
+    ])
     assert.equal(summary.contributions.storageNamespace, 'alpha')
   })
 
@@ -98,6 +114,15 @@ describe('packToSummary', () => {
     )
     const summary = packToSummary(pack, true, () => undefined)
     assert.deepEqual(summary.contributions.capabilities, [{ name: 'flag-x', title: 'Flag X' }])
+  })
+
+  it('projects a permission without description/scope as name + title only', () => {
+    const pack = definePack(
+      { name: 'perm-only', trust: 'first-party' },
+      { permissions: [{ name: 'bind-x', title: 'Bind X' }] },
+    )
+    const summary = packToSummary(pack, true, () => undefined)
+    assert.deepEqual(summary.contributions.permissions, [{ name: 'bind-x', title: 'Bind X' }])
   })
 
   it('falls values back to declared defaults when nothing is stored', () => {

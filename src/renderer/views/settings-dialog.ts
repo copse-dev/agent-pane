@@ -172,7 +172,8 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
-  { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
+  // Background tasks moved to Settings > Packs (`copse.background-tasks`), which
+  // also declares the `loopback-bind` sandbox relaxation (issue #1190).
   // The DevTools shortcut toggle moved to Settings > Packs (`copse.devtools-shortcut`).
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
@@ -1044,24 +1045,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 spend approval). When off, run it on demand via the <code>compare_models</code> tool.
               </p>
             </fieldset>
-
-            <fieldset>
-              <legend>Background tasks</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="backgroundTasksEnabled" />
-                Let the agent run long-lived background commands (dev servers, watchers)
-              </label>
-              <p class="field-hint">
-                Adds a <code>run_background</code> tool that starts a long-running command
-                (<code>npm run dev</code>, a build/test watcher, …) and keeps it alive across turns,
-                with list / logs / stop actions. A task can opt into binding a local port — for a
-                dev server — which reports its <code>http://localhost:&lt;port&gt;</code> URL so the
-                agent can open it in the built-in browser; that asks for your permission the first
-                time per project and relaxes the sandbox only to allow binding on localhost.
-                Otherwise a task stays fully sandboxed (workspace-only, no network). Tasks are
-                stopped when the app quits. While off, the tool is not registered.
-              </p>
-            </fieldset>
           </section>
 
           <div class="settings-search-results" id="settings-search-results"></div>
@@ -1751,6 +1734,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         label: 'Capabilities',
         count: contributions.capabilities.length,
         title: contributions.capabilities.map((c) => `${c.title} (${c.name})`).join(', '),
+      })
+    }
+    if (contributions.permissions.length > 0) {
+      chips.push({
+        label: 'Permissions',
+        count: contributions.permissions.length,
+        title: contributions.permissions
+          .map((p) => `${p.title} (${p.name}${p.scope ? `, ${p.scope}` : ''})`)
+          .join(', '),
       })
     }
     if (chips.length > 0) {

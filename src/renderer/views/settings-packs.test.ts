@@ -91,6 +91,7 @@ const demoPack: PackSummary = {
     promptBlocks: [{ id: 'demo-steer', trust: 'trusted' }],
     ui: [{ id: 'demo-panel', level: 2, slot: 'sidebar', title: 'Demo panel', panelKind: 'list' }],
     capabilities: [],
+    permissions: [],
     storageNamespace: 'copse.demo',
   },
   settings: [
@@ -124,6 +125,7 @@ const modelFieldPack: PackSummary = {
     promptBlocks: [],
     ui: [],
     capabilities: [],
+    permissions: [],
   },
   settings: [
     {
@@ -149,6 +151,7 @@ const disabledUserPack: PackSummary = {
     promptBlocks: [],
     ui: [],
     capabilities: [],
+    permissions: [],
   },
   settings: [],
 }
@@ -249,6 +252,7 @@ describe('settings → packs list', () => {
         promptBlocks: [],
         ui: [],
         capabilities: [{ name: 'mcp-ui-canvas', title: 'MCP-UI canvas rendering' }],
+        permissions: [],
       },
       settings: [],
     }
@@ -257,6 +261,29 @@ describe('settings → packs list', () => {
     assert.deepEqual(chipTexts, ['Capabilities × 1'])
     // A capability-only pack contributes something — no skeleton note.
     assert.doesNotMatch(list.textContent, /Contributes nothing yet/)
+  })
+
+  it('enumerates a declared permission / sandbox relaxation as a Permissions chip', async () => {
+    const permissionPack: PackSummary = {
+      id: 'copse.background-tasks',
+      trust: 'first-party',
+      name: 'copse.background-tasks',
+      enabled: false,
+      contributions: {
+        toolNames: ['run_background'],
+        blockingHooks: [],
+        asyncHooks: [],
+        commandHooks: [],
+        promptBlocks: [],
+        ui: [],
+        capabilities: [],
+        permissions: [{ name: 'loopback-bind', title: 'Bind a loopback port', scope: 'project' }],
+      },
+      settings: [],
+    }
+    const list = await openPacks({ packs: [permissionPack] }, spy)
+    const chipTexts = Array.from(list.querySelectorAll('.pack-chip')).map((el) => el.textContent)
+    assert.deepEqual(chipTexts, ['Tools × 1', 'Permissions × 1'])
   })
 
   it('shows a "contributes nothing" note for skeleton packs', async () => {
@@ -271,6 +298,7 @@ describe('settings → packs list', () => {
         promptBlocks: [],
         ui: [],
         capabilities: [],
+        permissions: [],
       },
       settings: [],
     }

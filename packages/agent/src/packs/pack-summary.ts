@@ -57,6 +57,14 @@ export interface PackCapabilityOut {
   description?: string
 }
 
+/** One permission / sandbox relaxation enumerated for the Settings pack list. */
+export interface PackPermissionOut {
+  name: string
+  title: string
+  description?: string
+  scope?: 'project' | 'workspace'
+}
+
 /** Contributions snapshot for one pack (renderer-facing plain data). */
 export interface PackContributionsOut {
   toolNames: readonly string[]
@@ -68,6 +76,8 @@ export interface PackContributionsOut {
   ui: readonly PackUiContributionOut[]
   /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
   capabilities: readonly PackCapabilityOut[]
+  /** Permission / sandbox relaxations the pack may request while enabled. */
+  permissions: readonly PackPermissionOut[]
   storageNamespace?: string
 }
 
@@ -164,6 +174,12 @@ export function packToSummary(
     if (c.description !== undefined) entry.description = c.description
     return entry
   })
+  const permissions = contributions.permissions.map((p) => {
+    const entry: PackPermissionOut = { name: p.name, title: p.title }
+    if (p.description !== undefined) entry.description = p.description
+    if (p.scope !== undefined) entry.scope = p.scope
+    return entry
+  })
   const contributionsOut: PackContributionsOut = {
     toolNames: contributions.toolNames.slice(),
     blockingHooks: contributions.blockingHooks.map((h) => ({ id: h.id, event: h.event })),
@@ -172,6 +188,7 @@ export function packToSummary(
     promptBlocks,
     ui,
     capabilities,
+    permissions,
   }
   if (manifest.tools?.mcpServers !== undefined) {
     contributionsOut.mcpServersPath = manifest.tools.mcpServers

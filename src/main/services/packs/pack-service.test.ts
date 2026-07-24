@@ -24,6 +24,7 @@ import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
@@ -37,6 +38,7 @@ const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEn
 const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
 const MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY = 'packMigration.mcpUiCanvasEnablement'
 const DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY = 'packMigration.devtoolsShortcutEnablement'
+const BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.backgroundTasksEnablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -75,14 +77,16 @@ function clearStorage(): void {
   storageDelete(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY)
   storageDelete(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY)
   storageDelete(PII_REDACTION_ENABLEMENT_MIGRATION_KEY)
-  // The two capability-only pack migrations run in the same getPackService()
-  // call as every other migration. Mark them done by default so the existing
-  // per-pack migration assertions stay scoped to their own pack; the dedicated
-  // capability-pack tests below clear these keys to exercise them.
+  // The two capability-only pack migrations + the background-tasks migration run
+  // in the same getPackService() call as every other migration. Mark them done
+  // by default so the existing per-pack migration assertions stay scoped to their
+  // own pack; the dedicated tests below clear these keys to exercise them.
   storageSet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY, true)
   storageDelete('mcpUiArtefactsEnabled')
   storageDelete('devtoolsShortcutEnabled')
+  storageDelete('backgroundTasksEnabled')
   storageDelete('postTurnReviewEnabled')
   storageDelete('modelComparisonEnabled')
   storageDelete('longHorizonTasksEnabled')
@@ -538,8 +542,8 @@ describe('PackService', () => {
   /**
    * Mark every migration except the one under test as already-done, so a single
    * getPackService() run exercises just that capability-pack migration. The two
-   * capability keys are marked done by clearStorage in beforeEach, so the test
-   * only clears its own target.
+   * capability keys + the background-tasks key are marked done by clearStorage in
+   * beforeEach, so the test only clears its own target.
    */
   function isolateSiblingMigrations(): void {
     storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
@@ -590,6 +594,40 @@ describe('PackService', () => {
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(DEVTOOLS_SHORTCUT_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('migrates background-tasks default-OFF without silently enabling run_background', () => {
+    isolateSiblingMigrations()
+    storageDelete(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY)
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PACK_ID), false)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [BACKGROUND_TASKS_PACK_ID])
+    assert.equal(storageGet(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY), true)
+  })
+
+  it('preserves an explicit legacy backgroundTasksEnabled=true choice', () => {
+    isolateSiblingMigrations()
+    storageDelete(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY)
+    storageSet('backgroundTasksEnabled', true)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('does not overwrite pack choices after the background-tasks migration has run', () => {
+    isolateSiblingMigrations()
+    // The migration key is already set by clearStorage → beforeEach.
+    storageSet(PACK_DISABLED_KEY, [])
+    // A stale legacy value must be ignored once the migration key is set.
+    storageSet('backgroundTasksEnabled', false)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PACK_ID), true)
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 })

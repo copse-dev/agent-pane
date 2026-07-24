@@ -65,6 +65,36 @@ export interface PackCapabilityDecl {
 }
 
 /**
+ * A permission / sandbox relaxation a pack DECLARES it may request — the missing
+ * "what authority does this pack open" contribution kind (issue #1190). Some
+ * features are, in essence, a sandbox relaxation gated by a permission prompt:
+ * the Background tasks pack can opt a task into binding a loopback port, which
+ * relaxes the default sandbox (workspace-only, no network) to allow `localhost`
+ * binding for the process lifetime, gated by a per-project grant through the
+ * permission-gate. A declared relaxation is grantable ONLY while the owning pack
+ * is enabled — the permission-gate resolves it through
+ * {@link PackRegistry.isPermissionDeclared}, so disabling the pack revokes the
+ * authority in the same atomic flag flip that drops its tools/hooks. The
+ * declaration also feeds the Settings pack-list enumeration and the future
+ * install-time capability/permission review (#1082).
+ */
+export interface PackPermissionDecl {
+  /** Stable relaxation id the permission-gate resolves via `isPermissionDeclared`. */
+  name: string
+  /** Human title for the Settings pack-list enumeration (P3). */
+  title: string
+  /** Optional human description of the authority the relaxation opens. */
+  description?: string
+  /**
+   * The granularity of the permission grant that gates the relaxation. `project`
+   * — a per-project grant (e.g. the loopback-bind grant, keyed by execution
+   * root); `workspace` — a broader per-workspace grant. Defaults to `project`
+   * when omitted (the tighter scope).
+   */
+  scope?: 'project' | 'workspace'
+}
+
+/**
  * A prompt / steering block a pack contributes, carrying trust framing (plan).
  * A `trusted` (first-party) block is injected verbatim; an `untrusted` (user)
  * block is delimited as data, matching the skills trust model.
@@ -163,6 +193,8 @@ export interface PackManifest {
   ui?: readonly PackUiContribution[]
   /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
   capabilities?: readonly PackCapabilityDecl[]
+  /** Permission / sandbox relaxations the pack may request while enabled. */
+  permissions?: readonly PackPermissionDecl[]
   settings?: PackSettingsSchema
   storage?: PackStorageDecl
 }
@@ -192,6 +224,14 @@ export interface PackContributions {
    * contribution kinds.
    */
   readonly capabilities: readonly PackCapabilityDecl[]
+  /**
+   * Permission / sandbox relaxations the pack may request while enabled. A
+   * relaxation is grantable iff some enabled pack declares it (see
+   * {@link PackRegistry.isPermissionDeclared}); disabling the owning pack drops
+   * it in the same atomic flag flip as its other contribution kinds, so the
+   * permission-gate stops honouring the authority the moment the pack is off.
+   */
+  readonly permissions: readonly PackPermissionDecl[]
 }
 
 /** Contributions a pack with nothing to offer registers (the P1 skeleton). */
@@ -202,6 +242,7 @@ export const EMPTY_PACK_CONTRIBUTIONS: PackContributions = {
   promptBlocks: [],
   uiContributions: [],
   capabilities: [],
+  permissions: [],
 }
 
 /**
@@ -253,6 +294,7 @@ export function packManifestFromPluginJson(
     prompt?: readonly PackPromptBlock[]
     ui?: readonly PackUiContribution[]
     capabilities?: readonly PackCapabilityDecl[]
+    permissions?: readonly PackPermissionDecl[]
     settings?: PackSettingsSchema
     storage?: PackStorageDecl
   },
@@ -289,6 +331,7 @@ export function packManifestFromPluginJson(
   if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
   if (raw.capabilities) manifest.capabilities = raw.capabilities
+  if (raw.permissions) manifest.permissions = raw.permissions
   if (raw.settings) manifest.settings = raw.settings
   if (raw.storage) manifest.storage = raw.storage
   return manifest

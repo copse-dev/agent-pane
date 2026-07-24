@@ -47,6 +47,7 @@ import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -79,6 +80,9 @@ const MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY = 'packMigration.mcpUiCanvasEnablem
 
 /** One-time bridge from the retired `devtoolsShortcutEnabled` standalone setting. */
 const DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY = 'packMigration.devtoolsShortcutEnablement'
+
+/** One-time bridge from the retired `backgroundTasksEnabled` standalone setting. */
+const BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.backgroundTasksEnablement'
 
 /** One-time bridge from the retired top-level model settings now owned by packs. */
 const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
@@ -303,6 +307,31 @@ function migrateDevtoolsShortcutEnablement(): void {
   storageSet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY, true)
 }
 
+/**
+ * Preserve the enablement users had before background tasks became a pack. The
+ * feature was opt-in (off by default via the `backgroundTasksEnabled` setting),
+ * so an absent or false value must disable the new `copse.background-tasks` pack
+ * — otherwise the migration would silently register the `run_background` tool
+ * (and advertise the loopback-bind sandbox relaxation) for every existing user
+ * after upgrade. This preserves the default-OFF invariant: it runs synchronously
+ * before the shared registry is created (which `registry-bootstrap.ts` consults
+ * via `isEnabled`, and `permission-gate.ts` via `isPermissionDeclared`) and is
+ * idempotent (guarded by its own key). A user who had previously turned the
+ * setting on keeps background tasks enabled.
+ */
+function migrateBackgroundTasksEnablement(): void {
+  if (storageGet(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const backgroundTasksEnabled = storageGet('backgroundTasksEnabled')
+
+  if (backgroundTasksEnabled === true) disabled.delete(BACKGROUND_TASKS_PACK_ID)
+  else disabled.add(BACKGROUND_TASKS_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+}
+
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
 function readPackSettings(packId: string): Record<string, unknown> {
   const raw = storageGet(packSettingsKey(packId))
@@ -466,6 +495,7 @@ export function getPackService(): PackService {
   migratePiiRedactionEnablement()
   migrateMcpUiCanvasEnablement()
   migrateDevtoolsShortcutEnablement()
+  migrateBackgroundTasksEnablement()
   migratePackModelSettings()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
