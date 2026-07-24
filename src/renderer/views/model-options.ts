@@ -325,7 +325,12 @@ export async function fetchModelOptions(
   opts: FetchModelOptionsOpts = {},
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
-  const sshWorkspace = opts.sshWorkspace === true
+  // ACP agents are hidden on SSH workspaces UNLESS the user opted into remote ACP
+  // over SSH, in which case they spawn on the remote host (docs/plans/acp-over-ssh.md).
+  const isSshWorkspace = opts.sshWorkspace === true
+  const acpOverSsh =
+    isSshWorkspace && ((await api.settings.get('acpOverSshEnabled')) as boolean | null) === true
+  const sshWorkspace = isSshWorkspace && !acpOverSsh
   const includeAgentModels = opts.includeAgentModels !== false
 
   let available: AvailableProviders = {}
