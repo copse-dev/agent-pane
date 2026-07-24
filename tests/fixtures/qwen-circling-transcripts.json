@@ -1,0 +1,29 @@
+{
+  "description": "Real captured Qwen reasoning-loop transcripts for the local-model loop-kicking regression corpus (docs/plans/local-model-loop-kicking.md, Tier 1). The deterministic detector MUST kick on every `cases` entry with the listed `expectedCutReasons` within `kicksWithinRepeats` repeats of `unit`, and MUST NOT kick on any `controls` entry. `unit` is one iteration of the observed loop; a run replays it `repeats` times back-to-back. Text is reconstructed from reported Qwen transcripts (screenshots) — replace with verbatim stream-stats.jsonl captures when available; do not trim `unit` so the fingerprint/marker signals stay representative.",
+  "cases": [
+    {
+      "id": "verbatim-spiral",
+      "failureMode": "verbatim block re-emitted near-identically",
+      "expectedCutReasons": ["reasoning_repeat", "reasoning_budget"],
+      "kicksWithinRepeats": 3,
+      "repeats": 18,
+      "unit": "Since we don't have streaming data, we can only estimate from the stored reasoning files. The stored reasoning files are all under 12K bytes (~3K tokens). This suggests that qwen's reasoning is typically concise in this dataset.\n\nBut the spiral we saw in the screenshot was much longer. This could be because:\n- The screenshot shows the streaming output in real-time, which may be longer than the final stored reasoning\n- The stored reasoning file is the final result after the stream completes, which may be shorter\n- The screenshot may be from a different session that isn't stored in this dataset\n\nSo the answer is: we can't determine from this data how many spirals occurred, because the streaming data is not stored. We can only estimate from the stored reasoning files, which are all under 12K bytes (~3K tokens).\n\nTo properly answer the user's question, we need to:\n- Add streaming data to the stored reasoning files (or a separate file)\n- Or look at the streaming data directly (if available)\n"
+    },
+    {
+      "id": "replanning-churn",
+      "failureMode": "same plan re-derived with restart openers, no action taken",
+      "expectedCutReasons": ["backtrack_churn", "reasoning_budget"],
+      "kicksWithinRepeats": 4,
+      "repeats": 12,
+      "unit": "I need to:\n1. Create a function to track reasoning content during streaming\n2. Create a function to persist cut reasoning to stream-stats.jsonl\n3. Wire it into the streaming loop where streams are cut\n\nLet me start by understanding the current structure better, then implement the changes.\n\nThe implementation should:\n1. Track reasoning chunks during streaming (not just character count)\n2. When a stream is cut, save the reasoning content + stop info to stream-stats.jsonl\n3. Create a utility function to write to stream-stats.jsonl\n\nI'll need to:\n1. Create a new file packages/agent/src/stream-stats.ts for the persistence logic\n2. Modify run-agent-loop.ts to track reasoning content and call the persistence function when a stream is cut\n\nActually, looking at the exploration results, I can see the key sections:\n- streamOutputChars is tracked in the streaming loop\n- When isStreamOutputRunaway(streamOutputChars) fires, the loop breaks\n- The streamCappedAsRunaway flag is set\n"
+    }
+  ],
+  "controls": [
+    {
+      "id": "healthy-plan-then-act",
+      "note": "Ordinary planning language and a single reconsideration — must NOT trip any signal.",
+      "repeats": 1,
+      "unit": "The task is to add a reasoning-token budget to the loop. I need to add a counter that resets on each productive step and increments per stream. Let me check where streamReasoningChars is already computed so I can reuse it. Actually, run-agent-loop.ts already carries that on the stream-cut record, so I'll thread it from there. Next I'll wire the profile lookup at the call site and add a unit test. That's enough to implement; proceeding.\n"
+    }
+  ]
+}
