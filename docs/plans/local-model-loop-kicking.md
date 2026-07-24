@@ -33,8 +33,8 @@ Three gaps show up specifically with small local weights:
    that loops on step 3 of a near-empty context gets no loop nudge and no
    force-finalize — only the reasoning-runaway path can fire, and only if the
    stream actually hits the token cap.
-2. **No repeated-*reasoning* detection.** Duplicate *tool calls* are
-   fingerprinted; repeated near-identical *reasoning/assistant text* — a classic
+2. **No repeated-_reasoning_ detection.** Duplicate _tool calls_ are
+   fingerprinted; repeated near-identical _reasoning/assistant text_ — a classic
    small-model failure — is not caught except indirectly via the per-stream cap.
 3. **Thresholds and streak limits are global constants.** `run-agent-loop.ts`
    already accepts per-run recovery knobs (`reasoningRunawayRecoveryOutputTokens`,
