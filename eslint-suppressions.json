@@ -235,11 +235,6 @@
       "count": 1
     }
   },
-  "scripts/lib/terminal-bench-profiles.mts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
   "scripts/lib/terminal-bench-steering.mts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 3
@@ -257,12 +252,7 @@
   },
   "scripts/lib/terminal-bench-transcript.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 5
-    }
-  },
-  "scripts/lib/terminal-bench.mts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
+      "count": 2
     }
   },
   "scripts/patch-dev-name.mts": {
