@@ -1,20 +1,26 @@
 name: Demo preview
 
-# Publishes the per-PR browser demo (staged by ci.yml's build job as the
-# `demo-preview` artifact) to the machine-managed demo-previews branch, then
-# redeploys Pages so it is live at copse.dev/pr-<n>/, and posts a sticky PR
+# Publishes a per-PR browser demo, live at copse.dev/pr-<n>/, with a sticky PR
 # comment linking each scenario.
 #
-# This runs on workflow_run — a TRUSTED context that uses workflow definitions
-# and secrets from the default branch, never the PR head — so the write token
-# and the deploy never execute untrusted PR code. It is additionally gated to
-# same-repo PRs (head_repository == this repo); fork PRs never reach here, and
-# their build job never produces the artifact in the first place.
+# Triggered on push (not workflow_run) so the workflow runs from the pushed
+# branch's own definition — which makes the whole flow testable on the PR that
+# introduces it, before merge. This is safe because only same-repo branches can
+# push here: forks push to their own fork and never trigger this repo's push
+# workflows, so untrusted code never reaches the write token or the deploy. Each
+# push rebuilds the demo, releases it into the machine-managed demo-previews
+# branch under pr-<n>/, and redeploys Pages. Branches without an open PR build
+# nothing.
+#
+# The deploy always republishes site/ from `main` (see pages.yml), so a preview
+# push can only ever change its own pr-<n>/ subtree — never the marketing site.
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
+  push:
+    branches-ignore:
+      - main
+      - demo-previews
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,57 +28,69 @@ permissions:
   pages: write
   id-token: write
 
+# A newer push to the same branch supersedes an in-flight preview build.
+concurrency:
+  group: demo-preview-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   publish:
-    if: >-
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+    # Skip forks entirely (their pushes don't trigger this anyway; explicit for
+    # clarity). Prefer the self-hosted check fleet when configured.
+    if: github.repository == 'copse-dev/agent-pane'
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     outputs:
+      found: ${{ steps.pr.outputs.found }}
+      pr: ${{ steps.pr.outputs.number }}
       published: ${{ steps.commit.outputs.published }}
-      pr: ${{ steps.meta.outputs.pr }}
-      scenarios: ${{ steps.meta.outputs.scenarios }}
+      scenarios: ${{ steps.scenarios.outputs.json }}
     steps:
       - uses: actions/checkout@v7.0.0
-      # The demo-preview artifact only exists when the build job ran the demo
-      # tier (UI-affecting PRs; skipped/docs-only runs produce none). Absent
-      # artifact → this workflow no-ops via the download outcome guard below.
-      - name: Download demo preview artifact
-        id: download
-        continue-on-error: true
-        uses: actions/download-artifact@v7
+      # A preview belongs to a PR: resolve the open PR for this branch. No PR →
+      # nothing to preview or comment on, so the rest of the job is skipped.
+      - id: pr
+        uses: actions/github-script@v9
         with:
-          name: demo-preview
-          path: demo-preview
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ github.token }}
-      - id: meta
-        if: steps.download.outcome == 'success'
+          script: |
+            const branch = context.ref.replace('refs/heads/', '');
+            const { data } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open',
+            });
+            if (data.length === 0) {
+              console.log(`No open PR for ${branch}; skipping preview.`);
+              core.setOutput('found', 'false');
+              return;
+            }
+            core.setOutput('found', 'true');
+            core.setOutput('number', String(data[0].number));
+      - if: steps.pr.outputs.found == 'true'
+        uses: ./.github/actions/setup
+      - if: steps.pr.outputs.found == 'true'
+        run: npm run build:demo
+      - id: scenarios
+        if: steps.pr.outputs.found == 'true'
         run: |
-          set -euo pipefail
-          pr="$(tr -dc '0-9' < demo-preview/pr-number.txt)"
-          if [ -z "$pr" ]; then
-            echo "No PR number in artifact" >&2
-            exit 1
-          fi
-          echo "pr=$pr" >> "$GITHUB_OUTPUT"
-          # Collapse the scenario manifest to a single line for the step output.
-          scenarios="$(tr -d '\n' < demo-preview/site/scenarios.json 2>/dev/null || echo '[]')"
-          echo "scenarios=${scenarios:-[]}" >> "$GITHUB_OUTPUT"
+          {
+            echo 'json<<SCENARIOS_EOF'
+            tr -d '\n' < dist/demo/scenarios.json 2>/dev/null || echo '[]'
+            echo
+            echo 'SCENARIOS_EOF'
+          } >> "$GITHUB_OUTPUT"
       - id: commit
-        if: steps.download.outcome == 'success'
+        if: steps.pr.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ steps.meta.outputs.pr }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          PR: ${{ steps.pr.outputs.number }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
-          # Work on an isolated clone of the previews branch so the demo build
-          # in demo-preview/ (untracked) is never disturbed. Create the orphan
-          # branch on first publish.
+          # Work on an isolated clone of the previews branch so the demo build in
+          # dist/ is never disturbed. Create the orphan branch on first publish.
           if git clone --depth=1 --branch demo-previews "$remote" previews-branch 2>/dev/null; then
             echo "Updating existing demo-previews branch"
           else
@@ -84,7 +102,7 @@ jobs:
           git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -rf "previews-branch/pr-${PR}"
           mkdir -p "previews-branch/pr-${PR}"
-          cp -R demo-preview/site/. "previews-branch/pr-${PR}/"
+          cp -R dist/demo/. "previews-branch/pr-${PR}/"
           printf '%s\n' "$SHA" > "previews-branch/pr-${PR}/.head-sha"
           git -C previews-branch add "pr-${PR}"
           if git -C previews-branch diff --cached --quiet; then
