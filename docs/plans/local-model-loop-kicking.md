@@ -124,12 +124,15 @@ a timer — see below.
 it's circling"_). Qwen / QwQ / Qwen3-thinking / R1-family loops are dominated by
 restart markers. Per-profile `backtrackMarkers` counted case-insensitively over
 the rolling reasoning window; when hits reach `backtrackMarkerLimit`, kick
-(`cutReason: 'backtrack_churn'`). Seed set for the Qwen entries: `wait`,
-`but wait`, `hold on`, `actually`, `let me reconsider`, `let me re-examine`,
-`alternatively`, `on second thought`, `hmm`. Markers are profile _data_, so
-frontier models (no profile) are untouched and the list is tunable per family
-with no code change. This catches the churn fingerprinting misses — lexically
-varied but marker-dense.
+(`cutReason: 'backtrack_churn'`). The limit is on _density over a window_, not a
+first occurrence, so ordinary planning language is not punished. Seed set for
+the Qwen entries, covering both a stalled decision and re-planning churn (the two
+captured failure modes below): `wait`, `but wait`, `hold on`, `actually`,
+`let me reconsider`, `let me re-examine`, `alternatively`, `on second thought`,
+`hmm`, `let me start`, `i need to:`, `the implementation should`, `i'll need to`,
+`actually, looking at`. Markers are profile _data_, so frontier models (no
+profile) are untouched and the list is tunable per family with no code change.
+This catches the churn fingerprinting misses — lexically varied but marker-dense.
 
 **Signal C — near-duplicate reasoning** (structural backstop). The original
 idea, demoted: `reasoningFingerprint(text)` — a normalized (whitespace-collapsed,
@@ -185,6 +188,37 @@ populating the currently-dead recovery knobs.
   signal fires at low fill ratio for a profiled model and emits the matching
   `StreamCutReason`; a frontier model (no profile) stays byte-identical to
   current fixtures.
+
+## Regression guarantee
+
+Two real captured Qwen loops set the bar; the detector MUST kick on both, and
+keep kicking, forever. They live in `tests/fixtures/qwen-circling-transcripts.json`
+and map to the two failure modes:
+
+- `verbatim-spiral` — a multi-paragraph reasoning block re-emitted near-identically
+  dozens of times ("Since we don't have streaming data… But the spiral we saw… So
+  the answer is… To properly answer…"). Caught by signal **C** (fingerprint) and,
+  from sheer volume, signal **A** (budget).
+- `replanning-churn` — the same plan re-derived over and over with restart openers
+  ("I need to:", "The implementation should:", "I'll need to:", "Actually, looking
+  at…", "Let me start by…") and no action taken. Caught by signals **A** (budget)
+  \+ **B** (markers) — the case fingerprinting alone would miss.
+
+Two tiers, matching the "cheap deterministic + thorough model-graded" split:
+
+- **Tier 1 — deterministic corpus (model-free, blocks CI).** A unit test feeds
+  each fixture through the detector and asserts it kicks with the expected
+  `StreamCutReason` within a bounded number of repeats — and that a healthy
+  control transcript never trips. No model, milliseconds to run; this is the
+  "does not happen again" guard, and every newly observed loop is added here.
+- **Tier 2 — model-graded eval (manual, non-blocking).** An LLM-judge over
+  captured `stream-stats.jsonl` (cut reasoning is now persisted, #489) scores per
+  run: did the model circle, and did the kick fire in time without firing
+  spuriously. Runs on demand via the existing eval harness
+  (`.cursor/skills/agent-run-eval` / `on-machine-eval`), never in the production
+  CI path — model latency and nondeterminism must not gate merges. Its role is to
+  tune `reasoningBudgetTokens` / `backtrackMarkerLimit` / the marker set against
+  real corpora, not to pass/fail a build.
 
 ## Rollout
 
