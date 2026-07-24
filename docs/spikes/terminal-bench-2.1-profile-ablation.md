@@ -207,6 +207,16 @@ A detected circle is recorded and enters the existing recovery path; its one ret
 at 4k. `product-aligned@2` remains selectable for a paired targeted comparison, and checkpoint
 decisions are retained separately from stream cuts.
 
+The paired targeted study is [workflow run 30091741763](https://github.com/copse-dev/agent-pane/actions/runs/30091741763),
+dispatched from commit `2bba08a35927070de93d5ab2662606ebd2879aa0`. It runs one attempt of v2 and
+v3, task-major and order-counterbalanced, on 12 tasks: `code-from-image`,
+`fix-code-vulnerability`, `query-optimize`, `prove-plus-comm`, `feal-linear-cryptanalysis`,
+`make-mips-interpreter`, `password-recovery`, `mailman`, `circuit-fibsqrt`,
+`break-filter-js-from-html`, `chess-best-move`, and `rstan-to-pystan`. Six `PRO2-S` hosts each run
+two isolated workers with a 200 GiB volume; model, provider, 2k v2 cap, command timeout, and all
+other harness settings are held constant. Results are pending and will be added here after capsule
+validation.
+
 ## Compact evidence retention
 
 This note is the canonical human-readable findings record for the 2.1 study. It retains run and
