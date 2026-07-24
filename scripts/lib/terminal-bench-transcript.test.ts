@@ -15,8 +15,12 @@ function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8').trim()) as unknown
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
-  assert.ok(value !== null && typeof value === 'object' && !Array.isArray(value))
+  assert.ok(isRecord(value))
   return value
 }
 
