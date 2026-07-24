@@ -262,7 +262,7 @@ truth:
 
 ## Relationship to existing pieces
 
-- [`docs/plans/skillsbench.md`](skillsbench.md) defines the paired SkillsBench v1.1 study. It keeps
+- `docs/plans/skillsbench.md` (planned, not yet written) defines the paired SkillsBench v1.1 study. It keeps
   skill content value, autonomous discovery, and explicit `/skill` injection as separate arms so a
   selection failure cannot be mistaken for a useless skill.
 - The product-host runtime contract remains tracked by

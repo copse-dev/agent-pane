@@ -43,26 +43,26 @@ Each hook receives a base payload — `conversation_id`, `generation_id`,
 agent-session event also carries the **model identity** of the model actually
 running the turn: `model` (slug), `model_id`, and `model_params` (Cursor's
 `{ id, value }[]` array — e.g. `context_window` / `max_output_tokens`), matching
-the vendor contract (B4).
+the vendor contract (the [permission-hook I/O phase](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)).
 
-| Event                  | stdin (event fields)                                                                                         | stdout                                   | Copse         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------- | ------------- |
-| `beforeShellExecution` | `command`, `cwd`                                                                                             | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
-| `beforeMCPExecution`   | `tool_name`, `tool_input`                                                                                    | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured   |
-| `beforeReadFile`       | `file_path`, `content`                                                                                       | `{ permission: "allow"\|"deny" }`        | ✅ honoured   |
-| `beforeSubmitPrompt`   | `prompt`, `attachments`                                                                                      | `{ continue: boolean }`                  | ✅ wired (B1) |
-| `afterFileEdit`        | `file_path`, `edits`                                                                                         | none (notification)                      | ✅ wired (B2) |
-| `stop`                 | `status`                                                                                                     | none (notification)                      | ✅ wired (B3) |
-| `afterShellExecution`  | `command`, `output`, `duration`                                                                              | none (notification)                      | ✅ wired (D2) |
-| `afterMCPExecution`    | `tool_name`, `tool_input`, `result_json`, `duration`                                                         | none (notification)                      | ✅ wired (D2) |
-| `postToolUse`          | `tool_name`, `tool_input`, `tool_output`, `tool_use_id`, `cwd`, `duration`                                   | `additional_context` (queued)            | ✅ wired      |
-| `postToolUseFailure`   | `tool_name`, `tool_input`, `tool_use_id`, `cwd`, `error_message`, `failure_type`, `duration`, `is_interrupt` | none                                     | ✅ wired      |
+| Event                  | stdin (event fields)                                                                                         | stdout                                   | Copse                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `beforeShellExecution` | `command`, `cwd`                                                                                             | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured                                                                                                          |
+| `beforeMCPExecution`   | `tool_name`, `tool_input`                                                                                    | `{ permission: "allow"\|"deny"\|"ask" }` | ✅ honoured                                                                                                          |
+| `beforeReadFile`       | `file_path`, `content`                                                                                       | `{ permission: "allow"\|"deny" }`        | ✅ honoured                                                                                                          |
+| `beforeSubmitPrompt`   | `prompt`, `attachments`                                                                                      | `{ continue: boolean }`                  | ✅ wired ([beforeSubmitPrompt](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))      |
+| `afterFileEdit`        | `file_path`, `edits`                                                                                         | none (notification)                      | ✅ wired ([afterFileEdit](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))           |
+| `stop`                 | `status`                                                                                                     | none (notification)                      | ✅ wired ([stop](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))                    |
+| `afterShellExecution`  | `command`, `output`, `duration`                                                                              | none (notification)                      | ✅ wired ([afterShellExecution / afterMCPExecution](plans/hooks-and-feature-packs.md#phase-d--parity-tier-2-events)) |
+| `afterMCPExecution`    | `tool_name`, `tool_input`, `result_json`, `duration`                                                         | none (notification)                      | ✅ wired ([afterShellExecution / afterMCPExecution](plans/hooks-and-feature-packs.md#phase-d--parity-tier-2-events)) |
+| `postToolUse`          | `tool_name`, `tool_input`, `tool_output`, `tool_use_id`, `cwd`, `duration`                                   | `additional_context` (queued)            | ✅ wired                                                                                                             |
+| `postToolUseFailure`   | `tool_name`, `tool_input`, `tool_use_id`, `cwd`, `error_message`, `failure_type`, `duration`, `is_interrupt` | none                                     | ✅ wired                                                                                                             |
 
 The real `conversation_id` (thread id) and `generation_id` (turn id) come from
-the active run (B4); they are empty strings only when a hook fires outside any
+the active run (the [permission-hook I/O phase](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)); they are empty strings only when a hook fires outside any
 agent turn.
 
-### Matchers (per-event, D3)
+### Matchers (per-event, [matcher support](plans/hooks-and-feature-packs.md#phase-d--parity-tier-2-events))
 
 A hook entry may carry an optional `matcher` — a **regex string** that filters
 when the hook runs. Which field the regex is tested against depends on the event
@@ -118,17 +118,17 @@ Semantics:
 Matcher evaluation is centralized in the Cursor adapter
 (`cursorMatcherMatches` / `cursorMatcherSubject`) and applied at discovery — the
 adapter's dispatch-side filter — so every event runs the same matcher code with
-only its subject field differing (decision 8: adapters own matchers).
+only its subject field differing (the [dialect-by-source-path decision](plans/hooks-and-feature-packs.md#decisions-log): adapters own matchers).
 
 Permission responses may also carry `agentMessage` / `userMessage`. A denying
 hook's `agentMessage` is now **surfaced to the agent** as the tool-result reason
-(B4) — a message-bearing `deny` fails the call with that reason so the model sees
+(the [permission-hook I/O phase](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)) — a message-bearing `deny` fails the call with that reason so the model sees
 why. A hook `ask` **escalates to Copse's approval prompt** (the same prompt a
 policy `ask` uses): approving lets the call proceed, declining blocks it. A hook
 still can only _tighten_ the gate — an `allow` never auto-approves something
 Copse would otherwise prompt about.
 
-`beforeReadFile` receives the file **content** on stdin (B4), so a redaction /
+`beforeReadFile` receives the file **content** on stdin (the [permission-hook I/O phase](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)), so a redaction /
 secret-detection hook can inspect the bytes and `deny`. Cursor's `beforeReadFile`
 response is `allow` / `deny` only — there is no content-rewrite field in the
 vendor contract — so "redaction" is expressed as _deny on inspection_, not by
@@ -142,12 +142,12 @@ returning modified content.
 | **User hooks**                | Supported     | `~/.cursor/hooks.json`, always honoured                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | **Project hooks**             | Supported     | `<root>/.cursor/hooks.json`, only when the workspace is trusted (#100)                                                                                                                                                                                                                                                                                                                                                                                       |
 | **Hook discovery / list**     | Supported     | `hooks:list` IPC returns hooks + validation warnings for the Sources panel                                                                                                                                                                                                                                                                                                                                                                                   |
-| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt` (B1), `afterFileEdit` (B2), `stop` (B3), `afterShellExecution` / `afterMCPExecution` (D2) are wired; every declared Cursor event now fires                                                                                                                                                                                                                                                                                              |
+| **Lifecycle hooks**           | Supported     | `beforeSubmitPrompt`, `afterFileEdit`, `stop`, `afterShellExecution` / `afterMCPExecution` are wired ([phase B](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface), [phase D](plans/hooks-and-feature-packs.md#phase-d--parity-tier-2-events)); every declared Cursor event now fires                                                                                                                                           |
 | **Post-tool observation**     | Supported     | `afterShellExecution` / `afterMCPExecution` plus generic `postToolUse` / `postToolUseFailure` fire **detached** from the one canonical `afterToolUse` event. Generic events cover every tool and split on success/failure; the output snapshot is capped before it reaches hook stdin. Because detached hooks cannot mutate an already-consumed result, `additional_context` becomes a budgeted queued message and `updated_mcp_tool_output` is not applied. |
-| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin (B4) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)                                                                                                                                                                                                                                                                                                      |
-| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event (B4), sourced from the model actually running                                                                                                                                                                                                                                                                                                                                             |
-| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt (B4)                                                                                                                                                                                                                                                                                                                          |
-| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is H1)                                                                                                                                                                                                                                                                                                                                                                    |
+| **`beforeReadFile` content**  | Supported     | The hook receives the file contents on stdin ([permission-hook I/O](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)) so it can inspect and `deny` (redaction = deny-on-inspection; Cursor has no content-rewrite response)                                                                                                                                                                                                   |
+| **Model identity in payload** | Supported     | `model` / `model_id` / `model_params` on every agent-session event ([permission-hook I/O](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)), sourced from the model actually running                                                                                                                                                                                                                                          |
+| **`agentMessage` / `ask`**    | Supported     | A denying hook's `agentMessage` reaches the agent as the tool-result reason; a hook `ask` escalates to Copse's approval prompt ([permission-hook I/O](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface))                                                                                                                                                                                                                       |
+| **Content rewriting**         | Not supported | Hooks can block but not yet mutate prompts, read output, or edits (`updated_input` is the [tool-gate input rewriting phase](plans/hooks-and-feature-packs.md#phase-h--vendor-response-semantics))                                                                                                                                                                                                                                                            |
 | **Plugin-contributed hooks**  | Not supported | Marketplace plugins do not declare hooks in current `plugin.json` examples                                                                                                                                                                                                                                                                                                                                                                                   |
 | **Settings UI**               | Supported     | Settings → Sources → Hooks: `cursorHooksEnabled` toggle, discovered hooks, per-entry validation warnings, per-hook runtime error state (first failure per session)                                                                                                                                                                                                                                                                                           |
 
@@ -161,8 +161,8 @@ visible before enabling.
 
 ### Implementation
 
-Cursor is a **dialect adapter** (A2 of the hooks platform,
-[`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md), decision 8:
+Cursor is a **dialect adapter** (the [dialect-adapter phase](plans/hooks-and-feature-packs.md#phase-a--foundations) of the hooks platform,
+[`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md), the [dialect-by-source-path decision](plans/hooks-and-feature-packs.md#decisions-log):
 "dialect by source path"). Discovery, parsing, matchers, wire marshalling in both
 directions, and the per-event exit-code table all live in
 [`src/main/services/hooks/cursor-adapter.ts`](../src/main/services/hooks/cursor-adapter.ts):
@@ -191,7 +191,7 @@ hook can never auto-approve something Copse would otherwise ask about.
   or unparseable response is treated as `allow`, so a broken hook never silently wedges
   the agent. But Cursor's per-hook `failClosed: true` (`{ "command": …, "failClosed": true }`)
   reverses that for **that** hook: a crash / timeout / invalid JSON **blocks** the action
-  instead — the vendor contract for imported security hooks (decision 9). The Cursor
+  instead — the vendor contract for imported security hooks (the [vendor failure semantics decision](plans/hooks-and-feature-packs.md#decisions-log)). The Cursor
   adapter reports the failure + the hook's resolved `onFailure`; the runner turns it into
   a deny (`failClosed`) or a no-op (the default).
 - **No LLM secrets.** Hook processes inherit `envForRendererChildProcess()` — the same
@@ -222,7 +222,7 @@ Concretely, "trusting a workspace" with hooks enabled also means:
   (`beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile`) spawns the repo's
   hook command first. A cloned or third-party repo can ship a `hooks.json` that runs
   whatever it likes, repeatedly, for the lifetime of the session.
-- **Sandboxed by default (F3, macOS-only).** As of F3 (decision 7 of the
+- **Sandboxed by default (the [sandbox phase](plans/hooks-and-feature-packs.md#phase-f--copse-dialect-native-events-sandbox), macOS-only).** Hook processes run inside the project sandbox by default (the [sandboxed-by-default decision](plans/hooks-and-feature-packs.md#decisions-log) of the
   [hooks platform plan](./plans/hooks-and-feature-packs.md)), hook processes run **inside
   the project sandbox by default** — the same workspace-scoped seatbelt that constrains the
   agent's shell/file tools. Cursor / Claude hooks cannot opt out (only the Copse dialect's
@@ -254,7 +254,7 @@ This is the same trust boundary described in
 [`docs/supply-chain-security.md`](./supply-chain-security.md): trusting a workspace means
 trusting the code it can cause to run.
 
-## Vendored upstream schemas & drift detection (G3)
+## Vendored upstream schemas & drift detection
 
 Copse pins committed copies of the upstream hook-config JSON schemas for both
 foreign dialects under [`schemas/vendor/`](../schemas/vendor/) —
@@ -280,7 +280,7 @@ a load gate** (a config that violates an upstream schema still loads):
    Cursor events above; the long tail of Claude events (`Notification`,
    `TeammateIdle`, …) is intentionally-unsupported v1.
 
-## Wire payload snapshots (G4)
+## Wire payload snapshots
 
 Every dialect wire **request** payload — the stdin JSON a Cursor / Claude / Copse
 hook actually receives — is snapshot-tested against a committed golden fixture
@@ -292,7 +292,7 @@ declares a marshaller for — including the tool-flavor splits (shell / MCP / re
 for `toolGate`, shell / MCP for `afterToolUse`) — and asserts the result is
 byte-identical to the fixture.
 
-This implements **decision 14** of
+This implements the [**payload stability at publish** decision](plans/hooks-and-feature-packs.md#decisions-log) of
 [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md):
 pre-v1 with zero consumers we do not version payloads, but the request direction
 is the stability contract, so **changing a snapshot is a publish-time stability
@@ -306,15 +306,15 @@ UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1 npm test
 ## Gaps and future work
 
 1. **Content rewriting** — `updated_input` on tool gates (rewrite the proposed tool
-   input, re-running policy analysis) is Phase H1, not yet wired.
+   input, re-running policy analysis) is the [tool-gate input rewriting phase](plans/hooks-and-feature-packs.md#phase-h--vendor-response-semantics), not yet wired.
 2. **Hook cards** — deny/ask decisions and hook executions surface today through the
    existing text / approval-prompt channels; the dedicated right-aligned hook-card
-   UI family is Phase G1. `userMessage` on a plain deny (no approval prompt) waits
+   UI family is the [hook cards UI phase](plans/hooks-and-feature-packs.md#phase-g--validation--tooling). `userMessage` on a plain deny (no approval prompt) waits
    for that card surface.
 3. **Claude `SessionStart` model** — the wire payload type carries the running model
    (`AgentSessionInfo`), but Claude's optional `model` on `sessionStart` needs the
-   `sessionStart` fire site, which is Phase H4; Cursor agent-session events carry
-   model identity now (B4).
+   `sessionStart` fire site, which is the [per-hook timeout + sessionStart phase](plans/hooks-and-feature-packs.md#phase-h--vendor-response-semantics); Cursor agent-session events carry
+   model identity now (the [permission-hook I/O phase](plans/hooks-and-feature-packs.md#phase-b--complete-the-cursor-declared-surface)).
 4. **Plugin-contributed hooks** — if Cursor adds a `hooks` slot to `plugin.json`, load
    them via the shared `cursor-plugins` discovery module.
 
@@ -329,11 +329,11 @@ UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1 npm test
 - `src/main/services/security/permission-gate.ts` — calls the tool-gate hooks
 - `src/shared/types/cursor-hooks.ts` — `CursorHookEvent` / `CursorHookSummary`
 - `src/shared/types/hooks.ts` — shared `HookSummary` for Sources / `hooks:list`
-- `src/shared/hooks/vendored-hook-schemas.ts` — published-event mirrors + intentionally-unsupported sets (G3)
-- `schemas/vendor/` — pinned upstream Cursor + Claude hook schemas (G3); see its `README.md`
-- `src/main/services/hooks/vendor-schema-drift.test.ts` — CI drift detector (G3)
-- `src/main/services/hooks/payload-snapshots.test.ts` — dialect wire payload snapshot tests (G4)
-- `src/main/services/hooks/__snapshots__/wire-payloads.json` — committed golden wire-payload fixture (G4)
+- `src/shared/hooks/vendored-hook-schemas.ts` — published-event mirrors + intentionally-unsupported sets ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
+- `schemas/vendor/` — pinned upstream Cursor + Claude hook schemas ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling)); see its `README.md`
+- `src/main/services/hooks/vendor-schema-drift.test.ts` — CI drift detector ([vendored schemas](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
+- `src/main/services/hooks/payload-snapshots.test.ts` — dialect wire payload snapshot tests ([wire payload snapshots](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
+- `src/main/services/hooks/__snapshots__/wire-payloads.json` — committed golden wire-payload fixture ([wire payload snapshots](plans/hooks-and-feature-packs.md#phase-g--validation--tooling))
 - `src/main/services/exec/child-process-env.ts` — secret-scrubbed env for hook processes
 - `docs/hooks.md` — dialect-agnostic hooks architecture umbrella
 - `docs/claude-hooks.md` — Claude Code hooks contract
