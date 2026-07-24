@@ -12,6 +12,7 @@ import { at } from '@shared/array-utils.ts'
 import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
+import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
 const XTERM_THEME = {
   dark: {
@@ -112,7 +113,7 @@ export function mountTerminalsPane(
   function createXterm(): { term: Terminal; fitAddon: FitAddon } {
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: store.getState().fontSize,
+      fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: XTERM_THEME[store.getState().theme],
     })
@@ -506,7 +507,8 @@ export function mountTerminalsPane(
   }
 
   function onFontSizeChange(): void {
-    const size = store.getState().fontSize
+    const { fontSize, uiScale } = store.getState()
+    const size = scaledEditorFontSize(fontSize, uiScale)
     for (const tab of tabs.values()) {
       tab.term.options.fontSize = size
     }
