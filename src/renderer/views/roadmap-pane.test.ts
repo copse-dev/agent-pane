@@ -1303,7 +1303,6 @@ describe('roadmap pane', () => {
       attachFile: (f) => attachedFiles.push(f),
       attachTextBlock: () => {},
       attachImage: (dataUrl, mimeType) => attachedImages.push({ dataUrl, mimeType }),
-      attachVideo: () => Promise.resolve(),
     })
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {
@@ -1355,6 +1354,84 @@ describe('roadmap pane', () => {
       assert.equal(
         viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
         'Half-typed new prompt',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('auto-saves and restores a partial edit when switching items', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'First prompt'), makeItem('b', 'Second prompt')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      const rows = list.querySelectorAll<HTMLButtonElement>('.roadmap-row')
+      rows[0]?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      assert.ok(prompt)
+      prompt.value = 'Partially edited first prompt'
+
+      rows[1]?.click()
+      await flush()
+      assert.deepEqual(calls.update, [
+        {
+          id: 'a',
+          prompt: 'Partially edited first prompt',
+          notes: undefined,
+          status: 'ready',
+          issue: undefined,
+        },
+      ])
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Second prompt',
+      )
+
+      list.querySelectorAll<HTMLButtonElement>('.roadmap-row')[0]?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Partially edited first prompt',
+      )
+    } finally {
+      unmount()
+    }
+  })
+
+  it('retains a new-item draft when switching to an existing item', async () => {
+    const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
+    const { api, calls } = makeApi([makeItem('a', 'Existing prompt')])
+    const { list, viewer } = mountHosts()
+    const unmount = mountRoadmapPane(list, viewer, store, api)
+    try {
+      await flush()
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      const prompt = viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')
+      const notes = viewer.querySelector<HTMLTextAreaElement>('.roadmap-notes-input')
+      assert.ok(prompt)
+      assert.ok(notes)
+      prompt.value = 'Draft prompt'
+      notes.value = 'Draft notes'
+
+      list.querySelector<HTMLButtonElement>('.roadmap-row')?.click()
+      await flush()
+      assert.equal(calls.create.length, 0)
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Existing prompt',
+      )
+
+      list.querySelector<HTMLButtonElement>('.roadmap-new-btn')?.click()
+      await flush()
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-prompt-input')?.value,
+        'Draft prompt',
+      )
+      assert.equal(
+        viewer.querySelector<HTMLTextAreaElement>('.roadmap-notes-input')?.value,
+        'Draft notes',
       )
     } finally {
       unmount()
