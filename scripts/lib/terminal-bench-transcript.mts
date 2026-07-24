@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { planAgentTextChunk } from '../../packages/agent/src/agent-text-chunk.ts'
 import type { AppliedNudgeRecord } from '../../packages/agent/src/run-agent-loop.ts'
+import type { ReasoningCheckpointRecord } from '../../packages/agent/src/reasoning-circle-detector.ts'
 import type { HookRunRecord } from '../../packages/agent/src/hooks/canonical-events.ts'
 import type { StreamCutRecord } from '../../packages/agent/src/stream-cut-record.ts'
 import type { AgentStreamChunk, ToolCall } from '../../packages/agent/src/wire-types.ts'
@@ -207,6 +208,22 @@ export class TerminalBenchTranscript {
         model: this.thread.model ?? 'unknown',
         totalTokensEstimate: Math.ceil(record.streamOutputChars / CHARS_PER_TOKEN),
         reasoningTokensEstimate: Math.ceil(record.streamReasoningChars / CHARS_PER_TOKEN),
+        ...record,
+      })}\n`,
+    )
+  }
+
+  recordReasoningCheckpoint(record: ReasoningCheckpointRecord): void {
+    mkdirSync(dirname(this.directory), { recursive: true })
+    appendFileSync(
+      join(dirname(this.directory), 'reasoning-checkpoints.jsonl'),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        timestamp: new Date().toISOString(),
+        projectId: 'terminal-bench',
+        threadId: this.thread.id,
+        turnId: this.turnId,
+        model: this.thread.model ?? 'unknown',
         ...record,
       })}\n`,
     )

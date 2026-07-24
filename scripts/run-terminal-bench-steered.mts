@@ -5,8 +5,9 @@ import { loadTerminalBenchSteering } from './lib/terminal-bench-steering.mts'
 import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
+import { terminalBenchAnalysisPlanPath, terminalBenchResultsRoot } from './lib/terminal-bench.mts'
 
-const PLAN_PATH = resolve('bench-results/terminal-bench-analysis-plan.json')
+const PLAN_PATH = terminalBenchAnalysisPlanPath()
 const rawArgs = process.argv.slice(2)
 const profileArgs = rawArgs.filter((arg) => arg.startsWith('--profile='))
 if (profileArgs.length > 1 || rawArgs.some((arg) => !arg.startsWith('--profile='))) {
@@ -22,7 +23,9 @@ function stringField(value: unknown, key: string): string | undefined {
 
 async function resultPaths(): Promise<Set<string>> {
   const paths = new Set<string>()
-  for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) paths.add(path)
+  for await (const path of glob(resolve(terminalBenchResultsRoot(), '*/*/result.json'))) {
+    paths.add(path)
+  }
   return paths
 }
 
@@ -67,7 +70,7 @@ for (const entry of entries) {
       taskName,
       '-k',
       '1',
-      `--profile=${profile.id}`,
+      `--profile=${profile.versionedId}`,
     ],
     {
       cwd: process.cwd(),
@@ -77,6 +80,7 @@ for (const entry of entries) {
         COPSE_TERMINAL_PARENT_TRIAL_ID: parentTrialId,
         COPSE_TERMINAL_INTERVENTION_ID: interventionId,
         COPSE_TERMINAL_PROFILE: profile.id,
+        COPSE_TERMINAL_PROFILE_VERSIONED_ID: profile.versionedId,
         COPSE_TERMINAL_PROFILE_HASH: profile.contentHash,
         ...(steering.recommended_step_budget !== undefined
           ? { COPSE_TERMINAL_MAX_STEPS: String(steering.recommended_step_budget) }

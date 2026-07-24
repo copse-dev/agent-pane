@@ -3,19 +3,28 @@ import { createHash } from 'node:crypto'
 export const TERMINAL_BENCH_PROFILE_IDS = ['main-legacy', 'pr-1149', 'product-aligned'] as const
 
 export type TerminalBenchProfileId = (typeof TERMINAL_BENCH_PROFILE_IDS)[number]
+export type TerminalBenchProfileVersionedId =
+  'main-legacy@1' | 'pr-1149@1' | 'product-aligned@1' | 'product-aligned@2' | 'product-aligned@3'
+export type TerminalBenchProfileSelectionId =
+  TerminalBenchProfileId | TerminalBenchProfileVersionedId
+
+export type TerminalBenchWriteFilePolicy = 'none' | 'app-absolute' | 'workspace-relative'
+export type TerminalBenchReasoningPolicy = 'fixed-cap' | 'circle-gated-2k-checkpoints-v1'
 
 export interface TerminalBenchProfile {
   id: TerminalBenchProfileId
-  version: 1
-  versionedId: `${TerminalBenchProfileId}@1`
+  version: 1 | 2 | 3
+  versionedId: TerminalBenchProfileVersionedId
   contentHash: string
   systemPrompt: string
   reasoningRunawayRecoveryNudge: string
   stuckToolRecoveryNudge: string
   exposesWriteFile: boolean
+  writeFilePolicy: TerminalBenchWriteFilePolicy
   forcesRequestedOutputRecovery: boolean
   warnsOnValidationEvidence: boolean
   nonzeroShellResultIsError: boolean
+  reasoningPolicy: TerminalBenchReasoningPolicy
 }
 
 export const MAIN_LEGACY_REASONING_RUNAWAY_RECOVERY_NUDGE =
@@ -53,13 +62,42 @@ const PRODUCT_ALIGNED_REASONING_RUNAWAY_RECOVERY_NUDGE =
 const PRODUCT_ALIGNED_STUCK_TOOL_RECOVERY_NUDGE =
   'Use the evidence already gathered to edit the deliverable now, then run a focused validation and iterate from its result.'
 
-export const PRODUCT_ALIGNED_SYSTEM_PROMPT = `You are an autonomous coding agent in a persistent task environment.
+export const PRODUCT_ALIGNED_V1_SYSTEM_PROMPT = `You are an autonomous coding agent in a persistent task environment.
 Use run_shell to inspect and validate the workspace, and write_file to create or replace text files under /app. Make concrete edits after brief inspection, run focused validation, and continue until the requested outcome is complete or practical approaches are exhausted. Commands that fail are reported as tool errors; diagnose them rather than treating their output as success. There is no user available for follow-up questions.`
 
-type ProfileDefinition = Omit<TerminalBenchProfile, 'contentHash'>
+export const PRODUCT_ALIGNED_SYSTEM_PROMPT = `You are an autonomous coding agent in a persistent task environment.
+Working directory: {WORKSPACE_ROOT}
+Use run_shell to inspect and validate the workspace, and write_file with paths relative to the working directory to create or replace text files. Make concrete edits after brief inspection, run focused validation, and continue until the requested outcome is complete or practical approaches are exhausted. Commands that fail are reported as tool errors; diagnose them rather than treating their output as success. There is no user available for follow-up questions.`
 
-const DEFINITIONS: Record<TerminalBenchProfileId, ProfileDefinition> = {
-  'main-legacy': {
+interface LegacyHashDefinition {
+  id: TerminalBenchProfileId
+  version: 1
+  versionedId: 'main-legacy@1' | 'pr-1149@1' | 'product-aligned@1'
+  systemPrompt: string
+  reasoningRunawayRecoveryNudge: string
+  stuckToolRecoveryNudge: string
+  exposesWriteFile: boolean
+  forcesRequestedOutputRecovery: boolean
+  warnsOnValidationEvidence: boolean
+  nonzeroShellResultIsError: boolean
+}
+
+type ProfileDefinition = Omit<TerminalBenchProfile, 'contentHash'> & { hashPayload: unknown }
+
+function legacyDefinition(
+  definition: LegacyHashDefinition,
+  writeFilePolicy: TerminalBenchWriteFilePolicy,
+): ProfileDefinition {
+  return {
+    ...definition,
+    writeFilePolicy,
+    reasoningPolicy: 'fixed-cap',
+    hashPayload: definition,
+  }
+}
+
+const MAIN_LEGACY_V1 = legacyDefinition(
+  {
     id: 'main-legacy',
     version: 1,
     versionedId: 'main-legacy@1',
@@ -71,7 +109,11 @@ const DEFINITIONS: Record<TerminalBenchProfileId, ProfileDefinition> = {
     warnsOnValidationEvidence: false,
     nonzeroShellResultIsError: false,
   },
-  'pr-1149': {
+  'none',
+)
+
+const PR_1149_V1 = legacyDefinition(
+  {
     id: 'pr-1149',
     version: 1,
     versionedId: 'pr-1149@1',
@@ -83,11 +125,15 @@ const DEFINITIONS: Record<TerminalBenchProfileId, ProfileDefinition> = {
     warnsOnValidationEvidence: true,
     nonzeroShellResultIsError: false,
   },
-  'product-aligned': {
+  'app-absolute',
+)
+
+const PRODUCT_ALIGNED_V1 = legacyDefinition(
+  {
     id: 'product-aligned',
     version: 1,
     versionedId: 'product-aligned@1',
-    systemPrompt: PRODUCT_ALIGNED_SYSTEM_PROMPT,
+    systemPrompt: PRODUCT_ALIGNED_V1_SYSTEM_PROMPT,
     reasoningRunawayRecoveryNudge: PRODUCT_ALIGNED_REASONING_RUNAWAY_RECOVERY_NUDGE,
     stuckToolRecoveryNudge: PRODUCT_ALIGNED_STUCK_TOOL_RECOVERY_NUDGE,
     exposesWriteFile: true,
@@ -95,10 +141,79 @@ const DEFINITIONS: Record<TerminalBenchProfileId, ProfileDefinition> = {
     warnsOnValidationEvidence: false,
     nonzeroShellResultIsError: true,
   },
+  'app-absolute',
+)
+
+const PRODUCT_ALIGNED_V2_BASE = {
+  id: 'product-aligned' as const,
+  version: 2 as const,
+  versionedId: 'product-aligned@2' as const,
+  systemPrompt: PRODUCT_ALIGNED_SYSTEM_PROMPT,
+  reasoningRunawayRecoveryNudge: PRODUCT_ALIGNED_REASONING_RUNAWAY_RECOVERY_NUDGE,
+  stuckToolRecoveryNudge: PRODUCT_ALIGNED_STUCK_TOOL_RECOVERY_NUDGE,
+  exposesWriteFile: true,
+  writeFilePolicy: 'workspace-relative' as const,
+  forcesRequestedOutputRecovery: false,
+  warnsOnValidationEvidence: false,
+  nonzeroShellResultIsError: true,
+}
+
+const PRODUCT_ALIGNED_V2: ProfileDefinition = {
+  ...PRODUCT_ALIGNED_V2_BASE,
+  reasoningPolicy: 'fixed-cap',
+  hashPayload: {
+    hashSchema: 2,
+    profile: PRODUCT_ALIGNED_V2_BASE,
+    implementation: {
+      bridgeProtocol: 'newline-delimited-json-v1',
+      runShellTool: 'persistent-shell-with-bounded-timeout-v1',
+      writeFileTool: 'workspace-relative-or-contained-absolute-path-base64-write-v1',
+      shellResult: 'nonzero-exit-is-tool-error-v1',
+      recovery: 'generic-agent-loop-nudges-no-forced-tool-v1',
+    },
+  },
+}
+
+const PRODUCT_ALIGNED_V3_BASE = {
+  ...PRODUCT_ALIGNED_V2_BASE,
+  version: 3 as const,
+  versionedId: 'product-aligned@3' as const,
+  reasoningPolicy: 'circle-gated-2k-checkpoints-v1' as const,
+}
+
+const PRODUCT_ALIGNED_V3: ProfileDefinition = {
+  ...PRODUCT_ALIGNED_V3_BASE,
+  hashPayload: {
+    hashSchema: 3,
+    profile: PRODUCT_ALIGNED_V3_BASE,
+    implementation: {
+      bridgeProtocol: 'newline-delimited-json-v1',
+      runShellTool: 'persistent-shell-with-bounded-timeout-v1',
+      writeFileTool: 'workspace-relative-or-contained-absolute-path-base64-write-v1',
+      shellResult: 'nonzero-exit-is-tool-error-v1',
+      recovery: 'generic-agent-loop-nudges-no-forced-tool-v1',
+      reasoning:
+        '2k-checkpoints-high-confidence-self-report-repeat-structure-list100-max32k-recovery4k-v1',
+    },
+  },
+}
+
+const DEFINITIONS: Record<TerminalBenchProfileVersionedId, ProfileDefinition> = {
+  'main-legacy@1': MAIN_LEGACY_V1,
+  'pr-1149@1': PR_1149_V1,
+  'product-aligned@1': PRODUCT_ALIGNED_V1,
+  'product-aligned@2': PRODUCT_ALIGNED_V2,
+  'product-aligned@3': PRODUCT_ALIGNED_V3,
+}
+
+const CURRENT_PROFILE_VERSIONS: Record<TerminalBenchProfileId, TerminalBenchProfileVersionedId> = {
+  'main-legacy': 'main-legacy@1',
+  'pr-1149': 'pr-1149@1',
+  'product-aligned': 'product-aligned@3',
 }
 
 function profileHash(definition: ProfileDefinition): string {
-  return createHash('sha256').update(JSON.stringify(definition)).digest('hex')
+  return createHash('sha256').update(JSON.stringify(definition.hashPayload)).digest('hex')
 }
 
 export function parseTerminalBenchProfileId(value: string | undefined): TerminalBenchProfileId {
@@ -111,23 +226,34 @@ export function parseTerminalBenchProfileId(value: string | undefined): Terminal
   )
 }
 
-export function parseTerminalBenchProfileIds(value: string | undefined): TerminalBenchProfileId[] {
+export function parseTerminalBenchProfileIds(
+  value: string | undefined,
+): TerminalBenchProfileSelectionId[] {
   if (!value?.trim()) return ['main-legacy']
   const rawIds = value.split(',').map((item) => item.trim())
   if (rawIds.some((item) => !item)) {
     throw new Error('Terminal-Bench profiles must be a comma-separated list without empty items.')
   }
-  const ids = rawIds.map((item) => parseTerminalBenchProfileId(item))
-  if (new Set(ids).size !== ids.length) {
+  const ids = rawIds.map((item) => parseTerminalBenchProfileSelectionId(item))
+  const versions = ids.map((id) => terminalBenchProfile(id).versionedId)
+  if (new Set(versions).size !== versions.length) {
     throw new Error('Terminal-Bench profiles must not contain duplicates.')
   }
   return ids
 }
 
+export function parseTerminalBenchProfileSelectionId(
+  value: string | undefined,
+): TerminalBenchProfileSelectionId {
+  const candidate = value?.trim() || 'main-legacy'
+  if (isVersionedProfileId(candidate)) return candidate
+  return parseTerminalBenchProfileId(candidate)
+}
+
 export function rotateTerminalBenchProfiles(
-  profiles: readonly TerminalBenchProfileId[],
+  profiles: readonly TerminalBenchProfileSelectionId[],
   offset: number,
-): TerminalBenchProfileId[] {
+): TerminalBenchProfileSelectionId[] {
   if (profiles.length === 0) throw new Error('at least one Terminal-Bench profile is required')
   if (!Number.isInteger(offset) || offset < 0) {
     throw new Error(
@@ -138,9 +264,17 @@ export function rotateTerminalBenchProfiles(
   return [...profiles.slice(normalized), ...profiles.slice(0, normalized)]
 }
 
+function isVersionedProfileId(value: string): value is TerminalBenchProfileVersionedId {
+  return Object.hasOwn(DEFINITIONS, value)
+}
+
 export function terminalBenchProfile(
   value: string | undefined = process.env['COPSE_TERMINAL_PROFILE'],
 ): TerminalBenchProfile {
-  const definition = DEFINITIONS[parseTerminalBenchProfileId(value)]
-  return { ...definition, contentHash: profileHash(definition) }
+  const candidate = value?.trim() || 'main-legacy'
+  const versionedId = isVersionedProfileId(candidate)
+    ? candidate
+    : CURRENT_PROFILE_VERSIONS[parseTerminalBenchProfileId(candidate)]
+  const { hashPayload: _, ...definition } = DEFINITIONS[versionedId]
+  return { ...definition, contentHash: profileHash(DEFINITIONS[versionedId]) }
 }
