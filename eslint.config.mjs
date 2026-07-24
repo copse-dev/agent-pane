@@ -62,6 +62,14 @@ export default ts.config(
         'error',
         { assertionStyle: 'as', objectLiteralTypeAssertions: 'never' },
       ],
+      // #508 high-churn rules, enabled as errors but held to a shrink-only
+      // baseline in `eslint-suppressions.json` (ESLint bulk suppressions). Today's
+      // violations are recorded there and don't fail the build; any NEW violation
+      // does. As sites are fixed, run `npm run lint:prune` to shrink the baseline —
+      // it can only get smaller. See the "Type-safety & lint discipline" section
+      // in AGENTS.md.
+      '@typescript-eslint/no-unsafe-type-assertion': 'error',
+      '@typescript-eslint/prefer-nullish-coalescing': 'error',
       '@typescript-eslint/no-this-alias': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
       '@typescript-eslint/explicit-function-return-type': 'error',

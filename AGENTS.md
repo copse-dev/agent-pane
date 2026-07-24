@@ -90,8 +90,10 @@ changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e
 ### Type-safety & lint discipline
 
 Minimise `as` casts, never cast object literals, and never reach for `eslint-disable` /
-`@ts-expect-error` to silence a real error. Conventions and the rules behind them:
-[`docs/type-safety.md`](docs/type-safety.md).
+`@ts-expect-error` to silence a real error. Two high-churn rules (`no-unsafe-type-assertion`,
+`prefer-nullish-coalescing`) run against a shrink-only baseline in `eslint-suppressions.json`: new
+violations fail `npm run lint`, and when you fix a baselined site run `npm run lint:prune` and commit
+the result. Conventions and the rules behind them: [`docs/type-safety.md`](docs/type-safety.md).
 
 ### Visual changes require evals
 

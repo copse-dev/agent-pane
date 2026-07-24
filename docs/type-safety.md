@@ -12,7 +12,8 @@ The checks that keep the codebase honest run together under **`npm run check`** 
   `tsconfig.web.json`), on `strict` plus the extra flags (`noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`, …).
 - **ESLint** (`npm run lint`) — flat config in `eslint.config.mjs`, on `typescript-eslint`'s
-  `strictTypeChecked`.
+  `strictTypeChecked`. Two high-churn rules run against a shrink-only baseline
+  (`eslint-suppressions.json`); see [Baselined rules](#baselined-rules-shrink-only).
 - **Prettier** (`npm run format:check`).
 
 Run `npm run check` before every commit — never hand-format or eyeball types in place of it. For a
@@ -39,8 +40,10 @@ wrong. Prefer the typed alternative:
 
 `as const` is fine. `as unknown as T` double-casts are a code smell — reach for a real type first.
 
-> The wider `as`-reduction effort (the `no-unsafe-type-assertion` backlog) is tracked as a staged
-> cleanup; clear a whole category (DOM casts, JSON-parse casts, `(err as Error)` …) at a time.
+> `@typescript-eslint/no-unsafe-type-assertion` is **on**, but its existing violations are held to a
+> shrink-only baseline (see [Baselined rules](#baselined-rules-shrink-only)). You never need to add a
+> new one — clear a whole category (DOM casts, JSON-parse casts, `(err as Error)` …) at a time and
+> prune the baseline as you go.
 
 ### Never cast object literals
 
@@ -67,3 +70,32 @@ Keep the inventory small and justified.
 `no-explicit-any` and the `no-unsafe-*` family are on. Type values at the boundary where they enter
 the code (parse/validate untyped input — storage reads, `JSON.parse`, network responses) rather than
 letting `any` propagate inward.
+
+## Baselined rules (shrink-only)
+
+Two high-churn rules from the #508 backlog are enabled as **errors** but carry too many existing
+violations to fix in one pass:
+
+- `@typescript-eslint/no-unsafe-type-assertion`
+- `@typescript-eslint/prefer-nullish-coalescing`
+
+Rather than leave them off (which lets new violations pile up unchecked), today's violations are
+recorded in **`eslint-suppressions.json`** using ESLint's bulk-suppressions feature. The effect is an
+allowlist that lets the backlog be paid down gradually while blocking regressions:
+
+- **Existing** violations in the baseline don't fail `npm run lint`.
+- **New** violations — anywhere, including a new file — fail immediately. This is the regression gate.
+- The baseline only ever **shrinks**: when you fix a site, run **`npm run lint:prune`** and commit the
+  updated `eslint-suppressions.json` in the same change.
+
+`npm run lint` passes `--pass-on-unpruned-suppressions` so that fixing a site without pruning doesn't
+red-wire the build (the CI `autoformat` job auto-applies `eslint --fix` on changed files, and a
+full-tree prune can't safely run there). That tolerance is only for _stale_ entries — a genuinely new
+violation still fails. Prune periodically, and always when a PR clears a batch, so the baseline stays
+an honest floor.
+
+Do **not** regenerate the whole file to “fix” a red build, and don't add new entries by hand. The
+only sanctioned writes are `--prune-suppressions` (shrink) and a deliberate, reviewed re-baseline if
+a rule's options change. The count-based baseline is per-file-per-rule, so it catches net new
+violations, not a fix-and-reintroduce within the same file's existing budget — keep pruning to keep
+that budget tight.
