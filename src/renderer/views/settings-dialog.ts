@@ -1599,6 +1599,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // is still the global chat-model select in the General section.
   let advisorModelSelectEl: HTMLSelectElement | null = null
   let advisorPairHintEl: HTMLElement | null = null
+  // A pack `model` field fills its `<select>` asynchronously (`populateModelSelect`
+  // clears then refills from the live catalogue). Its populate promise is stashed
+  // here so the advisor pack row can re-grade the pairing hint once the advisor
+  // select actually has options + a selected value — otherwise the synchronous
+  // grade at row-render time reads an empty `value` and leaves the hint hidden.
+  const modelFieldPopulated = new WeakMap<HTMLSelectElement, Promise<void>>()
 
   /**
    * Render one pack row for the Settings → Packs list (P3 of
@@ -1796,7 +1802,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           advisorSelect.addEventListener('change', () => {
             updateAdvisorPairHint()
           })
+          // Grade now (covers the case where options are already present), and
+          // again once this select's async population settles — the synchronous
+          // pass reads an empty `value` before `populateModelSelect` resolves, so
+          // without the deferred re-grade the hint would stay hidden until the
+          // user interacts. Pairs with the executor-side re-grade in
+          // `settings-open`; whichever of the two async populations finishes last
+          // is the one that reveals the hint.
           updateAdvisorPairHint()
+          const populated = modelFieldPopulated.get(advisorSelect)
+          if (populated) {
+            void populated.then(() => {
+              updateAdvisorPairHint()
+            })
+          }
         }
       }
     }
@@ -1854,7 +1873,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const select = document.createElement('select')
       select.className = 'pack-setting-input pack-setting-model'
       const current = typeof field.value === 'string' ? field.value : ''
-      void populateModelSelect(select, api, current)
+      // Record the populate promise so dependent UI (the advisor pairing hint)
+      // can re-grade after the options + selected value land, not before.
+      modelFieldPopulated.set(select, populateModelSelect(select, api, current))
       input = select
     } else {
       const text = document.createElement('input')
