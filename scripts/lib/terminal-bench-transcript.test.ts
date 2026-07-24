@@ -8,6 +8,7 @@ import { at } from '../../src/shared/array-utils.ts'
 import { foldThread } from '../../src/shared/threads/fold.ts'
 import { parseSpine, type ThreadMeta } from '../../src/shared/threads/spine-schema.ts'
 import type { StreamCutRecord } from '../../packages/agent/src/stream-cut-record.ts'
+import type { ReasoningCheckpointRecord } from '../../packages/agent/src/reasoning-circle-detector.ts'
 import { TerminalBenchTranscript } from './terminal-bench-transcript.mts'
 
 const root = mkdtempSync(join(tmpdir(), 'copse-terminal-transcript-'))
@@ -58,6 +59,17 @@ describe('terminal benchmark transcript', () => {
       willInjectReasoningRunawayNudge: true,
     }
     transcript.recordStreamCut(cut)
+    const checkpoint: ReasoningCheckpointRecord = {
+      step: 2,
+      checkpointTokens: 2_048,
+      hardMaxTokens: 32_000,
+      streamOutputChars: 8_192,
+      streamReasoningChars: 8_192,
+      visibleTextChars: 0,
+      decision: 'continue',
+      signals: [],
+    }
+    transcript.recordReasoningCheckpoint(checkpoint)
     transcript.recordHookRun({
       event: 'stepBoundary',
       hookId: 'reasoning-runaway',
@@ -109,6 +121,14 @@ describe('terminal benchmark transcript', () => {
     assert.equal(streamStat['totalTokensEstimate'], 4_000)
     assert.equal(streamStat['reasoningTokensEstimate'], 3_000)
     assert.equal(streamStat['reasoningText'], 'Repeated planning.')
+
+    const reasoningCheckpoint = JSON.parse(
+      readFileSync(join(root, 'reasoning-checkpoints.jsonl'), 'utf8').trim(),
+    ) as Record<string, unknown>
+    assert.equal(reasoningCheckpoint['threadId'], 'id-1')
+    assert.equal(reasoningCheckpoint['checkpointTokens'], 2_048)
+    assert.equal(reasoningCheckpoint['hardMaxTokens'], 32_000)
+    assert.equal(reasoningCheckpoint['decision'], 'continue')
 
     const hookRun = JSON.parse(
       readFileSync(join(root, 'hook-runs.jsonl'), 'utf8').trim(),

@@ -108,6 +108,15 @@ test('fleet validates and carries an explicit ablation profile', () => {
   )
 })
 
+test('fleet carries explicit product profile versions for a paired study', () => {
+  const config = runConfig({
+    profiles: 'product-aligned@2,product-aligned@3',
+    'no-steered-rerun': true,
+    'worker-image': workerImage,
+  })
+  assert.deepEqual(config.profiles, ['product-aligned@2', 'product-aligned@3'])
+})
+
 test('fleet carries unique profiles for task-major rotation', () => {
   const config = runConfig({
     profiles: 'main-legacy,pr-1149,product-aligned',
@@ -175,7 +184,15 @@ test('worker runs task-major profiles with per-task checkpoints and pruning', ()
   assert.match(suite, /MAX_CONSECUTIVE_FULLY_INVALID_TASKS = 3/)
   assert.match(suite, /continuing the paired cohort/)
   const fleet = readFileSync('scripts/run-terminal-bench-fleet.mts', 'utf8')
-  assert.match(fleet, /bench-results\/shard-\$\{String\(shardIndex\)\}/)
+  assert.match(fleet, /\$\{HOST_RESULTS_ROOT\}\/shard-\$\{String\(shardIndex\)\}/)
+  assert.match(fleet, /COPSE_TERMINAL_RESULTS_ROOT/)
+  assert.match(
+    fleet,
+    /--volume \$\{shellQuote\(HOST_RESULTS_ROOT\)\}:\$\{shellQuote\(HOST_RESULTS_ROOT\)\}/,
+  )
+  assert.doesNotMatch(fleet, /--volume \$\{shellQuote\(resultsPath\)\}:/)
+  assert.match(script, /COPSE_TERMINAL_RESULTS_ROOT/)
+  assert.match(checkpoint, /COPSE_TERMINAL_RESULTS_ROOT/)
   assert.match(fleet, /Worker host complete; terminating immediately/)
 })
 

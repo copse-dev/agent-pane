@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
+import { terminalBenchCapsulesRoot } from './lib/terminal-bench.mts'
 
 interface CapsuleUpload {
   archive: string
@@ -61,10 +62,9 @@ async function optionalFile(path: string): Promise<string> {
   }
 }
 
-const indexPath = resolve(process.argv[2] ?? 'bench-results/terminal-bench-capsules/index.json')
-const receiptsPath = resolve(
-  process.argv[3] ?? 'bench-results/terminal-bench-capsules/.uploaded-capsules.tsv',
-)
+const capsulesRoot = terminalBenchCapsulesRoot()
+const indexPath = resolve(process.argv[2] ?? resolve(capsulesRoot, 'index.json'))
+const receiptsPath = resolve(process.argv[3] ?? resolve(capsulesRoot, '.uploaded-capsules.tsv'))
 const uploads = capsuleUploads(JSON.parse(await readFile(indexPath, 'utf8')))
 const receipts = uploadReceipts(await optionalFile(receiptsPath))
 

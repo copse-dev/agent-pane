@@ -22,6 +22,7 @@ import {
   terminalBenchModel,
   terminalBenchPrefetchMinimumFreeDiskBytes,
   terminalBenchRequestedTaskNames,
+  terminalBenchResultsRoot,
   terminalBenchShard,
   terminalBenchShardEntries,
 } from './terminal-bench.mts'
@@ -74,6 +75,7 @@ describe('terminal benchmark launcher', () => {
     assert.deepEqual(launch.args.slice(-2), ['--n-tasks', '1'])
     assert.match(launch.env['COPSE_TERMINAL_AGENT_BUNDLE'] ?? '', /terminal-bench-agent\.cjs$/)
     assert.equal(launch.env['COPSE_TERMINAL_PROFILE'], 'main-legacy')
+    assert.equal(launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'main-legacy@1')
     assert.match(launch.env['COPSE_TERMINAL_PROFILE_HASH'] ?? '', /^[a-f0-9]{64}$/)
     assert.equal(launch.env['PYTHONPATH'], process.cwd())
   })
@@ -81,11 +83,36 @@ describe('terminal benchmark launcher', () => {
   it('selects profiles without forwarding the harness-only flag to Harbor', () => {
     const launch = buildTerminalBenchLaunch(['--profile=product-aligned'], env)
     assert.equal(launch.env['COPSE_TERMINAL_PROFILE'], 'product-aligned')
+    assert.equal(launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@3')
     assert.equal(
       launch.args.some((arg) => arg.startsWith('--profile=')),
       false,
     )
     assert.throws(() => buildTerminalBenchLaunch(['--profile=unknown'], env), /profile must be/)
+  })
+
+  it('keeps product v2 and v3 separately selectable for paired studies', () => {
+    const v2 = buildTerminalBenchLaunch(['--profile=product-aligned@2'], env)
+    const v3 = buildTerminalBenchLaunch(['--profile=product-aligned@3'], env)
+    assert.equal(v2.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@2')
+    assert.equal(v3.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'], 'product-aligned@3')
+    assert.notEqual(v2.env['COPSE_TERMINAL_PROFILE_HASH'], v3.env['COPSE_TERMINAL_PROFILE_HASH'])
+  })
+
+  it('uses a shard-specific absolute results root for Harbor and retained artifacts', () => {
+    const shardEnv = {
+      ...env,
+      COPSE_TERMINAL_RESULTS_ROOT: '/opt/copse/bench-results/shard-3',
+    }
+    assert.equal(
+      terminalBenchResultsRoot(shardEnv),
+      '/opt/copse/bench-results/shard-3/terminal-bench',
+    )
+    const launch = buildTerminalBenchLaunch([], shardEnv)
+    assert.deepEqual(
+      launch.args.slice(launch.args.indexOf('--jobs-dir'), launch.args.indexOf('--jobs-dir') + 2),
+      ['--jobs-dir', '/opt/copse/bench-results/shard-3/terminal-bench'],
+    )
   })
 
   it('keeps an existing Python import path after the repository root', () => {
