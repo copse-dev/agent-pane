@@ -1,6 +1,6 @@
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import {
-  buildRemoteAgentContextPreamble,
+  applyRemoteAgentHandoffContext,
   parseSseStream,
   promptPayloadFromUserContent,
   type PromptPayload,
@@ -391,9 +391,7 @@ async function buildFirstHandoffPrompt(
   } catch (err) {
     console.warn('[managed-agent] branch lookup failed:', err)
   }
-  const preamble = buildRemoteAgentContextPreamble({ priorMessages, branch })
-  if (!preamble) return prompt
-  return { ...prompt, text: `${preamble}\n\n--- New message ---\n${prompt.text}` }
+  return applyRemoteAgentHandoffContext(prompt, { priorMessages, branch })
 }
 
 function buildLaunchNotice(reused: boolean, hasRepo: boolean): string {
