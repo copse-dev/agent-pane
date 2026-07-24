@@ -153,7 +153,7 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
 - **C4 — cloud providers + guardrails.** Scaleway then AWS providers via the
   shared core; TTL/idle auto-teardown, startup/orphan reconciliation, cost/status
   surfaces, deny-by-default egress, credential mediation, capability display, and the
-  execution-runtime-security R4 acceptance suite.
+  execution-runtime-security plan's container-image hardening acceptance suite.
 - **C5 — per-thread containers.** The `thread-worktrees.md` allocation policy
   extended with a third mode: thread → fresh container (worktree semantics,
   runtime-level separation), enabling parallel agents that need not share a guest.
@@ -167,7 +167,7 @@ loop and tool policy in control and uses a runtime Copse provisions and reconcil
 
 - **Sequencing risk:** the SSH core is no longer the blocker. C1 may validate
   provisioning independently, but product execution must not invent a cloud-only
-  permission, event, or lifecycle path ahead of execution-runtime-security R1/R2.
+  permission, event, or lifecycle path ahead of the execution-runtime-security plan's capability-reporting and brokered-egress phases.
 - **Image freshness:** per-workspace baked images go stale on lockfile
   changes; same answer as stage one (lockhash gate, explicit rebake) but
   needs an in-app surface.

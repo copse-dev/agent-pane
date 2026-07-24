@@ -176,7 +176,7 @@ Shipped packs live in `packages/agent/src/packs/`, are listed from
 
 Design source of truth:
 [`docs/plans/hooks-and-feature-packs.md`](./plans/hooks-and-feature-packs.md)
-(decisions 15 & 17). Architecture notes: [`docs/packs.md`](./packs.md).
+(the [two-capability-tiers](./plans/hooks-and-feature-packs.md#decisions-log) and [disable-never-breaks-history](./plans/hooks-and-feature-packs.md#decisions-log) decisions). Architecture notes: [`docs/packs.md`](./packs.md).
 
 ## Related
 
