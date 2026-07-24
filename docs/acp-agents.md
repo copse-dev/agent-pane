@@ -1,12 +1,12 @@
 # Using other agents on the same device (ACP client)
 
 Copse can drive an external [ACP](https://agentclientprotocol.com/) agent that
-runs **locally on the same machine** — Gemini CLI, Claude (via an ACP adapter),
-or anything else that speaks the Agent Client Protocol over stdio. Copse acts as
-the **ACP client**: it spawns the agent, hands it your workspace, and renders its
-activity in the normal chat UI. The external agent runs its own model loop (and
-brings its own auth), while Copse keeps ownership of the workspace and the
-approval UX.
+runs **locally on the same machine** — or, with opt-in, on the remote host of an
+SSH workspace — Gemini CLI, Claude (via an ACP adapter), or anything else that
+speaks the Agent Client Protocol over stdio. Copse acts as the **ACP client**:
+it spawns the agent, hands it your workspace, and renders its activity in the
+normal chat UI. The external agent runs its own model loop (and brings its own
+auth), while Copse keeps ownership of the workspace and the approval UX.
 
 > **The agent is a separate program — it is not bundled with Copse.** Copse ships
 > only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
@@ -212,10 +212,13 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
   catalog agent out (#590).
-- **Not available on SSH workspaces.** ACP agents are local stdio processes; they
-  are hidden from the chat model picker and rejected at session open when the
-  active project is an SSH remote. Use a cloud/local model (or open a local
-  folder) instead. Remoting ACP over SSH is not implemented.
+- **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
+  chat model picker and are rejected at session open on an SSH remote. Turn on
+  **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the
+  agent on the **remote host** (stdio over the existing ControlMaster connection)
+  instead of blocking ACP. The agent binary must be installed and authenticated
+  on that host; Copse does not forward local credentials. See
+  [`docs/plans/acp-over-ssh.md`](plans/acp-over-ssh.md).
 
 ## Comparing agents (capability probe)
 
@@ -234,5 +237,7 @@ turn, use `npm run probe:acp:behavior` (issue #832; spends tokens). See
   (`npm run probe:acp` / `npm run probe:acp:behavior`).
 - [`docs/plans/acp-client-support.md`](plans/acp-client-support.md) — the design
   notes and phased rollout.
+- [`docs/plans/acp-over-ssh.md`](plans/acp-over-ssh.md) — opt-in ACP agents on
+  SSH workspaces (Phase 1: remote spawn over ControlMaster stdio).
 - [Agent Client Protocol](https://agentclientprotocol.com/) — the protocol spec
   and list of supported agents.
