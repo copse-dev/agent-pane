@@ -462,7 +462,11 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid,
     },
-    panes: { popout: resolvedVoid },
+    panes: {
+      popout: resolvedVoid,
+      takePopoutSeed: () => Promise.resolve(null),
+      onSwitchMode: () => () => {},
+    },
   }
 
   return api

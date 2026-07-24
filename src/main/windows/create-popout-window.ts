@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import type { RightPanelMode } from '@shared/types/state.ts'
 import { getAppIcon } from '../app-icon.ts'
+import { stashPopoutSeed } from '../services/popout-seed-store.ts'
 import { attachWebContentsLockdown } from './web-contents-lockdown.ts'
 import { registerTrustedAppFrame, unregisterTrustedAppFrame } from './app-frames.ts'
 import { bootThemeWindowOptions } from './boot-theme.ts'
@@ -19,9 +20,21 @@ const TITLES: Record<PopoutMode, string> = {
   browser: 'Browser — Copse',
 }
 
-// One window per mode: re-invoking "Pop out" focuses the existing window rather
-// than spawning duplicates.
-const popoutWindows = new Map<PopoutMode, BrowserWindow>()
+/** Landscape default — pop-outs are auxiliary workspaces, not tall portrait strips. */
+const POPOUT_WIDTH = 1024
+const POPOUT_HEIGHT = 720
+const POPOUT_MIN_WIDTH = 720
+const POPOUT_MIN_HEIGHT = 480
+
+// One shared pop-out window: re-invoking "Pop out" focuses it and switches mode
+// rather than spawning duplicates or leaving portrait-sized strips.
+let popoutWindow: BrowserWindow | null = null
+
+function notifyPopoutMode(win: BrowserWindow, mode: PopoutMode): void {
+  win.setTitle(TITLES[mode])
+  if (win.webContents.isLoading()) return
+  win.webContents.send('popout:switch-mode', mode)
+}
 
 /**
  * Open (or focus) a detached window that renders a single right-panel pane. The
@@ -29,21 +42,24 @@ const popoutWindows = new Map<PopoutMode, BrowserWindow>()
  * renderer hides the projects sidebar, chat, and titlebar so only the pane
  * fills the window (see `styles/global/popout.css`).
  */
-export function createPanePopoutWindow(mode: PopoutMode): BrowserWindow {
-  const existing = popoutWindows.get(mode)
+export function createPanePopoutWindow(mode: PopoutMode, seed?: unknown): BrowserWindow {
+  stashPopoutSeed(mode, seed)
+
+  const existing = popoutWindow
   if (existing && !existing.isDestroyed()) {
     if (existing.isMinimized()) existing.restore()
     existing.focus()
+    notifyPopoutMode(existing, mode)
     return existing
   }
 
   const icon = getAppIcon()
   const bootTheme = bootThemeWindowOptions()
   const win = new BrowserWindow({
-    width: 560,
-    height: 780,
-    minWidth: 360,
-    minHeight: 420,
+    width: POPOUT_WIDTH,
+    height: POPOUT_HEIGHT,
+    minWidth: POPOUT_MIN_WIDTH,
+    minHeight: POPOUT_MIN_HEIGHT,
     ...(icon ? { icon } : {}),
     title: TITLES[mode],
     backgroundColor: bootTheme.backgroundColor,
@@ -57,7 +73,7 @@ export function createPanePopoutWindow(mode: PopoutMode): BrowserWindow {
       preload: join(__dirname, '../preload/index.js'),
     },
   })
-  popoutWindows.set(mode, win)
+  popoutWindow = win
   attachWebContentsLockdown(win.webContents)
 
   // Trust this window's main frame for IPC *before* the renderer boots so its
@@ -70,7 +86,7 @@ export function createPanePopoutWindow(mode: PopoutMode): BrowserWindow {
   })
   win.on('closed', () => {
     unregisterTrustedAppFrame(frame)
-    popoutWindows.delete(mode)
+    popoutWindow = null
   })
 
   void win.loadFile(join(__dirname, '../renderer/index.html'), {

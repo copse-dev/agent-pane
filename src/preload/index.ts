@@ -770,7 +770,17 @@ contextBridge.exposeInMainWorld('api', {
     open: (editorId: string) => ipcRenderer.invoke('editors:open', editorId),
   },
   panes: {
-    popout: (mode: string) => ipcRenderer.invoke('panes:popout', mode),
+    popout: (mode: string, seed?: unknown) => ipcRenderer.invoke('panes:popout', mode, seed),
+    takePopoutSeed: (mode: string) => ipcRenderer.invoke('panes:takePopoutSeed', mode),
+    onSwitchMode: (handler: (mode: string) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, mode: string): void => {
+        handler(mode)
+      }
+      ipcRenderer.on('popout:switch-mode', listener)
+      return () => {
+        ipcRenderer.removeListener('popout:switch-mode', listener)
+      }
+    },
   },
 })
 
