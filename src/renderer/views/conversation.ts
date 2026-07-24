@@ -1578,29 +1578,37 @@ export function mountConversation(
     // Render any hook cards folded onto this message's turn (decision 10).
     renderMessageHookCards(threadId, msgId)
     // Model labels appear only once the primary chat has used more than one
-    // model; syncing after each append also labels earlier turns when the
-    // second model arrives.
+    // model, and only at model-segment boundaries (first assistant turn of
+    // each contiguous model run). Syncing after each append also backfills
+    // earlier boundaries when the second model arrives.
     syncModelLabels()
     scrollToBottom(msg.role === 'user')
   }
 
-  /** Show/hide per-message model chrome when the primary chat is multi-model. */
+  /**
+   * Show/hide per-message model chrome when the primary chat is multi-model.
+   * Labels mark the start of each model segment only — same-model
+   * continuations stay unlabeled.
+   */
   function syncModelLabels(): void {
     const thread = getActiveThread(store)
     if (!thread) return
     const show = shouldShowPrimaryChatModelLabels(thread.messages)
+    let prevModel: string | undefined
     for (const msg of thread.messages) {
       if (msg.role !== 'assistant') continue
       const msgEl = list.querySelector(`[data-message-id="${msg.id}"]`)
       if (!msgEl) continue
       const existing = msgEl.querySelector<HTMLElement>('.message-model')
-      if (show && msg.model) {
+      const model = msg.model
+      if (show && model && model !== prevModel) {
         const label = existing ?? el('div', { class: 'message-model' })
-        label.textContent = formatPrimaryChatModelLabel(msg.model)
+        label.textContent = formatPrimaryChatModelLabel(model)
         if (!existing) msgEl.prepend(label)
       } else {
         existing?.remove()
       }
+      prevModel = model
     }
   }
 

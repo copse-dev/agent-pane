@@ -98,13 +98,13 @@ structured). Screenshots supplement visual/layout verification.
 
 ## Implementation paths considered
 
-### A — MCP server only (Playwright MCP, custom stdio server)
+### Path A — MCP server only (Playwright MCP, custom stdio server)
 
 **Pros:** Reuses existing MCP registry; fastest prototype for text snapshots.  
 **Cons:** Images still blocked until tool-result multimodal support; external
 process; Playwright already triggers sandbox retry prompts in `run_shell`.
 
-### B — Native Electron browser session (recommended)
+### Path B — Native Electron browser session (recommended)
 
 Main-process `BrowserSessionManager`:
 
@@ -118,7 +118,7 @@ Main-process `BrowserSessionManager`:
 testing live.  
 **Cons:** Largest build; requires Phase 1 platform work for screenshots.
 
-### C — `run_shell` + Playwright scripts
+### Path C — `run_shell` + Playwright scripts
 
 **Pros:** Minimal new code.  
 **Cons:** Poor UX; sandbox friction; no integrated browser view.

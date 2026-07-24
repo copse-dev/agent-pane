@@ -11,7 +11,7 @@ contribution.
 
 The design source of truth is
 [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md)
-("Feature packs" + decisions 15 & 17); on conflict, that plan wins — update it in
+("Feature packs" + the [two-capability-tiers](plans/hooks-and-feature-packs.md#decisions-log) and [disable-never-breaks-history](plans/hooks-and-feature-packs.md#decisions-log) decisions); on conflict, that plan wins — update it in
 the same PR.
 
 ## Manifest shape
@@ -32,7 +32,7 @@ pack manifest
 └── storage    namespaced state; survives disable
 ```
 
-Following **decision 15** (VS Code's built-in-extensions model), first-party and
+Following **the [two-capability-tiers decision](plans/hooks-and-feature-packs.md#decisions-log)** (VS Code's built-in-extensions model), first-party and
 user packs share the manifest, registry, Settings surface, and disable semantics.
 First-party packs additionally supply typed runtime contributions —
 `AgentStreamChunk` emission, live loop-state access, real renderer views — which
@@ -43,8 +43,8 @@ user pack can never smuggle code through its `plugin.json`.
 `packManifestFromPluginJson()` maps a discovered `plugin.json` into a
 `PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
 fields fold into the pack slots (`mcpServers` → `tools.mcpServers`). The
-Settings pack list that renders `settings` landed in P3 (see
-[Pack list UI](#pack-list-ui-p3) below). Host disk-discovery that feeds user
+Settings pack list that renders `settings` landed in the pack-list UI phase (see
+[Pack list UI](#pack-list-ui) below). Host disk-discovery that feeds user
 packs into the registry is **not wired yet** — until it is, skills/MCP from a
 `plugin.json` still load via Cursor plugin discovery (see
 [`docs/adding-a-pack.md`](adding-a-pack.md)).
@@ -68,8 +68,8 @@ groups every pack's contributions by pack id and owns the lifecycle:
 
 First-party packs are the static list in
 [`packages/agent/src/packs/first-party-packs.ts`](../packages/agent/src/packs/first-party-packs.ts).
-P1 originally shipped a skeleton `copse.noop` pack (empty contributions) to
-prove the lifecycle end-to-end before the pilot **todos** pack landed in P4.
+The initial pack phase originally shipped a skeleton `copse.noop` pack (empty contributions) to
+prove the lifecycle end-to-end before the pilot **todos** pack landed in the todos-pack phase.
 Once real first-party packs exercised the same lifecycle, the skeleton was
 removed from the shipped list. The pack seam is wired into
 `createHookRegistry` — a pack's hooks register through the same registry the
@@ -110,7 +110,7 @@ rendering.
   panels paired with their owning pack id; disabling the pack drops it in one
   action alongside the pack's tools / hooks / prompt / other UI.
 
-## Pack list UI (P3)
+## Pack list UI
 
 Every registered pack — first-party and user — shows up in **Settings → Packs**
 as a row with an enable/disable toggle, an enumeration of what the pack
@@ -189,7 +189,7 @@ disable is pinned by
 ## Related
 
 - [`docs/adding-a-pack.md`](adding-a-pack.md) — practical install / authoring guide (linked from Settings → Packs)
-- [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) — design source of truth (Feature packs, decisions 15 & 17)
+- [`docs/plans/hooks-and-feature-packs.md`](plans/hooks-and-feature-packs.md) — design source of truth (Feature packs, the [two-capability-tiers](plans/hooks-and-feature-packs.md#decisions-log) and [disable-never-breaks-history](plans/hooks-and-feature-packs.md#decisions-log) decisions)
 - [`docs/cursor-plugins.md`](cursor-plugins.md) — the plugin manifest the pack manifest extends
 - [`docs/hooks.md`](hooks.md) — the hook registry a pack's hooks register through
 - [`docs/supply-chain-security.md`](supply-chain-security.md) — trust boundaries for skills and MCP

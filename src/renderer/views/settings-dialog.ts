@@ -138,6 +138,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'externalApiSafety', kind: 'checkbox', default: false, save: true },
   { name: 'remoteAgentAutoCreatePR', kind: 'checkbox', default: true, save: true },
   { name: 'remoteAgentWorkOnCurrentBranch', kind: 'checkbox', default: false, save: true },
+  { name: 'preferAcpOverCloudAgent', kind: 'checkbox', default: true, save: true },
   { name: 'localSubagentsEnabled', kind: 'checkbox', default: true, save: true },
   {
     name: 'subagentsEnabled',
@@ -417,6 +418,10 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <label class="checkbox-label">
                 <input type="checkbox" name="remoteAgentWorkOnCurrentBranch" />
                 Push directly to the current branch instead of a new branch
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" name="preferAcpOverCloudAgent" />
+                Prefer ACP agent over Cloud Agent (uses subscription instead of API key billing)
               </label>
             </fieldset>
 
