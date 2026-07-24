@@ -24,6 +24,14 @@ describe('settings-schema', () => {
     assert.equal(fontSize.safeParse(14).success, true)
     assert.equal(fontSize.safeParse(999).success, false)
     assert.equal(fontSize.safeParse('14').success, false)
+
+    const uiScale = getSettingSchema('uiScale')
+    assert.ok(uiScale)
+    assert.equal(uiScale.safeParse(1).success, true)
+    assert.equal(uiScale.safeParse(1.25).success, true)
+    assert.equal(uiScale.safeParse(0.5).success, false)
+    assert.equal(uiScale.safeParse(2).success, false)
+    assert.equal(uiScale.safeParse('1').success, false)
   })
 
   it('validates portrait layout toggle settings', () => {

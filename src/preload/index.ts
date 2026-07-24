@@ -506,6 +506,33 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('menu:keyboardShortcuts', listener)
       }
     },
+    onUiScaleZoomIn: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:uiScaleZoomIn', listener)
+      return (): void => {
+        ipcRenderer.off('menu:uiScaleZoomIn', listener)
+      }
+    },
+    onUiScaleZoomOut: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:uiScaleZoomOut', listener)
+      return (): void => {
+        ipcRenderer.off('menu:uiScaleZoomOut', listener)
+      }
+    },
+    onUiScaleReset: (handler: () => void) => {
+      const listener = (): void => {
+        handler()
+      }
+      ipcRenderer.on('menu:uiScaleReset', listener)
+      return (): void => {
+        ipcRenderer.off('menu:uiScaleReset', listener)
+      }
+    },
   },
   remoteAgent: {
     downloadArtifact: (agentId: string, path: string) =>

@@ -28,6 +28,25 @@ export function matchFindInChatShortcut(e: KeyboardEvent): boolean {
   return e.key === 'f' || e.key === 'F'
 }
 
+/** Result of matching Cmd/Ctrl++/−/0 interface-scale shortcuts. */
+export type UiScaleShortcutAction = 'in' | 'out' | 'reset'
+
+/**
+ * Cmd/Ctrl+= (or +) zooms the interface in, Cmd/Ctrl+- zooms out, Cmd/Ctrl+0
+ * resets. These replace Chromium page-zoom roles so scale stays crisp via
+ * `--ui-scale` (see `src/shared/ui-scale.ts`).
+ */
+export function matchUiScaleShortcut(e: KeyboardEvent): UiScaleShortcutAction | null {
+  const meta = e.ctrlKey || e.metaKey
+  if (!meta || e.altKey || e.shiftKey) return null
+  if (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0') return 'reset'
+  if (e.key === '=' || e.key === '+' || e.code === 'Equal' || e.code === 'NumpadAdd') return 'in'
+  if (e.key === '-' || e.key === '_' || e.code === 'Minus' || e.code === 'NumpadSubtract') {
+    return 'out'
+  }
+  return null
+}
+
 export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
 
 export function matchPanelShortcut(e: KeyboardEvent): PanelShortcutAction | null {
