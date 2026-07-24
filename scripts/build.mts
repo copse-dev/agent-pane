@@ -1,7 +1,8 @@
 import * as esbuild from 'esbuild'
 import { execSync } from 'node:child_process'
-import { accessSync, cpSync, copyFileSync, readFileSync } from 'node:fs'
+import { accessSync, cpSync, copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
@@ -12,6 +13,46 @@ const sharedAlias = {
   '@copse/agent': resolve('./packages/agent/src'),
   '@copse/llm': resolve('./packages/llm/src'),
   '@copse/plan-usage': resolve('./packages/plan-usage/src'),
+}
+
+// Emit a scenario manifest (id + label) alongside the demo build so the per-PR
+// demo-preview PR comment can link each selectable `?scenario=` state without
+// hard-coding the list. `demo-scenarios.ts` has only a type-only import, so
+// esbuild bundles it standalone; we import the emitted module and read the
+// exported list back. Best-effort: any failure writes `[]` rather than breaking
+// the demo build, since the comment degrades gracefully without it.
+async function writeDemoScenarioManifest(outPath: string): Promise<void> {
+  const tempModule = resolve('dist', '.demo-scenarios.mjs')
+  try {
+    await esbuild.build({
+      entryPoints: ['src/shared/demo-scenarios.ts'],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: tempModule,
+      alias: sharedAlias,
+    })
+    const imported: unknown = await import(pathToFileURL(tempModule).href)
+    const list =
+      imported !== null && typeof imported === 'object' && 'DEMO_SCENARIOS' in imported
+        ? (imported as { DEMO_SCENARIOS: unknown }).DEMO_SCENARIOS
+        : undefined
+    const manifest: { id: string; label: string }[] = []
+    if (Array.isArray(list)) {
+      for (const item of list as unknown[]) {
+        if (item !== null && typeof item === 'object' && 'id' in item && 'label' in item) {
+          const record = item as Record<string, unknown>
+          manifest.push({ id: String(record['id']), label: String(record['label']) })
+        }
+      }
+    }
+    writeFileSync(outPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  } catch (error) {
+    console.warn(`[build] demo scenario manifest generation failed: ${String(error)}`)
+    writeFileSync(outPath, '[]\n')
+  } finally {
+    rmSync(tempModule, { force: true })
+  }
 }
 
 function fetchBundledCursorSkillsForBuild(): void {
@@ -116,6 +157,7 @@ cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/
 })
 
 if (isDemo) {
+  await writeDemoScenarioManifest(`${rendererOutDir}/scenarios.json`)
   console.log(`Demo build written to ${rendererOutDir}`)
   process.exit(0)
 }

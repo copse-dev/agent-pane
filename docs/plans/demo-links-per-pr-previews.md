@@ -1,12 +1,32 @@
 # Per-PR demo previews: clickable demo links on every PR
 
-**Status: Proposed.** This resolves the deliberately-deferred "per-PR distribution"
-question from [demo-links.md](demo-links.md) M3. The demo _build_ already exists and
-runs in CI on every eligible PR (`npm run build:demo` → `dist/demo/`, plus `test:demo`
-in `ci.yml`); the only missing piece is publishing that artifact to a stable,
-per-PR URL and surfacing the link on the PR. **Chosen approach: GitHub Pages
-subdirectories** (`copse.dev/pr-<n>/`), keeping everything on GitHub rather than
-adding an external preview host.
+**Status: Active.** Resolves the deliberately-deferred "per-PR distribution"
+question from [demo-links.md](demo-links.md) M3. The demo _build_ already existed and
+ran in CI on every eligible PR (`npm run build:demo` → `dist/demo/`, plus `test:demo`
+in `ci.yml`); the missing piece — publishing that artifact to a stable per-PR URL and
+surfacing the link — is implemented via the **GitHub Pages subdirectory** approach
+(`copse.dev/pr-<n>/`), keeping everything on GitHub rather than adding an external
+preview host. The wiring cannot run until it is on `main` (workflow_run / pull_request /
+push triggers are read from the base branch), so it is verified end-to-end only after
+merge; the deploy is deliberately gated behind sign-off before it serves untrusted PR
+builds from the live domain.
+
+## Implementation
+
+- **`scripts/build.mts`** — the `--demo` build now emits `dist/demo/scenarios.json`
+  (id + label per scenario) so the PR comment links each `?scenario=` state without a
+  hard-coded list.
+- **`.github/workflows/ci.yml`** — the `build` job stages `dist/demo` + the PR number
+  and uploads them as the `demo-preview` artifact (same-repo PRs, non-skipped runs).
+- **`.github/workflows/pages.yml`** — the deploy job is now the single assembler: it
+  lays down `site/` then overlays every `demo-previews/pr-*/` directory, and exposes a
+  `workflow_call` entrypoint returning `page_url`.
+- **`.github/workflows/demo-preview.yml`** — `workflow_run` (trusted) after CI:
+  downloads the artifact, commits it to the machine-managed `demo-previews` branch,
+  calls `pages.yml` to redeploy, and posts/updates the sticky `<!-- copse-demo-preview -->`
+  comment.
+- **`.github/workflows/demo-preview-cleanup.yml`** — on PR close, prunes `pr-<n>/` from
+  `demo-previews` and redeploys.
 
 ## What already exists (don't rebuild it)
 
@@ -111,16 +131,32 @@ consideration, called out in demo-links.md M3. Mitigations, in order:
 
 ## Milestones
 
-- **P0 — durable store + assembler.** Create the `demo-previews` orphan branch; rewrite
-  `pages.yml`'s deploy to assemble `site/` + `pr-*/` into one artifact. Verify the
-  marketing site still publishes unchanged with an empty preview set.
-- **P1 — per-PR publish.** Wire the split-trust flow: PR job uploads `dist/demo`; trusted
-  job commits to `demo-previews:pr-<n>/` and redeploys. Gate to same-repo PRs.
-- **P2 — sticky comment.** Post/update `<!-- copse-demo-preview -->` with the base URL and
-  per-scenario links; depends on P1's URL being live.
-- **P3 — cleanup.** `pull_request: closed` prunes `pr-<n>/` and redeploys.
-- **P4 — fork fallback.** For fork PRs, link the downloadable `dist/demo` artifact from
-  the comment instead of a copse.dev URL.
+- **P0 — durable store + assembler.** _Done._ `pages.yml` assembles `site/` + `pr-*/`
+  into one artifact and tolerates an absent `demo-previews` branch (marketing site
+  publishes unchanged with no previews). The branch is created lazily on the first
+  publish rather than committed up front.
+- **P1 — per-PR publish.** _Done._ `ci.yml` uploads `dist/demo` as `demo-preview`;
+  `demo-preview.yml` (trusted `workflow_run`) commits to `demo-previews:pr-<n>/` and
+  redeploys. Gated to same-repo PRs.
+- **P2 — sticky comment.** _Done._ `demo-preview.yml`'s comment job posts/updates
+  `<!-- copse-demo-preview -->` with the base URL and per-scenario links.
+- **P3 — cleanup.** _Done._ `demo-preview-cleanup.yml` prunes `pr-<n>/` on PR close and
+  redeploys.
+- **P4 — fork fallback.** _Deferred._ Fork PRs currently get no preview (build job and
+  publish are same-repo-gated). Linking the downloadable `dist/demo` artifact for forks
+  remains follow-up work.
+
+## Verification and rollout notes
+
+- **Not testable pre-merge.** `workflow_run`, `pull_request`, and `push` triggers are
+  read from the base branch, so none of this executes on the PR that introduces it.
+  First real exercise is the first same-repo PR opened after merge to `main`.
+- **Locally verified before merge:** `build:demo` emits a valid `scenarios.json`; all
+  workflow YAML parses and is Prettier-clean.
+- **Sign-off gate.** Merging points builds from contributor branches at the live
+  `copse.dev` domain (shared origin with the marketing site). The security section above
+  covers the mitigations; this is the item needing an explicit human decision before
+  merge.
 
 ## Dependencies and open items
 

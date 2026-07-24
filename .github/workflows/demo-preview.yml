@@ -1,0 +1,174 @@
+name: Demo preview
+
+# Publishes the per-PR browser demo (staged by ci.yml's build job as the
+# `demo-preview` artifact) to the machine-managed demo-previews branch, then
+# redeploys Pages so it is live at copse.dev/pr-<n>/, and posts a sticky PR
+# comment linking each scenario.
+#
+# This runs on workflow_run — a TRUSTED context that uses workflow definitions
+# and secrets from the default branch, never the PR head — so the write token
+# and the deploy never execute untrusted PR code. It is additionally gated to
+# same-repo PRs (head_repository == this repo); fork PRs never reach here, and
+# their build job never produces the artifact in the first place.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    outputs:
+      published: ${{ steps.commit.outputs.published }}
+      pr: ${{ steps.meta.outputs.pr }}
+      scenarios: ${{ steps.meta.outputs.scenarios }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+      # The demo-preview artifact only exists when the build job ran the demo
+      # tier (UI-affecting PRs; skipped/docs-only runs produce none). Absent
+      # artifact → this workflow no-ops via the download outcome guard below.
+      - name: Download demo preview artifact
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: demo-preview
+          path: demo-preview
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - id: meta
+        if: steps.download.outcome == 'success'
+        run: |
+          set -euo pipefail
+          pr="$(tr -dc '0-9' < demo-preview/pr-number.txt)"
+          if [ -z "$pr" ]; then
+            echo "No PR number in artifact" >&2
+            exit 1
+          fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          # Collapse the scenario manifest to a single line for the step output.
+          scenarios="$(tr -d '\n' < demo-preview/site/scenarios.json 2>/dev/null || echo '[]')"
+          echo "scenarios=${scenarios:-[]}" >> "$GITHUB_OUTPUT"
+      - id: commit
+        if: steps.download.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.meta.outputs.pr }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          # Work on an isolated clone of the previews branch so the demo build
+          # in demo-preview/ (untracked) is never disturbed. Create the orphan
+          # branch on first publish.
+          if git clone --depth=1 --branch demo-previews "$remote" previews-branch 2>/dev/null; then
+            echo "Updating existing demo-previews branch"
+          else
+            git clone --depth=1 "$remote" previews-branch
+            git -C previews-branch checkout --orphan demo-previews
+            git -C previews-branch rm -rf . >/dev/null 2>&1 || true
+          fi
+          git -C previews-branch config user.name "github-actions[bot]"
+          git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf "previews-branch/pr-${PR}"
+          mkdir -p "previews-branch/pr-${PR}"
+          cp -R demo-preview/site/. "previews-branch/pr-${PR}/"
+          printf '%s\n' "$SHA" > "previews-branch/pr-${PR}/.head-sha"
+          git -C previews-branch add "pr-${PR}"
+          if git -C previews-branch diff --cached --quiet; then
+            echo "No preview change for PR #${PR}"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            git -C previews-branch commit -m "demo preview: PR #${PR} (${SHA})"
+            git -C previews-branch push origin demo-previews
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    uses: ./.github/workflows/pages.yml
+    secrets: inherit
+
+  comment:
+    needs: [publish, deploy]
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          PR: ${{ needs.publish.outputs.pr }}
+          BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          SCENARIOS: ${{ needs.publish.outputs.scenarios }}
+        with:
+          script: |
+            const marker = '<!-- copse-demo-preview -->';
+            const pr = Number(process.env.PR);
+            // page_url is the Pages root (e.g. https://copse.dev/); normalise to
+            // exactly one trailing slash, then hang the pr-<n>/ path off it. The
+            // trailing slash matters: the demo's assets are document-relative, so
+            // they must resolve against .../pr-<n>/ and not .../pr-<n>.
+            const base = (process.env.BASE_URL || 'https://copse.dev/').replace(/\/*$/, '/');
+            const previewUrl = `${base}pr-${pr}/`;
+            let scenarios = [];
+            try {
+              scenarios = JSON.parse(process.env.SCENARIOS || '[]');
+            } catch {
+              scenarios = [];
+            }
+            const links = scenarios
+              .map((s) => `- [${s.label}](${previewUrl}?scenario=${encodeURIComponent(s.id)})`)
+              .join('\n');
+            const body = [
+              marker,
+              '## 🖥️ Demo preview',
+              '',
+              `A browser build of this PR is live at **[${previewUrl}](${previewUrl})**.`,
+              '',
+              links ? 'Interactive, with a mocked backend — jump to a scenario:' : '',
+              links,
+              '',
+              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Refreshed on each push; removed when the PR closes.</sub>',
+            ]
+              .filter((line) => line !== '')
+              .join('\n');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+            });
+            const existing = comments.find(
+              (c) =>
+                c.user?.type === 'Bot' &&
+                typeof c.body === 'string' &&
+                c.body.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr,
+                body,
+              });
+            }
