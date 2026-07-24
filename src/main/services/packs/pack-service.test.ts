@@ -14,11 +14,19 @@ import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { definePack } from '@copse/agent/packs/pack-manifest.ts'
-import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
+import {
+  COMPARISON_JUDGE_MODEL_SETTING_ID,
+  COMPARISON_MODEL_A_SETTING_ID,
+  COMPARISON_MODEL_B_SETTING_ID,
+  MODEL_COMPARISON_PACK_ID,
+} from '@copse/agent/packs/model-comparison-pack.ts'
 import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
-import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import {
+  ADVISOR_STRATEGY_PACK_ID,
+  ADVISOR_MODEL_SETTING_ID,
+} from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
@@ -26,6 +34,7 @@ import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
+import { setSetting } from '../storage/settings.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
@@ -39,6 +48,7 @@ const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnable
 const MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY = 'packMigration.mcpUiCanvasEnablement'
 const DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY = 'packMigration.devtoolsShortcutEnablement'
 const BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.backgroundTasksEnablement'
+const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -77,13 +87,17 @@ function clearStorage(): void {
   storageDelete(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY)
   storageDelete(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY)
   storageDelete(PII_REDACTION_ENABLEMENT_MIGRATION_KEY)
-  // The two capability-only pack migrations + the background-tasks migration run
-  // in the same getPackService() call as every other migration. Mark them done
-  // by default so the existing per-pack migration assertions stay scoped to their
-  // own pack; the dedicated tests below clear these keys to exercise them.
+  // The two capability-only pack migrations + the background-tasks migration +
+  // the pack-model-settings lift run in the same getPackService() call as every
+  // other migration. Mark them done by default so the existing per-pack
+  // migration assertions stay scoped to their own pack; the dedicated tests
+  // below clear these keys to exercise them.
   storageSet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(PACK_MODEL_SETTINGS_MIGRATION_KEY, true)
+  storageDelete(packSettingsKey(ADVISOR_STRATEGY_PACK_ID))
+  storageDelete(packSettingsKey(MODEL_COMPARISON_PACK_ID))
   storageDelete('mcpUiArtefactsEnabled')
   storageDelete('devtoolsShortcutEnabled')
   storageDelete('backgroundTasksEnabled')
@@ -629,5 +643,50 @@ describe('PackService', () => {
 
     assert.equal(service.registry.isEnabled(BACKGROUND_TASKS_PACK_ID), true)
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('lifts legacy settings.json model ids into pack settings bags', async () => {
+    isolateSiblingMigrations()
+    storageDelete(PACK_MODEL_SETTINGS_MIGRATION_KEY)
+    // These model ids live in settings.json (getSetting), not config.json
+    // (storageGet). A storageGet-only migration would leave every upgrade on the
+    // pack defaults and break e2e seeds that write advisorModel via writeSettings.
+    await setSetting('advisorModel', 'claude-haiku-4-5')
+    await setSetting('comparisonModelA', 'claude-opus-4-8')
+    await setSetting('comparisonModelB', 'claude-sonnet-4-6')
+    await setSetting('comparisonJudgeModel', 'claude-fable-5')
+    // Poison the wrong store so a regression to storageGet would fail loudly.
+    storageSet('advisorModel', 'wrong-store-should-not-win')
+
+    const service = getPackService()
+
+    assert.deepEqual(storageGet(packSettingsKey(ADVISOR_STRATEGY_PACK_ID)), {
+      [ADVISOR_MODEL_SETTING_ID]: 'claude-haiku-4-5',
+    })
+    assert.deepEqual(storageGet(packSettingsKey(MODEL_COMPARISON_PACK_ID)), {
+      [COMPARISON_MODEL_A_SETTING_ID]: 'claude-opus-4-8',
+      [COMPARISON_MODEL_B_SETTING_ID]: 'claude-sonnet-4-6',
+      [COMPARISON_JUDGE_MODEL_SETTING_ID]: 'claude-fable-5',
+    })
+    assert.equal(
+      service.getSetting(ADVISOR_STRATEGY_PACK_ID, ADVISOR_MODEL_SETTING_ID),
+      'claude-haiku-4-5',
+    )
+    assert.equal(storageGet(PACK_MODEL_SETTINGS_MIGRATION_KEY), true)
+  })
+
+  it('does not clobber pack model settings already written before the lift', async () => {
+    isolateSiblingMigrations()
+    storageDelete(PACK_MODEL_SETTINGS_MIGRATION_KEY)
+    storageSet(packSettingsKey(ADVISOR_STRATEGY_PACK_ID), {
+      [ADVISOR_MODEL_SETTING_ID]: 'claude-fable-5',
+    })
+    await setSetting('advisorModel', 'claude-haiku-4-5')
+
+    getPackService()
+
+    assert.deepEqual(storageGet(packSettingsKey(ADVISOR_STRATEGY_PACK_ID)), {
+      [ADVISOR_MODEL_SETTING_ID]: 'claude-fable-5',
+    })
   })
 })

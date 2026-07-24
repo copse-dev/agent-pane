@@ -49,6 +49,7 @@ import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
+import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
 /** Storage key holding the ids of packs the user disabled. */
@@ -353,12 +354,16 @@ export function readPackSettingValue(packId: string, key: string): unknown {
 /**
  * Preserve the model choices users had before `advisorModel` /
  * `comparisonModelA` / `comparisonModelB` / `comparisonJudgeModel` moved from
- * top-level store keys onto their packs' `model` setting fields. Copies any
- * existing top-level value into the owning pack's settings bag (without
- * clobbering a value already written there), so the Settings → Packs picker and
- * the runtime read sites agree and no user loses their configured models on
- * upgrade. Idempotent (guarded by its own migration key); a role assignment in
- * `roleModels` still takes precedence at read time and is left untouched.
+ * top-level **settings.json** keys onto their packs' `model` setting fields
+ * (under `config.json` `pack.<id>.settings`). Copies any existing top-level
+ * value into the owning pack's settings bag (without clobbering a value already
+ * written there), so the Settings → Packs picker and the runtime read sites
+ * agree and no user loses their configured models on upgrade.
+ *
+ * Reads via `getSetting` (settings store), not `storageGet` (config store) —
+ * these model ids always lived in `settings.json` alongside `model`. Idempotent
+ * (guarded by its own migration key); a role assignment in `roleModels` still
+ * takes precedence at read time and is left untouched.
  */
 function migratePackModelSettings(): void {
   if (storageGet(PACK_MODEL_SETTINGS_MIGRATION_KEY) === true) return
@@ -393,7 +398,7 @@ function migratePackModelSettings(): void {
   }
 
   for (const move of moves) {
-    const legacy = storageGet(move.legacyKey)
+    const legacy = getSetting(move.legacyKey, '')
     if (typeof legacy !== 'string' || legacy.trim() === '') continue
     const bag = bagFor(move.packId)
     if (bag[move.key] === undefined) bag[move.key] = legacy

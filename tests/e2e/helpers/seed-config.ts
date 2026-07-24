@@ -386,6 +386,8 @@ export function seedEmptyProject(
   if (options?.packDisabled !== undefined) {
     settings.packDisabled = [...options.packDisabled]
   }
+  // Legacy top-level `advisorModel` in settings.json — `migratePackModelSettings`
+  // lifts it into `pack.copse.advisor-strategy.settings` via getSetting on boot.
   if (options?.advisorModel) {
     settings.advisorModel = options.advisorModel
   }
