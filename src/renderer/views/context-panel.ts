@@ -14,6 +14,7 @@ import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.t
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import { createGitChangesDiffEditor, setGitFileDiffModel } from '../monaco/git-diff-viewer.ts'
 import { showErrorToast } from './toast.ts'
+import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
 type FileViewMode = 'preview' | 'source' | 'changes'
 
@@ -105,7 +106,7 @@ export function mountContextPanel(
           diffEditor = createGitChangesDiffEditor(
             diffContainer,
             monaco,
-            store.getState().fontSize,
+            scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
             store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
           )
           registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () => {
@@ -199,7 +200,7 @@ export function mountContextPanel(
     readOnly: false,
     automaticLayout: true,
     scrollBeyondLastLine: false,
-    fontSize: store.getState().fontSize,
+    fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
     theme: store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
   })
 

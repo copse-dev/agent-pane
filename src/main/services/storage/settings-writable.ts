@@ -113,6 +113,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
   theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
+  // Whole-UI multiplier for design tokens (--ui-scale). Independent of
+  // fontSize (editor/terminal); see src/shared/ui-scale.ts.
+  uiScale: z.number().min(0.75).max(1.5),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   // Interaction colour for links, primary actions, selections, and chat

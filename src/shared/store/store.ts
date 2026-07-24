@@ -30,6 +30,7 @@ export function createStore(initial?: Partial<AppState>): AppStore {
     theme: 'dark',
     themePreference: 'system',
     fontSize: 14,
+    uiScale: 1,
     autoPortraitRightPanel: true,
     rightPanelPosition: 'auto',
     openLinksInBuiltInBrowser: true,
