@@ -353,7 +353,18 @@ function renderModelTable(
 
   const table = document.createElement('table')
   table.className = 'usage-table'
+  // A shared column template (fixed layout, identical widths) so the Cloud and
+  // Local tables line their columns up even though they are separate elements
+  // with different content widths.
   table.innerHTML = `
+    <colgroup>
+      <col class="usage-col-model" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+    </colgroup>
     <thead>
       <tr>
         <th scope="col">Model</th>
