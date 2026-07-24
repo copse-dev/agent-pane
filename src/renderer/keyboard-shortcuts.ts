@@ -28,6 +28,13 @@ export function matchFindInChatShortcut(e: KeyboardEvent): boolean {
   return e.key === 'f' || e.key === 'F'
 }
 
+/** Cmd/Ctrl+Shift+K opens the command palette ("filter all the things"). */
+export function matchCommandPaletteShortcut(e: KeyboardEvent): boolean {
+  const meta = e.ctrlKey || e.metaKey
+  if (!meta || e.altKey || !e.shiftKey) return false
+  return e.key === 'k' || e.key === 'K'
+}
+
 export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
 
 export function matchPanelShortcut(e: KeyboardEvent): PanelShortcutAction | null {

@@ -74,6 +74,43 @@
   font-size: 11px;
   color: var(--accent);
 }
+/* Thread-filter toggle in the projects header; `.active` while its row is open. */
+.projects-search-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+}
+.projects-search-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.projects-search-btn.active {
+  color: var(--accent);
+}
+.projects-search-row {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.projects-search-input {
+  width: 100%;
+  padding: 4px var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input, var(--bg-elevated));
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  outline: none;
+}
+.projects-search-input:focus {
+  border-color: var(--accent);
+}
+.projects-search-input::placeholder {
+  color: var(--text-muted);
+}
 .projects-list {
   flex: 1;
   overflow-y: auto;

@@ -23,6 +23,7 @@
 @import './global/composer-extras.css';
 @import './global/image-expand.css';
 @import './global/file-search.css';
+@import './global/command-palette.css';
 @import './global/keyboard-shortcuts.css';
 @import './global/conversation-search.css';
 @import './global/todo.css';

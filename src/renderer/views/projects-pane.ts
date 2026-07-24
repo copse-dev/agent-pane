@@ -4,6 +4,7 @@ import {
   closeIcon,
   gitPullRequestIcon,
   runningStatusIcon,
+  searchIcon,
   warningIcon,
 } from '../dom/icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -174,6 +175,14 @@ function showProjectContextMenu(clientX: number, clientY: number, onRemove: () =
 
 export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiClient): () => void {
   const title = el('span', {}, 'Projects')
+  // Toggles the thread filter row below. Filtering the sidebar's thread list is
+  // the local sibling to the Cmd/Ctrl+Shift+K command palette: this narrows the
+  // expanded project's threads in place, the palette jumps across everything.
+  const searchToggle = el(
+    'button',
+    { class: 'projects-search-btn', 'aria-label': 'Search threads', title: 'Search threads' },
+    searchIcon('ui-icon ui-icon-sm'),
+  )
   const openBtn = el(
     'button',
     { class: 'projects-open-btn', 'aria-label': 'Open project' },
@@ -184,7 +193,58 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     { class: 'projects-open-remote-btn', 'aria-label': 'Open remote project', hidden: true },
     '+ Remote',
   )
-  const header = el('div', { class: 'pane-projects-header' }, title, openBtn, openRemoteBtn)
+  const header = el(
+    'div',
+    { class: 'pane-projects-header' },
+    title,
+    searchToggle,
+    openBtn,
+    openRemoteBtn,
+  )
+
+  // Filter input for the expanded project's threads. It lives outside `list`
+  // (which render() clears on every update) so its focus and value survive
+  // re-renders while the user is typing.
+  let threadFilter = ''
+  const searchInput = el('input', {
+    type: 'text',
+    class: 'projects-search-input',
+    placeholder: 'Filter threads…',
+    'aria-label': 'Filter threads',
+    spellcheck: 'false',
+    autocomplete: 'off',
+  })
+  const searchRow = el('div', { class: 'projects-search-row', hidden: true }, searchInput)
+
+  const closeThreadFilter = (): void => {
+    searchInput.value = ''
+    threadFilter = ''
+    searchRow.hidden = true
+    searchToggle.classList.remove('active')
+  }
+
+  searchToggle.addEventListener('click', () => {
+    if (searchRow.hidden) {
+      searchRow.hidden = false
+      searchToggle.classList.add('active')
+      searchInput.focus()
+    } else {
+      closeThreadFilter()
+      render()
+    }
+  })
+  searchInput.addEventListener('input', () => {
+    threadFilter = searchInput.value.trim().toLowerCase()
+    render()
+  })
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation()
+      closeThreadFilter()
+      render()
+    }
+  })
+
   const list = el('div', { class: 'projects-list' })
   const settingsBtn = el(
     'button',
@@ -195,7 +255,7 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
   settingsBtn.addEventListener('click', () => {
     openSettingsDialog()
   })
-  root.append(header, list, settingsBtn)
+  root.append(header, searchRow, list, settingsBtn)
 
   openBtn.addEventListener('click', () => {
     void addProject(store, api)
@@ -442,20 +502,39 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
       if (!isExpanded) continue
 
       const sidebarThreads = getSidebarThreads(store, project.id)
+      // When a filter is active it narrows the list by thread title and shows
+      // every match (pagination is suppressed so a match can't hide behind
+      // "Show more").
+      const isFiltering = threadFilter.length > 0
+      const matchingThreads = isFiltering
+        ? sidebarThreads.filter((t) =>
+            (t.title || 'New Thread').toLowerCase().includes(threadFilter),
+          )
+        : sidebarThreads
       const visibleLimit = visibleThreadCounts.get(project.id) ?? SIDEBAR_THREADS_PAGE_SIZE
       const activeId = project.id === activeProjectId ? activeThreadId : null
-      const { visibleThreads, visibleCount, hasMore } = paginateSidebarThreads(
-        sidebarThreads,
-        visibleLimit,
-        activeId,
-      )
-      if (visibleCount !== visibleLimit) {
-        visibleThreadCounts.set(project.id, visibleCount)
+      let visibleThreads: Thread[]
+      let visibleCount: number
+      let hasMore: boolean
+      if (isFiltering) {
+        visibleThreads = matchingThreads
+        visibleCount = matchingThreads.length
+        hasMore = false
+      } else {
+        const paged = paginateSidebarThreads(sidebarThreads, visibleLimit, activeId)
+        visibleThreads = paged.visibleThreads
+        visibleCount = paged.visibleCount
+        hasMore = paged.hasMore
+        if (paged.visibleCount !== visibleLimit) {
+          visibleThreadCounts.set(project.id, paged.visibleCount)
+        }
       }
 
       const chats = el('div', { class: 'chats-list' })
       if (sidebarThreads.length === 0 && isProjectSwitchInFlight(store, project.id)) {
         chats.append(el('div', { class: 'sidebar-empty chats-loading' }, 'Loading…'))
+      } else if (isFiltering && matchingThreads.length === 0) {
+        chats.append(el('div', { class: 'sidebar-empty' }, 'No matching threads'))
       }
       for (const thread of visibleThreads) {
         const title = el('span', { class: 'chat-title' }, thread.title || 'New Thread')
