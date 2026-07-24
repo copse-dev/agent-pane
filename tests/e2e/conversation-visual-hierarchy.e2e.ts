@@ -31,7 +31,21 @@ describe('conversation visual hierarchy', () => {
 
     // Exercise the compact completed-trace treatment without changing the
     // product's disclosure-state behavior as part of this visual-only change.
-    await reasoning.$('.message-reasoning-summary').click()
+    // Drive the native <details> toggle through the DOM rather than a WebDriver
+    // click: the summary can render below the fold, and a WebDriver click first
+    // scrolls via the Actions API, which is unreliable when CI's chromedriver
+    // and Chromium drift by a patch version ("Browser.getWindowForTarget wasn't
+    // found") — the element then reports "not interactable" and the run flakes.
+    // The summary only records `userToggled` and otherwise relies on the
+    // browser's default collapse (see buildReasoningEl in conversation.ts), so a
+    // DOM click fires the same handler and default action as a user click and
+    // the assertions below are unchanged.
+    await reasoning.$('.message-reasoning-summary').waitForExist()
+    await browser.execute(() => {
+      const summary = document.querySelector<HTMLElement>('.message-reasoning-summary')
+      summary?.scrollIntoView({ block: 'center' })
+      summary?.click()
+    })
     await browser.waitUntil(
       async () =>
         !(await browser.execute(
