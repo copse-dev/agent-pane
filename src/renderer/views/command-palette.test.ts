@@ -106,11 +106,13 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
     openCommandPalette()
     assert.equal(isCommandPaletteOpen(), true)
     await tick(0) // let the catalog fetch resolve and re-render
-    // Sorted by updatedAt desc across both projects.
+    // Catalog hits sorted by updatedAt desc across both projects, then the live
+    // active-project thread (not in the catalog) appended so it never vanishes.
     assert.deepEqual(rowTexts(dialog, 'thread'), [
       'Fix login bug',
       'Landing page copy',
       'Refactor sidebar',
+      'Live active thread',
     ])
     // Projects, panels, and commands all render their own sections.
     assert.deepEqual(rowTexts(dialog, 'project'), ['app', 'site'])
@@ -121,6 +123,15 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
       (n) => n.textContent,
     )
     assert.deepEqual(sections, ['Threads', 'Projects', 'Panels', 'Commands'])
+  })
+
+  it('keeps live active-project threads when the catalog is empty', async () => {
+    // A freshly-opened workspace whose on-disk catalog has not been built yet:
+    // catalog() returns nothing, but the store already holds the active thread.
+    mount({})
+    openCommandPalette()
+    await tick(0)
+    assert.deepEqual(rowTexts(dialog, 'thread'), ['Live active thread'])
   })
 
   it('filters every section by the query', async () => {
