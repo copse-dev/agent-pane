@@ -46,6 +46,14 @@ export default ts.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-unnecessary-type-assertion': 'error',
+      // Catch union members silently dropped by a `switch`. Switches that
+      // intentionally lean on `default` to drop the rest (chunk/session-update
+      // adapters, errno maps) stay valid via `considerDefaultExhaustiveForUnions`;
+      // a switch with no `default` must still handle every member explicitly.
+      '@typescript-eslint/switch-exhaustiveness-check': [
+        'error',
+        { considerDefaultExhaustiveForUnions: true },
+      ],
       // Ban `{ ... } as T` object-literal casts: they silently bypass excess-property
       // checks, so a typo'd or stale field type-checks clean. Annotate the binding
       // (`const x: T = { ... }`) or use `satisfies T` instead. Other `as` casts stay
