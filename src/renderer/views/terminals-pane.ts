@@ -2,6 +2,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
+import { bindRenameBlur } from '../dom/rename-blur.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -209,7 +211,8 @@ export function mountTerminalsPane(
         finish(false)
       }
     })
-    input.addEventListener('blur', () => {
+    bindRenameBlur(input, () => {
+      if (done) return
       finish(true)
     })
     for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
@@ -405,6 +408,24 @@ export function mountTerminalsPane(
           focusTab(tab)
         })
       }
+    })
+    tabBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Rename',
+          onSelect: (): void => {
+            beginRename(tab)
+          },
+        },
+        {
+          label: 'Archive',
+          onSelect: (): void => {
+            void removeTab(id)
+          },
+        },
+      ])
     })
     labelSpan.addEventListener('dblclick', (e) => {
       e.stopPropagation()

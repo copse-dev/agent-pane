@@ -315,7 +315,9 @@ function digestOf(thread: Thread): string {
     .slice(0, 280)
 }
 
-function catalogEntryOf(thread: Thread): CatalogEntry {
+function catalogEntryOf(thread: Thread): CatalogEntry | null {
+  // Archived threads leave the `@`-picker index; the directory stays on disk.
+  if (thread.archivedAt != null) return null
   return {
     id: thread.id,
     title: thread.title,
@@ -350,7 +352,9 @@ function writeCatalog(projectId: string, entries: Map<string, CatalogEntry>): vo
 
 function upsertCatalogEntry(projectId: string, thread: Thread): void {
   const entries = readCatalog(projectId)
-  entries.set(thread.id, catalogEntryOf(thread))
+  const entry = catalogEntryOf(thread)
+  if (entry === null) entries.delete(thread.id)
+  else entries.set(thread.id, entry)
   writeCatalog(projectId, entries)
 }
 
@@ -373,6 +377,8 @@ function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry
   const dir = threadDir(projectId, threadId)
   const meta = readMeta(dir)
   if (meta === null) return null
+  // Soft-archived threads drop out of the `@`-picker index.
+  if (meta.archivedAt != null) return null
   const digest = [meta.title, meta.workingBrief ?? '', firstUserContent(dir)]
     .filter(Boolean)
     .join(' — ')
@@ -390,9 +396,13 @@ function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry
 }
 
 function refreshCatalogLine(projectId: string, threadId: string): void {
-  const entry = catalogEntryFromDisk(projectId, threadId)
-  if (entry === null) return
   const entries = readCatalog(projectId)
+  const entry = catalogEntryFromDisk(projectId, threadId)
+  if (entry === null) {
+    // Missing meta or archived — drop any stale catalog line.
+    if (entries.delete(threadId)) writeCatalog(projectId, entries)
+    return
+  }
   entries.set(threadId, entry)
   writeCatalog(projectId, entries)
 }
@@ -400,7 +410,8 @@ function refreshCatalogLine(projectId: string, threadId: string): void {
 function rebuildCatalog(projectId: string): Map<string, CatalogEntry> {
   const entries = new Map<string, CatalogEntry>()
   for (const thread of readProjectThreads(projectId)) {
-    entries.set(thread.id, catalogEntryOf(thread))
+    const entry = catalogEntryOf(thread)
+    if (entry) entries.set(thread.id, entry)
   }
   writeCatalog(projectId, entries)
   return entries
@@ -615,7 +626,8 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
     for (const thread of threads) {
       keepIds.add(thread.id)
       writeThread(projectId, thread)
-      entries.set(thread.id, catalogEntryOf(thread))
+      const entry = catalogEntryOf(thread)
+      if (entry) entries.set(thread.id, entry)
     }
     for (const threadId of listThreadIds(projectId)) {
       if (!keepIds.has(threadId)) {
