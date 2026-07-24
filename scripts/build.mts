@@ -1,7 +1,16 @@
 import * as esbuild from 'esbuild'
 import { execSync } from 'node:child_process'
-import { accessSync, cpSync, copyFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import {
+  accessSync,
+  cpSync,
+  copyFileSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
@@ -124,7 +133,11 @@ if (!isDemo) {
 const browserOpts = {
   bundle: true,
   platform: 'browser' as const,
-  sourcemap: true,
+  // Demo previews are committed to the machine-managed `demo-previews` branch and
+  // fetched by every Secret scan (`gitleaks` with `fetch-depth: 0`). Source maps
+  // there trip high-entropy secret heuristics and fail unrelated PR tips — so the
+  // demo build must not emit them.
+  sourcemap: !isDemo,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' } as const,
   alias: sharedAlias,
   define,
@@ -158,6 +171,20 @@ cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/
 
 if (isDemo) {
   await writeDemoScenarioManifest(`${rendererOutDir}/scenarios.json`)
+  // Fail closed: demo trees are committed to `demo-previews` and scanned by
+  // gitleaks across every PR tip. A source map here is a repo-wide CI outage.
+  const maps: string[] = []
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name)
+      if (statSync(path).isDirectory()) walk(path)
+      else if (name.endsWith('.map')) maps.push(path)
+    }
+  }
+  walk(rendererOutDir)
+  if (maps.length > 0) {
+    throw new Error(`demo build must not emit source maps (gitleaks): ${maps.join(', ')}`)
+  }
   console.log(`Demo build written to ${rendererOutDir}`)
   process.exit(0)
 }
