@@ -3,6 +3,7 @@ set -uo pipefail
 
 label="${1:-checkpoint}"
 required=(
+  COPSE_TERMINAL_RESULTS_ROOT
   SCW_OBJECT_STORAGE_BUCKET
   SCW_OBJECT_STORAGE_ENDPOINT
   SCW_OBJECT_STORAGE_PREFIX
@@ -18,7 +19,7 @@ status=0
 npm run bench:terminal:report || true
 npm run bench:terminal:seal || status=$?
 
-capsules_dir="bench-results/terminal-bench-capsules"
+capsules_dir="${COPSE_TERMINAL_RESULTS_ROOT}/terminal-bench-capsules"
 upload_receipts="$capsules_dir/.uploaded-capsules.tsv"
 if [[ -d "$capsules_dir" ]]; then
   pending_uploads="$(mktemp)"
@@ -55,8 +56,9 @@ else
   status=1
 fi
 
-if [[ -f bench-results/terminal-bench-host-metrics.jsonl ]]; then
-  aws s3 cp bench-results/terminal-bench-host-metrics.jsonl \
+metrics_path="${COPSE_TERMINAL_RESULTS_ROOT}/terminal-bench-host-metrics.jsonl"
+if [[ -f "$metrics_path" ]]; then
+  aws s3 cp "$metrics_path" \
     "s3://${SCW_OBJECT_STORAGE_BUCKET}/${SCW_OBJECT_STORAGE_PREFIX}/host-metrics.jsonl" \
     --sse AES256 \
     --only-show-errors \

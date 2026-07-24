@@ -22,6 +22,7 @@ import {
   terminalBenchModel,
   terminalBenchPrefetchMinimumFreeDiskBytes,
   terminalBenchRequestedTaskNames,
+  terminalBenchResultsRoot,
   terminalBenchShard,
   terminalBenchShardEntries,
 } from './terminal-bench.mts'
@@ -88,6 +89,22 @@ describe('terminal benchmark launcher', () => {
       false,
     )
     assert.throws(() => buildTerminalBenchLaunch(['--profile=unknown'], env), /profile must be/)
+  })
+
+  it('uses a shard-specific absolute results root for Harbor and retained artifacts', () => {
+    const shardEnv = {
+      ...env,
+      COPSE_TERMINAL_RESULTS_ROOT: '/opt/copse/bench-results/shard-3',
+    }
+    assert.equal(
+      terminalBenchResultsRoot(shardEnv),
+      '/opt/copse/bench-results/shard-3/terminal-bench',
+    )
+    const launch = buildTerminalBenchLaunch([], shardEnv)
+    assert.deepEqual(
+      launch.args.slice(launch.args.indexOf('--jobs-dir'), launch.args.indexOf('--jobs-dir') + 2),
+      ['--jobs-dir', '/opt/copse/bench-results/shard-3/terminal-bench'],
+    )
   })
 
   it('keeps an existing Python import path after the repository root', () => {

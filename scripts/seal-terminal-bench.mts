@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { glob, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { c as createTar } from 'tar'
 import { terminalBenchTrialOutcome } from './lib/terminal-bench-outcome.mts'
 import {
@@ -11,9 +11,14 @@ import {
 } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
+import {
+  terminalBenchAnalysisPlanPath,
+  terminalBenchCapsulesRoot,
+  terminalBenchResultsRoot,
+} from './lib/terminal-bench.mts'
 
-const RESULTS_ROOT = resolve('bench-results/terminal-bench')
-const CAPSULES_ROOT = resolve('bench-results/terminal-bench-capsules')
+const RESULTS_ROOT = terminalBenchResultsRoot()
+const CAPSULES_ROOT = terminalBenchCapsulesRoot()
 const SECRET_ENV_NAMES = [
   'SCW_GENERATIVE_API_KEY',
   'LM_STUDIO_API_KEY',
@@ -435,7 +440,7 @@ const sourcePatch = git(['diff', '--binary', 'HEAD'])
 const sourcePatchPath = join(CAPSULES_ROOT, 'source.patch')
 await writeFile(sourcePatchPath, sourcePatch)
 await assertNoKnownSecrets(sourcePatchPath, secretValues())
-const sourceAnalysisPlan = resolve('bench-results/terminal-bench-analysis-plan.json')
+const sourceAnalysisPlan = terminalBenchAnalysisPlanPath()
 let analysisPlan: string | null = null
 try {
   const contents = await readFile(sourceAnalysisPlan)

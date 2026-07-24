@@ -42,8 +42,9 @@ describe('Terminal-Bench retained profile metadata', () => {
       })}\n`,
     )
     const retained = await readTerminalBenchTrialProfile(result)
-    assert.equal(retained?.versionedId, 'product-aligned@1')
-    assert.equal(retained?.contentHash, legacy.contentHash)
+    assert.ok(retained)
+    assert.equal(retained.versionedId, 'product-aligned@1')
+    assert.equal(retained.contentHash, legacy.contentHash)
   })
 
   it('does not silently accept a v1 hash under the v2 identity', async () => {

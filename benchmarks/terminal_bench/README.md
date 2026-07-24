@@ -60,8 +60,11 @@ The manual `Terminal-Bench (Scaleway Fleet)` workflow uses GitHub only as the co
 one immutable worker image, pushes it to a private Scaleway Container Registry, and launches
 disposable x86 Scaleway Instances. `instances` is the physical host cap;
 `workers_per_instance` controls how many logical task shards share each host. Each worker container
-uses an isolated result directory while controlling Terminal-Bench's sibling task containers
-through the shared host Docker socket.
+uses an isolated `COPSE_TERMINAL_RESULTS_ROOT` below the shared host results mount while controlling
+Terminal-Bench's sibling task containers through the shared host Docker socket. The results parent
+is mounted at the same absolute path inside the worker and on the host: Harbor passes absolute bind
+sources to the host Docker daemon, so remapping that path would make verifier reward files invisible
+to Harbor.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
 `main-legacy,pr-1149,product-aligned` and set `steered_rerun` to false. The workflow provisions one

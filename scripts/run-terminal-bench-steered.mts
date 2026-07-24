@@ -5,8 +5,9 @@ import { loadTerminalBenchSteering } from './lib/terminal-bench-steering.mts'
 import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
+import { terminalBenchAnalysisPlanPath, terminalBenchResultsRoot } from './lib/terminal-bench.mts'
 
-const PLAN_PATH = resolve('bench-results/terminal-bench-analysis-plan.json')
+const PLAN_PATH = terminalBenchAnalysisPlanPath()
 const rawArgs = process.argv.slice(2)
 const profileArgs = rawArgs.filter((arg) => arg.startsWith('--profile='))
 if (profileArgs.length > 1 || rawArgs.some((arg) => !arg.startsWith('--profile='))) {
@@ -22,7 +23,9 @@ function stringField(value: unknown, key: string): string | undefined {
 
 async function resultPaths(): Promise<Set<string>> {
   const paths = new Set<string>()
-  for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) paths.add(path)
+  for await (const path of glob(resolve(terminalBenchResultsRoot(), '*/*/result.json'))) {
+    paths.add(path)
+  }
   return paths
 }
 

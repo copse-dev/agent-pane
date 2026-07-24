@@ -108,6 +108,19 @@ cohort chosen after inspecting the first study, so it can validate the v2 repair
 mechanisms for a later precommitted factorial experiment; it cannot justify a general benchmark
 improvement by itself.
 
+The first follow-up dispatch, [run 30054221355](https://github.com/copse-dev/agent-pane/actions/runs/30054221355),
+was cancelled as infrastructure-invalid. Its first 18 retained trials all raised
+`RewardFileNotFoundError`: packed workers remapped a shard-specific host directory onto the fixed
+container results path, while Harbor passed that container-visible absolute path to the host Docker
+daemon for verifier bind mounts. The verifier and Harbor therefore addressed different host
+directories. These trials have no official reward and are excluded from profile comparisons. One
+inspected `product-aligned@2` trajectory did write and compile the requested Coq proof under the
+actual `/workspace`, which validates the path diagnosis but is not benchmark evidence.
+
+The corrected fleet retains a shared host results parent at the same absolute path inside every
+worker and selects a shard-specific `COPSE_TERMINAL_RESULTS_ROOT` below it. A one-task oracle smoke
+must produce reward 1 before redispatching the targeted matrix.
+
 The next factorial should separate four hypotheses instead of changing them as a bundle:
 
 1. workspace-aware `write_file` availability;

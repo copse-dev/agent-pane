@@ -7,6 +7,7 @@ import {
   terminalBenchCanonicalTaskName,
 } from './lib/terminal-bench-tasks.mts'
 import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
+import { terminalBenchResultsRoot } from './lib/terminal-bench.mts'
 
 interface TrialSummary {
   profile: string
@@ -208,7 +209,7 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
 }
 
 const trials: TrialSummary[] = []
-for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) {
+for await (const path of glob(join(terminalBenchResultsRoot(), '*/*/result.json'))) {
   const trial = await parseTrial(path)
   if (trial) trials.push(trial)
 }
