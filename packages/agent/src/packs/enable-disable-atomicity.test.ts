@@ -35,6 +35,7 @@ function pilotPack(): RegisteredPack {
       asyncHooks: [asyncHook],
       promptBlocks: [{ id: 'pilot-steer', text: 'plan your work', trust: 'trusted' }],
       uiContributions: [{ id: 'pilot-plan-panel', level: 3, slot: 'plan' }],
+      capabilities: [{ name: 'pilot-flag', title: 'Pilot flag' }],
     },
   )
 }
@@ -46,6 +47,7 @@ function activeCounts(registry: PackRegistry): Record<string, number> {
     async: registry.activeAsyncHooks().length,
     prompt: registry.activePromptBlocks().length,
     ui: registry.activeUiContributions().length,
+    capabilities: registry.activeCapabilities().length,
   }
 }
 
@@ -60,7 +62,10 @@ describe('atomic enable/disable', () => {
       async: 1,
       prompt: 1,
       ui: 1,
+      capabilities: 1,
     })
+    // The capability is active while the owning pack is enabled.
+    assert.equal(registry.isCapabilityActive('pilot-flag'), true)
 
     registry.disable('pilot')
 
@@ -72,7 +77,11 @@ describe('atomic enable/disable', () => {
       async: 0,
       prompt: 0,
       ui: 0,
+      capabilities: 0,
     })
+    // Disabling drops the capability in the same flag flip (mirrors the tool-name
+    // assertion): `isCapabilityActive` is the single seam subsystems consult.
+    assert.equal(registry.isCapabilityActive('pilot-flag'), false)
   })
 
   it('restores every contribution kind on re-enable', () => {
@@ -88,7 +97,9 @@ describe('atomic enable/disable', () => {
       async: 1,
       prompt: 1,
       ui: 1,
+      capabilities: 1,
     })
+    assert.equal(registry.isCapabilityActive('pilot-flag'), true)
   })
 
   it('leaves only the disabled pack removed from a mixed registry', () => {

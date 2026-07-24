@@ -165,15 +165,15 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
-  // Experimental, opt-in features (off by default).
-  { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
+  // Experimental, opt-in features (off by default). The MCP-UI artefacts
+  // (canvas) toggle moved to Settings > Packs (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
   { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
+  // The DevTools shortcut toggle moved to Settings > Packs (`copse.devtools-shortcut`).
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -973,19 +973,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <div id="settings-acp-agents-host" class="settings-mount"></div>
 
             <fieldset>
-              <legend>MCP UI artefacts (canvas)</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="mcpUiArtefactsEnabled" />
-                Render MCP-UI artefacts as a sandboxed canvas
-              </label>
-              <p class="field-hint">
-                When an MCP tool returns a UI resource (self-contained HTML or a URL), Copse
-                recognises it and will render it as a fully sandboxed artefact in the Browser pane —
-                no Node, no app access. While off, UI resources are treated as plain tool output.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -1073,19 +1060,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 time per project and relaxes the sandbox only to allow binding on localhost.
                 Otherwise a task stays fully sandboxed (workspace-only, no network). Tasks are
                 stopped when the app quits. While off, the tool is not registered.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>DevTools shortcut</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="devtoolsShortcutEnabled" />
-                Enable <code>Ctrl+Shift+I</code> to toggle Developer Tools
-              </label>
-              <p class="field-hint">
-                Registers a keyboard shortcut to open the Electron DevTools window. Useful for
-                debugging the app itself (not the agent conversation). While off, no shortcut is
-                registered and the DevTools window cannot be opened.
               </p>
             </fieldset>
           </section>
@@ -1770,6 +1744,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               `L${String(u.level)} ${u.title ?? u.id}${u.panelKind ? ` (${u.panelKind})` : ''}`,
           )
           .join(', '),
+      })
+    }
+    if (contributions.capabilities.length > 0) {
+      chips.push({
+        label: 'Capabilities',
+        count: contributions.capabilities.length,
+        title: contributions.capabilities.map((c) => `${c.title} (${c.name})`).join(', '),
       })
     }
     if (chips.length > 0) {

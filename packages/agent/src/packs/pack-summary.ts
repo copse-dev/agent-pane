@@ -50,6 +50,13 @@ export interface PackPromptBlockOut {
   trust: 'trusted' | 'untrusted'
 }
 
+/** One runtime capability flag enumerated for the Settings pack list. */
+export interface PackCapabilityOut {
+  name: string
+  title: string
+  description?: string
+}
+
 /** Contributions snapshot for one pack (renderer-facing plain data). */
 export interface PackContributionsOut {
   toolNames: readonly string[]
@@ -59,6 +66,8 @@ export interface PackContributionsOut {
   commandHooks: readonly { event: string; command: string }[]
   promptBlocks: readonly PackPromptBlockOut[]
   ui: readonly PackUiContributionOut[]
+  /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
+  capabilities: readonly PackCapabilityOut[]
   storageNamespace?: string
 }
 
@@ -150,6 +159,11 @@ export function packToSummary(
   })
   const commandHooks = (manifest.hooks ?? []).map((h) => ({ event: h.event, command: h.command }))
   const promptBlocks = contributions.promptBlocks.map((b) => ({ id: b.id, trust: b.trust }))
+  const capabilities = contributions.capabilities.map((c) => {
+    const entry: PackCapabilityOut = { name: c.name, title: c.title }
+    if (c.description !== undefined) entry.description = c.description
+    return entry
+  })
   const contributionsOut: PackContributionsOut = {
     toolNames: contributions.toolNames.slice(),
     blockingHooks: contributions.blockingHooks.map((h) => ({ id: h.id, event: h.event })),
@@ -157,6 +171,7 @@ export function packToSummary(
     commandHooks,
     promptBlocks,
     ui,
+    capabilities,
   }
   if (manifest.tools?.mcpServers !== undefined) {
     contributionsOut.mcpServersPath = manifest.tools.mcpServers

@@ -58,6 +58,9 @@ function demoPack(id: string): RegisteredPack {
       uiContributions: [
         { id: `${id}-panel`, level: 2, slot: 'sidebar', title: 'Sidebar', panel: { kind: 'list' } },
       ],
+      capabilities: [
+        { name: `${id}-cap`, title: 'Demo capability', description: 'a pure behaviour flag' },
+      ],
     },
   )
 }
@@ -82,7 +85,19 @@ describe('packToSummary', () => {
     assert.deepEqual(summary.contributions.ui, [
       { id: 'alpha-panel', level: 2, slot: 'sidebar', title: 'Sidebar', panelKind: 'list' },
     ])
+    assert.deepEqual(summary.contributions.capabilities, [
+      { name: 'alpha-cap', title: 'Demo capability', description: 'a pure behaviour flag' },
+    ])
     assert.equal(summary.contributions.storageNamespace, 'alpha')
+  })
+
+  it('projects a capability without a description as name + title only', () => {
+    const pack = definePack(
+      { name: 'cap-only', trust: 'first-party' },
+      { capabilities: [{ name: 'flag-x', title: 'Flag X' }] },
+    )
+    const summary = packToSummary(pack, true, () => undefined)
+    assert.deepEqual(summary.contributions.capabilities, [{ name: 'flag-x', title: 'Flag X' }])
   })
 
   it('falls values back to declared defaults when nothing is stored', () => {

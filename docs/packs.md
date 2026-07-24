@@ -57,12 +57,18 @@ groups every pack's contributions by pack id and owns the lifecycle:
 
 - **Grouping** — `all()` / `grouping()` enumerate packs (Settings, P3); the
   `active*()` getters (`activeToolNames`, `activeBlockingHooks`,
-  `activeAsyncHooks`, `activePromptBlocks`, `activeUiContributions`) return the
-  contributions of **enabled** packs only, for **new work**.
+  `activeAsyncHooks`, `activePromptBlocks`, `activeUiContributions`,
+  `activeCapabilities`) return the contributions of **enabled** packs only, for
+  **new work**.
+- **Capabilities** — a pack may declare named **capability** flags: pure
+  cross-cutting behaviour with no tool/hook/prompt/panel (e.g. the MCP-UI canvas,
+  the DevTools shortcut). Any subsystem reads one through the single
+  `isCapabilityActive(name)` seam instead of a scattered `getSetting` check; a
+  capability is active iff some enabled pack declares it.
 - **Atomic enable/disable** — `disable(id)` flips a single flag, so every one of
   a pack's contribution kinds drops from the active getters at once: tools leave
   the model tool list, hooks stop firing, prompt blocks drop out, UI stops
-  mounting for new content. There is no partial state.
+  mounting for new content, capabilities turn off. There is no partial state.
 - **Storage survives disable** — `storage(id)` is a namespaced bag that is never
   cleared on disable (decision 17), like a disabled browser extension's data.
 

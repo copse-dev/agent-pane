@@ -46,6 +46,25 @@ export interface PackUiContribution {
 }
 
 /**
+ * A named runtime *capability* a pack owns — a pure cross-cutting behaviour flag
+ * that adds no tool, hook, prompt, or panel. Some Experimental features (the
+ * MCP-UI canvas, the DevTools shortcut) gate behaviour that already lives across
+ * main + renderer; they can't be expressed as any of the other contribution
+ * kinds. A capability is that missing kind: a stable `name` any subsystem reads
+ * through {@link PackRegistry.isCapabilityActive} (the single seam that replaces
+ * scattered `getSetting` reads), plus a human `title`/`description` so the
+ * Settings pack list can enumerate what the toggle actually does.
+ */
+export interface PackCapabilityDecl {
+  /** Stable capability id — the flag name subsystems read via `isCapabilityActive`. */
+  name: string
+  /** Human title for the Settings pack-list enumeration (P3). */
+  title: string
+  /** Optional human description shown alongside the title. */
+  description?: string
+}
+
+/**
  * A prompt / steering block a pack contributes, carrying trust framing (plan).
  * A `trusted` (first-party) block is injected verbatim; an `untrusted` (user)
  * block is delimited as data, matching the skills trust model.
@@ -142,6 +161,8 @@ export interface PackManifest {
   hooks?: readonly PackCommandHookDecl[]
   prompt?: readonly PackPromptBlock[]
   ui?: readonly PackUiContribution[]
+  /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
+  capabilities?: readonly PackCapabilityDecl[]
   settings?: PackSettingsSchema
   storage?: PackStorageDecl
 }
@@ -164,6 +185,13 @@ export interface PackContributions {
   readonly promptBlocks: readonly PackPromptBlock[]
   /** UI contributions mounted for *new* content while enabled (decision 17). */
   readonly uiContributions: readonly PackUiContribution[]
+  /**
+   * Runtime capability flags active while enabled. A capability is "active" iff
+   * some enabled pack declares it (see {@link PackRegistry.isCapabilityActive});
+   * disabling the pack drops it in the same atomic flag flip as its other
+   * contribution kinds.
+   */
+  readonly capabilities: readonly PackCapabilityDecl[]
 }
 
 /** Contributions a pack with nothing to offer registers (the P1 skeleton). */
@@ -173,6 +201,7 @@ export const EMPTY_PACK_CONTRIBUTIONS: PackContributions = {
   asyncHooks: [],
   promptBlocks: [],
   uiContributions: [],
+  capabilities: [],
 }
 
 /**
@@ -223,6 +252,7 @@ export function packManifestFromPluginJson(
     hooks?: readonly PackCommandHookDecl[]
     prompt?: readonly PackPromptBlock[]
     ui?: readonly PackUiContribution[]
+    capabilities?: readonly PackCapabilityDecl[]
     settings?: PackSettingsSchema
     storage?: PackStorageDecl
   },
@@ -258,6 +288,7 @@ export function packManifestFromPluginJson(
   // blocks (decision 15's capability tiering applied to prompt).
   if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
+  if (raw.capabilities) manifest.capabilities = raw.capabilities
   if (raw.settings) manifest.settings = raw.settings
   if (raw.storage) manifest.storage = raw.storage
   return manifest

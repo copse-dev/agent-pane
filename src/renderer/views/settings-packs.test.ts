@@ -90,6 +90,7 @@ const demoPack: PackSummary = {
     commandHooks: [],
     promptBlocks: [{ id: 'demo-steer', trust: 'trusted' }],
     ui: [{ id: 'demo-panel', level: 2, slot: 'sidebar', title: 'Demo panel', panelKind: 'list' }],
+    capabilities: [],
     storageNamespace: 'copse.demo',
   },
   settings: [
@@ -122,6 +123,7 @@ const modelFieldPack: PackSummary = {
     commandHooks: [],
     promptBlocks: [],
     ui: [],
+    capabilities: [],
   },
   settings: [
     {
@@ -146,6 +148,7 @@ const disabledUserPack: PackSummary = {
     commandHooks: [{ event: 'toolGate', command: './guard.sh' }],
     promptBlocks: [],
     ui: [],
+    capabilities: [],
   },
   settings: [],
 }
@@ -232,6 +235,30 @@ describe('settings → packs list', () => {
     assert.deepEqual(chipTexts, ['Tools × 1', 'Hooks × 1', 'Prompt blocks × 1', 'UI × 1'])
   })
 
+  it('enumerates a capability-only pack as a Capabilities chip', async () => {
+    const capabilityPack: PackSummary = {
+      id: 'copse.mcp-ui-canvas',
+      trust: 'first-party',
+      name: 'copse.mcp-ui-canvas',
+      enabled: false,
+      contributions: {
+        toolNames: [],
+        blockingHooks: [],
+        asyncHooks: [],
+        commandHooks: [],
+        promptBlocks: [],
+        ui: [],
+        capabilities: [{ name: 'mcp-ui-canvas', title: 'MCP-UI canvas rendering' }],
+      },
+      settings: [],
+    }
+    const list = await openPacks({ packs: [capabilityPack] }, spy)
+    const chipTexts = Array.from(list.querySelectorAll('.pack-chip')).map((el) => el.textContent)
+    assert.deepEqual(chipTexts, ['Capabilities × 1'])
+    // A capability-only pack contributes something — no skeleton note.
+    assert.doesNotMatch(list.textContent, /Contributes nothing yet/)
+  })
+
   it('shows a "contributes nothing" note for skeleton packs', async () => {
     const skeleton: PackSummary = {
       ...demoPack,
@@ -243,6 +270,7 @@ describe('settings → packs list', () => {
         commandHooks: [],
         promptBlocks: [],
         ui: [],
+        capabilities: [],
       },
       settings: [],
     }

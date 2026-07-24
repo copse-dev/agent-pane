@@ -22,6 +22,8 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
+import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
@@ -33,6 +35,8 @@ const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategy
 const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
 const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
 const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
+const MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY = 'packMigration.mcpUiCanvasEnablement'
+const DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY = 'packMigration.devtoolsShortcutEnablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -71,6 +75,14 @@ function clearStorage(): void {
   storageDelete(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY)
   storageDelete(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY)
   storageDelete(PII_REDACTION_ENABLEMENT_MIGRATION_KEY)
+  // The two capability-only pack migrations run in the same getPackService()
+  // call as every other migration. Mark them done by default so the existing
+  // per-pack migration assertions stay scoped to their own pack; the dedicated
+  // capability-pack tests below clear these keys to exercise them.
+  storageSet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY, true)
+  storageDelete('mcpUiArtefactsEnabled')
+  storageDelete('devtoolsShortcutEnabled')
   storageDelete('postTurnReviewEnabled')
   storageDelete('modelComparisonEnabled')
   storageDelete('longHorizonTasksEnabled')
@@ -520,6 +532,64 @@ describe('PackService', () => {
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  /**
+   * Mark every migration except the one under test as already-done, so a single
+   * getPackService() run exercises just that capability-pack migration. The two
+   * capability keys are marked done by clearStorage in beforeEach, so the test
+   * only clears its own target.
+   */
+  function isolateSiblingMigrations(): void {
+    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
+  }
+
+  it('migrates mcp-ui-canvas default-OFF without silently enabling canvas', () => {
+    isolateSiblingMigrations()
+    storageDelete(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY)
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(MCP_UI_CANVAS_PACK_ID), false)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [MCP_UI_CANVAS_PACK_ID])
+    assert.equal(storageGet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY), true)
+  })
+
+  it('preserves an explicit legacy mcpUiArtefactsEnabled=true choice', () => {
+    isolateSiblingMigrations()
+    storageDelete(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY)
+    storageSet('mcpUiArtefactsEnabled', true)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(MCP_UI_CANVAS_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('migrates devtools-shortcut default-OFF without silently registering the shortcut', () => {
+    isolateSiblingMigrations()
+    storageDelete(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY)
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(DEVTOOLS_SHORTCUT_PACK_ID), false)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [DEVTOOLS_SHORTCUT_PACK_ID])
+    assert.equal(storageGet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY), true)
+  })
+
+  it('preserves an explicit legacy devtoolsShortcutEnabled=true choice', () => {
+    isolateSiblingMigrations()
+    storageDelete(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY)
+    storageSet('devtoolsShortcutEnabled', true)
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(DEVTOOLS_SHORTCUT_PACK_ID), true)
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 })

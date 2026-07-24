@@ -51,6 +51,18 @@
 //    model tool list, stops appending the prompt block, and stops rewriting the
 //    user's input into placeholders (`registry-bootstrap.ts`,
 //    `agent-system-prompt.ts` and `pii-redactor.ts` read the pack registry).
+//  - `mcpUiCanvasPack` — the first-party pack for the experimental MCP-UI
+//    artefacts (canvas) feature (issue #611). Contributes no tool: it declares
+//    the `mcp-ui-canvas` **capability** — the canvas gates in `mcp-registry.ts`
+//    read `isCapabilityActive('mcp-ui-canvas')` instead of the retired
+//    `mcpUiArtefactsEnabled` setting, so the pack toggle atomically turns canvas
+//    rendering (and the bundled canvas server) on/off. Default DISABLED.
+//  - `devtoolsShortcutPack` — the first-party pack for the experimental DevTools
+//    shortcut. Contributes no tool: it declares the `devtools-shortcut`
+//    **capability** — `create-main-window.ts` reads
+//    `isCapabilityActive('devtools-shortcut')` instead of the retired
+//    `devtoolsShortcutEnabled` setting, so the pack toggle atomically
+//    registers/unregisters the global Ctrl+Shift+I shortcut. Default DISABLED.
 import type { RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
@@ -62,13 +74,16 @@ import { advisorStrategyPack } from './advisor-strategy-pack.ts'
 import { okfMemoriesPack } from './okf-memories-pack.ts'
 import { ciInvestigatorPack } from './ci-investigator-pack.ts'
 import { piiRedactionPack } from './pii-redaction-pack.ts'
+import { mcpUiCanvasPack } from './mcp-ui-canvas-pack.ts'
+import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
  * enumeration order (P3): the pilot todos pack, then P5's two extracted
  * feature packs (post-turn review + model comparison), then long-horizon
  * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
- * the CI investigator, then PII redaction.
+ * the CI investigator, then PII redaction, then the two capability-only packs
+ * (MCP-UI canvas + DevTools shortcut).
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -80,6 +95,8 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   okfMemoriesPack,
   ciInvestigatorPack,
   piiRedactionPack,
+  mcpUiCanvasPack,
+  devtoolsShortcutPack,
 ]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */

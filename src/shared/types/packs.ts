@@ -63,6 +63,21 @@ export interface PackPromptBlockSummary {
 }
 
 /**
+ * One named runtime capability a pack owns — a pure behaviour flag (no tool /
+ * hook / prompt / panel) that any subsystem reads through the registry's
+ * `isCapabilityActive` seam. Enumerated in Settings so the user sees what the
+ * toggle actually gates (e.g. the MCP-UI canvas, the DevTools shortcut).
+ */
+export interface PackCapabilitySummary {
+  /** Stable capability id read via the registry accessor. */
+  name: string
+  /** Human title for the Settings enumeration. */
+  title: string
+  /** Optional human description. */
+  description?: string
+}
+
+/**
  * Everything a pack contributes, enumerated for the Settings pack list. Both
  * first-party and user packs surface here (decision 15). Function hooks and
  * native tool wiring stay on the host side — the renderer only sees ids and
@@ -81,6 +96,8 @@ export interface PackContributionsSummary {
   commandHooks: readonly { event: string; command: string }[]
   promptBlocks: readonly PackPromptBlockSummary[]
   ui: readonly PackUiContributionSummary[]
+  /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
+  capabilities: readonly PackCapabilitySummary[]
   /** Namespaced storage bag the pack owns (survives disable — decision 17). */
   storageNamespace?: string
 }

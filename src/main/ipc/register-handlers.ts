@@ -115,6 +115,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE, migrateLegacyMemories } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -195,11 +196,7 @@ import {
   type MockScriptStep,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import {
-  getMainWindow,
-  registerDevtoolsShortcut,
-  unregisterDevtoolsShortcut,
-} from '../windows/create-main-window.ts'
+import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
@@ -243,6 +240,10 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Issue #438: persist grandfathered custom-provider hosts once so Settings
   // and runtime gates share the same allowlist after upgrade.
   void migrateApprovedProviderHosts()
+  // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
+  // pack is enabled (getPackService() has already applied the persisted disable
+  // set to the shared registry). Off by default, so a no-op for fresh installs.
+  syncDevtoolsShortcut(win)
   const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
@@ -776,16 +777,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
     }
-    // Toggle the DevTools shortcut registration when the setting changes.
-    if (k === 'devtoolsShortcutEnabled') {
-      const win = getMainWindow()
-      const enabled = typeof value === 'boolean' && value
-      if (enabled) {
-        if (win) registerDevtoolsShortcut(win)
-      } else {
-        unregisterDevtoolsShortcut()
-      }
-    }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -1101,6 +1092,13 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // the same pack enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
     if (id === PII_REDACTION_PACK_ID) {
       syncPiiTools(registry)
+    }
+    // The `copse.devtools-shortcut` pack contributes no tool — it owns the
+    // `devtools-shortcut` capability. Toggling the pack registers/unregisters the
+    // global Ctrl+Shift+I shortcut so the atomic pack-disable turns it off
+    // without an app restart (mirrors the tool syncs above).
+    if (id === DEVTOOLS_SHORTCUT_PACK_ID) {
+      syncDevtoolsShortcut(win)
     }
     return { packs: getPackService().list() }
   })

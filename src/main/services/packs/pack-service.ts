@@ -45,6 +45,8 @@ import {
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
+import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -71,6 +73,12 @@ const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEn
 
 /** One-time bridge from the retired `piiRedactionEnabled` standalone setting. */
 const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
+
+/** One-time bridge from the retired `mcpUiArtefactsEnabled` standalone setting. */
+const MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY = 'packMigration.mcpUiCanvasEnablement'
+
+/** One-time bridge from the retired `devtoolsShortcutEnabled` standalone setting. */
+const DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY = 'packMigration.devtoolsShortcutEnablement'
 
 /** One-time bridge from the retired top-level model settings now owned by packs. */
 const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
@@ -249,6 +257,52 @@ function migratePiiRedactionEnablement(): void {
   storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
 }
 
+/**
+ * Preserve the enablement users had before the MCP-UI canvas became a pack. The
+ * feature was opt-in (off by default via the `mcpUiArtefactsEnabled` setting), so
+ * an absent or false value must disable the new `copse.mcp-ui-canvas` pack —
+ * otherwise the migration would silently start rendering MCP-UI resources as
+ * sandboxed artefacts (and connect the bundled canvas server) for every existing
+ * user after upgrade. This preserves the default-OFF invariant: it runs
+ * synchronously before the shared registry is created (which `mcp-registry.ts`
+ * consults via `isCapabilityActive`) and is idempotent (guarded by its own key).
+ */
+function migrateMcpUiCanvasEnablement(): void {
+  if (storageGet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const mcpUiArtefactsEnabled = storageGet('mcpUiArtefactsEnabled')
+
+  if (mcpUiArtefactsEnabled === true) disabled.delete(MCP_UI_CANVAS_PACK_ID)
+  else disabled.add(MCP_UI_CANVAS_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY, true)
+}
+
+/**
+ * Preserve the enablement users had before the DevTools shortcut became a pack.
+ * The feature was opt-in (off by default via the `devtoolsShortcutEnabled`
+ * setting), so an absent or false value must disable the new
+ * `copse.devtools-shortcut` pack — otherwise the migration would silently
+ * register the global Ctrl+Shift+I shortcut for every existing user after
+ * upgrade. Runs synchronously before the shared registry is created (which
+ * `create-main-window.ts` consults via `isCapabilityActive` at boot) and is
+ * idempotent (guarded by its own key).
+ */
+function migrateDevtoolsShortcutEnablement(): void {
+  if (storageGet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  const devtoolsShortcutEnabled = storageGet('devtoolsShortcutEnabled')
+
+  if (devtoolsShortcutEnabled === true) disabled.delete(DEVTOOLS_SHORTCUT_PACK_ID)
+  else disabled.add(DEVTOOLS_SHORTCUT_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY, true)
+}
+
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
 function readPackSettings(packId: string): Record<string, unknown> {
   const raw = storageGet(packSettingsKey(packId))
@@ -410,6 +464,8 @@ export function getPackService(): PackService {
   migrateOkfMemoriesEnablement()
   migrateCiInvestigatorEnablement()
   migratePiiRedactionEnablement()
+  migrateMcpUiCanvasEnablement()
+  migrateDevtoolsShortcutEnablement()
   migratePackModelSettings()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)

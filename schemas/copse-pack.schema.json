@@ -124,6 +124,30 @@
         }
       }
     },
+    "capabilities": {
+      "description": "Named runtime capability flags the pack owns — pure cross-cutting behaviour (no tool/hook/prompt/panel), read by any subsystem through the registry's isCapabilityActive seam and enumerated in Settings (P3).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "title"],
+        "properties": {
+          "name": {
+            "description": "Stable capability id subsystems read via isCapabilityActive.",
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "description": "Human title for the Settings pack-list enumeration.",
+            "type": "string"
+          },
+          "description": {
+            "description": "Optional human description shown alongside the title.",
+            "type": "string"
+          }
+        }
+      }
+    },
     "settings": {
       "description": "Pack-scoped settings schema, keyed by setting id, rendered generically in Settings (P3).",
       "type": "object",
