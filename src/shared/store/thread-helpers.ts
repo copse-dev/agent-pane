@@ -40,9 +40,14 @@ export function hasUnsubmittedPrompt(thread: Thread): boolean {
   return Boolean(thread.draftPrompt?.trim())
 }
 
+/** True once the user archived the thread (soft-hidden from the sidebar). */
+export function isThreadArchived(thread: Thread): boolean {
+  return thread.archivedAt != null
+}
+
 /** Blank thread with no draft — safe to collapse when switching away. */
 function isPrunableBlankThread(thread: Thread): boolean {
-  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread)
+  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread)
 }
 
 function pruneBlankThreads(store: AppStore, keepIds: ReadonlySet<string>): void {
@@ -60,7 +65,8 @@ function pruneBlankThreads(store: AppStore, keepIds: ReadonlySet<string>): void 
 /** Drop extra blank threads after load (keeps drafts and one empty blank). */
 export function normalizeBlankThreads(store: AppStore): void {
   const { threads, activeThreadId } = store.getState()
-  const blanks = threads.filter(isBlankThread)
+  // Archived blanks stay put — they are not part of the sidebar blank budget.
+  const blanks = threads.filter((t) => isBlankThread(t) && !isThreadArchived(t))
   const emptyBlanks = blanks.filter((t) => !hasUnsubmittedPrompt(t))
   if (emptyBlanks.length <= 1) return
   const keepEmptyId =
@@ -113,7 +119,9 @@ export function createThread(store: AppStore, draftPrompt?: string): string {
 /** Open a fresh composer: reuse an unused blank thread or create one. */
 export function openNewThread(store: AppStore): string {
   const { threads, activeThreadId } = store.getState()
-  const existing = threads.find((t) => isBlankThread(t) && !hasUnsubmittedPrompt(t))
+  const existing = threads.find(
+    (t) => isBlankThread(t) && !hasUnsubmittedPrompt(t) && !isThreadArchived(t),
+  )
   if (existing) {
     if (activeThreadId !== existing.id) {
       store.emit('composer_draft_flush')
@@ -178,6 +186,36 @@ export function deleteThread(store: AppStore, id: string): void {
       ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null)
       : activeThreadId
   store.setState({ threads: remaining, activeThreadId: newActive })
+  store.emit('threads_changed')
+}
+
+/**
+ * Soft-hide a thread from the sidebar (and `@`-catalog via persistence). The
+ * thread directory stays on disk; only `archivedAt` is stamped. When the last
+ * visible thread is archived, a fresh blank thread is created so the composer
+ * always has somewhere to land.
+ */
+export function archiveThread(store: AppStore, id: string): void {
+  const { threads, activeThreadId } = store.getState()
+  const target = threads.find((t) => t.id === id)
+  if (!target || isThreadArchived(target)) return
+
+  const now = Date.now()
+  const updated = threads.map((t) => (t.id !== id ? t : { ...t, archivedAt: now, updatedAt: now }))
+  const visible = updated.filter((t) => !isThreadArchived(t))
+
+  if (visible.length === 0) {
+    store.setState({ threads: updated, activeThreadId: null })
+    createThread(store)
+    return
+  }
+
+  const index = threads.findIndex((t) => t.id === id)
+  const newActive =
+    activeThreadId === id
+      ? (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
+      : activeThreadId
+  store.setState({ threads: updated, activeThreadId: newActive })
   store.emit('threads_changed')
 }
 

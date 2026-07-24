@@ -182,6 +182,12 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
+  /**
+   * When set, the thread is archived: hidden from the sidebar and `@`-thread
+   * catalog, but kept on disk under `~/.copse/workspace/<projectId>/<id>/`.
+   * Soft-hide (not a delete) — restore is a later UI concern.
+   */
+  archivedAt?: number
   createdAt: number
   updatedAt: number
 }
