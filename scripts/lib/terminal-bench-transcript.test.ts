@@ -11,6 +11,19 @@ import type { StreamCutRecord } from '../../packages/agent/src/stream-cut-record
 import type { ReasoningCheckpointRecord } from '../../packages/agent/src/reasoning-circle-detector.ts'
 import { TerminalBenchTranscript } from './terminal-bench-transcript.mts'
 
+function readJson(path: string): unknown {
+  return JSON.parse(readFileSync(path, 'utf8').trim()) as unknown
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  assert.ok(isRecord(value))
+  return value
+}
+
 const root = mkdtempSync(join(tmpdir(), 'copse-terminal-transcript-'))
 after(() => {
   rmSync(root, { recursive: true, force: true })
@@ -85,7 +98,7 @@ describe('terminal benchmark transcript', () => {
     })
     transcript.write()
 
-    const meta = JSON.parse(readFileSync(join(directory, 'meta.json'), 'utf8')) as ThreadMeta
+    const meta = asRecord(readJson(join(directory, 'meta.json'))) as ThreadMeta
     const spine = parseSpine(readFileSync(join(directory, 'events.jsonl'), 'utf8'))
     const hash = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
     const folded = foldThread(meta, spine, (ref) => readFileSync(join(directory, ref), 'utf8'), {
@@ -107,13 +120,11 @@ describe('terminal benchmark transcript', () => {
     const exported = readFileSync(join(directory, 'thread.jsonl'), 'utf8')
       .trimEnd()
       .split('\n')
-      .map((line) => JSON.parse(line) as { type: string; content?: string })
+      .map((line) => asRecord(JSON.parse(line) as unknown) as { type: string; content?: string })
     assert.equal(exported[0]?.type, 'thread')
     assert.equal(exported.at(-1)?.content, 'Completed.')
 
-    const streamStat = JSON.parse(
-      readFileSync(join(root, 'stream-stats.jsonl'), 'utf8').trim(),
-    ) as Record<string, unknown>
+    const streamStat = asRecord(readJson(join(root, 'stream-stats.jsonl')))
     assert.equal(streamStat['schemaVersion'], 1)
     assert.equal(streamStat['threadId'], 'id-1')
     assert.equal(streamStat['turnId'], 'id-2')
@@ -122,25 +133,19 @@ describe('terminal benchmark transcript', () => {
     assert.equal(streamStat['reasoningTokensEstimate'], 3_000)
     assert.equal(streamStat['reasoningText'], 'Repeated planning.')
 
-    const reasoningCheckpoint = JSON.parse(
-      readFileSync(join(root, 'reasoning-checkpoints.jsonl'), 'utf8').trim(),
-    ) as Record<string, unknown>
+    const reasoningCheckpoint = asRecord(readJson(join(root, 'reasoning-checkpoints.jsonl')))
     assert.equal(reasoningCheckpoint['threadId'], 'id-1')
     assert.equal(reasoningCheckpoint['checkpointTokens'], 2_048)
     assert.equal(reasoningCheckpoint['hardMaxTokens'], 32_000)
     assert.equal(reasoningCheckpoint['decision'], 'continue')
 
-    const hookRun = JSON.parse(
-      readFileSync(join(root, 'hook-runs.jsonl'), 'utf8').trim(),
-    ) as Record<string, unknown>
+    const hookRun = asRecord(readJson(join(root, 'hook-runs.jsonl')))
     assert.equal(hookRun['schemaVersion'], 1)
     assert.equal(hookRun['threadId'], 'id-1')
     assert.equal(hookRun['hookId'], 'reasoning-runaway')
     assert.deepEqual(hookRun['outcome'], { injectContext: 'Use a tool now.' })
 
-    const appliedNudge = JSON.parse(
-      readFileSync(join(root, 'applied-nudges.jsonl'), 'utf8').trim(),
-    ) as Record<string, unknown>
+    const appliedNudge = asRecord(readJson(join(root, 'applied-nudges.jsonl')))
     assert.equal(appliedNudge['schemaVersion'], 1)
     assert.equal(appliedNudge['threadId'], 'id-1')
     assert.equal(appliedNudge['mechanism'], 'tool-enabled-message')
