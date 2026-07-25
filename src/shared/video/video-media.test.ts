@@ -43,8 +43,8 @@ describe('formatTimestamp', () => {
 
 describe('frameFileName', () => {
   it('encodes the timestamp without characters Windows rejects', () => {
-    assert.equal(frameFileName(83.45), 'frame-00-01-23.450.webp')
-    assert.ok(!frameFileName(83.45).includes(':'))
+    assert.equal(frameFileName(83.45, 'jpg'), 'frame-00-01-23.450.jpg')
+    assert.ok(!frameFileName(83.45, 'jpg').includes(':'))
   })
 })
 

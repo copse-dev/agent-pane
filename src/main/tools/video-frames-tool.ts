@@ -12,6 +12,7 @@ import {
 import { selectDistinctFrames, type FrameCandidate } from '@shared/video/frame-selection.ts'
 import {
   DEFAULT_FRAME_MAX_WIDTH,
+  FRAME_IMAGE_EXTENSION,
   DEFAULT_FRAME_QUALITY,
   DEFAULT_SAMPLE_INTERVAL_SECONDS,
   MAX_FRAME_MAX_WIDTH,
@@ -97,7 +98,7 @@ function resolveWindow(
 export const videoFramesTool = defineTool({
   name: 'video_frames',
   description:
-    'Read a video (typically a screen recording) as a small set of still images. Samples the video and returns only the frames that are visually distinct from each other, so a recording of a mostly-static screen costs a few images rather than hundreds — a still video returns exactly one. Audio is ignored. With no `start`/`end` it covers the whole video; pass a range to look closely at one moment. Each image is named for its timestamp (`frame-00-01-23.450.webp` = 00:01:23.450), so you can quote a time back to the user or re-request that moment with a tighter range. Raise `sensitivity` to catch smaller changes, lower it for fewer frames.',
+    'Read a video (typically a screen recording) as a small set of still images. Samples the video and returns only the frames that are visually distinct from each other, so a recording of a mostly-static screen costs a few images rather than hundreds — a still video returns exactly one. Audio is ignored. With no `start`/`end` it covers the whole video; pass a range to look closely at one moment. Each image is named for its timestamp (`frame-00-01-23.450.jpg` = 00:01:23.450), so you can quote a time back to the user or re-request that moment with a tighter range. Raise `sensitivity` to catch smaller changes, lower it for fewer frames.',
   parameters: z.object({
     path: z
       .string()
@@ -225,7 +226,7 @@ export const videoFramesTool = defineTool({
     for (const frame of selected) {
       const dataUrl = encodedByTime.get(frame.time)
       if (!dataUrl) continue
-      const name = frameFileName(frame.time)
+      const name = frameFileName(frame.time, FRAME_IMAGE_EXTENSION)
       const size = dataUrlBytes(dataUrl)
       if (totalBytes + size > MAX_TOTAL_IMAGE_BYTES && images.length > 0) {
         droppedForSize += 1

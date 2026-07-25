@@ -25,7 +25,7 @@ function frame(time: number, changedCells: number): DecodedFrame {
   return {
     time,
     signature,
-    dataUrl: `data:image/webp;base64,${Buffer.from(`f${String(time)}`).toString('base64')}`,
+    dataUrl: `data:image/jpeg;base64,${Buffer.from(`f${String(time)}`).toString('base64')}`,
   }
 }
 
@@ -68,7 +68,7 @@ describe('video_frames tool', () => {
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.ok(result.images)
     assert.equal(result.images.length, 1)
-    assert.equal(result.images.at(0)?.name, 'frame-00-00-00.000.webp')
+    assert.equal(result.images.at(0)?.name, 'frame-00-00-00.000.jpg')
     assert.match(result.result, /1 visually distinct frame returned/)
     assert.match(result.result, /Nothing else in this range looked different/)
   })
@@ -80,10 +80,10 @@ describe('video_frames tool', () => {
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.deepEqual(
       result.images?.map((i) => i.name),
-      ['frame-00-00-00.000.webp', 'frame-00-00-04.500.webp'],
+      ['frame-00-00-00.000.jpg', 'frame-00-00-04.500.jpg'],
     )
     // The manifest repeats the timestamp in readable form next to the filename.
-    assert.match(result.result, /frame-00-00-04\.500\.webp {2}00:00:04\.500/)
+    assert.match(result.result, /frame-00-00-04\.500\.jpg {2}00:00:04\.500/)
   })
 
   it('covers the whole video when no range is given', async () => {
@@ -170,7 +170,7 @@ describe('video_frames tool', () => {
     const frames = [frame(0, 0), { ...frame(0.5, 0), dataUrl: null }, frame(4, SIGNATURE_CELLS)]
     setVideoDecoderForTest(() => Promise.resolve(decodeResult(frames)))
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
-    assert.ok(result.images?.every((i) => i.dataUrl.startsWith('data:image/webp;base64,')))
+    assert.ok(result.images?.every((i) => i.dataUrl.startsWith('data:image/jpeg;base64,')))
   })
 
   it('surfaces a decoder failure as a tool error', async () => {

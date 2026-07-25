@@ -27,6 +27,27 @@ export function isRoutingPolicyError(err: unknown): boolean {
   )
 }
 
+/**
+ * The server rejected the request because of an image in it.
+ *
+ * Two causes, indistinguishable from the response: the model has no vision at
+ * all, or the server only accepts certain encodings. OpenAI-compatible local
+ * servers surface both as a 400 — LM Studio's is
+ * `'url' field must be a base64 encoded image`. Deterministic, so a plain retry
+ * would only fail again; the caller retries *without* the images instead.
+ *
+ * Matched narrowly on message: a false positive would silently strip images
+ * from a request that could have carried them.
+ */
+export function isImageUnsupportedError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const status = (err as { status?: number }).status
+  if (status !== 400 && status !== 415 && status !== 422) return false
+  return /must be a base64 encoded image|image_url|invalid image|unsupported image|does not support image|no vision|not a vision model/i.test(
+    err.message,
+  )
+}
+
 export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof Anthropic.APIUserAbortError) return false
   if (err instanceof OpenAI.APIUserAbortError) return false

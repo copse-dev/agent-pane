@@ -19,11 +19,27 @@ export const MIN_FRAME_MAX_WIDTH = 320
 export const MAX_FRAME_MAX_WIDTH = 1920
 
 /**
- * WebP quality for returned frames. 0.7 keeps UI text and code legible at
- * 1280px while landing roughly 5-10x smaller than the equivalent PNG — the
- * "squashed but readable" point this feature trades on.
+ * Encoding for returned frames.
+ *
+ * WebP is ~40% smaller than JPEG on a dense screen frame, and was the original
+ * choice for that reason. It is the wrong trade: image *token* cost is computed
+ * from the pixel dimensions, not the byte size, so WebP saves request bandwidth
+ * and nothing else — while several OpenAI-compatible servers (LM Studio among
+ * them) reject a `data:image/webp` payload outright with
+ * `'url' field must be a base64 encoded image`, which fails the whole turn.
+ * JPEG is accepted everywhere we send images and costs the same in context.
  */
-export const DEFAULT_FRAME_QUALITY = 0.7
+export const FRAME_IMAGE_MIME = 'image/jpeg'
+
+/** File extension matching {@link FRAME_IMAGE_MIME}, used in frame names. */
+export const FRAME_IMAGE_EXTENSION = 'jpg'
+
+/**
+ * JPEG quality for returned frames. 0.8 rather than 0.7: JPEG rings around the
+ * high-contrast edges of small UI text, and a frame the model cannot read is
+ * worth nothing however small it is.
+ */
+export const DEFAULT_FRAME_QUALITY = 0.8
 
 /** Default gap between samples. Fine enough to catch a click-through step. */
 export const DEFAULT_SAMPLE_INTERVAL_SECONDS = 0.5
@@ -55,9 +71,10 @@ export interface DecodedFrame {
   /** Cell-mean RGB grid for the distance function; see `frame-selection.ts`. */
   signature: number[]
   /**
-   * Encoded WebP data URL, or null when this sample is byte-identical at grid
-   * resolution to the one before it. A still recording is almost all nulls, and
-   * such a frame can never be selected, so encoding it would be pure waste.
+   * Encoded image data URL ({@link FRAME_IMAGE_MIME}), or null when this sample
+   * is byte-identical at grid resolution to the one before it. A still recording
+   * is almost all nulls, and such a frame can never be selected, so encoding it
+   * would be pure waste.
    */
   dataUrl: string | null
 }

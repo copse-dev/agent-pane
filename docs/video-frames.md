@@ -64,12 +64,12 @@ video_frames({ path: "…/blobs/media/2f8c…-Screen Recording.mov" })
 …/Screen Recording.mov — 2560x1440, 00:02:14.300 long.
 Sampled 00:00:00.000–00:02:14.300 (269 samples); 6 visually distinct frames returned at 1280x720.
 Frames follow as images, in order, named by timestamp:
-  frame-00-00-00.000.webp  00:00:00.000
-  frame-00-00-12.500.webp  00:00:12.500  (34% of the frame changed)
+  frame-00-00-00.000.jpg  00:00:00.000
+  frame-00-00-12.500.jpg  00:00:12.500  (34% of the frame changed)
   …
 ```
 
-Each image is named for its position (`frame-00-01-23.450.webp` =
+Each image is named for its position (`frame-00-01-23.450.jpg` =
 `00:01:23.450`), so the model can quote a time back to the user and re-request
 that moment with a tighter `start`/`end`.
 
@@ -149,8 +149,14 @@ Details worth knowing if you touch it:
 - Containers written by live recorders often report `duration: Infinity`; the
   decoder seeks past the end to make Chromium find the real one.
 
-Frames come back as WebP at quality 0.7 — roughly 5–10× smaller than the
-equivalent PNG while keeping UI text legible at 1280px.
+Frames come back as **JPEG at quality 0.8**. WebP is ~40% smaller on a dense
+screen frame and was the original choice for that reason — it was the wrong
+trade twice over. Image _token_ cost is computed from the pixel dimensions, not
+the byte size, so WebP saved request bandwidth and no context at all; and several
+OpenAI-compatible servers reject `data:image/webp` outright. LM Studio fails the
+whole turn with `'url' field must be a base64 encoded image`. Quality 0.8 rather
+than 0.7 because JPEG rings around small UI text, and an unreadable frame is
+worth nothing however small it is.
 
 ## Images in tool results
 
@@ -168,3 +174,21 @@ near-identical screenshots can say "at 00:01:23.450 the dialog is open" rather
 than "in the third image". The text result always stands on its own: images are
 stripped from the on-disk history (they are regenerable, and would grow a
 thread's sidecar without bound), so a reloaded thread re-reads what it needs.
+
+### When the model cannot take images at all
+
+Nothing in the app knows whether a given model has vision — there is no such
+field in the model catalog, and a local server can be pointed at anything. So a
+text-only model would reject the request and kill the turn.
+
+Instead, an image rejection is caught and the request is retried once with every
+image replaced by a note saying they could not be shown
+(`dropImageContent` + `isImageUnsupportedError`). The model then answers from the
+frame manifest — which still names every frame and its timestamp — and can say
+what it was unable to see, rather than the run dying on a 400 or, worse, the
+model reasoning confidently about pictures it never received.
+
+The match is deliberately narrow (a 400/415/422 whose message names an image):
+a false positive would silently strip images from a request that could have
+carried them. It also lives outside `isRetryableStreamError`, because this retry
+_changes_ the request rather than replaying it.

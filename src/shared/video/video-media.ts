@@ -1,3 +1,5 @@
+import { FRAME_IMAGE_EXTENSION } from './decode-contract.ts'
+
 /**
  * Video attachment vocabulary shared by the renderer (composer drops), the main
  * process (blob storage, the `video_frames` tool) and the offscreen decoder.
@@ -75,11 +77,13 @@ export function formatTimestamp(seconds: number): string {
 }
 
 /**
- * `frame-00-01-23.450.webp` — the same timestamp with `:` swapped for `-`, since
+ * `frame-00-01-23.450.jpg` — the same timestamp with `:` swapped for `-`, since
  * a colon is not a legal filename character on Windows and confuses shells
  * elsewhere. The model is told the mapping so it can name a frame back at us.
+ * The default follows the encoder so the name can never claim a format the
+ * bytes are not.
  */
-export function frameFileName(seconds: number, extension = 'webp'): string {
+export function frameFileName(seconds: number, extension = FRAME_IMAGE_EXTENSION): string {
   return `frame-${formatTimestamp(seconds).replace(/:/g, '-')}.${extension}`
 }
 

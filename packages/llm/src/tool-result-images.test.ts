@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { LLMMessage } from './wire-types.ts'
 import {
+  IMAGE_DROPPED_NOTE,
+  dropImageContent,
   isSupportedToolResultImage,
   stripToolResultImages,
   toolResultContentBlocks,
@@ -121,5 +123,61 @@ describe('stripToolResultImages', () => {
     ]
     stripToolResultImages(messages)
     assert.equal(messages[0]?.role === 'tool' && messages[0].toolResults[0]?.images?.length, 1)
+  })
+})
+
+describe('dropImageContent', () => {
+  it('leaves a request with no images untouched', () => {
+    const messages: LLMMessage[] = [
+      { role: 'user', content: 'hi' },
+      { role: 'tool', toolResults: [{ toolCallId: 't1', result: 'ok' }] },
+    ]
+    assert.deepEqual(dropImageContent(messages), messages)
+  })
+
+  it('replaces a user-attached image with a note the model can read', () => {
+    const [message] = dropImageContent([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look' },
+          { type: 'image', dataUrl: PNG },
+        ],
+      },
+    ])
+    assert.deepEqual(message, {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look' },
+        { type: 'text', text: IMAGE_DROPPED_NOTE },
+      ],
+    })
+  })
+
+  it("keeps a tool result's text and appends the note in place of its images", () => {
+    // The manifest still names every frame and timestamp, so the model can say
+    // what it could not see rather than inventing what it showed.
+    const [message] = dropImageContent([
+      {
+        role: 'tool',
+        toolResults: [
+          { toolCallId: 't1', result: '3 frames', images: [{ dataUrl: WEBP, name: 'f.jpg' }] },
+          { toolCallId: 't2', result: 'no images here' },
+        ],
+      },
+    ])
+    assert.deepEqual(message, {
+      role: 'tool',
+      toolResults: [
+        { toolCallId: 't1', result: `3 frames\n\n${IMAGE_DROPPED_NOTE}` },
+        { toolCallId: 't2', result: 'no images here' },
+      ],
+    })
+  })
+
+  it('does not mutate the input', () => {
+    const original: LLMMessage = { role: 'user', content: [{ type: 'image', dataUrl: PNG }] }
+    dropImageContent([original])
+    assert.deepEqual(original.content, [{ type: 'image', dataUrl: PNG }])
   })
 })

@@ -77,6 +77,46 @@ export function stripToolResultImages(messages: readonly LLMMessage[]): LLMMessa
 }
 
 /**
+ * What replaces an image the server refused. The model is *told*, rather than
+ * left with a tool result that describes pictures it never received — otherwise
+ * it reasons confidently about frames it cannot see.
+ */
+export const IMAGE_DROPPED_NOTE =
+  '[image omitted — this model or server does not accept images, so the text above is all that is available]'
+
+/**
+ * Strip every image from a request, leaving a note in its place.
+ *
+ * Used to retry a request that a server rejected because of its images (see
+ * `isImageUnsupportedError`). Turning one unusable turn into a text-only answer
+ * is strictly better than failing the run: the `video_frames` manifest still
+ * names each frame and its timestamp, so the model can say what it could not
+ * see rather than dying with a 400.
+ */
+export function dropImageContent(messages: readonly LLMMessage[]): LLMMessage[] {
+  return messages.map((m) => {
+    if (m.role === 'tool') {
+      if (!m.toolResults.some((r) => (r.images?.length ?? 0) > 0)) return m
+      return {
+        role: 'tool' as const,
+        toolResults: m.toolResults.map(({ toolCallId, result, images }) => ({
+          toolCallId,
+          result: images && images.length > 0 ? `${result}\n\n${IMAGE_DROPPED_NOTE}` : result,
+        })),
+      }
+    }
+    if (m.role !== 'user' || !Array.isArray(m.content)) return m
+    if (!m.content.some((b) => b.type === 'image')) return m
+    return {
+      role: 'user' as const,
+      content: m.content.map((b) =>
+        b.type === 'image' ? { type: 'text' as const, text: IMAGE_DROPPED_NOTE } : b,
+      ),
+    }
+  })
+}
+
+/**
  * A user message carrying every image from a batch of tool results, for
  * providers that can only put a string in a tool output. Returns null when
  * there is nothing to send, so no empty message is appended.

@@ -7,11 +7,12 @@ import {
   frameDistance,
   sampleTimes,
 } from '@shared/video/frame-selection.ts'
-import type {
-  DecodeFramesRequest,
-  DecodeFramesResponse,
-  DecodedFrame,
-  VideoDecoderBridge,
+import {
+  FRAME_IMAGE_MIME,
+  type DecodeFramesRequest,
+  type DecodeFramesResponse,
+  type DecodedFrame,
+  type VideoDecoderBridge,
 } from '@shared/video/decode-contract.ts'
 
 declare global {
@@ -22,7 +23,7 @@ declare global {
 
 /**
  * The offscreen half of `video_frames`: seek a video to a list of positions and
- * hand each one back as a downscaled WebP plus a cell-colour signature.
+ * hand each one back as a downscaled JPEG plus a cell-colour signature.
  *
  * Seeking (rather than playing through and grabbing frames as they arrive) is
  * what makes a time range cheap — asking for 01:30–01:40 of an hour-long
@@ -174,7 +175,7 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
       frames.push({
         time,
         signature,
-        dataUrl: unchanged ? null : frameCanvas.toDataURL('image/webp', request.quality),
+        dataUrl: unchanged ? null : frameCanvas.toDataURL(FRAME_IMAGE_MIME, request.quality),
       })
       previousSignature = signature
     }
