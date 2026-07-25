@@ -16,7 +16,7 @@ describe('ci.yml workflow invariants', () => {
     // Zero-shard plans (mode=skip / empty subset) must therefore gate the job
     // via `e2e_shard_total` so `needs.e2e.result` is 'skipped' and the
     // mode=skip branch of `ci-passed` can accept the run (#1233).
-    const e2eJob = workflow.match(/^  e2e:\n(?:    .*\n)+/m)?.[0]
+    const e2eJob = workflow.match(/^ {2}e2e:\n(?: {4}.*\n)+/m)?.[0]
     assert.ok(e2eJob, 'expected an `e2e:` job in ci.yml')
     assert.match(
       e2eJob,
