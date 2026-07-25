@@ -59,7 +59,7 @@ Arguments:
 | ------------- | ----------- | ------------------------------------------------------------------- |
 | `path`        | required    | Workspace-relative, or the absolute path given for an attachment    |
 | `start`/`end` | whole video | Seconds (`12.5`) or `mm:ss` / `hh:mm:ss`                            |
-| `max_frames`  | 20 (max 60) | Over the cap, the biggest-change frames are kept                    |
+| `max_frames`  | 10 (max 60) | Over the cap, the biggest-change frames are kept                    |
 | `sensitivity` | `normal`    | `high` catches a changed line of text; `low` only major transitions |
 | `max_width`   | 1280        | Longest edge of the returned frames                                 |
 

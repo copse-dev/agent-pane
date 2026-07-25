@@ -36,7 +36,18 @@ import { decodeVideoFrames } from '../services/video/video-decoder.ts'
  * The audio track is simply never decoded.
  */
 
-const DEFAULT_MAX_FRAMES = 20
+/**
+ * Frames returned when the model doesn't ask for a number.
+ *
+ * Ten images is already a substantial slice of a context window, and it is
+ * enough to survey almost any recording: the frames kept are the biggest
+ * changes, so what survives the cap is the shape of what happened. The result
+ * says when it capped, and narrowing `start`/`end` is the cheaper way to see
+ * more of one moment than raising this is to see more of everything.
+ */
+const DEFAULT_MAX_FRAMES = 10
+
+/** Ceiling on `max_frames`, for the rare case a model deliberately wants more. */
 const MAX_MAX_FRAMES = 60
 
 /** Cap on total returned image bytes, so one call can't swamp a context window. */

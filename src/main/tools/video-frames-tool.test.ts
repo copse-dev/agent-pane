@@ -137,6 +137,16 @@ describe('video_frames tool', () => {
     assert.match(result.result, /Could not read video/)
   })
 
+  it('returns at most 10 frames when the model does not ask for a number', async () => {
+    // A default this low is the point: ten images is already a substantial
+    // slice of a context window, and the ones kept are the biggest changes.
+    const frames = Array.from({ length: 60 }, (_, i) => frame(i, i % 2 === 0 ? SIGNATURE_CELLS : 0))
+    setVideoDecoderForTest(() => Promise.resolve(decodeResult(frames, 60)))
+    const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
+    assert.equal(result.images?.length, 10)
+    assert.match(result.result, /Capped at max_frames=10/)
+  })
+
   it('honours max_frames and says the result was capped', async () => {
     const frames = Array.from({ length: 12 }, (_, i) => frame(i, i % 2 === 0 ? SIGNATURE_CELLS : 0))
     setVideoDecoderForTest(() => Promise.resolve(decodeResult(frames, 12)))
