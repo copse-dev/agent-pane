@@ -82,6 +82,7 @@ import {
 import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
 import {
   requestAcpPackageInstallApproval,
+  revalidateStaleAcpModels,
   runAcpAutoSetup,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
@@ -117,7 +118,7 @@ import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
-import { MEMORY_TYPE, migrateLegacyMemories } from '../tools/memory-tools.ts'
+import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
 import {
   addKnowledgeNote,
@@ -296,6 +297,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .catch((err: unknown) => {
         console.warn('[skills] background init failed:', err)
       })
+    // Now a workspace is available, refresh any ACP model caches that have aged
+    // past the TTL. Fire-and-forget: the picker reads settings live, so fresh
+    // models (e.g. a new Opus release) appear on its next open without blocking
+    // boot or requiring a manual "Detect models".
+    revalidateStaleAcpModels()
     return canonical
   })
 
@@ -371,8 +377,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('memories:list', (event) => {
     assertMainFrameSender(event, win)
-    // Fold in any pre-#645 notes on first read so the pane matches `recall`.
-    migrateLegacyMemories()
     return loadKnowledgeNotes(MEMORY_TYPE)
   })
 
