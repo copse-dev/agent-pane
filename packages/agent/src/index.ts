@@ -24,6 +24,7 @@ export * from './agent-loop-guards.ts'
 export * from './agent-loop-escalation.ts'
 export * from './agent-loop-limits.ts'
 export * from './reasoning-circle-detector.ts'
+export * from './reasoning-checkpoint-policy.ts'
 export * from './trim-history.ts'
 
 // Run input/output plumbing.
