@@ -12,7 +12,11 @@ on:
   # pull_request events GitHub reads these triggers from the BASE branch's
   # workflow, so this is only active once merged to main.)
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    # `ready_for_review` is required because the heavy tier (build / e2e / bench)
+    # is gated on `draft == false` below: without it, promoting a draft would
+    # never dispatch those jobs and `CI Passed` would sit on the draft's
+    # heavy-jobs-skipped result forever.
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
   # Nightly full e2e on GitHub-hosted runners — the comprehensive safety net.
   # PR/push runs are oracle-thinned on self-hosted (see the e2e job), so the
   # full suite is no longer guaranteed on every main push; this catches anything
@@ -229,7 +233,43 @@ jobs:
       # Electron/gortex processes then OOM-crash unrelated late-running specs.
       # `--shard` and the subset round-robin still partition specs disjointly.
       - id: shards
+        env:
+          PLAN_MODE: ${{ steps.plan.outputs.mode }}
+          PLAN_SPECS: ${{ steps.plan.outputs.specs }}
         run: |
+          # Size the matrix to the work the oracle actually planned. Previously
+          # this was always 8, so a screenshots-only commit (mode=skip) still
+          # dispatched 8 shards that each paid checkout + `npm ci` + dist
+          # download before hitting the early-exit in the run step — 8 self-hosted
+          # runners occupied to do nothing, on every bot screenshot push. Same for
+          # a subset smaller than 8: the surplus shards booted only to find an
+          # empty slice.
+          #
+          # An empty list yields no matrix jobs at all, so `e2e` reports
+          # 'skipped'. `ci-passed` already tolerates that: mode=skip takes its own
+          # branch, and a skipped result is neither 'failure' nor 'cancelled'.
+          if [ "$PLAN_MODE" = "skip" ]; then
+            echo "mode=skip -> no e2e shards dispatched"
+            { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$PLAN_MODE" = "subset" ]; then
+            # SHARD_TOTAL is the round-robin modulus in the run step, so total and
+            # the list must agree or specs would be assigned to shards that were
+            # never dispatched. Cap at 8 (the memory ceiling from #339).
+            n=0
+            for _ in $PLAN_SPECS; do n=$(( n + 1 )); done
+            [ "$n" -gt 8 ] && n=8
+            if [ "$n" -lt 1 ]; then
+              echo "mode=subset with no specs -> no e2e shards dispatched"
+              { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            list="$(seq -s, 1 "$n")"
+            echo "mode=subset -> $n shard(s)"
+            { echo "total=$n"; echo "list=[$list]"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
 
   # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
@@ -354,7 +394,18 @@ jobs:
   # degrading in-app search.
   bench:
     needs: precheck
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.draft == false ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
+    # signal has no consumer until the PR is promoted — and `ready_for_review`
+    # (see the trigger block) dispatches the full tier the moment it is. The
+    # `ci-full` label forces it earlier for a draft that genuinely wants it.
+    # `precheck` / `check` / `autoformat` still run on drafts, so lint, types,
+    # unit tests and the autofixer keep giving fast feedback.
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. No Electron/display need.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
@@ -437,7 +488,18 @@ jobs:
 
   build:
     needs: precheck
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.draft == false ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
+    # signal has no consumer until the PR is promoted — and `ready_for_review`
+    # (see the trigger block) dispatches the full tier the moment it is. The
+    # `ci-full` label forces it earlier for a draft that genuinely wants it.
+    # `precheck` / `check` / `autoformat` still run on drafts, so lint, types,
+    # unit tests and the autofixer keep giving fast feedback.
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. Produces the dist artifact consumed by the e2e shards below.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
@@ -502,7 +564,15 @@ jobs:
 
   e2e:
     needs: [build, precheck]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.draft == false ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Draft PRs skip e2e for the same reason as `build` above; `build` is also
+    # gated, so on a draft this job's `needs` are unsatisfied and it would skip
+    # regardless — the explicit clause keeps the intent readable at this job.
     # PR/push e2e runs on the self-hosted Docker runners (see ci-runners/):
     # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
     # OOM that most of the shard quarantines exist to work around. The nightly
@@ -534,7 +604,7 @@ jobs:
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
     # 8 shards stays under that limit even in the densest spec range.
-    # The per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt
+    # The per-attempt `timeout` is 480s (step cap 18 min for 2 attempts) so attempt
     # 1 finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
@@ -591,7 +661,7 @@ jobs:
         if: >-
           needs.precheck.outputs.mode == 'full' ||
           needs.precheck.outputs.mode == 'subset'
-        timeout-minutes: 26
+        timeout-minutes: 18
         env:
           PLAN_MODE: ${{ needs.precheck.outputs.mode }}
           PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
@@ -639,7 +709,11 @@ jobs:
           }
 
           trap cleanup_e2e_processes EXIT
-          for attempt in 1 2 3; do
+          # Two attempts, not three: attempt 2 absorbs the flaky-session-startup
+          # case this retry exists for, while a deterministic failure (e.g. a
+          # selector that can never match) previously burned three full 480s
+          # attempts before reporting. Halves the cost of a genuine red shard.
+          for attempt in 1 2; do
             cleanup_e2e_processes
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
