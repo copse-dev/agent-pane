@@ -786,8 +786,16 @@ async function executeToolBatch(ctx: ToolBatchContext): Promise<void> {
             )
           }
         }
-        const { result, editStats, resultFormat } = normalizeToolExecuteResult(raw)
-        toolResults.push({ toolCallId: tc.id, result })
+        const { result, editStats, resultFormat, images } = normalizeToolExecuteResult(raw)
+        // Images ride on the history message (so the model sees them on the
+        // next provider call) but not on the stream chunk: the transcript
+        // persists tool results as text, and a reloaded thread re-reads them
+        // from the paths the result names rather than replaying base64.
+        toolResults.push({
+          toolCallId: tc.id,
+          result,
+          ...(images && images.length > 0 ? { images } : {}),
+        })
         onChunk({
           type: 'tool_result',
           toolCallId: tc.id,

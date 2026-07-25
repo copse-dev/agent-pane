@@ -68,6 +68,7 @@ import {
 } from '@shared/terminal/read-terminal.ts'
 import { readTerminalTool } from '../tools/read-terminal-tool.ts'
 import { runCheckupTool } from '../tools/checkup-tool.ts'
+import { videoFramesTool } from '../tools/video-frames-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -182,6 +183,10 @@ export function createRegistry(): ToolRegistry {
   // approval. Live toggles route through {@link syncPiiTools} on
   // `packs:setEnabled`.
   syncPiiTools(registry)
+  // Reading a video as stills. Always registered: it is read-only, and a user
+  // can attach a screen recording to any thread (the composer stores the file
+  // and points the model here rather than putting the video in context).
+  registry.register(videoFramesTool)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)

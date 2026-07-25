@@ -258,6 +258,19 @@ export interface ApiClient {
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
   }
+  video: {
+    /**
+     * Store a video the user attached to a chat and return the reference the
+     * agent is given. Pass `bytes` for a file dropped from outside the app, or
+     * `path` for one already in the workspace (referenced, not copied). The
+     * video itself never becomes model content — see `video_frames`.
+     */
+    attach: (
+      projectId: string,
+      threadId: string,
+      video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
+    ) => Promise<import('@shared/video/video-media.ts').VideoAttachmentRef>
+  }
   openRouter: {
     models: () => Promise<
       Array<{

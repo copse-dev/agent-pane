@@ -415,6 +415,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
   },
+  video: {
+    attach: (
+      projectId: string,
+      threadId: string,
+      video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
+    ) => ipcRenderer.invoke('video:attach', projectId, threadId, video),
+  },
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),
   },

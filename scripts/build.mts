@@ -79,6 +79,11 @@ if (!isDemo) {
     entryPoints: ['src/preload/index.ts'],
     outfile: 'dist/preload/index.js',
   })
+  await esbuild.build({
+    ...nodeOpts,
+    entryPoints: ['src/preload/video-decoder.ts'],
+    outfile: 'dist/preload/video-decoder.js',
+  })
 }
 const browserOpts = {
   bundle: true,
@@ -105,6 +110,17 @@ await esbuild.build({
   entryPoints: ['src/renderer/monaco/monaco-global.ts'],
   outfile: `${rendererOutDir}/monaco-bundle.js`,
 })
+// The hidden video-frame decoder runs in its own window, so it gets its own
+// bundle rather than riding along in app.js (see main/services/video/). The
+// demo build has no main process to open that window, so it skips this.
+if (!isDemo) {
+  await esbuild.build({
+    ...browserOpts,
+    entryPoints: ['src/renderer/video/decoder.ts'],
+    outfile: `${rendererOutDir}/video/decoder.js`,
+  })
+  copyFileSync('src/renderer/video/decoder.html', `${rendererOutDir}/video/decoder.html`)
+}
 
 copyFileSync('src/renderer/index.html', `${rendererOutDir}/index.html`)
 copyFileSync('src/renderer/theme-boot.js', `${rendererOutDir}/theme-boot.js`)

@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { isVideoFile } from '@shared/video/video-media.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
@@ -32,6 +33,13 @@ async function attachWorkspacePath(
   api: ApiClient,
   workspaceRoot: string | null,
 ): Promise<void> {
+  const name = path.split(/[\\/]/).pop() ?? path
+  // A video already in the workspace is referenced where it lies; reading it as
+  // text would inline binary into the prompt.
+  if (isVideoFile({ name })) {
+    await handlers.attachVideo({ name, mimeType: '', path })
+    return
+  }
   try {
     const content = await api.fs.readFile(path)
     handlers.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content })
@@ -49,6 +57,19 @@ async function attachDroppedFile(
   if (file.type.startsWith('image/')) {
     const dataUrl = await readAsDataUrl(file)
     handlers.attachImage(dataUrl, file.type)
+    return
+  }
+
+  // Videos are stored and referenced, never inlined — a screen recording is far
+  // too much media to put in a model's context. Checked before the
+  // workspace-path branch so a recording that happens to live in the repo still
+  // becomes a video attachment rather than an attempted text read.
+  if (isVideoFile(file)) {
+    await handlers.attachVideo({
+      name: file.name,
+      mimeType: file.type || 'video/mp4',
+      bytes: await file.arrayBuffer(),
+    })
     return
   }
 

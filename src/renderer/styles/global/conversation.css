@@ -428,11 +428,20 @@
   font-size: var(--font-size-sm);
   vertical-align: baseline;
 }
+/* These are lucide-style outline paths (dom/outline-icon.ts): without an
+   explicit fill/stroke they take SVG's default black fill and render as a solid
+   blob rather than an outline. The composer's own chips set this on their icon
+   classes; the transcript chips need the same. */
 .transcript-attachment-icon {
   flex: none;
   width: 14px;
   height: 14px;
   color: var(--text-muted);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 /* The icon is the chip's first flex item, and with align-items: center nothing
    participates in baseline alignment — so the flex container exports the icon's

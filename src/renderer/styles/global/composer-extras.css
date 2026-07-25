@@ -29,7 +29,8 @@
 .mention-thread-icon,
 .thread-chip-icon,
 .mention-shell-icon,
-.shell-chip-icon {
+.shell-chip-icon,
+.video-chip-icon {
   flex: none;
   width: 14px;
   height: 14px;
@@ -95,6 +96,13 @@
 .image-chip img {
   border-radius: 2px;
   object-fit: cover;
+}
+/* An attached video costs no context — its size is the only cost signal worth
+   showing, so it sits muted beside the filename rather than competing with it. */
+.attachment-chip-meta {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .attachment-chip button {
   display: inline-flex;

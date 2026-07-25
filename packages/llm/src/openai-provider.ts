@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { toolResultImageFollowUp } from './tool-result-images.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
 
@@ -203,11 +204,16 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
       ]
     }
     if (m.role === 'tool') {
-      return m.toolResults.map((tr) => ({
+      const toolMessages = m.toolResults.map((tr) => ({
         role: 'tool' as const,
         tool_call_id: tr.toolCallId,
         content: tr.result,
       }))
+      // Chat completions only accepts a string as a tool output, so images a
+      // tool produced follow as their own user message rather than being lost.
+      const images = toolResultImageFollowUp(m.toolResults)
+      if (!images || typeof images === 'string') return toolMessages
+      return [...toolMessages, { role: 'user' as const, content: toOpenAIContent(images) }]
     }
     return []
   })
