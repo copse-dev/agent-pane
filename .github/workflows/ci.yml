@@ -23,6 +23,23 @@ on:
   # a partial map missed, within a day. Off-:00 minute to avoid the cron stampede.
   schedule:
     - cron: '17 6 * * *'
+  # Merge queue. GitHub tests each queued batch on a `gh-readonly-queue/...` ref
+  # and waits for the SAME required checks the PR had, so `CI Passed` must run
+  # here or every queued entry would block forever.
+  #
+  # The queue runs the LIGHT tier only — precheck (typecheck, lint, format,
+  # dead-code, `npm audit`) plus check (unit tests) and build. e2e, bench and the
+  # screenshot jobs are excluded; see the per-job `if:` guards below.
+  #
+  # merge_group has no base to diff (both `pull_request.base.sha` and
+  # `event.before` are empty), so the e2e oracle reports mode=full. That is left
+  # deliberately alone: `mode` also gates `build:demo` / `test:demo` inside the
+  # `build` job, and `test:demo` is a real integration check — it is what caught
+  # the brace-expansion default-export break in #1205. Forcing mode=skip here to
+  # tidy the (unused) shard matrix would silently disable it in the queue. The
+  # matrix is sized but never consumed, because `e2e` is excluded outright.
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -245,9 +262,12 @@ jobs:
           # a subset smaller than 8: the surplus shards booted only to find an
           # empty slice.
           #
-          # An empty list yields no matrix jobs at all, so `e2e` reports
-          # 'skipped'. `ci-passed` already tolerates that: mode=skip takes its own
-          # branch, and a skipped result is neither 'failure' nor 'cancelled'.
+          # An empty list must NOT reach the `e2e` matrix: GitHub Actions treats
+          # `strategy.matrix: []` as a job **failure**, not 'skipped' (observed on
+          # #1233 — `needs.e2e.result=failure` painted `CI Passed` red in skip
+          # mode). The `e2e` job `if:` therefore gates on `e2e_shard_total != 0`
+          # so a zero-shard plan skips the job cleanly; `ci-passed` then sees
+          # 'skipped' and its mode=skip branch accepts it.
           if [ "$PLAN_MODE" = "skip" ]; then
             echo "mode=skip -> no e2e shards dispatched"
             { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
@@ -395,11 +415,15 @@ jobs:
   bench:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Excluded from the merge queue: the queue runs the light tier only. bench
+    # fetches gortex and runs the semantic-search + agent gates, which is the
+    # kind of cost that makes a queue too slow to drain.
     # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
     # signal has no consumer until the PR is promoted — and `ready_for_review`
     # (see the trigger block) dispatches the full tier the moment it is. The
@@ -565,11 +589,21 @@ jobs:
   e2e:
     needs: [build, precheck]
     if: >-
+      needs.precheck.outputs.e2e_shard_total != '0' &&
+      github.event_name != 'merge_group' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Zero-shard plans (oracle mode=skip / empty subset) skip this job via
+    # `e2e_shard_total != 0` — an empty matrix is a GHA **failure**, not a skip
+    # (see the precheck shards step). Excluded from the merge queue too: 8
+    # Electron shards per batch would not drain, and the `runs-on` expression
+    # below has no merge_group branch — it evaluates falsy and fails closed, so
+    # a queued entry would hang rather than run. The PR already gated e2e; the
+    # queue re-checks the cheap, merge-sensitive things (types, lint, unit
+    # tests) that a PR cannot see.
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
@@ -819,6 +853,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      # True when this job pushed a new commit, i.e. the SHA the rest of CI
+      # gated is no longer the branch tip. Consumed by `ci-passed`.
+      superseded: ${{ steps.push.outputs.superseded }}
     steps:
       # The PR can merge while this trailing job is still queued (auto-merge fires
       # the moment the e2e gate goes green), and GitHub then deletes the head
@@ -1106,12 +1144,25 @@ jobs:
       - name: Push
         if: steps.head.outputs.exists == 'true'
         id: push
+        env:
+          RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # No-op ("Everything up-to-date") when nothing was committed or merged, so
           # this is safe to run unconditionally — even on the manual-merge path it
           # just pushes the render commit (the aborted merge left HEAD untouched).
           git push
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          NEW_SHA="$(git rev-parse HEAD)"
+          echo "sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+          # Did this job move the branch? If so the SHA this run gated is no
+          # longer the tip, and `ci-passed` must not report green for it — see
+          # the supersession check there. Covers both the screenshot commit and
+          # the reconcile merge, since either advances HEAD.
+          if [ -n "$RUN_HEAD_SHA" ] && [ "$NEW_SHA" != "$RUN_HEAD_SHA" ]; then
+            echo "Head advanced ${RUN_HEAD_SHA} -> ${NEW_SHA}; this run's SHA is superseded."
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "superseded=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Comment on PR with updated screenshots
         # Always run: when there's something to report (refreshed shots, ignored
         # noise, held flapping/contested renders, or a source conflict needing a
@@ -1315,7 +1366,7 @@ jobs:
   ci-passed:
     name: CI Passed
     if: always()
-    needs: [precheck, check, bench, build, e2e]
+    needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
     # minutes; hosted fallback when unset. Fails closed either way: if the fleet
     # is saturated this stays pending (never green), so it can't wave a run
@@ -1359,6 +1410,24 @@ jobs:
             fi
             echo "Fork PR safe check tier passed; privileged jobs were intentionally skipped."
             exit 0
+          fi
+          # The screenshot job runs AFTER e2e and pushes reference PNGs to the PR
+          # head. Before this check, `ci-passed` could go green on a SHA that job
+          # was about to supersede — so auto-merge (which fires the moment the
+          # gate is green) could merge the PR before its screenshots landed. The
+          # head branch is then deleted, the job no-ops green by design (#1001),
+          # and the shots are silently lost: `main` keeps stale references for a
+          # change that moved them.
+          #
+          # Fail closed on the superseded SHA instead. The screenshot commit
+          # creates a new head, that run is screenshots-only so the oracle
+          # reports mode=skip, this job finds nothing to push, and the gate goes
+          # green on a tip whose references are final. Terminates in exactly one
+          # extra cheap cycle.
+          if [ "${{ needs.commit-screenshots.outputs.superseded }}" = "true" ]; then
+            echo "Reference screenshots were committed on top of ${RUN_HEAD_SHA}."
+            echo "This SHA is superseded; the gate will report on the new tip."
+            exit 1
           fi
           MODE="${{ needs.precheck.outputs.mode }}"
           ANY_FAILURE=${{ contains(needs.*.result, 'failure') }}

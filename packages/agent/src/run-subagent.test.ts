@@ -15,6 +15,37 @@ function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
 }
 
 describe('runSubagent', () => {
+  it('cuts a reasoning circle at the product checkpoint and recovers', async () => {
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          yield {
+            type: 'reasoning',
+            text: "I'm going in circles and repeating the same plan.".padEnd(8_300, ' '),
+          }
+          return
+        }
+        yield { type: 'text', text: 'Recovered summary.' }
+        yield { type: 'done' }
+      },
+    }
+
+    const { summary } = await runSubagent({
+      provider,
+      prompt: 'Investigate',
+      parentGoal: 'Finish the task',
+      tools: [],
+      parentToolCallId: 'parent-circle',
+      onSubagentChunk: () => {},
+      executeTool: async () => '',
+    })
+
+    assert.equal(streamCalls, 2)
+    assert.equal(summary, 'Recovered summary.')
+  })
+
   it('returns summary from final assistant text', async () => {
     const subagentChunks: AgentStreamChunk[] = []
     const { summary, session } = await runSubagent({

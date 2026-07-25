@@ -1580,7 +1580,8 @@ export function mountConversation(
     // Model labels appear only once the primary chat has used more than one
     // model, and only at model-segment boundaries (first assistant turn of
     // each contiguous model run). Syncing after each append also backfills
-    // earlier boundaries when the second model arrives.
+    // earlier boundaries when the second model arrives. (Best-value auto-picks
+    // show in the footer picker.)
     syncModelLabels()
     scrollToBottom(msg.role === 'user')
   }
