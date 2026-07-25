@@ -7,7 +7,7 @@ import type { SshConnectionState } from '@shared/types/ssh-workspace.ts'
 import { capabilityWarnings, mountSshStatusBanner } from './ssh-status-banner.ts'
 
 describe('capabilityWarnings', () => {
-  it('emits one line per missing tool and does not duplicate probe copy', () => {
+  it('emits one line per missing tool, then the probe warnings', () => {
     const warnings = capabilityWarnings({
       hostId: 'dev',
       status: 'connected',
@@ -20,10 +20,13 @@ describe('capabilityWarnings', () => {
         git: true,
         rg: true,
         inotifywait: false,
-        warnings: ['`inotifywait` missing — external file edits may not be detected live.'],
+        warnings: ['Capability probe command failed — remote tooling may be unavailable.'],
       },
     })
-    assert.deepEqual(warnings, ['inotifywait not found — file watching is disabled'])
+    assert.deepEqual(warnings, [
+      'inotifywait not found — file watching is disabled',
+      'Capability probe command failed — remote tooling may be unavailable.',
+    ])
   })
 })
 

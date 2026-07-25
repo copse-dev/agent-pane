@@ -50,6 +50,8 @@
     "bench:terminal:steered": "node scripts/run-terminal-bench-steered.mts",
     "bench:terminal:sync-dataset": "node scripts/sync-terminal-bench-dataset.mts",
     "bench:terminal:suite": "node scripts/run-terminal-bench-suite.mts",
+    "bench:skills:build-agent": "node scripts/build-skillsbench-agent.mts",
+    "bench:skills:fleet": "node scripts/run-skillsbench-fleet.mts",
     "bench:swe-tasks": "node scripts/fetch-swe-bench-subset.mts",
     "validate:browser-tools": "node scripts/validate-browser-tools.mts",
     "runners:burst": "node scripts/burst-runners.mts",
@@ -132,7 +134,7 @@
     "dompurify": "$dompurify",
     "js-yaml@4": "4.3.0",
     "serialize-javascript": "^7.0.7",
-    "tar": "^7.5.19",
+    "tar": "$tar",
     "sharp": "0.35.3",
     "fast-xml-parser": "5.10.1"
   },
@@ -193,7 +195,7 @@
     "pixelmatch": "^7.2.0",
     "pngjs": "^7.0.0",
     "prettier": "^3.9.5",
-    "tar": "^7.5.19",
+    "tar": "^7.5.22",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0",
     "webdriverio": "^9.29.0"
