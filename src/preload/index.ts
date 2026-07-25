@@ -141,6 +141,15 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:approval_request', listener)
       }
     },
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('agent:approval_cancelled', listener)
+      return (): void => {
+        ipcRenderer.off('agent:approval_cancelled', listener)
+      }
+    },
     onAskUserRequest: (
       handler: (req: {
         id: string
