@@ -1,4 +1,8 @@
 import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
+import {
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+} from '@copse/agent/reasoning-checkpoint-policy.ts'
 import type { CoerceToolArgsFn } from '@copse/agent/parse-text-tool-calls.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import {
@@ -67,6 +71,8 @@ export interface RunParentContinuationOptions {
   /** Spine-recording sink + step attribution for hooks fired in continuation loops (decision 6). */
   recordHookRun?: AgentLoopOptions['recordHookRun']
   onLlmCall?: AgentLoopOptions['onLlmCall']
+  recordStreamCut?: AgentLoopOptions['recordStreamCut']
+  recordReasoningCheckpoint?: AgentLoopOptions['recordReasoningCheckpoint']
   /**
    * Shared auto-continuation budget for this turn tree (decision 5). Each
    * pre-review todo attempt consumes one grant, so the gate runs at most
@@ -117,6 +123,8 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
     messages: opts.messages,
     tools: opts.tools,
     maxSteps: opts.maxSteps,
+    reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+    reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
     maxContextTokens: opts.contextWindow,
     toolSchemaReserveTokens: opts.toolSchemaReserve,
     signal: opts.signal,
@@ -130,6 +138,10 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
       : {}),
     ...(opts.recordHookRun !== undefined ? { recordHookRun: opts.recordHookRun } : {}),
     ...(opts.onLlmCall !== undefined ? { onLlmCall: opts.onLlmCall } : {}),
+    ...(opts.recordStreamCut !== undefined ? { recordStreamCut: opts.recordStreamCut } : {}),
+    ...(opts.recordReasoningCheckpoint !== undefined
+      ? { recordReasoningCheckpoint: opts.recordReasoningCheckpoint }
+      : {}),
     ...(opts.continuationBudget !== undefined
       ? { continuationBudget: opts.continuationBudget }
       : {}),
