@@ -30,6 +30,14 @@ on:
   # The queue runs the LIGHT tier only — precheck (typecheck, lint, format,
   # dead-code, `npm audit`) plus check (unit tests) and build. e2e, bench and the
   # screenshot jobs are excluded; see the per-job `if:` guards below.
+  #
+  # merge_group has no base to diff (both `pull_request.base.sha` and
+  # `event.before` are empty), so the e2e oracle reports mode=full. That is left
+  # deliberately alone: `mode` also gates `build:demo` / `test:demo` inside the
+  # `build` job, and `test:demo` is a real integration check — it is what caught
+  # the brace-expansion default-export break in #1205. Forcing mode=skip here to
+  # tidy the (unused) shard matrix would silently disable it in the queue. The
+  # matrix is sized but never consumed, because `e2e` is excluded outright.
   merge_group:
     types: [checks_requested]
 
@@ -178,16 +186,6 @@ jobs:
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Merge queue: the `e2e` job is excluded from merge_group, and there is
-          # no PR base to diff against (both base.sha and event.before are empty),
-          # so the oracle would otherwise fall through to "no base sha -> full".
-          # Report skip so `ci-passed` takes its heavy-jobs-intentionally-skipped
-          # branch instead of waiting on shards that were never dispatched.
-          if [ "$EVENT" = "merge_group" ]; then
-            echo "Merge queue -> light tier only, no e2e"
-            { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Screenshot-only head commit -> skip e2e. This is the commit-screenshots
