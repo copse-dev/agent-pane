@@ -23,6 +23,15 @@ on:
   # a partial map missed, within a day. Off-:00 minute to avoid the cron stampede.
   schedule:
     - cron: '17 6 * * *'
+  # Merge queue. GitHub tests each queued batch on a `gh-readonly-queue/...` ref
+  # and waits for the SAME required checks the PR had, so `CI Passed` must run
+  # here or every queued entry would block forever.
+  #
+  # The queue runs the LIGHT tier only — precheck (typecheck, lint, format,
+  # dead-code, `npm audit`) plus check (unit tests) and build. e2e, bench and the
+  # screenshot jobs are excluded; see the per-job `if:` guards below.
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -169,6 +178,16 @@ jobs:
           if [ "$EVENT" = "schedule" ]; then
             echo "Nightly schedule -> full e2e suite"
             { echo "mode=full"; echo "specs="; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Merge queue: the `e2e` job is excluded from merge_group, and there is
+          # no PR base to diff against (both base.sha and event.before are empty),
+          # so the oracle would otherwise fall through to "no base sha -> full".
+          # Report skip so `ci-passed` takes its heavy-jobs-intentionally-skipped
+          # branch instead of waiting on shards that were never dispatched.
+          if [ "$EVENT" = "merge_group" ]; then
+            echo "Merge queue -> light tier only, no e2e"
+            { echo "mode=skip"; echo "specs="; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Screenshot-only head commit -> skip e2e. This is the commit-screenshots
@@ -395,11 +414,15 @@ jobs:
   bench:
     needs: precheck
     if: >-
+      github.event_name != 'merge_group' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Excluded from the merge queue: the queue runs the light tier only. bench
+    # fetches gortex and runs the semantic-search + agent gates, which is the
+    # kind of cost that makes a queue too slow to drain.
     # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
     # signal has no consumer until the PR is promoted — and `ready_for_review`
     # (see the trigger block) dispatches the full tier the moment it is. The
@@ -565,11 +588,17 @@ jobs:
   e2e:
     needs: [build, precheck]
     if: >-
+      github.event_name != 'merge_group' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Excluded from the merge queue. Two reasons: 8 Electron shards per batch
+    # would not drain, and the `runs-on` expression below has no merge_group
+    # branch — it evaluates falsy and fails closed, so a queued entry would hang
+    # rather than run. The PR already gated e2e; the queue re-checks the cheap,
+    # merge-sensitive things (types, lint, unit tests) that a PR cannot see.
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
