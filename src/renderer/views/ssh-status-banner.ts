@@ -17,9 +17,6 @@ function activeSshHostId(store: AppStore): string | null {
   return project?.sshHost ?? null
 }
 
-/** Probe used to echo the same missing-tool lines into `warnings`; skip those. */
-const LEGACY_TOOL_WARNING_RE = /`?(?:git|rg|inotifywait)`?\s+missing/i
-
 /** One user-facing line per missing remote capability (plus any probe failures). */
 export function capabilityWarnings(state: SshConnectionState): string[] {
   const caps = state.capabilities
@@ -28,10 +25,7 @@ export function capabilityWarnings(state: SshConnectionState): string[] {
   if (!caps.git) warnings.push('git not found — git pane and backups will not work remotely')
   if (!caps.rg) warnings.push('ripgrep (rg) not found — search will use grep fallback')
   if (!caps.inotifywait) warnings.push('inotifywait not found — file watching is disabled')
-  for (const warning of caps.warnings) {
-    if (LEGACY_TOOL_WARNING_RE.test(warning)) continue
-    warnings.push(warning)
-  }
+  warnings.push(...caps.warnings)
   return warnings
 }
 

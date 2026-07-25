@@ -88,6 +88,7 @@ describe('terminal benchmark bridge', () => {
     )
     assert.deepEqual(terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@3')), {
       intervalTokens: 2_048,
+      maxNonReasoningTokens: 2_048,
       maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
       maxRecoveryTokens: 4_096,
     })
