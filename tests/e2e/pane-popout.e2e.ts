@@ -8,7 +8,7 @@ import {
   seedE2eViewport,
   seedPrPanelChatFixture,
 } from './helpers/seed-config.ts'
-import { E2E_SCREENSHOT_DIR } from './helpers/screenshot.ts'
+import { E2E_SCREENSHOT_DIR, waitForImagesSettled } from './helpers/screenshot.ts'
 
 // Terminal is omitted: opening it spawns a PTY (node-pty), which isn't built in
 // this sandbox. The pop-out path is identical to the panes covered here — the
@@ -115,6 +115,10 @@ describe('Pane pop-out (mock gh)', () => {
         })
       }
 
+      // The probe above proves the list element exists, not that its icons have
+      // painted — `pane-popout-explorer.png` has been drifting ~3.3% between runs
+      // on that gap alone.
+      await waitForImagesSettled(pane.listHost)
       await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, `pane-popout-${pane.mode}.png`))
 
       // Close this pop-out before opening the next so handles stay unambiguous.

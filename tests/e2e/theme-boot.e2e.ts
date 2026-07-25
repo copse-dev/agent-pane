@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedThemeBootFixture } from './helpers/seed-config.ts'
+import { waitForImagesSettled } from './helpers/screenshot.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
@@ -53,6 +54,13 @@ describe('theme boot before first paint (#41)', () => {
       popoutMode: new URLSearchParams(window.location.search).get('popout'),
     }))
     expect(themeState).toEqual({ htmlTheme: 'light', queryTheme: 'light', popoutMode: 'explorer' })
+
+    // The assertions above only need `documentElement`, which exists the moment
+    // the window does — so without these waits the capture below races the
+    // explorer's two async render stages (rows, then icons) and commits whatever
+    // it happens to catch. See {@link waitForImagesSettled}.
+    await $('#file-tree-host .file-tree').waitForDisplayed({ timeout: 30_000 })
+    await waitForImagesSettled('#file-tree-host')
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'theme-boot-popout-light.png'))
 
     await browser.closeWindow()

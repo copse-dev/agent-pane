@@ -113,6 +113,36 @@ export async function savePreparedElementScreenshot(
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
+/**
+ * Wait until every `<img>` inside `selector` has finished decoding.
+ *
+ * A pane can be "displayed" well before it is *settled*. Material file icons
+ * mount as `<img decoding="async">` once their row exists, so a capture taken as
+ * soon as the list appears catches rows whose icons have not painted. That is a
+ * distinct stage from the list itself appearing, so waiting on the list element
+ * alone is not enough.
+ *
+ * This is not hypothetical: `theme-boot-popout-light.png` accumulated three
+ * different committed baselines across three unrelated PRs — a blank pane, rows
+ * without icons, and rows with icons — because the capture landed on whichever
+ * stage the popout had reached. The ping-pong guard from #609 does not catch it,
+ * since each render is a state that was never committed before and so reads as
+ * "clearly different" every time.
+ */
+export async function waitForImagesSettled(selector: string, timeout = 15_000): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute((sel: string) => {
+        const host = document.querySelector(sel)
+        if (!host) return false
+        return Array.from(host.querySelectorAll('img')).every(
+          (img) => img.complete && img.naturalWidth > 0,
+        )
+      }, selector),
+    { timeout, timeoutMsg: `images inside ${selector} did not finish loading` },
+  )
+}
+
 /** Capture a single element after pinning the viewport (footer, input bar, etc.). */
 export async function saveElementScreenshot(selector: string, filename: string): Promise<void> {
   await prepareE2eScreenshot()
