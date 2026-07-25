@@ -2,7 +2,11 @@ import { createInterface } from 'node:readline'
 import { copyFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
-import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
+import {
+  PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS,
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_RECOVERY_MAX_TOKENS,
+} from '../packages/agent/src/reasoning-checkpoint-policy.ts'
 import type { ReasoningCheckpointPolicy } from '../packages/agent/src/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
@@ -24,8 +28,9 @@ import {
 import { TerminalBenchTranscript } from './lib/terminal-bench-transcript.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
-export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = 2_048
-export const DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS = 4_096
+export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS
+export const DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS =
+  PRODUCT_REASONING_RECOVERY_MAX_TOKENS
 export const DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC = 600
 const TERMINAL_COMMAND_TIMEOUT_DESCRIPTION =
   'Optional timeout for a command that is expected to run longer than the default, such as a final build, training run, or verifier. Keep the default for inspection and broad searches.'
@@ -57,9 +62,9 @@ export function terminalReasoningCheckpointPolicy(
 ): ReasoningCheckpointPolicy | undefined {
   if (profile.reasoningPolicy !== 'circle-gated-2k-checkpoints-v1') return undefined
   return {
-    intervalTokens: DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
-    maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
-    maxRecoveryTokens: DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS,
+    ...PRODUCT_REASONING_CHECKPOINT_POLICY,
+    // Terminal-Bench retains its action-oriented 2K visible-answer ceiling.
+    maxNonReasoningTokens: DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
   }
 }
 

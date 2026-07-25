@@ -73,6 +73,7 @@ const AGENT_HISTORY_VERSION = 1
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
+const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
@@ -102,6 +103,10 @@ function agentPrIndexPath(projectId: string): string {
 
 function streamStatsPath(projectId: string): string {
   return join(projectDir(projectId), STREAM_STATS_FILE)
+}
+
+function reasoningCheckpointsPath(projectId: string): string {
+  return join(projectDir(projectId), REASONING_CHECKPOINTS_FILE)
 }
 
 function metaOf(thread: Thread): ThreadMeta {
@@ -714,6 +719,18 @@ export function appendHookRun(
 export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
     const path = streamStatsPath(projectId)
+    mkdirSync(dirname(path), { recursive: true })
+    const existingRaw = safeRead(path) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
+  })
+}
+
+/** Append one reasoning-checkpoint decision (project-level eval source). */
+export function appendReasoningCheckpoint(projectId: string, line: unknown): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const path = reasoningCheckpointsPath(projectId)
     mkdirSync(dirname(path), { recursive: true })
     const existingRaw = safeRead(path) ?? ''
     const prefix =
