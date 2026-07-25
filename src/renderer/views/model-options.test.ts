@@ -190,7 +190,9 @@ describe('fetchModelOptions visibility', () => {
       }),
       '',
     )
-    const acp = options.filter((o) => o.group === 'Gemini CLI Client (ACP)')
+    // Gemini's default (free-tier) policy may train on prompts, so the heading
+    // is annotated with that caution.
+    const acp = options.filter((o) => o.group === 'Gemini CLI Client (ACP) — May train on your data')
     assert.deepEqual(
       acp.map((o) => o.value),
       ['acp:gemini-cli'],
@@ -198,6 +200,38 @@ describe('fetchModelOptions visibility', () => {
     const [acpAgent] = acp
     assert.ok(acpAgent)
     assert.equal(acpAgent.label, 'Gemini CLI')
+  })
+
+  it('labels a ZDR-capable ACP agent heading as zero data retention when the user enables it', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          // claude-agent-acp routes to Anthropic (a ZDR-capable provider); with
+          // zdrOnly on, the heading advertises zero data retention.
+          { id: 'claude-agent-acp', title: 'Claude Agent', command: 'x', enabled: true, zdrOnly: true },
+        ],
+      }),
+      '',
+    )
+    const groups = new Set(options.map((o) => o.group))
+    assert.ok(groups.has('Claude Agent Client (ACP) — Zero data retention'), [...groups].join(' | '))
+  })
+
+  it('annotates a ZDR-capable ACP agent heading with its default policy when ZDR is off', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        acpAgents: [
+          { id: 'claude-agent-acp', title: 'Claude Agent', command: 'x', enabled: true },
+        ],
+      }),
+      '',
+    )
+    const groups = new Set(options.map((o) => o.group))
+    // Anthropic's default: no training, retained ≤30 days.
+    assert.ok(
+      groups.has('Claude Agent Client (ACP) — No training — retained ≤30 days'),
+      [...groups].join(' | '),
+    )
   })
 
   it('lists an ACP agent’s detected models under its heading, dropping the bare default', async () => {

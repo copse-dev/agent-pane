@@ -74,6 +74,20 @@ export interface KnownAcpAgent {
   docsUrl?: string
   /** Short note shown by the detector (auth, caveats). */
   note?: string
+  /**
+   * The data-policy slug of the upstream model provider this agent routes to
+   * (must match a key in {@link dataPolicyForProvider}, e.g. "anthropic",
+   * "openai", "gemini"). When set, the model picker annotates the agent's
+   * group heading with that provider's data-retention policy. Undefined when
+   * the upstream provider is unknown (e.g. Cursor).
+   */
+  zdrProvider?: string
+  /**
+   * Whether the upstream provider offers a zero-data-retention path the user
+   * can opt into. When true, the agent config exposes a `zdrOnly` toggle that
+   * relabels the picker heading as "Zero data retention".
+   */
+  zdrSupported?: boolean
 }
 
 export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
@@ -93,6 +107,8 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'gemini', // first run walks through Google sign-in; or set GEMINI_API_KEY
     docsUrl: 'https://github.com/google-gemini/gemini-cli',
     note: 'Sign in by running `gemini` once, or set GEMINI_API_KEY.',
+    zdrProvider: 'gemini',
+    zdrSupported: true,
   },
   {
     id: 'claude-agent-acp',
@@ -125,6 +141,8 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     setup: 'claude setup-token',
     docsUrl: 'https://www.npmjs.com/package/@agentclientprotocol/claude-agent-acp',
     note: 'Claude Agent SDK over ACP. Uses your existing `claude` login (or ANTHROPIC_API_KEY).',
+    zdrProvider: 'anthropic',
+    zdrSupported: true,
   },
   {
     id: 'claude-code-acp',
@@ -154,6 +172,8 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     sandboxedPermissionMode: 'acceptEdits',
     docsUrl: 'https://www.npmjs.com/package/@zed-industries/claude-code-acp',
     note: "Zed's Claude Code ACP adapter. Auth with `claude /login` or ANTHROPIC_API_KEY.",
+    zdrProvider: 'anthropic',
+    zdrSupported: true,
   },
   {
     id: 'cursor',

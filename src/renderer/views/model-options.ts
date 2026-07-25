@@ -24,7 +24,9 @@ import {
   dataPolicyForProvider,
   openRouterDataPolicy,
   pickerPrivacyNote,
+  privacyBadge,
 } from '@copse/llm/data-policies.ts'
+import type { ProviderDataPolicy } from '@copse/llm/data-policies.ts'
 
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
 import {
@@ -38,6 +40,7 @@ import {
   remoteAgentModelValue,
 } from '@shared/remote-agent.ts'
 import { ACP_MODEL_PREFIX, acpGroupLabel, acpModelValue, parseAcpModel } from '@shared/acp.ts'
+import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { clear } from '../dom/helpers.ts'
 
@@ -77,9 +80,33 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
   }
   const options: ModelOption[] = []
   for (const agent of agents.filter((agent) => agent.enabled)) {
-    // Each agent gets its own heading ("<Title> Client (ACP)"), so models list
-    // bare underneath without a redundant "<Title> —" prefix.
-    const group = acpGroupLabel(agent.title)
+    // Look up the known agent to see which upstream provider it routes to and
+    // whether that provider offers a ZDR (zero-data-retention) path.
+    const known = KNOWN_ACP_AGENTS.find((a) => a.id === agent.id)
+    const zdrProvider = known?.zdrProvider
+
+    // Resolve the effective data policy so the picker can label where prompts
+    // go once they leave the device. When the user has turned on ZDR routing
+    // for a ZDR-capable provider, override to zero retention / no training;
+    // otherwise show the provider's default policy.
+    let policy: ProviderDataPolicy | null = null
+    if (zdrProvider) {
+      const basePolicy = dataPolicyForProvider({ id: zdrProvider })
+      if (basePolicy) {
+        policy =
+          agent.zdrOnly && known?.zdrSupported
+            ? { ...basePolicy, retainsPrompts: false, trainsOnData: false, zdr: 'default' }
+            : basePolicy
+      }
+    }
+    // Agents with no known ZDR-capable provider (e.g. Cursor) get no annotation.
+
+    // Unlike the cloud picker (which only surfaces caution flags via
+    // pickerPrivacyNote), the ACP heading shows the full badge label so the
+    // ZDR toggle has a visible effect ("Zero data retention" vs the default).
+    const badge = policy ? privacyBadge(policy) : null
+    const note = badge ? badge.label : null
+    const group = note ? `${acpGroupLabel(agent.title)} — ${note}` : acpGroupLabel(agent.title)
     const models = agent.availableModels ?? []
     if (models.length > 0) {
       // The agent exposes a model selector: list only its models (the bare

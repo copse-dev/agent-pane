@@ -76,6 +76,14 @@ export interface AcpAgentConfig {
    * unsandboxed); an object = custom confines; `false` = explicitly opt out.
    */
   sandbox?: AcpAgentSandboxConfig | false
+  /**
+   * When true, force ZDR (zero data retention) routing for this agent's
+   * upstream model provider. Only meaningful when the agent's provider
+   * supports ZDR (e.g. Anthropic, OpenAI, Google). When absent, the default
+   * from {@link KNOWN_ACP_AGENTS} applies; when set, the user's override
+   * takes priority.
+   */
+  zdrOnly?: boolean
   enabled: boolean
 }
 

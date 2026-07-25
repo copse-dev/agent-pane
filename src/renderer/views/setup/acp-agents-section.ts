@@ -251,6 +251,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       placeholder: 'KEY=value per line',
     })
     const enabledBox = el('input', { type: 'checkbox', checked: true })
+    const zdrBox = el('input', { type: 'checkbox' })
     const status = el('span', { class: 'key-status' })
 
     // Model picker: starts with just "Agent default"; "Detect models" probes the
@@ -308,6 +309,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       argsArea.value = formatArgsText(options.initial.args)
       envArea.value = formatEnvText(options.initial.env)
       enabledBox.checked = options.initial.enabled
+      zdrBox.checked = options.initial.zdrOnly ?? false
     }
     // Cached list persisted with the agent so the model picker can list models
     // without re-spawning; seeded from the saved config, refreshed by "Detect".
@@ -398,6 +400,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         ...(permissionMode ? { permissionMode } : {}),
         ...(detectedModes.length ? { availablePermissionModes: detectedModes } : {}),
         enabled: enabledBox.checked,
+        zdrOnly: zdrBox.checked,
       })
     })
 
@@ -429,6 +432,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         ),
       ),
       el('label', { class: 'checkbox-label' }, enabledBox, ' Enabled (shown in the model picker)'),
+      el('label', { class: 'checkbox-label' }, zdrBox, ' ZDR routing (when supported by agent provider)'),
     )
     const actions = el('div', { class: 'provider-actions provider-form-footer' }, submit, status)
     return el('div', { class: 'acp-agent-form' }, fields, actions)

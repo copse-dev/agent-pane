@@ -83,6 +83,7 @@ export const acpAgentConfigSchema = z.object({
       z.literal(false),
     ])
     .optional(),
+  zdrOnly: z.boolean().optional(),
   enabled: z.boolean(),
 })
 
