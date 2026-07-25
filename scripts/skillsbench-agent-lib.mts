@@ -105,16 +105,26 @@ function isInputMessage(value: unknown): value is InputMessage {
   return value.type === 'start' || value.type === 'tool_result'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function stringProperty(args: unknown, name: string): string | undefined {
-  if (typeof args !== 'object' || args === null || !(name in args)) return undefined
-  const value = args[name as keyof typeof args]
+  if (!isRecord(args) || !(name in args)) return undefined
+  const value = args[name]
   return typeof value === 'string' ? value : undefined
 }
 
 function numberProperty(args: unknown, name: string): number | undefined {
-  if (typeof args !== 'object' || args === null || !(name in args)) return undefined
-  const value = args[name as keyof typeof args]
+  if (!isRecord(args) || !(name in args)) return undefined
+  const value = args[name]
   return typeof value === 'number' ? value : undefined
+}
+
+function envTrimmedOr(name: string, fallback: string): string {
+  const value = process.env[name]?.trim()
+  if (value === undefined || value.length === 0) return fallback
+  return value
 }
 
 export async function runSkillsBenchAgent(): Promise<void> {
@@ -127,10 +137,14 @@ export async function runSkillsBenchAgent(): Promise<void> {
     throw new Error('SkillsBench bridge expected a start message.')
   }
 
-  const apiKey = process.env['LM_STUDIO_API_KEY']?.trim() || process.env['LM_API_TOKEN']?.trim()
-  if (!apiKey)
+  const studioKey = process.env['LM_STUDIO_API_KEY']?.trim()
+  const tokenKey = process.env['LM_API_TOKEN']?.trim()
+  let apiKey = ''
+  if (studioKey !== undefined && studioKey.length > 0) apiKey = studioKey
+  else if (tokenKey !== undefined && tokenKey.length > 0) apiKey = tokenKey
+  if (apiKey.length === 0)
     throw new Error('Set LM_STUDIO_API_KEY (or LM_API_TOKEN) before running SkillsBench.')
-  const baseUrl = process.env['LM_STUDIO_URL']?.trim() || 'http://localhost:1234/v1'
+  const baseUrl = envTrimmedOr('LM_STUDIO_URL', 'http://localhost:1234/v1')
   const profile = skillsBenchProfile(parsed.profile, parsed.skills)
   const provider = createLMStudioProvider(baseUrl, parsed.model, apiKey)
   const usage = { inputTokens: 0, outputTokens: 0, toolCalls: 0, llmCalls: 0 }

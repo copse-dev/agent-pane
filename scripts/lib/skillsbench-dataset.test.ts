@@ -15,9 +15,57 @@ interface Descriptor {
   excluded: Array<{ name: string; reason: string }>
 }
 
-const descriptor = JSON.parse(
-  readFileSync('benchmarks/skillsbench/dataset-v1.1.json', 'utf8'),
-) as Descriptor
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function stringProperty(value: unknown, key: string): string {
+  if (!isRecord(value)) throw new Error('Invalid SkillsBench descriptor.')
+  const property = value[key]
+  if (typeof property !== 'string' || !property) {
+    throw new Error(`SkillsBench descriptor ${key} is invalid.`)
+  }
+  return property
+}
+
+function parseTask(value: unknown): TaskRecord {
+  return {
+    name: stringProperty(value, 'name'),
+    git_commit_id: stringProperty(value, 'git_commit_id'),
+    path: stringProperty(value, 'path'),
+    digest: stringProperty(value, 'digest'),
+  }
+}
+
+function parseExcluded(value: unknown): { name: string; reason: string } {
+  return {
+    name: stringProperty(value, 'name'),
+    reason: stringProperty(value, 'reason'),
+  }
+}
+
+function parseDescriptor(value: unknown): Descriptor {
+  if (!isRecord(value)) throw new Error('SkillsBench descriptor was not an object.')
+  const datasetValue = value['dataset']
+  if (!isRecord(datasetValue)) throw new Error('SkillsBench descriptor dataset is invalid.')
+  const activeRaw = value['active']
+  const excludedRaw = value['excluded']
+  if (!Array.isArray(activeRaw) || !Array.isArray(excludedRaw)) {
+    throw new Error('SkillsBench descriptor task lists are invalid.')
+  }
+  return {
+    dataset: {
+      version: stringProperty(datasetValue, 'version'),
+      revision: stringProperty(datasetValue, 'revision'),
+      benchflow: stringProperty(datasetValue, 'benchflow'),
+    },
+    active: activeRaw.map(parseTask),
+    excluded: excludedRaw.map(parseExcluded),
+  }
+}
+
+const parsed: unknown = JSON.parse(readFileSync('benchmarks/skillsbench/dataset-v1.1.json', 'utf8'))
+const descriptor = parseDescriptor(parsed)
 
 describe('SkillsBench v1.1 descriptor', () => {
   it('pins the release and BenchFlow compatibility point', () => {
