@@ -26,13 +26,6 @@ import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
-const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
-const LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.longHorizonTasksEnablement'
-const ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY = 'packMigration.roadmapPlansEnablement'
-const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategyEnablement'
-const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
-const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
-const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -64,21 +57,6 @@ function makeRegistry(): PackRegistry {
 
 function clearStorage(): void {
   storageSet(PACK_DISABLED_KEY, [])
-  storageDelete(P5_ENABLEMENT_MIGRATION_KEY)
-  storageDelete(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY)
-  storageDelete(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY)
-  storageDelete(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY)
-  storageDelete(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY)
-  storageDelete(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY)
-  storageDelete(PII_REDACTION_ENABLEMENT_MIGRATION_KEY)
-  storageDelete('postTurnReviewEnabled')
-  storageDelete('modelComparisonEnabled')
-  storageDelete('longHorizonTasksEnabled')
-  storageDelete('roadmapPlansEnabled')
-  storageDelete('advisorStrategyEnabled')
-  storageDelete('okfMemoriesEnabled')
-  storageDelete('ciInvestigatorEnabled')
-  storageDelete('piiRedactionEnabled')
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -179,343 +157,61 @@ describe('PackService', () => {
     assert.equal(getPackService(), service)
   })
 
-  it('migrates P5 defaults without enabling the previously opt-in comparison tool', () => {
-    // Isolate P5: sibling pack migrations run in the same getPackService()
-    // call, so mark them already-done to keep this assertion scoped to the P5
-    // packs (their own coverage lives in the blocks below).
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
+  it('seeds the default-off packs on a profile that has no pack list', () => {
+    storageDelete(PACK_DISABLED_KEY)
+
     const service = getPackService()
 
+    // Post-turn review has always been on; every experimental pack starts off.
     assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), true)
-    assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), false)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [MODEL_COMPARISON_PACK_ID])
-    assert.equal(storageGet(P5_ENABLEMENT_MIGRATION_KEY), true)
+    for (const id of [
+      MODEL_COMPARISON_PACK_ID,
+      LONG_HORIZON_TASKS_PACK_ID,
+      ROADMAP_PLANS_PACK_ID,
+      ADVISOR_STRATEGY_PACK_ID,
+      OKF_MEMORIES_PACK_ID,
+      CI_INVESTIGATOR_PACK_ID,
+      PII_REDACTION_PACK_ID,
+    ]) {
+      assert.equal(service.registry.isEnabled(id), false, id)
+    }
+    assert.deepEqual(
+      storageGet(PACK_DISABLED_KEY),
+      [
+        MODEL_COMPARISON_PACK_ID,
+        LONG_HORIZON_TASKS_PACK_ID,
+        ROADMAP_PLANS_PACK_ID,
+        ADVISOR_STRATEGY_PACK_ID,
+        OKF_MEMORIES_PACK_ID,
+        CI_INVESTIGATOR_PACK_ID,
+        PII_REDACTION_PACK_ID,
+      ].sort(),
+    )
   })
 
-  it('preserves explicit legacy P5 enablement choices', () => {
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet('postTurnReviewEnabled', false)
-    storageSet('modelComparisonEnabled', true)
+  it('never re-seeds over a pack list the user already owns', () => {
+    // Everything default-off except model comparison, which the user enabled.
+    storageSet(PACK_DISABLED_KEY, [
+      LONG_HORIZON_TASKS_PACK_ID,
+      ROADMAP_PLANS_PACK_ID,
+      ADVISOR_STRATEGY_PACK_ID,
+      OKF_MEMORIES_PACK_ID,
+      CI_INVESTIGATOR_PACK_ID,
+      PII_REDACTION_PACK_ID,
+    ])
 
     const service = getPackService()
 
-    assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), false)
     assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [POST_TURN_REVIEW_PACK_ID])
-  })
-
-  it('does not overwrite pack choices after the P5 migration has run', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PACK_DISABLED_KEY, [POST_TURN_REVIEW_PACK_ID])
-    storageSet('postTurnReviewEnabled', true)
-    storageSet('modelComparisonEnabled', false)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(POST_TURN_REVIEW_PACK_ID), false)
-    assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [POST_TURN_REVIEW_PACK_ID])
-  })
-
-  it('migrates long-horizon-tasks default-OFF without enabling the previously opt-in tool', () => {
-    // Isolate from P5 + roadmap-plans + advisor-strategy + okf-memories (all run in getPackService).
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(LONG_HORIZON_TASKS_PACK_ID), false)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [LONG_HORIZON_TASKS_PACK_ID])
-    assert.equal(storageGet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY), true)
-  })
-
-  it('preserves an explicit legacy longHorizonTasksEnabled=true choice', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet('longHorizonTasksEnabled', true)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(LONG_HORIZON_TASKS_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('does not overwrite pack choices after the long-horizon migration has run', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PACK_DISABLED_KEY, [])
-    // A stale legacy value must be ignored once the migration key is set.
-    storageSet('longHorizonTasksEnabled', false)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(LONG_HORIZON_TASKS_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('migrates roadmap-plans default-OFF without enabling the previously opt-in tool', () => {
-    // Isolate from P5 + long-horizon-tasks + advisor-strategy + okf-memories (all run in getPackService).
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(ROADMAP_PLANS_PACK_ID), false)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [ROADMAP_PLANS_PACK_ID])
-    assert.equal(storageGet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY), true)
-  })
-
-  it('preserves an explicit legacy roadmapPlansEnabled=true choice', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet('roadmapPlansEnabled', true)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(ROADMAP_PLANS_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('does not overwrite pack choices after the roadmap migration has run', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PACK_DISABLED_KEY, [])
-    // A stale legacy value must be ignored once the migration key is set.
-    storageSet('roadmapPlansEnabled', false)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(ROADMAP_PLANS_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('migrates advisor-strategy default-OFF without enabling the previously opt-in tool', () => {
-    // Isolate the advisor migration from sibling migrations (all run in
-    // getPackService).
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(ADVISOR_STRATEGY_PACK_ID), false)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [ADVISOR_STRATEGY_PACK_ID])
-    assert.equal(storageGet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY), true)
-  })
-
-  it('preserves an explicit legacy advisorStrategyEnabled=true choice', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet('advisorStrategyEnabled', true)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(ADVISOR_STRATEGY_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('does not overwrite pack choices after the advisor migration has run', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PACK_DISABLED_KEY, [])
-    // A stale legacy value must be ignored once the migration key is set.
-    storageSet('advisorStrategyEnabled', false)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(ADVISOR_STRATEGY_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('migrates OKF memories default-OFF without enabling the previously opt-in tools', () => {
-    // Isolate from P5 + long-horizon-tasks + roadmap-plans + advisor-strategy
-    // (all run in getPackService).
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(OKF_MEMORIES_PACK_ID), false)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [OKF_MEMORIES_PACK_ID])
-    assert.equal(storageGet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY), true)
-  })
-
-  it('preserves an explicit legacy okfMemoriesEnabled=true choice', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet('okfMemoriesEnabled', true)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(OKF_MEMORIES_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('does not overwrite pack choices after the OKF-memories migration has run', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PACK_DISABLED_KEY, [])
-    // A stale legacy value must be ignored once the migration key is set.
-    storageSet('okfMemoriesEnabled', false)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(OKF_MEMORIES_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('migrates ci-investigator default-OFF without enabling the previously opt-in tool', () => {
-    // Isolate the CI-investigator migration from sibling migrations.
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(CI_INVESTIGATOR_PACK_ID), false)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [CI_INVESTIGATOR_PACK_ID])
-    assert.equal(storageGet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY), true)
-  })
-
-  it('preserves an explicit legacy ciInvestigatorEnabled=true choice', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet('ciInvestigatorEnabled', true)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(CI_INVESTIGATOR_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('does not overwrite pack choices after the CI-investigator migration has run', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PACK_DISABLED_KEY, [])
-    // A stale legacy value must be ignored once the migration key is set.
-    storageSet('ciInvestigatorEnabled', false)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(CI_INVESTIGATOR_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('migrates PII redaction default-OFF without enabling the previously opt-in tool', () => {
-    // Isolate from sibling migrations (all run in getPackService).
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    const service = getPackService()
-
     assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), false)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [PII_REDACTION_PACK_ID])
-    assert.equal(storageGet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY), true)
+    assert.equal(
+      (storageGet(PACK_DISABLED_KEY) as string[]).includes(MODEL_COMPARISON_PACK_ID),
+      false,
+    )
   })
 
-  it('preserves an explicit legacy piiRedactionEnabled=true choice', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet('piiRedactionEnabled', true)
-
-    const service = getPackService()
-
-    assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), true)
-    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
-  })
-
-  it('does not overwrite pack choices after the PII migration has run', () => {
-    storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-    storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
+  it('treats an empty pack list as the user turning everything on', () => {
     storageSet(PACK_DISABLED_KEY, [])
-    // A stale legacy value must be ignored once the migration key is set.
-    storageSet('piiRedactionEnabled', false)
 
     const service = getPackService()
 
