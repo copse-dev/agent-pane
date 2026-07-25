@@ -3,6 +3,14 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
 /**
  * The semantic-search bench gate fails loudly on missing gold targets, but that
  * job only runs with gortex. Catch fixture drift in the unit suite whenever a
@@ -11,15 +19,25 @@ import { join } from 'node:path'
 describe('semantic-search-bench fixtures', () => {
   it('gold expectedPaths all exist in the repo', () => {
     const fixturesPath = join(process.cwd(), 'scripts/semantic-search-bench.fixtures.json')
-    const fixtures = JSON.parse(readFileSync(fixturesPath, 'utf8')) as {
-      queries: Array<{ id: string; expectedPaths: string[] }>
-    }
+    const parsed: unknown = JSON.parse(readFileSync(fixturesPath, 'utf8'))
+    if (!isRecord(parsed)) assert.fail('fixtures root must be an object')
+    if (!Array.isArray(parsed.queries)) assert.fail('fixtures.queries must be an array')
 
-    const stale = fixtures.queries.flatMap((q) =>
-      q.expectedPaths
+    const stale = parsed.queries.flatMap((raw, index) => {
+      if (!isRecord(raw)) {
+        assert.fail(`fixtures.queries[${String(index)}] must be an object`)
+      }
+      const { id, expectedPaths } = raw
+      if (typeof id !== 'string') {
+        assert.fail(`fixtures.queries[${String(index)}].id must be a string`)
+      }
+      if (!isStringArray(expectedPaths)) {
+        assert.fail(`fixtures.queries[${String(index)}].expectedPaths must be string[]`)
+      }
+      return expectedPaths
         .filter((p) => !existsSync(join(process.cwd(), p)))
-        .map((p) => `${q.id} -> ${p}`),
-    )
+        .map((p) => `${id} -> ${p}`)
+    })
 
     assert.deepEqual(
       stale,
