@@ -55,6 +55,54 @@ describe('renderFrontierSvg', () => {
     assert.ok(label)
     assert.match(label.textContent, /\(~\)/)
   })
+
+  it('lifts frontier labels clear of the frontier line instead of letting it run through them', () => {
+    // A shallow, rising frontier: each point's side label would otherwise be
+    // crossed by the segment to its neighbour.
+    const svg = renderFrontierSvg([
+      { id: 'cheap-a', costPerMTok: 1, intellect: 40, onFrontier: true },
+      { id: 'mid-b', costPerMTok: 3, intellect: 52, onFrontier: true },
+      { id: 'mid-c', costPerMTok: 6, intellect: 58, onFrontier: true },
+      { id: 'top-d', costPerMTok: 10, intellect: 63, onFrontier: true },
+      { id: 'dom-e', costPerMTok: 4, intellect: 44, onFrontier: false },
+    ])
+
+    const poly = svg.querySelector('polyline.frontier-line')
+    assert.ok(poly)
+    const pointsAttr = poly.getAttribute('points')
+    assert.ok(pointsAttr)
+    const linePts = pointsAttr.split(' ').map((pair) => pair.split(',').map(Number))
+    const lineYAt = (px: number): number | null => {
+      for (let i = 0; i + 1 < linePts.length; i++) {
+        const [ax, ay] = linePts[i] as [number, number]
+        const [bx, by] = linePts[i + 1] as [number, number]
+        if (px < Math.min(ax, bx) || px > Math.max(ax, bx)) continue
+        return ay + ((by - ay) * (px - ax)) / (bx - ax || 1)
+      }
+      return null
+    }
+
+    const labels = [...svg.querySelectorAll<SVGTextElement>('text.frontier-label')]
+    // Every frontier point keeps its label — lifting must not drop any.
+    assert.equal(labels.length, 5)
+    for (const label of labels) {
+      const text = label.textContent
+      assert.ok(text)
+      const lx = Number(label.getAttribute('x'))
+      const ly = Number(label.getAttribute('y'))
+      const anchor = label.getAttribute('text-anchor')
+      const w = 10 + text.length * 5.2
+      const x0 = anchor === 'end' ? lx - w : lx
+      const x1 = anchor === 'end' ? lx : lx + w
+      // Sample the line across the label's horizontal extent; it must never fall
+      // inside the text band (~[y - 8, y + 2] for 9px glyphs above the baseline).
+      for (let sx = x0; sx <= x1; sx += 2) {
+        const lineY = lineYAt(sx)
+        if (lineY === null) continue
+        assert.ok(lineY <= ly - 8 || lineY >= ly + 2, `frontier line runs through label "${text}"`)
+      }
+    }
+  })
 })
 
 describe('local candidates and the composite strip', () => {
