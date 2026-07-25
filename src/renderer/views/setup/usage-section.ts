@@ -14,7 +14,7 @@ import {
   createIntellectFrontierPanel,
   type OpenRouterFrontierSource,
 } from '../intellect-frontier-panel.ts'
-import type { PlanCoverageMode } from '../plan-inclusion.ts'
+import type { PlanCoverageMode } from '@shared/plan-inclusion.ts'
 
 export type UsagePeriodKey = 'day' | 'month' | 'period90d' | 'allTime'
 

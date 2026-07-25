@@ -119,6 +119,19 @@ describe('settings packs (about:addons)', function () {
     await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await packRow.getAttribute('data-enabled'), 'false')
 
+    // Post-turn review pack: its pack-scoped `maxReviewCycles` setting renders
+    // as a generic number field seeded with the manifest default. This is the
+    // "does a failing review buy the agent another turn?" knob — 1 reports the
+    // failing verdict and stops, 2 (default) allows one remediation turn plus a
+    // re-review.
+    const postTurnReviewRow = packs.$('.pack-row[data-pack-id="copse.post-turn-review"]')
+    await expect(postTurnReviewRow).toBeDisplayed()
+    const reviewCyclesInput = postTurnReviewRow.$(
+      'input.pack-setting-number[data-setting-key="maxReviewCycles"]',
+    )
+    await expect(reviewCyclesInput).toBeDisplayed()
+    assert.equal(await reviewCyclesInput.getValue(), '2')
+
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
 
