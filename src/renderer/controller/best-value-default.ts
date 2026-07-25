@@ -12,13 +12,22 @@ import {
 import { isBestValueChatModel } from '@shared/lm-studio-defaults.ts'
 
 /**
+ * The slice of the preload bridge this resolver actually touches. Narrower than
+ * `ApiClient` so tests can build a real value instead of asserting their way to
+ * one; the full client satisfies it structurally.
+ */
+export interface BestValueDefaultApi {
+  models: Pick<ApiClient['models'], 'bestValueDefault'>
+}
+
+/**
  * If the active blank thread still carries the best-value sentinel (or inherits
  * it from settings), replace it with the concrete best-value model. No-op when
  * the thread already has a concrete model or is no longer blank.
  */
 export async function resolveBestValueForActiveBlankThread(
   store: AppStore,
-  api: ApiClient,
+  api: BestValueDefaultApi,
 ): Promise<void> {
   const thread = getActiveThread(store)
   if (!thread || !isBlankThread(thread) || hasUnsubmittedPrompt(thread)) return
@@ -51,7 +60,10 @@ export async function resolveBestValueForActiveBlankThread(
 }
 
 /** Subscribe once: every new chat window re-picks the best-value model. */
-export function attachBestValueDefaultResolver(store: AppStore, api: ApiClient): () => void {
+export function attachBestValueDefaultResolver(
+  store: AppStore,
+  api: BestValueDefaultApi,
+): () => void {
   return store.on('new_thread_opened', () => {
     void resolveBestValueForActiveBlankThread(store, api)
   })
