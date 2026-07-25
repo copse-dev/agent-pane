@@ -248,9 +248,14 @@ jobs:
           # An empty list yields no matrix jobs at all, so `e2e` reports
           # 'skipped'. `ci-passed` already tolerates that: mode=skip takes its own
           # branch, and a skipped result is neither 'failure' nor 'cancelled'.
+          # NOTE: an EMPTY matrix list does not skip a job — GitHub fails it
+          # ("Matrix vector 'shard' does not contain any values"), which then
+          # trips `ci-passed`. So emit a single placeholder shard and let the
+          # job's `if:` guard skip it instead; a skipped job costs no runner and
+          # reports 'skipped', which the gate tolerates.
           if [ "$PLAN_MODE" = "skip" ]; then
-            echo "mode=skip -> no e2e shards dispatched"
-            { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
+            echo "mode=skip -> e2e skipped via job guard (placeholder matrix)"
+            { echo "total=1"; echo "list=[1]"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$PLAN_MODE" = "subset" ]; then
@@ -261,8 +266,9 @@ jobs:
             for _ in $PLAN_SPECS; do n=$(( n + 1 )); done
             [ "$n" -gt 8 ] && n=8
             if [ "$n" -lt 1 ]; then
-              echo "mode=subset with no specs -> no e2e shards dispatched"
-              { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
+              # Same placeholder reasoning as the skip branch above.
+              echo "mode=subset with no specs -> e2e skipped via job guard"
+              { echo "total=1"; echo "list=[1]"; } >> "$GITHUB_OUTPUT"
               exit 0
             fi
             list="$(seq -s, 1 "$n")"
@@ -565,11 +571,16 @@ jobs:
   e2e:
     needs: [build, precheck]
     if: >-
+      needs.precheck.outputs.mode != 'skip' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Skipped outright when the oracle planned no specs (mode=skip): an empty
+    # matrix would FAIL the job rather than skip it, so the guard lives here and
+    # `shards` emits a placeholder list.
+    #
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
