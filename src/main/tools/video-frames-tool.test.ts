@@ -4,7 +4,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { normalizeToolExecuteResult, type ToolExecuteResult } from '@shared/types'
-import { SIGNATURE_CELLS } from '@shared/video/frame-selection.ts'
+import {
+  SIGNATURE_CHANNELS,
+  signatureGridFor,
+  signatureLength,
+} from '@shared/video/frame-selection.ts'
 import type { DecodedFrame, DecodeFramesResult } from '@shared/video/decode-contract.ts'
 import { MAX_VIDEO_BYTES } from '@shared/video/video-media.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
@@ -18,10 +22,14 @@ function run(args: Record<string, unknown>): Promise<ToolExecuteResult> {
   return Promise.resolve(videoFramesTool.execute(videoFramesTool.parameters.parse(args), signal))
 }
 
+/** The grid for the 1280x720 frames these fixtures claim to have decoded. */
+const GRID = signatureGridFor(1280, 720)
+const CELLS = GRID.cells
+
 /** A frame whose first `changedCells` cells are repainted. */
 function frame(time: number, changedCells: number): DecodedFrame {
-  const signature = new Array<number>(SIGNATURE_CELLS).fill(30)
-  for (let i = 0; i < changedCells; i++) signature[i] = 220
+  const signature = new Array<number>(signatureLength(GRID)).fill(30)
+  for (let i = 0; i < changedCells * SIGNATURE_CHANNELS; i++) signature[i] = 220
   return {
     time,
     signature,
@@ -71,13 +79,27 @@ describe('video_frames tool', () => {
     assert.equal(result.images.length, 1)
     assert.equal(result.images.at(0)?.name, 'frame-00-00-00.000.jpg')
     assert.match(result.result, /1 visually distinct frame returned/)
-    assert.match(result.result, /Nothing else in this range looked different/)
+    assert.match(result.result, /Nothing in this range changed at all/)
+  })
+
+  it('reports the biggest change it saw when only one frame cleared the bar', async () => {
+    // "1 frame" alone reads as "nothing happened". Naming the largest change and
+    // when it happened is what separates a still screen from a change judged too
+    // small — and the second has an obvious next move.
+    setVideoDecoderForTest(() =>
+      Promise.resolve(
+        decodeResult([frame(0, 0), frame(3, 4), frame(3.5, 0), frame(4, 0), frame(4.5, 0)]),
+      ),
+    )
+    const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
+    assert.equal(result.images?.length, 1)
+    assert.match(result.result, /largest change between consecutive samples was 0\.7% of the frame/)
+    assert.match(result.result, /at 00:00:03\.000/)
+    assert.match(result.result, /sensitivity:"high"/)
   })
 
   it('names each returned image for its timestamp', async () => {
-    setVideoDecoderForTest(() =>
-      Promise.resolve(decodeResult([frame(0, 0), frame(4.5, SIGNATURE_CELLS)])),
-    )
+    setVideoDecoderForTest(() => Promise.resolve(decodeResult([frame(0, 0), frame(4.5, CELLS)])))
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.deepEqual(
       result.images?.map((i) => i.name),
@@ -141,7 +163,7 @@ describe('video_frames tool', () => {
   it('returns at most 10 frames when the model does not ask for a number', async () => {
     // A default this low is the point: ten images is already a substantial
     // slice of a context window, and the ones kept are the biggest changes.
-    const frames = Array.from({ length: 60 }, (_, i) => frame(i, i % 2 === 0 ? SIGNATURE_CELLS : 0))
+    const frames = Array.from({ length: 60 }, (_, i) => frame(i, i % 2 === 0 ? CELLS : 0))
     setVideoDecoderForTest(() => Promise.resolve(decodeResult(frames, 60)))
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.equal(result.images?.length, 10)
@@ -149,7 +171,7 @@ describe('video_frames tool', () => {
   })
 
   it('honours max_frames and says the result was capped', async () => {
-    const frames = Array.from({ length: 12 }, (_, i) => frame(i, i % 2 === 0 ? SIGNATURE_CELLS : 0))
+    const frames = Array.from({ length: 12 }, (_, i) => frame(i, i % 2 === 0 ? CELLS : 0))
     setVideoDecoderForTest(() => Promise.resolve(decodeResult(frames, 12)))
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4', max_frames: 3 }))
     assert.equal(result.images?.length, 3)
@@ -158,7 +180,7 @@ describe('video_frames tool', () => {
 
   it('returns fewer frames at low sensitivity than at high', async () => {
     const frames = Array.from({ length: 16 }, (_, i) =>
-      frame(i, i % 2 === 0 ? 0 : Math.round(SIGNATURE_CELLS * 0.03)),
+      frame(i, i % 2 === 0 ? 0 : Math.round(CELLS * 0.03)),
     )
     setVideoDecoderForTest(() => Promise.resolve(decodeResult(frames, 16)))
     const high = normalizeToolExecuteResult(await run({ path: 'capture.mp4', sensitivity: 'high' }))
@@ -168,7 +190,7 @@ describe('video_frames tool', () => {
 
   it('falls back to the last encoded frame when a sample was skipped as identical', async () => {
     // The decoder leaves dataUrl null for a sample identical to its predecessor.
-    const frames = [frame(0, 0), { ...frame(0.5, 0), dataUrl: null }, frame(4, SIGNATURE_CELLS)]
+    const frames = [frame(0, 0), { ...frame(0.5, 0), dataUrl: null }, frame(4, CELLS)]
     setVideoDecoderForTest(() => Promise.resolve(decodeResult(frames)))
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.ok(result.images?.every((i) => i.dataUrl.startsWith('data:image/jpeg;base64,')))

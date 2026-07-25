@@ -9,7 +9,11 @@ import {
   frameFileName,
   parseTimePosition,
 } from '@shared/video/video-media.ts'
-import { selectDistinctFrames, type FrameCandidate } from '@shared/video/frame-selection.ts'
+import {
+  peakChange,
+  selectDistinctFrames,
+  type FrameCandidate,
+} from '@shared/video/frame-selection.ts'
 import {
   DEFAULT_FRAME_MAX_WIDTH,
   FRAME_IMAGE_EXTENSION,
@@ -62,6 +66,15 @@ function describeSupportedFormats(): string {
 /** `85ms` / `1.2s` — short enough to sit inline in the manifest header. */
 function formatInterval(seconds: number): string {
   return seconds < 1 ? `${String(Math.round(seconds * 1000))}ms` : `${seconds.toFixed(1)}s`
+}
+
+/**
+ * `34%` / `0.4%` — a change small enough to fall under the bar still has to read
+ * as a number, and rounding 0.4% to "0%" would say the opposite of what happened.
+ */
+function formatChange(fraction: number): string {
+  const percent = fraction * 100
+  return percent > 0 && percent < 1 ? `${percent.toFixed(1)}%` : `${String(Math.round(percent))}%`
 }
 
 function dataUrlBytes(dataUrl: string): number {
@@ -248,11 +261,10 @@ export const videoFramesTool = defineTool({
       }
       totalBytes += size
       images.push({ dataUrl, name })
-      const changed = Math.round(frame.change * 100)
       lines.push(
         images.length === 1
           ? `  ${name}  ${formatTimestamp(frame.time)}`
-          : `  ${name}  ${formatTimestamp(frame.time)}  (${String(changed)}% of the frame changed)`,
+          : `  ${name}  ${formatTimestamp(frame.time)}  (${formatChange(frame.change)} of the frame changed)`,
       )
     }
 
@@ -270,7 +282,17 @@ export const videoFramesTool = defineTool({
       `Anything lasting less than ${formatInterval(decoded.sampleIntervalSeconds)} can fall between samples and not appear at all. To look for something brief, narrow start/end (which samples more finely) or set \`interval\`.`,
     ]
     if (images.length === 1) {
-      header.push('Nothing else in this range looked different, so one frame covers it.')
+      // "1 frame" on its own is ambiguous in the way that matters: it reads as
+      // "nothing happened" when it can equally mean "something moved and was
+      // judged too small". Reporting the biggest change actually observed —
+      // selected or not — separates the two, and the second case has an obvious
+      // next move the model can take without asking the user.
+      const peak = peakChange(candidates)
+      header.push(
+        peak && peak.change > 0
+          ? `Nothing cleared the bar for a second frame. The largest change between consecutive samples was ${formatChange(peak.change)} of the frame at ${formatTimestamp(peak.time)}; to see it, re-run that moment with sensitivity:"high" and a narrow start/end.`
+          : 'Nothing in this range changed at all, so one frame covers it.',
+      )
     }
     if (selected.length >= maxFrames) {
       header.push(

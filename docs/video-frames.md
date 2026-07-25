@@ -115,17 +115,28 @@ they zoomed in to find.
 
 The interesting part is deciding what counts as a _different_ frame.
 
-Each sampled frame is reduced to a **signature**: a 32×18 grid of mean cell
-colours (`src/shared/video/frame-selection.ts`). The distance between two frames
-is the fraction of grid cells whose colour moved by more than a noise floor.
+Each sampled frame is reduced to a **signature**: ~576 mean cell colours on a
+grid derived from the frame's aspect ratio (`src/shared/video/frame-selection.ts`).
+The distance between two frames is the fraction of grid cells whose colour moved
+by more than a noise floor.
 
-Three deliberate choices:
+Four deliberate choices:
 
 - **A grid, not a whole-frame metric.** Screen recordings change _locally_ — a
   dialog opens, a line of output appears, a tab switches. A frame average barely
   moves for any of those, so a global metric would score a meaningful change as
   identical. Counting moved cells catches localized change while ignoring codec
   noise.
+
+- **Cells stay square, so the grid follows the frame.** The grid was originally a
+  fixed 32×18, which is only right for 16:9. On a portrait recording (2296×3916 —
+  a phone capture, a tall window, a stacked layout) that made each cell 40×121px:
+  a 3:1 vertical smear. A panel collapsing inside a short horizontal strip was
+  averaged across three times its own height, so the cell mean never cleared the
+  noise floor and the change was invisible at _every_ sensitivity. `signatureGridFor`
+  now splits the frame into ~576 near-square cells — 32×18 for landscape, 18×32
+  for that portrait capture — so a change registers in proportion to the area it
+  actually covers.
 
 - **Colour, not luma.** A luma-only signature is half the size and works fine for
   text, but it is blind to a status flipping red→green or a diff line going from
@@ -149,6 +160,27 @@ a full image's worth of tokens on a duplicate.
 So the threshold scales with how close together the candidates are: it relaxes to
 the base value at a 1s gap and rises to 3× as the gap approaches zero. A burst of
 motion has to be a genuinely large change to produce more than one frame.
+
+### One frame back is not the same as nothing happened
+
+A result of exactly one frame is ambiguous in the way that matters most: the
+screen genuinely held still, or something moved and was judged too small. Those
+want opposite responses — nothing, versus a closer look — and a frame count
+cannot tell them apart.
+
+So a single-frame result reports the **largest change observed between
+consecutive samples**, selected or not (`peakChange`), and names the timestamp it
+happened at:
+
+```
+Nothing cleared the bar for a second frame. The largest change between
+consecutive samples was 0.9% of the frame at 00:00:03.100; to see it, re-run
+that moment with sensitivity:"high" and a narrow start/end.
+```
+
+That gives the model a next move it can make on its own. Sub-1% changes are
+printed to one decimal — rounding 0.4% to "0%" would say precisely the opposite
+of what happened.
 
 ## How decoding works
 

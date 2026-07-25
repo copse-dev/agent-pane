@@ -14,10 +14,36 @@
  * codec noise (a cell has to move by `CELL_DELTA` to count at all).
  */
 
-/** Signature grid. 16:9-ish, chosen so one cell ≈ a short run of text. */
-export const SIGNATURE_COLUMNS = 32
-export const SIGNATURE_ROWS = 18
-export const SIGNATURE_CELLS = SIGNATURE_COLUMNS * SIGNATURE_ROWS
+/**
+ * Cells in a signature, however the frame is shaped. ~576 keeps one cell at
+ * roughly a short run of text on a typical capture.
+ */
+export const SIGNATURE_TARGET_CELLS = 576
+
+export interface SignatureGrid {
+  columns: number
+  rows: number
+  cells: number
+}
+
+/**
+ * Split a frame into ~{@link SIGNATURE_TARGET_CELLS} near-square cells.
+ *
+ * The grid used to be a fixed 32x18 regardless of the frame, which is only
+ * right for 16:9. On a portrait screen recording (2296x3916 — a tall window, a
+ * phone, a stacked layout) that made each cell 40x121px: a 3:1 vertical smear.
+ * A panel collapsing inside a short horizontal strip was averaged across three
+ * times its own height, so the cell mean never moved past {@link CELL_DELTA}
+ * and the change was invisible at every sensitivity. Deriving the split from
+ * the aspect ratio keeps cells square, so a change registers in proportion to
+ * the area it actually covers.
+ */
+export function signatureGridFor(width: number, height: number): SignatureGrid {
+  const aspect = width > 0 && height > 0 ? width / height : 16 / 9
+  const columns = Math.min(64, Math.max(8, Math.round(Math.sqrt(SIGNATURE_TARGET_CELLS * aspect))))
+  const rows = Math.min(64, Math.max(8, Math.round(SIGNATURE_TARGET_CELLS / columns)))
+  return { columns, rows, cells: columns * rows }
+}
 
 /**
  * Channels stored per cell (R, G, B).
@@ -32,8 +58,10 @@ export const SIGNATURE_CELLS = SIGNATURE_COLUMNS * SIGNATURE_ROWS
  */
 export const SIGNATURE_CHANNELS = 3
 
-/** Total entries in a signature: one RGB triple per cell. */
-export const SIGNATURE_LENGTH = SIGNATURE_CELLS * SIGNATURE_CHANNELS
+/** Entries in a signature for a given grid: one RGB triple per cell. */
+export function signatureLength(grid: SignatureGrid): number {
+  return grid.cells * SIGNATURE_CHANNELS
+}
 
 /**
  * How far a cell's mean colour (0–255 per channel) must move on its
@@ -106,7 +134,7 @@ export function distanceThreshold(gapSeconds: number, sensitivity: FrameSensitiv
 export interface FrameCandidate {
   /** Position in the source video, in seconds. */
   time: number
-  /** Cell-mean RGB grid, {@link SIGNATURE_LENGTH} entries. */
+  /** Cell-mean RGB grid; the cell count comes from the frame's aspect ratio. */
   signature: ArrayLike<number>
 }
 
@@ -190,6 +218,29 @@ function capFrames(frames: SelectedFrame[], maxFrames: number | undefined): Sele
     .sort((a, b) => b.change - a.change || a.time - b.time)
     .slice(0, maxFrames - 1)
   return [opening, ...survivors].sort((a, b) => a.time - b.time)
+}
+
+/**
+ * The biggest change between consecutive samples, whether or not it was
+ * selected.
+ *
+ * Reported so "1 distinct frame" is never a dead end. Without it the caller
+ * cannot tell "the screen genuinely held still" from "something moved but it
+ * was under the bar" — the second wants a lower sensitivity or a closer look,
+ * the first wants neither, and the two are indistinguishable from a frame count.
+ */
+export function peakChange(
+  candidates: readonly FrameCandidate[],
+): { time: number; change: number } | null {
+  let peak: { time: number; change: number } | null = null
+  for (let i = 1; i < candidates.length; i++) {
+    const previous = candidates[i - 1]
+    const candidate = candidates[i]
+    if (!previous || !candidate) continue
+    const change = frameDistance(previous.signature, candidate.signature)
+    if (!peak || change > peak.change) peak = { time: candidate.time, change }
+  }
+  return peak
 }
 
 /** Sample positions, in seconds, for a `[start, end]` window. */

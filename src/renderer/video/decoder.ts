@@ -1,11 +1,10 @@
 import {
-  SIGNATURE_CELLS,
   SIGNATURE_CHANNELS,
-  SIGNATURE_COLUMNS,
-  SIGNATURE_LENGTH,
-  SIGNATURE_ROWS,
   frameDistance,
   sampleTimes,
+  signatureGridFor,
+  signatureLength,
+  type SignatureGrid,
 } from '@shared/video/frame-selection.ts'
 import {
   FRAME_IMAGE_MIME,
@@ -97,19 +96,23 @@ function frameSize(video: HTMLVideoElement, maxWidth: number): { width: number; 
  * Reduce a frame to one mean RGB triple per signature cell.
  *
  * The averaging is done by the GPU: drawing the frame into a
- * SIGNATURE_COLUMNS x SIGNATURE_ROWS canvas with smoothing on *is* a box filter,
- * so a 4K frame collapses to 576 cells without a per-pixel loop in JS. Alpha is
+ * `grid.columns` x `grid.rows` canvas with smoothing on *is* a box filter, so a
+ * 4K frame collapses to ~576 cells without a per-pixel loop in JS. Alpha is
  * dropped — a video frame is opaque.
  */
-function signatureOf(source: CanvasImageSource, canvas: HTMLCanvasElement): number[] {
+function signatureOf(
+  source: CanvasImageSource,
+  canvas: HTMLCanvasElement,
+  grid: SignatureGrid,
+): number[] {
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) throw new Error('could not acquire a 2D context for frame signatures')
   ctx.imageSmoothingEnabled = true
   ctx.imageSmoothingQuality = 'low'
-  ctx.drawImage(source, 0, 0, SIGNATURE_COLUMNS, SIGNATURE_ROWS)
-  const { data } = ctx.getImageData(0, 0, SIGNATURE_COLUMNS, SIGNATURE_ROWS)
-  const signature: number[] = new Array<number>(SIGNATURE_LENGTH)
-  for (let cell = 0; cell < SIGNATURE_CELLS; cell++) {
+  ctx.drawImage(source, 0, 0, grid.columns, grid.rows)
+  const { data } = ctx.getImageData(0, 0, grid.columns, grid.rows)
+  const signature: number[] = new Array<number>(signatureLength(grid))
+  for (let cell = 0; cell < grid.cells; cell++) {
     const pixel = cell * 4
     const base = cell * SIGNATURE_CHANNELS
     signature[base] = data[pixel] ?? 0
@@ -146,9 +149,12 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
     const frameCtx = frameCanvas.getContext('2d')
     if (!frameCtx) throw new Error('could not acquire a 2D context for frames')
 
+    // Derived from the frame, not fixed: a portrait recording needs a tall grid
+    // or every cell smears three times its own height (see signatureGridFor).
+    const grid = signatureGridFor(width, height)
     const signatureCanvas = document.createElement('canvas')
-    signatureCanvas.width = SIGNATURE_COLUMNS
-    signatureCanvas.height = SIGNATURE_ROWS
+    signatureCanvas.width = grid.columns
+    signatureCanvas.height = grid.rows
 
     // Derived from the window unless the caller pinned one, so narrowing the
     // range genuinely buys temporal resolution rather than re-sampling the same
@@ -166,7 +172,7 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
         continue
       }
       frameCtx.drawImage(video, 0, 0, width, height)
-      const signature = signatureOf(frameCanvas, signatureCanvas)
+      const signature = signatureOf(frameCanvas, signatureCanvas, grid)
       // Encoding is the expensive part, so skip it for a sample that is
       // identical to its predecessor at grid resolution — it could never be
       // chosen, and a still recording is almost entirely such samples.
