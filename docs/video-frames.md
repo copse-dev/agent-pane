@@ -88,11 +88,12 @@ Audio is never decoded.
 
 ### Sampling resolution, and what it cannot see
 
-The tool samples ~60 positions across whatever window you ask for, so the gap
-between samples comes from the window length: ~1s across a whole 57-second
-recording, ~85ms across a 5-second range, ~33ms (one video frame) across two
-seconds. **Narrowing `start`/`end` is what buys temporal resolution** — the seek
-count stays the same, so a close look costs no more than a survey.
+The tool samples ~120 positions across whatever window you ask for, so the gap
+between samples comes from the window length: ~480ms across a whole 57-second
+recording, ~42ms across a 5-second range, ~33ms (one video frame) across two and
+a half. **Narrowing `start`/`end` is what buys temporal resolution** — the seek
+count stays the same, so a close look costs no more than a survey, and a full
+survey is no coarser than the old fixed grid.
 
 This matters because of the blind spot it implies: an event shorter than the
 sampling gap can fall between two samples and never appear at all. A UI flicker

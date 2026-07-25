@@ -51,11 +51,12 @@ export const DEFAULT_FRAME_QUALITY = 0.8
  * between samples and was invisible no matter how far you zoomed in.
  *
  * Deriving the interval from the window instead makes narrowing mean something:
- * 60 samples over a whole 57s recording is ~1s apart, over a 5s window ~85ms,
- * over 2s ~33ms — one video frame. The seek count stays constant, so a close
- * look costs no more than a survey.
+ * across a whole 57s recording this lands at ~480ms — the same resolution the
+ * fixed grid gave, so a full survey is no coarser than before — while a 5s
+ * window gets ~42ms and a 2.5s window ~33ms, one video frame. The seek count is
+ * constant either way, so a close look costs no more than a survey.
  */
-export const DEFAULT_TARGET_SAMPLES = 60
+export const DEFAULT_TARGET_SAMPLES = 120
 
 /** Finest sampling offered: ~one frame of a 30fps recording. */
 export const MIN_SAMPLE_INTERVAL_SECONDS = 1 / 30
