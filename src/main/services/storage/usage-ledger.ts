@@ -82,9 +82,9 @@ export function recordAgentUsageChunk(
   })
 }
 
-export function getUsageSummary(): UsageSummary {
+export async function getUsageSummary(): Promise<UsageSummary> {
   const events = parseUsageEvents(storageGet(USAGE_EVENTS_STORAGE_KEY))
-  const threads = loadAllProjectThreads()
+  const threads = await loadAllProjectThreads()
   return buildUsageSummary(
     events,
     threads,
