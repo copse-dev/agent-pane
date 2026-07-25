@@ -1,8 +1,13 @@
+import '../../../tests/setup-dom.ts'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { ApiClient } from '../../preload/api.d.ts'
 import type { PromptAttachmentHandlers, PromptVideoAttachment } from './prompt-attachments.ts'
-import { WORKSPACE_PATH_MIME, attachFiles, handleFileDrop } from './handle-file-drop.ts'
+import {
+  WORKSPACE_PATH_MIME,
+  attachFiles,
+  handleFileDrop,
+  type FileDropApi,
+} from './handle-file-drop.ts'
 
 interface Recorded {
   files: { path: string; content: string }[]
@@ -30,9 +35,9 @@ function recordingHandlers(): { handlers: PromptAttachmentHandlers; recorded: Re
   }
 }
 
-const api = {
+const api: FileDropApi = {
   fs: { readFile: (): Promise<string> => Promise.resolve('file contents') },
-} as unknown as ApiClient
+}
 
 function fakeFile(name: string, type: string): File {
   return new File([new Uint8Array([1, 2, 3])], name, { type })
@@ -67,15 +72,9 @@ describe('attaching dropped files', () => {
 
   it('references a workspace video by path rather than reading it as text', async () => {
     const { handlers, recorded } = recordingHandlers()
-    const event = {
-      preventDefault: () => {},
-      stopPropagation: () => {},
-      dataTransfer: {
-        getData: (mime: string): string =>
-          mime === WORKSPACE_PATH_MIME ? '/repo/docs/demo.mp4' : '',
-        files: [],
-      },
-    } as unknown as DragEvent
+    const dataTransfer = new DataTransfer()
+    dataTransfer.setData(WORKSPACE_PATH_MIME, '/repo/docs/demo.mp4')
+    const event = new DragEvent('drop', { dataTransfer, bubbles: true, cancelable: true })
     await handleFileDrop(event, handlers, api, '/repo')
     assert.deepEqual(recorded.videos, [
       { name: 'demo.mp4', mimeType: '', path: '/repo/docs/demo.mp4' },

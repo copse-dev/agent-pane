@@ -27,6 +27,7 @@ Object.assign(globalThis, {
   Event: win.Event,
   CustomEvent: win.CustomEvent,
   ErrorEvent: win.ErrorEvent,
+<<<<<<< HEAD
   // MouseEvent / PointerEvent are required for tip-layer and pointer tests that
   // construct real events (`new MouseEvent(...)`) instead of casting object
   // literals through `as MouseEvent`.
@@ -34,6 +35,12 @@ Object.assign(globalThis, {
   PointerEvent: win.PointerEvent,
   // DOMRect backs getBoundingClientRect stubs without `as DOMRect` casts.
   DOMRect: win.DOMRect,
+=======
+  // DragEvent / DataTransfer back file-drop tests that construct real drop
+  // events instead of casting object literals through `as DragEvent`.
+  DragEvent: win.DragEvent,
+  DataTransfer: win.DataTransfer,
+>>>>>>> 10eb064a (fix(lint): clear #508 casts introduced by video frame retry/drop tests)
   Element: win.Element,
   // HTMLElement is what renderer DOM helpers / tip layers return. Expose it so
   // `instanceof HTMLElement` works under happy-dom the same way Element does —

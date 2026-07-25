@@ -6,6 +6,11 @@ export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
 type ElectronFile = File & { path?: string }
 
+/** Only `fs.readFile` is used for workspace-path drops; keep the surface narrow for tests. */
+export type FileDropApi = {
+  fs: Pick<ApiClient['fs'], 'readFile'>
+}
+
 function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader()
@@ -30,7 +35,7 @@ function relativeWorkspacePath(absPath: string, workspaceRoot: string | null): s
 async function attachWorkspacePath(
   path: string,
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
 ): Promise<void> {
   const name = path.split(/[\\/]/).pop() ?? path
@@ -51,7 +56,7 @@ async function attachWorkspacePath(
 async function attachDroppedFile(
   file: ElectronFile,
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
 ): Promise<void> {
   if (file.type.startsWith('image/')) {
@@ -90,7 +95,7 @@ async function attachDroppedFile(
 export async function attachFiles(
   files: ElectronFile[],
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
 ): Promise<void> {
   for (const file of files) {
@@ -101,7 +106,7 @@ export async function attachFiles(
 export async function handleFileDrop(
   e: DragEvent,
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
 ): Promise<void> {
   e.preventDefault()
@@ -120,7 +125,7 @@ export async function handleFileDrop(
 export function bindFileDropTarget(
   el: HTMLElement,
   getHandlers: () => PromptAttachmentHandlers | null,
-  api: ApiClient,
+  api: FileDropApi,
   getWorkspaceRoot: () => string | null,
 ): () => void {
   const onDragOver = (e: DragEvent): void => {
