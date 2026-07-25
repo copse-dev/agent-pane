@@ -335,6 +335,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         activity(threadId)
         break
       }
+      case 'panel_update': {
+        // P4: the todos pack emits `panel_update` alongside `todo_update` (the
+        // ACP bridge maps it for external clients). The renderer already drives
+        // the plan panel from `thread.todos` via the `todo_update` above, so the
+        // chunk is redundant here — ignore it explicitly rather than through a
+        // fall-through so the exhaustiveness check stays meaningful.
+        break
+      }
       case 'todo_worker_start':
       case 'todo_worker_done': {
         activity(threadId)
