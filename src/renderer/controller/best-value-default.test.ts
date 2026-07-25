@@ -5,12 +5,14 @@ import { createThread, getActiveThread } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { resolveBestValueForActiveBlankThread } from './best-value-default.ts'
 
-function mockApi(resolved = 'claude-sonnet-4-6'): ApiClient {
+function mockApi(resolved = 'claude-sonnet-4-6'): {
+  models: Pick<ApiClient['models'], 'bestValueDefault'>
+} {
   return {
     models: {
       bestValueDefault: async () => resolved,
     },
-  } as unknown as ApiClient
+  }
 }
 
 describe('resolveBestValueForActiveBlankThread', () => {
