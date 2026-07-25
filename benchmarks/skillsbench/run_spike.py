@@ -22,6 +22,8 @@ from copse_planes import CopseRolloutPlanes
 
 PROFILES = ("skills-none", "skills-product", "skills-explicit")
 PROFILE_VERSIONS = ("1", "2")
+# BenchFlow's own acceptance checker requires an oracle reward of at least this.
+ORACLE_REQUIRED_REWARD = 0.99
 
 
 def _base_profile(profile: str) -> str:
@@ -60,12 +62,18 @@ def _arguments() -> argparse.Namespace:
         type=Path,
         default=Path("/opt/copse/scripts/print-skillsbench-profile.mts"),
     )
-    profiles = parser.add_mutually_exclusive_group(required=True)
+    profiles = parser.add_mutually_exclusive_group()
     profiles.add_argument("--profile", help="Base or versioned profile, e.g. skills-product@2")
     profiles.add_argument(
         "--profiles",
         help="Comma-separated arms run against every selected task, e.g. "
         "skills-product@1,skills-product@2",
+    )
+    parser.add_argument(
+        "--oracle",
+        action="store_true",
+        help="Run the upstream oracle (task solve.sh, no LLM and no Copse planes) "
+        "instead of an agent, to establish task eligibility.",
     )
     parser.add_argument("--task-names", default="offer-letter-generator")
     parser.add_argument("--attempts", type=int, default=1)
@@ -76,10 +84,17 @@ def _arguments() -> argparse.Namespace:
         "--capsules-dir", type=Path, default=Path("bench-results/skillsbench-capsules")
     )
     values = parser.parse_args()
-    try:
-        values.profiles = _parse_profiles(values.profiles or values.profile)
-    except ValueError as error:
-        parser.error(str(error))
+    if values.oracle:
+        if values.profile or values.profiles:
+            parser.error("--oracle runs the task solution, not a profile")
+        values.profiles = []
+    elif not (values.profile or values.profiles):
+        parser.error("one of --profile, --profiles, or --oracle is required")
+    else:
+        try:
+            values.profiles = _parse_profiles(values.profiles or values.profile)
+        except ValueError as error:
+            parser.error(str(error))
     if values.attempts < 1 or values.attempts > 5:
         parser.error("--attempts must be between 1 and 5")
     if values.shard_count < 1:
@@ -190,6 +205,96 @@ def _reasoning_summary(policy: str, checkpoints: list[dict[str, Any]]) -> dict[s
             (int(record.get("checkpointTokens") or 0) for record in checkpoints), default=0
         ),
     }
+
+
+async def _run_oracle(
+    *,
+    args: argparse.Namespace,
+    descriptor: dict[str, Any],
+    task: dict[str, Any],
+) -> bool:
+    """Run the task's own solution through the stock BenchFlow lifecycle.
+
+    BenchFlow treats ``agent="oracle"`` specially: it executes the task's
+    ``solve.sh`` and never calls an LLM, so this deliberately uses the default
+    planes and passes no model, agent env, or profile. A task is only eligible
+    for the study once this returns the upstream-required reward.
+    """
+    task_name = task["name"]
+    trial_id = f"{task_name}__oracle"
+    job_name = os.environ.get("COPSE_BENCH_RUN_ID", "skillsbench-spike")
+    task_path = args.tasks_root / task_name
+    started = time.time()
+    rollout = Rollout(
+        RolloutConfig(
+            task_path=task_path,
+            environment="docker",
+            sandbox_user=None,
+            agent="oracle",
+            skill_mode="with-skill",
+            self_gen_no_internet=True,
+            jobs_dir=args.jobs_dir,
+            job_name=job_name,
+            rollout_name=trial_id,
+            dataset={"name": "skillsbench", "version": descriptor["dataset"]["version"]},
+            task_digest=task["digest"],
+            source_provenance={
+                "repository": task["git_url"],
+                "revision": descriptor["dataset"]["revision"],
+                "task_revision": task["git_commit_id"],
+            },
+        )
+    )
+    result = await rollout.run()
+    elapsed = time.time() - started
+    source_dir = args.jobs_dir / job_name / trial_id
+    capsule = args.capsules_dir / trial_id
+    if capsule.exists():
+        shutil.rmtree(capsule)
+    if source_dir.is_dir():
+        shutil.copytree(source_dir, capsule)
+    else:
+        capsule.mkdir(parents=True)
+    reward = _reward(result)
+    eligible = reward is not None and reward >= ORACLE_REQUIRED_REWARD
+    manifest = {
+        "schemaVersion": 1,
+        "benchmark": {
+            "id": "skillsbench",
+            "version": descriptor["dataset"]["version"],
+            "tag": descriptor["dataset"]["tag"],
+            "revision": descriptor["dataset"]["revision"],
+            "benchflow": descriptor["dataset"]["benchflow"],
+        },
+        "task": {
+            "name": task_name,
+            "revision": task["git_commit_id"],
+            "digest": task["digest"],
+        },
+        "mode": "oracle",
+        "sourceCommit": _git_commit(),
+        "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
+        "networkPolicy": "no-network",
+        "elapsedSeconds": round(elapsed, 3),
+        "officialReward": reward,
+        "requiredReward": ORACLE_REQUIRED_REWARD,
+        "eligible": eligible,
+        "result": _result_mapping(result),
+    }
+    (capsule / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+    print(
+        f"skillsbench oracle task={task_name} reward={reward} "
+        f"required={ORACLE_REQUIRED_REWARD} eligible={eligible} elapsed={elapsed:.1f}s",
+        flush=True,
+    )
+    if not eligible:
+        print(
+            f"skillsbench oracle: {task_name} is NOT eligible; agent rewards on it are "
+            "not interpretable until the oracle passes in this environment",
+            file=sys.stderr,
+            flush=True,
+        )
+    return eligible and result.error is None and result.verifier_error is None
 
 
 async def _run_trial(
@@ -328,17 +433,23 @@ async def _run_trial(
 
 async def _main() -> int:
     args = _arguments()
-    if not args.bundle.is_file():
-        raise FileNotFoundError(f"Copse agent bundle is missing: {args.bundle}")
-    if not args.profile_script.is_file():
-        raise FileNotFoundError(f"profile metadata script is missing: {args.profile_script}")
-    model = os.environ.get("LM_STUDIO_MODEL", "").strip()
-    if not model or not os.environ.get("LM_STUDIO_API_KEY"):
-        raise RuntimeError("LM_STUDIO_MODEL and LM_STUDIO_API_KEY are required")
+    model = ""
+    profile_metadata: dict[str, dict[str, str]] = {}
+    # The oracle never launches the Copse bridge, so it needs neither the agent
+    # bundle nor model credentials.
+    if not args.oracle:
+        if not args.bundle.is_file():
+            raise FileNotFoundError(f"Copse agent bundle is missing: {args.bundle}")
+        if not args.profile_script.is_file():
+            raise FileNotFoundError(f"profile metadata script is missing: {args.profile_script}")
+        model = os.environ.get("LM_STUDIO_MODEL", "").strip()
+        if not model or not os.environ.get("LM_STUDIO_API_KEY"):
+            raise RuntimeError("LM_STUDIO_MODEL and LM_STUDIO_API_KEY are required")
     descriptor = json.loads(args.descriptor.read_text())
-    profile_metadata = {
-        profile: _profile_metadata(args.profile_script, profile) for profile in args.profiles
-    }
+    if not args.oracle:
+        profile_metadata = {
+            profile: _profile_metadata(args.profile_script, profile) for profile in args.profiles
+        }
     active = {task["name"]: task for task in descriptor["active"]}
     requested = [name.strip() for name in args.task_names.split(",") if name.strip()]
     unknown = [name for name in requested if name not in active]
@@ -351,6 +462,17 @@ async def _main() -> int:
     args.jobs_dir.mkdir(parents=True, exist_ok=True)
     args.capsules_dir.mkdir(parents=True, exist_ok=True)
     successful = True
+    if args.oracle:
+        for task_name in selected:
+            successful = (
+                await _run_oracle(
+                    args=args,
+                    descriptor=descriptor,
+                    task=active[task_name],
+                )
+                and successful
+            )
+        return 0 if successful else 1
     # Task-major so paired arms see the same task back to back on one worker.
     for task_name in selected:
         for attempt in range(1, args.attempts + 1):
