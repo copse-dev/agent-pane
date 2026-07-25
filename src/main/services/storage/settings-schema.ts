@@ -39,7 +39,6 @@ const extraProviderModelSchema = z.object({
   // the cost estimator for models absent from the static cloud catalog.
   inputPricePerMTok: z.number().min(0).optional(),
   outputPricePerMTok: z.number().min(0).optional(),
-  blendedCostPerMTok: z.number().min(0).optional(),
 })
 
 // Persisted override (for a built-in preset) or full definition (for a user
