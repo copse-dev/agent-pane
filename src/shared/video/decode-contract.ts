@@ -13,7 +13,12 @@ export const VIDEO_DECODE_REQUEST_CHANNEL = 'video-decoder:request'
 export const VIDEO_DECODE_RESULT_CHANNEL = 'video-decoder:result'
 export const VIDEO_DECODE_READY_CHANNEL = 'video-decoder:ready'
 
-/** Longest edge of a returned frame, before the caller's own `max_width`. */
+/**
+ * Longest edge — width or height — of a returned frame, before the caller's own
+ * `max_width`. Bounding the longest edge rather than the width is what keeps a
+ * portrait recording from costing ~3x per frame: image token cost comes from the
+ * pixel dimensions, and a 2296x3916 capture scaled to 1280 *wide* is 2183 tall.
+ */
 export const DEFAULT_FRAME_MAX_WIDTH = 1280
 export const MIN_FRAME_MAX_WIDTH = 320
 export const MAX_FRAME_MAX_WIDTH = 1920
@@ -81,6 +86,29 @@ export function resolveSampleInterval(spanSeconds: number, requested?: number | 
   if (requested !== undefined && requested !== null && requested > 0) return clamp(requested)
   if (!(spanSeconds > 0)) return MIN_SAMPLE_INTERVAL_SECONDS
   return clamp(spanSeconds / Math.max(1, DEFAULT_TARGET_SAMPLES - 1))
+}
+
+/**
+ * Fit a frame inside `maxEdge` on its longest side, never upscaling.
+ *
+ * Scaling on width alone is the obvious reading of an argument called
+ * `max_width`, and it is wrong for anything taller than it is wide: a 2296x3916
+ * portrait capture came back at 1280x2183 — 2.8M pixels against the 0.96M a
+ * landscape frame gets from the same budget. Image token cost is computed from
+ * the pixel dimensions, so a portrait recording silently cost ~3x per frame.
+ */
+export function frameSizeFor(
+  sourceWidth: number,
+  sourceHeight: number,
+  maxEdge: number,
+): { width: number; height: number } {
+  const width = sourceWidth > 0 ? sourceWidth : maxEdge
+  const height = sourceHeight > 0 ? sourceHeight : Math.round(maxEdge * 0.5625)
+  const scale = Math.min(1, maxEdge / Math.max(width, height))
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  }
 }
 
 export interface DecodeFramesRequest {

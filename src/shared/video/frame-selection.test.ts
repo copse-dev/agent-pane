@@ -173,12 +173,12 @@ describe('selectDistinctFrames', () => {
   })
 
   it('keeps a frame once a meaningful region repaints', () => {
-    const selected = selectDistinctFrames([
-      candidate(0, 0),
-      candidate(1, 0),
-      candidate(2, CELLS / 2),
-      candidate(3, CELLS / 2),
-    ])
+    // context: 0 isolates the threshold policy; the bracketing samples that
+    // normally accompany a change have their own tests below.
+    const selected = selectDistinctFrames(
+      [candidate(0, 0), candidate(1, 0), candidate(2, CELLS / 2), candidate(3, CELLS / 2)],
+      { context: 0 },
+    )
     assert.deepEqual(
       selected.map((f) => f.time),
       [0, 2],
@@ -189,7 +189,7 @@ describe('selectDistinctFrames', () => {
     // Each step alone is below threshold; measured against the kept anchor the
     // drift eventually clears it, so a gradual fade is not lost entirely.
     const creeping = Array.from({ length: 30 }, (_, i) => candidate(i, i))
-    const selected = selectDistinctFrames(creeping)
+    const selected = selectDistinctFrames(creeping, { context: 0 })
     assert.ok(selected.length > 1, 'a slow change should still produce a second frame')
     assert.ok(selected.length < creeping.length, 'but not one frame per step')
   })
@@ -200,7 +200,9 @@ describe('selectDistinctFrames', () => {
     const changed = Math.round(CELLS * 0.03)
     const burst = [candidate(0, 0), candidate(0.25, changed), candidate(0.5, changed * 2)]
     const spread = [candidate(0, 0), candidate(2, changed), candidate(4, changed * 2)]
-    assert.ok(selectDistinctFrames(burst).length < selectDistinctFrames(spread).length)
+    const changes = (c: FrameCandidate[]): number =>
+      selectDistinctFrames(c, { context: 0 }).filter((f) => f.role === 'change').length
+    assert.ok(changes(burst) < changes(spread))
   })
 
   it('honours maxFrames by dropping the least-changed frames', () => {
@@ -232,9 +234,100 @@ describe('selectDistinctFrames', () => {
     const candidates = Array.from({ length: 20 }, (_, i) =>
       candidate(i, Math.round(CELLS * 0.03) * (i % 2)),
     )
-    const high = selectDistinctFrames(candidates, { sensitivity: 'high' })
-    const low = selectDistinctFrames(candidates, { sensitivity: 'low' })
+    const high = selectDistinctFrames(candidates, { sensitivity: 'high', context: 0 })
+    const low = selectDistinctFrames(candidates, { sensitivity: 'low', context: 0 })
     assert.ok(low.length <= high.length)
+  })
+})
+
+describe('context frames around a change', () => {
+  it('brackets a change with the samples either side of it', () => {
+    const selected = selectDistinctFrames([
+      candidate(0, 0),
+      candidate(1, 0),
+      candidate(2, CELLS / 2),
+      candidate(3, CELLS / 2),
+    ])
+    assert.deepEqual(
+      selected.map((f) => [f.time, f.role]),
+      [
+        [0, 'opening'],
+        [1, 'before'],
+        [2, 'change'],
+        [3, 'after'],
+      ],
+    )
+  })
+
+  it('returns three frames for a flicker, not one', () => {
+    // The case this exists for: content appears for a single sample and goes
+    // again. One frame from the middle of that is unreadable — the model cannot
+    // tell what appeared from what vanished without the states either side.
+    const flicker = [
+      candidate(0, 0),
+      candidate(1, 0),
+      candidate(2, Math.round(CELLS * 0.3)),
+      candidate(3, 0),
+      candidate(4, 0),
+    ]
+    const selected = selectDistinctFrames(flicker)
+    assert.ok(
+      selected.length >= 3,
+      `a flicker needs before/change/after, got ${String(selected.length)}`,
+    )
+    const roles = new Set(selected.map((f) => f.role))
+    assert.ok(roles.has('change'))
+    assert.ok(roles.has('before') || roles.has('opening'))
+    assert.ok(roles.has('after'))
+  })
+
+  it('scores each frame against the one before it in the result', () => {
+    // Not against the selection anchor: the anchor is invisible to whoever
+    // reads the manifest, so a percentage measured from it describes a
+    // comparison the model cannot make.
+    const selected = selectDistinctFrames([
+      candidate(0, 0),
+      candidate(1, 0),
+      candidate(2, CELLS / 2),
+      candidate(3, CELLS / 2),
+    ])
+    assert.equal(selected[1]?.change, 0, 'the before frame is unchanged from the opening')
+    assert.equal(selected[2]?.change, 0.5, 'the change frame moved half the grid')
+    assert.equal(selected[3]?.change, 0, 'the after frame is unchanged from the change')
+  })
+
+  it('keeps a change on its own rather than dropping it when context will not fit', () => {
+    const candidates = [
+      candidate(0, 0),
+      candidate(1, 0),
+      candidate(2, Math.round(CELLS * 0.3)),
+      candidate(3, 0),
+    ]
+    const selected = selectDistinctFrames(candidates, { maxFrames: 2 })
+    assert.equal(selected.length, 2)
+    assert.deepEqual(
+      selected.map((f) => f.role),
+      ['opening', 'change'],
+    )
+  })
+
+  it('returns at least two frames whenever anything moved at all', () => {
+    // A sub-threshold change used to come back as a single frame, which reads
+    // as "nothing happened" and leaves nothing to compare it against.
+    const subtle = [candidate(0, 0), candidate(1, 0), candidate(2, 2), candidate(3, 2)]
+    const selected = selectDistinctFrames(subtle)
+    assert.ok(selected.length >= 2)
+    assert.ok(
+      selected.some((f) => f.role === 'peak'),
+      'the largest change is marked as under the bar rather than confirmed distinct',
+    )
+  })
+
+  it('still collapses a genuinely still recording to one frame', () => {
+    // The floor is "at least two once something moved", not "always two" — a
+    // static screen has nothing to compare.
+    const still = Array.from({ length: 20 }, (_, i) => candidate(i * 0.5, 0))
+    assert.equal(selectDistinctFrames(still).length, 1)
   })
 })
 
@@ -262,10 +355,11 @@ describe('peakChange', () => {
   })
 
   it('sees change that fell under the selection bar', () => {
-    // The reason it exists: "1 distinct frame" plus a non-zero peak means
-    // something moved and was judged too small, not that nothing happened.
+    // The reason it exists: no frame cleared the threshold, yet something moved
+    // and was judged too small. That is what the `peak` role reports.
     const candidates = [candidate(0, 0), candidate(0.1, 2), candidate(0.2, 0)]
-    assert.equal(selectDistinctFrames(candidates).length, 1)
+    const selected = selectDistinctFrames(candidates, { context: 0 })
+    assert.ok(selected.every((f) => f.role !== 'change'))
     const peak = peakChange(candidates)
     assert.ok(peak)
     assert.ok(peak.change > 0)

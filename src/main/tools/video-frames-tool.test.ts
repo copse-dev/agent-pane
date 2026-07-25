@@ -78,24 +78,52 @@ describe('video_frames tool', () => {
     assert.ok(result.images)
     assert.equal(result.images.length, 1)
     assert.equal(result.images.at(0)?.name, 'frame-00-00-00.000.jpg')
-    assert.match(result.result, /1 visually distinct frame returned/)
+    assert.match(result.result, /0 changes found, returned as 1 frame/)
     assert.match(result.result, /Nothing in this range changed at all/)
   })
 
-  it('reports the biggest change it saw when only one frame cleared the bar', async () => {
-    // "1 frame" alone reads as "nothing happened". Naming the largest change and
-    // when it happened is what separates a still screen from a change judged too
-    // small — and the second has an obvious next move.
+  it('returns a pair bracketing the biggest change when nothing cleared the bar', async () => {
+    // One frame alone reads as "nothing happened" and leaves nothing to compare
+    // against. A sub-threshold change still comes back as a readable pair.
     setVideoDecoderForTest(() =>
       Promise.resolve(
         decodeResult([frame(0, 0), frame(3, 4), frame(3.5, 0), frame(4, 0), frame(4.5, 0)]),
       ),
     )
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
-    assert.equal(result.images?.length, 1)
-    assert.match(result.result, /largest change between consecutive samples was 0\.7% of the frame/)
-    assert.match(result.result, /at 00:00:03\.000/)
+    assert.deepEqual(
+      result.images?.map((i) => i.name),
+      ['frame-00-00-00.000.jpg', 'frame-00-00-03.000.jpg'],
+    )
+    assert.match(result.result, /Nothing cleared the bar for a distinct frame/)
+    assert.match(result.result, /0\.7% of the frame at 00:00:03\.000/)
     assert.match(result.result, /sensitivity:"high"/)
+  })
+
+  it('brackets each change with the samples either side of it', async () => {
+    // A flicker returned as one image is unreadable: the model has the state
+    // during the event and nothing to compare it against.
+    setVideoDecoderForTest(() =>
+      Promise.resolve(
+        decodeResult([
+          frame(0, 0),
+          frame(1, 0),
+          frame(2, Math.round(CELLS * 0.3)),
+          frame(3, 0),
+          frame(4, 0),
+        ]),
+      ),
+    )
+    const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
+    assert.ok((result.images?.length ?? 0) >= 3, 'a flicker needs before/change/after')
+    assert.match(result.result, /frame-00-00-01\.000\.jpg.*just before the next change/)
+    // Content appearing and content vanishing are two changes, not one, so the
+    // flicker comes back as before → appeared → gone → after.
+    assert.match(result.result, /2 changes found/)
+    assert.match(result.result, /frame-00-00-02\.000\.jpg.*30% of the frame changed/)
+    assert.match(result.result, /frame-00-00-03\.000\.jpg.*30% of the frame changed/)
+    assert.match(result.result, /frame-00-00-04\.000\.jpg.*just after the change above/)
+    assert.match(result.result, /before → change → after/)
   })
 
   it('names each returned image for its timestamp', async () => {

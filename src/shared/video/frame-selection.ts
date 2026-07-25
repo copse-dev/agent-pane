@@ -138,21 +138,56 @@ export interface FrameCandidate {
   signature: ArrayLike<number>
 }
 
+/**
+ * Why a frame is in the result. The model reads a sequence, and "this is the
+ * state just before it changed" is a different claim from "this is what
+ * changed" — collapsing them loses the only thing that makes a transient
+ * change readable.
+ */
+export type FrameRole =
+  /** The first sample: the baseline everything else is a change against. */
+  | 'opening'
+  /** Cleared the distinctness bar against the last kept frame. */
+  | 'change'
+  /** A neighbouring sample kept to show the state before a change. */
+  | 'before'
+  /** A neighbouring sample kept to show the state after a change. */
+  | 'after'
+  /** Nothing cleared the bar; this is the largest change in the range anyway. */
+  | 'peak'
+
 export interface SelectedFrame {
   time: number
   /**
-   * Distance from the previously kept frame — how much of the screen changed to
-   * earn this frame a place. The first frame is 1 (it establishes the baseline);
-   * used to decide what to drop when `maxFrames` bites.
+   * Distance from the frame before it *in this result* — so the frames read as
+   * a sequence rather than as deltas against an anchor the model cannot see.
+   * The opening frame is 1 (it establishes the baseline).
    */
   change: number
+  role: FrameRole
 }
 
 export interface SelectFramesOptions {
   sensitivity?: FrameSensitivity
-  /** Hard cap on returned frames. The lowest-change frames are dropped first. */
+  /** Hard cap on returned frames. Whole changes are dropped before partial ones. */
   maxFrames?: number
+  /** Samples kept either side of a change; see {@link DEFAULT_CONTEXT_FRAMES}. */
+  context?: number
 }
+
+/**
+ * Samples kept either side of each change.
+ *
+ * A change returned as a single image is close to useless for the thing people
+ * record videos to show. Handed one frame from the middle of a flicker, a model
+ * cannot tell what appeared from what vanished — it has the state *during* the
+ * event and nothing to compare it against, so it describes a screenshot instead
+ * of a change. Keeping the sample before and the sample after makes the frame
+ * self-describing: before, during, after. That is the minimum for reading a
+ * flicker at all, which is why a range that contains any change returns at least
+ * two frames and a transient one returns three.
+ */
+export const DEFAULT_CONTEXT_FRAMES = 1
 
 /**
  * Whether the sub-second penalty applies at this sensitivity.
@@ -167,67 +202,155 @@ function subsecondStrictness(sensitivity: FrameSensitivity): number {
   return sensitivity === 'high' ? 0 : SUBSECOND_STRICTNESS
 }
 
+interface ChangeEvent {
+  index: number
+  change: number
+}
+
 /**
- * Greedily keep frames that differ enough from the last one kept.
+ * Samples that differ enough from the last one kept to count as a change.
  *
  * Comparing against the last *kept* frame rather than the previous *candidate*
  * is what makes a slow change (a progress bar creeping, a page fading in)
  * eventually register instead of being lost to a series of individually
- * sub-threshold steps. It is also what makes a genuinely still video collapse to
- * exactly one frame: nothing ever clears the bar against the opening frame.
+ * sub-threshold steps. It is also what makes a genuinely still video produce no
+ * events at all: nothing ever clears the bar against the opening frame.
+ */
+function changeEvents(
+  candidates: readonly FrameCandidate[],
+  sensitivity: FrameSensitivity,
+): ChangeEvent[] {
+  const events: ChangeEvent[] = []
+  let anchor = candidates[0]
+  if (!anchor) return events
+  for (let i = 1; i < candidates.length; i++) {
+    const candidate = candidates[i]
+    if (!candidate) continue
+    const distance = frameDistance(anchor.signature, candidate.signature)
+    if (distance >= distanceThreshold(candidate.time - anchor.time, sensitivity)) {
+      events.push({ index: i, change: distance })
+      anchor = candidate
+    }
+  }
+  return events
+}
+
+/** Neighbouring sample indices within `context` of `index`, nearest first. */
+function neighbourhood(index: number, context: number, length: number): number[] {
+  const indices: number[] = []
+  for (let distance = 1; distance <= context; distance++) {
+    if (index - distance >= 0) indices.push(index - distance)
+    if (index + distance < length) indices.push(index + distance)
+  }
+  return indices
+}
+
+/**
+ * Pick the frames to return: every change worth showing, each bracketed by the
+ * samples either side of it.
+ *
+ * Changes are taken in order of size rather than in time order, so when
+ * `maxFrames` bites it is the smallest changes that go rather than everything
+ * after some cut-off point — an early flurry would otherwise eat the whole
+ * budget and hide a bigger change later in the recording. A change whose
+ * neighbours will not fit is still kept on its own: a change with no context
+ * beats no change at all.
  */
 export function selectDistinctFrames(
   candidates: readonly FrameCandidate[],
   options: SelectFramesOptions = {},
 ): SelectedFrame[] {
   const sensitivity = options.sensitivity ?? 'normal'
-  const first = candidates[0]
-  if (!first) return []
+  const context = Math.max(0, options.context ?? DEFAULT_CONTEXT_FRAMES)
+  const budget =
+    options.maxFrames !== undefined && options.maxFrames > 0 ? options.maxFrames : Infinity
+  if (!candidates[0]) return []
 
-  const kept: SelectedFrame[] = [{ time: first.time, change: 1 }]
-  let anchor = first
-  for (let i = 1; i < candidates.length; i++) {
-    const candidate = candidates[i]
-    if (!candidate) continue
-    const distance = frameDistance(anchor.signature, candidate.signature)
-    if (distance >= distanceThreshold(candidate.time - anchor.time, sensitivity)) {
-      kept.push({ time: candidate.time, change: distance })
-      anchor = candidate
+  const roles = new Map<number, FrameRole>([[0, 'opening']])
+  const events = changeEvents(candidates, sensitivity)
+
+  if (events.length === 0) {
+    // Nothing cleared the bar. Returning the opening frame alone would say
+    // "nothing happened", which is only true if the screen genuinely held
+    // still — and leaves the model nothing to compare in the case where it
+    // did not. So fall back to the largest change actually measured and the
+    // sample before it: a pair the model can read, plus a `peak` role saying
+    // it was judged too small rather than confirmed distinct.
+    const peak = peakIndex(candidates)
+    if (peak !== null && budget >= 2) {
+      roles.set(peak, 'peak')
+      if (peak - 1 > 0 && roles.size < budget) roles.set(peak - 1, 'before')
+    }
+    return emitFrames(candidates, roles)
+  }
+
+  for (const event of [...events].sort((a, b) => b.change - a.change || a.index - b.index)) {
+    if (roles.size >= budget) break
+    const fresh = neighbourhood(event.index, context, candidates.length).filter(
+      (index) => !roles.has(index),
+    )
+    const cost = fresh.length + (roles.has(event.index) ? 0 : 1)
+    if (roles.size + cost <= budget) {
+      for (const index of fresh) roles.set(index, index < event.index ? 'before' : 'after')
+      roles.set(event.index, 'change')
+    } else if (!roles.has(event.index)) {
+      roles.set(event.index, 'change')
     }
   }
 
-  return capFrames(kept, options.maxFrames)
+  return emitFrames(candidates, roles)
 }
 
 /**
- * Trim a selection to `maxFrames` by dropping the least-changed frames first.
- *
- * Raising the threshold until the count fits would be the other option, but it
- * biases toward the start of the video (an early flurry of change eats the
- * budget). Ranking by change keeps the most visually significant moments
- * wherever they fall, and the survivors are re-sorted into time order because
- * the model reads them as a sequence.
+ * Turn chosen indices into time-ordered frames, scoring each against the frame
+ * before it in the result rather than against the selection anchor — the anchor
+ * is invisible to whoever reads the manifest, so a percentage measured from it
+ * describes a comparison the model cannot make.
  */
-function capFrames(frames: SelectedFrame[], maxFrames: number | undefined): SelectedFrame[] {
-  if (maxFrames === undefined || maxFrames <= 0 || frames.length <= maxFrames) return frames
-  // The opening frame is the baseline every later frame is a delta against, so
-  // it is never a drop candidate regardless of its (synthetic) change score.
-  const [opening, ...rest] = frames
-  if (!opening) return frames
-  const survivors = [...rest]
-    .sort((a, b) => b.change - a.change || a.time - b.time)
-    .slice(0, maxFrames - 1)
-  return [opening, ...survivors].sort((a, b) => a.time - b.time)
+function emitFrames(
+  candidates: readonly FrameCandidate[],
+  roles: ReadonlyMap<number, FrameRole>,
+): SelectedFrame[] {
+  const frames: SelectedFrame[] = []
+  let previous: FrameCandidate | null = null
+  for (const index of [...roles.keys()].sort((a, b) => a - b)) {
+    const candidate = candidates[index]
+    if (!candidate) continue
+    frames.push({
+      time: candidate.time,
+      change: previous ? frameDistance(previous.signature, candidate.signature) : 1,
+      role: roles.get(index) ?? 'change',
+    })
+    previous = candidate
+  }
+  return frames
+}
+
+/** Index of the sample that moved most from its predecessor; null if none did. */
+function peakIndex(candidates: readonly FrameCandidate[]): number | null {
+  let peak: number | null = null
+  let largest = 0
+  for (let i = 1; i < candidates.length; i++) {
+    const previous = candidates[i - 1]
+    const candidate = candidates[i]
+    if (!previous || !candidate) continue
+    const change = frameDistance(previous.signature, candidate.signature)
+    if (change > largest) {
+      largest = change
+      peak = i
+    }
+  }
+  return peak
 }
 
 /**
  * The biggest change between consecutive samples, whether or not it was
  * selected.
  *
- * Reported so "1 distinct frame" is never a dead end. Without it the caller
- * cannot tell "the screen genuinely held still" from "something moved but it
- * was under the bar" — the second wants a lower sensitivity or a closer look,
- * the first wants neither, and the two are indistinguishable from a frame count.
+ * Reported so a thin result is never a dead end. Without it the caller cannot
+ * tell "the screen genuinely held still" from "something moved but it was under
+ * the bar" — the second wants a lower sensitivity or a closer look, the first
+ * wants neither, and the two are indistinguishable from a frame count.
  */
 export function peakChange(
   candidates: readonly FrameCandidate[],

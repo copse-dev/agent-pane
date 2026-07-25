@@ -8,6 +8,7 @@ import {
 } from '@shared/video/frame-selection.ts'
 import {
   FRAME_IMAGE_MIME,
+  frameSizeFor,
   resolveSampleInterval,
   type DecodeFramesRequest,
   type DecodeFramesResponse,
@@ -81,17 +82,6 @@ async function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
   await seeked
 }
 
-/** Target frame size: fit inside `maxWidth` without ever upscaling. */
-function frameSize(video: HTMLVideoElement, maxWidth: number): { width: number; height: number } {
-  const sourceWidth = video.videoWidth || maxWidth
-  const sourceHeight = video.videoHeight || Math.round(maxWidth * 0.5625)
-  const scale = Math.min(1, maxWidth / sourceWidth)
-  return {
-    width: Math.max(1, Math.round(sourceWidth * scale)),
-    height: Math.max(1, Math.round(sourceHeight * scale)),
-  }
-}
-
 /**
  * Reduce a frame to one mean RGB triple per signature cell.
  *
@@ -141,7 +131,7 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
 
     const start = Math.max(0, Math.min(request.startSeconds, duration))
     const end = Math.max(start, Math.min(request.endSeconds ?? duration, duration))
-    const { width, height } = frameSize(video, request.maxWidth)
+    const { width, height } = frameSizeFor(video.videoWidth, video.videoHeight, request.maxWidth)
 
     const frameCanvas = document.createElement('canvas')
     frameCanvas.width = width

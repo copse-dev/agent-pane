@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
   DEFAULT_TARGET_SAMPLES,
+  frameSizeFor,
   MAX_SAMPLE_INTERVAL_SECONDS,
   MIN_SAMPLE_INTERVAL_SECONDS,
   resolveSampleInterval,
@@ -40,5 +41,35 @@ describe('resolveSampleInterval', () => {
   it('falls back to the finest interval for a zero-length window', () => {
     assert.equal(resolveSampleInterval(0), MIN_SAMPLE_INTERVAL_SECONDS)
     assert.equal(resolveSampleInterval(-1), MIN_SAMPLE_INTERVAL_SECONDS)
+  })
+})
+
+describe('frameSizeFor', () => {
+  it('fits a landscape frame to the budget on its width', () => {
+    assert.deepEqual(frameSizeFor(2560, 1440, 1280), { width: 1280, height: 720 })
+  })
+
+  it('fits a portrait frame to the budget on its height', () => {
+    // The bug this replaced scaled on width alone, so this 2296x3916 capture
+    // came back 1280x2183 — 2.8M pixels against the 0.96M a landscape frame
+    // gets from the same budget. Image tokens are priced on pixel dimensions,
+    // so a portrait recording silently cost ~3x per frame.
+    const size = frameSizeFor(2296, 3916, 1280)
+    assert.equal(size.height, 1280)
+    assert.ok(size.width < size.height)
+    assert.ok(size.width * size.height < 1280 * 1280)
+  })
+
+  it('never upscales a frame smaller than the budget', () => {
+    assert.deepEqual(frameSizeFor(640, 480, 1280), { width: 640, height: 480 })
+  })
+
+  it('keeps the source aspect ratio', () => {
+    const size = frameSizeFor(2296, 3916, 1280)
+    assert.ok(Math.abs(size.width / size.height - 2296 / 3916) < 0.01)
+  })
+
+  it('falls back to a 16:9 frame when the video reports no dimensions', () => {
+    assert.deepEqual(frameSizeFor(0, 0, 1280), { width: 1280, height: 720 })
   })
 })

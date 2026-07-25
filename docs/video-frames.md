@@ -62,16 +62,23 @@ video_frames({ path: "…/blobs/media/2f8c…-Screen Recording.mov" })
 
 ```
 …/Screen Recording.mov — 2560x1440, 00:02:14.300 long.
-Sampled 00:00:00.000–00:02:14.300 (269 samples); 6 visually distinct frames returned at 1280x720.
+Sampled 00:00:00.000–00:02:14.300 every 1.1s (120 samples); 2 changes found, returned as 6 frames at 1280x720.
+Anything lasting less than 1.1s can fall between samples and not appear at all. …
+Each change is bracketed by the samples either side of it, so a brief one reads
+as before → change → after. Describe what moved between them, not what each
+frame contains.
 Frames follow as images, in order, named by timestamp:
   frame-00-00-00.000.jpg  00:00:00.000
+  frame-00-00-11.400.jpg  00:00:11.400  (the state just before the next change)
   frame-00-00-12.500.jpg  00:00:12.500  (34% of the frame changed)
+  frame-00-00-13.600.jpg  00:00:13.600  (the state just after the change above — compare it with the frame before)
   …
 ```
 
-Each image is named for its position (`frame-00-01-23.450.jpg` =
-`00:01:23.450`), so the model can quote a time back to the user and re-request
-that moment with a tighter `start`/`end`.
+Each image is named for its position **in the video** (`frame-00-01-23.450.jpg`
+= `00:01:23.450`) — always absolute, never an offset into the requested range —
+so the model can quote a time back to the user and re-request that moment with a
+tighter `start`/`end`.
 
 Arguments:
 
@@ -79,10 +86,10 @@ Arguments:
 | ------------- | ----------- | ------------------------------------------------------------------- |
 | `path`        | required    | Workspace-relative, or the absolute path given for an attachment    |
 | `start`/`end` | whole video | Seconds (`12.5`) or `mm:ss` / `hh:mm:ss`                            |
-| `max_frames`  | 10 (max 60) | Over the cap, the biggest-change frames are kept                    |
+| `max_frames`  | 10 (max 60) | Images, not changes — a change costs up to 3 with its context       |
 | `sensitivity` | `normal`    | `high` catches a changed line of text; `low` only major transitions |
 | `interval`    | derived     | Seconds between samples; set only to go finer than the window gives |
-| `max_width`   | 1280        | Longest edge of the returned frames                                 |
+| `max_width`   | 1280        | Longest edge — width _or_ height — of the returned frames           |
 
 Audio is never decoded.
 
@@ -161,26 +168,63 @@ So the threshold scales with how close together the candidates are: it relaxes t
 the base value at a 1s gap and rises to 3× as the gap approaches zero. A burst of
 motion has to be a genuinely large change to produce more than one frame.
 
-### One frame back is not the same as nothing happened
+## A change on its own is not readable
 
-A result of exactly one frame is ambiguous in the way that matters most: the
-screen genuinely held still, or something moved and was judged too small. Those
-want opposite responses — nothing, versus a closer look — and a frame count
-cannot tell them apart.
+Finding the frame where something changed is only half the job. Handed that one
+image, a model has the state _during_ the event and nothing to compare it
+against — it cannot tell what appeared from what vanished, so it describes a
+screenshot instead of a change. For a flicker, which is the thing people record
+screen captures to show, that is worthless.
 
-So a single-frame result reports the **largest change observed between
-consecutive samples**, selected or not (`peakChange`), and names the timestamp it
-happened at:
+So every change is returned **bracketed by the samples either side of it**. A
+brief event reads as before → change → after, and the manifest labels each frame
+with its role so the sequence is self-describing:
 
 ```
-Nothing cleared the bar for a second frame. The largest change between
-consecutive samples was 0.9% of the frame at 00:00:03.100; to see it, re-run
-that moment with sensitivity:"high" and a narrow start/end.
+  frame-00-00-01.000.jpg  00:00:01.000  (the state just before the next change)
+  frame-00-00-02.000.jpg  00:00:02.000  (30% of the frame changed)
+  frame-00-00-03.000.jpg  00:00:03.000  (the state just after the change above — …)
 ```
 
-That gives the model a next move it can make on its own. Sub-1% changes are
-printed to one decimal — rounding 0.4% to "0%" would say precisely the opposite
-of what happened.
+Two consequences worth knowing:
+
+- **Content appearing and content vanishing are two changes, not one.** A true
+  flicker therefore comes back as before → appeared → gone → after. That is the
+  correct reading, and it is what makes "it flashed and went away" visible
+  rather than "there is a panel here".
+- **`max_frames` is a budget in images, not in changes.** With context, the
+  default of 10 covers roughly four changes rather than nine. That is a
+  deliberate trade: four changes a model can actually read beat nine it can only
+  see one frame of. The manifest says when it capped and names the lever.
+
+Changes are taken in order of size rather than in time order, so when the cap
+bites it is the smallest changes that go — an early flurry would otherwise eat
+the whole budget and hide a bigger change later in the recording. A change whose
+neighbours will not fit is still kept alone: a change with no context beats no
+change at all.
+
+### Nothing distinct is not the same as nothing happened
+
+A range where nothing clears the threshold is ambiguous in the way that matters
+most: the screen genuinely held still, or something moved and was judged too
+small. Those want opposite responses — nothing, versus a closer look — and a
+frame count cannot tell them apart.
+
+So instead of returning the opening frame alone, the tool falls back to the
+**largest change actually measured** (`peakChange`) and the sample before it —
+a pair the model can read — and says plainly that it was under the bar:
+
+```
+Nothing cleared the bar for a distinct frame. The two frames below bracket the
+largest change in this range (0.9% of the frame at 00:00:03.100); if that is not
+what you are looking for, re-run that moment with sensitivity:"high" and a
+narrow start/end.
+```
+
+Sub-1% changes are printed to one decimal — rounding 0.4% to "0%" would say
+precisely the opposite of what happened.
+
+A single frame now means one thing only: **nothing in the range moved at all.**
 
 ## How decoding works
 
@@ -206,6 +250,13 @@ Details worth knowing if you touch it:
   is almost entirely such samples.
 - Containers written by live recorders often report `duration: Infinity`; the
   decoder seeks past the end to make Chromium find the real one.
+- `max_width` bounds the **longest** edge, not the width. Scaling on width alone
+  is the obvious reading of the name and it is wrong for anything taller than it
+  is wide: a 2296×3916 portrait capture came back at 1280×2183 — 2.8M pixels
+  against the 0.96M a landscape frame gets from the same budget. Since image
+  token cost is computed from pixel dimensions, a portrait recording silently
+  cost ~3× per frame, and a dozen of them was enough to kill a local server's
+  request mid-turn.
 
 Frames come back as **JPEG at quality 0.8**. WebP is ~40% smaller on a dense
 screen frame and was the original choice for that reason — it was the wrong

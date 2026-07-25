@@ -13,6 +13,7 @@ import {
   peakChange,
   selectDistinctFrames,
   type FrameCandidate,
+  type SelectedFrame,
 } from '@shared/video/frame-selection.ts'
 import {
   DEFAULT_FRAME_MAX_WIDTH,
@@ -45,11 +46,14 @@ import { decodeVideoFrames } from '../services/video/video-decoder.ts'
 /**
  * Frames returned when the model doesn't ask for a number.
  *
- * Ten images is already a substantial slice of a context window, and it is
- * enough to survey almost any recording: the frames kept are the biggest
- * changes, so what survives the cap is the shape of what happened. The result
- * says when it capped, and narrowing `start`/`end` is the cheaper way to see
- * more of one moment than raising this is to see more of everything.
+ * Ten images is already a substantial slice of a context window, and the frames
+ * kept are the biggest changes, so what survives the cap is the shape of what
+ * happened. Note this is a budget in *images*, not in changes: once each change
+ * carries the samples either side of it, ten images is roughly four changes.
+ * That is the deliberate trade — four changes a model can actually read beat
+ * nine it can only describe one frame of. The result says when it capped, and
+ * narrowing `start`/`end` is the cheaper way to see more of one moment than
+ * raising this is to see more of everything.
  */
 const DEFAULT_MAX_FRAMES = 10
 
@@ -75,6 +79,29 @@ function formatInterval(seconds: number): string {
 function formatChange(fraction: number): string {
   const percent = fraction * 100
   return percent > 0 && percent < 1 ? `${percent.toFixed(1)}%` : `${String(Math.round(percent))}%`
+}
+
+/**
+ * The note after a frame's timestamp in the manifest.
+ *
+ * Saying which frames are context and which are the change is what makes a
+ * transient event readable: three near-identical screenshots with no labels
+ * invite the model to describe the third one, where the same three labelled
+ * before/change/after invite it to describe the difference.
+ */
+function describeRole(frame: SelectedFrame): string {
+  switch (frame.role) {
+    case 'opening':
+      return ''
+    case 'before':
+      return '  (the state just before the next change)'
+    case 'after':
+      return '  (the state just after the change above — compare it with the frame before)'
+    case 'peak':
+      return `  (${formatChange(frame.change)} of the frame changed — the largest change in this range, though under the bar for a distinct frame)`
+    default:
+      return `  (${formatChange(frame.change)} of the frame changed)`
+  }
 }
 
 function dataUrlBytes(dataUrl: string): number {
@@ -117,7 +144,7 @@ function resolveWindow(
 export const videoFramesTool = defineTool({
   name: 'video_frames',
   description:
-    'Read a video (typically a screen recording) as a small set of still images. Samples the video and returns only the frames that are visually distinct from each other, so a recording of a mostly-static screen costs a few images rather than hundreds — a still video returns exactly one. Audio is ignored. With no `start`/`end` it covers the whole video; pass a range to look closely at one moment. Each image is named for its timestamp (`frame-00-01-23.450.jpg` = 00:01:23.450), so you can quote a time back to the user or re-request that moment with a tighter range. Raise `sensitivity` to catch smaller changes, lower it for fewer frames.',
+    'Read a video (typically a screen recording) as a small set of still images. Samples the video, finds the moments where the screen changed, and returns each change bracketed by the samples either side of it — so a brief change reads as before → change → after rather than as one ambiguous screenshot. A recording of a mostly-static screen costs a few images rather than hundreds; a completely still one returns a single frame. Audio is ignored. With no `start`/`end` it covers the whole video; pass a range to look closely at one moment. Each image is named for its position in the video (`frame-00-01-23.450.jpg` = 00:01:23.450, always absolute, never relative to the range you asked for), so you can quote a time back to the user or re-request that moment with a tighter range. Raise `sensitivity` to catch smaller changes, lower it for fewer.',
   parameters: z.object({
     path: z
       .string()
@@ -141,7 +168,7 @@ export const videoFramesTool = defineTool({
       .max(MAX_MAX_FRAMES)
       .optional()
       .describe(
-        `Most frames to return (default ${String(DEFAULT_MAX_FRAMES)}, max ${String(MAX_MAX_FRAMES)}). When more distinct frames exist, the ones showing the biggest changes are kept.`,
+        `Most images to return (default ${String(DEFAULT_MAX_FRAMES)}, max ${String(MAX_MAX_FRAMES)}). A change costs up to 3 of these once its before/after context is included, so ${String(DEFAULT_MAX_FRAMES)} covers roughly 4 changes. When more exist, the biggest changes are kept.`,
       ),
     sensitivity: z
       .enum(['low', 'normal', 'high'])
@@ -164,7 +191,7 @@ export const videoFramesTool = defineTool({
       .max(MAX_FRAME_MAX_WIDTH)
       .optional()
       .describe(
-        `Longest edge of the returned frames in pixels (default ${String(DEFAULT_FRAME_MAX_WIDTH)}). Lower it to save context, raise it only when small text is unreadable.`,
+        `Longest edge — width or height, whichever is larger — of the returned frames in pixels (default ${String(DEFAULT_FRAME_MAX_WIDTH)}). Lower it to save context, raise it only when small text is unreadable.`,
       ),
   }),
   async execute({ path, start, end, max_frames, sensitivity, max_width, interval }, signal) {
@@ -261,42 +288,45 @@ export const videoFramesTool = defineTool({
       }
       totalBytes += size
       images.push({ dataUrl, name })
-      lines.push(
-        images.length === 1
-          ? `  ${name}  ${formatTimestamp(frame.time)}`
-          : `  ${name}  ${formatTimestamp(frame.time)}  (${formatChange(frame.change)} of the frame changed)`,
-      )
+      lines.push(`  ${name}  ${formatTimestamp(frame.time)}${describeRole(frame)}`)
     }
 
     if (images.length === 0) {
       return `No frames could be encoded from ${path}. The file may be corrupt or use a codec this platform cannot decode.`
     }
 
+    const changes = selected.filter((f) => f.role === 'change').length
     const windowEnd = window.end ?? decoded.durationSeconds
     const header = [
       `${path} — ${String(decoded.sourceWidth)}x${String(decoded.sourceHeight)}, ${formatTimestamp(decoded.durationSeconds)} long.`,
-      `Sampled ${formatTimestamp(window.start)}–${formatTimestamp(Math.min(windowEnd, decoded.durationSeconds))} every ${formatInterval(decoded.sampleIntervalSeconds)} (${String(decoded.frames.length)} samples); ${String(images.length)} visually distinct frame${images.length === 1 ? '' : 's'} returned at ${String(decoded.frameWidth)}x${String(decoded.frameHeight)}.`,
+      `Sampled ${formatTimestamp(window.start)}–${formatTimestamp(Math.min(windowEnd, decoded.durationSeconds))} every ${formatInterval(decoded.sampleIntervalSeconds)} (${String(decoded.frames.length)} samples); ${String(changes)} change${changes === 1 ? '' : 's'} found, returned as ${String(images.length)} frame${images.length === 1 ? '' : 's'} at ${String(decoded.frameWidth)}x${String(decoded.frameHeight)}.`,
       // The blind spot is the single most useful thing to say here: without it a
       // model reads "nothing changed" as "nothing happened", when a flicker
       // shorter than the sampling gap simply landed between two samples.
       `Anything lasting less than ${formatInterval(decoded.sampleIntervalSeconds)} can fall between samples and not appear at all. To look for something brief, narrow start/end (which samples more finely) or set \`interval\`.`,
     ]
-    if (images.length === 1) {
-      // "1 frame" on its own is ambiguous in the way that matters: it reads as
-      // "nothing happened" when it can equally mean "something moved and was
-      // judged too small". Reporting the biggest change actually observed —
-      // selected or not — separates the two, and the second case has an obvious
-      // next move the model can take without asking the user.
-      const peak = peakChange(candidates)
+    if (changes > 0) {
+      // Without this the sequence reads as a set of screenshots and the model
+      // describes the last one. Naming the shape tells it there is a comparison
+      // to make and which frames to make it between.
       header.push(
-        peak && peak.change > 0
-          ? `Nothing cleared the bar for a second frame. The largest change between consecutive samples was ${formatChange(peak.change)} of the frame at ${formatTimestamp(peak.time)}; to see it, re-run that moment with sensitivity:"high" and a narrow start/end.`
-          : 'Nothing in this range changed at all, so one frame covers it.',
+        'Each change is bracketed by the samples either side of it, so a brief one reads as before → change → after. Describe what moved between them, not what each frame contains.',
       )
+    }
+    const peak = peakChange(candidates)
+    if (selected.some((f) => f.role === 'peak')) {
+      // Nothing was confidently distinct, but something moved. Saying so — with
+      // the size — is what stops "no distinct frames" being read as "nothing
+      // happened", and it hands the model its own next move.
+      header.push(
+        `Nothing cleared the bar for a distinct frame. The two frames below bracket the largest change in this range (${formatChange(peak?.change ?? 0)} of the frame at ${formatTimestamp(peak?.time ?? window.start)}); if that is not what you are looking for, re-run that moment with sensitivity:"high" and a narrow start/end.`,
+      )
+    } else if (changes === 0) {
+      header.push('Nothing in this range changed at all, so one frame covers it.')
     }
     if (selected.length >= maxFrames) {
       header.push(
-        `Capped at max_frames=${String(maxFrames)} — narrow start/end to see more detail in one part of the video.`,
+        `Capped at max_frames=${String(maxFrames)} — each change costs up to 3 frames with its context, so raise max_frames or narrow start/end to see more.`,
       )
     }
     if (droppedForSize > 0) {
