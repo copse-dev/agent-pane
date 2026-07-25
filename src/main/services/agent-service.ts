@@ -128,6 +128,7 @@ import { todosToPanelListData } from '@copse/agent/packs/pack-panel.ts'
 import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
 import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { getPackService } from './packs/pack-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -841,10 +842,20 @@ export async function runAgent(
 
     const turnStart = await createHookRegistry().emit(
       'turnStart',
-      { userText: userTextForSteering, priorTodos },
+      {
+        userText: userTextForSteering,
+        priorTodos,
+        // The resolved run model + the tool list the model will actually see, so
+        // a steering hook can condition on which model is running (the
+        // forced-planning pack thresholds on its measured capability) and never
+        // name a tool this turn filtered out.
+        model,
+        toolNames: parentLoopTools.map((tool) => tool.name),
+      },
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolvePackSetting: (packId, key) => getPackService().getSetting(packId, key),
         recordHookRun: recordFunctionHookRun,
       },
     )

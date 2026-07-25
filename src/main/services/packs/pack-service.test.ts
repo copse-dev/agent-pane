@@ -22,6 +22,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { FORCED_PLANNING_PACK_ID } from '@copse/agent/packs/forced-planning-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
@@ -33,6 +34,7 @@ const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategy
 const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
 const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
 const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
+const FORCED_PLANNING_DEFAULT_OFF_KEY = 'packMigration.forcedPlanningDefaultOff'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -71,6 +73,10 @@ function clearStorage(): void {
   storageDelete(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY)
   storageDelete(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY)
   storageDelete(PII_REDACTION_ENABLEMENT_MIGRATION_KEY)
+  // The forced-planning default-OFF seed is marked *already applied* by default
+  // so it stays out of the sibling migrations' disable-list assertions; the two
+  // tests that cover the seed itself delete this key first.
+  storageSet(FORCED_PLANNING_DEFAULT_OFF_KEY, true)
   storageDelete('postTurnReviewEnabled')
   storageDelete('modelComparisonEnabled')
   storageDelete('longHorizonTasksEnabled')
@@ -81,6 +87,17 @@ function clearStorage(): void {
   storageDelete('piiRedactionEnabled')
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
+}
+
+/** Mark every *other* enablement migration done, so a test sees only its own effect. */
+function markSiblingMigrationsDone(): void {
+  storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
+  storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 describe('PackService', () => {
@@ -520,6 +537,32 @@ describe('PackService', () => {
     const service = getPackService()
 
     assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), true)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
+  })
+
+  it('seeds forced planning default-OFF on the first boot after it lands', () => {
+    // No retired standalone setting to read here — the pack is new, and the
+    // registry enables every registered pack by default. Since it rewrites the
+    // system prompt of every turn on a below-threshold model, the seed is what
+    // keeps it opt-in.
+    storageDelete(FORCED_PLANNING_DEFAULT_OFF_KEY)
+    markSiblingMigrationsDone()
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(FORCED_PLANNING_PACK_ID), false)
+    assert.deepEqual(storageGet(PACK_DISABLED_KEY), [FORCED_PLANNING_PACK_ID])
+    assert.equal(storageGet(FORCED_PLANNING_DEFAULT_OFF_KEY), true)
+  })
+
+  it('never re-disables forced planning once the user has enabled it', () => {
+    markSiblingMigrationsDone()
+    storageSet(FORCED_PLANNING_DEFAULT_OFF_KEY, true)
+    storageSet(PACK_DISABLED_KEY, [])
+
+    const service = getPackService()
+
+    assert.equal(service.registry.isEnabled(FORCED_PLANNING_PACK_ID), true)
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 })

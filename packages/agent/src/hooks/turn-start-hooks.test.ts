@@ -7,7 +7,15 @@ import {
   githubLinkSteeringHook,
   commitSteeringHook,
   todoPinHook,
+  forcedPlanningHook,
 } from './turn-start-hooks.ts'
+import {
+  FORCED_PLANNING_PACK_ID,
+  FORCED_TODO_PLAN_PROMPT,
+  FORCED_WRITTEN_PLAN_PROMPT,
+  CANONICAL_THRESHOLD_SETTING,
+  PLAN_TOOL_NAME,
+} from '../forced-planning.ts'
 import { TODO_STEERING_PROMPT, formatTodosForPrompt } from '../todo-steering.ts'
 import { buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
 import { buildCommitSteeringPrompt } from '../commit-steering.ts'
@@ -118,6 +126,61 @@ describe('todo-pin', () => {
 
   it('abstains when there are no prior todos', async () => {
     assert.equal(await todoPinHook.run({ userText: plainPrompt, priorTodos: [] }, {}), undefined)
+  })
+})
+
+describe('forced-planning', () => {
+  const weakModelTurn = {
+    userText: multiStepPrompt,
+    priorTodos: [],
+    model: 'claude-haiku-4-5',
+    toolNames: [PLAN_TOOL_NAME, 'read_file'],
+  }
+
+  it('forces the todo plan for a below-threshold model', async () => {
+    assert.deepEqual(await forcedPlanningHook.run(weakModelTurn, {}), {
+      injectContext: FORCED_TODO_PLAN_PROMPT,
+    })
+  })
+
+  it('abstains for a frontier model and for a turn with no model id', async () => {
+    assert.equal(
+      await forcedPlanningHook.run({ ...weakModelTurn, model: 'claude-fable-5' }, {}),
+      undefined,
+    )
+    assert.equal(
+      await forcedPlanningHook.run({ userText: multiStepPrompt, priorTodos: [] }, {}),
+      undefined,
+    )
+  })
+
+  it('steers to a written plan when update_todos is not in the turn’s tool list', async () => {
+    assert.deepEqual(await forcedPlanningHook.run({ ...weakModelTurn, toolNames: [] }, {}), {
+      injectContext: FORCED_WRITTEN_PLAN_PROMPT,
+    })
+    // No tool list at all is treated the same way — never name a tool the turn
+    // may not be offering.
+    const { toolNames: _dropped, ...noToolList } = weakModelTurn
+    assert.deepEqual(await forcedPlanningHook.run(noToolList, {}), {
+      injectContext: FORCED_WRITTEN_PLAN_PROMPT,
+    })
+  })
+
+  it('reads its threshold from the pack-scoped setting via context', async () => {
+    const reads: string[] = []
+    const outcome = await forcedPlanningHook.run(
+      { ...weakModelTurn, model: 'claude-sonnet-5' },
+      {
+        resolvePackSetting: (packId, key) => {
+          assert.equal(packId, FORCED_PLANNING_PACK_ID)
+          reads.push(key)
+          // Sonnet 5 measures ~53; a 60 threshold pulls it under.
+          return key === CANONICAL_THRESHOLD_SETTING ? 60 : undefined
+        },
+      },
+    )
+    assert.deepEqual(outcome, { injectContext: FORCED_TODO_PLAN_PROMPT })
+    assert.ok(reads.includes(CANONICAL_THRESHOLD_SETTING))
   })
 })
 

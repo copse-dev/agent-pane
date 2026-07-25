@@ -37,6 +37,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { FORCED_PLANNING_PACK_ID } from '@copse/agent/packs/forced-planning-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -63,6 +64,9 @@ const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEn
 
 /** One-time bridge from the retired `piiRedactionEnabled` standalone setting. */
 const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
+
+/** One-time seed marking the forced-planning pack opt-in (ships disabled). */
+const FORCED_PLANNING_DEFAULT_OFF_KEY = 'packMigration.forcedPlanningDefaultOff'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -238,6 +242,26 @@ function migratePiiRedactionEnablement(): void {
   storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
 }
 
+/**
+ * Ship the forced-planning pack **disabled**. Unlike the migrations above there
+ * is no retired standalone setting to read: the pack is new, and the registry
+ * enables every registered pack by default (VS Code's built-in-extension
+ * model). Since the pack rewrites the system prompt of every turn that runs on a
+ * below-threshold model, that default is wrong for it — so the first boot after
+ * it lands seeds the disable list once, and never again. A user who later
+ * enables it from Settings keeps that choice across relaunches because the
+ * migration key is already set.
+ */
+function seedForcedPlanningDefaultOff(): void {
+  if (storageGet(FORCED_PLANNING_DEFAULT_OFF_KEY) === true) return
+
+  const disabled = readDisabledIds()
+  disabled.add(FORCED_PLANNING_PACK_ID)
+
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(FORCED_PLANNING_DEFAULT_OFF_KEY, true)
+}
+
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
 function readPackSettings(packId: string): Record<string, unknown> {
   const raw = storageGet(packSettingsKey(packId))
@@ -335,6 +359,7 @@ export function getPackService(): PackService {
   migrateOkfMemoriesEnablement()
   migrateCiInvestigatorEnablement()
   migratePiiRedactionEnablement()
+  seedForcedPlanningDefaultOff()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

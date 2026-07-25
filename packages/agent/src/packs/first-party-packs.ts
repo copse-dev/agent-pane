@@ -45,6 +45,13 @@
 //    drops all three from the model tool list (`registry-bootstrap.ts` reads the
 //    pack registry, ANDing `gh` availability into the register direction) and
 //    re-points the "Investigate CI failure" follow-up.
+//  - `forcedPlanningPack` — the first-party pack for the experimental
+//    forced-planning feature. Contributes one turn-start hook that thresholds on
+//    the *measured capability of the model running the turn* and injects a
+//    mandatory plan-first block below it; the pack toggle atomically drops the
+//    hook from the assembly pipeline (`createHookRegistry` folds pack hooks in),
+//    restoring a byte-identical system prompt. Ships disabled — the host applies
+//    that default once in `pack-service.ts`.
 //  - `piiRedactionPack` — the first-party pack for the experimental client-side
 //    PII redaction feature. Declares the `reveal_pii` tool + the redaction
 //    steering prompt block; the pack toggle atomically drops the tool from the
@@ -62,13 +69,14 @@ import { advisorStrategyPack } from './advisor-strategy-pack.ts'
 import { okfMemoriesPack } from './okf-memories-pack.ts'
 import { ciInvestigatorPack } from './ci-investigator-pack.ts'
 import { piiRedactionPack } from './pii-redaction-pack.ts'
+import { forcedPlanningPack } from './forced-planning-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
  * enumeration order (P3): the pilot todos pack, then P5's two extracted
  * feature packs (post-turn review + model comparison), then long-horizon
  * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
- * the CI investigator, then PII redaction.
+ * the CI investigator, then PII redaction, then forced planning.
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -80,6 +88,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   okfMemoriesPack,
   ciInvestigatorPack,
   piiRedactionPack,
+  forcedPlanningPack,
 ]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */
