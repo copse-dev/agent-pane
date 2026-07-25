@@ -1288,11 +1288,6 @@
       "count": 2
     }
   },
-  "src/renderer/views/intellect-frontier-panel.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 6
-    }
-  },
   "src/renderer/views/intellect-frontier-panel.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 2

@@ -13,7 +13,24 @@ import {
   renderFrontierSvg,
 } from './intellect-frontier-panel.ts'
 import { frontierForKnownModels, type FrontierPoint } from '@copse/llm/pareto-frontier.ts'
+import type { ExtraProvider, ExtraProviderModel } from '@copse/llm/extra-providers.ts'
 import type { PlanUsageSnapshot } from '@copse/plan-usage'
+
+function testExtraProvider(models: readonly ExtraProviderModel[]): ExtraProvider {
+  return {
+    id: 'huggingface',
+    label: 'Hugging Face',
+    prefix: 'huggingface:',
+    baseUrl: 'https://example.invalid/v1',
+    builtin: false,
+    local: false,
+    keyLabel: 'Hugging Face token',
+    keyPlaceholder: 'hf_…',
+    keyHint: 'test',
+    fallbackContextWindow: 128_000,
+    models,
+  }
+}
 
 describe('renderFrontierSvg', () => {
   it('plots every scored model with a derivation tooltip and one frontier line', () => {
@@ -71,13 +88,20 @@ describe('renderFrontierSvg', () => {
     assert.ok(poly)
     const pointsAttr = poly.getAttribute('points')
     assert.ok(pointsAttr)
-    const linePts = pointsAttr.split(' ').map((pair) => pair.split(',').map(Number))
+    const linePts = pointsAttr.split(' ').map((pair) => {
+      const [xRaw, yRaw] = pair.split(',')
+      const x = Number(xRaw)
+      const y = Number(yRaw)
+      assert.ok(Number.isFinite(x) && Number.isFinite(y), `bad polyline point: ${pair}`)
+      return { x, y }
+    })
     const lineYAt = (px: number): number | null => {
       for (let i = 0; i + 1 < linePts.length; i++) {
-        const [ax, ay] = linePts[i] as [number, number]
-        const [bx, by] = linePts[i + 1] as [number, number]
-        if (px < Math.min(ax, bx) || px > Math.max(ax, bx)) continue
-        return ay + ((by - ay) * (px - ax)) / (bx - ax || 1)
+        const a = linePts[i]
+        const b = linePts[i + 1]
+        assert.ok(a && b)
+        if (px < Math.min(a.x, b.x) || px > Math.max(a.x, b.x)) continue
+        return a.y + ((b.y - a.y) * (px - a.x)) / (b.x - a.x || 1)
       }
       return null
     }
@@ -143,19 +167,9 @@ describe('local candidates and the composite strip', () => {
 })
 
 describe('extraProviderFrontierCandidates', () => {
-  type Provider = Parameters<typeof extraProviderFrontierCandidates>[0][number]
-  const provider = (models: Array<Record<string, unknown>>): Provider =>
-    ({
-      id: 'huggingface',
-      label: 'Hugging Face',
-      prefix: 'huggingface:',
-      baseUrl: 'https://example.invalid/v1',
-      models,
-    }) as unknown as Provider
-
   it('joins only models with both stored pricing and a resolvable measurement', () => {
     const candidates = extraProviderFrontierCandidates([
-      provider([
+      testExtraProvider([
         // Priced + measured (direct v4.1 reading) → joins at its real price.
         { id: 'MiniMaxAI/MiniMax-M3', inputPricePerMTok: 1, outputPricePerMTok: 4 },
         // Measured but unpriced → hint-only, never plotted.
@@ -269,16 +283,11 @@ describe('createIntellectFrontierPanel', () => {
     // provider model to exercise the unscored gutter.
     const panel = createIntellectFrontierPanel(
       async () => [],
-      async () =>
-        [
-          {
-            id: 'huggingface',
-            label: 'Hugging Face',
-            prefix: 'huggingface:',
-            baseUrl: 'x',
-            models: [{ id: 'vendor/unscored-priced', inputPricePerMTok: 1, outputPricePerMTok: 4 }],
-          },
-        ] as never,
+      async () => [
+        testExtraProvider([
+          { id: 'vendor/unscored-priced', inputPricePerMTok: 1, outputPricePerMTok: 4 },
+        ]),
+      ],
     )
     await panel.refresh()
     const svg = panel.root.querySelector('.frontier-chart svg')
@@ -306,16 +315,7 @@ describe('createIntellectFrontierPanel', () => {
     }))
     const panel = createIntellectFrontierPanel(
       async () => [],
-      async () =>
-        [
-          {
-            id: 'huggingface',
-            label: 'Hugging Face',
-            prefix: 'huggingface:',
-            baseUrl: 'x',
-            models: manyPriced,
-          },
-        ] as never,
+      async () => [testExtraProvider(manyPriced)],
     )
     await panel.refresh()
     const svg = panel.root.querySelector('.frontier-chart svg')
@@ -761,15 +761,7 @@ describe('positionFrontierTooltip', () => {
   it('flips to the left of the cursor near the right edge', () => {
     const container = document.createElement('div')
     Object.defineProperty(container, 'getBoundingClientRect', {
-      value: () =>
-        ({
-          left: 0,
-          top: 0,
-          width: 400,
-          height: 300,
-          right: 400,
-          bottom: 300,
-        }) as DOMRect,
+      value: (): DOMRect => new DOMRect(0, 0, 400, 300),
     })
     document.body.append(container)
 
@@ -787,15 +779,7 @@ describe('positionFrontierTooltip', () => {
   it('positions via createTooltipLayer without squeezing width', () => {
     const container = document.createElement('div')
     Object.defineProperty(container, 'getBoundingClientRect', {
-      value: () =>
-        ({
-          left: 0,
-          top: 0,
-          width: 400,
-          height: 300,
-          right: 400,
-          bottom: 300,
-        }) as DOMRect,
+      value: (): DOMRect => new DOMRect(0, 0, 400, 300),
     })
     document.body.append(container)
 
@@ -808,7 +792,7 @@ describe('positionFrontierTooltip', () => {
     Object.defineProperty(tipEl, 'offsetWidth', { value: 280 })
     Object.defineProperty(tipEl, 'offsetHeight', { value: 64 })
 
-    tooltip.show(content, { clientX: 390, clientY: 120 } as MouseEvent)
+    tooltip.show(content, new MouseEvent('mouseenter', { clientX: 390, clientY: 120 }))
     assert.equal(tipEl.hidden, false)
     assert.equal(tipEl.style.left, '98px')
 
