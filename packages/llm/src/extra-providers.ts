@@ -510,7 +510,10 @@ function normalizeModels(models: unknown): ExtraProviderModel[] {
         ? { outputPricePerMTok: outputPrice }
         : {}),
     }
-    if (typeof entry.inputPricePerMTok === 'number' && typeof entry.outputPricePerMTok === 'number') {
+    if (
+      typeof entry.inputPricePerMTok === 'number' &&
+      typeof entry.outputPricePerMTok === 'number'
+    ) {
       entry.blendedCostPerMTok = blendedRate(entry.inputPricePerMTok, entry.outputPricePerMTok)
     }
     out.push(entry)

@@ -165,13 +165,16 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
     })
     const blended = el('span', { class: 'provider-model-blended' })
     const updateBlended = (): void => {
-      const inStr = (inPrice as HTMLInputElement).value.trim()
-      const outStr = (outPrice as HTMLInputElement).value.trim()
+      const inStr = inPrice.value.trim()
+      const outStr = outPrice.value.trim()
       const inNum = Number(inStr)
       const outNum = Number(outStr)
       if (inStr && outStr && Number.isFinite(inNum) && Number.isFinite(outNum)) {
         blended.textContent = blendedRate(inNum, outNum).toFixed(2)
-      } else if (typeof model?.inputPricePerMTok === 'number' && typeof model?.outputPricePerMTok === 'number') {
+      } else if (
+        typeof model?.inputPricePerMTok === 'number' &&
+        typeof model?.outputPricePerMTok === 'number'
+      ) {
         blended.textContent = String(blendedRate(model.inputPricePerMTok, model.outputPricePerMTok))
       } else if (model?.blendedCostPerMTok != null) {
         blended.textContent = String(model.blendedCostPerMTok)
@@ -250,7 +253,10 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
           ? { outputPricePerMTok: outNum }
           : {}),
       }
-      if (typeof entry.inputPricePerMTok === 'number' && typeof entry.outputPricePerMTok === 'number') {
+      if (
+        typeof entry.inputPricePerMTok === 'number' &&
+        typeof entry.outputPricePerMTok === 'number'
+      ) {
         entry.blendedCostPerMTok = blendedRate(entry.inputPricePerMTok, entry.outputPricePerMTok)
       }
       out.push(entry)
