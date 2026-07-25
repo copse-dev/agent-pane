@@ -39,6 +39,28 @@ describe('formatTimestamp', () => {
   it('carries a rounded millisecond into the next second', () => {
     assert.equal(formatTimestamp(59.9999), '00:01:00.000')
   })
+
+  it('drops the components a short recording can never reach', () => {
+    // The manifest repeats this on every frame line, so hours and minutes a
+    // 10-second clip cannot reach are pure tokens.
+    assert.equal(formatTimestamp(3.386, 10), '3.386s')
+    assert.equal(formatTimestamp(83.45, 120), '01:23.450')
+    assert.equal(formatTimestamp(83.45, 7200), '00:01:23.450')
+  })
+
+  it('never shortens below what the timestamp itself needs', () => {
+    // A duration that under-reports the position must not truncate it.
+    assert.equal(formatTimestamp(83.45, 10), '01:23.450')
+  })
+
+  it('emits forms that parseTimePosition accepts', () => {
+    // The model hands these straight back as start/end, so a format the parser
+    // rejects would make the tool's own output unusable as its own input.
+    for (const duration of [10, 120, 7200]) {
+      const rendered = formatTimestamp(83.45, duration)
+      assert.equal(parseTimePosition(rendered), 83.45, `${rendered} did not round-trip`)
+    }
+  })
 })
 
 describe('frameFileName', () => {
@@ -46,12 +68,22 @@ describe('frameFileName', () => {
     assert.equal(frameFileName(83.45, 'jpg'), 'frame-00-01-23.450.jpg')
     assert.ok(!frameFileName(83.45, 'jpg').includes(':'))
   })
+
+  it('scales the name to the recording it came from', () => {
+    assert.equal(frameFileName(3.386, 'jpg', 57), 'frame-3.386s.jpg')
+    assert.equal(frameFileName(83.45, 'jpg', 120), 'frame-01-23.450.jpg')
+  })
 })
 
 describe('parseTimePosition', () => {
   it('accepts plain seconds', () => {
     assert.equal(parseTimePosition(12), 12)
     assert.equal(parseTimePosition('12.5'), 12.5)
+  })
+
+  it('accepts a trailing s, the form frame names and models both use', () => {
+    assert.equal(parseTimePosition('12.5s'), 12.5)
+    assert.equal(parseTimePosition('3s'), 3)
   })
 
   it('accepts mm:ss and hh:mm:ss', () => {

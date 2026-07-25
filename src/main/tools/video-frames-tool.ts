@@ -94,13 +94,13 @@ function describeRole(frame: SelectedFrame): string {
     case 'opening':
       return ''
     case 'before':
-      return '  (the state just before the next change)'
+      return '  (before)'
     case 'after':
-      return '  (the state just after the change above — compare it with the frame before)'
+      return '  (after)'
     case 'peak':
-      return `  (${formatChange(frame.change)} of the frame changed — the largest change in this range, though under the bar for a distinct frame)`
+      return `  (${formatChange(frame.change)} changed — largest in range, under the bar)`
     default:
-      return `  (${formatChange(frame.change)} of the frame changed)`
+      return `  (${formatChange(frame.change)} changed)`
   }
 }
 
@@ -124,13 +124,13 @@ function resolveWindow(
   const startSeconds = start === undefined ? 0 : parseTimePosition(start)
   if (startSeconds === null) {
     return {
-      error: `Could not read start time ${JSON.stringify(start)}. Use seconds (12.5) or mm:ss / hh:mm:ss.`,
+      error: `Could not read start time ${JSON.stringify(start)}. Use seconds (12.5 or 12.5s) or mm:ss / hh:mm:ss.`,
     }
   }
   const endSeconds = end === undefined ? null : parseTimePosition(end)
   if (end !== undefined && endSeconds === null) {
     return {
-      error: `Could not read end time ${JSON.stringify(end)}. Use seconds (12.5) or mm:ss / hh:mm:ss.`,
+      error: `Could not read end time ${JSON.stringify(end)}. Use seconds (12.5 or 12.5s) or mm:ss / hh:mm:ss.`,
     }
   }
   if (endSeconds !== null && endSeconds <= startSeconds) {
@@ -144,7 +144,7 @@ function resolveWindow(
 export const videoFramesTool = defineTool({
   name: 'video_frames',
   description:
-    'Read a video (typically a screen recording) as a small set of still images. Samples the video, finds the moments where the screen changed, and returns each change bracketed by the samples either side of it — so a brief change reads as before → change → after rather than as one ambiguous screenshot. A recording of a mostly-static screen costs a few images rather than hundreds; a completely still one returns a single frame. Audio is ignored. With no `start`/`end` it covers the whole video; pass a range to look closely at one moment. Each image is named for its position in the video (`frame-00-01-23.450.jpg` = 00:01:23.450, always absolute, never relative to the range you asked for), so you can quote a time back to the user or re-request that moment with a tighter range. Raise `sensitivity` to catch smaller changes, lower it for fewer.',
+    'Read a video (typically a screen recording) as a small set of still images. Samples the video, finds the moments where the screen changed, and returns each change bracketed by the samples either side of it — so a brief change reads as before → change → after rather than as one ambiguous screenshot. A recording of a mostly-static screen costs a few images rather than hundreds; a completely still one returns a single frame. Audio is ignored. With no `start`/`end` it covers the whole video; pass a range to look closely at one moment. Each image is named for its position in the video — always absolute, never relative to the range you asked for — so you can quote a time back to the user or re-request that moment with a tighter range; the result states the naming it used. Raise `sensitivity` to catch smaller changes, lower it for fewer.',
   parameters: z.object({
     path: z
       .string()
@@ -155,7 +155,7 @@ export const videoFramesTool = defineTool({
       .string()
       .optional()
       .describe(
-        'Start of the window to read, as seconds ("12.5") or "mm:ss" / "hh:mm:ss". Defaults to the start of the video.',
+        'Start of the window to read, as seconds ("12.5" or "12.5s") or "mm:ss" / "hh:mm:ss" — any form a frame name uses. Defaults to the start of the video.',
       ),
     end: z
       .string()
@@ -251,7 +251,7 @@ export const videoFramesTool = defineTool({
     if (cancelled()) return 'Cancelled after decoding the video.'
 
     if (decoded.frames.length === 0) {
-      return `No frames could be read from ${path} between ${formatTimestamp(window.start)} and ${formatTimestamp(window.end ?? decoded.durationSeconds)}.`
+      return `No frames could be read from ${path} between ${formatTimestamp(window.start, decoded.durationSeconds)} and ${formatTimestamp(window.end ?? decoded.durationSeconds, decoded.durationSeconds)}.`
     }
 
     const candidates: FrameCandidate[] = decoded.frames.map((f) => ({
@@ -280,7 +280,7 @@ export const videoFramesTool = defineTool({
     for (const frame of selected) {
       const dataUrl = encodedByTime.get(frame.time)
       if (!dataUrl) continue
-      const name = frameFileName(frame.time, FRAME_IMAGE_EXTENSION)
+      const name = frameFileName(frame.time, FRAME_IMAGE_EXTENSION, decoded.durationSeconds)
       const size = dataUrlBytes(dataUrl)
       if (totalBytes + size > MAX_TOTAL_IMAGE_BYTES && images.length > 0) {
         droppedForSize += 1
@@ -288,18 +288,24 @@ export const videoFramesTool = defineTool({
       }
       totalBytes += size
       images.push({ dataUrl, name })
-      lines.push(`  ${name}  ${formatTimestamp(frame.time)}${describeRole(frame)}`)
+      // The name already carries the timestamp, so printing it again in a
+      // second column spends a few tokens per line restating the number the
+      // model just read. The header states the mapping once instead.
+      lines.push(`  ${name}${describeRole(frame)}`)
     }
 
     if (images.length === 0) {
       return `No frames could be encoded from ${path}. The file may be corrupt or use a codec this platform cannot decode.`
     }
 
+    // Every timestamp in the manifest is scaled to the recording, so a clip
+    // under a minute never prints the hours and minutes it cannot reach.
+    const at = (seconds: number): string => formatTimestamp(seconds, decoded.durationSeconds)
     const changes = selected.filter((f) => f.role === 'change').length
     const windowEnd = window.end ?? decoded.durationSeconds
     const header = [
-      `${path} — ${String(decoded.sourceWidth)}x${String(decoded.sourceHeight)}, ${formatTimestamp(decoded.durationSeconds)} long.`,
-      `Sampled ${formatTimestamp(window.start)}–${formatTimestamp(Math.min(windowEnd, decoded.durationSeconds))} every ${formatInterval(decoded.sampleIntervalSeconds)} (${String(decoded.frames.length)} samples); ${String(changes)} change${changes === 1 ? '' : 's'} found, returned as ${String(images.length)} frame${images.length === 1 ? '' : 's'} at ${String(decoded.frameWidth)}x${String(decoded.frameHeight)}.`,
+      `${path} — ${String(decoded.sourceWidth)}x${String(decoded.sourceHeight)}, ${at(decoded.durationSeconds)} long.`,
+      `Sampled ${at(window.start)}–${at(Math.min(windowEnd, decoded.durationSeconds))} every ${formatInterval(decoded.sampleIntervalSeconds)} (${String(decoded.frames.length)} samples); ${String(changes)} change${changes === 1 ? '' : 's'} found, returned as ${String(images.length)} frame${images.length === 1 ? '' : 's'} at ${String(decoded.frameWidth)}x${String(decoded.frameHeight)}.`,
       // The blind spot is the single most useful thing to say here: without it a
       // model reads "nothing changed" as "nothing happened", when a flicker
       // shorter than the sampling gap simply landed between two samples.
@@ -319,7 +325,7 @@ export const videoFramesTool = defineTool({
       // the size — is what stops "no distinct frames" being read as "nothing
       // happened", and it hands the model its own next move.
       header.push(
-        `Nothing cleared the bar for a distinct frame. The two frames below bracket the largest change in this range (${formatChange(peak?.change ?? 0)} of the frame at ${formatTimestamp(peak?.time ?? window.start)}); if that is not what you are looking for, re-run that moment with sensitivity:"high" and a narrow start/end.`,
+        `Nothing cleared the bar for a distinct frame. The two frames below bracket the largest change in this range (${formatChange(peak?.change ?? 0)} of the frame at ${at(peak?.time ?? window.start)}); if that is not what you are looking for, re-run that moment with sensitivity:"high" and a narrow start/end.`,
       )
     } else if (changes === 0) {
       header.push('Nothing in this range changed at all, so one frame covers it.')
@@ -334,7 +340,14 @@ export const videoFramesTool = defineTool({
         `${String(droppedForSize)} further frame${droppedForSize === 1 ? '' : 's'} were dropped to stay under the per-call image budget; request a narrower range or a smaller max_width for those.`,
       )
     }
-    header.push('Frames follow as images, in order, named by timestamp:')
+    // Stating the mapping once, worked through the first frame's real name, is
+    // what lets each line below carry the timestamp only in its filename.
+    const firstFrame = selected[0]
+    header.push(
+      firstFrame
+        ? `Frames follow as images, in order. Each is named for its position in the video — ${frameFileName(firstFrame.time, FRAME_IMAGE_EXTENSION, decoded.durationSeconds)} is ${at(firstFrame.time)}:`
+        : 'Frames follow as images, in order, each named for its position in the video:',
+    )
 
     return { result: [...header, ...lines].join('\n'), images }
   },

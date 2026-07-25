@@ -77,7 +77,7 @@ describe('video_frames tool', () => {
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.ok(result.images)
     assert.equal(result.images.length, 1)
-    assert.equal(result.images.at(0)?.name, 'frame-00-00-00.000.jpg')
+    assert.equal(result.images.at(0)?.name, 'frame-0.000s.jpg')
     assert.match(result.result, /0 changes found, returned as 1 frame/)
     assert.match(result.result, /Nothing in this range changed at all/)
   })
@@ -93,10 +93,10 @@ describe('video_frames tool', () => {
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.deepEqual(
       result.images?.map((i) => i.name),
-      ['frame-00-00-00.000.jpg', 'frame-00-00-03.000.jpg'],
+      ['frame-0.000s.jpg', 'frame-3.000s.jpg'],
     )
     assert.match(result.result, /Nothing cleared the bar for a distinct frame/)
-    assert.match(result.result, /0\.7% of the frame at 00:00:03\.000/)
+    assert.match(result.result, /0\.7% of the frame at 3\.000s/)
     assert.match(result.result, /sensitivity:"high"/)
   })
 
@@ -116,13 +116,13 @@ describe('video_frames tool', () => {
     )
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.ok((result.images?.length ?? 0) >= 3, 'a flicker needs before/change/after')
-    assert.match(result.result, /frame-00-00-01\.000\.jpg.*just before the next change/)
+    assert.match(result.result, /frame-1\.000s\.jpg {2}\(before\)/)
     // Content appearing and content vanishing are two changes, not one, so the
     // flicker comes back as before → appeared → gone → after.
     assert.match(result.result, /2 changes found/)
-    assert.match(result.result, /frame-00-00-02\.000\.jpg.*30% of the frame changed/)
-    assert.match(result.result, /frame-00-00-03\.000\.jpg.*30% of the frame changed/)
-    assert.match(result.result, /frame-00-00-04\.000\.jpg.*just after the change above/)
+    assert.match(result.result, /frame-2\.000s\.jpg {2}\(30% changed\)/)
+    assert.match(result.result, /frame-3\.000s\.jpg {2}\(30% changed\)/)
+    assert.match(result.result, /frame-4\.000s\.jpg {2}\(after\)/)
     assert.match(result.result, /before → change → after/)
   })
 
@@ -131,10 +131,15 @@ describe('video_frames tool', () => {
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.deepEqual(
       result.images?.map((i) => i.name),
-      ['frame-00-00-00.000.jpg', 'frame-00-00-04.500.jpg'],
+      ['frame-0.000s.jpg', 'frame-4.500s.jpg'],
     )
-    // The manifest repeats the timestamp in readable form next to the filename.
-    assert.match(result.result, /frame-00-00-04\.500\.jpg {2}00:00:04\.500/)
+    // The name is the only place the timestamp appears, so the header has to
+    // state the mapping — worked through a real name, not an invented example.
+    assert.match(
+      result.result,
+      /named for its position in the video — frame-0\.000s\.jpg is 0\.000s:/,
+    )
+    assert.ok(!result.result.includes('00:00:04.500'), 'no second timestamp column to pay for')
   })
 
   it('covers the whole video when no range is given', async () => {
@@ -270,6 +275,6 @@ describe('video_frames tool', () => {
     const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
     assert.match(result.result, /2560x1440/)
     assert.match(result.result, /1280x720/)
-    assert.match(result.result, /00:02:05\.500 long/)
+    assert.match(result.result, /02:05\.500 long/)
   })
 })

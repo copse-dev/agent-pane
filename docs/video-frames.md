@@ -61,31 +61,54 @@ video_frames({ path: "…/blobs/media/2f8c…-Screen Recording.mov" })
 ```
 
 ```
-…/Screen Recording.mov — 2560x1440, 00:02:14.300 long.
-Sampled 00:00:00.000–00:02:14.300 every 1.1s (120 samples); 2 changes found, returned as 6 frames at 1280x720.
+…/Screen Recording.mov — 2560x1440, 02:14.300 long.
+Sampled 0.000s–02:14.300 every 1.1s (120 samples); 2 changes found, returned as 6 frames at 1280x720.
 Anything lasting less than 1.1s can fall between samples and not appear at all. …
 Each change is bracketed by the samples either side of it, so a brief one reads
 as before → change → after. Describe what moved between them, not what each
 frame contains.
-Frames follow as images, in order, named by timestamp:
-  frame-00-00-00.000.jpg  00:00:00.000
-  frame-00-00-11.400.jpg  00:00:11.400  (the state just before the next change)
-  frame-00-00-12.500.jpg  00:00:12.500  (34% of the frame changed)
-  frame-00-00-13.600.jpg  00:00:13.600  (the state just after the change above — compare it with the frame before)
+Frames follow as images, in order. Each is named for its position in the video —
+frame-0.000s.jpg is 0.000s:
+  frame-0.000s.jpg
+  frame-11.400s.jpg  (before)
+  frame-12.500s.jpg  (34% changed)
+  frame-13.600s.jpg  (after)
   …
 ```
 
-Each image is named for its position **in the video** (`frame-00-01-23.450.jpg`
-= `00:01:23.450`) — always absolute, never an offset into the requested range —
-so the model can quote a time back to the user and re-request that moment with a
-tighter `start`/`end`.
+Each image is named for its position **in the video** — always absolute, never
+an offset into the requested range — so the model can quote a time back to the
+user and re-request that moment with a tighter `start`/`end`.
+
+### The manifest is priced per line
+
+Every frame line is paid for on every call, so redundancy there is the one place
+in this design worth being stingy:
+
+- **Timestamps scale to the recording.** A 57-second clip has no hours and no
+  minutes, so `frame-00-00-03.386.jpg` spends four tokens saying "not hours, not
+  minutes". Names become `frame-3.386s.jpg` under a minute, `frame-01-23.450.jpg`
+  under an hour, and only then the full `frame-00-01-23.450.jpg`. Every form
+  round-trips through `parseTimePosition`, so the model can hand any of them
+  straight back as `start`/`end` — including the bare `3.4s` it would reach for
+  unprompted.
+- **The timestamp appears once, in the name.** A second column restating it cost
+  a few tokens per line to repeat the number the model had just read. The header
+  states the mapping instead, worked through the first frame's real name rather
+  than an invented example.
+- **Role labels are one word.** `(before)` and `(after)` say everything
+  `(the state just before the next change)` did; the sentence explaining how to
+  read the sequence is in the header, where it is paid for once.
+
+Together that is roughly half the tokens per frame line, for the same
+information.
 
 Arguments:
 
 | Argument      | Default     | Notes                                                               |
 | ------------- | ----------- | ------------------------------------------------------------------- |
 | `path`        | required    | Workspace-relative, or the absolute path given for an attachment    |
-| `start`/`end` | whole video | Seconds (`12.5`) or `mm:ss` / `hh:mm:ss`                            |
+| `start`/`end` | whole video | Seconds (`12.5`, `12.5s`) or `mm:ss` / `hh:mm:ss`                   |
 | `max_frames`  | 10 (max 60) | Images, not changes — a change costs up to 3 with its context       |
 | `sensitivity` | `normal`    | `high` catches a changed line of text; `low` only major transitions |
 | `interval`    | derived     | Seconds between samples; set only to go finer than the window gives |
@@ -181,9 +204,9 @@ brief event reads as before → change → after, and the manifest labels each f
 with its role so the sequence is self-describing:
 
 ```
-  frame-00-00-01.000.jpg  00:00:01.000  (the state just before the next change)
-  frame-00-00-02.000.jpg  00:00:02.000  (30% of the frame changed)
-  frame-00-00-03.000.jpg  00:00:03.000  (the state just after the change above — …)
+  frame-1.000s.jpg  (before)
+  frame-2.000s.jpg  (30% changed)
+  frame-3.000s.jpg  (after)
 ```
 
 Two consequences worth knowing:
@@ -216,7 +239,7 @@ a pair the model can read — and says plainly that it was under the bar:
 
 ```
 Nothing cleared the bar for a distinct frame. The two frames below bracket the
-largest change in this range (0.9% of the frame at 00:00:03.100); if that is not
+largest change in this range (0.9% of the frame at 3.100s); if that is not
 what you are looking for, re-run that moment with sensitivity:"high" and a
 narrow start/end.
 ```
