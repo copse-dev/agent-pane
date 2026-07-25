@@ -26,7 +26,50 @@ import { notifyRefreshContextEstimate } from '../context-estimate-notify.ts'
 export const SKILL_READ_MAX_BYTES = READ_FILE_LIMITS_CEILING.maxChars * 4
 
 const SKILL_CONTAINER_DIRS = new Set(['.cursor', '.agents', '.claude'])
-const SKIP_DIRS = new Set(['node_modules', '.git'])
+
+/**
+ * Directories the project skill scan never descends into.
+ *
+ * The scan looks for `<.cursor|.agents|.claude>/skills` anywhere under the
+ * workspace, so with only `node_modules`/`.git` excluded it walked build output,
+ * vendored trees and virtualenvs too — thousands of directories that cannot
+ * contain a hand-authored skill. Worse, Copse's own `dist/` holds the bundled
+ * Cursor skills, so a checkout of this repo re-scanned them as "project" skills
+ * and logged duplicate-skill warnings against its own build artifacts.
+ *
+ * Everything here is either generated, vendored, or a package/tool cache. A skill
+ * authored inside one would not survive a clean build anyway.
+ */
+const SKIP_DIRS = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'dist-test',
+  'out',
+  'build',
+  'target',
+  'vendor',
+  'coverage',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  '.turbo',
+  '.cache',
+  '.venv',
+  'venv',
+  '__pycache__',
+])
+
+/**
+ * How deep below the workspace root the project skill scan descends.
+ *
+ * Skill containers live near a package root by convention — `.cursor/skills` at
+ * the workspace root, or one per package in a monorepo (`packages/x/.cursor/…`).
+ * Six levels covers both with room to spare, and bounds the walk on a workspace
+ * whose tree is unexpectedly deep (a nested checkout, a huge data directory)
+ * rather than letting boot pay for the full traversal.
+ */
+const MAX_SKILL_ROOT_DEPTH = 6
 
 let cachedSkills: SkillMetadata[] = []
 let refreshPromise: Promise<void> | null = null
@@ -49,7 +92,8 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-async function walkForSkillRoots(dir: string, out: Set<string>): Promise<void> {
+async function walkForSkillRoots(dir: string, out: Set<string>, depth = 0): Promise<void> {
+  if (depth >= MAX_SKILL_ROOT_DEPTH) return
   let entries
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true })
@@ -62,9 +106,14 @@ async function walkForSkillRoots(dir: string, out: Set<string>): Promise<void> {
     const full = join(dir, entry.name)
     if (entry.name === 'skills') {
       const parent = basename(dirname(full))
-      if (SKILL_CONTAINER_DIRS.has(parent)) out.add(full)
+      // A container's own `skills/` dir is the root itself — its subtree holds
+      // the skills, not more containers, so there is nothing below to look for.
+      if (SKILL_CONTAINER_DIRS.has(parent)) {
+        out.add(full)
+        continue
+      }
     }
-    await walkForSkillRoots(full, out)
+    await walkForSkillRoots(full, out, depth + 1)
   }
 }
 

@@ -260,4 +260,52 @@ description: Bundled skill for tests
     await writeFile(join(skillRoot, 'big.bin'), 'x'.repeat(SKILL_READ_MAX_BYTES + 1), 'utf8')
     await assert.rejects(() => readSkill('demo-skill', 'big.bin'), /too large/)
   })
+
+  /** Write a discoverable skill at `<container>/skills/<name>/SKILL.md` under `dir`. */
+  async function seedSkillAt(dir: string, name: string): Promise<void> {
+    const root = join(dir, '.cursor', 'skills', name)
+    await mkdir(root, { recursive: true })
+    await writeFile(
+      join(root, 'SKILL.md'),
+      `---\nname: ${name}\ndescription: Seeded for the scan-scope tests\n---\n\n# ${name}`,
+      'utf-8',
+    )
+  }
+
+  describe('project scan scope', () => {
+    // Copse's own dist/ ships the bundled Cursor skills, so an unscoped walk
+    // rediscovered them as "project" skills and warned about duplicates against
+    // its own build output. Generated and vendored trees cannot hold a
+    // hand-authored skill that would survive a clean build.
+    it('does not descend into build output or vendored trees', async () => {
+      const skipped = ['dist', 'out', 'build', 'vendor', 'coverage', '.venv']
+      for (const dir of skipped) {
+        await seedSkillAt(join(tempRoot, dir), `skill-in-${dir.replace(/^\./, '')}`)
+      }
+      await refreshSkillsRegistry()
+      // Asserted by name rather than against the whole list: `userSkillRoots()`
+      // reads the real `~/.cursor|.agents|.claude/skills`, so the developer's own
+      // skills legitimately show up here too.
+      const found = new Set(listSkills().map((s) => s.name))
+      for (const dir of skipped) {
+        assert.ok(!found.has(`skill-in-${dir.replace(/^\./, '')}`), `should skip ${dir}/`)
+      }
+      assert.ok(found.has('demo-skill'), 'workspace-root skill still discovered')
+    })
+
+    it('still finds a monorepo package skill below the root', async () => {
+      await seedSkillAt(join(tempRoot, 'packages', 'web'), 'package-skill')
+      await refreshSkillsRegistry()
+      assert.ok(listSkills().some((s) => s.name === 'package-skill'))
+    })
+
+    // The walk is depth-bounded so an unexpectedly deep tree cannot make boot pay
+    // for a full traversal. MAX_SKILL_ROOT_DEPTH is 6; `.cursor` and `skills`
+    // consume two of those, so a container nested 5 levels down is out of reach.
+    it('stops descending past the depth cap', async () => {
+      await seedSkillAt(join(tempRoot, 'a', 'b', 'c', 'd', 'e'), 'too-deep')
+      await refreshSkillsRegistry()
+      assert.ok(!listSkills().some((s) => s.name === 'too-deep'))
+    })
+  })
 })
