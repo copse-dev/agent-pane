@@ -706,14 +706,19 @@ jobs:
   # branch) and only after a green e2e run, so we never commit half-rendered shots.
   # Deliberately NOT in `ci-passed`'s needs: it's a side effect, not a gate.
   #
-  # Write policy — UNCONTESTED SHOTS ONLY. A rendered shot is auto-committed only
-  # when nothing contests the write: the baseline was inherited from main (or is
-  # brand new) and neither this branch (by a non-bot author) nor main has touched
-  # it since the merge-base. A shot someone deliberately committed on the branch,
-  # or that main moved under the PR, is HELD — the branch's committed version
-  # always wins — and surfaced in the PR comment with a base-vs-branch image
-  # comparison. Adding the `update-screenshots` label is the explicit
-  # "regenerate and take CI's render" override. (filter-screenshots.mts decides.)
+  # Write policy — OWNED, UNCONTESTED SHOTS ONLY. A rendered shot is auto-committed
+  # only when this diff owns it AND nothing contests the write. Owned means the
+  # oracle maps the diff to a spec that renders it, or someone hand-committed it on
+  # this branch; the e2e tier re-renders far more than that (a broad selection
+  # renders everything), and committing the rest attributed unrelated render drift
+  # to whichever PR happened to run — a release-smoke fix once landed 17 refreshed
+  # shots. Uncontested means the baseline was inherited from main (or is brand new)
+  # and neither this branch (by a non-bot author) nor main has touched it since the
+  # merge-base. Everything else is HELD — the branch's committed version stands —
+  # and surfaced in the PR comment. Adding the `update-screenshots` label is the
+  # explicit "regenerate and take CI's render" override, and is the escape hatch
+  # when the oracle genuinely failed to map a render-affecting file to its shots.
+  # (filter-screenshots.mts decides; scripts/lib/screenshot-scope.mts owns the rule.)
   #
   # It also reconciles screenshot conflicts: if main re-rendered the same reference
   # PNG, that binary file can't 3-way merge and the PR goes `dirty`. The reconcile
@@ -879,11 +884,14 @@ jobs:
       # and STAYS that way: the render commit above only updates the head branch, it
       # never incorporates main, so head's PNG keeps conflicting with main's PNG.
       # Bring main in here so the conflict actually resolves. Generated PNGs have no
-      # meaningful 3-way merge — for any screenshot-path conflict we keep the head
-      # branch's version (--ours). Because the filter step above already reverted
-      # contested renders, --ours here means: the fresh render for uncontested
-      # shots, and the branch's deliberately COMMITTED shot for contested ones —
-      # the branch always wins, but CI's render never displaces deliberate work.
+      # meaningful 3-way merge, so each conflicting shot is resolved by OWNERSHIP:
+      # the branch keeps (--ours) a shot the oracle maps to this diff or that
+      # someone hand-committed here, and takes main's (--theirs) for anything else.
+      # Because the filter step above already reverted contested and out-of-scope
+      # renders, --ours here means: the fresh render for uncontested owned shots,
+      # and the branch's deliberately COMMITTED shot for contested ones — the
+      # branch wins for what it owns, CI's render never displaces deliberate work,
+      # and an unrelated re-render never reverts main.
       # We NEVER auto-resolve source code:
       # if anything outside tests/e2e/screenshots/ conflicts, abort and leave it to
       # a human (the `manual` output drives a PR comment below).
@@ -900,6 +908,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --no-tags origin main
+
+          # Resolve ownership BEFORE any merge attempt: --own-paths reads the
+          # branch's diff from the working tree, and a conflicted merge in progress
+          # would fold main's incoming changes into it and over-grant ownership.
+          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base origin/main)
+          echo "Branch owns ${#owned[@]} reference shot(s)"
 
           # `git merge` returns non-zero for real conflicts AND for "untracked
           # working tree files would be overwritten" (no MERGE_HEAD). Only the
@@ -953,8 +967,43 @@ jobs:
             git merge --abort
             exit 0
           fi
-          echo "Screenshot-only conflict — keeping the freshly re-rendered shots"
-          git checkout --ours -- tests/e2e/screenshots/
+          # Per-file resolution, not a blanket --ours. A shot this branch OWNS
+          # (the oracle maps the diff to a spec that renders it, or someone
+          # hand-committed it here) keeps the branch version. Anything else takes
+          # main's — otherwise a branch that merely *re-rendered* an unrelated shot
+          # reverts main's newer version on merge, the next PR flips it back, and
+          # the shot ping-pongs between render states across PRs. `*` means scope
+          # is unavailable (no merge-base) and every shot keeps --ours, the
+          # pre-scope policy. See scripts/lib/screenshot-scope.mts.
+          echo "Screenshot-only conflict — resolving by ownership"
+          resolve_shot() {
+            # `git checkout --ours/--theirs` reads the conflict's index stage, which
+            # is absent when that side DELETED the shot (modify/delete). Removing
+            # the file is the correct resolution for that side, so fall back to it
+            # rather than dying under `set -e` mid-merge. `git add <dir>` below
+            # stages the removal.
+            local side="$1" path="$2"
+            git checkout "--${side}" -- "$path" 2>/dev/null && return 0
+            echo "    ${side} side deleted this shot — taking the deletion"
+            git rm -q -f -- "$path"
+          }
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            keep_ours=0
+            for o in "${owned[@]}"; do
+              if [ "$o" = '*' ] || [ "$o" = "$path" ]; then
+                keep_ours=1
+                break
+              fi
+            done
+            if [ "$keep_ours" = 1 ]; then
+              echo "  ours   $path (owned by this branch)"
+              resolve_shot ours "$path"
+            else
+              echo "  theirs $path (not owned by this diff — keeping main's render)"
+              resolve_shot theirs "$path"
+            fi
+          done <<< "$conflicts"
           git add tests/e2e/screenshots/
           # The push authenticates with SCREENSHOTS_PAT, a classic PAT without
           # `workflow` scope. If main advanced a file under .github/workflows/, the
@@ -1003,6 +1052,7 @@ jobs:
           IGNORED_JSON: ${{ steps.filter.outputs.ignored-json }}
           FLAPPING_JSON: ${{ steps.filter.outputs.flapping-json }}
           CONTESTED_JSON: ${{ steps.filter.outputs.contested-json }}
+          OUT_OF_SCOPE_JSON: ${{ steps.filter.outputs.out-of-scope-json }}
           MAIN_SHA: ${{ steps.filter.outputs.main-sha }}
           MANUAL_MERGE_FILES: ${{ steps.reconcile.outputs.manual-files }}
           WORKFLOW_MERGE_FILES: ${{ steps.reconcile.outputs.workflow-files }}
@@ -1015,6 +1065,7 @@ jobs:
             const ignored = JSON.parse(process.env.IGNORED_JSON || '[]');
             const flapping = JSON.parse(process.env.FLAPPING_JSON || '[]');
             const contested = JSON.parse(process.env.CONTESTED_JSON || '[]');
+            const outOfScope = JSON.parse(process.env.OUT_OF_SCOPE_JSON || '[]');
             const mainSha = process.env.MAIN_SHA || '';
             const manualMerge = (process.env.MANUAL_MERGE_FILES || '').split('\n').filter(Boolean);
             const workflowMerge = (process.env.WORKFLOW_MERGE_FILES || '').split('\n').filter(Boolean);
@@ -1104,6 +1155,24 @@ jobs:
                   `just re-trigger CI and bring the other state back. If a real change is hiding ` +
                   `here, add the \`update-screenshots\` label to force it, or pin the runner ` +
                   `font/GPU rendering:\n\n` +
+                  lines.join('\n'),
+              );
+            }
+            if (outOfScope.length) {
+              // Named individually rather than counted: a silent hold reads as
+              // "nothing drifted", which is exactly the failure mode this replaces.
+              const lines = outOfScope.map((s) => {
+                const diff = s.diffPixels == null ? 'differs' : `${s.diffPixels} px (${s.ratioPct})`;
+                return `- \`${s.name}\` — ${diff} vs committed`;
+              });
+              sections.push(
+                `### Held — not owned by this diff (${outOfScope.length})\n\n` +
+                  `The e2e run re-rendered these, but no spec the test oracle maps to this diff ` +
+                  `produces them, so the difference is drift belonging to some other change — it ` +
+                  `was **not** committed. This stops an unrelated PR rewriting screens it never ` +
+                  `touched (and, on merge, reverting \`main\`'s newer render). If your change ` +
+                  `really does move these shots and the oracle missed the mapping, add the ` +
+                  `\`update-screenshots\` label to take CI's render:\n\n` +
                   lines.join('\n'),
               );
             }
