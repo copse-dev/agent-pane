@@ -442,11 +442,6 @@
       "count": 1
     }
   },
-  "src/main/services/acp/acp-ssh-transport.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
   "src/main/services/acp/session-update-adapter.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 4

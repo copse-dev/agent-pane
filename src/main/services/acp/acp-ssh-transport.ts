@@ -167,13 +167,19 @@ export async function spawnRemoteAcpTransport(
     if (text) console.warn(`[acp-ssh:${input.command}] ${text}`)
   })
 
-  // Bridge node's `stream/web` types to the global ones `ndJsonStream` expects;
-  // the cast is unavoidable across the two declarations (mirrors acp-client.ts),
-  // and is baselined in eslint-suppressions.json like its sibling.
-  const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-  const readable = Readable.toWeb(stdout) as ReadableStream<Uint8Array>
+  // Writable.toWeb is assignable to the DOM WritableStream brand; Readable.toWeb
+  // is not (node vs DOM ReadableStream). Re-wrap stdout through a global
+  // TransformStream so ndJsonStream typechecks without an `as` cast — new files
+  // must not expand eslint-suppressions.json (docs/type-safety.md).
+  const writable: WritableStream<Uint8Array> = Writable.toWeb(child.stdin)
+  const fromAgent = new TransformStream<Uint8Array, Uint8Array>()
+  void Readable.toWeb(stdout)
+    .pipeTo(fromAgent.writable)
+    .catch(() => {
+      /* child exit / dispose aborts the pipe */
+    })
   return {
-    stream: ndJsonStream(writable, readable),
+    stream: ndJsonStream(writable, fromAgent.readable),
     dispose: (): void => {
       terminateProcessTree(child)
     },
