@@ -1,23 +1,38 @@
 /** High-confidence reasons that an in-progress reasoning stream is circling. */
 export type ReasoningCircleSignal =
-  'self_reported_circle' | 'repeated_block' | 'repeated_heading' | 'repeated_plan' | 'runaway_list'
+  | 'self_reported_circle'
+  | 'repeated_block'
+  | 'repeated_sentence'
+  | 'repeated_tail'
+  | 'repeated_heading'
+  | 'repeated_plan'
+  | 'runaway_list'
 
 export interface ReasoningCircleDetectorOptions {
   /** Exact normalized prose blocks of at least this size may count as repeats. */
   minRepeatedBlockChars: number
-  /** A block, heading, or plan must recur this many times before it is a signal. */
+  /** Exact normalized sentences of at least this size may count as repeats. */
+  minRepeatedSentenceChars: number
+  /** A block, sentence, heading, or plan must recur this many times before it is a signal. */
   repeatLimit: number
   /** Consecutive list items fingerprinted as one repeated plan unit. */
   planWindowItems: number
   /** A reasoning-only list at or above this size is treated as runaway enumeration. */
   maxListItems: number
+  /** Smallest verbatim unit considered when testing the tail for a repeating cycle. */
+  minRepeatedTailChars: number
+  /** Largest verbatim unit considered when testing the tail for a repeating cycle. */
+  maxRepeatedTailChars: number
 }
 
 export const DEFAULT_REASONING_CIRCLE_DETECTOR_OPTIONS: ReasoningCircleDetectorOptions = {
   minRepeatedBlockChars: 120,
+  minRepeatedSentenceChars: 80,
   repeatLimit: 3,
   planWindowItems: 3,
   maxListItems: 100,
+  minRepeatedTailChars: 40,
+  maxRepeatedTailChars: 2_000,
 }
 
 const SELF_REPORTED_CIRCLE_PATTERNS: readonly RegExp[] = [
@@ -53,15 +68,59 @@ function repeatedBlock(reasoning: string, options: ReasoningCircleDetectorOption
   return repeatedValue(blocks, options.repeatLimit)
 }
 
-function reasoningHeadings(reasoning: string): string[] {
-  const headings: string[] = []
+/** Prose lines outside fenced code, which is where circling shows up. */
+function proseLines(reasoning: string): string[] {
+  const lines: string[] = []
   let inFence = false
   for (const line of reasoning.split('\n')) {
     if (/^\s*```/.test(line)) {
       inFence = !inFence
       continue
     }
-    if (inFence) continue
+    if (!inFence) lines.push(line)
+  }
+  return lines
+}
+
+/**
+ * A token-level repeat loop streams one unbroken wall of prose — no blank lines,
+ * headings, or list markers — so {@link repeatedBlock} never sees a second block
+ * to compare. Split that wall into sentences instead and look for a long one the
+ * model has emitted verbatim several times.
+ */
+function repeatedSentence(reasoning: string, options: ReasoningCircleDetectorOptions): boolean {
+  const sentences = proseLines(reasoning)
+    .join('\n')
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(normalized)
+    .filter((sentence) => sentence.length >= options.minRepeatedSentenceChars)
+  return repeatedValue(sentences, options.repeatLimit)
+}
+
+/**
+ * Catch a repeat loop that never reaches sentence punctuation (a fragment, a
+ * line of code, a bare phrase) by testing whether the stream *ends* in a
+ * verbatim cycle: the last three units of some period are byte-identical.
+ * Bounded by `maxRepeatedTailChars` so the scan stays cheap at each checkpoint.
+ */
+function repeatedTail(reasoning: string, options: ReasoningCircleDetectorOptions): boolean {
+  const tail = normalized(reasoning)
+  const maxPeriod = Math.min(options.maxRepeatedTailChars, Math.floor(tail.length / 3))
+  for (let period = options.minRepeatedTailChars; period <= maxPeriod; period++) {
+    const last = tail.slice(tail.length - period)
+    if (
+      last === tail.slice(tail.length - period * 2, tail.length - period) &&
+      last === tail.slice(tail.length - period * 3, tail.length - period * 2)
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+function reasoningHeadings(reasoning: string): string[] {
+  const headings: string[] = []
+  for (const line of proseLines(reasoning)) {
     const heading = MARKDOWN_HEADING.exec(line)?.[1] ?? PLAIN_HEADING.exec(line)?.[1]
     if (heading) headings.push(normalized(heading))
   }
@@ -70,13 +129,7 @@ function reasoningHeadings(reasoning: string): string[] {
 
 function reasoningListItems(reasoning: string): string[] {
   const items: string[] = []
-  let inFence = false
-  for (const line of reasoning.split('\n')) {
-    if (/^\s*```/.test(line)) {
-      inFence = !inFence
-      continue
-    }
-    if (inFence) continue
+  for (const line of proseLines(reasoning)) {
     const item = LIST_ITEM.exec(line)?.[1]
     if (item) items.push(normalized(item))
   }
@@ -107,6 +160,8 @@ export function detectReasoningCircle(
     signals.push('self_reported_circle')
   }
   if (repeatedBlock(reasoning, options)) signals.push('repeated_block')
+  if (repeatedSentence(reasoning, options)) signals.push('repeated_sentence')
+  if (repeatedTail(reasoning, options)) signals.push('repeated_tail')
   if (repeatedValue(reasoningHeadings(reasoning), options.repeatLimit)) {
     signals.push('repeated_heading')
   }
@@ -125,6 +180,13 @@ export interface ReasoningCheckpointPolicy {
   maxInitialTokens: number
   /** Maximum clean reasoning allowed after the one recovery nudge. */
   maxRecoveryTokens: number
+  /**
+   * Maximum reasoning allowed *after* a substantive answer has already streamed.
+   * Reasoning past that point has nothing left to steer — the answer is out — so
+   * it is checkpointed on its own budget instead of riding the much larger
+   * non-reasoning ceiling. Absent leaves trailing reasoning to that ceiling.
+   */
+  maxTrailingReasoningTokens?: number
 }
 
 export interface ReasoningCheckpointRecord {
