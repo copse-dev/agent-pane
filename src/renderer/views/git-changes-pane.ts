@@ -27,6 +27,7 @@ import {
   setGitFileDiffModel,
 } from '../monaco/git-diff-viewer.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
+import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
 function isImageDiff(diff: GitFileDiff): boolean {
   return diff.beforeImage != null || diff.afterImage != null
@@ -219,7 +220,12 @@ export function mountGitChangesPane(
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
-      diffEditor = createGitChangesDiffEditor(diffWrap, monaco, store.getState().fontSize, theme)
+      diffEditor = createGitChangesDiffEditor(
+        diffWrap,
+        monaco,
+        scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
+        theme,
+      )
       registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () => {
         if (selection?.kind === 'proposed') {
           return { path: selection.path, detail: 'before' }

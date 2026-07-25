@@ -401,6 +401,184 @@ describe('runAgentLoop', () => {
     assert.equal(cuts[0]?.streamOutputTokenLimit, 20)
   })
 
+  it('extends clean reasoning one checkpoint at a time until a tool call', async () => {
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          yield { type: 'reasoning', text: 'a'.repeat(90) }
+          yield { type: 'reasoning', text: 'b'.repeat(90) }
+          yield { type: 'tool_call', toolCall: { id: 'act', name: 'run_shell', args: {} } }
+          yield { type: 'done' }
+          return
+        }
+        yield { type: 'text', text: 'Completed.' }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [{ name: 'run_shell', description: 'run', parameters: { type: 'object' } }],
+      maxSteps: 3,
+      maxStreamOutputTokens: 20,
+      reasoningRunawayTextToleranceChars: 0,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 20,
+        maxNonReasoningTokens: 20,
+        maxInitialTokens: 60,
+        maxRecoveryTokens: 40,
+      },
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(streamCalls, 2)
+    assert.deepEqual(
+      checkpoints.map((record) => [record.checkpointTokens, record.decision]),
+      [
+        [20, 'continue'],
+        [40, 'continue'],
+      ],
+    )
+    assert.equal(cuts.length, 0)
+  })
+
+  it('cuts self-identified circling at the next checkpoint', async () => {
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          yield {
+            type: 'reasoning',
+            text: "I think I'm overcomplicating this and should stop going over it again.".padEnd(
+              90,
+              ' ',
+            ),
+          }
+          return
+        }
+        yield { type: 'text', text: 'Recovered.' }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 3,
+      maxStreamOutputTokens: 20,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 20,
+        maxNonReasoningTokens: 20,
+        maxInitialTokens: 60,
+        maxRecoveryTokens: 40,
+      },
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(checkpoints[0]?.decision, 'cut')
+    assert.deepEqual(checkpoints[0].signals, ['self_reported_circle'])
+    assert.equal(cuts[0]?.cutReason, 'reasoning_circle_detected')
+    assert.equal(cuts[0].streamOutputTokenLimit, 20)
+  })
+
+  it('keeps an absolute cap after clean checkpoint expansions', async () => {
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls === 1) {
+          for (let index = 0; index < 4; index++) {
+            yield { type: 'reasoning', text: String(index).repeat(80) }
+          }
+          return
+        }
+        yield { type: 'text', text: 'Recovered.' }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 3,
+      maxStreamOutputTokens: 20,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 20,
+        maxNonReasoningTokens: 20,
+        maxInitialTokens: 60,
+        maxRecoveryTokens: 40,
+      },
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.deepEqual(
+      checkpoints.slice(0, 3).map((record) => [record.checkpointTokens, record.decision]),
+      [
+        [20, 'continue'],
+        [40, 'continue'],
+        [60, 'cut'],
+      ],
+    )
+    assert.equal(cuts[0]?.cutReason, 'reasoning_runaway_cap')
+    assert.equal(cuts[0].streamOutputTokenLimit, 60)
+  })
+
+  it('preserves the host non-reasoning ceiling across earlier reasoning checkpoints', async () => {
+    let yieldedChunks = 0
+    let streamCalls = 0
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls > 1) {
+          yield { type: 'text', text: 'Recovered.' }
+          yield { type: 'done' }
+          return
+        }
+        for (let index = 0; index < 4; index++) {
+          yieldedChunks++
+          yield { type: 'text', text: 'x'.repeat(80) }
+        }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 1,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 20,
+        maxNonReasoningTokens: 60,
+        maxInitialTokens: 60,
+        maxRecoveryTokens: 40,
+      },
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(yieldedChunks, 3)
+    assert.equal(checkpoints.length, 0)
+    assert.equal(cuts[0]?.streamOutputTokenLimit, 60)
+  })
+
   it('applies the host-specific output cap to the final text-only turn', async () => {
     let yieldedChunks = 0
     const provider: LLMProvider = {

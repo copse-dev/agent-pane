@@ -37,9 +37,9 @@ import {
 } from './lib/cloud-hosts.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
 import {
-  parseTerminalBenchProfileId,
   parseTerminalBenchProfileIds,
-  type TerminalBenchProfileId,
+  parseTerminalBenchProfileSelectionId,
+  type TerminalBenchProfileSelectionId,
 } from './lib/terminal-bench-profiles.mts'
 
 const DEFAULT_NAME = 'copse-terminal-bench'
@@ -48,6 +48,7 @@ const DEFAULT_TYPE = 'PRO2-XS'
 const DEFAULT_WORKERS_PER_INSTANCE = 1
 const DEFAULT_VOLUME_SIZE_GB = 100
 const DEFAULT_TTL_MINUTES = 360
+const HOST_RESULTS_ROOT = '/opt/copse/bench-results'
 const CLEANUP_ATTEMPTS = 3
 const CLEANUP_RETRY_DELAY_MS = 15_000
 /** Reconnects after SSH transport drops during long quiet Harbor turns. */
@@ -68,7 +69,7 @@ export interface RunConfig extends SshConfig {
   maxTasks: number
   name: string
   objectPrefix: string
-  profiles: TerminalBenchProfileId[]
+  profiles: TerminalBenchProfileSelectionId[]
   securityGroupId: string | undefined
   steeredRerun: boolean
   taskNames: string[]
@@ -103,7 +104,7 @@ Options:
   --max-tasks <n>          Global task cap (default: same as instances, max: 89)
   --task-names <a,b,...>   Exact registry tasks to run, in the supplied order
   --attempts <n>           Attempts per task (default: 1, max: 5)
-  --profile <id>           main-legacy, pr-1149, or product-aligned (default: main-legacy)
+  --profile <id>           Base or versioned profile id (default: main-legacy)
   --profiles <a,b,...>     Run task-major profile blocks with order rotated by task
   --scw-type <type>        x86 Instance type (default: ${DEFAULT_TYPE})
   --scw-image <image>      Ubuntu/custom snapshot image (default: ${DEFAULT_SCW_IMAGE})
@@ -174,7 +175,7 @@ export function runConfig(options: Options): RunConfig {
   if (profile && profiles) throw new Error('pass only one of --profile or --profiles')
   const parsedProfiles = profiles
     ? parseTerminalBenchProfileIds(profiles)
-    : [parseTerminalBenchProfileId(profile)]
+    : [parseTerminalBenchProfileSelectionId(profile)]
   const steeredRerun = !hasFlag(options, 'no-steered-rerun')
   if (parsedProfiles.length > 1 && steeredRerun) {
     throw new Error('multi-profile fleet runs require --no-steered-rerun')
@@ -263,6 +264,7 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
     ['COPSE_TERMINAL_VOLUME_SIZE_GB', String(config.volumeSizeGb)],
     ['COPSE_TERMINAL_SHARD_COUNT', String(config.shardCount)],
     ['COPSE_TERMINAL_SHARD_INDEX', String(shardIndex)],
+    ['COPSE_TERMINAL_RESULTS_ROOT', `${HOST_RESULTS_ROOT}/shard-${String(shardIndex)}`],
     ['COPSE_TERMINAL_ATTEMPTS', String(config.attempts)],
     ['COPSE_TERMINAL_PROFILE', firstProfile],
     ['COPSE_TERMINAL_PROFILES', profiles.join(',')],
@@ -375,7 +377,7 @@ async function followWorkerContainer(
 
 async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number): Promise<void> {
   const envPath = `/opt/copse-terminal/worker-${String(shardIndex)}.env`
-  const resultsPath = `/opt/copse/bench-results/shard-${String(shardIndex)}`
+  const resultsPath = `${HOST_RESULTS_ROOT}/shard-${String(shardIndex)}`
   await sshRunAsync(
     config,
     host,
@@ -391,7 +393,7 @@ async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number)
         `sudo docker rm -f ${container} >/dev/null 2>&1 || true`,
         `sudo docker run --detach --name ${container} --env-file ${shellQuote(envPath)} ` +
           '--volume /var/run/docker.sock:/var/run/docker.sock ' +
-          `--volume ${shellQuote(resultsPath)}:/opt/copse/bench-results ` +
+          `--volume ${shellQuote(HOST_RESULTS_ROOT)}:${shellQuote(HOST_RESULTS_ROOT)} ` +
           `${shellQuote(config.workerImage)} >/dev/null`,
       ].join('; '),
     )

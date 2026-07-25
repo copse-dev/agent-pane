@@ -35,6 +35,9 @@ export const acpAgentConfigSchema = z.object({
     .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
     .max(256)
     .optional(),
+  // Epoch-ms timestamp of the probe that produced `availableModels`, used by the
+  // background staleness check to re-probe aged caches (see acp-auto-setup.ts).
+  modelsProbedAt: z.number().int().nonnegative().optional(),
   // ACP session (permission) mode to start each session in, and the cached set
   // of modes the agent advertised the last time it was probed (issue #607).
   permissionMode: z.string().min(1).max(256).optional(),
@@ -113,6 +116,9 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   model: z.string().max(256),
   theme: z.enum(['system', 'light', 'dark']),
   fontSize: z.number().int().min(8).max(32),
+  // Whole-UI multiplier for design tokens (--ui-scale). Independent of
+  // fontSize (editor/terminal); see src/shared/ui-scale.ts.
+  uiScale: z.number().min(0.75).max(1.5),
   autoPortraitRightPanel: z.boolean(),
   rightPanelPosition: z.enum(['auto', 'side', 'bottom']),
   // Interaction colour for links, primary actions, selections, and chat
@@ -185,6 +191,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
+  // When true (default) and the user selects Claude Cloud Agent
+  // (remote-agent:anthropic, API-key-billed), redirect to an enabled ACP Claude
+  // agent if one is registered — routing through the subscription login instead
+  // of the API key so turns count against plan headroom, not API credit.
+  preferAcpOverCloudAgent: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
   browserToolsEnabled: z.boolean(),

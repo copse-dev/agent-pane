@@ -209,6 +209,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.chat-title-rename {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-input, var(--bg-primary));
+  border: 1px solid var(--border-focus, var(--accent));
+  border-radius: 3px;
+  padding: 0 2px;
+}
 .chat-delete {
   flex-shrink: 0;
   opacity: 0;

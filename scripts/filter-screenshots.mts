@@ -35,6 +35,13 @@
  *           version always wins) and surface the shot in the PR comment with a
  *           base-vs-branch comparison. The `update-screenshots` label is the
  *           explicit "regenerate and take CI's render" escape hatch.
+ *   out-of-scope
+ *           The shot is not one this diff can legitimately move: the oracle maps
+ *           no selected spec to it and nobody committed it on this branch. The
+ *           e2e tier re-renders far more shots than a diff owns (a broad
+ *           selection renders everything), so without this the PR commits render
+ *           drift for screens it never touched. Restore HEAD and surface it. See
+ *           scripts/lib/screenshot-scope.mts for the ownership rule.
  *
  * Anti-aliased pixels are excluded by pixelmatch itself (its AA detector), which
  * already swallows most font-edge wobble; the threshold below is the small residual
@@ -64,16 +71,25 @@
  *   SCREENSHOT_FLAP_LOOKBACK         number of recent DISTINCT committed renders of
  *                                    each shot to compare a real change against for
  *                                    flap detection (default 4). 0 disables it.
+ *                                    The walk covers HEAD *and* the main ref, so a
+ *                                    state main committed after this branch pointed
+ *                                    off it still counts — that is where the
+ *                                    cross-PR ping-pong lives, and HEAD's ancestry
+ *                                    alone cannot see it.
+ *   SCREENSHOT_SCOPE                 set to `off` to disable ownership scoping (see
+ *                                    the out-of-scope verdict). Scoping also
+ *                                    self-disables when the main ref is absent.
  *   SCREENSHOT_MAIN_REF              ref the contested check compares against
  *                                    (default origin/main). When the ref is absent
  *                                    (local runs), contested detection is disabled.
  *
  * Outputs (CI): when GITHUB_OUTPUT is set, emits `ignored-count`, `kept-count`,
- * `flapping-count`, `contested-count`, `ignored-json`, `flapping-json`,
- * `contested-json` (JSON arrays of { name, path, diffPixels, ratioPct, ... };
- * flap items carry `matchedSha`, contested items carry `branchTouched` /
- * `mainTouched`) and `main-sha` (tip of SCREENSHOT_MAIN_REF, for blob-URL image
- * links) so the commit job's PR comment can show the held shots for a human.
+ * `flapping-count`, `contested-count`, `out-of-scope-count`, `ignored-json`,
+ * `flapping-json`, `contested-json`, `out-of-scope-json` (JSON arrays of
+ * { name, path, diffPixels, ratioPct, ... }; flap items carry `matchedSha`,
+ * contested items carry `branchTouched` / `mainTouched`) and `main-sha` (tip of
+ * SCREENSHOT_MAIN_REF, for blob-URL image links) so the commit job's PR comment
+ * can show the held shots for a human.
  *
  * Run: node scripts/filter-screenshots.mts [--dir tests/e2e/screenshots] [--dry-run]
  */
@@ -84,6 +100,12 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
+import {
+  computeScreenshotScope,
+  ownsScreenshot,
+  unscoped,
+  type ScreenshotScope,
+} from './lib/screenshot-scope.mts'
 
 // Repo root. Uses import.meta so it works when run directly; falls back to cwd
 // when a bundler (the unit-test build) leaves import.meta empty — the pure
@@ -141,6 +163,7 @@ export type Verdict =
       branchTouched: boolean
       mainTouched: boolean
     }
+  | { decision: 'out-of-scope'; reason: string; diffPixels?: number; ratio?: number }
 
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag)
@@ -180,6 +203,12 @@ function committedBytes(path: string): Buffer | null {
  * excluding the current HEAD baseline (`headBytes`). These are the states a real
  * change is checked against for flap detection — if the new render matches one of
  * them, the shot is oscillating between already-committed states.
+ *
+ * The walk covers HEAD *and* the main ref. HEAD's ancestry stops at the
+ * merge-base, so renders main committed after this branch pointed off it are
+ * invisible to it — and those are exactly the states a cross-PR ping-pong
+ * alternates with. Two refs mean two histories share the `-n` budget, so it is
+ * sized generously relative to `lookback` (blob-dedup discards the overlap).
  */
 function priorCommittedRenders(
   path: string,
@@ -187,7 +216,12 @@ function priorCommittedRenders(
   lookback: number,
 ): PriorRender[] {
   if (lookback <= 0) return []
-  const shas = git(['log', '-n', String(lookback + 4), '--format=%H', '--', path])
+  // A missing main ref must not take HEAD's history down with it: `git log`
+  // rejects the whole invocation on an unknown ref.
+  const refs = git(['rev-parse', '--verify', '--quiet', MAIN_REF]).trim()
+    ? ['HEAD', MAIN_REF]
+    : ['HEAD']
+  const shas = git(['log', '-n', String(lookback * 2 + 6), '--format=%H', ...refs, '--', path])
     .split('\n')
     .map((s) => s.trim())
     .filter(Boolean)
@@ -278,8 +312,9 @@ function isNoise(diff: { diffPixels: number; ratio: number }, opts: ClassifyOpti
  * Pure classification of one re-rendered shot. `priorRenders` are recent committed
  * renders of the same shot (see priorCommittedRenders); pass [] to disable flap
  * detection. `contested` marks a deliberate committed baseline (see contestedInfo);
- * pass null/undefined when uncontested. Kept pure (bytes in, verdict out) so it is
- * unit-testable without git.
+ * pass null/undefined when uncontested. `inScope` is the ownership verdict (see
+ * lib/screenshot-scope.mts); pass undefined to disable scoping. Kept pure (bytes
+ * in, verdict out) so it is unit-testable without git.
  */
 export function classifyScreenshotChange(
   oldBytes: Buffer | null,
@@ -287,9 +322,13 @@ export function classifyScreenshotChange(
   priorRenders: PriorRender[],
   opts: ClassifyOptions,
   contested?: ContestedInfo | null,
+  inScope?: boolean,
 ): Verdict {
   // No baseline → nothing committed to override; a brand-new shot is never
-  // contested.
+  // contested, and it is kept even out of scope. Dropping it would leave a shot
+  // a spec renders with no committed baseline at all, which the freshness gate
+  // then reports stale forever — strictly worse than attributing one new
+  // baseline to the PR that happened to render it first.
   if (!oldBytes) return { decision: 'keep', reason: 'new screenshot (no baseline)' }
 
   const oldPng = decode(oldBytes)
@@ -318,6 +357,18 @@ export function classifyScreenshotChange(
       ...(vsHead ? { diffPixels: vsHead.diffPixels, ratio: vsHead.ratio } : {}),
       branchTouched: contested.branchTouched,
       mainTouched: contested.mainTouched,
+    }
+  }
+
+  // Not a shot this diff can legitimately move. Held ahead of the decode-failed
+  // and resized cases below, which would otherwise commit for review: a resized
+  // out-of-scope render is the loudest form of the churn this exists to stop
+  // (an unrelated PR rewriting a shot to a different render state entirely).
+  if (inScope === false) {
+    return {
+      decision: 'out-of-scope',
+      reason: 'no selected spec renders this shot for this diff',
+      ...(vsHead ? { diffPixels: vsHead.diffPixels, ratio: vsHead.ratio } : {}),
     }
   }
 
@@ -370,7 +421,7 @@ function changedScreenshots(): string[] {
 
 type PathVerdict = Verdict & { path: string }
 
-function classify(path: string): PathVerdict {
+function classify(path: string, scope: ScreenshotScope): PathVerdict {
   const oldBytes = committedBytes(path)
   let newBytes: Buffer
   try {
@@ -394,6 +445,7 @@ function classify(path: string): PathVerdict {
       ignoreMinPixels: IGNORE_MIN_PIXELS,
     },
     contested,
+    scope.enabled ? ownsScreenshot(scope, path) : undefined,
   )
   return { path, ...verdict }
 }
@@ -424,6 +476,21 @@ function reportJson(items: Array<Extract<PathVerdict, { diffPixels: number }>>):
   )
 }
 
+/**
+ * Serializer for held shots whose render may not have been pixel-comparable
+ * (decode failure / resize), so the diff fields are nullable.
+ */
+function heldJson(items: Array<PathVerdict & { diffPixels?: number; ratio?: number }>): string {
+  return JSON.stringify(
+    items.map((v) => ({
+      name: v.path.split('/').pop(),
+      path: v.path,
+      diffPixels: v.diffPixels ?? null,
+      ratioPct: v.ratio !== undefined ? pct(v.ratio) : null,
+    })),
+  )
+}
+
 function contestedJson(items: Array<Extract<PathVerdict, { decision: 'contested' }>>): string {
   return JSON.stringify(
     items.map((v) => ({
@@ -438,39 +505,44 @@ function contestedJson(items: Array<Extract<PathVerdict, { decision: 'contested'
   )
 }
 
+/** Zero out every per-verdict output, for the early returns below. */
+function emitEmptyReport(keptCount: number): void {
+  emitOutput('ignored-count', '0')
+  emitOutput('kept-count', String(keptCount))
+  emitOutput('flapping-count', '0')
+  emitOutput('contested-count', '0')
+  emitOutput('out-of-scope-count', '0')
+  emitOutput('ignored-json', '[]')
+  emitOutput('flapping-json', '[]')
+  emitOutput('contested-json', '[]')
+  emitOutput('out-of-scope-json', '[]')
+}
+
 export function main(): void {
   const changed = changedScreenshots()
   if (changed.length === 0) {
     console.log('screenshot filter: no changed reference screenshots')
-    emitOutput('ignored-count', '0')
-    emitOutput('kept-count', '0')
-    emitOutput('flapping-count', '0')
-    emitOutput('contested-count', '0')
-    emitOutput('ignored-json', '[]')
-    emitOutput('flapping-json', '[]')
-    emitOutput('contested-json', '[]')
+    emitEmptyReport(0)
     return
   }
 
   // Escape hatch: the `update-screenshots` label means "refresh everything", so
   // keep all changed shots — including sub-threshold micro-diffs, shots that
-  // would otherwise be held as flapping, and contested shots (this is the
-  // explicit "regenerate and take CI's render" override).
+  // would otherwise be held as flapping or out of scope, and contested shots
+  // (this is the explicit "regenerate and take CI's render" override).
   if (process.env['UPDATE_SCREENSHOTS_LABEL'] === 'true') {
     console.log(
       `screenshot filter: update-screenshots label present — keeping all ${String(changed.length)} changed shot(s) unfiltered`,
     )
-    emitOutput('ignored-count', '0')
-    emitOutput('kept-count', String(changed.length))
-    emitOutput('flapping-count', '0')
-    emitOutput('contested-count', '0')
-    emitOutput('ignored-json', '[]')
-    emitOutput('flapping-json', '[]')
-    emitOutput('contested-json', '[]')
+    emitEmptyReport(changed.length)
     return
   }
 
-  const verdicts = changed.map(classify)
+  // Ownership scope. Self-disables without a merge-base; `SCREENSHOT_SCOPE=off`
+  // is the manual override (a local run comparing renders across a rewrite).
+  const scope = process.env['SCREENSHOT_SCOPE'] === 'off' ? unscoped() : computeScreenshotScope()
+
+  const verdicts = changed.map((p) => classify(p, scope))
   const kept = verdicts.filter((v) => v.decision === 'keep')
   const ignored = verdicts.filter(
     (v): v is Extract<PathVerdict, { decision: 'ignore' }> => v.decision === 'ignore',
@@ -481,14 +553,18 @@ export function main(): void {
   const contested = verdicts.filter(
     (v): v is Extract<PathVerdict, { decision: 'contested' }> => v.decision === 'contested',
   )
+  const outOfScope = verdicts.filter(
+    (v): v is Extract<PathVerdict, { decision: 'out-of-scope' }> => v.decision === 'out-of-scope',
+  )
 
   console.log(
     `screenshot filter: ${String(changed.length)} changed, ${String(kept.length)} kept (real), ` +
       `${String(ignored.length)} ignored (noise), ${String(flapping.length)} held (flapping), ` +
-      `${String(contested.length)} held (contested) ` +
+      `${String(contested.length)} held (contested), ` +
+      `${String(outOfScope.length)} held (out of scope) ` +
       `[color-threshold=${String(COLOR_THRESHOLD)}, ignore-ratio=${String(IGNORE_RATIO)}, ` +
       `min-pixels=${String(IGNORE_MIN_PIXELS)}, flap-lookback=${String(FLAP_LOOKBACK)}, ` +
-      `main-ref=${MAIN_REF}]`,
+      `main-ref=${MAIN_REF}, scope=${scope.enabled ? `${String(scope.affected.size)} affected + ${String(scope.branchOwned.size)} branch-owned` : 'disabled'}]`,
   )
 
   for (const v of kept) {
@@ -523,13 +599,26 @@ export function main(): void {
     if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
   }
 
+  // Revert out-of-scope shots: the e2e tier re-rendered them (a broad selection
+  // renders everything), but this diff maps to no spec that produces them, so the
+  // difference is drift belonging to some other change. Named individually so the
+  // hold is never a silent truncation — `update-screenshots` takes CI's render if
+  // the oracle genuinely missed the mapping.
+  for (const v of outOfScope) {
+    const detail = v.diffPixels !== undefined ? `${String(v.diffPixels)} px vs HEAD` : 'differs'
+    console.log(`  scope  ${v.path} (out of scope: ${v.reason}; ${detail})`)
+    if (!DRY_RUN) git(['checkout', 'HEAD', '--', v.path])
+  }
+
   emitOutput('ignored-count', String(ignored.length))
   emitOutput('kept-count', String(kept.length))
   emitOutput('flapping-count', String(flapping.length))
   emitOutput('contested-count', String(contested.length))
+  emitOutput('out-of-scope-count', String(outOfScope.length))
   emitOutput('ignored-json', reportJson(ignored))
   emitOutput('flapping-json', reportJson(flapping))
   emitOutput('contested-json', contestedJson(contested))
+  emitOutput('out-of-scope-json', heldJson(outOfScope))
   // Tip of the main ref, so the PR comment can blob-link the base version of a
   // contested shot for an inline side-by-side. Empty when the ref is absent.
   emitOutput('main-sha', git(['rev-parse', MAIN_REF]).trim())

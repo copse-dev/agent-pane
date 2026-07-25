@@ -2725,10 +2725,25 @@ export function seedMultiModelChatFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 3,
           },
+          {
+            id: 'msg-user-3',
+            role: 'user',
+            content: 'And one more clarification?',
+            toolCalls: [],
+            createdAt: now + 4,
+          },
+          {
+            id: 'msg-assistant-3',
+            role: 'assistant',
+            content: 'Same model again — this continuation should not get another model label.',
+            model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+            toolCalls: [],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 3,
+        updatedAt: now + 5,
       },
     ],
   })
@@ -2950,4 +2965,60 @@ export function seedThreadRunningStatusFixture(workspaceRoot: string): {
   })
   writeSettings({ model: 'claude-sonnet-4-6' })
   return { runningThreadTitle, idleThreadTitle }
+}
+
+/** Two named threads for sidebar rename / archive e2e. */
+export function seedThreadRenameArchiveFixture(workspaceRoot: string): {
+  projectId: string
+  keepTitle: string
+  archiveTitle: string
+} {
+  const projectId = 'e2e-thread-rename-archive-project'
+  const keepTitle = 'Keep this thread'
+  const archiveTitle = 'Archive this thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: 'e2e-keep-thread',
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-keep-thread',
+        title: keepTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-keep',
+            role: 'user',
+            content: 'Stay visible.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'e2e-archive-thread',
+        title: archiveTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-archive',
+            role: 'user',
+            content: 'Soft-hide me.',
+            toolCalls: [],
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
+      },
+    ],
+  })
+  writeSettings({ model: 'claude-sonnet-4-6' })
+  return { projectId, keepTitle, archiveTitle }
 }

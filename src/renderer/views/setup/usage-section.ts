@@ -330,7 +330,12 @@ export function renderPlanWorthItSection(
   host.append(card)
 }
 
-function renderModelTable(
+/**
+ * Render one model-usage table. The Cloud and Local tables share an identical
+ * `<colgroup>` under fixed layout so their columns line up even though they are
+ * separate elements. Exported for unit tests.
+ */
+export function renderModelTable(
   host: HTMLElement,
   title: string,
   rows: UsagePeriodSummary['cloudModels'],
@@ -353,7 +358,18 @@ function renderModelTable(
 
   const table = document.createElement('table')
   table.className = 'usage-table'
+  // A shared column template (fixed layout, identical widths) so the Cloud and
+  // Local tables line their columns up even though they are separate elements
+  // with different content widths.
   table.innerHTML = `
+    <colgroup>
+      <col class="usage-col-model" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+      <col class="usage-col-num" />
+    </colgroup>
     <thead>
       <tr>
         <th scope="col">Model</th>

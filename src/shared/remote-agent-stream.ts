@@ -91,14 +91,18 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
 
 export function userContentToText(content: UserContent): string {
   if (typeof content === 'string') return content
-  return content
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
+  return content.map((block) => (block.type === 'text' ? block.text : '[image]')).join('\n')
 }
 
 /** Keep the handoff prompt well under Cursor's input limits; trim the oldest turns first. */
 const MAX_CONTEXT_PREAMBLE_CHARS = 16_000
+
+/**
+ * Cursor Cloud Agents accept at most 5 images per prompt (15 MB each). Claude
+ * Managed Agents are more generous; we share the stricter cap so both adapters
+ * behave the same on first handoff.
+ */
+export const MAX_REMOTE_PROMPT_IMAGES = 5
 
 export interface RemoteAgentContextInput {
   /** Prior local conversation for this thread (system/tool turns are ignored). */
@@ -116,6 +120,10 @@ export interface RemoteAgentContextInput {
  * Fresh threads (no prior user/assistant turns) return an empty preamble —
  * there is nothing to hand off, and the branch is already supplied via the
  * provider create payload (`startingRef` / managed-agent system prompt).
+ *
+ * Name-only tool-call turns are omitted: without arguments/results they add
+ * noise and no actionable detail. System prompts and raw tool results are
+ * skipped for the same reason.
  */
 export function buildRemoteAgentContextPreamble(input: RemoteAgentContextInput): string {
   const lines: string[] = []
@@ -123,17 +131,10 @@ export function buildRemoteAgentContextPreamble(input: RemoteAgentContextInput):
     if (message.role === 'user') {
       const text = userContentToText(message.content).trim()
       if (text) lines.push(`User: ${text}`)
-    } else if (message.role === 'assistant') {
-      if (typeof message.content === 'string') {
-        const text = message.content.trim()
-        if (text) lines.push(`Assistant: ${text}`)
-      } else {
-        const tools = message.content.map((call) => call.name).filter(Boolean)
-        if (tools.length) lines.push(`Assistant: (used tools: ${tools.join(', ')})`)
-      }
+    } else if (message.role === 'assistant' && typeof message.content === 'string') {
+      const text = message.content.trim()
+      if (text) lines.push(`Assistant: ${text}`)
     }
-    // System prompts and raw tool results are intentionally skipped to keep the
-    // handoff compact and free of local-only tooling noise.
   }
 
   if (lines.length === 0) return ''
@@ -151,6 +152,39 @@ export function buildRemoteAgentContextPreamble(input: RemoteAgentContextInput):
   }
   sections.push(`--- Prior conversation ---\n${transcript}\n--- End prior conversation ---`)
   return sections.join('\n\n')
+}
+
+/** Image blocks from prior user turns, in conversation order. */
+export function collectPriorPromptImages(
+  priorMessages: LLMMessage[],
+): Array<{ data: string; mimeType: string }> {
+  const images: Array<{ data: string; mimeType: string }> = []
+  for (const message of priorMessages) {
+    if (message.role !== 'user' || typeof message.content === 'string') continue
+    for (const block of message.content) {
+      if (block.type === 'image') images.push(parseDataUrl(block.dataUrl))
+    }
+  }
+  return images
+}
+
+/**
+ * First-create handoff: prepend the prior-conversation preamble and attach
+ * prior-turn images (current-turn images always win the 5-slot budget; leftover
+ * slots take the most recent prior images).
+ */
+export function applyRemoteAgentHandoffContext(
+  prompt: PromptPayload,
+  input: RemoteAgentContextInput,
+): PromptPayload {
+  const preamble = buildRemoteAgentContextPreamble(input)
+  const currentImages = prompt.images ?? []
+  const priorBudget = Math.max(0, MAX_REMOTE_PROMPT_IMAGES - currentImages.length)
+  const selectedPrior = collectPriorPromptImages(input.priorMessages).slice(-priorBudget)
+  const images = [...selectedPrior, ...currentImages]
+  const text = preamble ? `${preamble}\n\n--- New message ---\n${prompt.text}` : prompt.text
+  if (!preamble && images.length === currentImages.length) return prompt
+  return images.length ? { text, images } : { text }
 }
 
 export function promptPayloadFromUserContent(content: UserContent): PromptPayload {

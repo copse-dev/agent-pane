@@ -15,6 +15,9 @@ let agentBrowserSession: Electron.Session | undefined
 // untrusted. Default-deny the powerful web-platform permissions a hostile page
 // could abuse (camera/mic, geolocation, device access, clipboard reads, …).
 // Anything not listed here (e.g. fullscreen) keeps Chromium's default handling.
+// Note: denying `clipboard-read` only blocks guest-page JS from reading the
+// clipboard — main-process Copy Link / Copy Image (browser-context-menu) still
+// writes via Electron's clipboard APIs.
 const DENIED_BROWSER_PERMISSIONS = new Set<string>([
   'media',
   'geolocation',

@@ -569,6 +569,17 @@ Collected from design review — each of these was _almost_ a bug in the plan it
 - **In-loop nudges are not continuations.** They live inside one `runAgentLoop` call
   under `maxSteps`/LLM caps; only machine-initiated _new turns_ touch the budget.
   Conflating the two either starves the loop or unbounds it.
+- **Reasoning expansion remains a bounded E1 mechanism.** Hosts may opt into pure, synchronous
+  reasoning checkpoints inside one provider stream. A clean checkpoint only raises the next local
+  stream boundary; it never creates a continuation or bypasses the product-wide hard cap. A circle
+  cut feeds the existing `reasoning-runaway` hook and streak/give-up path, while absent policy keeps
+  the pre-checkpoint behavior byte-identical. The host persists decisions through an injected sink;
+  `packages/agent` remains storage-free. Copse's internal primary, parent-continuation, todo-worker,
+  and subagent loops opt into 2K reasoning checkpoints with the existing 32K product ceiling and a
+  4K recovery ceiling. Ordinary visible responses retain the 32K ceiling; the checkpoint interval
+  is not a general response cap. The primary host persists metadata-only decisions (never reasoning
+  text) to `reasoning-checkpoints.jsonl`. ACP and other externally hosted agent loops remain outside
+  this policy.
 
 ## Codebase impact
 

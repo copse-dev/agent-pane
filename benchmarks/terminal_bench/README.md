@@ -15,13 +15,20 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
   and recovery behavior.
 - `pr-1149@1` retains PR #1149's constrained recovery writes and validation warnings as historical
   experimental behavior.
-- `product-aligned@1` exposes `run_shell` and an unconstrained `/app` `write_file`, reports nonzero
+- `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
   exits as tool errors, and contains no requested-path, forced-write, SIGINT, or task-specific
   recovery logic.
+- `product-aligned@3` keeps v2's prompt and tools but turns the 2k reasoning cap into a checkpoint.
+  Clean reasoning receives another 2k window, checked again up to the product's 32k hard ceiling;
+  explicit self-diagnosis, repeated blocks/headings/plans, or a 100-item list cuts the stream into
+  the existing bounded recovery path. Historical v1/v2 capsules remain readable; the unversioned
+  CLI and workflow selection resolves to v3.
 
 The four diagnostic tasks are a development cohort, not evidence of general improvement, and
 their historical 2.0 rewards are not comparable with 2.1 rewards. The frozen evidence and run
 links are in [`docs/spikes/terminal-bench-pr-1149.md`](../../docs/spikes/terminal-bench-pr-1149.md).
+The complete two-attempt 2.1 result and v2 follow-up rationale are in
+[`docs/spikes/terminal-bench-2.1-profile-ablation.md`](../../docs/spikes/terminal-bench-2.1-profile-ablation.md).
 
 ## Prerequisites
 
@@ -57,11 +64,14 @@ The manual `Terminal-Bench (Scaleway Fleet)` workflow uses GitHub only as the co
 one immutable worker image, pushes it to a private Scaleway Container Registry, and launches
 disposable x86 Scaleway Instances. `instances` is the physical host cap;
 `workers_per_instance` controls how many logical task shards share each host. Each worker container
-uses an isolated result directory while controlling Terminal-Bench's sibling task containers
-through the shared host Docker socket.
+uses an isolated `COPSE_TERMINAL_RESULTS_ROOT` below the shared host results mount while controlling
+Terminal-Bench's sibling task containers through the shared host Docker socket. The results parent
+is mounted at the same absolute path inside the worker and on the host: Harbor passes absolute bind
+sources to the host Docker daemon, so remapping that path would make verifier reward files invisible
+to Harbor.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
-`main-legacy,pr-1149,product-aligned` and set `steered_rerun` to false. The workflow provisions one
+`product-aligned@2,product-aligned@3` and set `steered_rerun` to false. The workflow provisions one
 fleet, then each worker runs one task across every profile before advancing to its next task. The
 profile order rotates by the task's global cohort position to counterbalance ordering effects:
 task 1 runs A/B/C, task 2 runs B/C/A, and task 3 runs C/A/B. All requested attempts for that
@@ -370,6 +380,10 @@ hook-run sink in `agent/hook-runs.jsonl`, including the outcome of each pressure
 Because a host may apply a selected hook through a different mechanism or substitute recovery
 text, `agent/applied-nudges.jsonl` separately records the exact message and mechanism the model
 received.
+For adaptive profiles, every 2k reasoning decision is separately retained in
+`agent/reasoning-checkpoints.jsonl`, including the checkpoint and hard-limit token counts, whether
+the stream continued or was cut, and the concrete circle signals. Reports count expansions and
+circle cuts independently from ordinary hard-cap cuts.
 
 `agent/provider-requests.jsonl` records the complete normalized message history and tool schema
 presented to the OpenAI-compatible provider on every model call. Together with
@@ -404,9 +418,12 @@ inspection, then runs the relevant verifier tests from `/tests` when they are av
 than substituting an ad hoc smoke check.
 A capped reasoning turn may contain up to 256 visible planning characters without
 escaping the terminal recovery streak, and the configured stream cap still applies to
-finalization turns. The initial terminal cap is 2k tokens; the one bounded retry after the
-reasoning-runaway nudge gets a 4k cap so a complex local-model thought can reach a tool call
-without restoring an unbounded stream. The terminal prompt also tells the agent to preserve damaged or stateful
+finalization turns. The v1/v2 initial terminal cap is 2k tokens; the one bounded retry after the
+reasoning-runaway nudge gets a 4k cap so a complex local-model thought can reach a tool call.
+Product-aligned v3 instead checks a reasoning-dominated stream every 2k tokens. A clean checkpoint
+continues in the same provider stream up to the product's 32k absolute cap; a detected circle uses
+the same recovery machinery, whose retry remains capped at 4k. Visible final-answer streams do not
+receive reasoning expansions. The terminal prompt also tells the agent to preserve damaged or stateful
 inputs before programs that may checkpoint, recover, migrate, or rewrite them; this prevents an
 inspection command from destroying the only copy of forensic task data. Iterative work also uses
 copies instead of moving, deleting, or overwriting original task inputs before validation. Large task inputs should

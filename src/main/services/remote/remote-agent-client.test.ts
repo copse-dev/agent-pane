@@ -2,9 +2,11 @@ import { afterEach, describe, it, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import {
+  applyRemoteAgentHandoffContext,
   buildRemoteAgentContextPreamble,
   FATAL_REMOTE_STREAM_ERROR_CODES,
   formatRemoteGitSummary,
+  MAX_REMOTE_PROMPT_IMAGES,
   parseSseBlock,
   promptPayloadFromUserContent,
   RemoteAgentStreamError,
@@ -506,7 +508,9 @@ describe('buildRemoteAgentContextPreamble', () => {
     assert.match(preamble, /Current branch: `fix-commonmark-heading-support`/)
     assert.match(preamble, /User: Fix the heading parser/)
     assert.match(preamble, /Assistant: Looking into it\./)
-    assert.match(preamble, /Assistant: \(used tools: read_file\)/)
+    // Name-only tool-call turns add no actionable detail — omit them.
+    assert.doesNotMatch(preamble, /used tools/)
+    assert.doesNotMatch(preamble, /read_file/)
     // System prompts and raw tool results stay out of the handoff.
     assert.doesNotMatch(preamble, /ignored system prompt/)
     assert.doesNotMatch(preamble, /contents/)
@@ -518,14 +522,73 @@ describe('buildRemoteAgentContextPreamble', () => {
     assert.equal(buildRemoteAgentContextPreamble({ priorMessages: [], branch: 'main' }), '')
   })
 
-  it('flattens multimodal user content to its text parts', () => {
+  it('marks prior image attachments in the transcript text', () => {
     assert.equal(
       userContentToText([
         { type: 'text', text: 'describe this' },
         { type: 'image', dataUrl: 'data:image/png;base64,abc' },
       ]),
-      'describe this',
+      'describe this\n[image]',
     )
+  })
+})
+
+describe('applyRemoteAgentHandoffContext', () => {
+  it('forwards prior-turn images on first handoff and prefers current-turn images', () => {
+    const priorMessages = [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'text' as const, text: 'first shot' },
+          { type: 'image' as const, dataUrl: 'data:image/png;base64,prior1' },
+        ],
+      },
+      { role: 'assistant' as const, content: 'Got it.' },
+      {
+        role: 'user' as const,
+        content: [{ type: 'image' as const, dataUrl: 'data:image/jpeg;base64,prior2' }],
+      },
+    ]
+    const prompt = {
+      text: 'and this one?',
+      images: [{ mimeType: 'image/png', data: 'current' }],
+    }
+
+    const handedOff = applyRemoteAgentHandoffContext(prompt, { priorMessages, branch: 'main' })
+
+    assert.match(handedOff.text, /User: first shot\n\[image\]/)
+    assert.match(handedOff.text, /User: \[image\]/)
+    assert.match(handedOff.text, /--- New message ---\nand this one\?/)
+    assert.deepEqual(handedOff.images, [
+      { mimeType: 'image/png', data: 'prior1' },
+      { mimeType: 'image/jpeg', data: 'prior2' },
+      { mimeType: 'image/png', data: 'current' },
+    ])
+  })
+
+  it('keeps current-turn images when the prior image budget is exhausted', () => {
+    const priorMessages = Array.from({ length: MAX_REMOTE_PROMPT_IMAGES + 2 }, (_, i) => ({
+      role: 'user' as const,
+      content: [{ type: 'image' as const, dataUrl: `data:image/png;base64,prior${String(i)}` }],
+    }))
+    const currentImages = [
+      { mimeType: 'image/png', data: 'c0' },
+      { mimeType: 'image/png', data: 'c1' },
+    ]
+    const handedOff = applyRemoteAgentHandoffContext(
+      { text: 'latest', images: currentImages },
+      { priorMessages },
+    )
+
+    assert.ok(handedOff.images)
+    assert.equal(handedOff.images.length, MAX_REMOTE_PROMPT_IMAGES)
+    assert.deepEqual(handedOff.images.slice(-currentImages.length), currentImages)
+    // Most recent prior images fill the leftover slots (prior0…prior6 available).
+    assert.deepEqual(handedOff.images.slice(0, MAX_REMOTE_PROMPT_IMAGES - currentImages.length), [
+      { mimeType: 'image/png', data: 'prior4' },
+      { mimeType: 'image/png', data: 'prior5' },
+      { mimeType: 'image/png', data: 'prior6' },
+    ])
   })
 })
 

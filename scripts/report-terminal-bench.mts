@@ -7,6 +7,7 @@ import {
   terminalBenchCanonicalTaskName,
 } from './lib/terminal-bench-tasks.mts'
 import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
+import { terminalBenchResultsRoot } from './lib/terminal-bench.mts'
 
 interface TrialSummary {
   profile: string
@@ -23,6 +24,9 @@ interface TrialSummary {
   toolCalls: number
   commandTimeouts: number
   streamCuts: number
+  reasoningCheckpoints: number
+  reasoningExpansions: number
+  reasoningCircleCuts: number
   appliedNudges: number
   failureCategory: FailureCategory
 }
@@ -48,6 +52,9 @@ interface ProfileCounts {
   timeout: number
   invalid: number
   streamCuts: number
+  reasoningCheckpoints: number
+  reasoningExpansions: number
+  reasoningCircleCuts: number
   appliedNudges: number
   modelRequests: number
   toolCalls: number
@@ -118,6 +125,38 @@ async function lineCount(path: string): Promise<number> {
   }
 }
 
+async function reasoningCheckpointMetrics(path: string): Promise<{
+  total: number
+  expansions: number
+  circleCuts: number
+}> {
+  let text: string
+  try {
+    text = await readFile(path, 'utf8')
+  } catch {
+    return { total: 0, expansions: 0, circleCuts: 0 }
+  }
+  let total = 0
+  let expansions = 0
+  let circleCuts = 0
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue
+    let value: unknown
+    try {
+      value = JSON.parse(line)
+    } catch {
+      continue
+    }
+    total++
+    if (nested(value, 'decision') === 'continue') expansions++
+    const signals = nested(value, 'signals')
+    if (nested(value, 'decision') === 'cut' && Array.isArray(signals) && signals.length > 0) {
+      circleCuts++
+    }
+  }
+  return { total, expansions, circleCuts }
+}
+
 async function traceMetrics(path: string): Promise<TraceMetrics> {
   const metrics = {
     inputTokens: 0,
@@ -182,6 +221,9 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
   const retainedProfile = await readTerminalBenchTrialProfile(path)
   const agentDirectory = join(dirname(path), 'agent')
   const trace = await traceMetrics(join(agentDirectory, 'copse-trace.jsonl'))
+  const checkpointMetrics = await reasoningCheckpointMetrics(
+    join(agentDirectory, 'reasoning-checkpoints.jsonl'),
+  )
 
   return {
     profile:
@@ -202,13 +244,16 @@ async function parseTrial(path: string): Promise<TrialSummary | undefined> {
     toolCalls: numberValue(nested(metadata, 'tool_calls')) ?? trace.toolCalls,
     commandTimeouts: numberValue(nested(metadata, 'command_timeouts')) ?? trace.commandTimeouts,
     streamCuts: await lineCount(join(agentDirectory, 'stream-stats.jsonl')),
+    reasoningCheckpoints: checkpointMetrics.total,
+    reasoningExpansions: checkpointMetrics.expansions,
+    reasoningCircleCuts: checkpointMetrics.circleCuts,
     appliedNudges: await lineCount(join(agentDirectory, 'applied-nudges.jsonl')),
     failureCategory: await failureCategory(value, dirname(path)),
   }
 }
 
 const trials: TrialSummary[] = []
-for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) {
+for await (const path of glob(join(terminalBenchResultsRoot(), '*/*/result.json'))) {
   const trial = await parseTrial(path)
   if (trial) trials.push(trial)
 }
@@ -229,6 +274,9 @@ function profileSummary(profile: string, selected: TrialSummary[]): ProfileSumma
     timeout: valid.filter((trial) => terminalBenchTrialOutcome(trial) === 'timeout').length,
     invalid: ordered.filter((trial) => terminalBenchTrialOutcome(trial) === 'invalid').length,
     streamCuts: valid.reduce((sum, trial) => sum + trial.streamCuts, 0),
+    reasoningCheckpoints: valid.reduce((sum, trial) => sum + trial.reasoningCheckpoints, 0),
+    reasoningExpansions: valid.reduce((sum, trial) => sum + trial.reasoningExpansions, 0),
+    reasoningCircleCuts: valid.reduce((sum, trial) => sum + trial.reasoningCircleCuts, 0),
     appliedNudges: valid.reduce((sum, trial) => sum + trial.appliedNudges, 0),
     modelRequests: valid.reduce((sum, trial) => sum + trial.modelRequests, 0),
     toolCalls: valid.reduce((sum, trial) => sum + trial.toolCalls, 0),
@@ -296,6 +344,8 @@ if (process.argv.slice(2).includes('--json')) {
         `${String(summary.counts.toolCalls)} tool calls, ` +
         `${String(summary.counts.commandTimeouts)} command timeouts, ` +
         `${String(summary.counts.streamCuts)} stream cuts, ` +
+        `${String(summary.counts.reasoningExpansions)}/${String(summary.counts.reasoningCheckpoints)} reasoning expansions, ` +
+        `${String(summary.counts.reasoningCircleCuts)} circle cuts, ` +
         `${String(summary.counts.appliedNudges)} applied nudges`,
     )
     console.log(
@@ -311,7 +361,9 @@ if (process.argv.slice(2).includes('--json')) {
         `${trial.outcome.toUpperCase().padEnd(7)} ${trial.taskName.padEnd(42)} ` +
           `${seconds.padStart(5)}s  llm=${String(trial.modelRequests).padStart(2)} ` +
           `tools=${String(trial.toolCalls).padStart(2)} timeouts=${String(trial.commandTimeouts)} ` +
-          `cuts=${String(trial.streamCuts)} nudges=${String(trial.appliedNudges)}`,
+          `cuts=${String(trial.streamCuts)} checkpoints=${String(trial.reasoningCheckpoints)} ` +
+          `expansions=${String(trial.reasoningExpansions)} circles=${String(trial.reasoningCircleCuts)} ` +
+          `nudges=${String(trial.appliedNudges)}`,
       )
     }
     console.log('')

@@ -217,7 +217,7 @@ describe('terminal benchmark capsule sealing', () => {
     const agentResult = result['agent_result'] as Record<string, unknown>
     const metadata = agentResult['metadata'] as Record<string, unknown>
     metadata['profile'] = 'product-aligned@1'
-    metadata['profile_hash'] = terminalBenchProfile('product-aligned').contentHash
+    metadata['profile_hash'] = terminalBenchProfile('product-aligned@1').contentHash
     result['started_at'] = '2026-07-21T11:00:00Z'
     result['finished_at'] = '2026-07-21T11:01:00Z'
     writeFileSync(resultPath, JSON.stringify(result))
@@ -262,7 +262,7 @@ describe('terminal benchmark capsule sealing', () => {
     ) as { capsules: Array<{ outcome: string; profile: string }> }
     assert.deepEqual(
       index.capsules.map(({ outcome, profile: id }) => [id, outcome]),
-      [['product-aligned@1', 'invalid']],
+      [['product-aligned@3', 'invalid']],
     )
   })
 })
