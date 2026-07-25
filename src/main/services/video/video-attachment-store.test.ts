@@ -90,22 +90,19 @@ describe('video attachment store', () => {
         }),
       /is empty/,
     )
-    assert.throws(
-      () => {
-        // Only the length is read before the limit check rejects it — avoid
-        // allocating a 256 MiB buffer just to trip the guard.
-        const oversized = new Uint8Array(0)
-        Object.defineProperty(oversized, 'byteLength', {
-          value: MAX_VIDEO_BYTES + 1,
-        })
-        storeVideoAttachment('proj', 't', {
-          name: 'demo.mp4',
-          mimeType: 'video/mp4',
-          bytes: oversized,
-        })
-      },
-      /over the .* limit/,
-    )
+    assert.throws(() => {
+      // Only the length is read before the limit check rejects it — avoid
+      // allocating a 256 MiB buffer just to trip the guard.
+      const oversized = new Uint8Array(0)
+      Object.defineProperty(oversized, 'byteLength', {
+        value: MAX_VIDEO_BYTES + 1,
+      })
+      storeVideoAttachment('proj', 't', {
+        name: 'demo.mp4',
+        mimeType: 'video/mp4',
+        bytes: oversized,
+      })
+    }, /over the .* limit/)
   })
 
   describe('describeWorkspaceVideo', () => {
