@@ -3,8 +3,10 @@ import { app, ipcMain } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
+  getInAppBrowserSession,
   isBrowserWebContents,
 } from './windows/browser-web-contents.ts'
+import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts'
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
@@ -102,6 +104,11 @@ import {
 app.on('web-contents-created', (_event, contents) => {
   if (isBrowserWebContents(contents)) {
     attachBrowserGuestWindowOpen(contents)
+    // Native right-click menu only on the visible in-app browser pane — not on
+    // headless agent automation windows (same session lockdown, no UI surface).
+    if (contents.session === getInAppBrowserSession()) {
+      attachBrowserGuestContextMenu(contents)
+    }
     return
   }
   attachWebContentsLockdown(contents)
