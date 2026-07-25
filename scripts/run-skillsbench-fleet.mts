@@ -198,17 +198,20 @@ function envLine(name: string, value: string): string {
   return `${name}=${value}`
 }
 
+function envTrimmedOr(name: string, fallback: string): string {
+  const value = process.env[name]?.trim()
+  if (value === undefined || value.length === 0) return fallback
+  return value
+}
+
 export function skillsBenchWorkerEnvironment(config: RunConfig, shardIndex: number): string {
   const firstProfile = config.profiles[0]
   if (!firstProfile) throw new Error('at least one SkillsBench profile is required')
   const generativeKey = envValue('SCW_GENERATIVE_API_KEY')
-  const objectRegion = process.env['SCW_OBJECT_STORAGE_REGION']?.trim() || 'fr-par'
-  const runId = process.env['COPSE_BENCH_RUN_ID']?.trim() || `manual-${Date.now().toString(36)}`
+  const objectRegion = envTrimmedOr('SCW_OBJECT_STORAGE_REGION', 'fr-par')
+  const runId = envTrimmedOr('COPSE_BENCH_RUN_ID', `manual-${Date.now().toString(36)}`)
   const values: Array<[string, string]> = [
-    [
-      'LM_STUDIO_URL',
-      process.env['SCW_GENERATIVE_API_URL']?.trim() || 'https://api.scaleway.ai/v1',
-    ],
+    ['LM_STUDIO_URL', envTrimmedOr('SCW_GENERATIVE_API_URL', 'https://api.scaleway.ai/v1')],
     ['LM_STUDIO_MODEL', envValue('LM_STUDIO_MODEL')],
     ['LM_STUDIO_API_KEY', generativeKey],
     ['COPSE_BENCH_RUN_ID', `${runId}-shard-${String(shardIndex)}`],
@@ -231,8 +234,8 @@ export function skillsBenchWorkerEnvironment(config: RunConfig, shardIndex: numb
       'SCW_OBJECT_STORAGE_PREFIX',
       `${cleanPrefix(config.objectPrefix)}/shard-${String(shardIndex)}`,
     ],
-    ['GITHUB_REPOSITORY', process.env['GITHUB_REPOSITORY']?.trim() || 'manual/local'],
-    ['GITHUB_SHA', process.env['GITHUB_SHA']?.trim() || 'manual'],
+    ['GITHUB_REPOSITORY', envTrimmedOr('GITHUB_REPOSITORY', 'manual/local')],
+    ['GITHUB_SHA', envTrimmedOr('GITHUB_SHA', 'manual')],
   ]
   for (const name of [
     'COPSE_SKILLSBENCH_MAX_STEPS',

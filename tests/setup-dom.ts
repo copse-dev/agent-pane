@@ -27,6 +27,11 @@ Object.assign(globalThis, {
   Event: win.Event,
   CustomEvent: win.CustomEvent,
   ErrorEvent: win.ErrorEvent,
+  MouseEvent: win.MouseEvent,
+  // DOMRect is returned by getBoundingClientRect(); expose the constructor so
+  // component tests can build real rects without unsafe casts.
+  DOMRect: win.DOMRect,
+  DOMRectReadOnly: win.DOMRectReadOnly,
   Element: win.Element,
   // HTMLElement is what renderer DOM helpers / tip layers return. Expose it so
   // `instanceof HTMLElement` works under happy-dom the same way Element does —

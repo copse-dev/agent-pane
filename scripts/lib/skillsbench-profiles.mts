@@ -102,12 +102,35 @@ function definition(
 
 const VERSIONED_ID = /^(.*)@([12])$/
 
+function isSkillsBenchProfileId(value: string): value is SkillsBenchProfileId {
+  for (const id of SKILLSBENCH_PROFILE_IDS) {
+    if (id === value) return true
+  }
+  return false
+}
+
+function parseSkillsBenchProfileVersion(value: string): SkillsBenchProfileVersion | undefined {
+  if (value === '1') return 1
+  if (value === '2') return 2
+  return undefined
+}
+
+const VERSION_SUFFIX = { 1: '1', 2: '2' } as const satisfies Record<
+  SkillsBenchProfileVersion,
+  `${SkillsBenchProfileVersion}`
+>
+
+function versionedProfileId(
+  id: SkillsBenchProfileId,
+  version: SkillsBenchProfileVersion,
+): SkillsBenchProfileVersionedId {
+  return `${id}@${VERSION_SUFFIX[version]}`
+}
+
 export function parseSkillsBenchProfileId(value: string | undefined): SkillsBenchProfileId {
   const trimmed = (value ?? '').trim()
   const normalized = VERSIONED_ID.exec(trimmed)?.[1] ?? trimmed
-  if ((SKILLSBENCH_PROFILE_IDS as readonly string[]).includes(normalized)) {
-    return normalized as SkillsBenchProfileId
-  }
+  if (isSkillsBenchProfileId(normalized)) return normalized
   throw new Error(
     `SkillsBench profile must be one of ${SKILLSBENCH_PROFILE_IDS.join(', ')}, received '${value ?? ''}'.`,
   )
@@ -123,8 +146,8 @@ export function parseSkillsBenchProfileSelectionId(
 ): SkillsBenchProfileSelectionId {
   const trimmed = (value ?? '').trim()
   const base = parseSkillsBenchProfileId(trimmed)
-  const version = VERSIONED_ID.exec(trimmed)?.[2]
-  return version ? (`${base}@${version}` as SkillsBenchProfileVersionedId) : base
+  const version = parseSkillsBenchProfileVersion(VERSIONED_ID.exec(trimmed)?.[2] ?? '')
+  return version ? versionedProfileId(base, version) : base
 }
 
 export function parseSkillsBenchProfileIds(
@@ -187,7 +210,7 @@ export function skillsBenchProfile(
   const selection = parseSkillsBenchProfileSelectionId(value)
   const id = parseSkillsBenchProfileId(selection)
   const version = skillsBenchProfileVersion(selection)
-  const versionedId = `${id}@${String(version)}` as SkillsBenchProfileVersionedId
+  const versionedId = versionedProfileId(id, version)
   const resolved = definition(id, skills)
   const template = definition(id, [
     { name: '__SKILL_NAME__', description: '__SKILL_DESCRIPTION__', body: '__SKILL_BODY__' },
