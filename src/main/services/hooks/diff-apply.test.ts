@@ -37,7 +37,12 @@ import { setSetting } from '../storage/settings.ts'
 
 let threadCounter = 0
 
-/** Poll until `path` exists (a detached hook wrote it) or the deadline passes. */
+/**
+ * Poll until `path` exists (a detached hook wrote it) or the deadline passes.
+ *
+ * Existence is a safe completion signal only because `writeCaptureHook` renames
+ * the file into place once its stdin is fully copied.
+ */
 async function waitForFile(path: string, timeoutMs = 3_000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -88,10 +93,22 @@ describe('diff-apply Copse-native events (F2)', () => {
     return path
   }
 
-  /** Executable script that copies its stdin to `stdinFile`. */
+  /**
+   * Executable script that copies its stdin to `stdinFile`.
+   *
+   * Writes to a sibling temp path and renames, so `stdinFile` only ever appears
+   * complete: a plain `cat > stdinFile` creates the file when the shell sets up
+   * the redirect, before any bytes are copied, and the detached-hook tests below
+   * poll for existence — they would otherwise read an empty file and fail in
+   * `JSON.parse`.
+   */
   async function writeCaptureHook(name: string, stdinFile: string): Promise<string> {
     const path = join(tempHome, name)
-    await writeFile(path, `#!/bin/sh\ncat > '${stdinFile}'\n`, 'utf-8')
+    await writeFile(
+      path,
+      `#!/bin/sh\ncat > '${stdinFile}.partial'\nmv '${stdinFile}.partial' '${stdinFile}'\n`,
+      'utf-8',
+    )
     await chmod(path, 0o755)
     return path
   }
