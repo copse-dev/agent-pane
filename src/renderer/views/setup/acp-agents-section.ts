@@ -337,6 +337,9 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // Cached list persisted with the agent so the model picker can list models
     // without re-spawning; seeded from the saved config, refreshed by "Detect".
     let detectedModels: AcpModelChoice[] = options.initial?.availableModels ?? []
+    // Probe time behind detectedModels, carried across a plain Save and stamped
+    // fresh by "Detect models" so the background staleness check can age it out.
+    let detectedModelsAt: number | undefined = options.initial?.modelsProbedAt
     setModelOptions(detectedModels, options.initial?.model ?? '')
     let detectedModes: AcpModeChoice[] = options.initial?.availablePermissionModes ?? []
     setModeOptions(detectedModes, options.initial?.permissionMode ?? '')
@@ -364,12 +367,14 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
           // separate Save. Merge onto the *saved* config (not the in-progress form
           // draft) so any unsaved field edits aren't clobbered, and skip the full
           // re-render so this form stays as the user left it.
+          detectedModelsAt = Date.now()
           const saved = agents.find((candidate) => candidate.id === id)
           if (saved) {
             agents = upsertAgent(agents, {
               ...saved,
               ...(probe.models ? { availableModels: probe.models.choices } : {}),
               ...(probe.modes ? { availablePermissionModes: probe.modes.choices } : {}),
+              modelsProbedAt: detectedModelsAt,
             })
             void api.settings.set('registeredAcpAgents', agents)
           }
@@ -420,6 +425,9 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         ...(Object.keys(env).length ? { env } : {}),
         ...(model ? { model } : {}),
         ...(detectedModels.length ? { availableModels: detectedModels } : {}),
+        ...(detectedModels.length && detectedModelsAt !== undefined
+          ? { modelsProbedAt: detectedModelsAt }
+          : {}),
         ...(permissionMode ? { permissionMode } : {}),
         ...(detectedModes.length ? { availablePermissionModes: detectedModes } : {}),
         enabled: enabledBox.checked,

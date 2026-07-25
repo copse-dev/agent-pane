@@ -16,7 +16,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
+import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
 import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
@@ -355,7 +355,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <div id="settings-env-detect-host" class="settings-mount"></div>
 
-            <fieldset id="settings-models-section">
+            <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
               <p class="settings-fieldset-desc">
                 Choose the main chat model and the models used for background tasks. Role defaults
@@ -366,10 +366,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Pick a cloud, local, or remote-agent model here (or from the model picker beside
-                  the chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to
-                  Cursor Cloud instead of running it on this machine — configure it in the Remote
-                  agents section.
+                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks the
+                  Pareto-frontier model with the best plan-aware value and routes to that provider.
+                  Or pin a cloud, local, or remote-agent model here (or from the picker beside the
+                  chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
+                  Cloud instead of running it on this machine — configure it in the Remote agents
+                  section.
                 </span>
               </label>
               <label>
@@ -2253,7 +2255,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await populateModelSelect(
         form.elements.namedItem('model') as HTMLSelectElement,
         api,
-        model ?? DEFAULT_CLOUD_MODEL,
+        model ?? DEFAULT_APP_CHAT_MODEL,
+        { includeBestValue: true },
       )
       const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
       const roleModels =
@@ -2317,9 +2320,11 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
         store.getState().fontSize,
       )
-      ;(form.elements.namedItem('uiScale') as HTMLInputElement).value = String(
-        store.getState().uiScale,
-      )
+      const uiScaleInput = form.elements.namedItem('uiScale')
+      if (!(uiScaleInput instanceof HTMLInputElement)) {
+        throw new Error('Settings dialog template is missing "uiScale"')
+      }
+      uiScaleInput.value = String(store.getState().uiScale)
       ;(form.elements.namedItem('autoPortraitRightPanel') as HTMLInputElement).checked =
         store.getState().autoPortraitRightPanel
       ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
@@ -2391,7 +2396,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // `theme` is the concrete value panes render; `system` resolves against the OS.
       const theme = resolveTheme(themePreference)
       const fontSize = parseInt(data.get('fontSize') as string, 10)
-      const uiScaleRaw = parseFloat(data.get('uiScale') as string)
+      const uiScaleField = data.get('uiScale')
+      const uiScaleRaw = typeof uiScaleField === 'string' ? parseFloat(uiScaleField) : Number.NaN
       const uiScale = Number.isFinite(uiScaleRaw)
         ? clampUiScale(uiScaleRaw)
         : normalizeUiScale(store.getState().uiScale)
