@@ -34,10 +34,6 @@ Object.assign(globalThis, {
   PointerEvent: win.PointerEvent,
   // DOMRect backs getBoundingClientRect stubs without `as DOMRect` casts.
   DOMRect: win.DOMRect,
-  // DragEvent / DataTransfer back file-drop tests that construct real drop
-  // events instead of casting object literals through `as DragEvent`.
-  DragEvent: win.DragEvent,
-  DataTransfer: win.DataTransfer,
   Element: win.Element,
   // HTMLElement is what renderer DOM helpers / tip layers return. Expose it so
   // `instanceof HTMLElement` works under happy-dom the same way Element does —

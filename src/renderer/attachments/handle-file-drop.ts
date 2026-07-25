@@ -11,6 +11,16 @@ export type FileDropApi = {
   fs: Pick<ApiClient['fs'], 'readFile'>
 }
 
+/** Structural drop event so tests can pass a plain object without `as DragEvent`. */
+export type FileDropEvent = {
+  preventDefault(): void
+  stopPropagation(): void
+  dataTransfer?: {
+    getData(format: string): string
+    files: ArrayLike<File>
+  } | null
+}
+
 function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader()
@@ -104,7 +114,7 @@ export async function attachFiles(
 }
 
 export async function handleFileDrop(
-  e: DragEvent,
+  e: FileDropEvent,
   handlers: PromptAttachmentHandlers,
   api: FileDropApi,
   workspaceRoot: string | null,
