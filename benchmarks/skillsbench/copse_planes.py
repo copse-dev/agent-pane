@@ -34,6 +34,20 @@ AGENT_CONFIG = AgentConfig(
 )
 
 
+#: Every rollout in this spike runs with task-container egress off, whichever
+#: plane stack it uses. Copse calls the model from the worker host, so unlike an
+#: in-container ACP CLI it never needs egress for provider access. Applied even
+#: when an upstream task declares ``network_mode=public``.
+NETWORK_POLICY = "no-network"
+
+
+def freeze_no_network(task: Any) -> None:
+    """Pin the spike's network condition onto a task config, in place."""
+    task.config.environment.network_mode = NetworkMode.NO_NETWORK
+    task.config.environment.allowed_hosts = None
+    task.config.environment.allow_internet = False
+
+
 class _SessionAdapter:
     def on_ask_user(self, _handler: Any) -> None:
         return None
@@ -359,14 +373,41 @@ class CopseRolloutPlanes(DefaultRolloutPlanes):
         preserve_agent_network: bool,
         environment_manifest: Any,
     ) -> Any:
-        # Copse calls the model from the worker host, so unlike an in-container
-        # ACP CLI it never needs task-container egress for provider access.
-        # Freeze the spike's safety condition even when an upstream task says
-        # network_mode=public.
         del preserve_agent_network
-        task.config.environment.network_mode = NetworkMode.NO_NETWORK
-        task.config.environment.allowed_hosts = None
-        task.config.environment.allow_internet = False
+        freeze_no_network(task)
+        return super().create_environment(
+            environment,
+            task,
+            task_path,
+            rollout_name,
+            rollout_paths,
+            preserve_agent_network=False,
+            environment_manifest=environment_manifest,
+        )
+
+
+class OracleRolloutPlanes(DefaultRolloutPlanes):
+    """Stock planes with only the spike's network condition applied.
+
+    The oracle runs the task's own ``solve.sh`` through BenchFlow's normal agent
+    plane, so none of the Copse overrides above apply to it. It must still see
+    the *same* environment the agent trials saw, or it is not a control for
+    them: an oracle with egress calibrates nothing about trials without it.
+    """
+
+    def create_environment(
+        self,
+        environment: str,
+        task: Any,
+        task_path: Path,
+        rollout_name: str | None,
+        rollout_paths: Any,
+        *,
+        preserve_agent_network: bool,
+        environment_manifest: Any,
+    ) -> Any:
+        del preserve_agent_network
+        freeze_no_network(task)
         return super().create_environment(
             environment,
             task,

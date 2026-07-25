@@ -17,7 +17,7 @@ from typing import Any
 
 from benchflow.rollout import Rollout, RolloutConfig
 
-from copse_planes import CopseRolloutPlanes
+from copse_planes import NETWORK_POLICY, CopseRolloutPlanes, OracleRolloutPlanes
 
 
 PROFILES = ("skills-none", "skills-product", "skills-explicit")
@@ -72,8 +72,9 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument(
         "--oracle",
         action="store_true",
-        help="Run the upstream oracle (task solve.sh, no LLM and no Copse planes) "
-        "instead of an agent, to establish task eligibility.",
+        help="Run the upstream oracle (the task's own solve.sh, no LLM and no Copse "
+        "agent plane) under the same network condition as the trials, to establish "
+        "task eligibility.",
     )
     parser.add_argument("--task-names", default="offer-letter-generator")
     parser.add_argument("--attempts", type=int, default=1)
@@ -216,9 +217,17 @@ async def _run_oracle(
     """Run the task's own solution through the stock BenchFlow lifecycle.
 
     BenchFlow treats ``agent="oracle"`` specially: it executes the task's
-    ``solve.sh`` and never calls an LLM, so this deliberately uses the default
-    planes and passes no model, agent env, or profile. A task is only eligible
-    for the study once this returns the upstream-required reward.
+    ``solve.sh`` and never calls an LLM, so this passes no model, agent env, or
+    profile and keeps BenchFlow's own agent plane.
+
+    It does NOT use stock planes wholesale: ``OracleRolloutPlanes`` re-applies
+    the spike's no-network condition, which otherwise lives only in
+    ``CopseRolloutPlanes``. Without that the oracle could run with egress the
+    agent trials were denied, and a pass would calibrate nothing about them.
+
+    A task is only eligible for the study once this returns the
+    upstream-required reward. Note this still exercises only the upstream half —
+    task image, skill mount, verifier — and not the Copse bridge or tools.
     """
     task_name = task["name"]
     trial_id = f"{task_name}__oracle"
@@ -243,6 +252,7 @@ async def _run_oracle(
                 "revision": descriptor["dataset"]["revision"],
                 "task_revision": task["git_commit_id"],
             },
+            planes=OracleRolloutPlanes(),
         )
     )
     result = await rollout.run()
@@ -274,7 +284,7 @@ async def _run_oracle(
         "mode": "oracle",
         "sourceCommit": _git_commit(),
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
-        "networkPolicy": "no-network",
+        "networkPolicy": NETWORK_POLICY,
         "elapsedSeconds": round(elapsed, 3),
         "officialReward": reward,
         "requiredReward": ORACLE_REQUIRED_REWARD,
@@ -398,7 +408,7 @@ async def _run_trial(
         "sourceCommit": _git_commit(),
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
         "model": model,
-        "networkPolicy": "no-network",
+        "networkPolicy": NETWORK_POLICY,
         "budgets": {
             "agentTimeoutSeconds": getattr(rollout, "_timeout", None),
             "defaultCommandTimeoutSeconds": 120,
