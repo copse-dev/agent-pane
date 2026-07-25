@@ -225,6 +225,14 @@ least one screenshot that reviewers can inspect.
 5. Screenshots land in `tests/e2e/screenshots/`:
    - `tool-display-live-mock.png` — live mock turn shows `Listed directory` (not `list_dir`)
 
+**CI only commits the shots your diff owns.** The e2e tier re-renders far more than a change
+touches — a broad selection renders everything — so `commit-screenshots` writes back only the
+reference PNGs the test oracle maps to your diff (plus any you hand-committed on the branch), and
+merge conflicts against `main` resolve the same way: your version for what you own, `main`'s for
+everything else. Anything held is listed by name in the PR comment. If your change really does
+move a shot the oracle didn't map, add the `update-screenshots` label to take CI's render.
+The rule lives in [`scripts/lib/screenshot-scope.mts`](scripts/lib/screenshot-scope.mts).
+
 Assertions to mirror: a turn with ≥2 tools collapses to `.tool-card-rollup` (`Used N tools` /
 category past-tense like `Read files`); expand for nested `.tool-card-group` / individuals;
 `.tool-count` = `×N` when the rollup is a single category; failed tools stay outside their
