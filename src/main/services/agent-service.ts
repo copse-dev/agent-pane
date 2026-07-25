@@ -22,7 +22,7 @@ import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { getSetting } from './storage/settings.ts'
 import { resetSessionBackup } from './worktree-backup.ts'
 import { resolveContextWindow } from './providers/resolve-context-window.ts'
-import { classifyAgentError } from './agent-errors.ts'
+import { classifyAgentError, classifyProviderAccessFailure } from './agent-errors.ts'
 import { resolveParentGoal } from '@copse/agent/working-brief.ts'
 import { buildSystemPrompt } from './agent-system-prompt.ts'
 import { hasLastUsage } from './providers/provider-usage.ts'
@@ -144,6 +144,10 @@ import type { TodoItem } from '@shared/types/todo.ts'
 import { parseRemoteAgentModelSelection } from '@shared/remote-agent.ts'
 import { runRemoteAgentFromSettings } from './remote/remote-agent-client.ts'
 import { resolveAgentChatModel } from './providers/resolve-agent-model.ts'
+import {
+  offerAcpClaudeFallback,
+  type CloudAgentBlockReason,
+} from './providers/acp-billing-fallback.ts'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
@@ -594,7 +598,16 @@ export async function runAgent(
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
   }
 
-  if (acpAgentId) {
+  // Running an ACP turn is reachable two ways: the user picked an `acp:<id>`
+  // model outright, or a blocked Claude Cloud Agent turn was re-routed here
+  // after the user accepted the offer to switch. Both need the identical run —
+  // abort registration, advisor bridge, partial-transcript salvage — so it lives
+  // in one closure rather than being duplicated down the remote-agent path.
+  const runAcpTurn = async (
+    acpRunAgentId: string,
+    acpRunModel: string | undefined,
+    executorModel: string,
+  ): Promise<{ usage: { inputTokens: number; outputTokens: number }; messages: LLMMessage[] }> => {
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
@@ -614,7 +627,7 @@ export async function runAgent(
     const advisorContext = registry.has('advisor')
       ? {
           advisorModel: resolveAdvisorModelId(),
-          executorModel: model,
+          executorModel,
           onChunk: sendChunk,
           getTranscript: (): LLMMessage[] => [
             ...priorMessages,
@@ -628,7 +641,7 @@ export async function runAgent(
     try {
       const result = await runAcpAgentFromSettings({
         threadId,
-        agentId: acpAgentId,
+        agentId: acpRunAgentId,
         userPrompt: outboundPrompt,
         priorMessages,
         signal: controller.signal,
@@ -636,7 +649,7 @@ export async function runAgent(
         registry,
         ...(advisorContext ? { advisorContext } : {}),
         ...(options?.invokedSkills?.length ? { invokedSkills: options.invokedSkills } : {}),
-        ...(acpSelection?.model ? { model: acpSelection.model } : {}),
+        ...(acpRunModel ? { model: acpRunModel } : {}),
       })
       sendChunk({ type: 'done', stopReason: result.stopReason })
       return {
@@ -653,7 +666,7 @@ export async function runAgent(
       // its estimated usage is reported instead of a silent zero. The error
       // text is separated from any streamed text so the bubble stays readable.
       const partial = err instanceof AcpTurnFailure ? err.partial : null
-      const msg = classifyAgentError(err, { acpAgentId })
+      const msg = classifyAgentError(err, { acpAgentId: acpRunAgentId })
       sendChunk({ type: 'text', text: partial?.assistantText ? `\n\n${msg}` : msg })
       sendChunk({ type: 'done' })
       return {
@@ -680,52 +693,115 @@ export async function runAgent(
     }
   }
 
-  if (remoteSelection) {
-    const controller = new AbortController()
-    abortMap.set(threadId, controller)
-    setActiveRunThread(threadId)
-    const runAbort = createAgentRunAbortScheduler(controller)
-    runAbort.schedule()
-    try {
-      const result = await runRemoteAgentFromSettings({
-        threadId,
-        provider: remoteSelection.provider,
-        ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
-        userPrompt: outboundPrompt,
-        priorMessages,
-        signal: controller.signal,
-        onChunk: sendChunk,
+  if (acpAgentId) return runAcpTurn(acpAgentId, acpSelection?.model, model)
+
+  // The user picked a remote agent but its key is unusable, so `model` is the
+  // local stand-in `resolveAgentChatModel` fell back to. Before accepting that
+  // demotion, offer the subscription-billed ACP path — the notice above already
+  // told them the Cloud Agent could not run.
+  if (resolved.blockedRemoteAgent) {
+    const choice = await offerAcpClaudeFallback({
+      provider: resolved.blockedRemoteAgent.provider,
+      reason: 'no-key',
+      ...(resolved.blockedRemoteAgent.model ? { model: resolved.blockedRemoteAgent.model } : {}),
+    })
+    if (choice) {
+      const switched = parseAcpModelSelection(choice.modelValue)
+      recordThreadModel(threadId, choice.modelValue)
+      setActiveRunModel(choice.modelValue)
+      sendChunk({
+        type: 'text',
+        text: `_Running this turn on **${choice.agentTitle}** instead — subscription-billed, against this worktree._\n\n`,
       })
-      return {
-        usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
-        messages: [
-          ...priorMessages,
-          { role: 'user' as const, content: outboundPrompt },
-          ...result.messages,
-        ],
-      }
-    } catch (err) {
-      // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
-      // emits CANCELLED `done` when it handles the signal; if an abort still
-      // escapes here, don't paint it as a provider error in the transcript.
-      if (controller.signal.aborted) {
-        sendChunk({ type: 'done', stopReason: 'CANCELLED' })
-      } else {
+      return runAcpTurn(choice.agentId, switched?.model, choice.modelValue)
+    }
+  }
+
+  if (remoteSelection) {
+    const emptyTurn = {
+      usage: { inputTokens: 0, outputTokens: 0 },
+      messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
+    }
+    // A credentials / billing failure is the one case worth offering an
+    // alternative billing path for, and the offer has to happen *outside* this
+    // block: its `finally` tears down the run's abort registration, which a
+    // follow-on ACP run then re-establishes for itself. So the run reports the
+    // block instead of writing the error to the transcript, and the caller
+    // below either re-routes or prints it.
+    const outcome = await (async (): Promise<
+      | { kind: 'done'; result: typeof emptyTurn }
+      | { kind: 'blocked'; reason: CloudAgentBlockReason; message: string }
+    > => {
+      const controller = new AbortController()
+      abortMap.set(threadId, controller)
+      setActiveRunThread(threadId)
+      const runAbort = createAgentRunAbortScheduler(controller)
+      runAbort.schedule()
+      try {
+        const result = await runRemoteAgentFromSettings({
+          threadId,
+          provider: remoteSelection.provider,
+          ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
+          userPrompt: outboundPrompt,
+          priorMessages,
+          signal: controller.signal,
+          onChunk: sendChunk,
+        })
+        return {
+          kind: 'done',
+          result: {
+            usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+            messages: [
+              ...priorMessages,
+              { role: 'user' as const, content: outboundPrompt },
+              ...result.messages,
+            ],
+          },
+        }
+      } catch (err) {
+        // Abort (Stop / Send now) is a clean interrupt — Cursor's adapter already
+        // emits CANCELLED `done` when it handles the signal; if an abort still
+        // escapes here, don't paint it as a provider error in the transcript.
+        if (controller.signal.aborted) {
+          sendChunk({ type: 'done', stopReason: 'CANCELLED' })
+          return { kind: 'done', result: emptyTurn }
+        }
         const msg = classifyAgentError(err)
+        const access = classifyProviderAccessFailure(err)
+        if (access) return { kind: 'blocked', reason: access, message: msg }
         sendChunk({ type: 'text', text: msg })
         sendChunk({ type: 'done' })
+        return { kind: 'done', result: emptyTurn }
+      } finally {
+        // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
+        fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+        runAbort.clear()
+        clearActiveRunThread(threadId)
+        abortMap.delete(threadId)
       }
-      return {
-        usage: { inputTokens: 0, outputTokens: 0 },
-        messages: [...priorMessages, { role: 'user' as const, content: outboundPrompt }],
-      }
-    } finally {
-      // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
-      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
-      runAbort.clear()
-      clearActiveRunThread(threadId)
-      abortMap.delete(threadId)
+    })()
+
+    if (outcome.kind === 'done') return outcome.result
+
+    const choice = await offerAcpClaudeFallback({
+      provider: remoteSelection.provider,
+      reason: outcome.reason,
+      ...(remoteSelection.model ? { model: remoteSelection.model } : {}),
+    })
+    if (!choice) {
+      sendChunk({ type: 'text', text: outcome.message })
+      sendChunk({ type: 'done' })
+      return emptyTurn
     }
+
+    const switched = parseAcpModelSelection(choice.modelValue)
+    recordThreadModel(threadId, choice.modelValue)
+    setActiveRunModel(choice.modelValue)
+    sendChunk({
+      type: 'text',
+      text: `_Retrying this turn on **${choice.agentTitle}** — subscription-billed, against this worktree._\n\n`,
+    })
+    return runAcpTurn(choice.agentId, switched?.model, choice.modelValue)
   }
 
   let trimmed: LLMMessage[] = [...priorMessages, { role: 'user', content: outboundPrompt }]
