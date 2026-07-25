@@ -208,7 +208,7 @@ function extraProviderOptions(
     entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
-  for (const model of provider.models) add(model.id, model.label ?? model.id)
+  for (const model of provider.models) add(model.id, model.id)
   if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
