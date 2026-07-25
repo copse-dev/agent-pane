@@ -52,7 +52,14 @@ describe('reasoning-checkpoint-recorder', () => {
 
     await getThreadMeta(PROJECT, THREAD).catch(() => undefined)
     const raw = readFileSync(join(root, PROJECT, 'reasoning-checkpoints.jsonl'), 'utf8').trim()
-    const line = JSON.parse(raw) as Record<string, unknown>
+    // JSON.parse returns `any`, which trips both #508 rules: asserting away
+    // from it hits no-unsafe-type-assertion, and assigning it hits
+    // no-unsafe-assignment. Widening to `unknown` is a safe assertion; the
+    // object check then earns the typed spread. The suppressions baseline is
+    // shrink-only, so this is fixed rather than added to it.
+    const parsed = JSON.parse(raw) as unknown
+    assert.ok(parsed !== null && typeof parsed === 'object', 'expected a JSON object')
+    const line: Record<string, unknown> = { ...parsed }
     assert.equal(line['schemaVersion'], 1)
     assert.equal(line['threadId'], THREAD)
     assert.equal(line['model'], 'lmstudio:qwen/qwen3.6-35b-a3b')
