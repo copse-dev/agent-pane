@@ -25,10 +25,18 @@
  * already refreshed in the diff (stale). A diff that hand-refreshes every
  * affected PNG needs no regen.
  *
+ * A third, non-gating mode serves the reconcile steps:
+ *
+ *   --own-paths  Print the reference PNGs this branch OWNS (see
+ *                lib/screenshot-scope.mts) — the shots it may keep with `--ours`
+ *                when a merge with main conflicts on them. A lone `*` means scope
+ *                is unavailable and the caller should keep everything.
+ *
  * Run: UPDATE_SCREENSHOTS_LABEL=<true|false> node scripts/check-screenshots.mts [--plan] --base <ref>
  */
 import { appendFileSync } from 'node:fs'
 import { changedFiles, computeScreenshotGate } from './test-oracle.mts'
+import { ownedScreenshotPaths } from './lib/screenshot-scope.mts'
 
 function parseBase(argv: string[]): string {
   const i = argv.indexOf('--base')
@@ -46,6 +54,18 @@ function main(): void {
   const argv = process.argv.slice(2)
   const base = parseBase(argv)
   const labeled = process.env['UPDATE_SCREENSHOTS_LABEL'] === 'true'
+
+  // Ownership list for the reconcile steps' per-file merge resolution: the shots
+  // this branch may keep with `--ours` when main re-rendered the same PNG. Every
+  // other conflicting shot takes main's version, so an unrelated re-render on a
+  // stale branch stops reverting main (see lib/screenshot-scope.mts). A lone `*`
+  // means scope is unavailable — the caller keeps the blanket `--ours` policy.
+  if (argv.includes('--own-paths')) {
+    const owned = ownedScreenshotPaths(base)
+    console.log(owned === null ? '*' : owned.join('\n'))
+    return
+  }
+
   const gate = computeScreenshotGate(changedFiles(base), labeled)
 
   // Regenerate when the change touches reference shots and they aren't already
