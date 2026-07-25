@@ -399,12 +399,6 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     }
   })
 
-  // Legacy path: some callers may still emit agent:usage directly.
-  api.agent.onUsage((threadId, usage) => {
-    recordUsageToLedger(api, store, threadId, usage)
-    addUsageDelta(store, threadId, usage)
-  })
-
   api.diff.onShowDiff((projectId, threadId, path, before, after, language) => {
     if (!isActiveOwner(projectId, threadId)) return
     store.setState({

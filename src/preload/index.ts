@@ -155,19 +155,6 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.off('agent:shell_output', listener)
       }
     },
-    onUsage: (handler: (threadId: string, usage: import('@shared/types').UsageDelta) => void) => {
-      const listener = (
-        _e: Electron.IpcRendererEvent,
-        threadId: string,
-        usage: import('@shared/types').UsageDelta,
-      ): void => {
-        handler(threadId, usage)
-      }
-      ipcRenderer.on('agent:usage', listener)
-      return (): void => {
-        ipcRenderer.off('agent:usage', listener)
-      }
-    },
     onRefreshContextEstimate: (handler: () => void) => {
       const listener = (): void => {
         handler()
