@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import {
   loadProjectThreads,
+  loadAllProjectThreads,
   saveProjectThread,
   saveProjectThreads,
   deleteProjectThread,
@@ -26,6 +27,8 @@ import {
   agentHistoryExists,
   findThreadOwners,
 } from './thread-store.ts'
+import { storageSet } from './storage/storage.ts'
+import { runSerialized } from './storage/write-queue.ts'
 import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
@@ -375,6 +378,39 @@ describe('thread-store', () => {
 
   it('returns an empty list for an unknown project', async () => {
     assert.deepEqual(await loadProjectThreads('nope'), [])
+  })
+
+  // Async prefetch yields to the event loop. loadAll must take the same
+  // per-project queue as saves — otherwise a concurrent save can tear the
+  // directory mid-read. Holding the queue key proves the load waits.
+  it('loadAllProjectThreads serializes behind an in-flight project op', async () => {
+    storageSet('projects', [{ id: 'p1', path: '/tmp', name: 'p1' }])
+    await saveProjectThread('p1', thread('t1', { messages: [userMsg('u1', 'hi')] }))
+
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const hold = runSerialized('thread-store:p1', async () => {
+      await gate
+    })
+
+    let settled = false
+    const loadP = loadAllProjectThreads().then((threads) => {
+      settled = true
+      return threads
+    })
+    // Two ticks: enough for an unqueued load to finish on this fixture, but a
+    // queued load must still be waiting on `hold`.
+    await new Promise((r) => setTimeout(r, 0))
+    await new Promise((r) => setTimeout(r, 0))
+    assert.equal(settled, false)
+
+    release()
+    await hold
+    const loaded = await loadP
+    assert.equal(loaded.length, 1)
+    assert.equal(loaded[0]?.id, 't1')
   })
 
   describe('event-level API', () => {

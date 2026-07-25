@@ -1030,7 +1030,14 @@ export function listOrphanProjectStores(
   })
 }
 
-/** Load every thread across all projects (usage summaries, etc.). */
+/**
+ * Load every thread across all projects (usage summaries, etc.).
+ *
+ * Must go through {@link loadProjectThreads} (the per-project write queue), not
+ * {@link readProjectThreads} directly: once reads are async and yield to the
+ * event loop, an unqueued load can interleave with `saveProjectThread` and
+ * observe a torn thread directory.
+ */
 export async function loadAllProjectThreads(): Promise<Thread[]> {
   const projects =
     (storageGet('projects') as Array<{ id: string }> | null)?.filter(
@@ -1038,7 +1045,7 @@ export async function loadAllProjectThreads(): Promise<Thread[]> {
     ) ?? []
   const threads: Thread[] = []
   for (const project of projects) {
-    threads.push(...(await readProjectThreads(project.id)))
+    threads.push(...(await loadProjectThreads(project.id)))
   }
   return threads
 }
