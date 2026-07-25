@@ -214,8 +214,22 @@ v3, task-major and order-counterbalanced, on 12 tasks: `code-from-image`,
 `make-mips-interpreter`, `password-recovery`, `mailman`, `circuit-fibsqrt`,
 `break-filter-js-from-html`, `chess-best-move`, and `rstan-to-pystan`. Six `PRO2-S` hosts each run
 two isolated workers with a 200 GiB volume; model, provider, 2k v2 cap, command timeout, and all
-other harness settings are held constant. Results are pending and will be added here after capsule
-validation.
+other harness settings are held constant. It completed at 3/12 for v2 and 4/12 for v3.
+
+A second paired run, [workflow run 30099923512](https://github.com/copse-dev/agent-pane/actions/runs/30099923512),
+completed at 2/12 for v2 and 5/12 for v3. Across both attempts, v2 solved 5/24 trials and v3 solved
+9/24. Mean elapsed time fell from 618 to 512 seconds and median elapsed time from 406 to 391
+seconds; provider requests fell from 896 to 746, tool calls from 945 to 922, and runaway cuts from
+56 to 27. V3 made 106 checkpoint decisions: 79 clean expansions and 23 circle cuts.
+
+This is directional product evidence, not a claim of statistical significance. Checkpoints fired
+on 17 paired tasks; within those pairs v2 solved two and v3 solved three. Three further v3 gains
+occurred without a checkpoint, showing the remaining run-to-run variance. The generic mechanism is
+still worth carrying into the built-in Copse agent because both paired attempts improved reward
+without a time or token-cost regression. Regular primary, parent-continuation, todo-worker, and
+subagent loops now use the same reasoning checkpoints while preserving ordinary visible responses
+up to the existing 32k product ceiling. ACP and other externally hosted agents remain unchanged;
+the #1149 forced-write and task-specific warning mechanisms remain benchmark-only.
 
 ## Compact evidence retention
 
