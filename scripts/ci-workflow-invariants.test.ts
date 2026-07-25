@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it } from 'node:test'
 
 // Invariants for the e2e dispatch path in .github/workflows/ci.yml.
@@ -9,7 +10,10 @@ import { describe, it } from 'node:test'
 // empty matrix skips the job. It does not — GitHub FAILS a job whose matrix
 // vector is empty ("Matrix vector 'shard' does not contain any values"), so
 // every skip-mode run reported `e2e: failure` and tripped `ci-passed`.
-const WORKFLOW = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8')
+// Resolved from the repo root, NOT from `import.meta.url`: run-tests.mts
+// bundles specs into `dist-test/` before running them, so a module-relative
+// path resolves inside the bundle output and the read throws ENOENT.
+const WORKFLOW = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
 
 describe('ci.yml e2e dispatch invariants', () => {
   it('never emits an empty shard matrix', () => {
