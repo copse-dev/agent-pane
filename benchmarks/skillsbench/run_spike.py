@@ -21,6 +21,29 @@ from copse_planes import CopseRolloutPlanes
 
 
 PROFILES = ("skills-none", "skills-product", "skills-explicit")
+PROFILE_VERSIONS = ("1", "2")
+
+
+def _base_profile(profile: str) -> str:
+    return profile.split("@", 1)[0]
+
+
+def _parse_profiles(raw: str) -> list[str]:
+    """Accept base or versioned selections; a bare id stays pinned to ``@1``."""
+    selections: list[str] = []
+    for item in (value.strip() for value in raw.split(",")):
+        if not item:
+            raise ValueError("profiles must be a comma-separated list without empty items")
+        base, separator, version = item.partition("@")
+        if base not in PROFILES:
+            raise ValueError(f"unsupported SkillsBench profile: {item}")
+        if separator and version not in PROFILE_VERSIONS:
+            raise ValueError(f"unsupported SkillsBench profile version: {item}")
+        resolved = f"{base}@{version or '1'}"
+        if resolved in selections:
+            raise ValueError(f"SkillsBench profiles must not contain duplicates: {resolved}")
+        selections.append(resolved)
+    return selections
 
 
 def _arguments() -> argparse.Namespace:
@@ -37,7 +60,13 @@ def _arguments() -> argparse.Namespace:
         type=Path,
         default=Path("/opt/copse/scripts/print-skillsbench-profile.mts"),
     )
-    parser.add_argument("--profile", choices=PROFILES, required=True)
+    profiles = parser.add_mutually_exclusive_group(required=True)
+    profiles.add_argument("--profile", help="Base or versioned profile, e.g. skills-product@2")
+    profiles.add_argument(
+        "--profiles",
+        help="Comma-separated arms run against every selected task, e.g. "
+        "skills-product@1,skills-product@2",
+    )
     parser.add_argument("--task-names", default="offer-letter-generator")
     parser.add_argument("--attempts", type=int, default=1)
     parser.add_argument("--shard-count", type=int, default=1)
@@ -47,6 +76,10 @@ def _arguments() -> argparse.Namespace:
         "--capsules-dir", type=Path, default=Path("bench-results/skillsbench-capsules")
     )
     values = parser.parse_args()
+    try:
+        values.profiles = _parse_profiles(values.profiles or values.profile)
+    except ValueError as error:
+        parser.error(str(error))
     if values.attempts < 1 or values.attempts > 5:
         parser.error("--attempts must be between 1 and 5")
     if values.shard_count < 1:
@@ -90,8 +123,11 @@ def _profile_metadata(script: Path, profile: str) -> dict[str, str]:
         ["node", str(script), profile], capture_output=True, text=True, check=True
     )
     value = json.loads(result.stdout)
-    if value.get("id") != f"{profile}@1" or not str(value.get("contentHash", "")).startswith(
-        "sha256:"
+    if (
+        value.get("id") != profile
+        or value.get("baseId") != _base_profile(profile)
+        or not value.get("reasoningPolicy")
+        or not str(value.get("contentHash", "")).startswith("sha256:")
     ):
         raise ValueError("profile metadata script returned invalid provenance")
     return value
@@ -133,6 +169,29 @@ def _reward(result: Any) -> float | None:
     return sum(numeric) / len(numeric) if numeric else None
 
 
+def _reasoning_summary(policy: str, checkpoints: list[dict[str, Any]]) -> dict[str, Any]:
+    """Keep checkpoint decisions and circle signals comparable across arms."""
+    signals: dict[str, int] = {}
+    circle_cuts = 0
+    for record in checkpoints:
+        record_signals = record.get("signals") or []
+        if record.get("decision") == "cut" and record_signals:
+            circle_cuts += 1
+        for signal in record_signals:
+            signals[str(signal)] = signals.get(str(signal), 0) + 1
+    return {
+        "policy": policy,
+        "checkpoints": len(checkpoints),
+        "continued": sum(1 for record in checkpoints if record.get("decision") == "continue"),
+        "cuts": sum(1 for record in checkpoints if record.get("decision") == "cut"),
+        "circleCuts": circle_cuts,
+        "signalCounts": dict(sorted(signals.items())),
+        "maxCheckpointTokens": max(
+            (int(record.get("checkpointTokens") or 0) for record in checkpoints), default=0
+        ),
+    }
+
+
 async def _run_trial(
     *,
     args: argparse.Namespace,
@@ -140,13 +199,15 @@ async def _run_trial(
     task: dict[str, Any],
     attempt: int,
     model: str,
+    profile: str,
     profile_metadata: dict[str, str],
 ) -> bool:
     task_name = task["name"]
-    trial_id = f"{task_name}__{args.profile}__attempt-{attempt}"
+    base_profile = _base_profile(profile)
+    trial_id = f"{task_name}__{profile.replace('@', '-')}__attempt-{attempt}"
     job_name = os.environ.get("COPSE_BENCH_RUN_ID", "skillsbench-spike")
-    rollout_name = trial_id.replace("@", "-")
-    planes = CopseRolloutPlanes(bundle=args.bundle.resolve(), profile=args.profile)
+    rollout_name = trial_id
+    planes = CopseRolloutPlanes(bundle=args.bundle.resolve(), profile=profile)
     agent_env = {
         "LM_STUDIO_URL": os.environ.get("LM_STUDIO_URL", "http://localhost:1234/v1"),
         "LM_STUDIO_MODEL": model,
@@ -171,7 +232,7 @@ async def _run_trial(
             agent="copse-skillsbench",
             model=model,
             agent_env=agent_env,
-            skill_mode="no-skill" if args.profile == "skills-none" else "with-skill",
+            skill_mode="no-skill" if base_profile == "skills-none" else "with-skill",
             self_gen_no_internet=True,
             jobs_dir=args.jobs_dir,
             job_name=job_name,
@@ -199,6 +260,11 @@ async def _run_trial(
     bridge_result = getattr(planes, "last_result", None) or {}
     if bridge_result and bridge_result.get("profileHash") != profile_metadata["contentHash"]:
         raise RuntimeError("agent bridge profile hash disagrees with the preflight profile hash")
+    checkpoints = bridge_result.get("reasoningCheckpoints") or []
+    if checkpoints:
+        (capsule / "reasoning-checkpoints.jsonl").write_text(
+            "".join(json.dumps(record, default=str) + "\n" for record in checkpoints)
+        )
     manifest = {
         "schemaVersion": 1,
         "benchmark": {
@@ -216,12 +282,13 @@ async def _run_trial(
         "profile": {
             "id": profile_metadata["id"],
             "contentHash": profile_metadata["contentHash"],
+            "reasoningPolicy": profile_metadata["reasoningPolicy"],
         },
         "skillBundle": {
             "digest": skill_digest,
             "inventory": skill_inventory,
-            "catalogued": args.profile != "skills-none",
-            "injected": args.profile == "skills-explicit",
+            "catalogued": base_profile != "skills-none",
+            "injected": base_profile == "skills-explicit",
         },
         "sourceCommit": _git_commit(),
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
@@ -243,13 +310,17 @@ async def _run_trial(
         "attempt": attempt,
         "elapsedSeconds": round(elapsed, 3),
         "officialReward": _reward(result),
+        "reasoning": _reasoning_summary(profile_metadata["reasoningPolicy"], checkpoints),
         "result": _result_mapping(result),
     }
     (capsule / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     reward = manifest["officialReward"]
+    reasoning = manifest["reasoning"]
     print(
         f"skillsbench trial={trial_id} reward={reward} tools={result.n_tool_calls} "
-        f"skill_reads={result.n_skill_invocations} elapsed={elapsed:.1f}s",
+        f"skill_reads={result.n_skill_invocations} "
+        f"checkpoints={reasoning['checkpoints']} circle_cuts={reasoning['circleCuts']} "
+        f"elapsed={elapsed:.1f}s",
         flush=True,
     )
     return result.error is None and result.verifier_error is None
@@ -265,7 +336,9 @@ async def _main() -> int:
     if not model or not os.environ.get("LM_STUDIO_API_KEY"):
         raise RuntimeError("LM_STUDIO_MODEL and LM_STUDIO_API_KEY are required")
     descriptor = json.loads(args.descriptor.read_text())
-    profile_metadata = _profile_metadata(args.profile_script, args.profile)
+    profile_metadata = {
+        profile: _profile_metadata(args.profile_script, profile) for profile in args.profiles
+    }
     active = {task["name"]: task for task in descriptor["active"]}
     requested = [name.strip() for name in args.task_names.split(",") if name.strip()]
     unknown = [name for name in requested if name not in active]
@@ -278,19 +351,22 @@ async def _main() -> int:
     args.jobs_dir.mkdir(parents=True, exist_ok=True)
     args.capsules_dir.mkdir(parents=True, exist_ok=True)
     successful = True
+    # Task-major so paired arms see the same task back to back on one worker.
     for task_name in selected:
         for attempt in range(1, args.attempts + 1):
-            successful = (
-                await _run_trial(
-                    args=args,
-                    descriptor=descriptor,
-                    task=active[task_name],
-                    attempt=attempt,
-                    model=model,
-                    profile_metadata=profile_metadata,
+            for profile in args.profiles:
+                successful = (
+                    await _run_trial(
+                        args=args,
+                        descriptor=descriptor,
+                        task=active[task_name],
+                        attempt=attempt,
+                        model=model,
+                        profile=profile,
+                        profile_metadata=profile_metadata[profile],
+                    )
+                    and successful
                 )
-                and successful
-            )
     return 0 if successful else 1
 
 

@@ -24,13 +24,21 @@ on:
         default: '1'
         type: string
       profile:
-        description: Frozen Copse skill-delivery profile
+        description: Frozen Copse skill-delivery profile (@1 fixed cap, @2 checkpointed reasoning)
         required: true
         type: choice
         options:
-          - skills-none
-          - skills-product
-          - skills-explicit
+          - skills-none@1
+          - skills-none@2
+          - skills-product@1
+          - skills-product@2
+          - skills-explicit@1
+          - skills-explicit@2
+      profiles:
+        description: Optional comma-separated arms run on one fleet, e.g. skills-product@1,skills-product@2
+        required: false
+        default: ''
+        type: string
       scw_type:
         description: Scaleway x86 Instance type
         required: true
@@ -61,6 +69,7 @@ jobs:
           INSTANCES: ${{ inputs.instances }}
           ATTEMPTS: ${{ inputs.attempts }}
           PROFILE: ${{ inputs.profile }}
+          PROFILES: ${{ inputs.profiles }}
           TASK_NAMES: ${{ inputs.task_names }}
           MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
@@ -82,10 +91,21 @@ jobs:
             echo "::error::attempts must be an integer from 1 through 5"
             exit 2
           fi
-          case "$PROFILE" in
-            skills-none|skills-product|skills-explicit) ;;
-            *) echo "::error::unsupported SkillsBench profile: $PROFILE"; exit 2 ;;
-          esac
+          profile_csv="${PROFILES:-$PROFILE}"
+          IFS=',' read -r -a profile_ids <<< "$profile_csv"
+          declare -A seen_profiles=()
+          for profile_id in "${profile_ids[@]}"; do
+            case "$profile_id" in
+              skills-none|skills-product|skills-explicit) profile_id="$profile_id@1" ;;
+              skills-none@[12]|skills-product@[12]|skills-explicit@[12]) ;;
+              *) echo "::error::unsupported SkillsBench profile: $profile_id"; exit 2 ;;
+            esac
+            if [ -n "${seen_profiles[$profile_id]:-}" ]; then
+              echo "::error::SkillsBench profiles must not contain duplicates: $profile_id"
+              exit 2
+            fi
+            seen_profiles[$profile_id]=1
+          done
           if [ -z "$TASK_NAMES" ] || ! [[ "$TASK_NAMES" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]]; then
             echo "::error::task_names must be a comma-separated list of exact v1.1 task names"
             exit 2
@@ -229,6 +249,7 @@ jobs:
           TASK_NAMES: ${{ inputs.task_names }}
           ATTEMPTS: ${{ inputs.attempts }}
           PROFILE: ${{ inputs.profile }}
+          PROFILES: ${{ inputs.profiles }}
           SCW_TYPE: ${{ inputs.scw_type }}
           WORKER_IMAGE: ${{ needs.prepare.outputs.worker_image }}
           FLEET_NAME: skillsbench-spike-${{ github.run_id }}-${{ github.run_attempt }}
@@ -240,11 +261,16 @@ jobs:
         run: |
           args=(
             run --instances "$INSTANCES" --task-names "$TASK_NAMES"
-            --attempts "$ATTEMPTS" --profile "$PROFILE" --scw-type "$SCW_TYPE"
+            --attempts "$ATTEMPTS" --scw-type "$SCW_TYPE"
             --scw-image "$BASE_IMAGE" --volume-size-gb 100 --ttl-minutes 300
             --worker-image "$WORKER_IMAGE" --name "$FLEET_NAME"
             --object-prefix "$OBJECT_PREFIX" --key-path "$SSH_KEY_PATH"
           )
+          if [ -n "$PROFILES" ]; then
+            args+=(--profiles "$PROFILES")
+          else
+            args+=(--profile "$PROFILE")
+          fi
           if [ -n "$SCW_ZONE" ]; then args+=(--zone "$SCW_ZONE"); fi
           if [ -n "$SECURITY_GROUP_ID" ]; then args+=(--security-group-id "$SECURITY_GROUP_ID"); fi
           npm run bench:skills:fleet -- "${args[@]}"

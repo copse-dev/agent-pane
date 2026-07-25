@@ -15,7 +15,24 @@ describe('SkillsBench Scaleway spike', () => {
       'task-names': 'offer-letter-generator,xlsx-recover-data',
     })
     assert.equal(config.instanceCount, 2)
-    assert.equal(config.profile, 'skills-product')
+    assert.deepEqual(config.profiles, ['skills-product'])
+  })
+
+  it('runs paired reasoning arms on one fleet', () => {
+    assert.throws(
+      () =>
+        skillsBenchFleetConfig({
+          'worker-image': workerImage,
+          profile: 'skills-product@1',
+          profiles: 'skills-product@1,skills-product@2',
+        }),
+      /only one of/,
+    )
+    const config = skillsBenchFleetConfig({
+      'worker-image': workerImage,
+      profiles: 'skills-product@1,skills-product@2',
+    })
+    assert.deepEqual(config.profiles, ['skills-product@1', 'skills-product@2'])
   })
 
   it('passes immutable treatment and runner provenance to each shard', () => {
@@ -33,10 +50,11 @@ describe('SkillsBench Scaleway spike', () => {
     try {
       const config = skillsBenchFleetConfig({
         'worker-image': workerImage,
-        profile: 'skills-none',
+        profiles: 'skills-none,skills-product@2',
       })
       const environment = skillsBenchWorkerEnvironment(config, 0)
       assert.match(environment, /^COPSE_SKILLSBENCH_PROFILE=skills-none$/m)
+      assert.match(environment, /^COPSE_SKILLSBENCH_PROFILES=skills-none,skills-product@2$/m)
       assert.match(environment, new RegExp(`^COPSE_SKILLSBENCH_WORKER_IMAGE=${workerImage}$`, 'm'))
       assert.match(environment, /^COPSE_SKILLSBENCH_TASK_NAMES=offer-letter-generator$/m)
     } finally {
@@ -52,5 +70,7 @@ describe('SkillsBench Scaleway spike', () => {
     assert.match(workflow, /benchmarks\/skillsbench\/Dockerfile\.worker/)
     assert.match(workflow, /if: always\(\)/)
     assert.match(workflow, /bench:skills:fleet/)
+    assert.match(workflow, /--profiles "\$PROFILES"/)
+    assert.match(workflow, /skills-product@2/)
   })
 })

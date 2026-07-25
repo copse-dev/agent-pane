@@ -1,20 +1,27 @@
 import { createInterface } from 'node:readline'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
+import type {
+  ReasoningCheckpointPolicy,
+  ReasoningCheckpointRecord,
+} from '../packages/agent/src/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
 import {
-  parseSkillsBenchProfileId,
   skillsBenchProfile,
-  type SkillsBenchProfileId,
+  type SkillsBenchProfile,
+  type SkillsBenchProfileSelectionId,
   type SkillsBenchSkill,
 } from './lib/skillsbench-profiles.mts'
+
+export const DEFAULT_SKILLSBENCH_STREAM_OUTPUT_TOKENS = 4_096
 
 interface StartMessage {
   type: 'start'
   instruction: string
   model: string
-  profile: SkillsBenchProfileId
+  profile: SkillsBenchProfileSelectionId
   skills: SkillsBenchSkill[]
 }
 
@@ -58,6 +65,25 @@ const READ_SKILL_TOOL: LLMTool = {
     },
     required: ['name'],
   },
+}
+
+/**
+ * Reassess a reasoning-only stream once per configured stream cap instead of
+ * cutting at the first one, up to the product's absolute per-stream ceiling.
+ * A cut stream still falls back to the ordinary bounded recovery budget.
+ */
+export function skillsBenchReasoningCheckpointPolicy(
+  profile: SkillsBenchProfile,
+  maxStreamOutputTokens: number,
+): ReasoningCheckpointPolicy | undefined {
+  if (profile.reasoningPolicy !== 'circle-gated-2k-checkpoints-v1') return undefined
+  const intervalTokens = maxStreamOutputTokens
+  const maxInitialTokens = Math.max(MAX_STREAM_OUTPUT_TOKENS, intervalTokens)
+  return {
+    intervalTokens,
+    maxInitialTokens,
+    maxRecoveryTokens: Math.min(intervalTokens * 2, maxInitialTokens),
+  }
 }
 
 function envPositiveInt(name: string, fallback: number): number {
@@ -105,7 +131,7 @@ export async function runSkillsBenchAgent(): Promise<void> {
   if (!apiKey)
     throw new Error('Set LM_STUDIO_API_KEY (or LM_API_TOKEN) before running SkillsBench.')
   const baseUrl = process.env['LM_STUDIO_URL']?.trim() || 'http://localhost:1234/v1'
-  const profile = skillsBenchProfile(parseSkillsBenchProfileId(parsed.profile), parsed.skills)
+  const profile = skillsBenchProfile(parsed.profile, parsed.skills)
   const provider = createLMStudioProvider(baseUrl, parsed.model, apiKey)
   const usage = { inputTokens: 0, outputTokens: 0, toolCalls: 0, llmCalls: 0 }
   let stopReason: string | undefined
@@ -113,6 +139,15 @@ export async function runSkillsBenchAgent(): Promise<void> {
   const tools = profile.tools.map((name) =>
     name === 'run_shell' ? RUN_SHELL_TOOL : READ_SKILL_TOOL,
   )
+  const maxStreamOutputTokens = envPositiveInt(
+    'COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS',
+    DEFAULT_SKILLSBENCH_STREAM_OUTPUT_TOKENS,
+  )
+  const reasoningCheckpointPolicy = skillsBenchReasoningCheckpointPolicy(
+    profile,
+    maxStreamOutputTokens,
+  )
+  const reasoningCheckpoints: ReasoningCheckpointRecord[] = []
 
   await runAgentLoop({
     provider,
@@ -124,10 +159,15 @@ export async function runSkillsBenchAgent(): Promise<void> {
     maxSteps: envPositiveInt('COPSE_SKILLSBENCH_MAX_STEPS', 80),
     maxLlmCalls: envPositiveInt('COPSE_SKILLSBENCH_MAX_LLM_CALLS', 83),
     maxContextTokens: envPositiveInt('COPSE_SKILLSBENCH_CONTEXT_TOKENS', 32_768),
-    maxStreamOutputTokens: envPositiveInt('COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS', 4_096),
+    maxStreamOutputTokens,
+    ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
     usageModel: parsed.model.startsWith('lmstudio:') ? parsed.model : `lmstudio:${parsed.model}`,
     onLlmCall: (count) => {
       usage.llmCalls = count
+    },
+    recordReasoningCheckpoint: (record) => {
+      reasoningCheckpoints.push(record)
+      writeProtocol({ type: 'reasoning_checkpoint', record })
     },
     onChunk: (chunk: AgentStreamChunk) => {
       if (chunk.type === 'tool_call') usage.toolCalls += 1
@@ -179,6 +219,8 @@ export async function runSkillsBenchAgent(): Promise<void> {
     assistantText,
     profile: profile.versionedId,
     profileHash: profile.contentHash,
+    reasoningPolicy: profile.reasoningPolicy,
+    reasoningCheckpoints,
   })
   lines.close()
 }

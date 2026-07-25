@@ -84,6 +84,35 @@ Freeze the exact catalog prompt, tool schema, body envelope, trust settings, and
 each run. A future prompt or routing experiment gets a new profile ID; it must not mutate
 `skills-product@1` in place.
 
+### Reasoning arm
+
+The skill surface is one axis; how much reasoning a stream is allowed is another, and the two must
+not move together. Each profile therefore has a second version that keeps its prompt and tool set
+byte-identical and changes only the reasoning bound:
+
+| Version | Reasoning policy                 | Behaviour                                                                                                                        |
+| ------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `@1`    | `fixed-cap`                      | One fixed per-stream output cap, cut at the first breach                                                                         |
+| `@2`    | `circle-gated-2k-checkpoints-v1` | Reassess once per stream cap, continue clean reasoning to the 32k product ceiling, cut a high-confidence circle into 2× recovery |
+
+This is the mechanism from Terminal-Bench `product-aligned@3` (#1181), which found that Qwen often
+needs more than one cap's worth of reasoning while some traces keep going after the model has
+explicitly said it is circling. The circle signals are self-report, repeated blocks, repeated
+headings, repeated plans, and 100-item enumeration; common successful planning markers such as
+`actually`, `wait`, and `I need to` are deliberately not signals.
+
+A bare id resolves to `@1`, so every profile hash recorded before this arm existed keeps its exact
+meaning and the checkpointed arm is always named explicitly. `@1` and `@2` have distinct content
+hashes and must never be pooled.
+
+Run the arm as a paired study on one fleet — `--profiles skills-product@1,skills-product@2` — with
+trials ordered task-major so both arms see the same task back to back under the same model,
+dataset revision, and worker image. Report `skills-product@2 - skills-product@1` separately from
+Skill Lift; a reasoning-arm result never licenses a claim about skill exposure, or the reverse.
+Capsules retain every checkpoint decision and circle signal in `reasoning-checkpoints.jsonl` and
+summarise them under `manifest.json` → `reasoning`, so a reward difference can be attributed to
+continued-versus-cut reasoning rather than assumed.
+
 ### Trust and isolation
 
 Benchmark skills are third-party input. Load them into an ephemeral per-trial registry as untrusted
@@ -127,7 +156,9 @@ Deterministic tests cover:
   instructions;
 - resource reads remain within the mounted skill root, including symlink cases;
 - ambient user/project/plugin skills cannot enter a trial;
-- manifests round-trip and sealed capsules retain profile and skill provenance.
+- manifests round-trip and sealed capsules retain profile and skill provenance;
+- `@1` content hashes are unchanged by the reasoning arm, `@2` shares `@1`'s prompt and tools, and a
+  paired `--profiles` selection rejects duplicates.
 
 The slice is complete after one oracle smoke returns reward `1` and deterministic mock runs prove
 that the three profiles expose exactly their intended prompts and tools.
