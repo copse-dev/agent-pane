@@ -81,6 +81,13 @@ export function skillsBenchReasoningCheckpointPolicy(
   const maxInitialTokens = Math.max(MAX_STREAM_OUTPUT_TOKENS, intervalTokens)
   return {
     intervalTokens,
+    // `maxInitialTokens` rather than MAX_STREAM_OUTPUT_TOKENS directly:
+    // validateReasoningCheckpointPolicy requires every maximum to be at least
+    // one checkpoint interval, and `intervalTokens` can exceed the constant when
+    // COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS raises it. `maxInitialTokens`
+    // is already Math.max(MAX_STREAM_OUTPUT_TOKENS, intervalTokens), so it
+    // satisfies that bound by construction.
+    maxNonReasoningTokens: maxInitialTokens,
     maxInitialTokens,
     maxRecoveryTokens: Math.min(intervalTokens * 2, maxInitialTokens),
   }
