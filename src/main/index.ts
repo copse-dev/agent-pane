@@ -174,8 +174,6 @@ app
     recordStartupPhase('reap-gortex')
     await reapOversizedGortexDaemon()
 
-    recordStartupPhase('tool-availability')
-    await checkToolAvailability()
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
@@ -207,6 +205,16 @@ app
     applyAppIcon([win])
     buildAppMenu(win)
     initUpdatePrompt(win)
+    // Probe for rg/git/gh and the search backends only now: these are ~9 process
+    // spawns (one of them, `gh auth status`, a network round trip), and run
+    // before the window they cost the user seconds of blank screen. The window
+    // is already loading its renderer while they run.
+    //
+    // This must still finish before `createRegistry()` below, which reads
+    // `isGhAvailable()` synchronously to decide whether the read-only GitHub
+    // tools are exposed at all (#523).
+    recordStartupPhase('tool-availability')
+    await checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     // P5: boot the pack service before `createRegistry()` so persisted
