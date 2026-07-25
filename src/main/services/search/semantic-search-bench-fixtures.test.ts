@@ -21,13 +21,15 @@ describe('semantic-search-bench fixtures', () => {
     const fixturesPath = join(process.cwd(), 'scripts/semantic-search-bench.fixtures.json')
     const parsed: unknown = JSON.parse(readFileSync(fixturesPath, 'utf8'))
     if (!isRecord(parsed)) assert.fail('fixtures root must be an object')
-    if (!Array.isArray(parsed.queries)) assert.fail('fixtures.queries must be an array')
+    const queries = parsed['queries']
+    if (!Array.isArray(queries)) assert.fail('fixtures.queries must be an array')
 
-    const stale = parsed.queries.flatMap((raw, index) => {
+    const stale = queries.flatMap((raw, index) => {
       if (!isRecord(raw)) {
         assert.fail(`fixtures.queries[${String(index)}] must be an object`)
       }
-      const { id, expectedPaths } = raw
+      const id = raw['id']
+      const expectedPaths = raw['expectedPaths']
       if (typeof id !== 'string') {
         assert.fail(`fixtures.queries[${String(index)}].id must be a string`)
       }
