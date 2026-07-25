@@ -5,6 +5,7 @@ import {
   computeParetoFrontier,
   costOnAxis,
   frontierForKnownModels,
+  pickBestValueFrontierModel,
   projectOntoCostAxis,
   type FrontierCandidate,
 } from './pareto-frontier.ts'
@@ -176,5 +177,45 @@ describe('frontierForKnownModels', () => {
     )
     assert.equal(points.length, 1)
     assert.equal(points[0]?.id, 'openrouter:openai/gpt-4o')
+  })
+})
+
+describe('pickBestValueFrontierModel', () => {
+  it('prefers the smartest free (plan/local) frontier point', () => {
+    const points = computeParetoFrontier([
+      { id: 'local-ok', intellect: 35, costPerMTok: 0, local: true },
+      { id: 'plan-smart', intellect: 58, costPerMTok: 0, plan: 'Weekly' },
+      { id: 'paid-smarter', intellect: 62, costPerMTok: 9 },
+    ])
+    assert.equal(pickBestValueFrontierModel(points)?.id, 'plan-smart')
+  })
+
+  it('among paid frontier points maximizes intellect per dollar', () => {
+    const points = computeParetoFrontier([
+      { id: 'cheap-good', intellect: 40, costPerMTok: 1 },
+      { id: 'pricey-great', intellect: 60, costPerMTok: 12 },
+    ])
+    // 40/1 = 40 value vs 60/12 = 5 — cheap-good wins on value for price.
+    assert.equal(pickBestValueFrontierModel(points)?.id, 'cheap-good')
+  })
+
+  it('ignores discovery-only and dominated points', () => {
+    const points = computeParetoFrontier([
+      { id: 'routable', intellect: 50, costPerMTok: 3 },
+      { id: 'ghost', intellect: 70, costPerMTok: 10 },
+      { id: 'dominated', intellect: 40, costPerMTok: 5 },
+    ]).map((p) => (p.id === 'ghost' ? { ...p, discovery: true } : p))
+    // ghost is on the frontier but not routable; dominated is off it.
+    assert.equal(pickBestValueFrontierModel(points)?.id, 'routable')
+  })
+
+  it('returns null when nothing is selectable', () => {
+    assert.equal(pickBestValueFrontierModel([]), null)
+    assert.equal(
+      pickBestValueFrontierModel([
+        { id: 'only-discovery', intellect: 50, costPerMTok: 1, onFrontier: true, discovery: true },
+      ]),
+      null,
+    )
   })
 })
