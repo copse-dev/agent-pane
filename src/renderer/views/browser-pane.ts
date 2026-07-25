@@ -99,8 +99,9 @@ interface BrowserPopoutSeed {
 
 function isBrowserPopoutSeed(seed: unknown): seed is BrowserPopoutSeed {
   if (!seed || typeof seed !== 'object') return false
-  const tabs = (seed as BrowserPopoutSeed).tabs
-  return Array.isArray(tabs)
+  // `in` narrowing rather than an assertion: no-unsafe-type-assertion (#508)
+  // rejects narrowing away from `unknown`, and this is the safer check anyway.
+  return 'tabs' in seed && Array.isArray(seed.tabs)
 }
 
 function browserModeActive(store: AppStore): boolean {
@@ -629,7 +630,12 @@ export function mountBrowserPane(
       : 0
     return {
       tabs: ordered.map((tab) => ({
-        url: tab.urlInput.value || webviewUrl(tab) || tab.pendingUrl || 'about:blank',
+        // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
+        // (#508) rejects `||`, but `??` alone would change behaviour — these
+        // fall back on EMPTY strings, not just null/undefined.
+        url:
+          [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value) => value) ??
+          'about:blank',
         label: tab.label,
         artefactTitle: tab.artefactTitle,
       })),

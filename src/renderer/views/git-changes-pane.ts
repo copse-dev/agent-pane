@@ -84,6 +84,16 @@ const STATUS_LABEL: Record<GitChangeStatus, string> = {
 type ChangeSelection =
   { kind: 'proposed'; path: string } | { kind: 'git'; path: string; staged: boolean }
 
+/** Validates a pop-out seed before it drives selection. The previous assertion
+ * trusted the shape outright, so a malformed seed reached selectGitChange with
+ * `staged` undefined. */
+function isChangeSelection(seed: unknown): seed is ChangeSelection {
+  if (!seed || typeof seed !== 'object') return false
+  if (!('kind' in seed) || !('path' in seed) || typeof seed.path !== 'string') return false
+  if (seed.kind === 'proposed') return true
+  return seed.kind === 'git' && 'staged' in seed && typeof seed.staged === 'boolean'
+}
+
 function changesModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
   return filesPaneOpen && rightPanelMode === 'changes'
@@ -700,10 +710,9 @@ export function mountGitChangesPane(
   const unregisterPopoutSeed = registerPopoutSeedHandlers('changes', {
     capture: () => selection,
     apply: (seed) => {
-      if (!seed || typeof seed !== 'object') return
-      const next = seed as ChangeSelection
-      if (next.kind === 'proposed') void selectProposed(next.path)
-      else void selectGitChange(next.path, next.staged)
+      if (!isChangeSelection(seed)) return
+      if (seed.kind === 'proposed') void selectProposed(seed.path)
+      else void selectGitChange(seed.path, seed.staged)
     },
   })
 
