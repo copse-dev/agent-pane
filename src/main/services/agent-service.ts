@@ -6,6 +6,10 @@ import {
   DEFAULT_MAX_LLM_CALLS,
 } from '@copse/agent/agent-loop-limits.ts'
 import {
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+} from '@copse/agent/reasoning-checkpoint-policy.ts'
+import {
   normalizeToolExecuteResult,
   type LLMMessage,
   type LLMTool,
@@ -42,6 +46,7 @@ import {
   setHookRunToolset,
 } from './hook-run-recorder.ts'
 import { recordStreamCut } from './stream-stats-recorder.ts'
+import { recordReasoningCheckpoint } from './reasoning-checkpoint-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
@@ -1155,6 +1160,8 @@ export async function runAgent(
           tools: parentLoopTools,
           usageModel: model,
           maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
+          reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+          reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
           runDeadline: runAbort.deadline,
           onRunDeadlineActivity: runAbort.schedule,
           coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
@@ -1164,6 +1171,9 @@ export async function runAgent(
           onLlmCall: setHookRunStep,
           recordStreamCut: (record) => {
             recordStreamCut(record, model)
+          },
+          recordReasoningCheckpoint: (record) => {
+            recordReasoningCheckpoint(record, model)
           },
           executeTool: executeParentTool,
           signal: controller.signal,
@@ -1240,6 +1250,12 @@ export async function runAgent(
       },
       recordHookRun: recordFunctionHookRun,
       onLlmCall: setHookRunStep,
+      recordStreamCut: (record) => {
+        recordStreamCut(record, model)
+      },
+      recordReasoningCheckpoint: (record) => {
+        recordReasoningCheckpoint(record, model)
+      },
       continuationBudget,
       userNudge: '',
       maxSteps: 6,
