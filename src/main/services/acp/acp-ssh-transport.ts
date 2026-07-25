@@ -167,6 +167,9 @@ export async function spawnRemoteAcpTransport(
     if (text) console.warn(`[acp-ssh:${input.command}] ${text}`)
   })
 
+  // Bridge node's `stream/web` types to the global ones `ndJsonStream` expects;
+  // the cast is unavoidable across the two declarations (mirrors acp-client.ts),
+  // and is baselined in eslint-suppressions.json like its sibling.
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
   const readable = Readable.toWeb(stdout) as ReadableStream<Uint8Array>
   return {
