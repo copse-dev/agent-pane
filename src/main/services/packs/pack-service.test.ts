@@ -22,6 +22,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { parseStringList } from '../storage/storage-schema.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
@@ -205,7 +206,7 @@ describe('PackService', () => {
     assert.equal(service.registry.isEnabled(MODEL_COMPARISON_PACK_ID), true)
     assert.equal(service.registry.isEnabled(PII_REDACTION_PACK_ID), false)
     assert.equal(
-      (storageGet(PACK_DISABLED_KEY) as string[]).includes(MODEL_COMPARISON_PACK_ID),
+      parseStringList(storageGet(PACK_DISABLED_KEY)).includes(MODEL_COMPARISON_PACK_ID),
       false,
     )
   })
