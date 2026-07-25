@@ -15,9 +15,59 @@ interface Descriptor {
   excluded: Array<{ name: string; reason: string }>
 }
 
-const descriptor = JSON.parse(
-  readFileSync('benchmarks/skillsbench/dataset-v1.1.json', 'utf8'),
-) as Descriptor
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isTaskRecord(value: unknown): value is TaskRecord {
+  if (!isRecord(value)) return false
+  return (
+    isString(value['name']) &&
+    isString(value['git_commit_id']) &&
+    isString(value['path']) &&
+    isString(value['digest'])
+  )
+}
+
+function isExcluded(value: unknown): value is { name: string; reason: string } {
+  if (!isRecord(value)) return false
+  return isString(value['name']) && isString(value['reason'])
+}
+
+function isDescriptor(value: unknown): value is Descriptor {
+  if (!isRecord(value)) return false
+  const dataset = value['dataset']
+  if (!isRecord(dataset)) return false
+  if (
+    !isString(dataset['version']) ||
+    !isString(dataset['revision']) ||
+    !isString(dataset['benchflow'])
+  ) {
+    return false
+  }
+  const active = value['active']
+  const excluded = value['excluded']
+  if (!Array.isArray(active) || !Array.isArray(excluded)) return false
+  return active.every(isTaskRecord) && excluded.every(isExcluded)
+}
+
+function loadDescriptor(): Descriptor {
+  const parsed: unknown = JSON.parse(
+    readFileSync('benchmarks/skillsbench/dataset-v1.1.json', 'utf8'),
+  )
+  if (!isDescriptor(parsed)) {
+    throw new Error(
+      'benchmarks/skillsbench/dataset-v1.1.json is not a valid SkillsBench descriptor',
+    )
+  }
+  return parsed
+}
+
+const descriptor = loadDescriptor()
 
 describe('SkillsBench v1.1 descriptor', () => {
   it('pins the release and BenchFlow compatibility point', () => {

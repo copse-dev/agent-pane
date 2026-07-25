@@ -102,11 +102,25 @@ function definition(
 
 const VERSIONED_ID = /^(.*)@([12])$/
 
+function isSkillsBenchProfileId(value: string): value is SkillsBenchProfileId {
+  for (const id of SKILLSBENCH_PROFILE_IDS) {
+    if (id === value) return true
+  }
+  return false
+}
+
+function skillsBenchVersionedId(
+  id: SkillsBenchProfileId,
+  version: SkillsBenchProfileVersion,
+): SkillsBenchProfileVersionedId {
+  return version === 1 ? `${id}@1` : `${id}@2`
+}
+
 export function parseSkillsBenchProfileId(value: string | undefined): SkillsBenchProfileId {
   const trimmed = (value ?? '').trim()
   const normalized = VERSIONED_ID.exec(trimmed)?.[1] ?? trimmed
-  if ((SKILLSBENCH_PROFILE_IDS as readonly string[]).includes(normalized)) {
-    return normalized as SkillsBenchProfileId
+  if (isSkillsBenchProfileId(normalized)) {
+    return normalized
   }
   throw new Error(
     `SkillsBench profile must be one of ${SKILLSBENCH_PROFILE_IDS.join(', ')}, received '${value ?? ''}'.`,
@@ -123,8 +137,10 @@ export function parseSkillsBenchProfileSelectionId(
 ): SkillsBenchProfileSelectionId {
   const trimmed = (value ?? '').trim()
   const base = parseSkillsBenchProfileId(trimmed)
-  const version = VERSIONED_ID.exec(trimmed)?.[2]
-  return version ? (`${base}@${version}` as SkillsBenchProfileVersionedId) : base
+  const versionDigit = VERSIONED_ID.exec(trimmed)?.[2]
+  if (versionDigit === '1') return skillsBenchVersionedId(base, 1)
+  if (versionDigit === '2') return skillsBenchVersionedId(base, 2)
+  return base
 }
 
 export function parseSkillsBenchProfileIds(
@@ -187,7 +203,7 @@ export function skillsBenchProfile(
   const selection = parseSkillsBenchProfileSelectionId(value)
   const id = parseSkillsBenchProfileId(selection)
   const version = skillsBenchProfileVersion(selection)
-  const versionedId = `${id}@${String(version)}` as SkillsBenchProfileVersionedId
+  const versionedId = skillsBenchVersionedId(id, version)
   const resolved = definition(id, skills)
   const template = definition(id, [
     { name: '__SKILL_NAME__', description: '__SKILL_DESCRIPTION__', body: '__SKILL_BODY__' },

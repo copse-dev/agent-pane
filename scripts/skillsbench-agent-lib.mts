@@ -105,16 +105,25 @@ function isInputMessage(value: unknown): value is InputMessage {
   return value.type === 'start' || value.type === 'tool_result'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function stringProperty(args: unknown, name: string): string | undefined {
-  if (typeof args !== 'object' || args === null || !(name in args)) return undefined
-  const value = args[name as keyof typeof args]
+  if (!isRecord(args) || !(name in args)) return undefined
+  const value = args[name]
   return typeof value === 'string' ? value : undefined
 }
 
 function numberProperty(args: unknown, name: string): number | undefined {
-  if (typeof args !== 'object' || args === null || !(name in args)) return undefined
-  const value = args[name as keyof typeof args]
+  if (!isRecord(args) || !(name in args)) return undefined
+  const value = args[name]
   return typeof value === 'number' ? value : undefined
+}
+
+function nonEmptyTrimmed(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed !== undefined && trimmed !== '' ? trimmed : undefined
 }
 
 export async function runSkillsBenchAgent(): Promise<void> {
@@ -127,10 +136,12 @@ export async function runSkillsBenchAgent(): Promise<void> {
     throw new Error('SkillsBench bridge expected a start message.')
   }
 
-  const apiKey = process.env['LM_STUDIO_API_KEY']?.trim() || process.env['LM_API_TOKEN']?.trim()
+  const apiKey =
+    nonEmptyTrimmed(process.env['LM_STUDIO_API_KEY']) ??
+    nonEmptyTrimmed(process.env['LM_API_TOKEN'])
   if (!apiKey)
     throw new Error('Set LM_STUDIO_API_KEY (or LM_API_TOKEN) before running SkillsBench.')
-  const baseUrl = process.env['LM_STUDIO_URL']?.trim() || 'http://localhost:1234/v1'
+  const baseUrl = nonEmptyTrimmed(process.env['LM_STUDIO_URL']) ?? 'http://localhost:1234/v1'
   const profile = skillsBenchProfile(parsed.profile, parsed.skills)
   const provider = createLMStudioProvider(baseUrl, parsed.model, apiKey)
   const usage = { inputTokens: 0, outputTokens: 0, toolCalls: 0, llmCalls: 0 }
