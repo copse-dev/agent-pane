@@ -269,6 +269,110 @@ describe('thread-store', () => {
     assert.deepEqual(loaded[0], t)
   })
 
+  // Loading prefetches a thread's files before folding, discovering refs by
+  // walking the spine. A subagent's own refs only become knowable once its
+  // `events.jsonl` has been read, so each nesting level costs another round —
+  // two levels catch a prefetch that stops recursing after the first.
+  it('round-trips a doubly-nested subagent session through disk', async () => {
+    const t = thread('t1', {
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'exploring',
+          createdAt: 5,
+          toolCalls: [
+            {
+              id: 'tc1',
+              name: 'explore',
+              args: {},
+              status: 'done',
+              result: 'summary',
+              subagent: {
+                id: 'sub1',
+                kind: 'explore',
+                status: 'done',
+                prompt: 'outer',
+                summary: 'outer done',
+                messages: [
+                  {
+                    id: 'sm1',
+                    role: 'assistant',
+                    content: 'searching',
+                    toolCalls: [
+                      {
+                        id: 'stc1',
+                        name: 'explore',
+                        args: {},
+                        status: 'done',
+                        result: 'inner summary',
+                        subagent: {
+                          id: 'sub2',
+                          kind: 'explore',
+                          status: 'done',
+                          prompt: 'inner',
+                          summary: 'inner done',
+                          messages: [
+                            { id: 'dm1', role: 'assistant', content: 'deep', toolCalls: [] },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await saveProjectThread('proj-1', t)
+    assert.ok(
+      existsSync(
+        join(root, 'proj-1', 't1', 'subagents', 'sub1', 'subagents', 'sub2', 'events.jsonl'),
+      ),
+    )
+    const loaded = await loadProjectThreads('proj-1')
+    assert.deepEqual(loaded[0], t)
+  })
+
+  it('skips a thread whose subagent spine references a missing file', async () => {
+    const t = thread('broken', {
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'exploring',
+          createdAt: 5,
+          toolCalls: [
+            {
+              id: 'tc1',
+              name: 'explore',
+              args: {},
+              status: 'done',
+              result: 'summary',
+              subagent: {
+                id: 'sub1',
+                kind: 'explore',
+                status: 'done',
+                prompt: 'find it',
+                summary: 'done',
+                messages: [{ id: 'sm1', role: 'assistant', content: 'searching', toolCalls: [] }],
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await saveProjectThreads('proj-1', [thread('good', { messages: [userMsg('u1', 'ok')] }), t])
+    rmSync(join(root, 'proj-1', 'broken', 'subagents', 'sub1', 'messages', 'sm1.md'))
+    const loaded = await loadProjectThreads('proj-1')
+    assert.deepEqual(
+      loaded.map((t2) => t2.id),
+      ['good'],
+    )
+  })
+
   it('returns an empty list for an unknown project', async () => {
     assert.deepEqual(await loadProjectThreads('nope'), [])
   })
