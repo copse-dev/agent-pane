@@ -386,6 +386,10 @@ describe('thread-store', () => {
   it('loadAllProjectThreads serializes behind an in-flight project op', async () => {
     storageSet('projects', [{ id: 'p1', path: '/tmp', name: 'p1' }])
     await saveProjectThread('p1', thread('t1', { messages: [userMsg('u1', 'hi')] }))
+    // A second store, deliberately absent from `projects` so the load under test
+    // ignores it. It exists only as a pacing yardstick below: same async fold, a
+    // different queue key, so awaiting it cannot deadlock against `hold`.
+    await saveProjectThread('p2', thread('t2', { messages: [userMsg('u2', 'hi')] }))
 
     let release!: () => void
     const gate = new Promise<void>((resolve) => {
@@ -400,11 +404,16 @@ describe('thread-store', () => {
       settled = true
       return threads
     })
-    // Two ticks: enough for an unqueued load to finish on this fixture, but a
-    // queued load must still be waiting on `hold`.
-    await new Promise((r) => setTimeout(r, 0))
-    await new Promise((r) => setTimeout(r, 0))
-    assert.equal(settled, false)
+    // The window has to be long enough that an *unqueued* load would definitely
+    // have finished. Event-loop ticks are not: these reads go through the fs
+    // threadpool, so a bypassing load is still in flight after a couple of
+    // `setTimeout(0)`s — an earlier version of this test used two ticks and
+    // passed with the bug still present. Instead, run the same async fold over
+    // `p2` several times over: it is strictly more work than the load under
+    // test, on a queue `hold` does not block, so once it has finished a load
+    // that were not queued would have finished too.
+    for (let i = 0; i < 5; i++) await loadProjectThreads('p2')
+    assert.equal(settled, false, 'load must still be queued behind the in-flight op')
 
     release()
     await hold
