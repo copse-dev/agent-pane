@@ -24,6 +24,10 @@ describe('SkillsBench reasoning checkpoints', () => {
     )
     assert.deepEqual(policy, {
       intervalTokens: 4_096,
+      // #1204 made this a required field on ReasoningCheckpointPolicy. It
+      // tracks maxInitialTokens so it satisfies the validator's
+      // "at least one checkpoint interval" bound for any stream cap.
+      maxNonReasoningTokens: MAX_STREAM_OUTPUT_TOKENS,
       maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
       maxRecoveryTokens: 8_192,
     })
@@ -35,6 +39,7 @@ describe('SkillsBench reasoning checkpoints', () => {
       16_384,
     )
     assert.ok(policy)
+    assert.ok(policy.maxNonReasoningTokens >= policy.intervalTokens)
     assert.ok(policy.maxInitialTokens >= policy.intervalTokens)
     assert.ok(policy.maxRecoveryTokens >= policy.intervalTokens)
     assert.ok(policy.maxRecoveryTokens <= policy.maxInitialTokens)
