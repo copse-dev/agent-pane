@@ -166,4 +166,83 @@ describe('classifyScreenshotChange', () => {
     const v = classifyScreenshotChange(solid(100, 100, WHITE), solid(100, 100, RED), [], OPTS, null)
     assert.equal(v.decision, 'keep')
   })
+
+  it('holds a real change to a shot this diff does not own', () => {
+    // The e2e tier re-renders far more shots than a diff owns; an unrelated
+    // render must not be committed as if this PR had changed that screen.
+    const v = classifyScreenshotChange(
+      solid(100, 100, WHITE),
+      solid(100, 100, RED),
+      [],
+      OPTS,
+      null,
+      false,
+    )
+    assert.equal(v.decision, 'out-of-scope')
+  })
+
+  it('holds an out-of-scope shot whose re-render resized', () => {
+    // The loudest churn case: an unrelated PR rewriting a shot to a wholly
+    // different render state. The in-scope path keeps a resize for review.
+    const v = classifyScreenshotChange(
+      solid(100, 100, WHITE),
+      solid(120, 100, WHITE),
+      [],
+      OPTS,
+      null,
+      false,
+    )
+    assert.equal(v.decision, 'out-of-scope')
+  })
+
+  it('reports an identical re-render as noise before consulting scope', () => {
+    // Restoring HEAD is the outcome either way; "identical re-render" is the
+    // accurate report, not an ownership complaint.
+    const base = solid(100, 100, WHITE)
+    const v = classifyScreenshotChange(base, solid(100, 100, WHITE), [], OPTS, null, false)
+    assert.equal(v.decision, 'ignore')
+  })
+
+  it('contested beats out-of-scope so deliberate work keeps the clearer report', () => {
+    const v = classifyScreenshotChange(
+      solid(100, 100, WHITE),
+      solid(100, 100, RED),
+      [],
+      OPTS,
+      { branchTouched: true, mainTouched: false },
+      false,
+    )
+    assert.equal(v.decision, 'contested')
+  })
+
+  it('keeps a brand-new shot even out of scope', () => {
+    // Dropping it would leave a rendered shot with no committed baseline, which
+    // the freshness gate then reports stale forever.
+    const v = classifyScreenshotChange(null, solid(100, 100, RED), [], OPTS, null, false)
+    assert.equal(v.decision, 'keep')
+  })
+
+  it('keeps an in-scope real change', () => {
+    const v = classifyScreenshotChange(
+      solid(100, 100, WHITE),
+      solid(100, 100, RED),
+      [],
+      OPTS,
+      null,
+      true,
+    )
+    assert.equal(v.decision, 'keep')
+  })
+
+  it('disables scoping when ownership is undefined', () => {
+    const v = classifyScreenshotChange(
+      solid(100, 100, WHITE),
+      solid(100, 100, RED),
+      [],
+      OPTS,
+      null,
+      undefined,
+    )
+    assert.equal(v.decision, 'keep')
+  })
 })
