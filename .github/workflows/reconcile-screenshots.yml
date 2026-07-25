@@ -6,11 +6,15 @@ name: Reconcile PR screenshots after main
 # changes), so the commit-screenshots reconcile in ci.yml would never get a
 # chance to clear the conflict on an idle PR. This workflow closes that gap: on a
 # main push that changes screenshots, it merges the new main into each conflicting
-# PR head and keeps the PR's own shots for any screenshot-only conflict — the same
-# policy as ci.yml's reconcile, but driven reactively by the base moving. The PR's
-# committed shots are trustworthy as the winning side because commit-screenshots
-# only ever auto-commits UNCONTESTED renders (see its write-policy comment):
+# PR head and resolves screenshot-only conflicts by OWNERSHIP — the same policy as
+# ci.yml's reconcile, but driven reactively by the base moving. A shot the PR owns
+# (the oracle maps its diff to a spec that renders it, or someone hand-committed it
+# on the branch) keeps the PR's version; anything else takes main's. The PR's
+# committed shots are trustworthy for what it owns because commit-screenshots only
+# ever auto-commits OWNED, UNCONTESTED renders (see its write-policy comment):
 # anything deliberately committed on the branch is still the author's own work.
+# Keeping the PR's version for the rest is what made unrelated re-renders revert
+# main and ping-pong across PRs. See scripts/lib/screenshot-scope.mts.
 #
 # It is intentionally cheap: a pure git merge, no build/e2e. The push that
 # resolves the conflict fires the PR's normal `synchronize` CI once (which, for a
@@ -149,6 +153,12 @@ jobs:
           ref: ${{ matrix.pr.head }}
           fetch-depth: 0
           token: ${{ secrets.SCREENSHOTS_PAT || github.token }}
+      # Only to run check-screenshots.mts --own-paths, which walks the repo and git
+      # with no external dependencies — no `npm ci`, so this stays a cheap job.
+      - uses: actions/setup-node@v7
+        if: steps.pr.outputs.open == 'true'
+        with:
+          node-version: '22'
       - name: Merge main, auto-resolving screenshot-only conflicts
         if: steps.pr.outputs.open == 'true'
         id: merge
@@ -158,6 +168,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --no-tags origin main
+
+          # Resolve ownership BEFORE any merge attempt: --own-paths reads the PR's
+          # diff from the working tree, and a conflicted merge in progress would
+          # fold main's incoming changes into it and over-grant ownership.
+          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base origin/main)
+          echo "PR #$PR_NUMBER owns ${#owned[@]} reference shot(s)"
 
           # Non-zero merge is not always a conflict: untracked working-tree files
           # that main also adds abort before MERGE_HEAD exists. Clearing those
@@ -209,8 +225,40 @@ jobs:
             } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "PR #$PR_NUMBER: screenshot-only conflict — keeping the PR's shots"
-          git checkout --ours -- tests/e2e/screenshots/
+          # Per-file resolution by ownership, mirroring ci.yml's reconcile: the PR
+          # keeps only the shots its diff owns; the rest take main's newer render
+          # rather than being reverted by a branch that merely re-rendered them.
+          # A lone `*` means scope is unavailable — keep everything (pre-scope
+          # policy). The merge is in progress here, so HEAD is still the PR head and
+          # the oracle sees the PR's own diff.
+          echo "PR #$PR_NUMBER: screenshot-only conflict — resolving by ownership"
+          resolve_shot() {
+            # `git checkout --ours/--theirs` reads the conflict's index stage, which
+            # is absent when that side DELETED the shot (modify/delete). Removing
+            # the file is the correct resolution for that side, so fall back to it
+            # rather than dying under `set -e` mid-merge.
+            local side="$1" path="$2"
+            git checkout "--${side}" -- "$path" 2>/dev/null && return 0
+            echo "    ${side} side deleted this shot — taking the deletion"
+            git rm -q -f -- "$path"
+          }
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            keep_ours=0
+            for o in "${owned[@]}"; do
+              if [ "$o" = '*' ] || [ "$o" = "$path" ]; then
+                keep_ours=1
+                break
+              fi
+            done
+            if [ "$keep_ours" = 1 ]; then
+              echo "  ours   $path (owned by this PR)"
+              resolve_shot ours "$path"
+            else
+              echo "  theirs $path (not owned by this PR — keeping main's render)"
+              resolve_shot theirs "$path"
+            fi
+          done <<< "$conflicts"
           git add tests/e2e/screenshots/
           # The reconcile push authenticates with SCREENSHOTS_PAT, a classic PAT
           # without `workflow` scope. If main advanced a file under
