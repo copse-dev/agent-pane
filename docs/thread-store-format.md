@@ -61,9 +61,7 @@ describes it to the agent, so changing the layout means updating that preamble.
   trimming replaces the whole file via an atomic write. Corrupt JSON, a missing
   file, or an unsupported future `v` fail closed to fresh provider history
   without damaging the human transcript in `events.jsonl` / `messages/`. Do not
-  log history values. Legacy electron-store keys `llm-history:<threadId>` are
-  migrated once at startup (after legacy thread import, before the first window)
-  when ownership resolves to exactly one `(projectId, threadId)`.
+  log history values.
 
 ## Spine line schema
 

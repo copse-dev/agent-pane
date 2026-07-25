@@ -204,7 +204,6 @@ export type StartupPhase =
   | 'tool-availability'
   | 'sandbox-init'
   | 'thread-migration'
-  | 'llm-history-migration'
   | 'window-create'
   | 'register-handlers'
   | 'skills-mcp'
