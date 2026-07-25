@@ -1008,8 +1008,17 @@ dialog.settings-overlay::backdrop {
 }
 .usage-table {
   width: 100%;
+  /* Fixed layout + a shared colgroup make the Cloud and Local tables share one
+     column grid, so their columns align despite being separate elements. */
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--font-size-sm);
+}
+.usage-col-model {
+  width: 34%;
+}
+.usage-col-num {
+  width: 13.2%;
 }
 .usage-table th,
 .usage-table td {
@@ -1028,6 +1037,8 @@ dialog.settings-overlay::backdrop {
 }
 .usage-table td code {
   font-size: 12px;
+  /* Long model ids must wrap inside their fixed-width column, not overflow it. */
+  overflow-wrap: anywhere;
 }
 
 /* ACP agents panel: detect results + a card per configured agent. */
