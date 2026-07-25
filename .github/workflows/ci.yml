@@ -262,9 +262,12 @@ jobs:
           # a subset smaller than 8: the surplus shards booted only to find an
           # empty slice.
           #
-          # An empty list yields no matrix jobs at all, so `e2e` reports
-          # 'skipped'. `ci-passed` already tolerates that: mode=skip takes its own
-          # branch, and a skipped result is neither 'failure' nor 'cancelled'.
+          # An empty list must NOT reach the `e2e` matrix: GitHub Actions treats
+          # `strategy.matrix: []` as a job **failure**, not 'skipped' (observed on
+          # #1233 — `needs.e2e.result=failure` painted `CI Passed` red in skip
+          # mode). The `e2e` job `if:` therefore gates on `e2e_shard_total != 0`
+          # so a zero-shard plan skips the job cleanly; `ci-passed` then sees
+          # 'skipped' and its mode=skip branch accepts it.
           if [ "$PLAN_MODE" = "skip" ]; then
             echo "mode=skip -> no e2e shards dispatched"
             { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
@@ -586,17 +589,21 @@ jobs:
   e2e:
     needs: [build, precheck]
     if: >-
+      needs.precheck.outputs.e2e_shard_total != '0' &&
       github.event_name != 'merge_group' &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.head.repo.full_name == github.repository) &&
       (github.event_name != 'pull_request' ||
        github.event.pull_request.draft == false ||
        contains(github.event.pull_request.labels.*.name, 'ci-full'))
-    # Excluded from the merge queue. Two reasons: 8 Electron shards per batch
-    # would not drain, and the `runs-on` expression below has no merge_group
-    # branch — it evaluates falsy and fails closed, so a queued entry would hang
-    # rather than run. The PR already gated e2e; the queue re-checks the cheap,
-    # merge-sensitive things (types, lint, unit tests) that a PR cannot see.
+    # Zero-shard plans (oracle mode=skip / empty subset) skip this job via
+    # `e2e_shard_total != 0` — an empty matrix is a GHA **failure**, not a skip
+    # (see the precheck shards step). Excluded from the merge queue too: 8
+    # Electron shards per batch would not drain, and the `runs-on` expression
+    # below has no merge_group branch — it evaluates falsy and fails closed, so
+    # a queued entry would hang rather than run. The PR already gated e2e; the
+    # queue re-checks the cheap, merge-sensitive things (types, lint, unit
+    # tests) that a PR cannot see.
     # Draft PRs skip e2e for the same reason as `build` above; `build` is also
     # gated, so on a draft this job's `needs` are unsatisfied and it would skip
     # regardless — the explicit clause keeps the intent readable at this job.
