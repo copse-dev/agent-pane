@@ -20,7 +20,6 @@ describe('conversation visual hierarchy', () => {
   })
 
   it('keeps the outcome prominent while completed trace details stay compact', async () => {
-    const reasoning = await $('.message-reasoning')
     const initialDisclosureState = await browser.execute(() => ({
       reasoningOpen: document.querySelector('.message-reasoning')?.hasAttribute('open') ?? false,
       toolOpen:
@@ -31,20 +30,15 @@ describe('conversation visual hierarchy', () => {
 
     // Exercise the compact completed-trace treatment without changing the
     // product's disclosure-state behavior as part of this visual-only change.
-    // Drive the native <details> toggle through the DOM rather than a WebDriver
-    // click: the summary can render below the fold, and a WebDriver click first
-    // scrolls via the Actions API, which is unreliable when CI's chromedriver
-    // and Chromium drift by a patch version ("Browser.getWindowForTarget wasn't
-    // found") — the element then reports "not interactable" and the run flakes.
-    // The summary only records `userToggled` and otherwise relies on the
-    // browser's default collapse (see buildReasoningEl in conversation.ts), so a
-    // DOM click fires the same handler and default action as a user click and
-    // the assertions below are unchanged.
-    await reasoning.$('.message-reasoning-summary').waitForExist()
+    // A completed segment's reasoning now nests inside its (collapsed) tool
+    // rollup, so the summary isn't directly interactable — collapse it the way
+    // the summary click would (mark it user-toggled, then close it).
     await browser.execute(() => {
-      const summary = document.querySelector<HTMLElement>('.message-reasoning-summary')
-      summary?.scrollIntoView({ block: 'center' })
-      summary?.click()
+      const details = document.querySelector('.message-reasoning')
+      if (details instanceof HTMLDetailsElement) {
+        details.dataset['userToggled'] = '1'
+        details.open = false
+      }
     })
     await browser.waitUntil(
       async () =>

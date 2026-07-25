@@ -53,6 +53,9 @@ const HEIGHT = 290
 // placement below), so the plot itself claims almost the full panel width.
 const MARGIN = { top: 14, right: 20, bottom: 34, left: 40 }
 
+/** Clearance kept between a lifted frontier label and the frontier line. */
+const LABEL_LINE_GAP = 3
+
 /**
  * Compact display form of a model id for chart labels: provider prefixes and
  * vendor org paths are wrappers, not identity, so `huggingface:zai-org/
@@ -746,6 +749,33 @@ export function renderFrontierSvg(
     )
   }
 
+  // Frontier line as x-sorted segments, so a label sitting beside a frontier
+  // point can be lifted clear of the segment that would otherwise run through it.
+  const frontierByX = [...frontier].sort((a, b) => x(a.costPerMTok) - x(b.costPerMTok))
+  /** Screen-y span the frontier line occupies across [xa, xb], or null if none. */
+  const frontierYRange = (xa: number, xb: number): { min: number; max: number } | null => {
+    let min = Infinity
+    let max = -Infinity
+    for (let i = 0; i + 1 < frontierByX.length; i++) {
+      const a = frontierByX[i]
+      const b = frontierByX[i + 1]
+      if (!a || !b) continue
+      const ax = x(a.costPerMTok)
+      const bx = x(b.costPerMTok)
+      const lo = Math.max(xa, ax)
+      const hi = Math.min(xb, bx)
+      if (lo > hi) continue
+      const ay = y(a.intellect)
+      const by = y(b.intellect)
+      const span = bx - ax || 1
+      const y0 = ay + ((by - ay) * (lo - ax)) / span
+      const y1 = ay + ((by - ay) * (hi - ax)) / span
+      min = Math.min(min, y0, y1)
+      max = Math.max(max, y0, y1)
+    }
+    return min === Infinity ? null : { min, max }
+  }
+
   // Direct labels sit beside their point, in compact display form (full ids
   // stay in the tooltip). Collision layout is interval-aware: a label bumps
   // down until its horizontal extent overlaps nothing on its row. Frontier
@@ -754,8 +784,13 @@ export function renderFrontierSvg(
   // never overflow the axis into the copy below. A label whose natural right
   // placement would run off the (now tight) right edge FLIPS to the left of its
   // point instead, so the trimmed margin never clips it.
+  // Frontier labels lift UP to clear the line, so they are placed bottom-first
+  // (each rises into space the lower ones haven't claimed); the rest cascade
+  // DOWN, so they are placed top-first.
   const labelledPoints = [...points].sort(
-    (a, b) => Number(b.onFrontier) - Number(a.onFrontier) || y(a.intellect) - y(b.intellect),
+    (a, b) =>
+      Number(b.onFrontier) - Number(a.onFrontier) ||
+      (a.onFrontier ? y(b.intellect) - y(a.intellect) : y(a.intellect) - y(b.intellect)),
   )
   const plotBottom = MARGIN.top + plotH
   const rightEdge = width - 2
@@ -794,25 +829,41 @@ export function renderFrontierSvg(
       continue
     }
     let py = y(p.intellect) + 3
+    // A frontier point sits ON the line, so the adjacent segment can run through
+    // its side label. When it does, lift the label clear ABOVE the line — the
+    // Pareto-empty upper region — rather than leave the line crossing the text.
+    const up = p.onFrontier
+    if (up) {
+      const range = frontierYRange(x0, x1)
+      // Text band is roughly [py - 8, py + 2] (9px glyphs above the baseline).
+      if (range && py - 8 < range.max + LABEL_LINE_GAP && py + 2 > range.min - LABEL_LINE_GAP) {
+        py = range.min - LABEL_LINE_GAP
+      }
+    }
+    // Nudge off other labels and dots. Frontier labels move UP into clear space,
+    // the rest move DOWN, so neither is pushed back through the frontier line.
+    // The strict-progress guard (a move must change py in the chosen direction)
+    // avoids a floating-point fixed point where the step is a no-op yet `moved`
+    // stays true forever.
     let moved = true
     while (moved) {
       moved = false
       for (const prev of placed) {
-        // Only resolve a collision when it actually pushes the label DOWN. The
-        // naive `py = prev.py + 10` can hit a floating-point fixed point where
-        // |py − prev.py| rounds to just under 10 while prev.py + 10 === py, so
-        // the assignment is a no-op yet `moved` stays true forever. Requiring a
-        // strict increase drops only that artifact (a real overlap always
-        // implies prev.py + 10 > py) and guarantees termination.
-        const next = prev.py + 10
-        if (next > py && Math.abs(py - prev.py) < 10 && x0 < prev.x1 && x1 > prev.x0) {
+        if (Math.abs(py - prev.py) >= 10 || x0 >= prev.x1 || x1 <= prev.x0) continue
+        const next = up ? prev.py - 10 : prev.py + 10
+        if (up ? next < py : next > py) {
           py = next
           moved = true
         }
       }
     }
-    // Drop a label that can only land below the plot — hover still has it.
-    if (py > plotBottom) continue
+    if (up) {
+      // Keep a lifted frontier label inside the plot rather than dropping it.
+      if (py - 8 < MARGIN.top) py = MARGIN.top + 8
+    } else if (py > plotBottom) {
+      // Drop a label that can only land below the plot — hover still has it.
+      continue
+    }
     placed.push({ x0, x1, py })
     labelText.set(p.id, text)
     labelY.set(p.id, py)

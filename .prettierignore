@@ -17,3 +17,7 @@ schemas/vendor/*.json
 # payload-snapshots.test.ts (UPDATE_HOOK_PAYLOAD_SNAPSHOTS=1); the test compares
 # against these bytes, so prettier must not reformat them (decision 14).
 src/main/services/hooks/__snapshots__/*.json
+# ESLint bulk-suppressions baseline (#508) — an ESLint-managed artifact written in
+# ESLint's own JSON shape by `--suppress-rule` / `--prune-suppressions`. Leave it
+# untouched so prettier and ESLint don't fight over its formatting on every prune.
+eslint-suppressions.json

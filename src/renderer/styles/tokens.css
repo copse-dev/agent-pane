@@ -59,19 +59,24 @@
   --shadow-composer: 0 -6px 18px rgba(0, 0, 0, 0.1);
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  --font-size-xs: 11px;
-  --font-size-sm: 12px;
-  --font-size-base: 14px;
-  --font-size-md: 15px;
-  --font-size-lg: 16px;
+  /* Interface scale (Settings → Appearance, ⌘+/-, pinch). Multiplies type and
+     spacing tokens below so the shell reflows crisply instead of bitmap-zooming.
+     Radii, layout max-widths, and the traffic-light inset stay unscaled so OS
+     chrome alignment and corner geometry do not drift. */
+  --ui-scale: 1;
+  --font-size-xs: calc(11px * var(--ui-scale));
+  --font-size-sm: calc(12px * var(--ui-scale));
+  --font-size-base: calc(14px * var(--ui-scale));
+  --font-size-md: calc(15px * var(--ui-scale));
+  --font-size-lg: calc(16px * var(--ui-scale));
   --radius-sm: 4px;
   --radius: 6px;
   --radius-lg: 8px;
-  --spacing-xs: 4px;
-  --spacing-sm: 8px;
-  --spacing-md: 12px;
-  --spacing-lg: 16px;
-  --spacing-xl: 24px;
+  --spacing-xs: calc(4px * var(--ui-scale));
+  --spacing-sm: calc(8px * var(--ui-scale));
+  --spacing-md: calc(12px * var(--ui-scale));
+  --spacing-lg: calc(16px * var(--ui-scale));
+  --spacing-xl: calc(24px * var(--ui-scale));
   /* Keep prose, tool traces, and the docked composer readable on very wide
      windows. Wide artifacts can still scroll or expand within this column. */
   --chat-content-max: 960px;
@@ -81,12 +86,12 @@
   --settings-content-max: 720px;
   /* Left inset for custom titlebars under macOS traffic lights (see trafficLightPosition). */
   --traffic-light-inset: 78px;
-  --titlebar-height: 40px;
+  --titlebar-height: calc(40px * var(--ui-scale));
   /* Shared height for projects Settings and the portrait panel-controls row:
      16px icon + sm padding + top border (Settings' historical band). */
-  --chrome-action-band-height: calc(16px + 2 * var(--spacing-sm) + 1px);
-  --chrome-action-band-content-height: 16px;
+  --chrome-action-band-height: calc((16px * var(--ui-scale)) + 2 * var(--spacing-sm) + 1px);
+  --chrome-action-band-content-height: calc(16px * var(--ui-scale));
   /* Browser Tabs header + URL toolbar share one band so their bottom borders
      meet across the tree resizer (28px nav buttons + xs pad + bottom border). */
-  --browser-chrome-band-height: calc(28px + 2 * var(--spacing-xs) + 1px);
+  --browser-chrome-band-height: calc((28px * var(--ui-scale)) + 2 * var(--spacing-xs) + 1px);
 }

@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto'
 import { glob, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import OpenAI from 'openai'
 import { parseTerminalBenchSteering } from './lib/terminal-bench-steering.mts'
 import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
+import { terminalBenchAnalysisPlanPath, terminalBenchResultsRoot } from './lib/terminal-bench.mts'
 
-const RESULTS_ROOT = resolve('bench-results/terminal-bench')
-const PLAN_PATH = resolve('bench-results/terminal-bench-analysis-plan.json')
+const RESULTS_ROOT = terminalBenchResultsRoot()
+const PLAN_PATH = terminalBenchAnalysisPlanPath()
 const DEFAULT_MAX_INPUT_CHARS = 350_000
 
 interface Trial {
@@ -116,6 +117,7 @@ async function analysisInput(trial: Trial, maxChars: number): Promise<string> {
     'agent/applied-nudges.jsonl',
     'agent/hook-runs.jsonl',
     'agent/stream-stats.jsonl',
+    'agent/reasoning-checkpoints.jsonl',
     'agent/workspace-files.tsv',
     'agent/copse-trace.jsonl',
   ]

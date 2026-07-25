@@ -1,4 +1,8 @@
 import { runAgentLoop } from '@copse/agent/run-agent-loop.ts'
+import {
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+} from '@copse/agent/reasoning-checkpoint-policy.ts'
 import type { LLMMessage, LLMProvider, LLMTool, StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { ToolRegistry } from './tool-registry.ts'
@@ -65,6 +69,8 @@ export async function runTodoWorker(opts: RunTodoWorkerOptions): Promise<TodoWor
     messages,
     tools: filterWorkerTools(registry),
     maxSteps: 12,
+    reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+    reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
     maxContextTokens: contextWindow,
     toolSchemaReserveTokens: toolSchemaReserve,
     signal,

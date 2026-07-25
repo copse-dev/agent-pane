@@ -31,13 +31,20 @@ All spacing, radii, colors, and fonts come from CSS custom properties in
 [`src/renderer/styles/tokens.css`](../src/renderer/styles/tokens.css). Reach for a token before
 typing a raw pixel value; if you find yourself writing `padding: 8px 20px`, that's a smell.
 
-| Token          | Value | Token              | Value |
-| -------------- | ----- | ------------------ | ----- |
-| `--spacing-xs` | 4px   | `--radius`         | 4px   |
-| `--spacing-sm` | 8px   | `--radius-lg`      | 8px   |
-| `--spacing-md` | 12px  | `--font-size-sm`   | 12px  |
-| `--spacing-lg` | 16px  | `--font-size-base` | 14px  |
-| `--spacing-xl` | 24px  | `--font-size-lg`   | 16px  |
+Interface scale (`--ui-scale`, Settings → Appearance, ⌘+/−/0, trackpad pinch) multiplies the
+font-size and spacing tokens (and chrome band heights) via `calc(… * var(--ui-scale))`. Radii,
+layout max-widths, and `--traffic-light-inset` stay unscaled so OS chrome alignment does not drift.
+Prefer tokens over hardcoded `px` so scale reaches the surface. Helpers live in
+[`src/shared/ui-scale.ts`](../src/shared/ui-scale.ts); the renderer applies the var through
+[`src/renderer/dom/ui-scale.ts`](../src/renderer/dom/ui-scale.ts).
+
+| Token          | Base | Token              | Base |
+| -------------- | ---- | ------------------ | ---- |
+| `--spacing-xs` | 4px  | `--radius`         | 6px  |
+| `--spacing-sm` | 8px  | `--radius-lg`      | 8px  |
+| `--spacing-md` | 12px | `--font-size-sm`   | 12px |
+| `--spacing-lg` | 16px | `--font-size-base` | 14px |
+| `--spacing-xl` | 24px | `--font-size-lg`   | 16px |
 
 Chrome band tokens (not spacing, but reach for these before inventing heights):
 `--chrome-action-band-height`, `--browser-chrome-band-height`.
@@ -358,12 +365,18 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
 
 ## Context menus (right-click)
 
-Right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
+App-chrome right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
 [`layout.css`](../src/renderer/styles/global/layout.css)), not the anchored `.browser-menu` wrap.
 Pin to `clientX`/`clientY`, clamp into the viewport, and dismiss on outside pointerdown / Escape /
 window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
 [`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
+
+In-app **browser guest pages** (`<webview>`) use a native Electron `Menu` from the main-process
+`context-menu` event instead — guest content cannot host our DOM menu. Standard items live in
+[`browser-context-menu.ts`](../src/main/windows/browser-context-menu.ts): Open Link in New Tab /
+Copy Link Address, Copy Image / Copy Image Address / Save Image As…, Cut/Copy/Paste/Select All,
+Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.context-menu`.
 
 ## Prove visual changes with a focused e2e eval
 

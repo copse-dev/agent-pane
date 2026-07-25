@@ -2,13 +2,17 @@ import { DEFAULT_APP_CHAT_MODEL, LM_STUDIO_MODEL_IDS } from '@shared/lm-studio-d
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import {
   REMOTE_AGENT_MODELS,
+  REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
+  parseRemoteAgentModelSelection,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
+import { acpModelValue } from '@shared/acp.ts'
 import { isProviderKeyUsable } from './provider-key-status.ts'
 import { buildProvider } from './provider-selection.ts'
-import { isProviderAvailable } from '../storage/settings.ts'
+import { getSetting, isProviderAvailable } from '../storage/settings.ts'
+import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
 
 export interface ResolvedAgentChatModel {
   /** Model id actually used for the turn. */
@@ -70,12 +74,46 @@ async function pickFallbackChatModel(): Promise<string> {
   return DEFAULT_APP_CHAT_MODEL
 }
 
+/** ACP agent ids that are Claude-based and use subscription billing. */
+const CLAUDE_ACP_AGENT_IDS = new Set(['claude-agent-acp', 'claude-code-acp'])
+
+/**
+ * When the user selected Claude Cloud Agent (`remote-agent:anthropic`) and has
+ * an enabled ACP Claude agent, redirect to the ACP path so turns are
+ * subscription-billed rather than API-key-billed. Returns the ACP model value,
+ * or `null` to stay on the Cloud Agent path.
+ */
+function tryAcpClaudeRedirect(requested: string): string | null {
+  if (!getSetting<boolean>('preferAcpOverCloudAgent', true)) return null
+  const selection = parseRemoteAgentModelSelection(requested)
+  if (!selection || selection.provider !== REMOTE_AGENT_PROVIDER_ANTHROPIC) return null
+
+  const enabled = listEnabledAcpAgents()
+  const claude = enabled.find((agent) => CLAUDE_ACP_AGENT_IDS.has(agent.id))
+  if (!claude) return null
+
+  return acpModelValue(claude.id, selection.model)
+}
+
 /**
  * Resolve the chat model for an agent turn. When the user picked a remote agent
  * but has no valid API key, fall back to a runnable local/cloud chat model and
  * return a notice so the transcript states what happened.
+ *
+ * When `preferAcpOverCloudAgent` is on (default) and a Claude Cloud Agent
+ * request can be served by an enabled ACP Claude agent, redirect to the ACP
+ * path so turns count against subscription headroom instead of API credit.
  */
 export async function resolveAgentChatModel(requested: string): Promise<ResolvedAgentChatModel> {
+  const acpRedirect = tryAcpClaudeRedirect(requested)
+  if (acpRedirect) {
+    return {
+      model: acpRedirect,
+      fallbackNotice:
+        '_Using **Claude Code (ACP)** instead of Claude Cloud Agent — subscription-billed, no API key cost._\n\n',
+    }
+  }
+
   const remoteProvider = parseRemoteAgentModel(requested)
   if (!remoteProvider) return { model: requested }
 

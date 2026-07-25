@@ -10,6 +10,7 @@ required=(
   COPSE_TERMINAL_SHARD_COUNT
   COPSE_TERMINAL_SHARD_INDEX
   COPSE_TERMINAL_ATTEMPTS
+  COPSE_TERMINAL_RESULTS_ROOT
   SCW_OBJECT_STORAGE_BUCKET
   SCW_OBJECT_STORAGE_ENDPOINT
   SCW_OBJECT_STORAGE_PREFIX
@@ -31,7 +32,7 @@ analysis_status=0
 steered_status=0
 checkpoint_status=0
 checkpoint_script="benchmarks/terminal_bench/checkpoint-results.sh"
-metrics_path="bench-results/terminal-bench-host-metrics.jsonl"
+metrics_path="${COPSE_TERMINAL_RESULTS_ROOT}/terminal-bench-host-metrics.jsonl"
 metrics_pid=""
 stop_metrics() {
   if [[ -n "$metrics_pid" ]] && kill -0 "$metrics_pid" 2>/dev/null; then

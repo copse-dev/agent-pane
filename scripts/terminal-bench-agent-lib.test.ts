@@ -11,6 +11,7 @@ import {
   terminalCommandTimeoutParameter,
   terminalBenchProfileToolNames,
   terminalReasoningRunawayRecoveryNudge,
+  terminalReasoningCheckpointPolicy,
   terminalRecoveryWriteBlockReason,
   terminalRecoveryWriteTool,
   terminalRequestedOutputPaths,
@@ -19,14 +20,17 @@ import {
   terminalStuckToolRecoveryNudge,
   terminalValidationBoundaryWarning,
   terminalWriteFileCommand,
+  terminalWorkspaceWriteFileCommand,
 } from './terminal-bench-agent-lib.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
 
 describe('terminal benchmark bridge', () => {
   it('keeps versioned profiles isolated and content-addressed', () => {
     const main = terminalBenchProfile('main-legacy')
     const pr = terminalBenchProfile('pr-1149')
     const aligned = terminalBenchProfile('product-aligned')
+    const alignedV2 = terminalBenchProfile('product-aligned@2')
     assert.deepEqual(terminalBenchProfileToolNames(main), ['run_shell'])
     assert.deepEqual(terminalBenchProfileToolNames(pr), ['run_shell', 'write_file'])
     assert.deepEqual(terminalBenchProfileToolNames(aligned), ['run_shell', 'write_file'])
@@ -34,20 +38,33 @@ describe('terminal benchmark bridge', () => {
       {
         'main-legacy@1': main.contentHash,
         'pr-1149@1': pr.contentHash,
-        'product-aligned@1': aligned.contentHash,
+        'product-aligned@2': alignedV2.contentHash,
+        'product-aligned@3': aligned.contentHash,
       },
       {
         'main-legacy@1': '4c79ddf0b404ea906d6b136fcc874253c5353ca4987e6d5fc5f8910ce67db65b',
         'pr-1149@1': '9f482024cb1d5ad879e285f96dd1c73f8ae7c57ae48fcab8476d79598aa0a460',
-        'product-aligned@1': '9880c6ed0d8fac7b93eb5a8d842ce813ae1aeaa430110dc2eb394ab482774aaa',
+        'product-aligned@2': 'bb72d92ff108556d25660492cdf6bfd0e165b45db13aebcfb9d1e3132461dd23',
+        'product-aligned@3': '69c56451ed7d3abb564ac6edf731294cbf70d8c496249336f9282dbd64181a1f',
       },
     )
-    assert.equal(new Set([main.contentHash, pr.contentHash, aligned.contentHash]).size, 3)
+    assert.equal(aligned.versionedId, 'product-aligned@3')
+    assert.equal(
+      new Set([main.contentHash, pr.contentHash, alignedV2.contentHash, aligned.contentHash]).size,
+      4,
+    )
     assert.equal(main.forcesRequestedOutputRecovery, false)
     assert.equal(pr.forcesRequestedOutputRecovery, true)
     assert.equal(aligned.forcesRequestedOutputRecovery, false)
     assert.equal(pr.warnsOnValidationEvidence, true)
     assert.equal(aligned.warnsOnValidationEvidence, false)
+    assert.equal(aligned.writeFilePolicy, 'workspace-relative')
+    assert.equal(alignedV2.reasoningPolicy, 'fixed-cap')
+    assert.equal(aligned.reasoningPolicy, 'circle-gated-2k-checkpoints-v1')
+    assert.equal(
+      terminalBenchProfile('product-aligned@1').contentHash,
+      '9880c6ed0d8fac7b93eb5a8d842ce813ae1aeaa430110dc2eb394ab482774aaa',
+    )
   })
 
   it('marks nonzero shell exits as errors only in the product-aligned profile', () => {
@@ -65,6 +82,16 @@ describe('terminal benchmark bridge', () => {
   it('uses an action-oriented local-model stream cap', () => {
     assert.equal(DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS, 2_048)
     assert.equal(DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS, 4_096)
+    assert.equal(
+      terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@2')),
+      undefined,
+    )
+    assert.deepEqual(terminalReasoningCheckpointPolicy(terminalBenchProfile('product-aligned@3')), {
+      intervalTokens: 2_048,
+      maxNonReasoningTokens: 2_048,
+      maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
+      maxRecoveryTokens: 4_096,
+    })
   })
 
   it('offers a bounded opt-in timeout for legitimately long commands', () => {
@@ -158,6 +185,25 @@ describe('terminal benchmark bridge', () => {
     )
     assert.throws(() => terminalWriteFileCommand('/tests/result.txt', 'nope'), /under \/app/)
     assert.throws(() => terminalWriteFileCommand('/app/../tests/result.txt', 'nope'), /under \/app/)
+  })
+
+  it('writes product-aligned files relative to the actual task workspace', () => {
+    assert.equal(
+      terminalWorkspaceWriteFileCommand('src/result.txt', 'first\nsecond\n', '/workspace'),
+      "mkdir -p -- '/workspace/src' && printf '%s' 'Zmlyc3QKc2Vjb25kCg==' | base64 -d > '/workspace/src/result.txt'",
+    )
+    assert.equal(
+      terminalWorkspaceWriteFileCommand('/workspace/result.txt', 'done', '/workspace'),
+      "mkdir -p -- '/workspace' && printf '%s' 'ZG9uZQ==' | base64 -d > '/workspace/result.txt'",
+    )
+    assert.throws(
+      () => terminalWorkspaceWriteFileCommand('../tests/result.txt', 'nope', '/workspace'),
+      /remain inside the workspace/,
+    )
+    assert.throws(
+      () => terminalWorkspaceWriteFileCommand('/app/result.txt', 'nope', '/workspace'),
+      /remain inside the workspace/,
+    )
   })
 
   it('retains #1149 validation warnings as profile-local mechanisms', () => {

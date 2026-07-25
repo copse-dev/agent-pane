@@ -28,6 +28,7 @@ import {
   observeDiffHostLayout,
   setGitFileDiffModel,
 } from '../monaco/git-diff-viewer.ts'
+import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
 const STATUS_LABEL: Record<string, string> = {
   added: 'A',
@@ -195,7 +196,12 @@ export function mountPrPane(
   function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
-      diffEditor = createGitChangesDiffEditor(diffWrap, monaco, store.getState().fontSize, theme)
+      diffEditor = createGitChangesDiffEditor(
+        diffWrap,
+        monaco,
+        scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
+        theme,
+      )
     }
     return diffEditor
   }

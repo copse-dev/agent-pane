@@ -364,6 +364,9 @@ export interface ApiClient {
     onShowChanges: (handler: () => void) => () => void
     onShowBrowser: (handler: () => void) => () => void
     onKeyboardShortcuts: (handler: () => void) => () => void
+    onUiScaleZoomIn: (handler: () => void) => () => void
+    onUiScaleZoomOut: (handler: () => void) => () => void
+    onUiScaleReset: (handler: () => void) => () => void
   }
   settings: {
     get: (key: string) => Promise<unknown>

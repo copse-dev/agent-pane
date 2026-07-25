@@ -321,7 +321,7 @@ function mockSnapshot(): PlanUsageSnapshot {
           windows: [
             {
               id: 'five_hour',
-              label: '5-hour (inactive)',
+              label: '5-hour',
               usedPercent: 0,
               resetsAt: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
               severity: 'normal',
@@ -339,7 +339,7 @@ function mockSnapshot(): PlanUsageSnapshot {
             },
             {
               id: 'seven_day_fable',
-              label: 'Weekly Fable (inactive)',
+              label: 'Weekly Fable',
               usedPercent: 89,
               resetsAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
               severity: 'warning',

@@ -29,3 +29,14 @@ paths = [
 description = "Public Claude Code OAuth client id (not a secret)"
 targetRules = ["generic-api-key"]
 paths = ['''^packages/plan-usage/src/claude-oauth\.ts$''']
+
+[[allowlists]]
+# Per-PR demo preview builds land under `pr-<n>/` on the machine-managed
+# `demo-previews` branch. Minified bundles and source maps trip entropy
+# heuristics (`generic-api-key`, `sourcegraph-access-token`, …) even though they
+# contain no real credentials. Scope by path only — the Secret scan workflow
+# also limits `gitleaks git` to the checked-out tip so these refs are not walked
+# for unrelated PRs, but keep the path exemption if a preview commit is ever
+# reachable from a scanned tip.
+description = "Per-PR demo preview build artifacts (minified bundles, not secrets)"
+paths = ['''^pr-\d+/''']
