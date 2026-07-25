@@ -41,15 +41,46 @@ export const FRAME_IMAGE_EXTENSION = 'jpg'
  */
 export const DEFAULT_FRAME_QUALITY = 0.8
 
-/** Default gap between samples. Fine enough to catch a click-through step. */
-export const DEFAULT_SAMPLE_INTERVAL_SECONDS = 0.5
+/**
+ * How many positions a call aims to sample, whatever the window length.
+ *
+ * A *fixed* interval was the original design and it quietly broke the tool's
+ * own advice. Sampling every 0.5s meant narrowing `start`/`end` bought no extra
+ * detail — a 5-second window still got 11 samples — so anything shorter than
+ * half a second (a flicker, a one-frame repaint, a spinner blinking) fell
+ * between samples and was invisible no matter how far you zoomed in.
+ *
+ * Deriving the interval from the window instead makes narrowing mean something:
+ * 60 samples over a whole 57s recording is ~1s apart, over a 5s window ~85ms,
+ * over 2s ~33ms — one video frame. The seek count stays constant, so a close
+ * look costs no more than a survey.
+ */
+export const DEFAULT_TARGET_SAMPLES = 60
+
+/** Finest sampling offered: ~one frame of a 30fps recording. */
+export const MIN_SAMPLE_INTERVAL_SECONDS = 1 / 30
+
+/** Coarsest derived sampling, so a long recording still gets a usable scan. */
+export const MAX_SAMPLE_INTERVAL_SECONDS = 2
 
 /**
- * Hard cap on how many positions are sampled in one call, whatever the window
- * length. Past this the interval stretches instead: every sample costs a seek,
- * a downscale and an encode, and bounds the decoder's peak memory.
+ * Hard cap on how many positions are sampled in one call. Only bites when a
+ * caller asks for an interval fine enough to exceed it over a long window; every
+ * sample costs a seek, a downscale and an encode.
  */
 export const MAX_SAMPLES_PER_CALL = 600
+
+/**
+ * Gap between samples for a window of `spanSeconds`, honouring an explicit
+ * request and otherwise aiming at {@link DEFAULT_TARGET_SAMPLES}.
+ */
+export function resolveSampleInterval(spanSeconds: number, requested?: number | null): number {
+  const clamp = (v: number): number =>
+    Math.min(MAX_SAMPLE_INTERVAL_SECONDS, Math.max(MIN_SAMPLE_INTERVAL_SECONDS, v))
+  if (requested !== undefined && requested !== null && requested > 0) return clamp(requested)
+  if (!(spanSeconds > 0)) return MIN_SAMPLE_INTERVAL_SECONDS
+  return clamp(spanSeconds / Math.max(1, DEFAULT_TARGET_SAMPLES - 1))
+}
 
 export interface DecodeFramesRequest {
   requestId: string
@@ -59,7 +90,8 @@ export interface DecodeFramesRequest {
   /** Window to sample, in seconds. `endSeconds` null means "to the end". */
   startSeconds: number
   endSeconds: number | null
-  sampleIntervalSeconds: number
+  /** Explicit gap between samples; null derives one from the window length. */
+  sampleIntervalSeconds: number | null
   maxSamples: number
   maxWidth: number
   quality: number
@@ -89,6 +121,12 @@ export interface DecodeFramesResult {
   /** Dimensions of the returned frames. */
   frameWidth: number
   frameHeight: number
+  /**
+   * The gap actually used between samples. Reported back so the caller can tell
+   * the model what temporal resolution it is looking at — an event shorter than
+   * this can fall between samples and never appear.
+   */
+  sampleIntervalSeconds: number
   frames: DecodedFrame[]
 }
 

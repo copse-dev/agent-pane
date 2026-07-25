@@ -13,8 +13,9 @@ import { selectDistinctFrames, type FrameCandidate } from '@shared/video/frame-s
 import {
   DEFAULT_FRAME_MAX_WIDTH,
   FRAME_IMAGE_EXTENSION,
+  MAX_SAMPLE_INTERVAL_SECONDS,
+  MIN_SAMPLE_INTERVAL_SECONDS,
   DEFAULT_FRAME_QUALITY,
-  DEFAULT_SAMPLE_INTERVAL_SECONDS,
   MAX_FRAME_MAX_WIDTH,
   MAX_SAMPLES_PER_CALL,
   MIN_FRAME_MAX_WIDTH,
@@ -56,6 +57,11 @@ const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024
 
 function describeSupportedFormats(): string {
   return SUPPORTED_VIDEO_EXTENSIONS.join(', ')
+}
+
+/** `85ms` / `1.2s` — short enough to sit inline in the manifest header. */
+function formatInterval(seconds: number): string {
+  return seconds < 1 ? `${String(Math.round(seconds * 1000))}ms` : `${seconds.toFixed(1)}s`
 }
 
 function dataUrlBytes(dataUrl: string): number {
@@ -130,6 +136,14 @@ export const videoFramesTool = defineTool({
       .describe(
         'How much of the screen must change for a frame to count as new. "high" catches small edits (a changed line of text), "low" returns only major transitions. Default "normal".',
       ),
+    interval: z
+      .number()
+      .min(MIN_SAMPLE_INTERVAL_SECONDS)
+      .max(MAX_SAMPLE_INTERVAL_SECONDS)
+      .optional()
+      .describe(
+        'Seconds between samples. Omit to derive one from the window — narrowing start/end already samples more finely. Set it only to go finer still (minimum ~0.033s, one video frame) when hunting something very short-lived.',
+      ),
     max_width: z
       .number()
       .int()
@@ -140,7 +154,7 @@ export const videoFramesTool = defineTool({
         `Longest edge of the returned frames in pixels (default ${String(DEFAULT_FRAME_MAX_WIDTH)}). Lower it to save context, raise it only when small text is unreadable.`,
       ),
   }),
-  async execute({ path, start, end, max_frames, sensitivity, max_width }, signal) {
+  async execute({ path, start, end, max_frames, sensitivity, max_width, interval }, signal) {
     // Read through a function: decoding is the slow step and the run can be
     // cancelled during it, but a direct `signal.aborted` check reads as
     // permanently false to the type-narrowing after the first one.
@@ -186,7 +200,7 @@ export const videoFramesTool = defineTool({
         mimeType: mimeTypeForExtension(extension),
         startSeconds: window.start,
         endSeconds: window.end,
-        sampleIntervalSeconds: DEFAULT_SAMPLE_INTERVAL_SECONDS,
+        sampleIntervalSeconds: interval ?? null,
         maxSamples: MAX_SAMPLES_PER_CALL,
         maxWidth,
         quality: DEFAULT_FRAME_QUALITY,
@@ -249,7 +263,11 @@ export const videoFramesTool = defineTool({
     const windowEnd = window.end ?? decoded.durationSeconds
     const header = [
       `${path} — ${String(decoded.sourceWidth)}x${String(decoded.sourceHeight)}, ${formatTimestamp(decoded.durationSeconds)} long.`,
-      `Sampled ${formatTimestamp(window.start)}–${formatTimestamp(Math.min(windowEnd, decoded.durationSeconds))} (${String(decoded.frames.length)} samples); ${String(images.length)} visually distinct frame${images.length === 1 ? '' : 's'} returned at ${String(decoded.frameWidth)}x${String(decoded.frameHeight)}.`,
+      `Sampled ${formatTimestamp(window.start)}–${formatTimestamp(Math.min(windowEnd, decoded.durationSeconds))} every ${formatInterval(decoded.sampleIntervalSeconds)} (${String(decoded.frames.length)} samples); ${String(images.length)} visually distinct frame${images.length === 1 ? '' : 's'} returned at ${String(decoded.frameWidth)}x${String(decoded.frameHeight)}.`,
+      // The blind spot is the single most useful thing to say here: without it a
+      // model reads "nothing changed" as "nothing happened", when a flicker
+      // shorter than the sampling gap simply landed between two samples.
+      `Anything lasting less than ${formatInterval(decoded.sampleIntervalSeconds)} can fall between samples and not appear at all. To look for something brief, narrow start/end (which samples more finely) or set \`interval\`.`,
     ]
     if (images.length === 1) {
       header.push('Nothing else in this range looked different, so one frame covers it.')

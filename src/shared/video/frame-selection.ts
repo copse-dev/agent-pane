@@ -100,7 +100,7 @@ export function distanceThreshold(gapSeconds: number, sensitivity: FrameSensitiv
   const base = BASE_THRESHOLD[sensitivity]
   const gap = Math.max(0, Math.min(gapSeconds, SUBSECOND_WINDOW_SECONDS))
   const closeness = 1 - gap / SUBSECOND_WINDOW_SECONDS
-  return base * (1 + SUBSECOND_STRICTNESS * closeness)
+  return base * (1 + subsecondStrictness(sensitivity) * closeness)
 }
 
 export interface FrameCandidate {
@@ -124,6 +124,19 @@ export interface SelectFramesOptions {
   sensitivity?: FrameSensitivity
   /** Hard cap on returned frames. The lowest-change frames are dropped first. */
   maxFrames?: number
+}
+
+/**
+ * Whether the sub-second penalty applies at this sensitivity.
+ *
+ * At `high` it does not. The penalty exists to stop an animation becoming a
+ * frame per tick during a broad survey, but a caller asking for high
+ * sensitivity — usually after narrowing to a couple of seconds — is explicitly
+ * asking to see everything that changed. Keeping the 3× bar there would hide
+ * exactly the short-lived event they zoomed in to find.
+ */
+function subsecondStrictness(sensitivity: FrameSensitivity): number {
+  return sensitivity === 'high' ? 0 : SUBSECOND_STRICTNESS
 }
 
 /**

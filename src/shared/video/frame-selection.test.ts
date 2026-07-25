@@ -199,3 +199,29 @@ describe('sampleTimes', () => {
     assert.deepEqual(sampleTimes(4, 4, 0.5, 100), [4])
   })
 })
+
+describe('high sensitivity and short-lived events', () => {
+  it('drops the sub-second penalty at high sensitivity', () => {
+    // A caller asking for high sensitivity — usually after narrowing to a
+    // couple of seconds — wants everything that changed, including the brief
+    // event they zoomed in to find.
+    assert.equal(distanceThreshold(0, 'high'), distanceThreshold(5, 'high'))
+    assert.ok(distanceThreshold(0, 'normal') > distanceThreshold(5, 'normal'))
+  })
+
+  it('keeps a one-sample flicker that normal sensitivity would hide', () => {
+    // Content vanishes for a single 33ms sample and comes back.
+    const gone = Math.round(SIGNATURE_CELLS * 0.04)
+    const candidates = [
+      candidate(0, 0),
+      candidate(0.033, gone),
+      candidate(0.066, 0),
+      candidate(0.099, 0),
+    ]
+    const high = selectDistinctFrames(candidates, { sensitivity: 'high' })
+    assert.ok(
+      high.some((f) => f.time === 0.033),
+      'the frame where the content disappeared must survive at high sensitivity',
+    )
+  })
+})

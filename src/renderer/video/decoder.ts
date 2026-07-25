@@ -9,6 +9,7 @@ import {
 } from '@shared/video/frame-selection.ts'
 import {
   FRAME_IMAGE_MIME,
+  resolveSampleInterval,
   type DecodeFramesRequest,
   type DecodeFramesResponse,
   type DecodedFrame,
@@ -149,12 +150,11 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
     signatureCanvas.width = SIGNATURE_COLUMNS
     signatureCanvas.height = SIGNATURE_ROWS
 
-    const times = sampleTimes(
-      start,
-      end,
-      request.sampleIntervalSeconds,
-      Math.min(request.maxSamples, Number.MAX_SAFE_INTEGER),
-    )
+    // Derived from the window unless the caller pinned one, so narrowing the
+    // range genuinely buys temporal resolution rather than re-sampling the same
+    // half-second grid.
+    const sampleIntervalSeconds = resolveSampleInterval(end - start, request.sampleIntervalSeconds)
+    const times = sampleTimes(start, end, sampleIntervalSeconds, request.maxSamples)
     const frames: DecodedFrame[] = []
     let previousSignature: number[] | null = null
 
@@ -188,6 +188,7 @@ async function decodeFrames(request: DecodeFramesRequest): Promise<DecodeFramesR
       sourceHeight: video.videoHeight,
       frameWidth: width,
       frameHeight: height,
+      sampleIntervalSeconds,
       frames,
     }
   } catch (err) {

@@ -81,9 +81,34 @@ Arguments:
 | `start`/`end` | whole video | Seconds (`12.5`) or `mm:ss` / `hh:mm:ss`                            |
 | `max_frames`  | 10 (max 60) | Over the cap, the biggest-change frames are kept                    |
 | `sensitivity` | `normal`    | `high` catches a changed line of text; `low` only major transitions |
+| `interval`    | derived     | Seconds between samples; set only to go finer than the window gives |
 | `max_width`   | 1280        | Longest edge of the returned frames                                 |
 
 Audio is never decoded.
+
+### Sampling resolution, and what it cannot see
+
+The tool samples ~60 positions across whatever window you ask for, so the gap
+between samples comes from the window length: ~1s across a whole 57-second
+recording, ~85ms across a 5-second range, ~33ms (one video frame) across two
+seconds. **Narrowing `start`/`end` is what buys temporal resolution** — the seek
+count stays the same, so a close look costs no more than a survey.
+
+This matters because of the blind spot it implies: an event shorter than the
+sampling gap can fall between two samples and never appear at all. A UI flicker
+is often one or two frames. So the manifest states the interval it used and says
+so outright, rather than letting "no distinct frames" read as "nothing happened".
+
+`sensitivity: 'high'` also **drops the sub-second penalty** described below. The
+penalty exists to stop an animation becoming one frame per tick during a broad
+survey; someone who has narrowed to a couple of seconds and asked for high
+sensitivity is explicitly asking to see everything, including the brief event
+they zoomed in to find.
+
+> An earlier version sampled on a fixed 0.5s grid regardless of the window. That
+> silently made the tool's own advice useless — narrowing the range re-sampled
+> the same grid — and anything shorter than half a second was invisible however
+> far you zoomed in.
 
 ## How frames are chosen
 

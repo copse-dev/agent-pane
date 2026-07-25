@@ -38,6 +38,7 @@ function decodeResult(frames: DecodedFrame[], durationSeconds = 10): DecodeFrame
     sourceHeight: 1440,
     frameWidth: 1280,
     frameHeight: 720,
+    sampleIntervalSeconds: 0.5,
     frames,
   }
 }
@@ -191,6 +192,27 @@ describe('video_frames tool', () => {
     await handle.close()
     const result = normalizeToolExecuteResult(await run({ path: 'huge.mp4' }))
     assert.match(result.result, /over the .* limit for frame extraction/)
+  })
+
+  it('leaves the sample interval for the decoder to derive unless asked', async () => {
+    let seen: number | null | undefined
+    setVideoDecoderForTest((input) => {
+      seen = input.sampleIntervalSeconds
+      return Promise.resolve(decodeResult([frame(0, 0)]))
+    })
+    await run({ path: 'capture.mp4' })
+    assert.equal(seen, null, 'a fixed interval would make narrowing the range pointless')
+    await run({ path: 'capture.mp4', interval: 0.05 })
+    assert.equal(seen, 0.05)
+  })
+
+  it('states the sampling resolution and what it can miss', async () => {
+    // Without this a model reads "nothing changed" as "nothing happened", when
+    // a brief flicker simply landed between two samples.
+    setVideoDecoderForTest(() => Promise.resolve(decodeResult([frame(0, 0)])))
+    const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
+    assert.match(result.result, /every 500ms/)
+    assert.match(result.result, /less than 500ms can fall between samples/)
   })
 
   it('reports the source and frame dimensions so the model can judge legibility', async () => {
