@@ -183,9 +183,10 @@ export function createRegistry(): ToolRegistry {
   // approval. Live toggles route through {@link syncPiiTools} on
   // `packs:setEnabled`.
   syncPiiTools(registry)
-  // Reading a video as stills. Always registered: it is read-only, and a user
-  // can attach a screen recording to any thread (the composer stores the file
-  // and points the model here rather than putting the video in context).
+  // Reading a video as stills. Registered unconditionally because a video can
+  // be attached to any thread at any time, but withheld per turn from threads
+  // that have never had one (see `parentTools`) — most threads never will, and
+  // the schema is not free.
   registry.register(videoFramesTool)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)

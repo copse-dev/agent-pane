@@ -7,6 +7,7 @@ import {
   addMessage,
   setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
+  recordThreadVideos,
   applyPreparedThreadCheckout,
   getThreadById,
   getActiveThread,
@@ -989,6 +990,10 @@ export function mountInputBar(
       attachments.length ? attachments : undefined,
     )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
+    // Durable record of the attachment: the reference block in this message can
+    // be trimmed out of a long conversation, but the tool is gated and described
+    // from the thread, so the agent keeps the path for as long as the thread does.
+    recordThreadVideos(store, id, attachedVideos)
 
     if (isRunning()) {
       enqueueUserMessage(store, id, {

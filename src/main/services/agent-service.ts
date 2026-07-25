@@ -82,6 +82,8 @@ import { formatReadFileLimitHint } from '@copse/agent/read-file-limits.ts'
 import { runWithExploreSubagentContext } from './explore-subagent-runner.ts'
 import { setCurrentShellTaskId } from './exec/shell-output-context.ts'
 import { hasTerminalSessions } from './exec/terminal-service.ts'
+import { applyVideoToolAvailability, getThreadVideos } from './video/thread-videos.ts'
+import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 import { setCiInvestigatorContext } from './ci-investigator-runner.ts'
 import { resolveAdvisorModelId } from './advisor-runner.ts'
 import { runWithAdvisorContext } from './advisor-runner-context.ts'
@@ -228,6 +230,7 @@ function parentTools(
   readonlyMode: boolean,
   executorModel: string,
   threadId: string,
+  threadVideos: readonly VideoAttachmentRef[],
 ): LLMTool[] {
   let tools = registry.toLLMTools()
   // Hide the advisor tool when the configured advisor is not more capable than
@@ -272,6 +275,9 @@ function parentTools(
   if (!hasTerminalSessions(threadId)) {
     tools = tools.filter((t) => t.name !== 'read_terminal')
   }
+  // Withhold video_frames from threads that have never had a video attached,
+  // and name the attached ones in its description when they have.
+  tools = applyVideoToolAvailability(tools, threadVideos)
   return tools
 }
 
@@ -836,7 +842,15 @@ export async function runAgent(
     // every hook_run spine record — including turnStart's — references it
     // (decision 6). The tool list is fixed for the whole run.
     const readonlyMode = getSetting<boolean>('defaultReadonlyMode', false)
-    const parentLoopTools = parentTools(registry, subagentsEnabled, readonlyMode, model, threadId)
+    const threadVideos = await getThreadVideos()
+    const parentLoopTools = parentTools(
+      registry,
+      subagentsEnabled,
+      readonlyMode,
+      model,
+      threadId,
+      threadVideos,
+    )
     setHookRunToolset(parentLoopTools)
 
     const turnStart = await createHookRegistry().emit(

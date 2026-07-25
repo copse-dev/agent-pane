@@ -34,6 +34,26 @@ turn asking why it cannot.
 
 Deleting the thread deletes its stored videos with it.
 
+## The thread remembers
+
+Sending a message with a video records it on the thread's `meta.json`
+(`Thread.videos`) — on send, not on attach, so a chip added and removed never
+counts. Two turn-level decisions read that record in `parentTools`
+(`src/main/services/agent-service.ts`):
+
+- **`video_frames` is withheld from threads that have never had a video.** Its
+  schema is ~480 tokens on every turn it is offered, and most threads never see
+  a video. This mirrors `read_terminal`, which is withheld unless the thread has
+  an open Shells tab.
+- **When it is offered, the attached paths are appended to its description.**
+  The reference block in the user's message says the same thing, but that message
+  can be trimmed out from under a long conversation; the description is rebuilt
+  every turn, so the model can always name a video it was given.
+
+The consequence worth knowing: a video sitting in the repo that was never
+attached (`docs/demo.mp4`) will not turn the tool on. Attach it, or ask on a
+thread that already has one.
+
 ## What the tool returns
 
 ```
