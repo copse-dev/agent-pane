@@ -81,6 +81,7 @@ import {
 import { probeAcpAgentForSettings } from '../services/acp/acp-agent-service.ts'
 import {
   requestAcpPackageInstallApproval,
+  revalidateStaleAcpModels,
   runAcpAutoSetup,
 } from '../services/acp/acp-auto-setup.ts'
 import { requestSshPrompt } from '../services/ssh-workspace/ssh-prompt.ts'
@@ -295,6 +296,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       .catch((err: unknown) => {
         console.warn('[skills] background init failed:', err)
       })
+    // Now a workspace is available, refresh any ACP model caches that have aged
+    // past the TTL. Fire-and-forget: the picker reads settings live, so fresh
+    // models (e.g. a new Opus release) appear on its next open without blocking
+    // boot or requiring a manual "Detect models".
+    revalidateStaleAcpModels()
     return canonical
   })
 
