@@ -22,7 +22,10 @@ describe('resolveSampleInterval', () => {
 
   it('honours an explicit positive interval and clamps to the allowed band', () => {
     assert.equal(resolveSampleInterval(57, 0.05), 0.05)
-    assert.equal(resolveSampleInterval(57, MIN_SAMPLE_INTERVAL_SECONDS / 2), MIN_SAMPLE_INTERVAL_SECONDS)
+    assert.equal(
+      resolveSampleInterval(57, MIN_SAMPLE_INTERVAL_SECONDS / 2),
+      MIN_SAMPLE_INTERVAL_SECONDS,
+    )
     assert.equal(resolveSampleInterval(57, 10), MAX_SAMPLE_INTERVAL_SECONDS)
   })
 
