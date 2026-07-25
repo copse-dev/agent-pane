@@ -138,4 +138,18 @@ describe('formatFooterUsageSummary', () => {
       '1.3k tokens',
     )
   })
+
+  it('rolls over to M for millions of tokens', () => {
+    assert.equal(
+      formatFooterUsageSummary(
+        { inputTokens: 4_200_000, outputTokens: 53_600, estimated: false },
+        {
+          costVisible: false,
+          model: 'claude-sonnet-4-6',
+          measuredUsage: { inputTokens: 4_200_000, outputTokens: 53_600 },
+        },
+      ),
+      '4.3M tokens',
+    )
+  })
 })
