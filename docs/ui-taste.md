@@ -365,12 +365,18 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
 
 ## Context menus (right-click)
 
-Right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
+App-chrome right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
 [`layout.css`](../src/renderer/styles/global/layout.css)), not the anchored `.browser-menu` wrap.
 Pin to `clientX`/`clientY`, clamp into the viewport, and dismiss on outside pointerdown / Escape /
 window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
 [`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
+
+In-app **browser guest pages** (`<webview>`) use a native Electron `Menu` from the main-process
+`context-menu` event instead — guest content cannot host our DOM menu. Standard items live in
+[`browser-context-menu.ts`](../src/main/windows/browser-context-menu.ts): Open Link in New Tab /
+Copy Link Address, Copy Image / Copy Image Address / Save Image As…, Cut/Copy/Paste/Select All,
+Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.context-menu`.
 
 ## Prove visual changes with a focused e2e eval
 
