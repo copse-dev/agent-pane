@@ -713,7 +713,11 @@ export interface ApiClient {
   }
   panes: {
     /** Detach a right-panel pane into its own window. */
-    popout: (mode: RightPanelMode) => Promise<void>
+    popout: (mode: RightPanelMode, seed?: unknown) => Promise<void>
+    /** Read (once) the pane snapshot stashed when this pop-out was opened. */
+    takePopoutSeed: (mode: RightPanelMode) => Promise<unknown>
+    /** When an existing pop-out is re-focused for a different pane mode. */
+    onSwitchMode: (handler: (mode: RightPanelMode) => void) => () => void
   }
 }
 
