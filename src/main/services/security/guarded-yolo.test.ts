@@ -10,7 +10,7 @@ describe('GuardedYoloRegistry', () => {
 
   it('arms one thread, activates for the thread, and persists across runs', () => {
     const changed: string[] = []
-    const registry = new GuardedYoloRegistry({ schedule: (): (() => void) => () => {} })
+    const registry = new GuardedYoloRegistry()
     registry.onChanged((threadId) => changed.push(threadId))
 
     registry.arm('thread-1')
@@ -28,7 +28,7 @@ describe('GuardedYoloRegistry', () => {
   })
 
   it('arms without an expiry timer — armed state persists until activated or disabled', () => {
-    const registry = new GuardedYoloRegistry({ schedule: (): (() => void) => () => {} })
+    const registry = new GuardedYoloRegistry()
 
     registry.arm('thread-1')
     assert.equal(registry.state('thread-1', true).phase, 'armed')
@@ -36,7 +36,7 @@ describe('GuardedYoloRegistry', () => {
   })
 
   it('reports the effective containment state truthfully', () => {
-    const registry = new GuardedYoloRegistry({ schedule: (): (() => void) => () => {} })
+    const registry = new GuardedYoloRegistry()
     registry.arm('thread-1')
     assert.equal(registry.state('thread-1', true).containment, 'project-sandbox')
     assert.equal(registry.state('thread-1', false).containment, 'unsandboxed')
