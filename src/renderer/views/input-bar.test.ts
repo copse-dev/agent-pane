@@ -728,6 +728,6 @@ describe('input bar footer overflow menu', () => {
     )
     // Export/Share are gated on the thread having exportable content, which this
     // blank fixture does not — hence two items here and four in the demo scenario.
-    assert.deepEqual(labels, ['Enable Guarded YOLO for next turn…', 'Copy thread ID'])
+    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Copy thread ID'])
   })
 })

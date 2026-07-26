@@ -65,7 +65,10 @@ export interface AcpClientHandlers {
   /** Forward a translated update to the UI (`agent:chunk`). */
   onChunk: (chunk: StreamChunk) => void
   /** Approve/deny a tool call the external agent wants to run. */
-  requestPermission: (req: RequestPermissionRequest) => Promise<RequestPermissionResponse>
+  requestPermission: (
+    req: RequestPermissionRequest,
+    signal: AbortSignal,
+  ) => Promise<RequestPermissionResponse>
   /** Back `fs/read_text_file` with Copse's workspace-scoped reader. */
   readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
   /** Back `fs/write_text_file` (e.g. route through the diff queue). */
@@ -509,10 +512,15 @@ export async function openAcpSession(
       pending.push(update)
       pendingUpdates.set(sessionId, pending)
     })
-    .onRequest(methods.client.session.requestPermission, (ctx) => {
+    .onRequest(methods.client.session.requestPermission, async (ctx) => {
       const current = handlers.current
       if (!current) return { outcome: { outcome: 'cancelled' as const } }
-      return current.requestPermission(ctx.params)
+      try {
+        return await current.requestPermission(ctx.params, ctx.signal)
+      } catch (err) {
+        if (ctx.signal.aborted) return { outcome: { outcome: 'cancelled' as const } }
+        throw err
+      }
     })
     .onRequest(methods.client.fs.readTextFile, (ctx): Promise<ReadTextFileResponse> => {
       const readTextFile = handlers.current?.readTextFile
