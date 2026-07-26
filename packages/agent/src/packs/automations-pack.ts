@@ -12,7 +12,7 @@ export const automationsPack: RegisteredPack = definePack(
   {
     name: AUTOMATIONS_PACK_ID,
     description:
-      'Project-scoped cron schedules that create model-pinned draft tasks while Copse is running.',
+      'Project-scoped cron schedules that start model-pinned tasks while Copse is running.',
     trust: 'first-party',
     ui: [
       {

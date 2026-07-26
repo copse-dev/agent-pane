@@ -1266,7 +1266,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     },
   )
 
-  // Local cron-to-draft prototype (`copse.automations`). Every operation is
+  // Local cron automation prototype (`copse.automations`). Every operation is
   // project-scoped; the service repeats that ownership check for update/delete
   // so a renderer cannot address a schedule through another project id.
   ipcMain.handle('automations:list', (event, rawProjectId: unknown) => {
