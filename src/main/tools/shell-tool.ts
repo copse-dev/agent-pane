@@ -40,6 +40,8 @@ import {
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
 import { getCurrentShellTaskId } from '../services/exec/shell-output-context.ts'
+import { getActiveRunThread } from '../services/thread-models.ts'
+import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
 
 /** Shortest foreground timeout a caller may request. */
 export const RUN_SHELL_MIN_TIMEOUT_MS = 1_000
@@ -187,6 +189,7 @@ async function maybeRetryUnsandboxed(
   signal: AbortSignal,
   result: ShellRunResult,
   env: NodeJS.ProcessEnv,
+  guardedYolo: boolean,
 ): Promise<ShellRunResult | 'declined' | null> {
   if (!isProjectSandboxEnabled()) return null
   if (!shellSandboxFailureShouldOfferUnsandboxedRetry(command, cwd)) {
@@ -200,7 +203,7 @@ async function maybeRetryUnsandboxed(
     spawnFailed: result.spawnFailed ?? false,
   })
   if (!detection.likely) return null
-  const approved = await promptUnsandboxedShell(command, detection.reasons)
+  const approved = guardedYolo || (await promptUnsandboxedShell(command, detection.reasons))
   if (!approved) return 'declined'
   return runShellOnce(command, cwd, timeout_ms, signal, true, env)
 }
@@ -324,6 +327,7 @@ export const runShellTool = defineTool({
     // existing external-command heuristic applies. shellRunsOutsideSandbox is the
     // single source of truth shared with the gate and todo verification.
     const sandboxEnabled = isProjectSandboxEnabled()
+    const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
     let outsideSandbox = shellRunsOutsideSandbox(command)
 
     // If the agent declared up front that it expects the sandbox to block this
@@ -338,7 +342,7 @@ export const runShellTool = defineTool({
     if (!outsideSandbox && expects_sandbox_block === true) {
       const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
       if (escalation.eligible) {
-        if (await promptExpectedSandboxBlock(command, escalation.reasons)) {
+        if (guardedYolo || (await promptExpectedSandboxBlock(command, escalation.reasons))) {
           outsideSandbox = true
         } else {
           // The user declined the up-front escalation. Still run the command inside
@@ -347,6 +351,17 @@ export const runShellTool = defineTool({
           suppressUnsandboxedRetry = true
         }
       }
+    }
+
+    const containmentBanner = guardedYolo
+      ? `[Guarded YOLO · ${outsideSandbox || !sandboxEnabled ? 'unsandboxed' : 'project sandbox'}]\n`
+      : ''
+    if (containmentBanner) {
+      getMainWindow()?.webContents.send(
+        'agent:shell_output',
+        containmentBanner,
+        getCurrentShellTaskId(),
+      )
     }
 
     // Strip LLM API keys (and other secrets) from the child env so a compromised
@@ -373,7 +388,8 @@ export const runShellTool = defineTool({
         childEnv,
       )
 
-      if (result.exitCode === 0) return withBanner(formatShellSuccess(result))
+      if (result.exitCode === 0)
+        return `${containmentBanner}${withBanner(formatShellSuccess(result))}`
 
       if (!suppressUnsandboxedRetry) {
         const retry = await maybeRetryUnsandboxed(
@@ -383,10 +399,14 @@ export const runShellTool = defineTool({
           signal,
           result,
           childEnv,
+          guardedYolo,
         )
         if (retry === 'declined') return 'User declined to run outside the sandbox.'
         if (retry) {
-          if (retry.exitCode === 0) return withBanner(formatShellSuccess(retry))
+          if (retry.exitCode === 0) {
+            const retryBanner = guardedYolo ? '[Guarded YOLO · unsandboxed retry]\n' : ''
+            return `${retryBanner}${withBanner(formatShellSuccess(retry))}`
+          }
           throw formatShellFailure(retry)
         }
       }

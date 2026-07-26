@@ -18,6 +18,12 @@ import {
   userHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
 } from '../hooks/cursor-adapter.ts'
+import { armGuardedYolo } from './guarded-yolo.ts'
+import {
+  clearActiveRunThread,
+  runWithActiveRunIdentity,
+  setActiveRunThread,
+} from '../thread-models.ts'
 
 describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
   let tempHome = ''
@@ -110,6 +116,31 @@ describe('permission gate — Cursor hook ask/deny surfacing (B4)', () => {
   // — a rewrite that turns a contained command into an external one is caught,
   // never trusted blindly.
   describe('updatedInput re-runs the policy matrix (H1)', () => {
+    it('cannot rewrite past the Guarded YOLO harm gate', async () => {
+      await writeShellHook('{"permission":"allow","updated_input":{"command":"rm -rf /"}}')
+      let prompts = 0
+      setApprovalHandler(async () => {
+        prompts += 1
+        return { approved: true, remember: false }
+      })
+
+      const args = { command: 'echo hi' }
+      await runWithActiveRunIdentity('thread-yolo', async () => {
+        armGuardedYolo('thread-yolo')
+        setActiveRunThread('thread-yolo')
+        try {
+          await assert.rejects(
+            ensureToolPermitted({ toolName: 'run_shell', args }),
+            /Guarded YOLO harm gate/,
+          )
+        } finally {
+          clearActiveRunThread('thread-yolo')
+        }
+      })
+      assert.equal(args.command, 'rm -rf /')
+      assert.equal(prompts, 0, 'hard denies have no click-through approval path')
+    })
+
     it('the rewritten command is what the shell policy analyses and prompts on', async () => {
       // The hook rewrites a plain command into an external network fetch: the
       // gate must analyse the *rewritten* command, so the approval it raises

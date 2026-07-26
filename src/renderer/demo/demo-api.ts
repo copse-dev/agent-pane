@@ -56,6 +56,15 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     browser: {
       onOpenTab: subscribe,
     },
+    security: {
+      getGuardedYolo: (threadId) =>
+        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
+      enableGuardedYolo: (threadId) =>
+        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
+      disableGuardedYolo: (threadId) =>
+        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
+      onGuardedYoloChanged: subscribe,
+    },
     fs: {
       readFile: () => resolved(''),
       writeFile: resolvedVoid,
@@ -115,6 +124,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         }
       },
       onApprovalRequest: subscribe,
+      onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -199,6 +209,9 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         threads = threads.filter((candidate) => candidate.id !== threadId)
         return resolvedVoid()
       },
+      // The demo has no provider history sidecar to inherit; the forked thread's
+      // transcript copy (which the renderer owns) is the whole demo story.
+      fork: () => resolved({ source: 'empty' as const, messageCount: 0 }),
       catalog: emptyArray,
       listOrphans: emptyArray,
     },
@@ -398,6 +411,13 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ packs: [] }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
+    },
+    automations: {
+      list: emptyArray,
+      upsert: unsupported,
+      remove: unsupported,
+      runNow: unsupported,
+      onTriggered: subscribe,
     },
     instructions: { list: emptyArray },
     cursorRules: { list: emptyArray },

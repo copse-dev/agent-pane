@@ -36,6 +36,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
@@ -60,7 +61,11 @@ const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
   OKF_MEMORIES_PACK_ID,
   PII_REDACTION_PACK_ID,
   ROADMAP_PLANS_PACK_ID,
+  AUTOMATIONS_PACK_ID,
 ]
+
+/** One-time default-off seed for the new local automations prototype. */
+const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -85,6 +90,19 @@ function readDisabledIds(): Set<string> {
 function seedDefaultDisabledPacks(): void {
   if (storageGet(PACK_DISABLED_KEY) !== undefined) return
   storageSet(PACK_DISABLED_KEY, [...DEFAULT_DISABLED_PACK_IDS].sort())
+}
+
+/**
+ * Automations have no retired standalone toggle to migrate. Seed the new pack
+ * disabled exactly once so an upgrade never starts a clock-driven feature
+ * without an explicit opt-in; subsequent user toggles own the disable set.
+ */
+function migrateAutomationsEnablement(): void {
+  if (storageGet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY) === true) return
+  const disabled = readDisabledIds()
+  disabled.add(AUTOMATIONS_PACK_ID)
+  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
+  storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -178,6 +196,7 @@ export function createPackService(registry: PackRegistry): PackService {
 export function getPackService(): PackService {
   if (singleton) return singleton
   seedDefaultDisabledPacks()
+  migrateAutomationsEnablement()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

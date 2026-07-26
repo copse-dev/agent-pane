@@ -113,6 +113,58 @@ export async function savePreparedElementScreenshot(
   await el.saveScreenshot(join(E2E_SCREENSHOT_DIR, filename))
 }
 
+/**
+ * Wait until every `<img>` inside `selector` has finished decoding.
+ *
+ * A pane can be "displayed" well before it is *settled*. Material file icons
+ * mount as `<img decoding="async">` once their row exists, so a capture taken as
+ * soon as the list appears catches rows whose icons have not painted. That is a
+ * distinct stage from the list itself appearing, so waiting on the list element
+ * alone is not enough.
+ *
+ * This is not hypothetical: `theme-boot-popout-light.png` accumulated three
+ * different committed baselines across three unrelated PRs — a blank pane, rows
+ * without icons, and rows with icons — because the capture landed on whichever
+ * stage the popout had reached. The ping-pong guard from #609 does not catch it,
+ * since each render is a state that was never committed before and so reads as
+ * "clearly different" every time.
+ *
+ * Pass `minImages` whenever the settled pane is known to contain icons. The
+ * explorer's `.file-tree` is appended empty and filled asynchronously, so a host
+ * still showing a blank list contains no `<img>` — and a wait over zero images
+ * succeeds immediately, capturing exactly the blank frame it was meant to avoid.
+ */
+export async function waitForImagesSettled(
+  selector: string,
+  options: { minImages?: number; timeout?: number } = {},
+): Promise<void> {
+  const { minImages = 0, timeout = 15_000 } = options
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (sel: string, min: number) => {
+          const host = document.querySelector(sel)
+          if (!host) return false
+          const images = Array.from(host.querySelectorAll('img'))
+          // An empty host has no <img> at all, so `every` would report settled
+          // while the list is still blank. Callers that know the settled pane
+          // must contain icons pass `minImages` to close that hole.
+          if (images.length < min) return false
+          return images.every((img) => img.complete && img.naturalWidth > 0)
+        },
+        selector,
+        minImages,
+      ),
+    {
+      timeout,
+      timeoutMsg:
+        minImages > 0
+          ? `${selector} did not settle with at least ${String(minImages)} loaded image(s)`
+          : `images inside ${selector} did not finish loading`,
+    },
+  )
+}
+
 /** Capture a single element after pinning the viewport (footer, input bar, etc.). */
 export async function saveElementScreenshot(selector: string, filename: string): Promise<void> {
   await prepareE2eScreenshot()

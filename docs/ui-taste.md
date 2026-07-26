@@ -425,6 +425,29 @@ wash through otherwise neutral surfaces. Derive hover and link shades from the a
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
 
+## Roadmap list rows
+
+Roadmap backlog rows (`.roadmap-row` in
+[`roadmap-pane.ts`](../src/renderer/views/roadmap-pane.ts) /
+[`roadmap.css`](../src/renderer/styles/global/roadmap.css)) follow the same quiet
+sidebar taste as thread rows and PR status icons:
+
+- **Title first, one line.** Title on the left; trailing indicators on the right.
+  No second meta row of chips under every title.
+- **Hide the default state.** `ready` items show no status badge — the title is
+  the signal. `done` is strikethrough on the title only (`.roadmap-row.is-done`),
+  not a "done" pill. Only exceptional statuses (`blocked`, `conflicts`,
+  `archived`) get a lowercase status chip.
+- **Icons over labels.** Linked threads use the muted messages icon (tooltip /
+  `aria-label` carries the thread title); attachments are a muted paperclip +
+  count with no pill wash. Mark-done / reopen are check / refresh icons, hidden
+  until row hover or focus (same idea as `.chat-delete`).
+- **Palette matches.** Cmd/Ctrl+P roadmap hits follow the same hide-ready rule.
+
+Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.ts).
+Complexity / fit / review chips stay when present (they are rare); tuck those
+further only if the list gets noisy again.
+
 ## Sidebar selections
 
 Chat rows use flat, square, full-bleed selection and hover fills with a slim inset accent rail on
@@ -445,3 +468,12 @@ The plan worth-it block sits between subscription bars and the local ledger: one
 fee field, one action that jumps to the value map’s Inference cost basis. Do not turn it into a
 dashboard (no sparkline grids, no multi-provider scorecards in v1). Keep the fee control plain —
 label + number input — and let verdict color come from `--success` / `--warning`, not custom hues.
+
+## Explicit danger modes
+
+A mode that materially relaxes routine confirmations must remain visible at the
+point of action. Use a full-width, square composer strip with the shared `--danger`
+token, plain containment copy, and an immediate Disable action; do not reduce it to
+a transient toast, icon-only state, or rounded status pill. The opt-in warning must
+name the scope, expiry, containment, and residual risk before activation. Visual
+eval: `tests/e2e/guarded-yolo.e2e.ts`.
