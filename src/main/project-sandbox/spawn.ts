@@ -260,6 +260,8 @@ export async function spawnBackgroundProcess(
     cwd: string
     env?: NodeJS.ProcessEnv
     allowPortBinding?: boolean
+    /** Explicit host-owned routing decision; never accepted from model/tool arguments. */
+    unsandboxed?: boolean
     executionTarget?: ExecutionTarget
   },
 ): Promise<ChildProcess> {
@@ -273,7 +275,7 @@ export async function spawnBackgroundProcess(
     })
   }
 
-  if (!isProjectSandboxEnabled()) {
+  if (opts.unsandboxed === true || !isProjectSandboxEnabled()) {
     const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh'
     const shellArgs =
       process.platform === 'win32' ? ['/c', shellCommandLine] : ['-c', shellCommandLine]

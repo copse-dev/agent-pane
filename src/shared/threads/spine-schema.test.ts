@@ -13,6 +13,7 @@ import {
   toolsetBlobRef,
   type SpineHookRunLine,
   type SpineMessageLine,
+  type SpinePermissionDecisionLine,
 } from './spine-schema.ts'
 
 function messageLine(id: string): SpineMessageLine {
@@ -48,6 +49,25 @@ function hookRunLine(id: string, overrides: Partial<SpineHookRunLine> = {}): Spi
   }
 }
 
+function permissionDecisionLine(id: string): SpinePermissionDecisionLine {
+  return {
+    v: SPINE_SCHEMA_VERSION,
+    type: 'permission_decision',
+    id,
+    turnId: 'turn-1',
+    step: 2,
+    decidedAt: 120,
+    originalCommand: 'rm -rf build',
+    originalMode: 'guarded-yolo',
+    effectiveMode: 'guarded-yolo',
+    sandboxState: 'project-sandbox',
+    harmDecision: 'prompt',
+    policyDecision: 'prompt',
+    reasons: ['recursive delete'],
+    userResponse: 'declined',
+  }
+}
+
 describe('spine-schema hook_run union (decision 6)', () => {
   it('round-trips a hook_run line through serialize/parse', () => {
     const line = hookRunLine('h1', { toolset: 'ts-hash' })
@@ -61,6 +81,16 @@ describe('spine-schema hook_run union (decision 6)', () => {
     assert.deepEqual(
       messages.map((m) => m.id),
       ['m1', 'm2'],
+    )
+  })
+
+  it('round-trips and hides durable permission decisions from message readers', () => {
+    const line = permissionDecisionLine('p1')
+    assert.deepEqual(parseSpineLine(serializeSpineLine(line)), line)
+    const body = serializeSpine([messageLine('m1'), line])
+    assert.deepEqual(
+      parseSpine(body).map((message) => message.id),
+      ['m1'],
     )
   })
 
@@ -126,6 +156,17 @@ describe('rebuildSpinePreservingNonMessageLines (decision 6 full-save round-trip
     const existing = `${serializeSpineLine(m1)}\n${unknown}\n`
     const { body } = rebuildSpinePreservingNonMessageLines(existing, [m1])
     assert.ok(body.includes(unknown))
+  })
+
+  it('preserves permission decision audit lines through a full rewrite', () => {
+    const m1 = messageLine('m1')
+    const permission = permissionDecisionLine('p1')
+    const existing = serializeSpine([m1, permission])
+    const { body } = rebuildSpinePreservingNonMessageLines(existing, [m1])
+    assert.deepEqual(
+      parseSpineEntries(body).map((entry) => entry.line?.id),
+      ['m1', 'p1'],
+    )
   })
 
   it('is a plain rewrite when no non-message lines exist', () => {
