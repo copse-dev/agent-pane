@@ -22,6 +22,10 @@ export interface ComparisonModelSelection {
 export interface ApprovalRequest {
   title: string
   body: string
+  /** Explanatory copy rendered outside the monospaced command block when set. */
+  bodyAdvice?: string
+  /** Call-to-action or trailing context rendered below the command block when set. */
+  bodyFooter?: string
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
@@ -59,6 +63,8 @@ export function approvalDedupeKey(req: ApprovalRequest): string {
   return JSON.stringify({
     title: req.title,
     body: req.body,
+    bodyAdvice: req.bodyAdvice ?? '',
+    bodyFooter: req.bodyFooter ?? '',
     type: req.type,
     allowRemember: req.allowRemember ?? false,
     rememberLabel: req.rememberLabel ?? '',

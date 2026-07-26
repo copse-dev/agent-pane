@@ -149,6 +149,8 @@ export interface ApiClient {
         threadId?: string
         title: string
         body: string
+        bodyAdvice?: string
+        bodyFooter?: string
         type: string
         allowRemember?: boolean
         rememberLabel?: string
