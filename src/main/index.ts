@@ -98,6 +98,7 @@ import {
   prepareThreadCheckout,
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
+import { getAutomationService } from './services/automations/automation-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -230,6 +231,9 @@ app
     const disposeTerminalHandlers = initTerminal(win)
     recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
+    getAutomationService().start((event) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -558,6 +562,7 @@ let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
+  getAutomationService().stop()
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()

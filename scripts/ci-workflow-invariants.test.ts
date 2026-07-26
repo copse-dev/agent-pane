@@ -63,6 +63,33 @@ describe('ci.yml workflow invariants', () => {
   })
 })
 
+describe('reconcile-screenshots.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/reconcile-screenshots.yml'), 'utf8')
+
+  it('attempts the push before handing a workflow-file merge to a human', () => {
+    // The hand-off must be driven by a REFUSED push, never by merely noticing a
+    // .github/workflows change in the merge. Bailing pre-emptively made the
+    // hand-off unconditional: it fired even when the token had `workflow` scope,
+    // and because one base commit under .github/workflows/ lands in every stale
+    // branch's merge, a single such commit handed off every open PR at once
+    // (11 in one run, none with a real conflict).
+    const step = workflow.match(/git add tests\/e2e\/screenshots\/[\s\S]*?(?=\n {6}- name:)/)?.[0]
+    assert.ok(step, 'expected the reconcile merge step in reconcile-screenshots.yml')
+    assert.match(step, /if git push; then/, 'the push must be attempted, not assumed to fail')
+    assert.doesNotMatch(
+      step,
+      /wf="\$\([^)]*\)"\s*\n\s*if \[ -n "\$wf" \]; then\s*\n[\s\S]{0,200}?git merge --abort/,
+      'must not abort the merge on workflow-file detection alone',
+    )
+  })
+
+  it('leaves the branch untouched when the push is refused', () => {
+    // A refused push must not leave a local merge commit behind or half-apply the
+    // reconcile; the branch has to end up exactly as it was found.
+    assert.match(workflow, /git reset --hard HEAD~1/)
+  })
+})
+
 describe('codeql.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/codeql.yml'), 'utf8')
 

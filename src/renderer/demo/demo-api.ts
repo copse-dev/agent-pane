@@ -124,6 +124,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         }
       },
       onApprovalRequest: subscribe,
+      onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,
@@ -410,6 +411,13 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ packs: [] }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
+    },
+    automations: {
+      list: emptyArray,
+      upsert: unsupported,
+      remove: unsupported,
+      runNow: unsupported,
+      onTriggered: subscribe,
     },
     instructions: { list: emptyArray },
     cursorRules: { list: emptyArray },
