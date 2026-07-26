@@ -1,6 +1,18 @@
-import { basename, dirname, isAbsolute, parse as parsePath, resolve, sep, win32 } from 'node:path'
-import { parse as parseShellCommand } from 'shell-quote'
-import { dangerousInSandboxReasons, normalizeShellCommandForAnalysis } from './shell-scope.ts'
+import { dirname, isAbsolute, parse as parsePath, resolve, sep, win32 } from 'node:path'
+import {
+  CODE_INTERPRETERS,
+  SCRIPT_EXTENSIONS,
+  commandName,
+  inlineCodeBody,
+  shellSegments,
+  unwrapWrappers,
+} from './shell-argv.ts'
+import {
+  REASON_FIND_DELETE,
+  REASON_RECURSIVE_DELETE,
+  dangerousInSandboxReasons,
+  normalizeShellCommandForAnalysis,
+} from './shell-scope.ts'
 
 export type ShellHarmDecision =
   | { action: 'allow'; reasons: string[] }
@@ -22,21 +34,6 @@ interface MutableDecision {
 }
 
 const MAX_SCRIPT_DEPTH = 3
-const SHELL_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh'])
-const CODE_INTERPRETERS = new Set([
-  ...SHELL_INTERPRETERS,
-  'node',
-  'deno',
-  'bun',
-  'python',
-  'python2',
-  'python3',
-  'ruby',
-  'perl',
-  'pwsh',
-  'powershell',
-])
-const SCRIPT_EXTENSIONS = /\.(?:sh|bash|zsh|js|cjs|mjs|ts|py|rb|pl|ps1|cmd|bat)$/i
 
 function isWindowsPath(path: string): boolean {
   return /^(?:[A-Za-z]:[\\/]|\\\\)/.test(path)
@@ -55,15 +52,41 @@ function canonicalPath(path: string, context: ShellHarmContext): string {
   }
 }
 
+/**
+ * Home- and cwd-references across sh, PowerShell, and cmd. One table, because it
+ * is applied twice — once per path token ({@link expandPathToken}) and once over
+ * the whole command line before lexing ({@link substitutePathVariables}) — and
+ * two copies had drifted: `$PWD` resolved to the empty string in one and to the
+ * home directory in the other, so with no workspace root `rm -rf $PWD` denied
+ * with the reason "targets home root", which was not true.
+ */
+function pathVariables(context: ShellHarmContext): Array<{ re: RegExp; value: string }> {
+  const cwd = context.workspaceRoot ?? process.cwd()
+  return [
+    { re: /\$(?:\{HOME\}|HOME)(?=$|[\s/\\])/g, value: context.homeDir },
+    { re: /\$(?:\{PWD\}|PWD)(?=$|[\s/\\])/g, value: cwd },
+    { re: /\$env:USERPROFILE(?=$|[\s/\\])/gi, value: context.homeDir },
+    { re: /\$USERPROFILE(?=$|[\s/\\])/gi, value: context.homeDir },
+    { re: /%(?:USERPROFILE|HOMEPATH)%(?=$|[\s/\\])/gi, value: context.homeDir },
+    { re: /%CD%(?=$|[\s/\\])/gi, value: cwd },
+  ]
+}
+
+/**
+ * Rewrite path variables in a whole command line before lexing, quoting each
+ * substitution so an expanded Windows path survives the lexer as one token.
+ */
+function substitutePathVariables(command: string, context: ShellHarmContext): string {
+  let result = command
+  for (const { re, value } of pathVariables(context)) {
+    result = result.replace(re, JSON.stringify(value))
+  }
+  return result
+}
+
 function expandPathToken(token: string, context: ShellHarmContext): string {
-  const expanded = token
-    .replace(/^~(?=$|[\\/])/, context.homeDir)
-    .replace(/\$(?:\{HOME\}|HOME)(?=$|[\\/])/, context.homeDir)
-    .replace(/\$(?:\{PWD\}|PWD)(?=$|[\\/])/, context.workspaceRoot ?? '')
-    .replace(/^\$env:USERPROFILE(?=$|[\\/])/i, context.homeDir)
-    .replace(/^\$USERPROFILE(?=$|[\\/])/i, context.homeDir)
-    .replace(/^%(?:USERPROFILE|HOMEPATH)%(?=$|[\\/])/i, context.homeDir)
-    .replace(/^%CD%(?=$|[\\/])/i, context.workspaceRoot ?? '')
+  let expanded = token.replace(/^~(?=$|[\\/])/, context.homeDir)
+  for (const { re, value } of pathVariables(context)) expanded = expanded.replace(re, value)
   if (isAbsolute(expanded) || isWindowsPath(expanded)) return canonicalPath(expanded, context)
   const base = context.workspaceRoot ?? process.cwd()
   return canonicalPath(
@@ -116,73 +139,37 @@ const SYSTEM_ROOTS = [
   'C:\\Program Files',
 ]
 
-function systemRootReason(resolved: string, target: string): string | null {
-  for (const root of SYSTEM_ROOTS) {
-    if (isAtOrAbove(resolved, root)) return `broad deletion targets system tree: ${target}`
-  }
-  return null
+/**
+ * What a destructive target turns out to be, kept structured rather than
+ * pre-formatted. The three inspectors that reuse this check previously received a
+ * finished English sentence and patched the verb back out of it with
+ * `.replace('broad deletion', …)`, which left the wording of a security reason at
+ * the mercy of string surgery.
+ */
+type CatastrophicScope =
+  'filesystem root' | 'system tree' | 'home root' | 'workspace root' | 'drive root'
+
+interface CatastrophicHit {
+  scope: CatastrophicScope
+  target: string
 }
 
-function catastrophicTargetReason(target: string, context: ShellHarmContext): string | null {
+function catastrophicTarget(target: string, context: ShellHarmContext): CatastrophicHit | null {
   const resolved = expandPathToken(destructiveTargetBase(target), context)
   const root = isWindowsPath(resolved) ? win32.parse(resolved).root : parsePath(resolved).root
-  if (resolved.toLowerCase() === root.toLowerCase())
-    return `broad deletion targets filesystem root: ${target}`
-  const systemReason = systemRootReason(resolved, target)
-  if (systemReason) return systemReason
-  if (isAtOrAbove(resolved, context.homeDir)) return `broad deletion targets home root: ${target}`
+  if (resolved.toLowerCase() === root.toLowerCase()) return { scope: 'filesystem root', target }
+  for (const systemRoot of SYSTEM_ROOTS) {
+    if (isAtOrAbove(resolved, systemRoot)) return { scope: 'system tree', target }
+  }
+  if (isAtOrAbove(resolved, context.homeDir)) return { scope: 'home root', target }
   if (context.workspaceRoot && isAtOrAbove(resolved, context.workspaceRoot)) {
-    return `broad deletion targets workspace root: ${target}`
+    return { scope: 'workspace root', target }
   }
   return null
 }
 
-function commandSegments(command: string): string[][] {
-  let tokens: ReturnType<typeof parseShellCommand>
-  try {
-    tokens = parseShellCommand(command)
-  } catch {
-    return []
-  }
-  const segments: string[][] = []
-  let current: string[] = []
-  const flush = (): void => {
-    if (current.length > 0) segments.push(current)
-    current = []
-  }
-  for (const token of tokens) {
-    if (typeof token === 'string') current.push(token)
-    else flush()
-  }
-  flush()
-  return segments
-}
-
-function rawTokens(command: string): string[] {
-  return (command.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((token) => {
-    const first = token[0]
-    const last = token[token.length - 1]
-    return (first === '"' && last === '"') || (first === "'" && last === "'")
-      ? token.slice(1, -1)
-      : token
-  })
-}
-
-/** Preserve globs and Windows backslashes that shell-quote treats as expansions/escapes. */
-function rawDeletionSegments(command: string): string[][] {
-  const segments: string[][] = []
-  const patterns = [
-    /(?:^|[;&|(\r\n])\s*((?:sudo\s+)?rm\b[^;&|\r\n]*)/gi,
-    /(?:^|[;&|(\r\n])\s*((?:rd|rmdir|del)\b[^;&|\r\n]*)/gi,
-    /(?:^|[;&|(\r\n])\s*(Remove-Item\b[^;&|\r\n]*)/gi,
-  ]
-  for (const pattern of patterns) {
-    for (const match of command.matchAll(pattern)) {
-      const segment = rawTokens((match[1] ?? match[0]).replace(/["']$/, ''))
-      if (segment.length > 0) segments.push(segment)
-    }
-  }
-  return segments
+function catastrophicReason(verb: string, hit: CatastrophicHit): string {
+  return `${verb} targets ${hit.scope}: ${hit.target}`
 }
 
 /** Extract command/process substitutions without executing shell expansion. */
@@ -263,48 +250,6 @@ function embeddedProcessBodies(command: string): string[] {
   return bodies
 }
 
-function unwrapCommand(argv: string[]): string[] {
-  const current = [...argv]
-  for (;;) {
-    while (/^[A-Za-z_][A-Za-z0-9_]*=/.test(current[0] ?? '')) current.shift()
-    const head = basename(current[0] ?? '').toLowerCase()
-    if (head === 'env') {
-      current.shift()
-      while (
-        (current[0] ?? '').startsWith('-') ||
-        /^[A-Za-z_][A-Za-z0-9_]*=/.test(current[0] ?? '')
-      ) {
-        current.shift()
-      }
-      continue
-    }
-    // Wrappers that pass their tail through unchanged. Without these, forms like
-    // `timeout 5 rm -rf ~` or `echo ~ | xargs rm -rf` never reach inspectDeletion
-    // with the real argv, so a catastrophic target degrades to a bare prompt.
-    if (head === 'timeout' || head === 'stdbuf') {
-      current.shift()
-      while ((current[0] ?? '').startsWith('-') || /^\d/.test(current[0] ?? '')) current.shift()
-      continue
-    }
-    if (head === 'xargs' || head === 'time' || head === 'nice' || head === 'ionice') {
-      current.shift()
-      while ((current[0] ?? '').startsWith('-')) current.shift()
-      continue
-    }
-    if (head === 'command' || head === 'builtin' || head === 'nohup') {
-      current.shift()
-      while ((current[0] ?? '').startsWith('-')) current.shift()
-      continue
-    }
-    if (head === 'sudo') {
-      current.shift()
-      while ((current[0] ?? '').startsWith('-')) current.shift()
-      continue
-    }
-    return current
-  }
-}
-
 function hasRecursiveForce(args: string[]): boolean {
   const flags = args.filter((arg) => arg.startsWith('-')).join('')
   return flags.includes('r') && flags.includes('f')
@@ -317,25 +262,28 @@ function nonOptionArgs(args: string[]): string[] {
 }
 
 function inspectDeletion(argv: string[], context: ShellHarmContext, out: MutableDecision): void {
-  const command = basename(argv[0] ?? '').toLowerCase()
+  const command = commandName(argv[0])
   const args = argv.slice(1)
   if (command === 'rm' && hasRecursiveForce(args)) {
-    const targets = nonOptionArgs(args)
-    for (const target of targets) {
-      const catastrophic = catastrophicTargetReason(target, context)
-      if (catastrophic) addUnique(out.deny, catastrophic)
+    let flagged = false
+    for (const target of nonOptionArgs(args)) {
+      const hit = catastrophicTarget(target, context)
+      if (hit) {
+        addUnique(out.deny, catastrophicReason('broad deletion', hit))
+        flagged = true
+      }
     }
-    if (targets.length === 0 || out.deny.length === 0) {
-      addUnique(out.prompt, 'recursive/forced delete requires confirmation')
-    }
+    // Worded exactly as shell-scope's fuzzy net words it, so a command both see
+    // reports the signal once rather than twice.
+    if (!flagged) addUnique(out.prompt, REASON_RECURSIVE_DELETE)
     return
   }
 
   if (command === 'find' && args.includes('-delete')) {
     const target = args.find((arg) => !arg.startsWith('-')) ?? '.'
-    const catastrophic = catastrophicTargetReason(target, context)
-    if (catastrophic) addUnique(out.deny, catastrophic)
-    else addUnique(out.prompt, 'find -delete performs bulk removal')
+    const hit = catastrophicTarget(target, context)
+    if (hit) addUnique(out.deny, catastrophicReason('broad deletion', hit))
+    else addUnique(out.prompt, REASON_FIND_DELETE)
     return
   }
 
@@ -347,15 +295,17 @@ function inspectDeletion(argv: string[], context: ShellHarmContext, out: Mutable
     args.some((arg) => /^-(?:recurse|r)$/i.test(arg)) &&
     args.some((arg) => /^-(?:force|fo)$/i.test(arg))
   if (windowsRecursiveDelete || powershellRecursiveDelete) {
-    const targets = args.filter((arg) => !/^[/-]/.test(arg))
-    for (const target of targets) {
-      const driveRoot = /^[A-Za-z]:[\\/]?$/.test(target)
-      const catastrophic = driveRoot
-        ? `broad deletion targets drive root: ${target}`
-        : catastrophicTargetReason(target, context)
-      if (catastrophic) addUnique(out.deny, catastrophic)
+    let flagged = false
+    for (const target of args.filter((arg) => !/^[/-]/.test(arg))) {
+      const hit: CatastrophicHit | null = /^[A-Za-z]:[\\/]?$/.test(target)
+        ? { scope: 'drive root', target }
+        : catastrophicTarget(target, context)
+      if (hit) {
+        addUnique(out.deny, catastrophicReason('broad deletion', hit))
+        flagged = true
+      }
     }
-    if (out.deny.length === 0) addUnique(out.prompt, 'recursive deletion requires confirmation')
+    if (!flagged) addUnique(out.prompt, 'recursive deletion requires confirmation')
   }
 }
 
@@ -371,7 +321,7 @@ function inspectOwnershipChange(
   context: ShellHarmContext,
   out: MutableDecision,
 ): void {
-  const command = basename(argv[0] ?? '').toLowerCase()
+  const command = commandName(argv[0])
   if (command !== 'chmod' && command !== 'chown' && command !== 'chgrp') return
   const args = argv.slice(1)
   if (!args.some((arg) => RECURSIVE_FLAG.test(arg))) return
@@ -379,9 +329,9 @@ function inspectOwnershipChange(
   const operands = nonOptionArgs(args).slice(1)
   let flagged = false
   for (const target of operands) {
-    const catastrophic = catastrophicTargetReason(target, context)
-    if (catastrophic) {
-      addUnique(out.deny, catastrophic.replace('broad deletion', `recursive ${command}`))
+    const hit = catastrophicTarget(target, context)
+    if (hit) {
+      addUnique(out.deny, catastrophicReason(`recursive ${command}`, hit))
       flagged = true
     }
   }
@@ -393,26 +343,25 @@ function inspectOwnershipChange(
  * original path. Every argument except the destination is a source.
  */
 function inspectRelocation(argv: string[], context: ShellHarmContext, out: MutableDecision): void {
-  const command = basename(argv[0] ?? '').toLowerCase()
+  const command = commandName(argv[0])
   if (command !== 'mv' && command !== 'move' && command !== 'move-item') return
   const operands = nonOptionArgs(argv.slice(1))
   if (operands.length < 2) return
-  const sources = operands.slice(0, -1)
-  for (const source of sources) {
-    const catastrophic = catastrophicTargetReason(source, context)
-    if (catastrophic) addUnique(out.deny, catastrophic.replace('broad deletion', 'relocation'))
+  for (const source of operands.slice(0, -1)) {
+    const hit = catastrophicTarget(source, context)
+    if (hit) addUnique(out.deny, catastrophicReason('relocation', hit))
   }
 }
 
 /** Overwrite/hijack of an existing path: dd onto a regular file, symlink swap. */
 function inspectOverwrite(argv: string[], context: ShellHarmContext, out: MutableDecision): void {
-  const command = basename(argv[0] ?? '').toLowerCase()
+  const command = commandName(argv[0])
   if (command === 'dd') {
     const output = argv.slice(1).find((arg) => /^of=/i.test(arg))
     if (output) {
       const target = output.slice(3)
-      const catastrophic = catastrophicTargetReason(target, context)
-      if (catastrophic) addUnique(out.deny, catastrophic.replace('broad deletion', 'dd overwrite'))
+      const hit = catastrophicTarget(target, context)
+      if (hit) addUnique(out.deny, catastrophicReason('dd overwrite', hit))
       else addUnique(out.prompt, `dd overwrites an existing path: ${target}`)
     }
     return
@@ -426,43 +375,50 @@ function inspectOverwrite(argv: string[], context: ShellHarmContext, out: Mutabl
   }
 }
 
-function inspectRawDevice(command: string, out: MutableDecision): void {
-  const normalized = normalizeShellCommandForAnalysis(command)
-  const rawDevice = String.raw`(?:/dev/(?:disk|rdisk|sd|nvme|mmcblk)[^\s|;&]*|\\\\\.\\PhysicalDrive\d+)`
-  if (
-    new RegExp(String.raw`\b(?:mkfs(?:\.\w+)?|fdisk|parted)\b[^\n]*${rawDevice}`, 'i').test(
-      normalized,
-    )
-  ) {
-    addUnique(out.deny, 'raw disk/device destruction is never allowed')
-  }
-  if (new RegExp(String.raw`\bdd\b[^\n|;&]*\bof\s*=\s*${rawDevice}`, 'i').test(normalized)) {
-    addUnique(out.deny, 'raw disk/device write is never allowed')
-  }
-  if (new RegExp(String.raw`(?:>|\bshred\b[^\n|;&]*)\s*${rawDevice}`, 'i').test(normalized)) {
-    addUnique(out.deny, 'raw disk/device write is never allowed')
-  }
-  if (
-    new RegExp(
-      String.raw`\b(?:writeFileSync|writeFile|openSync|createWriteStream|open)\s*\([^\n]*${rawDevice}`,
+const RAW_DEVICE = String.raw`(?:/dev/(?:disk|rdisk|sd|nvme|mmcblk)[^\s|;&]*|\\\\\.\\PhysicalDrive\d+)`
+
+/** Hoisted: these were rebuilt on every call, at every recursion depth. */
+const RAW_DEVICE_PATTERNS: Array<{ re: RegExp; reason: string }> = [
+  {
+    re: new RegExp(String.raw`\b(?:mkfs(?:\.\w+)?|fdisk|parted)\b[^\n]*${RAW_DEVICE}`, 'i'),
+    reason: 'raw disk/device destruction is never allowed',
+  },
+  {
+    re: new RegExp(String.raw`\bdd\b[^\n|;&]*\bof\s*=\s*${RAW_DEVICE}`, 'i'),
+    reason: 'raw disk/device write is never allowed',
+  },
+  {
+    re: new RegExp(String.raw`(?:>|\bshred\b[^\n|;&]*)\s*${RAW_DEVICE}`, 'i'),
+    reason: 'raw disk/device write is never allowed',
+  },
+  {
+    re: new RegExp(
+      String.raw`\b(?:writeFileSync|writeFile|openSync|createWriteStream|open)\s*\([^\n]*${RAW_DEVICE}`,
       'i',
-    ).test(normalized)
-  ) {
-    addUnique(out.deny, 'raw disk/device write is never allowed')
-  }
-  if (/\bdiskutil\s+(?:eraseDisk|partitionDisk|zeroDisk|secureErase)\b/i.test(normalized)) {
-    addUnique(out.deny, 'raw disk/device destruction is never allowed')
-  }
-  if (
-    /\b(?:Clear-Disk|Format-Volume)\b/i.test(normalized) ||
-    /(?:^|[;&|])\s*format\s+[A-Za-z]:/i.test(normalized)
-  ) {
-    addUnique(out.deny, 'raw disk/device destruction is never allowed')
+    ),
+    reason: 'raw disk/device write is never allowed',
+  },
+  {
+    re: /\bdiskutil\s+(?:eraseDisk|partitionDisk|zeroDisk|secureErase)\b/i,
+    reason: 'raw disk/device destruction is never allowed',
+  },
+  {
+    re: /\b(?:Clear-Disk|Format-Volume)\b/i,
+    reason: 'raw disk/device destruction is never allowed',
+  },
+  {
+    re: /(?:^|[;&|])\s*format\s+[A-Za-z]:/i,
+    reason: 'raw disk/device destruction is never allowed',
+  },
+]
+
+function inspectRawDevice(normalized: string, out: MutableDecision): void {
+  for (const { re, reason } of RAW_DEVICE_PATTERNS) {
+    if (re.test(normalized)) addUnique(out.deny, reason)
   }
 }
 
-function inspectPermissionBypass(command: string, out: MutableDecision): void {
-  const normalized = normalizeShellCommandForAnalysis(command)
+function inspectPermissionBypass(command: string, normalized: string, out: MutableDecision): void {
   const namesPermissionSurface =
     /\b(?:permission-gate|permission-policy|guarded[-_]?yolo|autoRunSandboxCommands|safetyExternalDenyThreshold|approval:respond)\b/i.test(
       normalized,
@@ -487,20 +443,10 @@ function inspectLanguageDeletion(
   for (const match of command.matchAll(pattern)) {
     const target = match[2]
     if (!target) continue
-    const catastrophic = catastrophicTargetReason(target, context)
-    if (catastrophic) addUnique(out.deny, catastrophic)
+    const hit = catastrophicTarget(target, context)
+    if (hit) addUnique(out.deny, catastrophicReason('broad deletion', hit))
     else addUnique(out.prompt, 'recursive deletion from interpreter code requires confirmation')
   }
-}
-
-function inlineBody(argv: string[]): string | null {
-  for (let index = 1; index < argv.length - 1; index += 1) {
-    const arg = argv[index]
-    if (arg === '-c' || arg === '-e' || arg === '--eval' || arg === '-Command') {
-      return argv[index + 1] ?? null
-    }
-  }
-  return null
 }
 
 function scriptOperand(argv: string[]): string | null {
@@ -520,10 +466,9 @@ function inspectInterpreter(
   depth: number,
   seenScripts: Set<string>,
 ): void {
-  const executable = basename(argv[0] ?? '').toLowerCase()
-  if (!CODE_INTERPRETERS.has(executable) && !(argv[0] ?? '').includes('/')) return
+  if (!CODE_INTERPRETERS.has(commandName(argv[0])) && !(argv[0] ?? '').includes('/')) return
 
-  const inline = inlineBody(argv)
+  const inline = inlineCodeBody(argv)
   if (inline !== null) {
     if (depth >= MAX_SCRIPT_DEPTH) {
       addUnique(out.prompt, 'nested inline interpreter code could not be fully inspected')
@@ -549,8 +494,7 @@ function inspectInterpreter(
   )
 }
 
-function inspectObviousCatastrophe(command: string, out: MutableDecision): void {
-  const normalized = normalizeShellCommandForAnalysis(command)
+function inspectObviousCatastrophe(normalized: string, out: MutableDecision): void {
   if (/:\(\)\s*\{\s*:\|:&\s*}\s*;/.test(normalized)) {
     addUnique(out.deny, 'fork bomb is never allowed')
   }
@@ -581,27 +525,15 @@ function assess(
 ): ShellHarmDecision {
   const out: MutableDecision = { deny: [], prompt: [] }
   const inspectableCommand = command.replace(/^#![^\r\n]*(?:\r?\n|$)/, '')
-  const commandForParsing = inspectableCommand
-    .replace(/\$(?:\{HOME\}|HOME)(?=$|[\s/\\])/g, JSON.stringify(context.homeDir))
-    .replace(
-      /\$(?:\{PWD\}|PWD)(?=$|[\s/\\])/g,
-      JSON.stringify(context.workspaceRoot ?? context.homeDir),
-    )
-    .replace(/\$env:USERPROFILE(?=$|[\s/\\])/gi, JSON.stringify(context.homeDir))
-    .replace(/\$USERPROFILE(?=$|[\s/\\])/gi, JSON.stringify(context.homeDir))
-    .replace(/%(?:USERPROFILE|HOMEPATH)%(?=$|[\s/\\])/gi, JSON.stringify(context.homeDir))
-    .replace(/%CD%(?=$|[\s/\\])/gi, JSON.stringify(context.workspaceRoot ?? context.homeDir))
-  inspectRawDevice(inspectableCommand, out)
-  inspectPermissionBypass(inspectableCommand, out)
-  inspectLanguageDeletion(inspectableCommand, context, out)
-  inspectObviousCatastrophe(inspectableCommand, out)
+  const normalized = normalizeShellCommandForAnalysis(inspectableCommand)
 
-  const segments = [
-    ...commandSegments(commandForParsing),
-    ...rawDeletionSegments(commandForParsing),
-  ]
-  for (const segment of segments) {
-    const argv = unwrapCommand(segment)
+  inspectRawDevice(normalized, out)
+  inspectPermissionBypass(inspectableCommand, normalized, out)
+  inspectLanguageDeletion(inspectableCommand, context, out)
+  inspectObviousCatastrophe(normalized, out)
+
+  for (const segment of shellSegments(substitutePathVariables(inspectableCommand, context))) {
+    const argv = unwrapWrappers(segment)
     if (argv.length === 0) continue
     inspectDeletion(argv, context, out)
     inspectOwnershipChange(argv, context, out)
@@ -625,10 +557,13 @@ function assess(
     mergeDecision(out, assess(body, context, depth + 1, seenScripts))
   }
 
+  // The fuzzy regex net shared with standard mode. It overlaps the token-based
+  // inspectors above deliberately — it reaches forms the lexers cannot — and the
+  // overlapping reasons are worded identically so they dedupe instead of
+  // reporting the same fact twice. Pipe-to-interpreter used to be re-implemented
+  // here as well, which is why every piped command carried two near-identical
+  // reasons; the shared pattern now covers pwsh/powershell too.
   for (const reason of dangerousInSandboxReasons(inspectableCommand)) addUnique(out.prompt, reason)
-  if (/\|\s*(?:sh|bash|zsh|python3?|node|ruby|perl|pwsh|powershell)\b/i.test(inspectableCommand)) {
-    addUnique(out.prompt, 'piping output into an interpreter requires confirmation')
-  }
   if (
     /\$(?:\{|[A-Za-z_])|%[A-Za-z_][A-Za-z0-9_]*%/.test(inspectableCommand) &&
     /\b(?:rm|del|rmdir|remove-item|dd|mkfs|shred)\b/i.test(inspectableCommand)
