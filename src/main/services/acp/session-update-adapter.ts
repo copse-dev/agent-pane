@@ -16,8 +16,8 @@ import type { PanelEntry } from '@copse/agent/packs/pack-panel.ts'
  *   {@link sessionUpdateToStreamChunk} turns updates received from the agent
  *   back into chunks the renderer already knows how to display.
  *
- * Chunks/updates without a clean counterpart (usage accounting, context
- * pressure, internal subagent events) map to `null` and are dropped.
+ * Chunks/updates without a clean counterpart (turn token accounting, outbound
+ * context pressure, internal subagent events) map to `null` and are dropped.
  */
 
 /**
@@ -174,6 +174,20 @@ export function sessionUpdateToStreamChunk(update: SessionUpdate): StreamChunk |
           content: entry.content,
           status: entry.status,
         })),
+      }
+    case 'usage_update':
+      // ACP reports the agent-owned context directly. Unlike Copse's native
+      // estimator this includes the external agent's own system prompt, tools,
+      // cache reads, and any other context the client cannot inspect. Reuse the
+      // existing live context-pressure chunk so persistence and the footer wheel
+      // consume the authoritative `used / size` pair end to end.
+      return {
+        type: 'context_pressure',
+        contextWindow: update.size,
+        conversationBudget: update.size,
+        conversationTokens: update.used,
+        fillRatio: update.size > 0 ? update.used / update.size : 0,
+        source: 'agent-reported',
       }
     case 'tool_call':
       return {

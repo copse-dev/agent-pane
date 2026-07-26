@@ -269,6 +269,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
           conversationBudget: chunk.conversationBudget,
           conversationTokens: chunk.conversationTokens,
           fillRatio: chunk.fillRatio,
+          ...(chunk.source !== undefined ? { source: chunk.source } : {}),
         })
         break
       }
