@@ -1,9 +1,5 @@
 export const DEVELOPER_MODE_SETTING = 'developerMode'
 
-// Compatibility with builds that exposed only the DevTools shortcut toggle.
-// Read this as a fallback, but persist all new changes under developerMode.
-export const LEGACY_DEVTOOLS_SHORTCUT_SETTING = 'devtoolsShortcutEnabled'
-
 export interface DevToolsController {
   isDevToolsOpened(): boolean
   openDevTools(options: { mode: 'detach'; title: string }): void

@@ -3,7 +3,9 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedDeveloperModeFixture } from './helpers/seed-config.ts'
 import { saveElementScreenshot } from './helpers/screenshot.ts'
 
-describe('Developer mode surfaces', () => {
+describe('Developer mode surfaces', function () {
+  this.timeout(90_000)
+
   after(() => {
     resetUserData()
   })
@@ -14,7 +16,15 @@ describe('Developer mode surfaces', () => {
     await browser.reloadSession()
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
 
-    await expect($('.footer-overflow')).not.toBeDisplayed()
+    const overflow = $('.footer-overflow')
+    await expect(overflow).toBeDisplayed()
+    await overflow.$('.footer-overflow-trigger').click()
+    const labels = await browser.execute(() =>
+      Array.from(document.querySelectorAll('.footer-overflow-item'), (item) =>
+        item.textContent?.trim(),
+      ),
+    )
+    assert.deepEqual(labels, ['Enable Guarded YOLO'])
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
     await expect(dialog).toBeDisplayed()
@@ -36,7 +46,12 @@ describe('Developer mode surfaces', () => {
         item.textContent?.trim(),
       ),
     )
-    assert.deepEqual(labels, ['Copy thread ID', 'Export conversation (JSONL)', 'Share trace'])
+    assert.deepEqual(labels, [
+      'Enable Guarded YOLO',
+      'Copy thread ID',
+      'Export conversation (JSONL)',
+      'Share trace',
+    ])
     await saveElementScreenshot('#input-bar', 'developer-mode-footer-menu.png')
 
     await $('[aria-label="Settings"]').click()

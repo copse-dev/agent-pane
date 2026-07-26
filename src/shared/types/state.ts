@@ -91,7 +91,7 @@ export interface AppState {
   autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
   openLinksInBuiltInBrowser: boolean // Clicked http(s) links open in the in-app browser vs the system browser.
-  developerMode: boolean // Reveals advanced diagnostics and enables detached Electron DevTools.
+  developerMode: boolean // Reveals advanced diagnostics and the native Developer Tools menu item.
   settings?: { model: string }
 }
 

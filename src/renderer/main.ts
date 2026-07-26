@@ -37,7 +37,7 @@ import {
   DEFAULT_TINT_STRENGTH,
   DEFAULT_ACCENT_COLOR,
 } from './views/settings-dialog.ts'
-import { DEVELOPER_MODE_SETTING, LEGACY_DEVTOOLS_SHORTCUT_SETTING } from '@shared/developer-mode.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 import { resolveTheme, applyThemeToDocument, watchSystemTheme } from './dom/theme.ts'
 import {
   restoreUiScale,
@@ -224,7 +224,6 @@ async function boot(): Promise<void> {
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   const savedRightPanelPosition = await api.settings.get('rightPanelPosition')
   const savedOpenLinksInBuiltInBrowser = await api.settings.get('openLinksInBuiltInBrowser')
-  const savedLegacyDeveloperMode = await api.settings.get(LEGACY_DEVTOOLS_SHORTCUT_SETTING)
   const savedDeveloperMode = await api.settings.get(DEVELOPER_MODE_SETTING)
   // Theme and editor font size persist too. Restore them here (the store
   // otherwise keeps its dark/14 defaults on every launch) and apply the theme to
@@ -278,10 +277,7 @@ async function boot(): Promise<void> {
       : 'auto',
     openLinksInBuiltInBrowser:
       typeof savedOpenLinksInBuiltInBrowser === 'boolean' ? savedOpenLinksInBuiltInBrowser : true,
-    developerMode:
-      typeof savedDeveloperMode === 'boolean'
-        ? savedDeveloperMode
-        : savedLegacyDeveloperMode === true,
+    developerMode: typeof savedDeveloperMode === 'boolean' ? savedDeveloperMode : false,
   })
   // Reflect the "open links in built-in browser" choice onto the document root so
   // CSS can flag external links with an icon (and re-sync when Settings saves).
