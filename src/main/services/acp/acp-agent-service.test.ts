@@ -428,12 +428,13 @@ describe('ACP on SSH workspaces', () => {
     setWorkspaceRootForTest('/remote/project')
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     setWorkspaceRootForTest(null)
     storageSet('activeProjectId', null)
     storageSet('projects', [])
-    void setSetting('sshWorkspaceEnabled', false)
-    void setSetting('sshWorkspaceHosts', [])
+    await setSetting('sshWorkspaceEnabled', false)
+    await setSetting('sshWorkspaceHosts', [])
+    await setSetting('acpOverSshEnabled', false)
   })
 
   it('rejects session open and model detect with a clear unsupported message', async () => {
@@ -452,6 +453,24 @@ describe('ACP on SSH workspaces', () => {
     await assert.rejects(
       () => probeAcpAgentForSettings('cursor'),
       (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
+    )
+  })
+
+  it('lifts the SSH block once remote ACP is opted in', async () => {
+    await setSetting('acpOverSshEnabled', true)
+    // The agent isn't registered here, so it now fails PAST the SSH guard with a
+    // different error — proving the guard no longer short-circuits on SSH.
+    await assert.rejects(
+      () =>
+        runAcpAgentFromSettings({
+          threadId: 't1',
+          agentId: 'cursor',
+          userPrompt: 'hi',
+          priorMessages: [],
+          signal: new AbortController().signal,
+          onChunk: () => undefined,
+        }),
+      (err: unknown) => err instanceof Error && err.message !== ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
   })
 })

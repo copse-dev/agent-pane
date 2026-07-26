@@ -166,6 +166,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
+  { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
   // Experimental, opt-in features (off by default). The MCP-UI artefacts
   // (canvas) toggle moved to Settings > Packs (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
@@ -666,6 +667,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 diffs, browser, web fetch) through a bridge that re-applies Copse's native
                 permission checks when each call runs — so the extra approval prompt only duplicates
                 that gate. Turn off to prompt for every bridged tool call.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpOverSshEnabled" />
+                Run ACP agents over SSH (experimental)
+              </label>
+              <p class="field-hint">
+                When the active project is an SSH workspace, spawn the external ACP agent on the
+                <strong>remote host</strong> where the code lives, piping its stdio over the SSH
+                connection — instead of blocking ACP. The agent must be installed and authenticated
+                on the remote host (e.g. <code>npm install -g @zed-industries/claude-code-acp</code>,
+                then <code>claude /login</code>). Requires SSH workspaces to be enabled. Off leaves
+                ACP unavailable on SSH workspaces. See <code>docs/plans/acp-over-ssh.md</code>.
               </p>
             </fieldset>
 
