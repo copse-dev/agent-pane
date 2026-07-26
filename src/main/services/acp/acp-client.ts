@@ -36,6 +36,7 @@ import type {
 } from '@shared/types/acp.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
@@ -64,7 +65,10 @@ export interface AcpClientHandlers {
   /** Forward a translated update to the UI (`agent:chunk`). */
   onChunk: (chunk: StreamChunk) => void
   /** Approve/deny a tool call the external agent wants to run. */
-  requestPermission: (req: RequestPermissionRequest) => Promise<RequestPermissionResponse>
+  requestPermission: (
+    req: RequestPermissionRequest,
+    signal: AbortSignal,
+  ) => Promise<RequestPermissionResponse>
   /** Back `fs/read_text_file` with Copse's workspace-scoped reader. */
   readTextFile?: (req: ReadTextFileRequest) => Promise<ReadTextFileResponse>
   /** Back `fs/write_text_file` (e.g. route through the diff queue). */
@@ -423,6 +427,11 @@ export type AcpTransportFactory = (
 async function spawnTransport(
   config: AcpAgentSpawnConfig,
 ): Promise<{ stream: Stream; dispose: () => void }> {
+  // When the active project is an SSH workspace and the user opted in, spawn the
+  // agent on the remote host (stdio over SSH) instead of locally — see
+  // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
+  const sshTarget = acpSshTarget(config.cwd)
+  if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget)
   const child = await spawnAcpAgentProcess(config)
   if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
@@ -503,10 +512,15 @@ export async function openAcpSession(
       pending.push(update)
       pendingUpdates.set(sessionId, pending)
     })
-    .onRequest(methods.client.session.requestPermission, (ctx) => {
+    .onRequest(methods.client.session.requestPermission, async (ctx) => {
       const current = handlers.current
       if (!current) return { outcome: { outcome: 'cancelled' as const } }
-      return current.requestPermission(ctx.params)
+      try {
+        return await current.requestPermission(ctx.params, ctx.signal)
+      } catch (err) {
+        if (ctx.signal.aborted) return { outcome: { outcome: 'cancelled' as const } }
+        throw err
+      }
     })
     .onRequest(methods.client.fs.readTextFile, (ctx): Promise<ReadTextFileResponse> => {
       const readTextFile = handlers.current?.readTextFile

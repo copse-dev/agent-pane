@@ -14,6 +14,25 @@ Profiles are `skills-none`, `skills-product`, and `skills-explicit`. The first o
 use `offer-letter-generator`; use all three profiles before drawing any conclusion. This branch is
 an infrastructure spike, not a published benchmark result.
 
+## Reasoning arms
+
+Each skill-delivery profile has two content-addressed versions that share a prompt and tool set and
+differ only in how a reasoning-only stream is bounded:
+
+- `@1` — the original single fixed per-stream output cap.
+- `@2` — the checkpointed policy ported from Terminal-Bench `product-aligned@3`. A clean
+  reasoning-only stream is reassessed once per stream cap and may continue up to the product's
+  32k per-stream ceiling; a high-confidence circle signal (self-report, repeated blocks, headings,
+  or plans, or a 100-item enumeration) cuts it into the ordinary bounded recovery path.
+
+A bare id such as `skills-product` stays pinned to `@1`, so existing dispatches and their content
+hashes keep their exact meaning and the checkpointed arm is always requested explicitly.
+
+Run a paired arm study on one fleet with `--profiles` (the workflow's `profiles` input), for
+example `skills-product@1,skills-product@2`. Trials are task-major, so both arms see the same task
+back to back on the same worker. Every checkpoint decision and circle signal is retained in the
+capsule as `reasoning-checkpoints.jsonl` and summarised under `manifest.json` → `reasoning`.
+
 ## Local container smoke
 
 Build the same amd64 worker used by the workflow:
@@ -35,5 +54,6 @@ Storage, and terminates the fleet in an `always()` cleanup step. The workflow re
 used by Terminal-Bench.
 
 Each capsule contains the complete BenchFlow rollout plus `manifest.json`, including the official
-reward, release and task revisions, task digest, profile/content hash, full skill-bundle inventory
-and digest, model, tokens, tool/skill-read counts, elapsed time, and Copse source commit.
+reward, release and task revisions, task digest, profile/content hash, reasoning policy and
+checkpoint summary, full skill-bundle inventory and digest, model, tokens, tool/skill-read counts,
+elapsed time, and Copse source commit.

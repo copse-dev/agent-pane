@@ -25,7 +25,7 @@ done
 run_status=0
 upload_status=0
 python benchmarks/skillsbench/run_spike.py \
-  --profile "$COPSE_SKILLSBENCH_PROFILE" \
+  --profiles "${COPSE_SKILLSBENCH_PROFILES:-$COPSE_SKILLSBENCH_PROFILE}" \
   --task-names "$COPSE_SKILLSBENCH_TASK_NAMES" \
   --attempts "$COPSE_SKILLSBENCH_ATTEMPTS" \
   --shard-count "$COPSE_SKILLSBENCH_SHARD_COUNT" \

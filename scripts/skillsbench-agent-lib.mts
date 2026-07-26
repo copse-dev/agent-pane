@@ -1,20 +1,27 @@
 import { createInterface } from 'node:readline'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
+import { MAX_STREAM_OUTPUT_TOKENS } from '../packages/agent/src/agent-loop-limits.ts'
+import type {
+  ReasoningCheckpointPolicy,
+  ReasoningCheckpointRecord,
+} from '../packages/agent/src/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import type { LLMTool } from '@copse/llm/wire-types.ts'
 import {
-  parseSkillsBenchProfileId,
   skillsBenchProfile,
-  type SkillsBenchProfileId,
+  type SkillsBenchProfile,
+  type SkillsBenchProfileSelectionId,
   type SkillsBenchSkill,
 } from './lib/skillsbench-profiles.mts'
+
+export const DEFAULT_SKILLSBENCH_STREAM_OUTPUT_TOKENS = 4_096
 
 interface StartMessage {
   type: 'start'
   instruction: string
   model: string
-  profile: SkillsBenchProfileId
+  profile: SkillsBenchProfileSelectionId
   skills: SkillsBenchSkill[]
 }
 
@@ -60,6 +67,32 @@ const READ_SKILL_TOOL: LLMTool = {
   },
 }
 
+/**
+ * Reassess a reasoning-only stream once per configured stream cap instead of
+ * cutting at the first one, up to the product's absolute per-stream ceiling.
+ * A cut stream still falls back to the ordinary bounded recovery budget.
+ */
+export function skillsBenchReasoningCheckpointPolicy(
+  profile: SkillsBenchProfile,
+  maxStreamOutputTokens: number,
+): ReasoningCheckpointPolicy | undefined {
+  if (profile.reasoningPolicy !== 'circle-gated-2k-checkpoints-v1') return undefined
+  const intervalTokens = maxStreamOutputTokens
+  const maxInitialTokens = Math.max(MAX_STREAM_OUTPUT_TOKENS, intervalTokens)
+  return {
+    intervalTokens,
+    // `maxInitialTokens` rather than MAX_STREAM_OUTPUT_TOKENS directly:
+    // validateReasoningCheckpointPolicy requires every maximum to be at least
+    // one checkpoint interval, and `intervalTokens` can exceed the constant when
+    // COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS raises it. `maxInitialTokens`
+    // is already Math.max(MAX_STREAM_OUTPUT_TOKENS, intervalTokens), so it
+    // satisfies that bound by construction.
+    maxNonReasoningTokens: maxInitialTokens,
+    maxInitialTokens,
+    maxRecoveryTokens: Math.min(intervalTokens * 2, maxInitialTokens),
+  }
+}
+
 function envPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name]?.trim()
   if (!raw) return fallback
@@ -79,16 +112,25 @@ function isInputMessage(value: unknown): value is InputMessage {
   return value.type === 'start' || value.type === 'tool_result'
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function stringProperty(args: unknown, name: string): string | undefined {
-  if (typeof args !== 'object' || args === null || !(name in args)) return undefined
-  const value = args[name as keyof typeof args]
+  if (!isRecord(args) || !(name in args)) return undefined
+  const value = args[name]
   return typeof value === 'string' ? value : undefined
 }
 
 function numberProperty(args: unknown, name: string): number | undefined {
-  if (typeof args !== 'object' || args === null || !(name in args)) return undefined
-  const value = args[name as keyof typeof args]
+  if (!isRecord(args) || !(name in args)) return undefined
+  const value = args[name]
   return typeof value === 'number' ? value : undefined
+}
+
+function nonEmptyTrimmed(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  return trimmed !== undefined && trimmed !== '' ? trimmed : undefined
 }
 
 export async function runSkillsBenchAgent(): Promise<void> {
@@ -101,11 +143,13 @@ export async function runSkillsBenchAgent(): Promise<void> {
     throw new Error('SkillsBench bridge expected a start message.')
   }
 
-  const apiKey = process.env['LM_STUDIO_API_KEY']?.trim() || process.env['LM_API_TOKEN']?.trim()
+  const apiKey =
+    nonEmptyTrimmed(process.env['LM_STUDIO_API_KEY']) ??
+    nonEmptyTrimmed(process.env['LM_API_TOKEN'])
   if (!apiKey)
     throw new Error('Set LM_STUDIO_API_KEY (or LM_API_TOKEN) before running SkillsBench.')
-  const baseUrl = process.env['LM_STUDIO_URL']?.trim() || 'http://localhost:1234/v1'
-  const profile = skillsBenchProfile(parseSkillsBenchProfileId(parsed.profile), parsed.skills)
+  const baseUrl = nonEmptyTrimmed(process.env['LM_STUDIO_URL']) ?? 'http://localhost:1234/v1'
+  const profile = skillsBenchProfile(parsed.profile, parsed.skills)
   const provider = createLMStudioProvider(baseUrl, parsed.model, apiKey)
   const usage = { inputTokens: 0, outputTokens: 0, toolCalls: 0, llmCalls: 0 }
   let stopReason: string | undefined
@@ -113,6 +157,15 @@ export async function runSkillsBenchAgent(): Promise<void> {
   const tools = profile.tools.map((name) =>
     name === 'run_shell' ? RUN_SHELL_TOOL : READ_SKILL_TOOL,
   )
+  const maxStreamOutputTokens = envPositiveInt(
+    'COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS',
+    DEFAULT_SKILLSBENCH_STREAM_OUTPUT_TOKENS,
+  )
+  const reasoningCheckpointPolicy = skillsBenchReasoningCheckpointPolicy(
+    profile,
+    maxStreamOutputTokens,
+  )
+  const reasoningCheckpoints: ReasoningCheckpointRecord[] = []
 
   await runAgentLoop({
     provider,
@@ -124,10 +177,15 @@ export async function runSkillsBenchAgent(): Promise<void> {
     maxSteps: envPositiveInt('COPSE_SKILLSBENCH_MAX_STEPS', 80),
     maxLlmCalls: envPositiveInt('COPSE_SKILLSBENCH_MAX_LLM_CALLS', 83),
     maxContextTokens: envPositiveInt('COPSE_SKILLSBENCH_CONTEXT_TOKENS', 32_768),
-    maxStreamOutputTokens: envPositiveInt('COPSE_SKILLSBENCH_MAX_STREAM_OUTPUT_TOKENS', 4_096),
+    maxStreamOutputTokens,
+    ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
     usageModel: parsed.model.startsWith('lmstudio:') ? parsed.model : `lmstudio:${parsed.model}`,
     onLlmCall: (count) => {
       usage.llmCalls = count
+    },
+    recordReasoningCheckpoint: (record) => {
+      reasoningCheckpoints.push(record)
+      writeProtocol({ type: 'reasoning_checkpoint', record })
     },
     onChunk: (chunk: AgentStreamChunk) => {
       if (chunk.type === 'tool_call') usage.toolCalls += 1
@@ -179,6 +237,8 @@ export async function runSkillsBenchAgent(): Promise<void> {
     assistantText,
     profile: profile.versionedId,
     profileHash: profile.contentHash,
+    reasoningPolicy: profile.reasoningPolicy,
+    reasoningCheckpoints,
   })
   lines.close()
 }

@@ -1,5 +1,6 @@
 import { formatThreadUsageCost } from '@copse/llm/estimate-cost.ts'
 import type { ContextBreakdown, ContextSnapshot, Message, ThreadUsage } from '@shared/types'
+import { formatTokenCount } from './format-usage-summary.ts'
 
 const CHARS_PER_TOKEN = 4
 
@@ -57,7 +58,7 @@ export function resolveFooterUsage(input: FooterUsageInput): FooterUsageDisplay 
 }
 
 function formatTokenThousands(total: number, estimated: boolean): string {
-  const value = total ? `${(total / 1000).toFixed(1)}k tokens` : '0 tokens'
+  const value = `${formatTokenCount(total)} tokens`
   return estimated ? `~${value}` : value
 }
 

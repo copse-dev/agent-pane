@@ -275,6 +275,7 @@ async def _run_prompt(client: _CopseClient, prompt: str) -> dict[str, Any]:
     stderr: list[str] = []
     stderr_task = asyncio.create_task(_drain_stderr(process.stderr, stderr))
     final: dict[str, Any] | None = None
+    checkpoints: list[dict[str, Any]] = []
     try:
         while True:
             line = await process.stdout.readline()
@@ -285,6 +286,10 @@ async def _run_prompt(client: _CopseClient, prompt: str) -> dict[str, Any]:
                 event = message.get("event")
                 if isinstance(event, dict):
                     _record_event(client.session, event)
+            elif message.get("type") == "reasoning_checkpoint":
+                record = message.get("record")
+                if isinstance(record, dict):
+                    checkpoints.append(record)
             elif message.get("type") == "tool_request":
                 response = await _handle_tool(client, message)
                 process.stdin.write((json.dumps(response) + "\n").encode())
@@ -296,6 +301,7 @@ async def _run_prompt(client: _CopseClient, prompt: str) -> dict[str, Any]:
         if code != 0 or final is None:
             detail = "".join(stderr).strip()
             raise RuntimeError(detail or f"Copse bridge exited {code} without a result")
+        final["reasoningCheckpoints"] = final.get("reasoningCheckpoints") or checkpoints
         client.session.record_prompt_usage(
             {
                 "input_tokens": final.get("inputTokens", 0),
@@ -325,6 +331,7 @@ class CopseRolloutPlanes(DefaultRolloutPlanes):
         super().__init__()
         self.bundle = bundle
         self.profile = profile
+        self.base_profile = profile.split("@", 1)[0]
         self.last_result: dict[str, Any] | None = None
 
     def agent_launch(self, agent: str, *, disallow_web_tools: bool) -> str:
@@ -399,7 +406,7 @@ class CopseRolloutPlanes(DefaultRolloutPlanes):
     async def connect_acp(self, *args: Any, **kwargs: Any) -> Any:
         env = kwargs["env"]
         session = ACPSession(f"copse-{os.urandom(8).hex()}")
-        skills = [] if self.profile == "skills-none" else await _load_skills(env)
+        skills = [] if self.base_profile == "skills-none" else await _load_skills(env)
         client = _CopseClient(
             env=env,
             session=session,

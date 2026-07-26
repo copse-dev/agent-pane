@@ -1,6 +1,11 @@
-import { parseSkillsBenchProfileId, skillsBenchProfile } from './lib/skillsbench-profiles.mts'
+import { skillsBenchProfile } from './lib/skillsbench-profiles.mts'
 
-const profile = skillsBenchProfile(parseSkillsBenchProfileId(process.argv[2]), [])
+const profile = skillsBenchProfile(process.argv[2], [])
 process.stdout.write(
-  `${JSON.stringify({ id: profile.versionedId, contentHash: profile.contentHash })}\n`,
+  `${JSON.stringify({
+    id: profile.versionedId,
+    baseId: profile.id,
+    contentHash: profile.contentHash,
+    reasoningPolicy: profile.reasoningPolicy,
+  })}\n`,
 )

@@ -98,6 +98,7 @@ import {
   prepareThreadCheckout,
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
+import { getAutomationService } from './services/automations/automation-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -179,20 +180,9 @@ app
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
-    // One-time import of pre-#644 threads into the ~/.copse/workspace store.
-    // Self-contained — delete this block and thread-migration.ts to drop it.
-    recordStartupPhase('thread-migration')
-    const { migrateLegacyThreads } = await import('./services/thread-migration.ts')
-    const migration = await migrateLegacyThreads()
-    if (migration.ranMigration) {
-      console.log(
-        `[thread-migration] imported ${String(migration.migrated)} thread(s) from ${String(migration.projects)} project(s), skipped ${String(migration.skipped)}`,
-      )
-    }
-
     // Move provider-format history out of electron-store into per-thread
-    // sidecars (issue #993). Must run after legacy thread dirs exist so
-    // ownership can be resolved, and before the first window.
+    // sidecars (issue #993). Must run before the first window so ownership is
+    // resolved against the thread store the renderer is about to read.
     recordStartupPhase('llm-history-migration')
     const { migrateLlmHistory } = await import('./services/llm-history-migration.ts')
     const historyMigration = await migrateLlmHistory()
@@ -241,6 +231,9 @@ app
     const disposeTerminalHandlers = initTerminal(win)
     recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
+    getAutomationService().start((event) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -569,6 +562,7 @@ let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
+  getAutomationService().stop()
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()

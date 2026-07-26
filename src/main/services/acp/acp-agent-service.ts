@@ -18,6 +18,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
+import { isAcpOverSshEnabled } from './acp-ssh-transport.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
@@ -267,7 +268,10 @@ export async function runWithAcpRetry<T>(
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
-  if (isActiveSshWorkspace()) {
+  // On an SSH workspace, ACP is blocked unless the user opted into remote ACP
+  // (docs/plans/acp-over-ssh.md), in which case the agent spawns on the remote
+  // host via the SSH-aware transport.
+  if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
 
@@ -335,8 +339,14 @@ export async function runAcpAgentFromSettings(
   const queueWrites = new Set<string>()
   const handlers: AcpClientHandlers = {
     onChunk,
-    requestPermission: (req) =>
-      respondToPermission({ id: agent.id, title: agent.title, sandboxed }, req, cwd, projectRoot),
+    requestPermission: (req, rpcSignal) =>
+      respondToPermission(
+        { id: agent.id, title: agent.title, sandboxed },
+        req,
+        cwd,
+        projectRoot,
+        mergeAcpPermissionAbortSignals(options.signal, rpcSignal),
+      ),
     readTextFile: (req) => readTextFile(req, cwd),
     writeTextFile: (req) => writeViaDiffQueue(req, options.signal, queueWrites, cwd),
   }
@@ -475,7 +485,7 @@ export async function runAcpAgentFromSettings(
  * exposes none of that kind.
  */
 export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
-  if (isActiveSshWorkspace()) {
+  if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
   const agent = getAcpAgent(agentId)
@@ -512,14 +522,26 @@ export function shouldAutoApproveLowRiskAcpPermission(
   return READ_ONLY_ACP_TOOL_KINDS.has(kind)
 }
 
+export function mergeAcpPermissionAbortSignals(
+  turnSignal: AbortSignal | undefined,
+  rpcSignal: AbortSignal,
+): AbortSignal {
+  if (!turnSignal) return rpcSignal
+  if (turnSignal.aborted) return turnSignal
+  if (rpcSignal.aborted) return rpcSignal
+  return AbortSignal.any([turnSignal, rpcSignal])
+}
+
 async function respondToAcpExecutePermission(
   agent: { sandboxed: boolean },
   req: RequestPermissionRequest,
   root: string | null,
   projectRoot: string | null,
+  signal?: AbortSignal,
 ): Promise<RequestPermissionResponse | null> {
   const command = acpExecuteCommandText(req.toolCall)
   if (!command) return null
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const readOnly = agent.sandboxed && isStructurallyReadOnlyShellCommand(command)
   const approved = await ensureShellCommandPermitted(command, {
     sandboxEnabled: agent.sandboxed,
@@ -527,7 +549,9 @@ async function respondToAcpExecutePermission(
     networkScopeAlreadyApplies: agent.sandboxed,
     executionRoot: root,
     projectRoot,
+    ...(signal ? { signal } : {}),
   })
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   return permissionResponseFor(req.options, approved)
 }
 
@@ -546,7 +570,9 @@ async function respondToPermission(
   req: RequestPermissionRequest,
   root: string | null = getAgentExecutionRoot(),
   projectRoot: string | null = getAgentProjectRoot(),
+  signal?: AbortSignal,
 ): Promise<RequestPermissionResponse> {
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   const kind = req.toolCall.kind ?? 'other'
   if (isAcpPermissionRemembered(agent.id, kind)) {
     return permissionResponseFor(req.options, true, { preferAlways: true })
@@ -570,7 +596,13 @@ async function respondToPermission(
     return permissionResponseFor(req.options, true)
   }
   if (kind === 'execute') {
-    const executeResponse = await respondToAcpExecutePermission(agent, req, root, projectRoot)
+    const executeResponse = await respondToAcpExecutePermission(
+      agent,
+      req,
+      root,
+      projectRoot,
+      signal,
+    )
     if (executeResponse) return executeResponse
   }
   // File-mutating kinds (edit/delete/move) are auto-approved once a durable
@@ -584,11 +616,15 @@ async function respondToPermission(
     }
   }
   const presentation = presentPermissionRequest(agent.title, req)
-  const { approved, remember } = await requestApproval({
-    ...presentation,
-    allowRemember: true,
-    rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      ...presentation,
+      allowRemember: true,
+      rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+    },
+    signal,
+  )
+  if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
   if (approved && remember) void rememberAcpPermission(agent.id, kind)
   return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
 }
@@ -905,4 +941,15 @@ function messageLine(message: LLMMessage): string {
   // System prompts, tool results, and raw assistant tool-call turns are dropped
   // to keep the handoff compact and free of local-only tooling noise.
   return ''
+}
+
+/** @internal Test seam for permission-cancel wiring (PR1). */
+export function respondToPermissionForTest(
+  agent: { id: string; title: string; sandboxed: boolean },
+  req: RequestPermissionRequest,
+  root: string | null,
+  projectRoot: string | null,
+  signal?: AbortSignal,
+): Promise<RequestPermissionResponse> {
+  return respondToPermission(agent, req, root, projectRoot, signal)
 }

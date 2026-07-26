@@ -191,3 +191,56 @@ describe('shell permissions: auto-run disabled in Settings', () => {
     assert.ok(d.reasons.some((r) => /auto-run.*disabled/i.test(r)))
   })
 })
+
+describe('shell permissions: explicit Guarded YOLO mode', () => {
+  for (const sandboxEnabled of [true, false]) {
+    const platform = sandboxEnabled ? 'macOS sandbox active' : 'no OS sandbox'
+
+    it(`auto-runs routine local and external work on ${platform}`, () => {
+      for (const command of [SANDBOXED, EXTERNAL, AMBIGUOUS]) {
+        const d = decideShellPermission(command, {
+          workspaceRoot: root,
+          sandboxEnabled,
+          autoRun: false,
+          classification: null,
+          mode: 'guarded-yolo',
+          harmDecision: { action: 'allow', reasons: ['no harmful signals'] },
+        })
+        assert.equal(d.action, 'allow', command)
+      }
+    })
+
+    it(`preserves deterministic prompt and deny outcomes on ${platform}`, () => {
+      const prompt = decideShellPermission('rm -rf build', {
+        workspaceRoot: root,
+        sandboxEnabled,
+        autoRun: true,
+        classification: null,
+        mode: 'guarded-yolo',
+        harmDecision: { action: 'prompt', reasons: ['bounded delete'] },
+      })
+      const deny = decideShellPermission('rm -rf /', {
+        workspaceRoot: root,
+        sandboxEnabled,
+        autoRun: true,
+        classification: null,
+        mode: 'guarded-yolo',
+        harmDecision: { action: 'deny', reasons: ['filesystem root'] },
+      })
+      assert.equal(prompt.action, 'prompt')
+      assert.equal(deny.action, 'deny')
+    })
+  }
+
+  it('fails closed when the host harm verdict is absent', () => {
+    const d = decideShellPermission(SANDBOXED, {
+      workspaceRoot: root,
+      sandboxEnabled: true,
+      autoRun: true,
+      classification: null,
+      mode: 'guarded-yolo',
+    })
+    assert.equal(d.action, 'deny')
+    assert.match(d.reasons.join(' '), /harm assessment unavailable/i)
+  })
+})

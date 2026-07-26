@@ -3,7 +3,7 @@
   "version": "0.1.0-beta.1",
   "private": true,
   "license": "Apache-2.0",
-  "description": "Copse — AI coding assistant desktop app",
+  "description": "Copse \u2014 AI coding assistant desktop app",
   "main": "dist/main/index.js",
   "type": "commonjs",
   "scripts": {
@@ -27,7 +27,8 @@
     "preinstall": "node scripts/check-node-version.cjs",
     "postinstall": "node scripts/check-node-version.cjs && node scripts/patch-dev-name.mts && node scripts/postinstall-native.mts && node scripts/fetch-gortex.mts && node scripts/fetch-bundled-cursor-skills.mts",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "lint": "eslint .",
+    "lint": "eslint . --pass-on-unpruned-suppressions",
+    "lint:prune": "eslint . --prune-suppressions",
     "check:dead-code": "node scripts/check-dead-code.mts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -128,14 +129,14 @@
     }
   },
   "overrides": {
+    "@hono/node-server": "2.0.11",
     "adm-zip": "^0.6.0",
-    "brace-expansion@1": "1.1.16",
-    "brace-expansion@2": "2.1.2",
-    "brace-expansion@5": "5.0.7",
+    "brace-expansion": "5.0.8",
+    "minimatch": "10.2.5",
     "dompurify": "$dompurify",
     "js-yaml@4": "4.3.0",
     "serialize-javascript": "^7.0.7",
-    "tar": "^7.5.19",
+    "tar": "$tar",
     "sharp": "0.35.3",
     "fast-xml-parser": "5.10.1"
   },
@@ -196,7 +197,7 @@
     "pixelmatch": "^7.2.0",
     "pngjs": "^7.0.0",
     "prettier": "^3.9.5",
-    "tar": "^7.5.19",
+    "tar": "^7.5.22",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0",
     "webdriverio": "^9.29.0"
