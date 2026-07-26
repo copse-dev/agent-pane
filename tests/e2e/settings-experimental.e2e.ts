@@ -123,6 +123,14 @@ describe('experimental settings section', () => {
     )
     assert.equal(await experimental.$('legend=Roadmap plans').isExisting(), false)
 
+    // ACP agents graduated out of Experimental into their own top-level section,
+    // so the panel's legend must no longer appear here.
+    assert.equal(
+      await experimental.$('legend=ACP agents').isExisting(),
+      false,
+      'ACP agents must leave Settings > Experimental after graduating to its own section',
+    )
+
     // The model classifier speaks the shared intellect scale, not a separate
     // tier vocabulary (docs/plans/advisor-strategy.md).
     const classifierHint = await experimental

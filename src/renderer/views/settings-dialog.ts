@@ -61,6 +61,7 @@ export type SettingsSection =
   | 'packs'
   | 'appearance'
   | 'ssh'
+  | 'acp'
   | 'experimental'
 
 /**
@@ -336,6 +337,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="packs">Packs</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
+          <button type="button" class="settings-nav-btn" data-section="acp">ACP agents</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
@@ -966,14 +968,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
           </section>
 
+          <section class="settings-section" data-section="acp">
+            <h3>ACP agents</h3>
+            <p class="settings-section-desc">
+              Drive external coding agents — Claude Code, Gemini CLI, Cursor, Codex — that run
+              locally over the Agent Client Protocol. Pick an agent to install, sign in, and add
+              it; added agents show up in the model picker as their own group.
+            </p>
+
+            <div id="settings-acp-agents-host" class="settings-mount"></div>
+          </section>
+
           <section class="settings-section" data-section="experimental">
             <h3>Experimental</h3>
             <p class="settings-section-desc">
               Early, opt-in features that are still being explored. They may change or be removed,
               and are off by default.
             </p>
-
-            <div id="settings-acp-agents-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>Model classifier</legend>
@@ -1280,8 +1291,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
-        // don't trigger a which/ps scan (Experimental) or fs walk (Sources) on open.
-        if (id === 'experimental') void acpAgentsSection.refresh()
+        // don't trigger a which/ps scan (ACP agents) or fs walk (Sources) on open.
+        if (id === 'acp') void acpAgentsSection.refresh()
         if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
         if (id === 'packs') void refreshPacks()
@@ -2244,7 +2255,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
     // lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
-    if (openedSection === 'experimental') void acpAgentsSection.refresh()
+    if (openedSection === 'acp') void acpAgentsSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'sources') void refreshSources()
     searchInput.focus()
