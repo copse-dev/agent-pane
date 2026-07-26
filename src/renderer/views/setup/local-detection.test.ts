@@ -55,13 +55,13 @@ describe('importDetectedPreset', () => {
   })
 
   it('merges with a curated model list instead of replacing it', async () => {
-    // User curated a model with a custom label.
+    // User curated a model by hand.
     await saveExtraProvider({ slug: 'ollama', models: [{ id: 'my-model' }] })
     // A re-scan finds the curated id plus a new one.
     await importDetectedPreset(fakeApi(), reachable('ollama', ['my-model', 'fresh-model']))
     const models = getResolvedExtraProvider('ollama')?.models ?? []
-    // Curated entry preserved with its label; new id appended; no duplicate.
-    assert.deepEqual(models, [{ id: 'my-model', label: 'My Model' }, { id: 'fresh-model' }])
+    // Curated entry preserved; new id appended; no duplicate.
+    assert.deepEqual(models, [{ id: 'my-model' }, { id: 'fresh-model' }])
   })
 
   it('imports every reachable preset when run sequentially (no lost-update)', async () => {
