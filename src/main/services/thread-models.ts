@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { activateGuardedYoloForRun, finishGuardedYoloRun } from './security/guarded-yolo.ts'
+import { activateGuardedYoloForRun } from './security/guarded-yolo.ts'
 
 // Tracks which LLM models actually ran in each thread so `git_commit` can credit
 // them in the Copse attribution trailer. Populated from usage chunks during a
@@ -53,7 +53,6 @@ export function setActiveRunThread(threadId: string): void {
 export function clearActiveRunThread(threadId: string): void {
   const active = activeRunStorage.getStore()
   if (active?.threadId === threadId) {
-    finishGuardedYoloRun(threadId)
     active.model = null
   }
 }

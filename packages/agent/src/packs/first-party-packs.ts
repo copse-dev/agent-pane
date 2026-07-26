@@ -85,6 +85,7 @@ import { piiRedactionPack } from './pii-redaction-pack.ts'
 import { mcpUiCanvasPack } from './mcp-ui-canvas-pack.ts'
 import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
 import { backgroundTasksPack } from './background-tasks-pack.ts'
+import { automationsPack } from './automations-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
@@ -108,6 +109,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   mcpUiCanvasPack,
   devtoolsShortcutPack,
   backgroundTasksPack,
+  automationsPack,
 ]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */

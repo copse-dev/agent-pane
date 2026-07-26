@@ -96,6 +96,12 @@ removed from the shipped list. The pack seam is wired into
 loop uses — so a disabled pack removes them from new work without touching loop
 code.
 
+The default-off `copse.automations` pack also exercises the first-party level-3
+boundary: its manifest declares a `settings-pack-detail` view and namespaced
+storage, while the Electron host supplies the local clock/thread-store service.
+See [`docs/plans/automations.md`](plans/automations.md) for the deliberately narrow
+desktop-online cron-to-draft prototype and its durable-supervisor boundary.
+
 ## Level-2 declarative panels (P2)
 
 A pack contributes a **level-2 panel** by declaring a UI contribution at

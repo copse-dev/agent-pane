@@ -379,7 +379,8 @@ passes because the pack is referenced by the registry, not the loop.
 
 Later packs, in extraction order: post-turn review, model comparison, long-horizon
 tasks, roadmap plans, advisor strategy, OKF memories (memory tools), CI investigator,
-PII redaction, GitHub-link steering, commit attribution, browser tools.
+PII redaction, project automations (local cron-to-draft prototype), GitHub-link
+steering, commit attribution, browser tools.
 **Not packs** (the platform): permission gate, context trimming, the step machine,
 diff queue.
 

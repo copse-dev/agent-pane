@@ -26,10 +26,12 @@ import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
+const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 
 function makeRegistry(): PackRegistry {
@@ -61,6 +63,9 @@ function makeRegistry(): PackRegistry {
 
 function clearStorage(): void {
   storageSet(PACK_DISABLED_KEY, [])
+  // Keep the prototype's one-time default-off migration out of unrelated cases;
+  // its dedicated test below deletes this marker explicitly.
+  storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -181,6 +186,7 @@ describe('PackService', () => {
       MCP_UI_CANVAS_PACK_ID,
       DEVTOOLS_SHORTCUT_PACK_ID,
       BACKGROUND_TASKS_PACK_ID,
+      AUTOMATIONS_PACK_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
     }
@@ -197,8 +203,24 @@ describe('PackService', () => {
         MCP_UI_CANVAS_PACK_ID,
         DEVTOOLS_SHORTCUT_PACK_ID,
         BACKGROUND_TASKS_PACK_ID,
+        AUTOMATIONS_PACK_ID,
       ].sort(),
     )
+  })
+
+  it('seeds the new automations pack disabled without erasing later choices', async () => {
+    storageDelete(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY)
+    const service = getPackService()
+    assert.equal(service.registry.isEnabled(AUTOMATIONS_PACK_ID), false)
+    const disabled = storageGet(PACK_DISABLED_KEY)
+    assert.ok(Array.isArray(disabled))
+    assert.ok(disabled.includes(AUTOMATIONS_PACK_ID))
+    assert.equal(storageGet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY), true)
+
+    await service.setEnabled(AUTOMATIONS_PACK_ID, true)
+    __resetPackServiceForTests()
+    const later = getPackService()
+    assert.equal(later.registry.isEnabled(AUTOMATIONS_PACK_ID), true)
   })
 
   it('never re-seeds over a pack list the user already owns', () => {
@@ -210,6 +232,7 @@ describe('PackService', () => {
       OKF_MEMORIES_PACK_ID,
       CI_INVESTIGATOR_PACK_ID,
       PII_REDACTION_PACK_ID,
+      AUTOMATIONS_PACK_ID,
     ])
 
     const service = getPackService()
