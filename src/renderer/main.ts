@@ -102,6 +102,8 @@ import {
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
+import { mountPopoutPanelBar } from './popout/popout-panel-bar.ts'
+import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
   isThemePreference,
@@ -178,6 +180,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
+let unmountPopoutPanelBar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
@@ -364,8 +367,7 @@ async function boot(): Promise<void> {
   // In a pop-out window, force the detached pane open once the workspace is
   // restored; popout.css collapses everything else to a single-pane window.
   if (popoutMode && store.getState().workspaceRoot) {
-    ensureLayout()
-    openRightPanel(store, popoutMode)
+    await activatePopoutPane(popoutMode)
     return
   }
 
@@ -386,6 +388,30 @@ function ensureLayout(): void {
   updateFilesPane()
   registerKeyboardShortcuts()
   registerPanelKeyboardShortcuts(store, api)
+  if (popoutMode) {
+    const paneFiles = document.getElementById('pane-files')
+    if (paneFiles && !unmountPopoutPanelBar) {
+      unmountPopoutPanelBar = mountPopoutPanelBar(paneFiles, store, api)
+    }
+  }
+}
+
+// A pop-out window hosts exactly one detached pane. Opening it also replays the
+// snapshot ("seed") the parent window stashed, so the pane arrives on the same
+// selection the user was looking at rather than an empty default.
+async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
+  ensureLayout()
+  openRightPanel(store, mode)
+  document.documentElement.setAttribute('data-popout-mode', mode)
+  const seed = await api.panes.takePopoutSeed(mode)
+  await applyPopoutSeed(mode, seed)
+}
+
+if (popoutMode) {
+  api.panes.onSwitchMode((mode) => {
+    if (!POPOUT_MODES.has(mode)) return
+    void activatePopoutPane(mode)
+  })
 }
 
 function mountFullLayout(): void {
