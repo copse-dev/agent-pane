@@ -251,6 +251,17 @@ export interface ApiClient {
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => Promise<void>
     delete: (projectId: string, threadId: string) => Promise<void>
+    /**
+     * Seed a fork's provider-format history from the thread it branched off.
+     * Omit `throughMessageId` (or pass the source's last message id) to copy the
+     * sidecar verbatim; an earlier id rebuilds history from the transcript slice.
+     */
+    fork: (
+      projectId: string,
+      sourceThreadId: string,
+      targetThreadId: string,
+      throughMessageId?: string,
+    ) => Promise<import('@shared/types').ForkedHistoryResult>
     catalog: (
       projectId: string,
       query?: string,
