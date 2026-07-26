@@ -41,13 +41,13 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   servers. Calls execute through the same `ToolRegistry` as built-in model runs,
   so the normal path validation, diff queue, permission policy, sandbox escape,
   and approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
-- Known agents (the Claude and Gemini catalog entries) are **spawned under the
-  workspace seatbelt** on macOS when the project sandbox is active (issue
-  #590): writes confined to the workspace, home denied except the agent's own
-  config dirs, network limited to its declared endpoints (plus loopback for the
-  bridge). The confines come from the `KNOWN_ACP_AGENTS` catalog at spawn time —
-  no per-config copy — and the config's optional `sandbox` field overrides them
-  (an object for custom confines, `false` to opt out). The agent's shell
+- Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
+  under the workspace seatbelt** on macOS when the project sandbox is active
+  (issue #590): writes confined to the workspace, home denied except the agent's
+  own config dirs, network limited to its declared endpoints (plus loopback for
+  the bridge). The confines come from the `KNOWN_ACP_AGENTS` catalog at spawn
+  time — no per-config copy — and the config's optional `sandbox` field overrides
+  them (an object for custom confines, `false` to opt out). The agent's shell
   children inherit the same confines, and approval prompts cannot override the
   agent's own shell sandbox. Sandboxed turns steer commands through the bridge's
   `run_shell`: that reuses Copse's native permission decision and can run

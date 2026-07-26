@@ -165,14 +165,16 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     requiresClient: 'cursor-agent',
     preset: true,
     sandbox: {
-      // Cursor-owned infra wholesale: the CLI talks to api2/api3.cursor.sh and
-      // auth flows move between cursor.com subdomains (origin, review, agents,
-      // OAuth callbacks) — pinning individual hosts breaks login when they do.
+      // Cursor-owned infra wholesale: the API lives on cursor.com, but OAuth
+      // and telemetry move between subdomains (cursor.sh, etc.) — pinning
+      // individual hosts breaks auth when they do.
       allowedDomains: ['cursor.com', '*.cursor.com', 'cursor.sh', '*.cursor.sh'],
       homeDirs: ['.cursor', '.local/share/cursor-agent'],
-      // cursor-agent keeps scratch state under /tmp/.cursor, ignoring $TMPDIR.
+      // Cursor uses /tmp/.cursor for session bookkeeping (same pattern as
+      // Claude's /tmp/claude-<hex> dirs).
       scratchPaths: ['/tmp/.cursor'],
     },
+    sandboxedPermissionMode: 'acceptEdits',
     install: 'curl https://cursor.com/install | bash',
     setup: 'cursor-agent login',
     docsUrl: 'https://docs.cursor.com/en/cli/overview',
