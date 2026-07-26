@@ -1,11 +1,12 @@
-name: Reconcile PR screenshots after main
+name: Reconcile PR screenshots after a base push
 
-# When main re-renders a reference PNG, every open PR that also touched that PNG
-# silently goes `dirty` — a binary file git can't 3-way merge. Nothing re-runs a
+# When an integration branch re-renders a reference PNG, every open PR based on it
+# that also touched that PNG silently goes `dirty` — a binary file git can't 3-way
+# merge. Nothing re-runs a
 # PR's CI when its *base* moves (the `pull_request` event only fires on head
 # changes), so the commit-screenshots reconcile in ci.yml would never get a
 # chance to clear the conflict on an idle PR. This workflow closes that gap: on a
-# main push that changes screenshots, it merges the new main into each conflicting
+# base push that changes screenshots, it merges the new base into each conflicting
 # PR head and resolves screenshot-only conflicts by OWNERSHIP — the same policy as
 # ci.yml's reconcile, but driven reactively by the base moving. A shot the PR owns
 # (the oracle maps its diff to a spec that renders it, or someone hand-committed it
@@ -22,15 +23,22 @@ name: Reconcile PR screenshots after main
 # without this workflow ever running the suite itself.
 on:
   push:
-    branches: [main]
-    # Only screenshot churn on main can create a screenshot conflict, so don't
-    # wake on unrelated main commits.
+    # Both integration branches. Day-to-day PRs are based on `develop`, so that
+    # is where a moving base creates their conflicts; `main` still matters for
+    # the promotion PR. Every step below reconciles against the branch that was
+    # actually pushed (`github.ref_name`), and only PRs based on THAT branch are
+    # considered — a develop push must not merge develop into a main-based PR.
+    branches: [main, develop]
+    # Only screenshot churn can create a screenshot conflict, so don't wake on
+    # unrelated commits.
     paths:
       - 'tests/e2e/screenshots/**'
 
-# A burst of main pushes only needs the latest reconcile pass; collapse them.
+# A burst of pushes only needs the latest reconcile pass; collapse them. Keyed by
+# branch so a develop push and a main push don't cancel each other — they act on
+# disjoint sets of PRs.
 concurrency:
-  group: reconcile-screenshots
+  group: reconcile-screenshots-${{ github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -51,14 +59,21 @@ jobs:
     steps:
       - id: find
         uses: actions/github-script@v9
+        env:
+          BASE_BRANCH: ${{ github.ref_name }}
         with:
           script: |
             const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
             const self = `${context.repo.owner}/${context.repo.repo}`;
+            const base = process.env.BASE_BRANCH;
             const open = await github.paginate(github.rest.pulls.list, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
+              // Only PRs based on the branch that just moved. Without this, a
+              // `develop` push would try to merge develop into the promotion PR
+              // (base `main`) and into any main-based hotfix.
+              base,
               per_page: 100,
             });
             const out = [];
@@ -159,20 +174,24 @@ jobs:
         if: steps.pr.outputs.open == 'true'
         with:
           node-version: '22'
-      - name: Merge main, auto-resolving screenshot-only conflicts
+      - name: Merge the base branch, auto-resolving screenshot-only conflicts
         if: steps.pr.outputs.open == 'true'
         id: merge
         env:
           PR_NUMBER: ${{ matrix.pr.number }}
+          # The branch whose push woke this run — `develop` for day-to-day PRs,
+          # `main` for the promotion PR. `list` already filtered the matrix to
+          # PRs based on it, so this is always the right merge source.
+          BASE_BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch --no-tags origin main
+          git fetch --no-tags origin "$BASE_BRANCH"
 
           # Resolve ownership BEFORE any merge attempt: --own-paths reads the PR's
           # diff from the working tree, and a conflicted merge in progress would
           # fold main's incoming changes into it and over-grant ownership.
-          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base origin/main)
+          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base origin/$BASE_BRANCH)
           echo "PR #$PR_NUMBER owns ${#owned[@]} reference shot(s)"
 
           # Non-zero merge is not always a conflict: untracked working-tree files
@@ -180,7 +199,7 @@ jobs:
           # screenshot paths and retrying avoids the false "screenshot conflict"
           # path that then dies on `git commit --no-edit` with an empty message.
           try_merge() {
-            git merge --no-commit --no-ff origin/main
+            git merge --no-commit --no-ff origin/$BASE_BRANCH
           }
           clear_untracked_screenshots_blocking_merge() {
             mapfile -t blockers < <(
@@ -207,7 +226,7 @@ jobs:
               exit 0
             fi
             if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
-              echo "::error::PR #$PR_NUMBER: git merge origin/main failed without MERGE_HEAD"
+              echo "::error::PR #$PR_NUMBER: git merge origin/$BASE_BRANCH failed without MERGE_HEAD"
               exit 1
             fi
           fi
@@ -260,31 +279,54 @@ jobs:
             fi
           done <<< "$conflicts"
           git add tests/e2e/screenshots/
-          # The reconcile push authenticates with SCREENSHOTS_PAT, a classic PAT
-          # without `workflow` scope. If main advanced a file under
-          # .github/workflows/, the merge folds that change in and GitHub rejects
-          # the push ("refusing to allow a Personal Access Token to create or
-          # update workflow ... without workflow scope"), hard-failing the job. We
-          # can't drop main's workflow change either — reverting it to --ours would
-          # undo it when the PR merges — so hand these off to a human instead of
-          # failing red. Granting the PAT `workflow` scope lets CI resolve these
-          # automatically. `--cached` diff vs HEAD lists what the merge would push.
+          # If the base advanced a file under .github/workflows/, the merge folds
+          # that change in, and a token without `workflow` scope has its push
+          # rejected ("refusing to allow a Personal Access Token to create or
+          # update workflow ... without workflow scope").
+          #
+          # This used to bail BEFORE pushing whenever the merge touched a workflow
+          # file at all — which made the hand-off unconditional and unfixable: it
+          # fired even once SCREENSHOTS_PAT *had* the scope, so the note telling
+          # people that granting it "lets CI resolve these automatically" was
+          # false. It also scaled badly. A single base commit touching
+          # .github/workflows/ puts that change in EVERY stale branch's merge, so
+          # one such commit hands off every open PR at once (observed: 11 PRs in
+          # one run, none with a real conflict — `manual-files` was empty).
+          #
+          # Try the push instead, and only hand off if it is actually refused.
+          # `--cached` diff vs HEAD lists what the merge would push, captured
+          # before the commit so it can be reported if the push fails.
           wf="$(git diff --cached --name-only -- .github/workflows/ || true)"
+          git commit --no-edit
+          if git push; then
+            echo "resolved=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Push refused. Undo the merge so the branch is left exactly as found,
+          # then hand off. A workflow-file change is the expected cause and gets
+          # the specific message; anything else (a race pushing to the head
+          # branch, a protected-branch rule) still needs a human, so report it
+          # rather than failing red or silently dropping the reconcile.
+          echo "PR #$PR_NUMBER: push refused; reverting the local merge."
+          git reset --hard HEAD~1
           if [ -n "$wf" ]; then
-            echo "PR #$PR_NUMBER: merge updates workflow files the PAT can't push — needs a human:"
+            echo "Merge updates workflow files the token cannot push — needs a human:"
             printf '%s\n' "$wf"
-            git merge --abort
             {
               echo "workflow=true"
               echo "workflow-files<<EOF"
               printf '%s\n' "$wf"
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "Push refused for a non-workflow reason — needs a human."
+            {
+              echo "manual=true"
+              echo "manual-files<<EOF"
+              echo "(push refused; see the reconcile job log)"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           fi
-          git commit --no-edit
-          git push
-          echo "resolved=true" >> "$GITHUB_OUTPUT"
       - name: Comment when manual resolution is needed
         if: >-
           steps.pr.outputs.open == 'true' &&
@@ -294,23 +336,25 @@ jobs:
           PR_NUMBER: ${{ matrix.pr.number }}
           MANUAL_FILES: ${{ steps.merge.outputs.manual-files }}
           WORKFLOW_FILES: ${{ steps.merge.outputs.workflow-files }}
+          BASE_BRANCH: ${{ github.ref_name }}
         with:
           script: |
             const marker = '<!-- reconcile-screenshots-manual -->';
             const manual = (process.env.MANUAL_FILES || '').split('\n').filter(Boolean);
             const workflow = (process.env.WORKFLOW_FILES || '').split('\n').filter(Boolean);
             // Two reasons CI can't finish the merge for you: a non-screenshot file
-            // genuinely conflicts, or main advanced a workflow file that CI's PAT
-            // isn't scoped to push. Both need a human to merge/rebase `main`.
+            // genuinely conflicts, or the base advanced a workflow file that CI's
+            // PAT isn't scoped to push. Both need a human to merge/rebase.
+            const base = process.env.BASE_BRANCH;
             const bullets = (process.env.WORKFLOW_FILES ? workflow : manual).map((p) => `- \`${p}\``);
             const reason = process.env.WORKFLOW_FILES
-              ? '`main` advanced and screenshot conflicts were resolved automatically, but the ' +
+              ? `\`${base}\` advanced and screenshot conflicts were resolved automatically, but the ` +
                 'merge updates these **workflow** files, which CI\'s token isn\'t scoped to push. ' +
-                'Merge or rebase `main` by hand (or grant the `SCREENSHOTS_PAT` the `workflow` scope ' +
+                `Merge or rebase \`${base}\` by hand (or grant the \`SCREENSHOTS_PAT\` the \`workflow\` scope ` +
                 'to let CI resolve these automatically):'
-              : '`main` advanced and screenshot conflicts were resolved automatically, but ' +
+              : `\`${base}\` advanced and screenshot conflicts were resolved automatically, but ` +
                 'these **non-screenshot** files conflict and can\'t be auto-merged. ' +
-                'Resolve them by hand (merge or rebase `main`):';
+                `Resolve them by hand (merge or rebase \`${base}\`):`;
             const body = [
               marker,
               '### Merge conflict needs a human',

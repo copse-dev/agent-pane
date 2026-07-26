@@ -14,7 +14,8 @@ export const DEFAULT_TERMINAL_BENCH_MIN_FREE_DISK_GIB = 15
 export const DEFAULT_TERMINAL_BENCH_PREFETCH_MIN_FREE_DISK_GIB = 30
 
 export function terminalBenchArtifactRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return resolve(env['COPSE_TERMINAL_RESULTS_ROOT']?.trim() || 'bench-results')
+  const root = env['COPSE_TERMINAL_RESULTS_ROOT']?.trim() ?? ''
+  return resolve(root === '' ? 'bench-results' : root)
 }
 
 export function terminalBenchResultsRoot(env: NodeJS.ProcessEnv = process.env): string {
@@ -231,9 +232,9 @@ export function buildTerminalBenchLaunch(
   const repositoryRoot = resolve()
   const jobsDir = terminalBenchResultsRoot(env)
   const pythonPath = env['PYTHONPATH']
+  const prebuiltBundle = env['COPSE_TERMINAL_PREBUILT_AGENT_BUNDLE']?.trim() ?? ''
   const agentBundle =
-    env['COPSE_TERMINAL_PREBUILT_AGENT_BUNDLE']?.trim() ||
-    resolve('dist-test/terminal-bench-agent.cjs')
+    prebuiltBundle === '' ? resolve('dist-test/terminal-bench-agent.cjs') : prebuiltBundle
 
   const harborArgs = [
     '--from',

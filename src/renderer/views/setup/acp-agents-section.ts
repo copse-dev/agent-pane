@@ -13,6 +13,12 @@ import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 // their install + sign-in commands ("preinstall" guidance), one-click add, plus a
 // CRUD editor over the `registeredAcpAgents` setting for configured/custom agents.
 //
+// The panel mirrors the unified "Providers" panel (custom-providers-section.ts):
+// a chip row selects one agent and shows just its form, so each agent is hidden
+// away until picked rather than every card being expanded at once. Known agents
+// lead the row, followed by any custom-configured agents, then an "Add agent"
+// chip. A dot marks the agents you've added.
+//
 // Pure helpers (parse/format/upsert/knownToConfig) are exported and unit-tested;
 // the rest is thin DOM glue that persists on every change via settings.set.
 
@@ -123,14 +129,31 @@ function commandRow(label: string, command: string): HTMLElement {
   )
 }
 
+/** Installed/running badge for a known agent, based on the last device scan. */
+function detectedStatus(detected: DetectedAcpAgent | undefined): HTMLElement {
+  const installed = detected?.installed ?? false
+  const status = el('span', { class: `acp-known-status ${installed ? 'ok' : 'missing'}` })
+  status.append(
+    inlineStatus(
+      installed ? 'ok' : 'pending',
+      installed ? `installed${detected?.running ? ' · running' : ''}` : 'not installed',
+    ),
+  )
+  return status
+}
+
 export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
   let agents: AcpAgentConfig[] = []
   let detectedById = new Map<string, DetectedAcpAgent>()
+  const knownById = new Map(KNOWN_ACP_AGENTS.map((k) => [k.id, k]))
 
-  const knownHost = el('div', { class: 'acp-known-list' })
+  // The selected chip. Empty until the first refresh picks a sensible default
+  // (a configured agent if there is one, else the first known agent).
+  let selected = ''
+
+  const chipRow = el('div', { class: 'provider-chips', role: 'tablist' })
+  const formHost = el('div', { class: 'provider-form-host' })
   const scanStatus = el('span', { class: 'key-status' })
-  const listHost = el('div', { class: 'acp-agent-list' })
-  const addHost = el('div', { class: 'acp-agent-add' })
 
   const rescanBtn = el('button', { type: 'button' }, 'Re-scan device')
   rescanBtn.addEventListener('click', () => void scan())
@@ -145,17 +168,14 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       'Drive an external coding agent that runs locally on this device (Gemini CLI, ' +
         'Claude Code, …) over the Agent Client Protocol. The agent is a separate program, ' +
         'not bundled with Copse — install it with the command shown, then sign it in. ' +
-        'Configured agents appear in the model picker as their own group; open a folder ' +
-        "before using one, since it acts in that workspace and its writes go through Copse's " +
-        'diff-approval queue. Not available in SSH remote workspaces (agents are not spawned ' +
-        'on the remote host).',
+        'Pick an agent below to install, add, or configure it; added agents appear in the ' +
+        'model picker as their own group. Open a folder before using one, since it acts in ' +
+        "that workspace and its writes go through Copse's diff-approval queue. Not available " +
+        'in SSH remote workspaces (agents are not spawned on the remote host).',
     ),
-    el('h4', { class: 'provider-form-title' }, 'Known agents'),
-    knownHost,
     el('div', { class: 'provider-actions' }, rescanBtn, scanStatus),
-    el('h4', { class: 'provider-form-title' }, 'Configured agents'),
-    listHost,
-    addHost,
+    chipRow,
+    formHost,
   )
 
   async function persist(next: AcpAgentConfig[]): Promise<void> {
@@ -179,46 +199,51 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       setInlineStatus(scanStatus, 'error', 'Could not scan')
       scanStatus.className = 'key-status err'
     }
-    renderKnown()
+    // A fresh scan updates install/running badges. Re-render the chips, and the
+    // open form too — unless it's a configured agent being edited, whose unsaved
+    // field edits we don't want to discard for a badge refresh.
+    renderChips()
+    if (selected === 'other' || !agents.some((a) => a.id === selected)) renderForm()
   }
 
-  function renderKnown(): void {
-    clear(knownHost)
-    for (const known of KNOWN_ACP_AGENTS) {
-      const detected = detectedById.get(known.id)
-      const installed = detected?.installed ?? false
-      const configured = agents.some((a) => a.id === known.id)
+  /** Chip keys in display order: known agents, then custom-configured, then "Add". */
+  function chipKeys(): string[] {
+    const ordered: string[] = KNOWN_ACP_AGENTS.map((k) => k.id)
+    for (const a of agents) if (!ordered.includes(a.id)) ordered.push(a.id)
+    ordered.push('other')
+    return ordered
+  }
 
-      const status = el('span', { class: `acp-known-status ${installed ? 'ok' : 'missing'}` })
-      status.append(
-        inlineStatus(
-          installed ? 'ok' : 'idle',
-          installed ? `installed${detected?.running ? ' · running' : ''}` : 'not installed',
-        ),
-      )
-      const add = el(
+  function chipLabel(key: string): string {
+    if (key === 'other') return 'Add agent'
+    return knownById.get(key)?.title ?? agents.find((a) => a.id === key)?.title ?? key
+  }
+
+  /** Land on the first configured agent when there is one, else the first known. */
+  function defaultSelected(): string {
+    const configured = chipKeys().find((k) => k !== 'other' && agents.some((a) => a.id === k))
+    return configured ?? KNOWN_ACP_AGENTS[0]?.id ?? 'other'
+  }
+
+  function renderChips(): void {
+    clear(chipRow)
+    for (const key of chipKeys()) {
+      const chip = el(
         'button',
-        { type: 'button', ...(configured ? { disabled: true } : {}) },
-        configured ? 'Added' : 'Add',
+        { type: 'button', class: 'provider-chip', role: 'tab' },
+        chipLabel(key),
       )
-      add.addEventListener('click', () => void persist(upsertAgent(agents, knownToConfig(known))))
-
-      const card = el(
-        'div',
-        { class: 'acp-known-card' },
-        el(
-          'div',
-          { class: 'acp-known-head' },
-          el('strong', {}, known.title),
-          status,
-          el('span', { class: 'acp-known-add' }, add),
-        ),
-      )
-      // Show how to install (only when missing) and how to authenticate.
-      if (!installed && known.install) card.append(commandRow('Install', known.install))
-      if (known.setup) card.append(commandRow('Sign in', known.setup))
-      if (known.note) card.append(el('p', { class: 'field-hint' }, known.note))
-      knownHost.append(card)
+      chip.dataset['agent'] = key
+      chip.classList.toggle('active', key === selected)
+      if (key !== 'other' && agents.some((a) => a.id === key)) {
+        chip.append(el('span', { class: 'provider-chip-dot', title: 'Added' }))
+      }
+      chip.addEventListener('click', () => {
+        selected = key
+        renderChips()
+        renderForm()
+      })
+      chipRow.append(chip)
     }
   }
 
@@ -312,6 +337,9 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // Cached list persisted with the agent so the model picker can list models
     // without re-spawning; seeded from the saved config, refreshed by "Detect".
     let detectedModels: AcpModelChoice[] = options.initial?.availableModels ?? []
+    // Probe time behind detectedModels, carried across a plain Save and stamped
+    // fresh by "Detect models" so the background staleness check can age it out.
+    let detectedModelsAt: number | undefined = options.initial?.modelsProbedAt
     setModelOptions(detectedModels, options.initial?.model ?? '')
     let detectedModes: AcpModeChoice[] = options.initial?.availablePermissionModes ?? []
     setModeOptions(detectedModes, options.initial?.permissionMode ?? '')
@@ -339,12 +367,14 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
           // separate Save. Merge onto the *saved* config (not the in-progress form
           // draft) so any unsaved field edits aren't clobbered, and skip the full
           // re-render so this form stays as the user left it.
+          detectedModelsAt = Date.now()
           const saved = agents.find((candidate) => candidate.id === id)
           if (saved) {
             agents = upsertAgent(agents, {
               ...saved,
               ...(probe.models ? { availableModels: probe.models.choices } : {}),
               ...(probe.modes ? { availablePermissionModes: probe.modes.choices } : {}),
+              modelsProbedAt: detectedModelsAt,
             })
             void api.settings.set('registeredAcpAgents', agents)
           }
@@ -395,6 +425,9 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
         ...(Object.keys(env).length ? { env } : {}),
         ...(model ? { model } : {}),
         ...(detectedModels.length ? { availableModels: detectedModels } : {}),
+        ...(detectedModels.length && detectedModelsAt !== undefined
+          ? { modelsProbedAt: detectedModelsAt }
+          : {}),
         ...(permissionMode ? { permissionMode } : {}),
         ...(detectedModes.length ? { availablePermissionModes: detectedModes } : {}),
         enabled: enabledBox.checked,
@@ -434,44 +467,120 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     return el('div', { class: 'acp-agent-form' }, fields, actions)
   }
 
-  function render(): void {
-    renderKnown() // keep the "Add"/"Added" state in sync with the configured list
-    clear(listHost)
-    if (agents.length === 0) {
-      listHost.append(
-        el('p', { class: 'field-hint' }, 'No ACP agents configured yet. Add one above or below.'),
-      )
-    }
-    for (const agent of agents) {
-      const remove = el('button', { type: 'button', class: 'provider-delete' }, 'Remove')
-      remove.addEventListener('click', () => void persist(removeAgent(agents, agent.id)))
-      const card = el(
-        'div',
-        { class: 'acp-agent-card' },
+  /** Preinstall guidance + one-click add for a known agent that isn't configured yet. */
+  function knownForm(known: KnownAcpAgent): HTMLElement {
+    const detected = detectedById.get(known.id)
+    const installed = detected?.installed ?? false
+    const form = el(
+      'div',
+      { class: 'provider-form' },
+      el('h4', { class: 'provider-form-title' }, known.title, detectedStatus(detected)),
+    )
+    if (!installed && known.install) form.append(commandRow('Install', known.install))
+    if (known.setup) form.append(commandRow('Sign in', known.setup))
+    if (known.note) form.append(el('p', { class: 'field-hint' }, known.note))
+    if (known.docsUrl) {
+      form.append(
         el(
-          'div',
-          { class: 'acp-agent-card-head' },
-          el('strong', {}, agent.title),
-          el('code', {}, `acp:${agent.id}`),
-          remove,
+          'p',
+          { class: 'field-hint' },
+          el(
+            'a',
+            { href: known.docsUrl, target: '_blank', rel: 'noopener noreferrer' },
+            'Documentation',
+          ),
         ),
-        agentForm({
-          initial: agent,
-          submitLabel: 'Save',
-          onSubmit: (draft) => void persist(upsertAgent(agents, draft)),
-        }),
       )
-      listHost.append(card)
     }
+    const add = el('button', { type: 'button', class: 'provider-save' }, 'Add to my agents')
+    add.addEventListener('click', () => {
+      selected = known.id
+      void persist(upsertAgent(agents, knownToConfig(known)))
+    })
+    form.append(el('div', { class: 'provider-actions provider-form-footer' }, add))
+    return form
+  }
 
-    clear(addHost)
-    addHost.append(
-      el('h4', { class: 'provider-form-title' }, 'Add an agent'),
+  /** Editable card for a configured agent (known preset or a custom entry). */
+  function configuredForm(agent: AcpAgentConfig): HTMLElement {
+    const known = knownById.get(agent.id)
+    const remove = el('button', { type: 'button', class: 'provider-delete' }, 'Remove')
+    remove.addEventListener('click', () => {
+      // A custom agent's chip disappears on removal, so fall back to the default
+      // selection; a known agent keeps its chip (its guidance form returns).
+      if (!knownById.has(agent.id)) selected = ''
+      void persist(removeAgent(agents, agent.id))
+    })
+    const card = el(
+      'div',
+      { class: 'acp-agent-card' },
+      el(
+        'div',
+        { class: 'acp-agent-card-head' },
+        el('strong', {}, agent.title),
+        el('code', {}, `acp:${agent.id}`),
+        ...(known ? [detectedStatus(detectedById.get(known.id))] : []),
+        remove,
+      ),
+    )
+    // Keep install/sign-in guidance to hand even after adding a known agent.
+    if (known) {
+      const installed = detectedById.get(known.id)?.installed ?? false
+      if (!installed && known.install) card.append(commandRow('Install', known.install))
+      if (known.setup) card.append(commandRow('Sign in', known.setup))
+    }
+    card.append(
       agentForm({
-        submitLabel: 'Add agent',
+        initial: agent,
+        submitLabel: 'Save',
         onSubmit: (draft) => void persist(upsertAgent(agents, draft)),
       }),
     )
+    return card
+  }
+
+  /** The "Add agent" chip: a blank form for any ACP-speaking command. */
+  function addForm(): HTMLElement {
+    return el(
+      'div',
+      { class: 'provider-form' },
+      el('h4', { class: 'provider-form-title' }, 'Add a custom agent'),
+      el(
+        'p',
+        { class: 'field-hint' },
+        'Point Copse at any command that speaks ACP over stdio. Give it an id, the ' +
+          'command to launch, and the arguments that put it into ACP mode.',
+      ),
+      agentForm({
+        submitLabel: 'Add agent',
+        onSubmit: (draft) => {
+          selected = draft.id
+          void persist(upsertAgent(agents, draft))
+        },
+      }),
+    )
+  }
+
+  function renderForm(): void {
+    clear(formHost)
+    if (selected === 'other') {
+      formHost.append(addForm())
+      return
+    }
+    const configured = agents.find((a) => a.id === selected)
+    if (configured) {
+      formHost.append(configuredForm(configured))
+      return
+    }
+    const known = knownById.get(selected)
+    if (known) formHost.append(knownForm(known))
+  }
+
+  function render(): void {
+    // Keep the selection valid as agents are added/removed (or on first paint).
+    if (selected !== 'other' && !chipKeys().includes(selected)) selected = defaultSelected()
+    renderChips()
+    renderForm()
   }
 
   async function reloadAgents(): Promise<void> {

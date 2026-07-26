@@ -35,6 +35,9 @@ export const acpAgentConfigSchema = z.object({
     .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
     .max(256)
     .optional(),
+  // Epoch-ms timestamp of the probe that produced `availableModels`, used by the
+  // background staleness check to re-probe aged caches (see acp-auto-setup.ts).
+  modelsProbedAt: z.number().int().nonnegative().optional(),
   // ACP session (permission) mode to start each session in, and the cached set
   // of modes the agent advertised the last time it was probed (issue #607).
   permissionMode: z.string().min(1).max(256).optional(),
@@ -244,6 +247,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Experimental: route shell/terminal/background spawns through the SSH workspace
   // connection when the active project has an `sshHost`. See ssh-remote-repo.md.
   sshWorkspaceEnabled: z.boolean(),
+  // Experimental: when the active project is an SSH workspace, spawn external ACP
+  // agents on the remote host (stdio over the SSH connection) instead of blocking
+  // ACP. Only meaningful when `sshWorkspaceEnabled` is also on. See
+  // docs/plans/acp-over-ssh.md.
+  acpOverSshEnabled: z.boolean(),
   // SSH workspace hosts (Phase 1 connection manager). See ssh-remote-repo.md.
   sshWorkspaceHosts: z
     .array(

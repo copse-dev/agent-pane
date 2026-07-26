@@ -43,7 +43,10 @@ const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000
  * agent) registers one that maps to its own permission channel. With no handler
  * set, approvals are denied rather than left hanging.
  */
-export type ApprovalHandler = (req: ApprovalRequest) => Promise<ApprovalResponse>
+export type ApprovalHandler = (
+  req: ApprovalRequest,
+  signal?: AbortSignal,
+) => Promise<ApprovalResponse>
 
 let handler: ApprovalHandler | null = null
 
@@ -51,8 +54,12 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
   handler = next
 }
 
-export function requestApproval(req: ApprovalRequest): Promise<ApprovalResponse> {
-  return handler ? handler(req) : Promise.resolve({ approved: false, remember: false })
+export function requestApproval(
+  req: ApprovalRequest,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
+  if (signal?.aborted) return Promise.resolve({ approved: false, remember: false })
+  return handler ? handler(req, signal) : Promise.resolve({ approved: false, remember: false })
 }
 
 /**
@@ -116,7 +123,7 @@ export function initApproval(win: BrowserWindow): void {
   })
 
   setApprovalHandler(
-    (req) =>
+    (req, signal) =>
       new Promise<ApprovalResponse>((resolve) => {
         const id = randomUUID()
         // Attribute the request to the thread whose run triggered it so the
@@ -134,7 +141,14 @@ export function initApproval(win: BrowserWindow): void {
           settle(id, { approved: false, remember: false })
         }, APPROVAL_TIMEOUT_MS)
         if (typeof timer.unref === 'function') timer.unref()
+        const onAbort = (): void => {
+          if (!pending.has(id)) return
+          win.webContents.send('agent:approval_cancelled', { id })
+          settle(id, { approved: false, remember: false })
+        }
+        signal?.addEventListener('abort', onAbort, { once: true })
         pending.set(id, (response) => {
+          signal?.removeEventListener('abort', onAbort)
           clearTimeout(timer)
           stopDockAttention()
           resolve(response)

@@ -15,6 +15,7 @@ import {
   parseSpineEntries,
   toolsetBlobRef,
   type SpineHookRunLine,
+  type SpinePermissionDecisionLine,
 } from '@shared/threads/spine-schema.ts'
 import {
   appendHookRun,
@@ -33,6 +34,7 @@ import {
   snapshotHookRunContext,
 } from './hook-run-recorder.ts'
 import { storageSet } from './storage/storage.ts'
+import { recordPermissionDecision } from './security/permission-audit.ts'
 
 const PROJECT = 'proj-hooks'
 const THREAD = 't1'
@@ -79,6 +81,13 @@ function readHookRuns(root: string): SpineHookRunLine[] {
   return parseSpineEntries(raw)
     .map((e) => e.line)
     .filter((l): l is SpineHookRunLine => l?.type === 'hook_run')
+}
+
+function readPermissionDecisions(root: string): SpinePermissionDecisionLine[] {
+  const raw = readFileSync(join(root, PROJECT, THREAD, 'events.jsonl'), 'utf8')
+  return parseSpineEntries(raw)
+    .map((entry) => entry.line)
+    .filter((line): line is SpinePermissionDecisionLine => line?.type === 'permission_decision')
 }
 
 /** Flush the store's per-project write queue (recording appends are fire-and-forget). */
@@ -159,6 +168,35 @@ describe('hook_run survives full save (decision 6)', () => {
       parseSpine(raw).map((m) => m.id),
       ['m1', 'm2'],
     )
+  })
+
+  it('a Guarded YOLO permission audit survives a full thread save', async () => {
+    storageSet('activeProjectId', PROJECT)
+    const m1 = userMsg('m1', 'run it')
+    await saveProjectThread(PROJECT, thread([m1]))
+    beginHookRunRecording(THREAD)
+    setHookRunStep(3)
+    recordPermissionDecision({
+      originalCommand: 'echo safe',
+      effectiveCommand: 'rm -rf build',
+      originalMode: 'guarded-yolo',
+      effectiveMode: 'guarded-yolo',
+      sandboxState: 'project-sandbox',
+      harmDecision: 'prompt',
+      policyDecision: 'prompt',
+      reasons: ['recursive/forced delete requires confirmation'],
+      userResponse: 'declined',
+    })
+    await flushStore()
+    await saveProjectThread(PROJECT, thread([m1, userMsg('m2', 'done')]))
+
+    const decisions = readPermissionDecisions(root)
+    assert.equal(decisions.length, 1)
+    const [decision] = decisions
+    assert.ok(decision)
+    assert.equal(decision.originalCommand, 'echo safe')
+    assert.equal(decision.effectiveCommand, 'rm -rf build')
+    assert.equal(decision.step, 3)
   })
 
   it('a detached hook records against a snapshot taken before endHookRunRecording (C1, decision 3/6)', async () => {

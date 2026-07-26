@@ -270,7 +270,9 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
     await api.settings.set('subagentModel', routingValues.subagentModel)
     await api.settings.set('localSubagentsEnabled', true)
     await api.settings.set('localTodoItemsEnabled', true)
-    await api.settings.set('model', lmStudioChatModelValue(LM_STUDIO_MODEL_IDS.chat))
+    // Chat default is the plan/price Pareto mode; local models stay on the
+    // coder / small-tasks / research role slots set above.
+    await api.settings.set('model', DEFAULT_APP_CHAT_MODEL)
     await api.settings.set('onboardingCompleted', true)
     store.setState({
       settings: { ...store.getState().settings, model: DEFAULT_APP_CHAT_MODEL },
