@@ -58,10 +58,13 @@ const roots = [
   'src/main/project-sandbox/sandbox-fs-worker.ts',
   'src/main/services/ssh-workspace/askpass-helper.ts',
   'src/preload/index.ts',
+  'src/preload/video-decoder.ts',
   'src/renderer/main.ts',
   'src/renderer/demo/main.ts',
   // Standalone bundle injected lazily at runtime (not imported by product code).
   'src/renderer/monaco/monaco-global.ts',
+  // Hidden video-decoder window's page bundle (main/services/video opens it).
+  'src/renderer/video/decoder.ts',
   ...tracked.filter((p) => /\.test\.ts$/.test(p)),
   ...tracked.filter((p) => p.startsWith('src/') && /\.test-shim\.ts$/.test(p)),
   ...tracked.filter((p) => p.startsWith('tests/') && isModuleTs(p)),

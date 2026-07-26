@@ -72,6 +72,11 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import {
+  describeWorkspaceVideo,
+  storeVideoAttachment,
+  readVideoForPlayback,
+} from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
@@ -1095,6 +1100,47 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     return loadProjectCatalog(pid, q)
   })
+  // A video attached in the composer. It is stored, never inlined — the
+  // renderer gets back a path to hand the agent (see video-attachment-store).
+  ipcMain.handle(
+    'video:attach',
+    async (event, projectId: unknown, threadId: unknown, video: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            name: zNonEmptyString.max(255),
+            mimeType: z.string().max(128),
+            bytes: z.instanceof(Uint8Array).optional(),
+            path: zPathString.optional(),
+          }),
+        ]),
+        [projectId, threadId, video],
+      )
+      if (payload.path !== undefined) {
+        // Already on disk in the workspace: reference it in place rather than
+        // storing a second copy of a potentially very large file.
+        return describeWorkspaceVideo(payload.path, payload.name, payload.mimeType)
+      }
+      if (!payload.bytes) throw new IpcValidationError('A video needs either bytes or a path')
+      return storeVideoAttachment(pid, tid, {
+        name: payload.name,
+        mimeType: payload.mimeType,
+        bytes: payload.bytes,
+      })
+    },
+  )
+
+  // Read an attached video back so the preview modal can play it. Authorised to
+  // the chat store and the workspace only — see readVideoForPlayback.
+  ipcMain.handle('video:read', async (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const videoPath = parseIpcArgs(zPathString, [path])
+    return readVideoForPlayback(videoPath)
+  })
+
   ipcMain.handle('threads:listOrphans', (event) => {
     assertMainFrameSender(event, win)
     const projects =
