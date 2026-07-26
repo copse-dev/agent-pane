@@ -67,6 +67,8 @@ describe('terminal file links', () => {
   beforeEach(() => {
     store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
       filesPaneOpen: false,
       rightPanelMode: 'terminal',
     })
