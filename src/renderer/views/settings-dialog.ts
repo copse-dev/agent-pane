@@ -16,7 +16,7 @@ import {
   isAppIconVariant,
   type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
-import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
+import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
 import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
@@ -36,6 +36,8 @@ import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { createAutomationPackSettings } from './automation-pack-settings.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -61,6 +63,7 @@ export type SettingsSection =
   | 'packs'
   | 'appearance'
   | 'ssh'
+  | 'acp'
   | 'experimental'
 
 /**
@@ -165,6 +168,7 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'openLinksInBuiltInBrowser', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
+  { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
   // Experimental, opt-in features (off by default).
   { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
@@ -335,6 +339,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           <button type="button" class="settings-nav-btn" data-section="packs">Packs</button>
           <button type="button" class="settings-nav-btn" data-section="appearance">Appearance</button>
           <button type="button" class="settings-nav-btn" data-section="ssh">SSH</button>
+          <button type="button" class="settings-nav-btn" data-section="acp">ACP agents</button>
           <button type="button" class="settings-nav-btn" data-section="experimental">Experimental</button>
         </nav>
 
@@ -353,7 +358,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
             <div id="settings-env-detect-host" class="settings-mount"></div>
 
-            <fieldset id="settings-models-section">
+            <fieldset id="settings-models-section" data-testid="settings-chat-model">
               <legend>Models</legend>
               <p class="settings-fieldset-desc">
                 Choose the main chat model and the models used for background tasks. Role defaults
@@ -364,10 +369,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 Chat model
                 <select name="model"></select>
                 <span class="field-hint">
-                  Pick a cloud, local, or remote-agent model here (or from the model picker beside
-                  the chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to
-                  Cursor Cloud instead of running it on this machine — configure it in the Remote
-                  agents section.
+                  Default is <strong>Best value (plan / price)</strong>: each new chat window picks the
+                  Pareto-frontier model with the best plan-aware value and routes to that provider.
+                  Or pin a cloud, local, or remote-agent model here (or from the picker beside the
+                  chat box). Selecting <strong>Cursor Cloud Agent</strong> sends each turn to Cursor
+                  Cloud instead of running it on this machine — configure it in the Remote agents
+                  section.
                 </span>
               </label>
               <label>
@@ -661,6 +668,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 diffs, browser, web fetch) through a bridge that re-applies Copse's native
                 permission checks when each call runs — so the extra approval prompt only duplicates
                 that gate. Turn off to prompt for every bridged tool call.
+              </p>
+              <label class="checkbox-label">
+                <input type="checkbox" name="acpOverSshEnabled" />
+                Run ACP agents over SSH (experimental)
+              </label>
+              <p class="field-hint">
+                When the active project is an SSH workspace, spawn the external ACP agent on the
+                <strong>remote host</strong> where the code lives, piping its stdio over the SSH
+                connection — instead of blocking ACP. The agent must be installed and authenticated
+                on the remote host (e.g. <code>npm install -g @zed-industries/claude-code-acp</code>,
+                then <code>claude /login</code>). Requires SSH workspaces to be enabled. Off leaves
+                ACP unavailable on SSH workspaces. See <code>docs/plans/acp-over-ssh.md</code>.
               </p>
             </fieldset>
 
@@ -963,14 +982,23 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             <div id="settings-ssh-workspace-host" class="settings-mount"></div>
           </section>
 
+          <section class="settings-section" data-section="acp">
+            <h3>ACP agents</h3>
+            <p class="settings-section-desc">
+              Drive external coding agents — Claude Code, Gemini CLI, Cursor, Codex — that run
+              locally over the Agent Client Protocol. Pick an agent to install, sign in, and add
+              it; added agents show up in the model picker as their own group.
+            </p>
+
+            <div id="settings-acp-agents-host" class="settings-mount"></div>
+          </section>
+
           <section class="settings-section" data-section="experimental">
             <h3>Experimental</h3>
             <p class="settings-section-desc">
               Early, opt-in features that are still being explored. They may change or be removed,
               and are off by default.
             </p>
-
-            <div id="settings-acp-agents-host" class="settings-mount"></div>
 
             <fieldset>
               <legend>MCP UI artefacts (canvas)</legend>
@@ -1345,8 +1373,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         showSection(id)
         if (id === 'usage') void usageSection.refresh()
         // Defer disk scans until each tab is opened, so users who never visit them
-        // don't trigger a which/ps scan (Experimental) or fs walk (Sources) on open.
-        if (id === 'experimental') void acpAgentsSection.refresh()
+        // don't trigger a which/ps scan (ACP agents) or fs walk (Sources) on open.
+        if (id === 'acp') void acpAgentsSection.refresh()
         if (id === 'ssh') void sshWorkspaceSection.refresh()
         if (id === 'sources') void refreshSources()
         if (id === 'packs') void refreshPacks()
@@ -1820,6 +1848,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(settingsBox)
     }
 
+    // First-party level-3 settings detail. The manifest advertises the named
+    // slot in the contribution chips; shipped renderer code supplies the view
+    // (user packs cannot inject arbitrary renderer code, decision 15).
+    if (
+      pack.id === AUTOMATIONS_PACK_ID &&
+      pack.contributions.ui.some(
+        (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
+      )
+    ) {
+      row.append(createAutomationPackSettings(store, api, pack.enabled))
+    }
+
     // Disabling greys the whole row so the effect of the toggle is immediately
     // visible; individual pack-scoped settings stay editable so users can
     // configure a disabled pack before re-enabling it.
@@ -2225,7 +2265,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // Deep-links (e.g. status banner → SSH) skip the nav click path, so refresh
     // lazy section content here too.
     if (openedSection === 'ssh') void sshWorkspaceSection.refresh()
-    if (openedSection === 'experimental') void acpAgentsSection.refresh()
+    if (openedSection === 'acp') void acpAgentsSection.refresh()
     if (openedSection === 'usage') void usageSection.refresh()
     if (openedSection === 'sources') void refreshSources()
     searchInput.focus()
@@ -2242,7 +2282,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await populateModelSelect(
         form.elements.namedItem('model') as HTMLSelectElement,
         api,
-        model ?? DEFAULT_CLOUD_MODEL,
+        model ?? DEFAULT_APP_CHAT_MODEL,
+        { includeBestValue: true },
       )
       const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
       const roleModels =

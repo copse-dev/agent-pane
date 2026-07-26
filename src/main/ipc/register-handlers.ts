@@ -52,7 +52,6 @@ import {
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
 import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
-import { migrateApprovedProviderHosts } from '../services/providers/approved-provider-hosts.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -62,6 +61,7 @@ import {
 } from '../services/providers/extra-providers-store.ts'
 import { fetchOpenAiCompatibleModelsForSettings } from '../services/providers/provider-models.ts'
 import { evaluateChatDefaultContext } from '../services/providers/chat-default-context.ts'
+import { resolveBestValueChatModel } from '../services/providers/best-value-model.ts'
 import { storageGet, storageSet } from '../services/storage/storage.ts'
 import {
   loadProjectThreads,
@@ -72,6 +72,7 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import { forkThreadHistory } from '../services/thread-fork.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
@@ -116,6 +117,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { getAutomationService } from '../services/automations/automation-service.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -127,6 +129,7 @@ import {
   setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
+
 import {
   deleteAllKnowledgeAttachments,
   deleteKnowledgeAttachmentFiles,
@@ -227,12 +230,29 @@ import {
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
+
 import {
   gatewayListDir,
   gatewayReadFile,
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
+import { requestApproval } from '../services/approval.ts'
+import {
+  armGuardedYolo,
+  disableGuardedYolo,
+  getGuardedYoloState,
+  onGuardedYoloChanged,
+} from '../services/security/guarded-yolo.ts'
+
+const zAutomationScheduleInput = z.object({
+  id: z.string().min(1).max(256).optional(),
+  name: z.string().trim().min(1).max(160),
+  cron: z.string().trim().min(1).max(160),
+  prompt: z.string().trim().min(1).max(100_000),
+  model: z.string().trim().min(1).max(1024),
+  enabled: z.boolean(),
+})
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
@@ -241,9 +261,12 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  // Issue #438: persist grandfathered custom-provider hosts once so Settings
-  // and runtime gates share the same allowlist after upgrade.
-  void migrateApprovedProviderHosts()
+  const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('security:guardedYoloChanged', getGuardedYoloState(threadId))
+    }
+  })
+  win.once('closed', stopGuardedYoloEvents)
   const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
@@ -907,6 +930,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return { imported, skipped }
   })
   ipcMain.handle('models:chatDefaultContextHealth', () => evaluateChatDefaultContext())
+  ipcMain.handle('models:bestValueDefault', () => resolveBestValueChatModel())
   ipcMain.handle('settings:extraProviders', () => getResolvedExtraProviders())
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
@@ -966,6 +990,43 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   const zThreadId = zNonEmptyString.max(256)
+  ipcMain.handle('security:getGuardedYolo', (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zThreadId, [threadId])
+    return getGuardedYoloState(id)
+  })
+  ipcMain.handle('security:enableGuardedYolo', async (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zThreadId, [threadId])
+    const current = getGuardedYoloState(id)
+    if (current.phase !== 'off') return current
+    const containment =
+      current.containment === 'project-sandbox'
+        ? 'The project sandbox remains in use where possible, but external commands may run unsandboxed.'
+        : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
+    const { approved } = await requestApproval({
+      title: 'Enable Guarded YOLO for this thread?',
+      body: [
+        'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
+        '',
+        containment,
+        '',
+        'A deterministic host-owned checker will still ask about bounded destructive work and permanently block obvious catastrophic commands. It reduces obvious harm, but it is not a complete security boundary and cannot understand every script or obfuscation.',
+        '',
+        'Guarded YOLO stays enabled for this thread until you disable it or restart the app.',
+      ].join('\n'),
+      type: 'shell',
+      allowRemember: false,
+    })
+    if (approved) armGuardedYolo(id)
+    return getGuardedYoloState(id)
+  })
+  ipcMain.handle('security:disableGuardedYolo', (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zThreadId, [threadId])
+    disableGuardedYolo(id)
+    return getGuardedYoloState(id)
+  })
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
@@ -1006,6 +1067,26 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return deleteProjectThread(pid, tid)
   })
+  // Seed a freshly created fork's provider-format history from the thread it was
+  // branched off. The renderer owns the visible transcript copy; this is the
+  // half it cannot do, since `agent-history.json` never leaves the main process.
+  ipcMain.handle(
+    'threads:fork',
+    (
+      event,
+      projectId: unknown,
+      sourceThreadId: unknown,
+      targetThreadId: unknown,
+      throughMessageId: unknown,
+    ) => {
+      assertMainFrameSender(event, win)
+      const [pid, sourceId, targetId, messageId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zThreadId, zNonEmptyString.max(256).optional()]),
+        [projectId, sourceThreadId, targetThreadId, throughMessageId],
+      )
+      return forkThreadHistory(pid, sourceId, targetId, messageId)
+    },
+  )
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, q] = parseIpcArgs(z.tuple([zProjectId, z.string().max(512).optional()]), [
@@ -1123,6 +1204,50 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       )
       await getPackService().setSetting(id, key, value)
       return { packs: getPackService().list() }
+    },
+  )
+
+  // Local cron-to-draft prototype (`copse.automations`). Every operation is
+  // project-scoped; the service repeats that ownership check for update/delete
+  // so a renderer cannot address a schedule through another project id.
+  ipcMain.handle('automations:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAutomationService().list(projectId)
+  })
+  ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const input = parseIpcArgs(zAutomationScheduleInput, [rawInput])
+    return getAutomationService().upsert(projectId, {
+      ...(input.id !== undefined ? { id: input.id } : {}),
+      name: input.name,
+      cron: input.cron,
+      prompt: input.prompt,
+      model: input.model,
+      enabled: input.enabled,
+    })
+  })
+  ipcMain.handle(
+    'automations:remove',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      await getAutomationService().remove(projectId, scheduleId)
+    },
+  )
+  ipcMain.handle(
+    'automations:runNow',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().runNow(projectId, scheduleId)
     },
   )
 

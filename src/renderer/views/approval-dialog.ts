@@ -301,6 +301,25 @@ export function mountApprovalDialog(
     syncAttention()
   }
 
+  function removeCancelled(id: string): void {
+    const queueIdx = queue.findIndex((req) => req.id === id)
+    if (queueIdx >= 0) queue.splice(queueIdx, 1)
+    const wasInBatch = batch.some((req) => req.id === id)
+    batch = batch.filter((req) => req.id !== id)
+    if (wasInBatch && active) {
+      if (batch.length === 0) {
+        dialog.close()
+        active = false
+        readComparisonModels = null
+        clearSettle()
+        show()
+      } else {
+        renderBatch()
+      }
+    }
+    syncAttention()
+  }
+
   function resolve(approved: boolean, remember: boolean): void {
     if (!active || batch.length === 0) return
     const answered = batch
@@ -343,6 +362,10 @@ export function mountApprovalDialog(
       syncAttention()
     },
   )
+
+  api.agent.onApprovalCancelled(({ id }) => {
+    removeCancelled(id)
+  })
 
   // When the user switches threads, a previously-backgrounded request for the
   // now-focused thread should surface. `threads_changed` also fires on project

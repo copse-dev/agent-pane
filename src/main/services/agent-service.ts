@@ -131,8 +131,13 @@ import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { todosToPanelListData } from '@copse/agent/packs/pack-panel.ts'
 import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
-import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
+import {
+  POST_TURN_REVIEW_PACK_ID,
+  POST_TURN_REVIEW_MAX_CYCLES_SETTING,
+  resolveMaxReviewCycles,
+} from '@copse/agent/packs/post-turn-review-pack.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { getPackService } from './packs/pack-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -593,6 +598,11 @@ export async function runAgent(
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
+    // ACP-native tool bridge calls share the host permission gate. Keep the
+    // same durable attribution window as the local loop so Guarded YOLO
+    // decisions cannot become unaudited merely because an ACP client invoked
+    // the shell tool.
+    beginHookRunRecording(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
     // The advisor works both ways for ACP: an external executor can consult it
@@ -670,6 +680,7 @@ export async function runAgent(
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       runAbort.clear()
+      endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
     }
@@ -1294,6 +1305,13 @@ export async function runAgent(
       const reviewUsageModel = reviewRoute?.usageModel ?? model
       const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
       const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
+      // How many review passes this turn may run. A failing verdict buys the
+      // parent one remediation turn plus a re-review (the next pass), so this is
+      // the "do we do another post turn after a failed review?" knob — pack-scoped
+      // because it is meaningless with the pack off (decision 15).
+      const maxReviewCycles = resolveMaxReviewCycles(
+        getPackService().getSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
+      )
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
       const reviewApproved =
@@ -1323,6 +1341,7 @@ export async function runAgent(
         },
         emitChunk: sendChunk,
         continuationBudget,
+        maxCycles: maxReviewCycles,
         runReviewOnce: (todos) =>
           runPostTurnReviewOnce({
             parentGoal,

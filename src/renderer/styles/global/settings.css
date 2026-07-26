@@ -1054,12 +1054,6 @@ dialog.settings-overlay::backdrop {
   justify-content: space-between;
   gap: var(--spacing-md);
 }
-.acp-agent-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-md);
-}
 .acp-agent-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1089,29 +1083,8 @@ dialog.settings-overlay::backdrop {
   flex: 1 1 auto;
   min-width: 0;
 }
-.acp-agent-add {
-  margin-top: var(--spacing-lg);
-  padding-top: var(--spacing-md);
-  border-top: 1px solid var(--border);
-}
 
-/* ACP known-agents list: status + install/sign-in commands per agent. */
-.acp-known-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-sm);
-}
-.acp-known-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-}
-.acp-known-head {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-}
+/* ACP known-agent status badge: installed / running state from the last scan. */
 .acp-known-status {
   font-size: 12px;
 }
@@ -1120,9 +1093,6 @@ dialog.settings-overlay::backdrop {
 }
 .acp-known-status.missing {
   color: var(--text-muted);
-}
-.acp-known-add {
-  margin-left: auto;
 }
 .acp-cmd-row {
   display: flex;
@@ -1427,4 +1397,180 @@ dialog.settings-overlay::backdrop {
 .pack-setting-input.pack-setting-string,
 .pack-setting-input.pack-setting-number {
   min-width: 180px;
+}
+
+/* First-party level-3 detail for copse.automations. It lives inside the pack
+   row so scope, enablement, and configuration remain one coherent surface. */
+.automation-pack-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--border);
+  padding-top: var(--spacing-sm);
+}
+.automation-pack-heading,
+.automation-row,
+.automation-row-meta,
+.automation-row-actions,
+.automation-form-actions {
+  display: flex;
+  align-items: center;
+}
+.automation-pack-heading {
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+.automation-add-btn,
+.automation-save-btn,
+.automation-cancel-btn,
+.automation-row-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  cursor: pointer;
+}
+.automation-add-btn:hover:not(:disabled),
+.automation-cancel-btn:hover:not(:disabled),
+.automation-row-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.automation-add-btn:disabled,
+.automation-row-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.automation-scope,
+.automation-notice,
+.automation-status,
+.automation-empty,
+.automation-row-last-run,
+.automation-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.automation-notice {
+  color: var(--text-secondary);
+}
+.automation-status {
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  color: var(--success);
+}
+.automation-status-error {
+  color: var(--error);
+}
+.automation-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.automation-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  text-align: center;
+}
+.automation-row {
+  gap: var(--spacing-md);
+  justify-content: space-between;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-sm);
+  background: var(--bg-base);
+}
+.automation-row-paused {
+  opacity: 0.7;
+}
+.automation-row-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.automation-row-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.automation-row-meta {
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.automation-row-meta code {
+  color: var(--accent);
+}
+.automation-row-actions,
+.automation-form-actions {
+  flex: none;
+  gap: var(--spacing-sm);
+}
+.automation-run-btn,
+.automation-save-btn {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+.automation-remove-btn {
+  color: var(--error);
+}
+.automation-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--spacing-md);
+  background: var(--bg-base);
+}
+.automation-form[hidden] {
+  display: none;
+}
+.automation-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.automation-label:has(.automation-prompt-input),
+.automation-enabled-label,
+.automation-form-actions {
+  grid-column: 1 / -1;
+}
+.automation-input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: var(--spacing-sm);
+  font: inherit;
+}
+.automation-prompt-input {
+  min-height: 88px;
+  resize: vertical;
+}
+.automation-enabled-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-self: start;
+  gap: var(--spacing-sm);
+  color: var(--text-secondary);
+}
+.automation-enabled-input {
+  width: auto;
+}
+.automation-form-actions {
+  justify-content: flex-end;
 }

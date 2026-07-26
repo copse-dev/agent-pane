@@ -1,5 +1,6 @@
 import { parse as parseShell } from 'shell-quote'
 import { isValidTrustedCommand } from '@shared/command-routing.ts'
+import { CODE_INTERPRETERS, TRUST_TRANSPARENT_WRAPPERS } from './shell-argv.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
 
 /**
@@ -72,31 +73,23 @@ const SAFE_PREP_COMMANDS = new Set([
  * `bash` would let `bash -c '<anything>'` escape with no prompt — defeating the
  * point of a narrow allow-list. Listing one of these is treated as if it were
  * not on the list at all.
+ *
+ * The interpreter half comes from `shell-argv.ts` so this list cannot fall behind
+ * the set the other analyzers treat as code-executing; the rest are tools that
+ * are not interpreters but hand execution somewhere this gate cannot see.
  */
-const NON_TRUSTABLE_COMMANDS = new Set([
-  'sh',
-  'bash',
-  'zsh',
-  'dash',
+const NON_TRUSTABLE_COMMANDS: ReadonlySet<string> = new Set([
+  ...CODE_INTERPRETERS,
   'fish',
-  'ksh',
   'csh',
   'tcsh',
+  'php',
   'env',
   'eval',
   'exec',
   'command',
   'xargs',
   'find',
-  'node',
-  'deno',
-  'bun',
-  'python',
-  'python2',
-  'python3',
-  'ruby',
-  'perl',
-  'php',
   'ssh',
   'scp',
   'sudo',
@@ -108,10 +101,11 @@ const NON_TRUSTABLE_COMMANDS = new Set([
   'socat',
   'awk',
   'gawk',
-]) satisfies Set<string>
+])
 
-// Leading tokens that wrap the real command without changing what runs.
-const TRANSPARENT_PREFIXES = new Set(['nohup', 'nice', 'stdbuf', 'time', 'builtin'])
+// Leading tokens that wrap the real command without changing what runs. Narrower
+// than the harm gate's wrapper list on purpose — see TRUST_TRANSPARENT_WRAPPERS.
+const TRANSPARENT_PREFIXES = TRUST_TRANSPARENT_WRAPPERS
 
 /**
  * Command substitution / subshell grouping / backticks can hide arbitrary tools
