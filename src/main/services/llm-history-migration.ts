@@ -9,7 +9,7 @@ import { storageDeleteKeys, storageGet, storageListKeys } from './storage/storag
  * migrated keys in a single config.json rewrite.
  *
  * Ordering (enforced by the call site in `main/index.ts`):
- *   migrateLegacyThreads() → migrateLlmHistory() → createMainWindow()
+ *   migrateLlmHistory() → createMainWindow()
  *
  * Idempotent: sidecar writes happen first; an existing sidecar is never
  * overwritten (a restart after interruption, or post-migration agent activity,
