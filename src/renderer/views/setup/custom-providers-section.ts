@@ -173,7 +173,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
         blended.textContent = blendedRate(inNum, outNum).toFixed(2)
       } else if (
         typeof model?.inputPricePerMTok === 'number' &&
-        typeof model?.outputPricePerMTok === 'number'
+        typeof model.outputPricePerMTok === 'number'
       ) {
         blended.textContent = String(blendedRate(model.inputPricePerMTok, model.outputPricePerMTok))
       } else if (model?.blendedCostPerMTok != null) {
