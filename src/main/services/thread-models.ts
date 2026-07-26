@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { activateGuardedYoloForRun, finishGuardedYoloRun } from './security/guarded-yolo.ts'
 
 // Tracks which LLM models actually ran in each thread so `git_commit` can credit
 // them in the Copse attribution trailer. Populated from usage chunks during a
@@ -45,12 +46,16 @@ export function setActiveRunThread(threadId: string): void {
   if (active.threadId !== threadId) {
     throw new Error(`Active run identity belongs to "${active.threadId}", not "${threadId}"`)
   }
+  activateGuardedYoloForRun(threadId)
 }
 
 /** Clear mutable model state only when this async context owns the thread. */
 export function clearActiveRunThread(threadId: string): void {
   const active = activeRunStorage.getStore()
-  if (active?.threadId === threadId) active.model = null
+  if (active?.threadId === threadId) {
+    finishGuardedYoloRun(threadId)
+    active.model = null
+  }
 }
 
 /** Thread whose run is currently executing tools, or null when idle. */

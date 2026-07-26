@@ -75,6 +75,27 @@ function createApi(options: {
     fs: {
       onChanged: () => () => {},
     },
+    security: {
+      getGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      enableGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      disableGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      onGuardedYoloChanged: () => () => {},
+    },
     git: {
       branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
       checkoutBranch: options.onCheckoutBranch ?? (async (): Promise<void> => {}),
@@ -676,5 +697,37 @@ describe('input bar skill invocation', () => {
       'must not toast Unknown skill when checkup is registered',
     )
     assert.equal(runs, 1)
+  })
+})
+
+describe('input bar footer overflow menu', () => {
+  // The demo suite pins these labels and their order, but `build` (which runs it)
+  // is skipped on draft PRs — so the Guarded YOLO item was added to this menu and
+  // the stale count assertion only surfaced when #1251 left draft. Assert it here
+  // too, where it runs in the ordinary unit suite.
+  it('puts the Guarded YOLO action first among the thread actions', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(trigger)
+    trigger.click()
+    await settle()
+
+    const labels = [...host.querySelectorAll('.footer-overflow-item')].map(
+      (item) => item.textContent,
+    )
+    // Export/Share are gated on the thread having exportable content, which this
+    // blank fixture does not — hence two items here and four in the demo scenario.
+    assert.deepEqual(labels, ['Enable Guarded YOLO for next turn…', 'Copy thread ID'])
   })
 })
