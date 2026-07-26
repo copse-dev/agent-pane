@@ -19,6 +19,7 @@ import type {
   ThreadCatalogHit,
 } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
+import { stripToolResultImages } from '@copse/llm/tool-result-images.ts'
 import {
   attachHookCards,
   explodeMessage,
@@ -84,6 +85,11 @@ function workspaceRoot(): string {
   const override = process.env['COPSE_WORKSPACE_DIR']?.trim()
   if (override) return override
   return join(homedir(), '.copse', 'workspace')
+}
+
+/** Root of the chat store, for callers that need to authorise a path against it. */
+export function chatStoreRoot(): string {
+  return workspaceRoot()
 }
 
 function projectDir(projectId: string): string {
@@ -814,6 +820,16 @@ function agentHistoryPath(projectId: string, threadId: string): string {
   return join(threadDir(projectId, threadId), AGENT_HISTORY_FILE)
 }
 
+/**
+ * A thread's blob directory — verbatim tool results, images, and the videos a
+ * user attaches to the chat. It sits inside the chat store, which the agent's
+ * read tools already treat as a readable root, so a stored video is addressable
+ * by absolute path without granting any new filesystem authority.
+ */
+export function threadBlobsDir(projectId: string, threadId: string): string {
+  return join(threadDir(projectId, threadId), 'blobs')
+}
+
 /** Load provider history for a thread. Missing/corrupt/future-version → `[]`. */
 export function loadAgentHistory(projectId: string, threadId: string): Promise<LLMMessage[]> {
   return runSerialized(queueKey(projectId), () => {
@@ -832,7 +848,10 @@ export function saveAgentHistory(
   return runSerialized(queueKey(projectId), () => {
     const dir = threadDir(projectId, threadId)
     mkdirSync(dir, { recursive: true })
-    const body = `${JSON.stringify({ v: AGENT_HISTORY_VERSION, messages })}\n`
+    // Images a tool produced (video frames) are regenerable from the paths its
+    // text result names, so they never reach the sidecar — see
+    // `stripToolResultImages` for why that matters to file size.
+    const body = `${JSON.stringify({ v: AGENT_HISTORY_VERSION, messages: stripToolResultImages(messages) })}\n`
     atomicWriteFile(join(dir, AGENT_HISTORY_FILE), body)
   })
 }
