@@ -72,9 +72,12 @@ describe('bench-agent headless conformance', () => {
     // A chunk that would project to an event missing a required field must be
     // rejected by the in-builder validation. `tool_call` with a non-string name
     // is the simplest way to force an invalid projection.
-    const bad = [
-      { type: 'tool_call', toolCall: { id: 'x', name: 42 as unknown as string, args: {} } },
-    ] as AgentStreamChunk[]
+    const badChunk: AgentStreamChunk = {
+      type: 'tool_call',
+      toolCall: { id: 'x', name: 'temporarily-valid', args: {} },
+    }
+    Reflect.set(badChunk.toolCall, 'name', 42)
+    const bad = [badChunk]
     assert.throws(() =>
       buildHeadlessTurnEvents({
         threadId: 't',

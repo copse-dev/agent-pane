@@ -21,6 +21,17 @@ import { resolve } from 'node:path'
 const SCHEMA_PATH = resolve('schemas/headless-contract.schema.json')
 const out = resolve('dist-test/headless-contract.cjs')
 
+function isSchemaModule(
+  value: unknown,
+): value is { headlessContractJsonSchema: () => Record<string, unknown> } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'headlessContractJsonSchema' in value &&
+    typeof value.headlessContractJsonSchema === 'function'
+  )
+}
+
 await esbuild.build({
   entryPoints: [resolve('packages/agent/src/headless-contract.ts')],
   outfile: out,
@@ -36,7 +47,8 @@ await esbuild.build({
 })
 
 const require = createRequire(import.meta.url)
-const mod = require(out) as { headlessContractJsonSchema: () => Record<string, unknown> }
+const mod: unknown = require(out)
+if (!isSchemaModule(mod)) throw new Error('Bundled headless contract does not export its schema')
 const serialized = `${JSON.stringify(mod.headlessContractJsonSchema(), null, 2)}\n`
 
 if (process.argv.includes('--check')) {

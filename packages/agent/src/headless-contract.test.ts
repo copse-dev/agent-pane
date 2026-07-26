@@ -24,6 +24,18 @@ import {
 } from './headless-contract.ts'
 import type { AgentStreamChunk } from './wire-types.ts'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value)
+}
+
 describe('headless-contract: version negotiation', () => {
   it('picks the lower of the two versions', () => {
     assert.equal(negotiateProtocolVersion(1, 1), 1)
@@ -258,7 +270,7 @@ describe('headless-contract: capabilities', () => {
 describe('headless-contract: published JSON Schema', () => {
   it('matches the committed schemas/headless-contract.schema.json (no drift)', () => {
     const committedPath = resolve(process.cwd(), 'schemas/headless-contract.schema.json')
-    const committed = JSON.parse(readFileSync(committedPath, 'utf8')) as Record<string, unknown>
+    const committed: unknown = JSON.parse(readFileSync(committedPath, 'utf8'))
     assert.deepEqual(committed, headlessContractJsonSchema())
   })
 
@@ -269,19 +281,23 @@ describe('headless-contract: published JSON Schema', () => {
     // `required`, or an external JSON-Schema validator would reject a request the
     // canonical parser accepts.
     const schema = headlessContractJsonSchema()
-    const definitions = schema['definitions'] as Record<
-      string,
-      { oneOf?: unknown[]; anyOf?: unknown[] }
-    >
+    const definitions = schema['definitions']
+    assert.ok(isRecord(definitions))
     const runRequest = definitions['runRequest']
-    assert.ok(runRequest)
-    const members = (runRequest.oneOf ?? runRequest.anyOf ?? []) as Array<{
-      properties?: { kind?: { const?: string } }
-      required?: string[]
-    }>
-    const newMember = members.find((m) => m.properties?.kind?.const === 'new')
-    assert.ok(newMember, 'runRequest schema exposes a "new" member')
-    const required = newMember.required ?? []
+    assert.ok(isRecord(runRequest))
+    const members = runRequest['oneOf'] ?? runRequest['anyOf']
+    assert.ok(isUnknownArray(members))
+    const newMember = members.find((member) => {
+      if (!isRecord(member)) return false
+      const properties = member['properties']
+      if (!isRecord(properties)) return false
+      const kind = properties['kind']
+      return isRecord(kind) && kind['const'] === 'new'
+    })
+    assert.ok(isRecord(newMember), 'runRequest schema exposes a "new" member')
+    const requiredValue = newMember['required'] ?? []
+    assert.ok(isStringArray(requiredValue))
+    const required = requiredValue
     assert.deepEqual([...required].sort(), ['cwd', 'input', 'kind'])
     assert.ok(!required.includes('outputMode'))
     assert.ok(!required.includes('permissionProfile'))
