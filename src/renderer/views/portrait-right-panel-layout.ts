@@ -50,6 +50,13 @@ export function mountPortraitRightPanelLayout(body: HTMLElement, store: AppStore
   const app = body.closest('#app') ?? document.getElementById('app')
 
   const sync = (): void => {
+    // Pop-out windows are always landscape auxiliary panes — never stack below a
+    // hidden chat column or show the portrait chrome row.
+    if (document.documentElement.classList.contains('is-popout')) {
+      body.classList.remove(PORTRAIT_RIGHT_PANEL_CLASS, PORTRAIT_CHROME_CLASS)
+      app?.classList.remove(PORTRAIT_CHROME_CLASS)
+      return
+    }
     const viewport = { width: window.innerWidth, height: window.innerHeight }
     const { autoPortraitRightPanel, filesPaneOpen, rightPanelPosition } = store.getState()
     body.classList.toggle(

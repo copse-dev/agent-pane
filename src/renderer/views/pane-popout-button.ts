@@ -1,6 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { RightPanelMode } from '@shared/types/state.ts'
+import { capturePopoutSeed } from '../popout/pane-popout-seed.ts'
 
 /**
  * A small "pop out into its own window" control for a right-panel pane header.
@@ -22,6 +23,9 @@ export function panePopoutButton(
     },
     '⧉',
   )
-  btn.addEventListener('click', () => void api.panes.popout(mode))
+  btn.addEventListener('click', () => {
+    const seed = capturePopoutSeed(mode)
+    void api.panes.popout(mode, seed ?? undefined)
+  })
   return btn
 }

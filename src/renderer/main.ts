@@ -9,11 +9,7 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import {
-  openNewThread,
-  sortThreadsNewestFirst,
-  switchThread,
-} from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -79,6 +75,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
+import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
@@ -105,6 +102,8 @@ import {
 } from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
+import { mountPopoutPanelBar } from './popout/popout-panel-bar.ts'
+import { applyPopoutSeed } from './popout/pane-popout-seed.ts'
 import {
   isRightPanelPosition,
   isThemePreference,
@@ -181,6 +180,7 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 let layoutMounted = false
+let unmountPopoutPanelBar: (() => void) | null = null
 let handleStopShortcut: ((key: 'Escape' | 'Enter') => boolean) | null = null
 
 async function boot(): Promise<void> {
@@ -277,6 +277,7 @@ async function boot(): Promise<void> {
     startAgentController(store, api)
     attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
+    attachAutomationController(store, api)
   }
   attachProjectThreadCache(store)
 
@@ -314,23 +315,6 @@ async function boot(): Promise<void> {
   api.menu.onShowBrowser(() => {
     ensureLayout()
     openRightPanelWithWorkspace(store, api, 'browser')
-  })
-
-  // A cron trigger writes the new draft task in main so it also works for an
-  // inactive project. When it belongs to the active project, merge just that
-  // authoritative thread into the renderer store without replacing any live
-  // composer/stream state or stealing focus from the current task.
-  api.automations.onTriggered((event) => {
-    if (store.getState().activeProjectId !== event.projectId) return
-    void api.threads.loadProject(event.projectId).then((loaded) => {
-      if (store.getState().activeProjectId !== event.projectId) return
-      const created = loaded.find((thread) => thread.id === event.threadId)
-      if (!created || store.getState().threads.some((thread) => thread.id === created.id)) return
-      store.setState({
-        threads: sortThreadsNewestFirst([created, ...store.getState().threads]),
-      })
-      store.emit('threads_changed')
-    })
   })
 
   // Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) opens the shortcut cheat sheet. Unlike
@@ -383,8 +367,7 @@ async function boot(): Promise<void> {
   // In a pop-out window, force the detached pane open once the workspace is
   // restored; popout.css collapses everything else to a single-pane window.
   if (popoutMode && store.getState().workspaceRoot) {
-    ensureLayout()
-    openRightPanel(store, popoutMode)
+    await activatePopoutPane(popoutMode)
     return
   }
 
@@ -405,6 +388,30 @@ function ensureLayout(): void {
   updateFilesPane()
   registerKeyboardShortcuts()
   registerPanelKeyboardShortcuts(store, api)
+  if (popoutMode) {
+    const paneFiles = document.getElementById('pane-files')
+    if (paneFiles && !unmountPopoutPanelBar) {
+      unmountPopoutPanelBar = mountPopoutPanelBar(paneFiles, store, api)
+    }
+  }
+}
+
+// A pop-out window hosts exactly one detached pane. Opening it also replays the
+// snapshot ("seed") the parent window stashed, so the pane arrives on the same
+// selection the user was looking at rather than an empty default.
+async function activatePopoutPane(mode: RightPanelMode): Promise<void> {
+  ensureLayout()
+  openRightPanel(store, mode)
+  document.documentElement.setAttribute('data-popout-mode', mode)
+  const seed = await api.panes.takePopoutSeed(mode)
+  await applyPopoutSeed(mode, seed)
+}
+
+if (popoutMode) {
+  api.panes.onSwitchMode((mode) => {
+    if (!POPOUT_MODES.has(mode)) return
+    void activatePopoutPane(mode)
+  })
 }
 
 function mountFullLayout(): void {

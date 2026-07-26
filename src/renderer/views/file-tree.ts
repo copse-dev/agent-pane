@@ -10,6 +10,8 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { WORKSPACE_PATH_MIME } from '../attachments/handle-file-drop.ts'
 import { openWorkspaceFile } from '../controller/files.ts'
+import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
+import type { PanelTab } from '@shared/types/state.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 function join(parent: string, child: string): string {
@@ -215,7 +217,23 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   ]
 
   refreshForActiveTask()
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('explorer', {
+    capture: () => ({
+      openFilePath: store.getState().openFile?.path ?? null,
+      panelTab: store.getState().panelTab,
+    }),
+    apply: (seed) => {
+      if (!seed || typeof seed !== 'object') return
+      const { openFilePath, panelTab } = seed as {
+        openFilePath?: string | null
+        panelTab?: PanelTab
+      }
+      if (panelTab) store.setState({ panelTab })
+      if (openFilePath) void openWorkspaceFile(store, api, openFilePath)
+    },
+  })
   return () => {
+    unregisterPopoutSeed()
     unsubs.forEach((unsub) => {
       unsub()
     })

@@ -114,7 +114,7 @@ describe('settings packs (about:addons)', function () {
     await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await packRow.getAttribute('data-enabled'), 'false')
 
-    // Local cron-to-draft automations are a new, explicit opt-in. Upgrading
+    // Local cron automations are a new, explicit opt-in. Upgrading
     // must not arm a clock-driven feature until the user enables the pack.
     const automationsRow = packs.$('.pack-row[data-pack-id="copse.automations"]')
     await expect(automationsRow).toBeDisplayed()

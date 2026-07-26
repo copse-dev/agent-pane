@@ -44,6 +44,7 @@ import {
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { FORCED_PLANNING_PACK_ID } from '@copse/agent/packs/forced-planning-pack.ts'
 import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
 import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
@@ -74,6 +75,10 @@ const PACK_DISABLED_KEY = 'packDisabled'
  * `copse.background-tasks` matters most: beyond registering `run_background` it
  * declares the `loopback-bind` sandbox relaxation, so defaulting it on would
  * advertise an authority nobody asked for.
+ *
+ * `copse.forced-planning` never had a standalone setting to be opt-in through,
+ * but belongs here for the same reason: it rewrites the system prompt of every
+ * turn that runs on a below-threshold model.
  */
 const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
   ADVISOR_STRATEGY_PACK_ID,
@@ -81,6 +86,7 @@ const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
   BACKGROUND_TASKS_PACK_ID,
   CI_INVESTIGATOR_PACK_ID,
   DEVTOOLS_SHORTCUT_PACK_ID,
+  FORCED_PLANNING_PACK_ID,
   LONG_HORIZON_TASKS_PACK_ID,
   MCP_UI_CANVAS_PACK_ID,
   MODEL_COMPARISON_PACK_ID,

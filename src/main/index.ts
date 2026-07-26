@@ -87,6 +87,7 @@ import {
   startEventLoopWatchdog,
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
+import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import { closeVideoDecoder } from './services/video/video-decoder.ts'
@@ -176,28 +177,24 @@ app
     recordStartupPhase('reap-gortex')
     await reapOversizedGortexDaemon()
 
-    recordStartupPhase('tool-availability')
-    await checkToolAvailability()
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
-
-    // Move provider-format history out of electron-store into per-thread
-    // sidecars (issue #993). Must run before the first window so ownership is
-    // resolved against the thread store the renderer is about to read.
-    recordStartupPhase('llm-history-migration')
-    const { migrateLlmHistory } = await import('./services/llm-history-migration.ts')
-    const historyMigration = await migrateLlmHistory()
-    if (historyMigration.scanned > 0) {
-      console.log(
-        `[llm-history-migration] scanned ${String(historyMigration.scanned)}, migrated ${String(historyMigration.migrated)}, removed ${String(historyMigration.legacyKeysRemoved)} legacy key(s)`,
-      )
-    }
 
     recordStartupPhase('window-create')
     const win = createMainWindow()
     applyAppIcon([win])
     buildAppMenu(win)
     initUpdatePrompt(win)
+    // Probe for rg/git/gh and the search backends only now: these are ~9 process
+    // spawns (one of them, `gh auth status`, a network round trip), and run
+    // before the window they cost the user seconds of blank screen. The window
+    // is already loading its renderer while they run.
+    //
+    // This must still finish before `createRegistry()` below, which reads
+    // `isGhAvailable()` synchronously to decide whether the read-only GitHub
+    // tools are exposed at all (#523).
+    recordStartupPhase('tool-availability')
+    await checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     // P5: boot the pack service before `createRegistry()` so persisted
@@ -553,6 +550,11 @@ app
     await loadCustomTools(registry)
 
     recordStartupPhase('boot-complete')
+    // Print the boot timeline and flag any phase over its ceiling (#994). Every
+    // expensive thing above scales with something CI does not have — profile
+    // size, workspace size, MCP server count — so this is the one place the
+    // number is observable on a real machine.
+    reportStartupBudget()
     disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)

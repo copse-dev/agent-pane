@@ -38,6 +38,63 @@ html.is-popout .pane-popout-btn {
    both starting a new thread and reopening a tracked one. */
 html.is-popout .roadmap-start-btn,
 html.is-popout .roadmap-reopen-btn,
-html.is-popout .roadmap-thread-chip {
+html.is-popout .roadmap-thread-indicator {
+  display: none;
+}
+
+/* Pop-out windows keep a labeled panel switcher docked to the bottom-left corner
+   (the titlebar and composer portrait row are hidden). */
+html.is-popout #pane-files {
+  position: relative;
+}
+
+html.is-popout .popout-panel-bar-host {
+  position: absolute;
+  left: var(--spacing-md);
+  bottom: var(--spacing-md);
+  z-index: 40;
+  pointer-events: none;
+}
+
+html.is-popout .popout-panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: nowrap;
+  overflow: visible;
+  box-sizing: border-box;
+  padding: 0 var(--spacing-sm);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--bg-base) 40%, transparent);
+  pointer-events: auto;
+}
+
+html.is-popout .popout-panel-bar .titlebar-text-btn,
+html.is-popout .popout-panel-bar .portrait-panel-btn {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  height: calc(var(--chrome-action-band-height) - 2 * var(--spacing-xs));
+  padding: 0 var(--spacing-sm);
+  gap: 4px;
+  white-space: nowrap;
+}
+
+html.is-popout .popout-panel-bar .titlebar-text-btn:hover,
+html.is-popout .popout-panel-bar .portrait-panel-btn:hover {
+  background: var(--bg-hover);
+}
+
+html.is-popout .popout-panel-bar .titlebar-text-btn.active,
+html.is-popout .popout-panel-bar .portrait-panel-btn.active {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-hover));
+  color: var(--accent);
+}
+
+html.is-popout .popout-panel-bar .titlebar-text-btn[data-portrait-overflow],
+html.is-popout .popout-panel-bar .portrait-panel-btn[data-portrait-overflow] {
   display: none;
 }
