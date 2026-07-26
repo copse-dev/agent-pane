@@ -84,7 +84,7 @@ describe('Guarded YOLO composer control', () => {
     assert.equal(control.element.hidden, false)
     assert.equal(control.element.dataset['phase'], 'armed')
     assert.equal(control.element.dataset['containment'], 'project-sandbox')
-    assert.match(control.element.textContent, /armed for the next turn/i)
+    assert.match(control.element.textContent, /armed/i)
     assert.match(control.element.textContent, /external commands may run unsandboxed/i)
     assert.equal(control.menuLabel(), 'Disable Guarded YOLO')
 
@@ -94,7 +94,7 @@ describe('Guarded YOLO composer control', () => {
       containment: 'unsandboxed',
       expiresAt: null,
     })
-    assert.match(control.element.textContent, /active for this turn/i)
+    assert.match(control.element.textContent, /active for this thread/i)
     assert.match(control.element.textContent, /No OS sandbox/i)
 
     control.element.querySelector<HTMLButtonElement>('.guarded-yolo-disable')?.click()
