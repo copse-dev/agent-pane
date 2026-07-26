@@ -88,7 +88,10 @@ paired per-task differences with a task bootstrap 95% interval, solves, tokens, 
 time, and failure categories. A non-default profile is eligible only when the held-out interval
 excludes zero, all expected attempts are present, and median tokens and elapsed time stay within
 25% of the baseline unless it adds solved tasks. Otherwise `main-legacy@1` remains the benchmark
-default; no mechanism in this slice changes the regular Copse agent.
+default. The #1149 forced-write and task-specific warning mechanisms remain benchmark-only. After
+two paired targeted runs favored v3, the generic reasoning checkpoint policy is also used by the
+built-in Copse agent: 2K reasoning checkpoints inside the existing 32K product ceiling, with a 4K
+recovery ceiling. ACP and other externally hosted agents are unchanged.
 
 ## The framing: benchmarks as harness evals, not model evals
 

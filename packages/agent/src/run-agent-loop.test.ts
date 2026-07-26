@@ -428,6 +428,7 @@ describe('runAgentLoop', () => {
       reasoningRunawayTextToleranceChars: 0,
       reasoningCheckpointPolicy: {
         intervalTokens: 20,
+        maxNonReasoningTokens: 20,
         maxInitialTokens: 60,
         maxRecoveryTokens: 40,
       },
@@ -476,6 +477,7 @@ describe('runAgentLoop', () => {
       maxStreamOutputTokens: 20,
       reasoningCheckpointPolicy: {
         intervalTokens: 20,
+        maxNonReasoningTokens: 20,
         maxInitialTokens: 60,
         maxRecoveryTokens: 40,
       },
@@ -515,6 +517,7 @@ describe('runAgentLoop', () => {
       maxStreamOutputTokens: 20,
       reasoningCheckpointPolicy: {
         intervalTokens: 20,
+        maxNonReasoningTokens: 20,
         maxInitialTokens: 60,
         maxRecoveryTokens: 40,
       },
@@ -533,6 +536,47 @@ describe('runAgentLoop', () => {
     )
     assert.equal(cuts[0]?.cutReason, 'reasoning_runaway_cap')
     assert.equal(cuts[0].streamOutputTokenLimit, 60)
+  })
+
+  it('preserves the host non-reasoning ceiling across earlier reasoning checkpoints', async () => {
+    let yieldedChunks = 0
+    let streamCalls = 0
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        if (streamCalls > 1) {
+          yield { type: 'text', text: 'Recovered.' }
+          yield { type: 'done' }
+          return
+        }
+        for (let index = 0; index < 4; index++) {
+          yieldedChunks++
+          yield { type: 'text', text: 'x'.repeat(80) }
+        }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 1,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 20,
+        maxNonReasoningTokens: 60,
+        maxInitialTokens: 60,
+        maxRecoveryTokens: 40,
+      },
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.equal(yieldedChunks, 3)
+    assert.equal(checkpoints.length, 0)
+    assert.equal(cuts[0]?.streamOutputTokenLimit, 60)
   })
 
   it('applies the host-specific output cap to the final text-only turn', async () => {

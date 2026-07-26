@@ -7,6 +7,8 @@ import {
   type PostTurnReviewOutcome,
   type RunPostTurnReviewCycleOptions,
 } from './post-turn-orchestration.ts'
+import { MAX_POST_TURN_REVIEW_CYCLES } from '@shared/todos/todo-logic.ts'
+import { DEFAULT_POST_TURN_REVIEW_CYCLES } from '@copse/agent/packs/post-turn-review-pack.ts'
 import type { ParsedReviewVerdict } from '@copse/agent/review-subagent.ts'
 import type { StreamChunk } from '@shared/types'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -194,6 +196,63 @@ describe('runPostTurnReviewCycle (E3)', () => {
     // then the last cycle breaks without remediating.
     assert.equal(h.reviews, 2)
     assert.equal(h.remediations.length, 1)
+  })
+
+  it('does no further post turn on a failing review when maxCycles is 1', async () => {
+    const h = newHarness()
+    await runPostTurnReviewCycle(
+      baseOptions(h, {
+        maxCycles: 1,
+        runReviewOnce: () => {
+          h.reviews += 1
+          return Promise.resolve(outcome(verdict({ issuesFound: true, requestFollowUp: true })))
+        },
+      }),
+    )
+    // The failing verdict is still reported — it just doesn't buy a remediation
+    // turn or a re-review.
+    assert.equal(h.reviews, 1)
+    assert.equal(h.remediations.length, 0)
+    assert.equal(reviewChunks(h.chunks).at(-1)?.issuesFound, true)
+  })
+
+  it('runs the configured number of passes when the reviewer keeps failing', async () => {
+    const h = newHarness()
+    await runPostTurnReviewCycle(
+      baseOptions(h, {
+        maxCycles: 3,
+        runReviewOnce: () => {
+          h.reviews += 1
+          return Promise.resolve(outcome(verdict({ requestFollowUp: true })))
+        },
+      }),
+    )
+    // Three reviews with a remediation turn between each pair; the last pass
+    // breaks without remediating.
+    assert.equal(h.reviews, 3)
+    assert.equal(h.remediations.length, 2)
+  })
+
+  it('falls back to the shipped default for an unset or corrupt maxCycles', async () => {
+    // The pack default and the host constant must stay in lockstep: an unset
+    // `maxReviewCycles` has to reproduce the pre-setting behaviour exactly.
+    assert.equal(DEFAULT_POST_TURN_REVIEW_CYCLES, MAX_POST_TURN_REVIEW_CYCLES)
+    for (const maxCycles of [undefined, 0, -1, Number.POSITIVE_INFINITY]) {
+      const h = newHarness()
+      await runPostTurnReviewCycle(
+        baseOptions(h, {
+          ...(maxCycles === undefined ? {} : { maxCycles }),
+          runReviewOnce: () => {
+            h.reviews += 1
+            return Promise.resolve(outcome(verdict({ requestFollowUp: true })))
+          },
+        }),
+      )
+      // 0 / negatives floor to one pass (the review always runs at least once —
+      // turning it off is the pack toggle's job); undefined / non-finite land on
+      // the default of 2.
+      assert.equal(h.reviews, maxCycles === undefined || !Number.isFinite(maxCycles) ? 2 : 1)
+    }
   })
 
   it('stops remediating when the shared budget is exhausted (decision 5)', async () => {

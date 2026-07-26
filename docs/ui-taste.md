@@ -386,7 +386,8 @@ manual VNC glance.
 
 - Primary-chat model labels (`.message-model`) appear only when a thread's assistant turns used more
   than one picker model — keep them muted chrome (`--font-size-xs`, tertiary text), never inside
-  `.message-text`. Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
+  `.message-text`. The footer model picker shows the active route (including best-value auto-picks).
+  Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
 - For the footer / settings-column layout,
   [`tests/demo/settings-footer.demo.ts`](../tests/demo/settings-footer.demo.ts) asserts (a) the
   scroll panel fills the body beside the nav while the form column stays at
