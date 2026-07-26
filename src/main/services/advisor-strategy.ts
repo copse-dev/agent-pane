@@ -26,14 +26,14 @@ import { intellectBand, modelIntellect, topAnnotatedIntellect } from '@copse/llm
  * This module is pure (no I/O, no settings read). The run-scoped provider call
  * lives in advisor-runner.ts, and the tool gating lives in registry-bootstrap:
  * the `advisor` tool is now the `copse.advisor-strategy` first-party pack, so it
- * is registered iff that pack is enabled (Settings → Packs). The orthogonal
- * `advisorModel` setting below — which model the advisor consults — stays a
- * top-level setting and is used wherever the advisor model is referenced.
+ * is registered iff that pack is enabled (Settings → Packs). Which model the
+ * advisor consults is now the pack's own `advisorModel` `model` setting field
+ * (see `advisor-strategy-pack.ts`); `resolveAdvisorModelId` in advisor-runner.ts
+ * reads it (a `roleModels` `advisor` assignment still wins first).
  */
 
-export const ADVISOR_MODEL_SETTING = 'advisorModel'
-
-/** Default advisor model when the strategy is enabled (a frontier Claude). */
+/** Default advisor model when nothing is configured (a frontier Claude). Kept
+ *  equal to `DEFAULT_ADVISOR_MODEL_ID` on the Electron-free pack side. */
 export const DEFAULT_ADVISOR_MODEL = 'claude-opus-4-8'
 
 /**

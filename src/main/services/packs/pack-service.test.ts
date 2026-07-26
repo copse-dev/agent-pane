@@ -22,6 +22,9 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
+import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
@@ -178,6 +181,11 @@ describe('PackService', () => {
       OKF_MEMORIES_PACK_ID,
       CI_INVESTIGATOR_PACK_ID,
       PII_REDACTION_PACK_ID,
+      // Added with the contribution kinds (#1188-#1190); each replaces a retired
+      // opt-in boolean, so each must ship off like its predecessor.
+      MCP_UI_CANVAS_PACK_ID,
+      DEVTOOLS_SHORTCUT_PACK_ID,
+      BACKGROUND_TASKS_PACK_ID,
       AUTOMATIONS_PACK_ID,
     ]) {
       assert.equal(service.registry.isEnabled(id), false, id)
@@ -192,6 +200,9 @@ describe('PackService', () => {
         OKF_MEMORIES_PACK_ID,
         CI_INVESTIGATOR_PACK_ID,
         PII_REDACTION_PACK_ID,
+        MCP_UI_CANVAS_PACK_ID,
+        DEVTOOLS_SHORTCUT_PACK_ID,
+        BACKGROUND_TASKS_PACK_ID,
         AUTOMATIONS_PACK_ID,
       ].sort(),
     )

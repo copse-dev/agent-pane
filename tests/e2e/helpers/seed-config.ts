@@ -47,8 +47,11 @@ const SETTINGS_PATH = join(USER_DATA, 'settings.json')
  */
 const DEFAULT_DISABLED_PACK_IDS = [
   'copse.advisor-strategy',
+  'copse.background-tasks',
   'copse.ci-investigator',
+  'copse.devtools-shortcut',
   'copse.long-horizon-tasks',
+  'copse.mcp-ui-canvas',
   'copse.model-comparison',
   'copse.okf-memories',
   'copse.pii-redaction',
