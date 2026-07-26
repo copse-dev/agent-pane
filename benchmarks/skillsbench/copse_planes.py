@@ -432,19 +432,35 @@ class _PrebakeVerifierDepsMixin:
     it grades under the same image and the same network condition.
     """
 
-    def stage_dockerfile_deps(self, task_path: Path, context_root: Path) -> None:
-        super().stage_dockerfile_deps(task_path, context_root)  # type: ignore[misc]
+    #: Marker that makes the append idempotent across trials on one worker.
+    PREBAKE_MARKER = "copse skillsbench: pre-baked verifier"
+
+    def prebake_verifier_deps(self, task_path: Path) -> bool:
+        """Append the pre-bake layer to a task's Dockerfile. Returns whether it did.
+
+        Called from ``create_environment`` rather than ``stage_dockerfile_deps``:
+        BenchFlow only invokes the latter when ``RolloutConfig.context_root`` is
+        set, which this spike never sets, so hooking it silently did nothing.
+        ``create_environment`` runs unconditionally for every rollout.
+        """
         layer = verifier_prebake_layer(task_path.name)
         if not layer:
-            return
+            return False
         dockerfile = task_path / "environment" / "Dockerfile"
         if not dockerfile.is_file():
-            return
+            return False
         existing = dockerfile.read_text()
-        if "copse skillsbench: pre-baked verifier" in existing:
-            return
+        if self.PREBAKE_MARKER in existing:
+            return False
         separator = "" if existing.endswith("\n") else "\n"
         dockerfile.write_text(existing + separator + layer)
+        return True
+
+    def stage_dockerfile_deps(self, task_path: Path, context_root: Path) -> None:
+        # Kept for the context_root case; the append is guarded, so whichever
+        # hook fires first wins and the other is a no-op.
+        super().stage_dockerfile_deps(task_path, context_root)  # type: ignore[misc]
+        self.prebake_verifier_deps(task_path)
 
 
 class CopseRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
@@ -481,6 +497,7 @@ class CopseRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
         environment_manifest: Any,
     ) -> Any:
         del preserve_agent_network
+        self.prebake_verifier_deps(task_path)
         freeze_no_network(task)
         return super().create_environment(
             environment,
@@ -515,6 +532,7 @@ class OracleRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
         environment_manifest: Any,
     ) -> Any:
         del preserve_agent_network
+        self.prebake_verifier_deps(task_path)
         freeze_no_network(task)
         return super().create_environment(
             environment,
