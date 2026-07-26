@@ -5,28 +5,22 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 
 function stubApi(skills: SkillSummary[]): ApiClient {
-  const fallback: unknown = new Proxy(() => new Promise(() => {}), {
-    get: () => fallback,
-    apply: () => new Promise(() => {}),
-  })
-  const overrides: Record<string, unknown> = {
-    instructions: { list: () => Promise.resolve([]) },
-    cursorRules: { list: () => Promise.resolve([]) },
-    skills: { list: () => Promise.resolve(skills) },
-    plugins: { list: () => Promise.resolve([]) },
-    hooks: { list: () => Promise.resolve({ hooks: [], warnings: [] }) },
-  }
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get: (_target, prop) =>
-        typeof prop === 'string' && prop in overrides ? overrides[prop] : fallback,
+  const base = createFakeApi()
+  return {
+    ...base,
+    instructions: { ...base.instructions, list: () => Promise.resolve([]) },
+    cursorRules: { ...base.cursorRules, list: () => Promise.resolve([]) },
+    skills: { ...base.skills, list: () => Promise.resolve(skills) },
+    plugins: { ...base.plugins, list: () => Promise.resolve([]) },
+    hooks: {
+      ...base.hooks,
+      list: () => Promise.resolve({ hooks: [], warnings: [] }),
     },
-  )
-  return proxy as ApiClient
+  }
 }
 
 const BUNDLED_SKILL: SkillSummary = {
