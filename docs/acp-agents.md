@@ -41,13 +41,13 @@ auth), while Copse keeps ownership of the workspace and the approval UX.
   servers. Calls execute through the same `ToolRegistry` as built-in model runs,
   so the normal path validation, diff queue, permission policy, sandbox escape,
   and approval dialogs apply. Disable with the `acpNativeBridgeEnabled` setting.
-- Known agents (the Claude and Gemini catalog entries) are **spawned under the
-  workspace seatbelt** on macOS when the project sandbox is active (issue
-  #590): writes confined to the workspace, home denied except the agent's own
-  config dirs, network limited to its declared endpoints (plus loopback for the
-  bridge). The confines come from the `KNOWN_ACP_AGENTS` catalog at spawn time —
-  no per-config copy — and the config's optional `sandbox` field overrides them
-  (an object for custom confines, `false` to opt out). The agent's shell
+- Known agents (the Claude, Gemini, and Cursor catalog entries) are **spawned
+  under the workspace seatbelt** on macOS when the project sandbox is active
+  (issue #590): writes confined to the workspace, home denied except the agent's
+  own config dirs, network limited to its declared endpoints (plus loopback for
+  the bridge). The confines come from the `KNOWN_ACP_AGENTS` catalog at spawn
+  time — no per-config copy — and the config's optional `sandbox` field overrides
+  them (an object for custom confines, `false` to opt out). The agent's shell
   children inherit the same confines, and approval prompts cannot override the
   agent's own shell sandbox. Sandboxed turns steer commands through the bridge's
   `run_shell`: that reuses Copse's native permission decision and can run
@@ -210,11 +210,11 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
 - **Native-tool bridge is http-only.** Agents that support only stdio MCP
   servers don't get Copse's bridged tools this turn — a stdio shim is a
   possible follow-up (#602). Skills and todo/plan tools are not bridged.
-- **Sandboxing is macOS-only and catalog-scoped.** Agents with no
-  `KNOWN_ACP_AGENTS` sandbox entry (e.g. Cursor, custom agents) spawn
-  unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
-  `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
-  catalog agent out (#590).
+- **Sandboxing is macOS-only and catalog-scoped.** Known presets (Claude,
+  Gemini, Codex, Cursor) ship a catalog `sandbox` entry; custom agents spawn
+  unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their
+  `registeredAcpAgents` entry, or set `sandbox: false` to opt a catalog agent
+  out (#590).
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

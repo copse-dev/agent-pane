@@ -13,6 +13,7 @@ import {
   getGitShowText,
   getGitWorkingFileDiff,
   parseAheadBehind,
+  parseOriginHeadSymbolicRef,
   parsePorcelainV1,
   resolveWorkspaceRelativeGitPath,
   sumDiffNumstat,
@@ -606,6 +607,16 @@ describe('getGitShowText subdirectory workspace', { skip: !gitOk && 'git not ins
   })
 })
 
+describe('parseOriginHeadSymbolicRef', () => {
+  it('extracts the branch name from origin/HEAD', () => {
+    assert.equal(parseOriginHeadSymbolicRef('refs/remotes/origin/develop'), 'develop')
+  })
+
+  it('returns null for unrelated refs', () => {
+    assert.equal(parseOriginHeadSymbolicRef('refs/heads/main'), null)
+  })
+})
+
 describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
   let repo = ''
   let restore: (() => void) | undefined
@@ -621,6 +632,21 @@ describe('getDefaultBranch', { skip: !gitOk && 'git not installed' }, () => {
   after(async () => {
     if (repo) await rm(repo, { recursive: true, force: true })
     repo = ''
+  })
+
+  it('uses origin/HEAD over init.defaultBranch when both exist', async () => {
+    repo = await mkdtemp(join(tmpdir(), 'copse-git-default-branch-origin-head-'))
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.email', 'test@example.com')
+    git('config', 'user.name', 'Test')
+    git('commit', '--allow-empty', '-m', 'init')
+    git('branch', 'develop')
+    git('remote', 'add', 'origin', 'https://example.com/repo.git')
+    git('update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    restore = setWorkspaceRootForTest(repo)
+
+    assert.equal(await getDefaultBranch(), 'develop')
   })
 
   it('uses init.defaultBranch from git config when origin is absent', async () => {

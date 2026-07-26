@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   clearAllowedWorkspaceRootsForTest,
   registerAllowedWorkspaceRoot,
+  resolvePathWithinRoot,
   resolveWorkspacePath,
   setWorkspaceRootForTest,
 } from '../services/workspace.ts'
@@ -136,6 +137,28 @@ describe('sandbox-fs-client', () => {
       restore()
     } finally {
       await rm(ws, { recursive: true, force: true })
+    }
+  })
+
+  it('uses an explicit task root instead of the active project root', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'copse-sbfs-project-'))
+    const taskRoot = await mkdtemp(join(tmpdir(), 'copse-sbfs-task-'))
+    try {
+      clearAllowedWorkspaceRootsForTest()
+      const projectRoot = await registerAllowedWorkspaceRoot(project)
+      const restore = setWorkspaceRootForTest(projectRoot)
+      await writeFile(join(projectRoot, 'same.txt'), 'project', 'utf-8')
+      await writeFile(join(taskRoot, 'same.txt'), 'task', 'utf-8')
+
+      const taskFile = await resolvePathWithinRoot('same.txt', taskRoot)
+      assert.equal(await gatewayReadFile(taskFile, taskRoot), 'task')
+      await gatewayWriteFile(taskFile, 'task edited', taskRoot)
+      assert.equal(await readFile(taskFile, 'utf-8'), 'task edited')
+      assert.equal(await readFile(join(projectRoot, 'same.txt'), 'utf-8'), 'project')
+      restore()
+    } finally {
+      await rm(project, { recursive: true, force: true })
+      await rm(taskRoot, { recursive: true, force: true })
     }
   })
 })

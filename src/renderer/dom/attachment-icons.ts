@@ -28,6 +28,17 @@ const ATTACHMENT_ICON_PATHS: Record<TranscriptAttachment['kind'], string[]> = {
     'M11 13h4',
     'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2Z',
   ],
+  // lucide `film` — an attached video the agent reads as stills
+  video: [
+    'M7 3v18',
+    'M3 7.5h4',
+    'M3 12h18',
+    'M3 16.5h4',
+    'M17 3v18',
+    'M17 7.5h4',
+    'M17 16.5h4',
+    'M20 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1Z',
+  ],
 }
 
 /** The outline icon for an attachment kind, at a caller-styled size/color. */

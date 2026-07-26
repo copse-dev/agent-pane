@@ -692,11 +692,6 @@
       "count": 3
     }
   },
-  "src/main/services/packs/pack-service.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
   "src/main/services/plan-usage-bridge.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 2
@@ -934,11 +929,6 @@
   },
   "src/main/tools/memory-tools.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/tools/memory-tools.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     }
   },
@@ -1441,7 +1431,7 @@
   },
   "src/renderer/views/settings-dialog.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 51
+      "count": 42
     }
   },
   "src/renderer/views/settings-packs.test.ts": {

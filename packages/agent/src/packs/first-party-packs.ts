@@ -58,6 +58,26 @@
 //    model tool list, stops appending the prompt block, and stops rewriting the
 //    user's input into placeholders (`registry-bootstrap.ts`,
 //    `agent-system-prompt.ts` and `pii-redactor.ts` read the pack registry).
+//  - `mcpUiCanvasPack` — the first-party pack for the experimental MCP-UI
+//    artefacts (canvas) feature (issue #611). Contributes no tool: it declares
+//    the `mcp-ui-canvas` **capability** — the canvas gates in `mcp-registry.ts`
+//    read `isCapabilityActive('mcp-ui-canvas')` instead of the retired
+//    `mcpUiArtefactsEnabled` setting, so the pack toggle atomically turns canvas
+//    rendering (and the bundled canvas server) on/off. Default DISABLED.
+//  - `devtoolsShortcutPack` — the first-party pack for the experimental DevTools
+//    shortcut. Contributes no tool: it declares the `devtools-shortcut`
+//    **capability** — `create-main-window.ts` reads
+//    `isCapabilityActive('devtools-shortcut')` instead of the retired
+//    `devtoolsShortcutEnabled` setting, so the pack toggle atomically
+//    registers/unregisters the global Ctrl+Shift+I shortcut. Default DISABLED.
+//  - `backgroundTasksPack` — the first-party pack for the experimental
+//    background tasks feature (issue #691). Declares the `run_background` tool
+//    AND the `loopback-bind` **permission / sandbox relaxation** (issue #1190):
+//    the pack toggle atomically drops the tool from the model tool list
+//    (`registry-bootstrap.ts` reads the pack registry) and the permission-gate
+//    only grants the loopback port-binding relaxation while the pack declares it
+//    (`permission-gate.ts` reads `isPermissionDeclared('loopback-bind')`).
+//    Default DISABLED.
 import type { RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
@@ -70,6 +90,9 @@ import { okfMemoriesPack } from './okf-memories-pack.ts'
 import { ciInvestigatorPack } from './ci-investigator-pack.ts'
 import { piiRedactionPack } from './pii-redaction-pack.ts'
 import { forcedPlanningPack } from './forced-planning-pack.ts'
+import { mcpUiCanvasPack } from './mcp-ui-canvas-pack.ts'
+import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
+import { backgroundTasksPack } from './background-tasks-pack.ts'
 import { automationsPack } from './automations-pack.ts'
 
 /**
@@ -77,8 +100,10 @@ import { automationsPack } from './automations-pack.ts'
  * enumeration order (P3): the pilot todos pack, then P5's two extracted
  * feature packs (post-turn review + model comparison), then long-horizon
  * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
- * the CI investigator, then PII redaction, then forced planning, then the
- * automations prototype.
+ * the CI investigator, then PII redaction, then forced planning, then the two
+ * capability-only packs (MCP-UI canvas + DevTools shortcut), then the
+ * background-tasks pack (which declares a permission / sandbox relaxation,
+ * issue #1190), then the automations prototype.
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -91,6 +116,9 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   ciInvestigatorPack,
   piiRedactionPack,
   forcedPlanningPack,
+  mcpUiCanvasPack,
+  devtoolsShortcutPack,
+  backgroundTasksPack,
   automationsPack,
 ]
 

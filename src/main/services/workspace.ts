@@ -567,8 +567,17 @@ export async function isResolvedPathInsideWorkspace(
   backend: PathBackend = getActivePathBackend(),
 ): Promise<boolean> {
   if (!workspaceRoot) return false
+  return isResolvedPathInsideRoot(absPath, workspaceRoot, backend)
+}
+
+/** Explicit-root TOCTOU containment check for task worktrees and shared checkouts. */
+export async function isResolvedPathInsideRoot(
+  absPath: string,
+  root: string,
+  backend: PathBackend = getActivePathBackend(),
+): Promise<boolean> {
   try {
-    const absRoot = await backend.realpath(resolve(workspaceRoot))
+    const absRoot = await backend.realpath(resolve(root))
     const resolved = await resolveThroughExistingPrefix(resolve(absPath), backend)
     return isPathInsideRoot(resolved, absRoot)
   } catch {
