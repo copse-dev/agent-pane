@@ -180,18 +180,6 @@ app
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
-    // Move provider-format history out of electron-store into per-thread
-    // sidecars (issue #993). Must run before the first window so ownership is
-    // resolved against the thread store the renderer is about to read.
-    recordStartupPhase('llm-history-migration')
-    const { migrateLlmHistory } = await import('./services/llm-history-migration.ts')
-    const historyMigration = await migrateLlmHistory()
-    if (historyMigration.scanned > 0) {
-      console.log(
-        `[llm-history-migration] scanned ${String(historyMigration.scanned)}, migrated ${String(historyMigration.migrated)}, removed ${String(historyMigration.legacyKeysRemoved)} legacy key(s)`,
-      )
-    }
-
     recordStartupPhase('window-create')
     const win = createMainWindow()
     applyAppIcon([win])
