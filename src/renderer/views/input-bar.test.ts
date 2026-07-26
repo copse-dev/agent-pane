@@ -397,10 +397,10 @@ describe('draft prompt preservation', () => {
       2,
     )
 
-    const showMore = projectsHost.querySelector<HTMLButtonElement>('.chats-show-more')
-    assert.ok(showMore)
-    showMore.click()
+    // All three fit inside one sidebar page, so they are all listed and no
+    // "Show more" appears (the window only pages past SIDEBAR_THREADS_PAGE_SIZE).
     assert.equal(projectsHost.querySelectorAll('.chats-list .chat-row').length, 3)
+    assert.equal(projectsHost.querySelector('.chats-show-more'), null)
   })
 })
 
