@@ -263,11 +263,17 @@ function recordReasoningCheckpoint(
 }
 
 function validateReasoningCheckpointPolicy(policy: ReasoningCheckpointPolicy): void {
-  const values = [policy.intervalTokens, policy.maxInitialTokens, policy.maxRecoveryTokens]
+  const values = [
+    policy.intervalTokens,
+    policy.maxNonReasoningTokens,
+    policy.maxInitialTokens,
+    policy.maxRecoveryTokens,
+  ]
   if (values.some((value) => !Number.isInteger(value) || value <= 0)) {
     throw new Error('Reasoning checkpoint token limits must be positive integers.')
   }
   if (
+    policy.maxNonReasoningTokens < policy.intervalTokens ||
     policy.maxInitialTokens < policy.intervalTokens ||
     policy.maxRecoveryTokens < policy.intervalTokens
   ) {
@@ -1113,13 +1119,25 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         if (!pendingToolCalls.length) {
           if (reasoningCheckpointPolicy && reasoningCheckpointHardMax && nextReasoningCheckpoint) {
             while (isStreamOutputRunaway(streamOutputChars, nextReasoningCheckpoint)) {
-              const signals = detectReasoningCircle(streamReasoningText)
-              const atHardMax = nextReasoningCheckpoint >= reasoningCheckpointHardMax
               const reasoningDominated =
                 streamReasoningChars > assistantText.length &&
                 assistantText.trim().length <= reasoningRunawayTextToleranceChars
-              const decision =
-                !reasoningDominated || signals.length > 0 || atHardMax ? 'cut' : 'continue'
+              if (!reasoningDominated) {
+                const nonReasoningHardMax = Math.min(
+                  reasoningCheckpointPolicy.maxNonReasoningTokens,
+                  reasoningCheckpointHardMax,
+                )
+                if (nextReasoningCheckpoint >= nonReasoningHardMax) {
+                  stopReason = 'max_tokens'
+                  streamCappedAsRunaway = true
+                  break
+                }
+                nextReasoningCheckpoint += reasoningCheckpointPolicy.intervalTokens
+                continue
+              }
+              const signals = detectReasoningCircle(streamReasoningText)
+              const atHardMax = nextReasoningCheckpoint >= reasoningCheckpointHardMax
+              const decision = signals.length > 0 || atHardMax ? 'cut' : 'continue'
               recordReasoningCheckpoint(reasoningCheckpointSink, {
                 step: budget.llmCalls,
                 checkpointTokens: nextReasoningCheckpoint,

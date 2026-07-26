@@ -6,6 +6,10 @@ import {
   DEFAULT_MAX_LLM_CALLS,
 } from '@copse/agent/agent-loop-limits.ts'
 import {
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+} from '@copse/agent/reasoning-checkpoint-policy.ts'
+import {
   normalizeToolExecuteResult,
   type LLMMessage,
   type LLMTool,
@@ -42,6 +46,7 @@ import {
   setHookRunToolset,
 } from './hook-run-recorder.ts'
 import { recordStreamCut } from './stream-stats-recorder.ts'
+import { recordReasoningCheckpoint } from './reasoning-checkpoint-recorder.ts'
 import type { HookCard } from '@shared/hooks/hook-card.ts'
 import {
   buildProvider,
@@ -128,8 +133,13 @@ import { compactAtTodoBoundary } from '@shared/todos/todo-context.ts'
 import { setTodoToolPostProcess } from '../tools/todo-tool.ts'
 import { todosToPanelListData } from '@copse/agent/packs/pack-panel.ts'
 import { TODOS_PACK_ID, TODOS_PANEL_CONTRIBUTION_ID } from '@copse/agent/packs/todos-pack.ts'
-import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
+import {
+  POST_TURN_REVIEW_PACK_ID,
+  POST_TURN_REVIEW_MAX_CYCLES_SETTING,
+  resolveMaxReviewCycles,
+} from '@copse/agent/packs/post-turn-review-pack.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { getPackService } from './packs/pack-service.ts'
 import { runTodoWorker } from './todo-worker-runner.ts'
 import { verifyTodoCheck } from './todo-verification.ts'
 import type { TodoItem } from '@shared/types/todo.ts'
@@ -1169,6 +1179,8 @@ export async function runAgent(
           tools: parentLoopTools,
           usageModel: model,
           maxLlmCalls: DEFAULT_MAX_LLM_CALLS,
+          reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+          reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
           runDeadline: runAbort.deadline,
           onRunDeadlineActivity: runAbort.schedule,
           coerceTextToolCallArgs: (name, args) => registry.tryCoerceArgs(name, args),
@@ -1178,6 +1190,9 @@ export async function runAgent(
           onLlmCall: setHookRunStep,
           recordStreamCut: (record) => {
             recordStreamCut(record, model)
+          },
+          recordReasoningCheckpoint: (record) => {
+            recordReasoningCheckpoint(record, model)
           },
           executeTool: executeParentTool,
           signal: controller.signal,
@@ -1254,6 +1269,12 @@ export async function runAgent(
       },
       recordHookRun: recordFunctionHookRun,
       onLlmCall: setHookRunStep,
+      recordStreamCut: (record) => {
+        recordStreamCut(record, model)
+      },
+      recordReasoningCheckpoint: (record) => {
+        recordReasoningCheckpoint(record, model)
+      },
       continuationBudget,
       userNudge: '',
       maxSteps: 6,
@@ -1292,6 +1313,13 @@ export async function runAgent(
       const reviewUsageModel = reviewRoute?.usageModel ?? model
       const reviewContextWindow = reviewRoute?.contextWindow ?? contextWindow
       const reviewToolSchemaReserve = reviewRoute?.toolSchemaReserve ?? toolSchemaReserve
+      // How many review passes this turn may run. A failing verdict buys the
+      // parent one remediation turn plus a re-review (the next pass), so this is
+      // the "do we do another post turn after a failed review?" knob — pack-scoped
+      // because it is meaningless with the pack off (decision 15).
+      const maxReviewCycles = resolveMaxReviewCycles(
+        getPackService().getSetting(POST_TURN_REVIEW_PACK_ID, POST_TURN_REVIEW_MAX_CYCLES_SETTING),
+      )
       const minChangedLines = getSetting<number>('postTurnReviewMinChangedLines', 1)
       const nothingToReview = minChangedLines > 0 && (await changedLinesBelow(minChangedLines))
       const reviewApproved =
@@ -1321,6 +1349,7 @@ export async function runAgent(
         },
         emitChunk: sendChunk,
         continuationBudget,
+        maxCycles: maxReviewCycles,
         runReviewOnce: (todos) =>
           runPostTurnReviewOnce({
             parentGoal,

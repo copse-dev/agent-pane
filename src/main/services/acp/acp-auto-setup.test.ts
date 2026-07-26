@@ -1,7 +1,10 @@
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import type { KnownAcpAgent } from '@shared/acp-known-agents.ts'
+import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import {
+  ACP_MODELS_TTL_MS,
+  acpModelsCacheStale,
   planAcpAutoSetup,
   requestAcpPackageInstallApproval,
   updateCurrentAcpAgentModels,
@@ -155,6 +158,41 @@ describe('planAcpAutoSetup', () => {
       input(claude, { configured: true, agentInstalled: false, hasModels: false }),
     ])
     assert.deepEqual(plan.refreshModels, [])
+  })
+})
+
+describe('acpModelsCacheStale', () => {
+  const now = 1_700_000_000_000
+  const agent = (over: Partial<AcpAgentConfig> = {}): AcpAgentConfig => ({
+    id: 'claude-agent-acp',
+    title: 'Claude',
+    command: 'claude-agent-acp',
+    availableModels: [{ value: 'opus', label: 'Opus' }],
+    enabled: true,
+    ...over,
+  })
+
+  it('treats a cache with no timestamp as stale (written before the field existed)', () => {
+    assert.equal(acpModelsCacheStale(agent(), now), true)
+  })
+
+  it('is fresh within the TTL and stale once past it', () => {
+    assert.equal(acpModelsCacheStale(agent({ modelsProbedAt: now - 1000 }), now), false)
+    assert.equal(
+      acpModelsCacheStale(agent({ modelsProbedAt: now - ACP_MODELS_TTL_MS - 1 }), now),
+      true,
+    )
+  })
+
+  it('is stale exactly at the TTL boundary', () => {
+    assert.equal(acpModelsCacheStale(agent({ modelsProbedAt: now - ACP_MODELS_TTL_MS }), now), true)
+  })
+
+  it('never revalidates a disabled agent or one with no cached models', () => {
+    assert.equal(acpModelsCacheStale(agent({ enabled: false }), now), false)
+    assert.equal(acpModelsCacheStale(agent({ availableModels: [] }), now), false)
+    const { availableModels: _omit, ...noModels } = agent()
+    assert.equal(acpModelsCacheStale(noModels, now), false)
   })
 })
 
