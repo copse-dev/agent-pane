@@ -67,8 +67,8 @@ function defaultShell(): string {
   return process.env['SHELL'] || '/bin/bash'
 }
 
-function sessionCwd(): string {
-  return getWorkspaceRoot() ?? process.cwd()
+function sessionCwd(executionRoot?: string): string {
+  return executionRoot ?? getWorkspaceRoot() ?? process.cwd()
 }
 
 function sendTerminalEvent(
@@ -129,12 +129,13 @@ async function spawnShell(
   cols: number,
   rows: number,
   meta?: TerminalSessionMeta,
+  executionRoot?: string,
 ): Promise<TerminalSession> {
   const shell = defaultShell()
   const ptyProcess = await spawnPtyInProjectSandbox(shell, {
     cols,
     rows,
-    cwd: sessionCwd(),
+    cwd: sessionCwd(executionRoot),
     env: envForRendererChildProcess(),
     // User-initiated Shells tabs run outside the project seatbelt; agent shell
     // confinement stays on run_shell / run_background (#662, #812).
@@ -160,8 +161,9 @@ export async function createTerminalSession(
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,
   meta?: TerminalSessionMeta,
+  executionRoot?: string,
 ): Promise<string> {
-  const session = await spawnShell(win, ownerId, cols, rows, meta)
+  const session = await spawnShell(win, ownerId, cols, rows, meta, executionRoot)
   // First session for this owner becomes active until the UI focuses another.
   if (!activeByOwner.has(ownerId)) activeByOwner.set(ownerId, session.id)
   return session.id

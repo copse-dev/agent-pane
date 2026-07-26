@@ -3,6 +3,7 @@ import type { TodoItem } from './todo.ts'
 import type { RemoteAgentLink } from '../remote-agent-link.ts'
 import type { HookCard } from '../hooks/hook-card.ts'
 import type { ThreadWorktree, ThreadWorktreeChoice } from './worktree.ts'
+import type { VideoAttachmentRef } from '../video/video-media.ts'
 export type { HookCard } from '../hooks/hook-card.ts'
 // Token-usage types are owned by the LLM module (a provider reports usage across
 // the contract). Imported for use by the thread types below and re-exported so
@@ -182,12 +183,23 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
-  /** Provenance for a draft task created by a project automation schedule. */
+  /** Provenance for a task created by a project automation schedule. */
   automation?: {
     scheduleId: string
     scheduleName: string
     triggeredAt: number
   }
+  /**
+   * Videos the user has attached to this thread, in the order they were sent.
+   *
+   * Recorded on send (not on chip creation), so a video attached and then
+   * removed before sending never counts. Two things read it: `video_frames` is
+   * only offered to the model on threads that have one, and the paths are
+   * restated in the tool's description every turn — the reference block in the
+   * user's message is the only other place they appear, and history trimming
+   * can drop it out from under a long conversation.
+   */
+  videos?: VideoAttachmentRef[]
   /**
    * When set, the thread is archived: hidden from the sidebar and `@`-thread
    * catalog, but kept on disk under `~/.copse/workspace/<projectId>/<id>/`.
@@ -242,8 +254,15 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
  * `content`; `file`/`thread` chips render as a trailing row.
  */
 export interface TranscriptAttachment {
-  kind: 'paste' | 'file' | 'thread' | 'shell'
+  kind: 'paste' | 'file' | 'thread' | 'shell' | 'video'
   label: string
+  /**
+   * Where the attached file lives, for the chips that can act on it. Only
+   * `video` sets it today: the chip plays the recording in a preview modal, and
+   * the label alone (a bare filename) cannot find the file again after a
+   * reload. Absent for every other kind, which are display-only.
+   */
+  path?: string
 }
 
 export interface Message {

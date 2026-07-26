@@ -20,7 +20,7 @@ describe('experimental settings section', () => {
     resetUserData()
   })
 
-  it('exposes the MCP UI artefacts toggle, off by default', async () => {
+  it('hides the retired experimental toggles migrated to Settings > Packs', async () => {
     await $('.prompt-input').waitForExist({ timeout: 15_000 })
     await $('[aria-label="Settings"]').click()
 
@@ -31,12 +31,24 @@ describe('experimental settings section', () => {
 
     const experimental = settingsSection('experimental')
     await expect(experimental).toBeDisplayed()
-    await expect(experimental.$('legend=MCP UI artefacts (canvas)')).toBeDisplayed()
 
-    const toggle = await experimental.$('input[name="mcpUiArtefactsEnabled"]')
-    await expect(toggle).toBeExisting()
-    // Off by default — opt-in only.
-    assert.equal(await toggle.isSelected(), false)
+    // MCP UI artefacts (canvas) migrated to the `copse.mcp-ui-canvas` first-party
+    // pack (Settings > Packs), so the retired fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="mcpUiArtefactsEnabled"]').isExisting(),
+      false,
+      'mcpUiArtefactsEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(await experimental.$('legend=MCP UI artefacts (canvas)').isExisting(), false)
+
+    // DevTools shortcut migrated to the `copse.devtools-shortcut` first-party
+    // pack (Settings > Packs), so the retired fieldset must not appear here.
+    assert.equal(
+      await experimental.$('input[name="devtoolsShortcutEnabled"]').isExisting(),
+      false,
+      'devtoolsShortcutEnabled must leave Settings > Experimental after pack migration',
+    )
+    assert.equal(await experimental.$('legend=DevTools shortcut').isExisting(), false)
 
     // CI investigator migrated from an experimental toggle to the
     // `copse.ci-investigator` first-party pack (Settings > Packs), so the retired
@@ -127,6 +139,6 @@ describe('experimental settings section', () => {
       .$('.field-hint')
     assert.match(await classifierHint.getText(), /shared model\s+intellect scale/i)
 
-    await saveElementScreenshot('#settings-dialog', 'settings-experimental-mcp-ui.png')
+    await saveElementScreenshot('#settings-dialog', 'settings-experimental.png')
   })
 })

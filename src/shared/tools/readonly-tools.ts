@@ -30,6 +30,8 @@ export const READONLY_AGENT_TOOLS = new Set<string>([
   'recall',
   // Snapshotting the user's open Shells tabs is read-only.
   'read_terminal',
+  // Reading stills out of a video decodes in a hidden window and writes nothing.
+  'video_frames',
 ])
 
 export const READONLY_MODE_BLOCK_MESSAGE =

@@ -15,6 +15,10 @@ import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-ch
 import { createGitChangesDiffEditor, setGitFileDiffModel } from '../monaco/git-diff-viewer.ts'
 import { showErrorToast } from './toast.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
+import {
+  getActiveThreadOwner,
+  requireActiveThreadOwner,
+} from '../controller/active-thread-owner.ts'
 
 type FileViewMode = 'preview' | 'source' | 'changes'
 
@@ -148,11 +152,22 @@ export function mountContextPanel(
   async function refreshWorkingDiff(): Promise<void> {
     const { openFile } = store.getState()
     if (!openFile) return
+    const owner = getActiveThreadOwner(store)
+    if (!owner) return
     const requestId = ++workingDiffRequestId
-    const diff = await api.git.workingFileDiff(openFile.path).catch(() => null)
+    const diff = await api.git
+      .workingFileDiff(owner.projectId, owner.threadId, openFile.path)
+      .catch(() => null)
     if (requestId !== workingDiffRequestId) return
     const current = store.getState().openFile
-    if (!current || current.path !== openFile.path) return
+    const currentOwner = getActiveThreadOwner(store)
+    if (
+      !current ||
+      current.path !== openFile.path ||
+      currentOwner?.projectId !== owner.projectId ||
+      currentOwner.threadId !== owner.threadId
+    )
+      return
 
     // Identical content means nothing to re-render; keep the attached models
     // (and the user's diff scroll position) instead of churning them.
@@ -207,9 +222,12 @@ export function mountContextPanel(
   fileEditor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     const { openFile } = store.getState()
     if (openFile) {
-      void api.fs.writeFile(openFile.path, fileEditor.getValue()).catch((err: unknown) => {
-        showErrorToast(`Failed to save ${openFile.path}`, err)
-      })
+      const owner = requireActiveThreadOwner(store)
+      void api.fs
+        .writeFile(owner.projectId, owner.threadId, openFile.path, fileEditor.getValue())
+        .catch((err: unknown) => {
+          showErrorToast(`Failed to save ${openFile.path}`, err)
+        })
     }
   })
 
@@ -260,20 +278,26 @@ export function mountContextPanel(
     }
   }
 
-  let watchedPath: string | null = null
+  let watched: { projectId: string; threadId: string; path: string } | null = null
 
   const unsubs = [
     store.on('panel_changed', () => {
       updatePanel()
       void refreshWorkingDiff()
       const { openFile } = store.getState()
-      if (watchedPath && watchedPath !== openFile?.path) {
-        void api.fs.unwatch(watchedPath)
-        watchedPath = null
+      const owner = getActiveThreadOwner(store)
+      if (
+        watched &&
+        (watched.path !== openFile?.path ||
+          watched.projectId !== owner?.projectId ||
+          watched.threadId !== owner.threadId)
+      ) {
+        void api.fs.unwatch(watched.projectId, watched.threadId, watched.path)
+        watched = null
       }
-      if (openFile && watchedPath !== openFile.path) {
-        void api.fs.watch(openFile.path)
-        watchedPath = openFile.path
+      if (openFile && owner && !watched) {
+        void api.fs.watch(owner.projectId, owner.threadId, openFile.path)
+        watched = { ...owner, path: openFile.path }
       }
     }),
     store.on('theme_changed', (theme) => {
@@ -281,12 +305,14 @@ export function mountContextPanel(
     }),
   ]
 
-  const unsubFsChanged = api.fs.onChanged((path, newContent) => {
+  const unsubFsChanged = api.fs.onChanged((projectId, threadId, path, newContent) => {
+    const owner = getActiveThreadOwner(store)
+    if (projectId !== owner?.projectId || threadId !== owner.threadId) return
     if (path !== store.getState().openFile?.path) return
     void (async (): Promise<void> => {
       let content: string
       try {
-        content = newContent ?? (await api.fs.readFile(path))
+        content = newContent ?? (await api.fs.readFile(projectId, threadId, path))
       } catch (err) {
         showErrorToast(`Failed to reload ${path}`, err)
         return
@@ -305,12 +331,10 @@ export function mountContextPanel(
   updatePanel()
   void refreshWorkingDiff()
 
-  const unbindDrop = bindFileDropTarget(
-    root,
-    getPromptAttachmentHandlers,
-    api,
-    () => store.getState().workspaceRoot,
-  )
+  const unbindDrop = bindFileDropTarget(root, getPromptAttachmentHandlers, api, () => ({
+    workspaceRoot: store.getState().workspaceRoot,
+    owner: getActiveThreadOwner(store),
+  }))
   const unbindFileLinks = bindFileReferenceClicks(previewContainer, store, api)
   const unbindWorkspaceLinks = bindWorkspaceLinkClicks(previewContainer, store, api)
   const unbindBrowserLinks = bindBrowserLinkClicks(previewContainer, store, api)
@@ -320,6 +344,7 @@ export function mountContextPanel(
       u()
     })
     unsubFsChanged()
+    if (watched) void api.fs.unwatch(watched.projectId, watched.threadId, watched.path)
     unbindDrop()
     unbindFileLinks()
     unbindWorkspaceLinks()

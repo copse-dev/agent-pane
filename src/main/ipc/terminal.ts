@@ -1,8 +1,16 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { ensureTerminalPermitted } from '../services/security/permission-gate.ts'
+import { resolveThreadExecutionContext } from '../services/thread-execution-context.ts'
+import { getProjectRoot } from '../services/workspace.ts'
 import { z } from 'zod'
-import { assertMainFrameSender, parseIpcArgs, zSessionId } from './ipc-guards.ts'
+import {
+  assertMainFrameSender,
+  parseIpcArgs,
+  zProjectId,
+  zSessionId,
+  zThreadId,
+} from './ipc-guards.ts'
 import {
   createTerminalSession,
   destroyAllTerminalSessions,
@@ -17,12 +25,11 @@ import {
 const terminalCreateSchema = z.tuple([
   z.number().int().min(1).max(500),
   z.number().int().min(1).max(200),
-  z
-    .object({
-      label: z.string().max(200).optional(),
-      threadId: z.string().max(128).nullable().optional(),
-    })
-    .optional(),
+  z.object({
+    label: z.string().max(200).optional(),
+    projectId: zProjectId,
+    threadId: zThreadId.nullable(),
+  }),
 ])
 
 const terminalMetaSchema = z.tuple([
@@ -43,18 +50,32 @@ function normalizeMeta(meta: {
   return out
 }
 
+async function resolveTerminalRoot(meta: {
+  projectId: string
+  threadId: string | null
+}): Promise<string> {
+  if (meta.threadId) {
+    return (await resolveThreadExecutionContext(meta.projectId, meta.threadId)).root
+  }
+  const projectRoot = getProjectRoot(meta.projectId)
+  if (!projectRoot) throw new Error(`Cannot resolve root for project "${meta.projectId}"`)
+  return projectRoot
+}
+
 export function initTerminal(win: BrowserWindow): () => void {
   ipcMain.handle('terminal:create', async (event, ...rawArgs) => {
     assertMainFrameSender(event, win)
     const [cols, rows, meta] = parseIpcArgs(terminalCreateSchema, rawArgs)
     const permitted = await ensureTerminalPermitted()
     if (!permitted) throw new Error('Terminal access was not approved')
+    const executionRoot = await resolveTerminalRoot(meta)
     return createTerminalSession(
       win,
       event.sender.id,
       cols,
       rows,
-      meta ? normalizeMeta(meta) : undefined,
+      normalizeMeta(meta),
+      executionRoot,
     )
   })
 

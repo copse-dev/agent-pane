@@ -98,7 +98,9 @@ function createApi(options: {
     },
     git: {
       branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
-      checkoutBranch: options.onCheckoutBranch ?? (async (): Promise<void> => {}),
+      checkoutBranch: async (_projectId: string, _threadId: string, branch: string) => {
+        await options.onCheckoutBranch?.(branch)
+      },
       listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
       getDefaultBranch: async () => 'main',
     },
@@ -481,6 +483,7 @@ describe('input bar branch mismatch warning', () => {
     let branchRefreshes = 0
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread('feature/thread-branch')],
     })

@@ -198,7 +198,12 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
       return
     }
     try {
-      const content = await api.fs.readFile(item.path)
+      const { activeProjectId, activeThreadId } = store.getState()
+      if (!activeProjectId || !activeThreadId) return
+      const content = await api.fs.readFile(activeProjectId, activeThreadId, item.path)
+      const current = store.getState()
+      if (current.activeProjectId !== activeProjectId || current.activeThreadId !== activeThreadId)
+        return
       onAttach({ path: item.path, content })
     } catch {
       /* ignore read errors */
