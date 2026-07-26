@@ -1,8 +1,4 @@
-import {
-  GUARDED_YOLO_ARM_TTL_MS,
-  type GuardedYoloContainment,
-  type GuardedYoloState,
-} from '@shared/types/guarded-yolo.ts'
+import { type GuardedYoloContainment, type GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 
 interface GuardedYoloEntry {
@@ -13,15 +9,6 @@ interface GuardedYoloEntry {
 
 interface GuardedYoloRegistryOptions {
   now?: () => number
-  schedule?: (callback: () => void, delayMs: number) => () => void
-}
-
-function defaultSchedule(callback: () => void, delayMs: number): () => void {
-  const timer = setTimeout(callback, delayMs)
-  if (typeof timer.unref === 'function') timer.unref()
-  return () => {
-    clearTimeout(timer)
-  }
 }
 
 /**
@@ -33,11 +20,9 @@ export class GuardedYoloRegistry {
   private readonly entries = new Map<string, GuardedYoloEntry>()
   private readonly listeners = new Set<(threadId: string) => void>()
   private readonly now: () => number
-  private readonly schedule: (callback: () => void, delayMs: number) => () => void
 
   constructor(options: GuardedYoloRegistryOptions = {}) {
     this.now = options.now ?? Date.now
-    this.schedule = options.schedule ?? defaultSchedule
   }
 
   arm(threadId: string): void {

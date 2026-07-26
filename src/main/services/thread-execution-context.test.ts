@@ -9,6 +9,7 @@ import {
   type ThreadExecutionContext,
   type ThreadExecutionContextDependencies,
 } from './thread-execution-context.ts'
+import type { ThreadWorktree } from '@shared/types/worktree.ts'
 import type { ValidatedThreadWorktree } from './worktree-manager.ts'
 
 function sharedContext(threadId: string, root: string): ThreadExecutionContext {
@@ -103,6 +104,47 @@ describe('thread execution context', () => {
       root: '/validated/root',
       checkoutMode: 'worktree',
       branch: 'copse/thread-1',
+    })
+  })
+
+  it('persists an adopted live branch when Git HEAD drifted inside the worktree', async () => {
+    const persisted = {
+      path: '/diagnostic/path',
+      branch: 'copse/stale',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
+    }
+    const validated: ValidatedThreadWorktree = {
+      ...persisted,
+      branch: 'feat/live',
+      path: '/validated/root',
+      root: '/validated/root',
+      gitDir: '/repo/.git/worktrees/thread-1',
+      commonGitDir: '/repo/.git',
+    }
+    let synced: ThreadWorktree | undefined
+    const context = await resolver({
+      getThreadMeta: async () => ({
+        id: 'thread-1',
+        gitBranch: 'copse/stale',
+        worktree: persisted,
+      }),
+      validateWorktree: async () => validated,
+      syncWorktreeBranch: async (_projectId, _threadId, worktree) => {
+        synced = worktree
+      },
+    })
+
+    assert.equal(context.branch, 'feat/live')
+    assert.deepEqual(synced, {
+      path: '/diagnostic/path',
+      branch: 'feat/live',
+      baseBranch: 'main',
+      baseCommit: 'abc123',
+      createdAt: 1,
+      seededFromDirtyProject: false,
     })
   })
 
