@@ -1,4 +1,4 @@
-import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
+import type { StreamChunk, ContextBreakdown } from '@shared/types'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
@@ -138,7 +138,6 @@ export interface ApiClient {
       }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
-    onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
     /**
      * An async hook's `queueMessage` output (decision 4), bridged from the host.
