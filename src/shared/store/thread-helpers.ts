@@ -305,35 +305,47 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
   store.emit('thread_draft_changed', threadId)
 }
 
-export function appendToken(store: AppStore, messageId: string, text: string): void {
+/**
+ * Replace exactly one message in its owning thread, cloning only that thread and
+ * its `messages` array. Every unrelated thread — and every sibling message in the
+ * owning thread — keeps its object identity, so the per-chunk work of a stream is
+ * proportional to the owning thread's message count rather than to all loaded
+ * history (issue #1155). No `setState` happens when the id is unknown; returns the
+ * owning thread's id (or `null`) so callers can scope their emit.
+ */
+function replaceMessage(
+  store: AppStore,
+  messageId: string,
+  update: (message: Message) => Message,
+): string | null {
   const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, content: m.content + text })),
-  }))
-  store.setState({ threads: updated })
+  for (let ti = 0; ti < threads.length; ti++) {
+    const thread = threads[ti]
+    if (!thread) continue
+    const mi = thread.messages.findIndex((m) => m.id === messageId)
+    if (mi === -1) continue
+    const messages = thread.messages.slice()
+    messages[mi] = update(at(messages, mi))
+    const nextThreads = threads.slice()
+    nextThreads[ti] = { ...thread, messages }
+    store.setState({ threads: nextThreads })
+    return thread.id
+  }
+  return null
+}
+
+export function appendToken(store: AppStore, messageId: string, text: string): void {
+  replaceMessage(store, messageId, (m) => ({ ...m, content: m.content + text }))
   store.emit('message_token', messageId, text)
 }
 
 export function appendReasoning(store: AppStore, messageId: string, text: string): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) =>
-      m.id !== messageId ? m : { ...m, reasoning: (m.reasoning ?? '') + text },
-    ),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, reasoning: (m.reasoning ?? '') + text }))
   store.emit('message_reasoning', messageId, text)
 }
 
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, content })),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, content }))
   store.emit('message_token', messageId, content)
 }
 
@@ -342,12 +354,7 @@ export function setMessageCommandSummary(
   messageId: string,
   commandSummary: string,
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, commandSummary })),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, commandSummary }))
   // Re-uses the tool-card refresh path so the shell group header updates in place.
   store.emit('tool_call_updated', messageId, '')
 }
@@ -357,30 +364,13 @@ export function setMessageToolSummary(
   messageId: string,
   toolSummary: string,
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, toolSummary })),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, toolSummary }))
   // Re-uses the tool-card refresh path so the turn rollup label updates in place.
   store.emit('tool_call_updated', messageId, '')
 }
 
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) =>
-      m.id !== messageId
-        ? m
-        : {
-            ...m,
-            toolCalls: [...m.toolCalls, toolCall],
-          },
-    ),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, toolCalls: [...m.toolCalls, toolCall] }))
   store.emit('tool_call_started', messageId, toolCall)
 }
 
@@ -404,19 +394,10 @@ export function updateToolCall(
   toolCallId: string,
   patch: Partial<ToolCall>,
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) =>
-      m.id !== messageId
-        ? m
-        : {
-            ...m,
-            toolCalls: m.toolCalls.map((tc) => (tc.id !== toolCallId ? tc : { ...tc, ...patch })),
-          },
-    ),
+  replaceMessage(store, messageId, (m) => ({
+    ...m,
+    toolCalls: m.toolCalls.map((tc) => (tc.id !== toolCallId ? tc : { ...tc, ...patch })),
   }))
-  store.setState({ threads: updated })
   store.emit('tool_call_updated', messageId, toolCallId)
 }
 
@@ -427,23 +408,13 @@ export function updateToolCall(
  * family. Deduped by spine id so a re-delivered chunk never doubles a card.
  */
 export function addHookCard(store: AppStore, messageId: string, card: HookCard): void {
-  const { threads } = store.getState()
-  let threadId: string | undefined
-  const updated = threads.map((t) => {
-    if (!t.messages.some((m) => m.id === messageId)) return t
-    threadId = t.id
-    return {
-      ...t,
-      messages: t.messages.map((m) => {
-        if (m.id !== messageId) return m
-        const existing = m.hookCards ?? []
-        if (existing.some((c) => c.id === card.id)) return m
-        return { ...m, hookCards: [...existing, card] }
-      }),
-    }
+  const threadId = replaceMessage(store, messageId, (m) => {
+    const existing = m.hookCards ?? []
+    // Deduped by spine id so a re-delivered chunk never doubles a card.
+    if (existing.some((c) => c.id === card.id)) return m
+    return { ...m, hookCards: [...existing, card] }
   })
-  if (threadId === undefined) return
-  store.setState({ threads: updated })
+  if (threadId === null) return
   store.emit('hook_card_added', threadId, messageId)
 }
 

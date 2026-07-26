@@ -6,9 +6,10 @@ import { $, browser, expect } from '@wdio/globals'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
 import { E2E_SCREENSHOT_DIR, saveAppScreenshot } from './helpers/screenshot.ts'
 
-// Row-level mark-done toggle on the Roadmap pane: ✓ flips a live item to
-// `done` without opening the editor. Done rows are filtered out by default;
-// the header "done" toggle reveals them (struck-through title, ↺ reopen).
+// Row-level mark-done toggle on the Roadmap pane: the check icon flips a live
+// item to `done` without opening the editor. The icon is opacity-hidden until
+// row hover/focus. Done rows are filtered out by default; the header "done"
+// toggle reveals them (struck-through title, refresh icon to reopen).
 describe('roadmap done toggle', () => {
   let workspaceRoot: string
 
@@ -49,6 +50,9 @@ describe('roadmap done toggle', () => {
     await $('.roadmap-cancel-btn').click()
     await $('.roadmap-empty').waitForDisplayed({ timeout: 10_000 })
 
+    // Hover reveals the mark-done icon (opacity 0 at rest).
+    const row = $('.roadmap-row')
+    await row.moveTo()
     const toggle = $('.roadmap-done-toggle')
     await toggle.waitForDisplayed({ timeout: 10_000 })
     assert.equal(await toggle.getAttribute('title'), 'Mark done')
@@ -63,9 +67,14 @@ describe('roadmap done toggle', () => {
     assert.equal(await showDone.getAttribute('aria-pressed'), 'false')
     await showDone.click()
     assert.equal(await showDone.getAttribute('aria-pressed'), 'true')
-    await browser.waitUntil(
-      async () => (await $('.roadmap-status-badge').getText()).toLowerCase() === 'done',
-      { timeout: 10_000, timeoutMsg: 'status badge never flipped to done' },
+    await browser.waitUntil(async () => (await $('.roadmap-row.is-done').isExisting()) === true, {
+      timeout: 10_000,
+      timeoutMsg: 'done row class never appeared',
+    })
+    assert.equal(
+      await $('.roadmap-status-badge').isExisting(),
+      false,
+      'done uses strikethrough, not a status chip',
     )
 
     const doneStyles = await browser.execute(() => {
@@ -83,11 +92,19 @@ describe('roadmap done toggle', () => {
     await saveAppScreenshot('roadmap-done-toggle.png')
 
     // The same control now reopens the item.
+    await $('.roadmap-row').moveTo()
     assert.equal(await $('.roadmap-done-toggle').getAttribute('title'), 'Reopen (set ready)')
     await $('.roadmap-done-toggle').click()
     await browser.waitUntil(
-      async () => (await $('.roadmap-status-badge').getText()).toLowerCase() === 'ready',
-      { timeout: 10_000, timeoutMsg: 'status badge never flipped back to ready' },
+      async () =>
+        (await $('.roadmap-row').isExisting()) === true &&
+        (await $('.roadmap-row.is-done').isExisting()) === false,
+      { timeout: 10_000, timeoutMsg: 'row never returned to ready (no is-done)' },
+    )
+    assert.equal(
+      await $('.roadmap-status-badge').isExisting(),
+      false,
+      'ready stays silent after reopen',
     )
   })
 })
