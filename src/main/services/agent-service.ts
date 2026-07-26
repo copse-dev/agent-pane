@@ -598,6 +598,11 @@ export async function runAgent(
     const controller = new AbortController()
     abortMap.set(threadId, controller)
     setActiveRunThread(threadId)
+    // ACP-native tool bridge calls share the host permission gate. Keep the
+    // same durable attribution window as the local loop so Guarded YOLO
+    // decisions cannot become unaudited merely because an ACP client invoked
+    // the shell tool.
+    beginHookRunRecording(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
     // The advisor works both ways for ACP: an external executor can consult it
@@ -675,6 +680,7 @@ export async function runAgent(
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       runAbort.clear()
+      endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)
     }
