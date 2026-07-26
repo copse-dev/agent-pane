@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "node ../scripts/hook-file-check.mts --dialect copse",
+        "glob": [
+          "src/**/*.{ts,mts,tsx,css,html}",
+          "packages/*/src/**/*.ts",
+          "scripts/**/*.{ts,mts}",
+          "tests/**/*.ts"
+        ],
+        "async": true,
+        "onFailure": "open",
+        "timeout": 60
+      }
+    ]
+  }
+}

@@ -212,6 +212,45 @@ and real-runtime checks (sizing/rendering, Monaco, terminal, webview, main IPC) 
 [`docs/testing-strategy.md`](docs/testing-strategy.md). The per-spec e2e→component migration backlog
 is in [`docs/e2e-component-migration.md`](docs/e2e-component-migration.md).
 
+### Run the smallest set of tests
+
+A full `npm test` is ~3 minutes over 530 files. While iterating, run the tests your change can
+actually break — the full `npm run check` stays the gate before you commit, not the loop you
+iterate in. Full guidance (including the confidence levels) is in
+[`docs/testing-strategy.md`](docs/testing-strategy.md#run-the-smallest-set-of-tests).
+
+```bash
+npm test -- thread-store        # filter: path substring, base name, or glob
+npm run oracle                  # which tests can your diff break, and how sure is it?
+npm run oracle -- --run unit    # run exactly those unit tests
+npm run oracle -- --run e2e     # run exactly those e2e specs
+```
+
+Three rules that keep the subset honest:
+
+- **Read the oracle's confidence line.** `HIGH` means the subset covers the diff. `LOW` means some
+  changed file maps to nothing — the unmapped files it lists are a blind spot the subset cannot
+  see. `broad` means run everything. A subset run on a `LOW` verdict is not evidence.
+- **A filter that matches nothing is an error, not a pass.** `npm test -- <typo>` exits non-zero
+  rather than reporting a green on zero tests. Never read "0 tests" as success.
+- **A green subset is not a green suite.** The oracle maps imports and DOM selectors, so anything
+  reached dynamically — a string key, an IPC channel name, a registry lookup — is invisible to it.
+  `npm run check` before committing, always.
+
+### The post-edit hook runs the lint for you
+
+Every file you edit in this repo is lint- and format-checked automatically, in about 2s, via the
+`afterFileEdit` / `PostToolUse` hook wired in `.copse/hooks.json`, `.cursor/hooks.json` and
+`.claude/settings.json` (all three run `scripts/hook-file-check.mts`, so it works whichever agent
+you are). **Don't spend a turn re-running Prettier or ESLint on a file you just edited** — if the
+hook said nothing, it is clean.
+
+What the hook covers is deliberately narrow: Prettier, plus the **type-unaware** ESLint rules
+(`eslint.hook.config.mjs`). The type-aware rules and `tsc` need the whole TypeScript program —
+~10s per file — which is too slow to run on every edit, so they stay in `npm run check`. A silent
+hook means "no cheap problems", not "verified". Run it by hand with
+`node scripts/hook-file-check.mts <file>`.
+
 ### Visual validation (tool UI / screenshots)
 
 Use WebdriverIO Electron e2e — do not hand-drive VNC unless debugging layout. For every visual
