@@ -85,6 +85,9 @@ The allow-list model closes that:
 - `src/main/services/security/command-routing.ts` — pure `resolveCommandRouting`
   (allow/defer), quote- and escape-aware `splitSegments`, `shell-quote`-based
   `commandHead`, the safe-prep and non-trustable sets.
+- `src/main/services/security/shell-argv.ts` — the lexing primitives shared by all
+  three analyzers: segment splitting, wrapper unwrapping, and the interpreter,
+  script-suffix, and inline-code-flag tables.
 - `src/main/services/security/command-routing-config.ts` — `routeShellCommand`
   (auto-run + workspace-trust gating, cached allow-set) and `shellRunsOutsideSandbox`,
   the single unsandboxed-decision helper shared by the tool and todo checks.
@@ -130,6 +133,9 @@ command list.
   compound commands, unwraps pass-through wrappers (`env`, `sudo`, `timeout`, `nice`,
   `xargs`, …), inspects command/process substitutions, interpreter bodies, and
   readable script files, across common Unix, macOS, PowerShell, and Windows forms.
+  Wrapper unwrapping currently only skips flag-shaped arguments, so a wrapper option
+  that takes a _separate_ value (`sudo -u root …`, `nice -n 10 …`) still hides the real
+  argv and degrades a hard deny to a prompt.
   Hard-denied: erasure of the filesystem root, home, workspace, or a system tree
   (`/etc`, `/usr`, `/System`, `C:\Windows`, …); the same targets reached by recursive
   `chown`/`chmod`/`chgrp` or by relocation (`mv`), which destroy access without
@@ -137,7 +143,15 @@ command list.
   attempts to rewrite the permission surface. Prompted: bounded deletion, `dd`
   overwrite of an existing path, forced symlink replacement, `crontab -r`, destructive
   version-control operations, opaque scripts, dynamic destructive paths, and
-  resource-exhaustion signals.
+  resource-exhaustion signals. "Destructive version-control operations" means the four
+  patterns in `DANGEROUS_IN_SANDBOX_PATTERNS` (`git clean -fdx`, `git reset --hard`,
+  `git checkout -- .`, and `rm -rf`) — `git push --force`, `git branch -D`,
+  `git reflog expire`, and `git update-ref -d` are not yet modelled.
+- Lexing, wrapper unwrapping, and the interpreter/script/inline-flag tables are shared
+  with the other two analyzers via `shell-argv.ts`. The wrapper list it exposes for
+  _routing_ is deliberately narrower than the one for harm analysis: seeing through
+  `sudo` is always right when asking "what damage can this do" and always wrong when
+  asking "which binary did the user authorise".
 - Each decision appends a `permission_decision` line to the thread spine with the
   original/effective command, original/effective mode, actual sandbox state, harm and
   policy verdicts, reasons, and user response. ACP-native tool bridge calls use the
