@@ -8,6 +8,12 @@ every published entry.
 
 ## Unreleased
 
+- ACP agents graduated out of **Settings → Experimental** into their own
+  top-level **Settings → ACP agents** section. The panel now follows the
+  Providers pattern: a chip row lists each agent (known presets first, then your
+  custom ones, then **Add agent**) and reveals only the selected agent's install
+  guidance / editor, so agents are hidden away until picked rather than all
+  expanded at once. A dot marks the agents you've added.
 - Packs: new opt-in `copse.forced-planning` first-party pack. When the model
   running a turn measures below a capability threshold, it requires an explicit
   plan before any other tool call — `update_todos` when that tool is offered, a
