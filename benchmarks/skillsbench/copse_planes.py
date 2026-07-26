@@ -513,41 +513,6 @@ class CopseRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
             environment_manifest=environment_manifest,
         )
 
-
-
-class OracleRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
-    """Stock planes with only the spike's network condition applied.
-
-    The oracle runs the task's own ``solve.sh`` through BenchFlow's normal agent
-    plane, so none of the Copse overrides above apply to it. It must still see
-    the *same* environment the agent trials saw, or it is not a control for
-    them: an oracle with egress calibrates nothing about trials without it.
-    """
-
-    def create_environment(
-        self,
-        environment: str,
-        task: Any,
-        task_path: Path,
-        rollout_name: str | None,
-        rollout_paths: Any,
-        *,
-        preserve_agent_network: bool,
-        environment_manifest: Any,
-    ) -> Any:
-        del preserve_agent_network
-        self.prebake_verifier_deps(task_path)
-        freeze_no_network(task)
-        return super().create_environment(
-            environment,
-            task,
-            task_path,
-            rollout_name,
-            rollout_paths,
-            preserve_agent_network=False,
-            environment_manifest=environment_manifest,
-        )
-
     async def install_agent(
         self,
         env: Any,
@@ -610,3 +575,52 @@ class OracleRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
                 self.last_result = await _run_prompt(client, prompt)
             session.mark_prompt_end()
         return _capture_session_trajectory(session), len(session.tool_calls)
+
+
+class OracleRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
+    """Stock planes with only the spike's network condition applied.
+
+    The oracle runs the task's own ``solve.sh`` through BenchFlow's normal agent
+    plane, so none of the Copse overrides above apply to it. It must still see
+    the *same* environment the agent trials saw, or it is not a control for
+    them: an oracle with egress calibrates nothing about trials without it.
+    """
+
+    def create_environment(
+        self,
+        environment: str,
+        task: Any,
+        task_path: Path,
+        rollout_name: str | None,
+        rollout_paths: Any,
+        *,
+        preserve_agent_network: bool,
+        environment_manifest: Any,
+    ) -> Any:
+        del preserve_agent_network
+        self.prebake_verifier_deps(task_path)
+        freeze_no_network(task)
+        return super().create_environment(
+            environment,
+            task,
+            task_path,
+            rollout_name,
+            rollout_paths,
+            preserve_agent_network=False,
+            environment_manifest=environment_manifest,
+        )
+
+
+#: The agent plane this spike exists to replace. A refactor once moved these off
+#: `CopseRolloutPlanes` and onto `OracleRolloutPlanes`; BenchFlow then fell back
+#: to its own ACP path, launched an empty `agent_launch`, and every trial died at
+#: `bash -c` before running a single tool — while the oracle kept passing,
+#: because `agent="oracle"` never touches ACP. Fail at import instead.
+_REQUIRED_AGENT_PLANE = ("connect_acp", "execute_prompts", "install_agent", "agent_launch")
+
+_missing = [name for name in _REQUIRED_AGENT_PLANE if name not in vars(CopseRolloutPlanes)]
+if _missing:
+    raise RuntimeError(
+        "CopseRolloutPlanes must define the agent plane it overrides; missing: "
+        + ", ".join(_missing)
+    )
