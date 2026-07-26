@@ -298,24 +298,17 @@ export function seedEmptyProject(
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     /**
      * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
-     * memory prompt block, and the Memories pane). The feature migrated off the
-     * retired `okfMemoriesEnabled` setting; `migrateOkfMemoriesEnablement()`
-     * treats an absent legacy value as "keep the experimental feature off" and
-     * disables the pack on first boot — so a test that needs the Memories pane
-     * visible seeds the legacy opt-in. Written to `config.json` (the unvalidated
-     * `electron-store` the migration reads via `storageGet`), not `settings.json`
-     * (whose writable schema retired the flag), mirroring `modelComparisonEnabled`.
+     * memory prompt block, and the Memories pane). The pack declares
+     * `defaultEnabled: false`, so a test that needs the Memories pane visible
+     * must opt in — this writes `{'copse.okf-memories': true}` into the
+     * `packEnablement` map.
      */
     okfMemoriesEnabled?: boolean
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
-     * Roadmap pane). Like `modelComparisonEnabled`, the one-time
-     * `migrateRoadmapPlansEnablement()` treats an absent legacy
-     * `roadmapPlansEnabled` as "keep the experimental feature off" and disables
-     * the pack on first boot — so a roadmap test must seed the legacy opt-in.
-     * Written to `config.json` (the unvalidated `electron-store` the migration
-     * reads via `storageGet`), not `settings.json` (whose writable schema
-     * retired the flag), mirroring pack-service.test.ts.
+     * Roadmap pane). The pack declares `defaultEnabled: false`, so a roadmap
+     * test must opt in — this writes `{'copse.roadmap-plans': true}` into the
+     * `packEnablement` map.
      */
     roadmapPlansEnabled?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
@@ -323,20 +316,22 @@ export function seedEmptyProject(
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
-     * Pack ids to force-disable at boot. Written to the `packDisabled` list the
-     * host pack service reads (P3). Use this to opt out of packs that ship
-     * enabled by default (e.g. drop the `copse.model-comparison` pack for a test
-     * that must not surface the `compare_models` tool).
+     * Pack ids to force-disable at boot, written as explicit `false` entries in
+     * the `packEnablement` map (`config.json`). Only needed for packs that ship
+     * enabled — an experimental pack is already off by default.
      */
     packDisabled?: readonly string[]
     /**
+     * Pack ids to force-enable at boot, written as explicit `true` entries in the
+     * `packEnablement` map. The generic form of `modelComparisonEnabled` and
+     * friends: use it for any pack that declares `defaultEnabled: false`.
+     */
+    packEnabled?: readonly string[]
+    /**
      * Opt into the `copse.model-comparison` pack (and its `compare_models`
-     * tool). P5's one-time `migrateP5Enablement()` treats an absent legacy
-     * `modelComparisonEnabled` as "keep the experimental tool off" and disables
-     * the pack on first boot — so a test exercising the comparison approval flow
-     * must seed the legacy opt-in. Written to `config.json` (the unvalidated
-     * `electron-store` the migration reads via `storageGet`), not `settings.json`
-     * (whose writable schema retired the flag), mirroring pack-service.test.ts.
+     * tool). The pack declares `defaultEnabled: false`, so a test exercising the
+     * comparison approval flow must opt in — this writes
+     * `{'copse.model-comparison': true}` into the `packEnablement` map.
      */
     modelComparisonEnabled?: boolean
   },
@@ -353,24 +348,19 @@ export function seedEmptyProject(
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
-  // Seed the legacy opt-in into `config.json` (the store `migrateP5Enablement`
-  // reads) so the migration keeps `copse.model-comparison` enabled instead of
-  // disabling it as a previously opt-in tool.
-  if (options?.modelComparisonEnabled) {
-    seedConfig.modelComparisonEnabled = true
-  }
-  // Same for the `copse.roadmap-plans` pack: seed the legacy opt-in into
-  // `config.json` so `migrateRoadmapPlansEnablement` keeps the pack (and its
-  // Roadmap pane) enabled instead of disabling it as a previously opt-in tool.
-  if (options?.roadmapPlansEnabled) {
-    seedConfig.roadmapPlansEnabled = true
-  }
-  // Same as modelComparisonEnabled: seed the retired `okfMemoriesEnabled` legacy
-  // opt-in into `config.json` so `migrateOkfMemoriesEnablement()` keeps the
-  // `copse.okf-memories` pack enabled instead of disabling it as a previously
-  // opt-in feature (which is what reveals the Memories pane).
-  if (options?.okfMemoriesEnabled) {
-    seedConfig.okfMemoriesEnabled = true
+  // Pack enablement is one `packEnablement` map in `config.json`, holding only
+  // explicit choices — the same shape `PackService.setEnabled` writes. Each pack
+  // ships at its manifest's `defaultEnabled`, so a spec only seeds the packs it
+  // needs flipped: `true` to opt into an experimental pack (all of these ship
+  // off), `false` to force one off.
+  const packEnablement: Record<string, boolean> = {}
+  if (options?.modelComparisonEnabled) packEnablement['copse.model-comparison'] = true
+  if (options?.roadmapPlansEnabled) packEnablement['copse.roadmap-plans'] = true
+  if (options?.okfMemoriesEnabled) packEnablement['copse.okf-memories'] = true
+  for (const packId of options?.packEnabled ?? []) packEnablement[packId] = true
+  for (const packId of options?.packDisabled ?? []) packEnablement[packId] = false
+  if (Object.keys(packEnablement).length > 0) {
+    seedConfig.packEnablement = packEnablement
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
@@ -382,9 +372,6 @@ export function seedEmptyProject(
   }
   if (options?.model) {
     settings.model = options.model
-  }
-  if (options?.packDisabled !== undefined) {
-    settings.packDisabled = [...options.packDisabled]
   }
   // Legacy top-level `advisorModel` in settings.json — `migratePackModelSettings`
   // lifts it into `pack.copse.advisor-strategy.settings` via getSetting on boot.

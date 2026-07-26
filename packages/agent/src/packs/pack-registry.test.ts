@@ -101,15 +101,37 @@ describe('PackRegistry storage', () => {
 })
 
 describe('first-party packs', () => {
-  it('seeds a registry with the shipped first-party packs, all enabled', () => {
+  it('seeds a registry with the shipped first-party packs at their declared defaults', () => {
     const registry = createFirstPartyPackRegistry()
     assert.deepEqual(
       registry.all().map((p) => p.id),
       FIRST_PARTY_PACKS.map((p) => p.id),
     )
+    // Enablement follows the manifest, not the act of registering: a pack that
+    // declares `defaultEnabled: false` is off in *every* registry, including the
+    // fallback `getDefaultPackRegistry()` hands out before the host wires the
+    // shared one. Nothing host-side has to run first for that to hold.
     for (const pack of FIRST_PARTY_PACKS) {
-      assert.equal(registry.isEnabled(pack.id), true)
+      assert.equal(
+        registry.isEnabled(pack.id),
+        pack.manifest.defaultEnabled !== false,
+        `${pack.id} must start at its declared default`,
+      )
     }
+  })
+
+  it('honours defaultEnabled: false at registration, and lets it be turned on', () => {
+    const registry = new PackRegistry()
+    registry.register(definePack({ name: 'off', trust: 'first-party', defaultEnabled: false }))
+    registry.register(definePack({ name: 'on', trust: 'first-party' }))
+
+    assert.equal(registry.isEnabled('off'), false)
+    assert.equal(registry.isEnabled('on'), true, 'omitting defaultEnabled ships enabled')
+
+    // The declared default is a starting point, not a lock — an explicit opt-in
+    // still enables it (that is what `packEnablement: {id: true}` replays).
+    registry.enable('off')
+    assert.equal(registry.isEnabled('off'), true)
   })
 })
 

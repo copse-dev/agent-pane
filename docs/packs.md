@@ -58,17 +58,33 @@ groups every pack's contributions by pack id and owns the lifecycle:
 - **Grouping** — `all()` / `grouping()` enumerate packs (Settings, P3); the
   `active*()` getters (`activeToolNames`, `activeBlockingHooks`,
   `activeAsyncHooks`, `activePromptBlocks`, `activeUiContributions`,
-  `activeCapabilities`) return the contributions of **enabled** packs only, for
-  **new work**.
+  `activeCapabilities`, `activePermissions`) return the contributions of
+  **enabled** packs only, for **new work**.
 - **Capabilities** — a pack may declare named **capability** flags: pure
   cross-cutting behaviour with no tool/hook/prompt/panel (e.g. the MCP-UI canvas,
   the DevTools shortcut). Any subsystem reads one through the single
   `isCapabilityActive(name)` seam instead of a scattered `getSetting` check; a
   capability is active iff some enabled pack declares it.
+- **Permissions** — a pack may declare the **authority it opens**: a sandbox
+  relaxation it may request, such as `copse.background-tasks` declaring
+  `loopback-bind` for a task that binds a localhost port. The permission-gate
+  resolves it through `isPermissionDeclared(name)` before offering or honouring
+  the grant, so the authority exists only while the owning pack is enabled — the
+  same flag flip that unregisters the pack's tools revokes it. The declaration
+  also feeds the Settings enumeration and the install-time review.
+- **Default enablement** — a pack declares `defaultEnabled: false` to ship off
+  (every experimental pack does); omitting it ships enabled. `register()` applies
+  the declaration, so it holds in **every** registry, including the fallback
+  `getDefaultPackRegistry()` returns before the host installs the shared one — a
+  read site cannot see a default-off pack as enabled just because it ran early.
+  The host persists only _explicit_ user choices (`packEnablement`, a
+  `packId → boolean` map) and layers them on top, so an untouched pack keeps
+  following its manifest rather than whatever the default was when it shipped.
 - **Atomic enable/disable** — `disable(id)` flips a single flag, so every one of
   a pack's contribution kinds drops from the active getters at once: tools leave
   the model tool list, hooks stop firing, prompt blocks drop out, UI stops
-  mounting for new content, capabilities turn off. There is no partial state.
+  mounting for new content, capabilities turn off, declared permissions are
+  revoked. There is no partial state.
 - **Storage survives disable** — `storage(id)` is a namespaced bag that is never
   cleared on disable (decision 17), like a disabled browser extension's data.
 

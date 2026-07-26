@@ -64,7 +64,10 @@ describe('copse.roadmap-plans pack', () => {
 
   it('atomically drops the tool from the active seed on disable', () => {
     const registry = createFirstPartyPackRegistry()
-    assert.equal(registry.isEnabled(ROADMAP_PLANS_PACK_ID), true)
+    // Experimental: the manifest declares `defaultEnabled: false`, so a fresh
+    // seed ships it off. Opt in explicitly to exercise the disable path below.
+    assert.equal(registry.isEnabled(ROADMAP_PLANS_PACK_ID), false)
+    registry.enable(ROADMAP_PLANS_PACK_ID)
     assert.ok(registry.activeToolNames().includes(ROADMAP_PLANS_TOOL_NAME))
 
     // Pack storage survives disable (decision 17).

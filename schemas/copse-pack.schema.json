@@ -124,6 +124,10 @@
         }
       }
     },
+    "defaultEnabled": {
+      "description": "Whether the pack is on for a user who has never touched its toggle. Omitted or true ships enabled; false is how an experimental pack declares that it ships off. Applied at registration, so the default holds in every registry rather than depending on host boot order. Only explicit user choices are persisted, so an untouched pack follows this declaration.",
+      "type": "boolean"
+    },
     "capabilities": {
       "description": "Named runtime capability flags the pack owns — pure cross-cutting behaviour (no tool/hook/prompt/panel), read by any subsystem through the registry's isCapabilityActive seam and enumerated in Settings (P3).",
       "type": "array",

@@ -31,8 +31,8 @@
 //  - `advisorStrategyPack` — the first-party pack for the experimental
 //    client-side advisor strategy (issue #566). Declares the `advisor` tool;
 //    the pack toggle atomically drops the tool from the model tool list
-//    (`registry-bootstrap.ts` reads the pack registry). The orthogonal
-//    `advisorModel` setting (which model the advisor consults) stays top-level.
+//    (`registry-bootstrap.ts` reads the pack registry). Which model the advisor
+//    consults is the pack's own `advisorModel` `model` setting field.
 //  - `okfMemoriesPack` — the first-party pack for the experimental OKF memories
 //    feature. Declares the `remember`/`recall` tools and the memory steering
 //    prompt block; the pack toggle atomically drops the tools from the model
@@ -56,13 +56,13 @@
 //    the `mcp-ui-canvas` **capability** — the canvas gates in `mcp-registry.ts`
 //    read `isCapabilityActive('mcp-ui-canvas')` instead of the retired
 //    `mcpUiArtefactsEnabled` setting, so the pack toggle atomically turns canvas
-//    rendering (and the bundled canvas server) on/off. Default DISABLED.
+//    rendering (and the bundled canvas server) on/off. Declares `defaultEnabled: false`.
 //  - `devtoolsShortcutPack` — the first-party pack for the experimental DevTools
 //    shortcut. Contributes no tool: it declares the `devtools-shortcut`
 //    **capability** — `create-main-window.ts` reads
 //    `isCapabilityActive('devtools-shortcut')` instead of the retired
 //    `devtoolsShortcutEnabled` setting, so the pack toggle atomically
-//    registers/unregisters the global Ctrl+Shift+I shortcut. Default DISABLED.
+//    registers/unregisters the global Ctrl+Shift+I shortcut. Declares `defaultEnabled: false`.
 //  - `backgroundTasksPack` — the first-party pack for the experimental
 //    background tasks feature (issue #691). Declares the `run_background` tool
 //    AND the `loopback-bind` **permission / sandbox relaxation** (issue #1190):
@@ -70,7 +70,7 @@
 //    (`registry-bootstrap.ts` reads the pack registry) and the permission-gate
 //    only grants the loopback port-binding relaxation while the pack declares it
 //    (`permission-gate.ts` reads `isPermissionDeclared('loopback-bind')`).
-//    Default DISABLED.
+//    Declares `defaultEnabled: false`.
 import type { RegisteredPack } from './pack-manifest.ts'
 import { PackRegistry } from './pack-registry.ts'
 import { todosPack } from './todos-pack.ts'
@@ -110,7 +110,13 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   backgroundTasksPack,
 ]
 
-/** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */
+/**
+ * A fresh {@link PackRegistry} seeded with the shipped first-party packs, each
+ * at its declared default enablement (`defaultEnabled: false` packs start
+ * disabled). The user's explicit choices are layered on host-side by
+ * `pack-service.ts`; a registry built here without that layer is therefore a
+ * safe default rather than an all-on one.
+ */
 export function createFirstPartyPackRegistry(): PackRegistry {
   const registry = new PackRegistry()
   for (const pack of FIRST_PARTY_PACKS) registry.register(pack)

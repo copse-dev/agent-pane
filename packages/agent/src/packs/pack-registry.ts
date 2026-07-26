@@ -89,13 +89,23 @@ export class PackRegistry {
   // order (contribution order can be load-bearing, e.g. prompt assembly).
   private readonly packs = new Map<string, RegisteredPack>()
   // Disabled ids. A pack is enabled unless present here — so registering a pack
-  // enables it by default, matching VS Code's built-in-extension model.
+  // enables it by default, matching VS Code's built-in-extension model, unless
+  // its manifest declares `defaultEnabled: false` (an experimental pack that
+  // ships off; see `register`).
   private readonly disabledIds = new Set<string>()
   // Per-pack storage bag, keyed by pack id. Never cleared on disable (decision
   // 17): the entry outlives the pack's active registration.
   private readonly storageByPack = new Map<string, Map<string, unknown>>()
 
-  /** Register a pack, grouped by its id. Enabled by default. Duplicate id throws. */
+  /**
+   * Register a pack, grouped by its id. Enabled unless the manifest declares
+   * `defaultEnabled: false`. Duplicate id throws.
+   *
+   * Applying the declared default here (rather than host-side) is what makes
+   * default-off hold in *every* registry, including the fresh fallback
+   * `getDefaultPackRegistry()` hands out before the host wires the shared one.
+   * The host then layers the user's explicit choices on top via enable/disable.
+   */
   register(pack: RegisteredPack): void {
     if (this.packs.has(pack.id)) throw new DuplicatePackError(pack.id)
     for (const contribution of pack.contributions.uiContributions) {
@@ -118,6 +128,7 @@ export class PackRegistry {
       }
     }
     this.packs.set(pack.id, pack)
+    if (pack.manifest.defaultEnabled === false) this.disabledIds.add(pack.id)
   }
 
   /** Every registered pack in registration order (Settings enumeration, P3). */

@@ -71,7 +71,10 @@ describe('copse.ci-investigator pack', () => {
 
   it('atomically drops every tool from the active seed on disable', () => {
     const registry = createFirstPartyPackRegistry()
-    assert.equal(registry.isEnabled(CI_INVESTIGATOR_PACK_ID), true)
+    // Experimental: the manifest declares `defaultEnabled: false`, so a fresh
+    // seed ships it off. Opt in explicitly to exercise the disable path below.
+    assert.equal(registry.isEnabled(CI_INVESTIGATOR_PACK_ID), false)
+    registry.enable(CI_INVESTIGATOR_PACK_ID)
     for (const name of TOOL_NAMES) {
       assert.ok(registry.activeToolNames().includes(name), `${name} active while enabled`)
     }

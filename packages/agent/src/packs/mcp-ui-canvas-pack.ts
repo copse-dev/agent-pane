@@ -11,12 +11,10 @@
 // retired `mcpUiArtefactsEnabled` standalone setting, so a Settings > Packs
 // disable turns canvas rendering off in one atomic flag flip (decision 15).
 //
-// **Default DISABLED.** Canvas was opt-in (off by default via
-// `mcpUiArtefactsEnabled`); this pack must not silently enable it for existing
-// users. Default-off is expressed the same way as every other experimental pack:
-// the pack-service enablement migration seeds the persisted `packDisabled` set
-// (an absent/false old setting → disabled) before the shared registry is built.
-// A user who had previously turned the setting on keeps canvas enabled.
+// **Default DISABLED.** Canvas is opt-in, declared as `defaultEnabled: false` on
+// the manifest so `PackRegistry.register` starts it disabled in every registry —
+// including the fallback `getDefaultPackRegistry()` hands out before the host
+// wires the shared one. Only an explicit Settings > Packs toggle turns it on.
 //
 // **No-double-registration.** The `mcpUiArtefactsEnabled` standalone setting is
 // gone (removed from the zod schema and the settings dialog) — the pack
@@ -53,6 +51,7 @@ export const mcpUiCanvasPack: RegisteredPack = definePack(
     description:
       'MCP-UI artefacts (canvas) — render self-contained HTML UI resources from MCP tools as live, fully sandboxed artefacts in the Browser pane (no Node, no app access), and ship a bundled canvas server with a render_html_artefact tool for demos, charts, and small interactive UIs.',
     trust: 'first-party',
+    defaultEnabled: false,
     capabilities: [MCP_UI_CANVAS_CAPABILITY_DECL],
   },
   {

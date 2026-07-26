@@ -4,8 +4,9 @@
 //  - owns the **shared** `PackRegistry` (first-party packs registered), and
 //    installs it via `setDefaultPackRegistry` so `createHookRegistry` (called
 //    every turn) reads through the same instance the Settings UI toggles;
-//  - applies the persisted disable set from `electron-store` before wiring the
-//    provider, so a pack the user turned off stays off across relaunches;
+//  - applies the user's explicit enablement choices from `electron-store` on top
+//    of each manifest's declared default, before wiring the provider, so a pack
+//    the user toggled stays that way across relaunches;
 //  - persists pack-scoped settings values under a namespaced storage key so
 //    the manifest's declarative `settings` schema round-trips through Settings
 //    generically (P3's "the about:addons of Copse");
@@ -17,14 +18,27 @@
 // the active getters at once (tools, hooks, prompt blocks, panels). There is
 // no partial state; persistence is a write-behind snapshot of `registry`.
 //
+// **Default enablement is the manifest's job, not this file's.** A pack declares
+// `defaultEnabled: false` to ship off (`pack-manifest.ts`), and
+// `PackRegistry.register` applies it. This service persists only the choices a
+// user actually made, so an untouched pack keeps following its declaration and a
+// registry built without this service is still correct. That replaces the tower
+// of one-shot `migrate*Enablement()` functions this file used to carry: each
+// retired standalone setting needed its own function, storage key, and pair of
+// tests, and each one silently baked "whatever the default was on the boot it
+// happened to run" into persisted state.
+//
 // Storage layout under the shared `electron-store`:
-//   `packDisabled`         → readonly string[]   (pack ids the user disabled)
+//   `packEnablement`         → Record<string, boolean> (EXPLICIT user choices only)
 //   `pack.<packId>.settings` → Record<string, unknown> (values keyed by field id)
 //
-// The disable list stays a plain array (like `mcpDisabledServers`) so it is
-// still readable / editable by hand and easy to migrate. Pack settings are
-// bagged per pack to keep the top-level key namespace clean and let the P4
-// todos pack lift/shift its config into a single record.
+// Absence from `packEnablement` means "no opinion — use the manifest default",
+// which is why it replaced the older `packDisabled` array: a bare list of
+// disabled ids cannot distinguish "off by default" from "the user turned this
+// off", so it could not express a user enabling a default-off pack. A legacy
+// `packDisabled` array is folded in on read (see {@link readEnablementPrefs}).
+// Pack settings are bagged per pack to keep the top-level key namespace clean
+// and let the P4 todos pack lift/shift its config into a single record.
 import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
@@ -35,55 +49,25 @@ import {
   COMPARISON_MODEL_B_SETTING_ID,
   COMPARISON_JUDGE_MODEL_SETTING_ID,
 } from '@copse/agent/packs/model-comparison-pack.ts'
-import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
-import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
-import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
-import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
-import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
-import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
-import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
-import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
-import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
-/** Storage key holding the ids of packs the user disabled. */
-const PACK_DISABLED_KEY = 'packDisabled'
+/**
+ * Storage key holding the user's EXPLICIT pack enablement choices, keyed by pack
+ * id. Absence means "no choice made" — the pack follows its manifest default.
+ */
+const PACK_ENABLEMENT_KEY = 'packEnablement'
 
-/** One-time bridge from P5's retired standalone enablement settings. */
-const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
-
-/** One-time bridge from the retired `longHorizonTasksEnabled` standalone setting. */
-const LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.longHorizonTasksEnablement'
-
-/** One-time bridge from the retired `roadmapPlansEnabled` standalone setting. */
-const ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY = 'packMigration.roadmapPlansEnablement'
-
-/** One-time bridge from the retired `advisorStrategyEnabled` standalone setting. */
-const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategyEnablement'
-
-/** One-time bridge from the retired `okfMemoriesEnabled` standalone setting. */
-const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
-
-/** One-time bridge from the retired `ciInvestigatorEnabled` standalone setting. */
-const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
-
-/** One-time bridge from the retired `piiRedactionEnabled` standalone setting. */
-const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
-
-/** One-time bridge from the retired `mcpUiArtefactsEnabled` standalone setting. */
-const MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY = 'packMigration.mcpUiCanvasEnablement'
-
-/** One-time bridge from the retired `devtoolsShortcutEnabled` standalone setting. */
-const DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY = 'packMigration.devtoolsShortcutEnablement'
-
-/** One-time bridge from the retired `backgroundTasksEnabled` standalone setting. */
-const BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.backgroundTasksEnablement'
+/**
+ * The pre-`packEnablement` shape: a bare array of disabled pack ids. Folded into
+ * the preference map on read so an existing user's explicit disables survive.
+ */
+const LEGACY_PACK_DISABLED_KEY = 'packDisabled'
 
 /** One-time bridge from the retired top-level model settings now owned by packs. */
 const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
@@ -93,244 +77,28 @@ function packSettingsKey(packId: string): string {
   return `pack.${packId}.settings`
 }
 
-/** Read the persisted disable set. */
-function readDisabledIds(): Set<string> {
-  return new Set(parseStringList(storageGet(PACK_DISABLED_KEY)))
-}
-
 /**
- * Preserve the enablement users had before post-turn review and model
- * comparison became packs. This must run synchronously before the shared
- * registry is created: `createRegistry()` immediately consults it to decide
- * whether `compare_models` belongs in the model's tool list.
+ * The user's explicit enablement choices. Reads the `packEnablement` map, then
+ * folds in any legacy `packDisabled` array for ids the map does not already
+ * mention — an explicit disable from before this key existed is still an
+ * explicit choice, so it must outrank the manifest default.
  *
- * The old defaults were asymmetric — post-turn review on, model comparison
- * off. In particular, an absent `modelComparisonEnabled` value must disable
- * the new pack or P5 would expose an experimental, previously opt-in tool to
- * every existing user after upgrade.
+ * Deliberately a read-time fold rather than a one-shot migration: there is no
+ * migration key to guard, nothing to re-run, and no way for it to bake a
+ * default into persisted state. Ids the user never touched simply stay absent.
  */
-function migrateP5Enablement(): void {
-  if (storageGet(P5_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const postTurnReviewEnabled = storageGet('postTurnReviewEnabled')
-  const modelComparisonEnabled = storageGet('modelComparisonEnabled')
-
-  if (postTurnReviewEnabled === false) disabled.add(POST_TURN_REVIEW_PACK_ID)
-  else if (postTurnReviewEnabled === true) disabled.delete(POST_TURN_REVIEW_PACK_ID)
-
-  if (modelComparisonEnabled === true) disabled.delete(MODEL_COMPARISON_PACK_ID)
-  else disabled.add(MODEL_COMPARISON_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before long-horizon tasks became a pack.
- * Like model comparison, the feature was previously opt-in (off by default via
- * the `longHorizonTasksEnabled` setting), so an absent or false value must
- * disable the new `copse.long-horizon-tasks` pack — otherwise the migration
- * would expose a previously opt-in experimental tool to every existing user
- * after upgrade. Runs synchronously before the shared registry is created and
- * is idempotent (guarded by its own migration key).
- */
-function migrateLongHorizonTasksEnablement(): void {
-  if (storageGet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const longHorizonTasksEnabled = storageGet('longHorizonTasksEnabled')
-
-  if (longHorizonTasksEnabled === true) disabled.delete(LONG_HORIZON_TASKS_PACK_ID)
-  else disabled.add(LONG_HORIZON_TASKS_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before roadmap plans became a pack. Like
- * model comparison, the feature was previously opt-in (off by default via the
- * `roadmapPlansEnabled` setting), so an absent or false value must disable the
- * new `copse.roadmap-plans` pack — otherwise the migration would expose a
- * previously opt-in experimental tool (and its Roadmap pane) to every existing
- * user after upgrade. Runs synchronously before the shared registry is created
- * and is idempotent (guarded by its own migration key).
- */
-function migrateRoadmapPlansEnablement(): void {
-  if (storageGet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const roadmapPlansEnabled = storageGet('roadmapPlansEnabled')
-
-  if (roadmapPlansEnabled === true) disabled.delete(ROADMAP_PLANS_PACK_ID)
-  else disabled.add(ROADMAP_PLANS_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before the advisor strategy became a pack.
- * Like model comparison, the feature was previously opt-in (off by default via
- * the `advisorStrategyEnabled` setting), so an absent or false value must
- * disable the new `copse.advisor-strategy` pack — otherwise the migration would
- * expose a previously opt-in experimental tool to every existing user after
- * upgrade. The orthogonal `advisorModel` setting is left untouched (it is not a
- * pack enablement flag). Runs synchronously before the shared registry is
- * created and is idempotent (guarded by its own migration key).
- */
-function migrateAdvisorStrategyEnablement(): void {
-  if (storageGet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const advisorStrategyEnabled = storageGet('advisorStrategyEnabled')
-
-  if (advisorStrategyEnabled === true) disabled.delete(ADVISOR_STRATEGY_PACK_ID)
-  else disabled.add(ADVISOR_STRATEGY_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before OKF memories became a pack. Like
- * model comparison, the feature was previously opt-in (off by default via the
- * `okfMemoriesEnabled` setting), so an absent or false value must disable the
- * new `copse.okf-memories` pack — otherwise the migration would expose a
- * previously opt-in experimental tool (and its prompt block + Memories pane) to
- * every existing user after upgrade. Runs synchronously before the shared
- * registry is created and is idempotent (guarded by its own migration key).
- */
-function migrateOkfMemoriesEnablement(): void {
-  if (storageGet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const okfMemoriesEnabled = storageGet('okfMemoriesEnabled')
-
-  if (okfMemoriesEnabled === true) disabled.delete(OKF_MEMORIES_PACK_ID)
-  else disabled.add(OKF_MEMORIES_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before the CI investigator became a pack.
- * Like model comparison, the feature was previously opt-in (off by default via
- * the `ciInvestigatorEnabled` setting), so an absent or false value must disable
- * the new `copse.ci-investigator` pack — otherwise the migration would expose a
- * previously opt-in experimental tool to every existing user after upgrade. Runs
- * synchronously before the shared registry is created and is idempotent (guarded
- * by its own migration key).
- */
-function migrateCiInvestigatorEnablement(): void {
-  if (storageGet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const ciInvestigatorEnabled = storageGet('ciInvestigatorEnabled')
-
-  if (ciInvestigatorEnabled === true) disabled.delete(CI_INVESTIGATOR_PACK_ID)
-  else disabled.add(CI_INVESTIGATOR_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before client-side PII redaction became a
- * pack. Like model comparison, the feature was previously opt-in (off by default
- * via the `piiRedactionEnabled` setting), so an absent or false value must
- * disable the new `copse.pii-redaction` pack — otherwise the migration would
- * silently start rewriting the input of, and expose the reveal tool to, every
- * existing user after upgrade. This preserves the default-OFF invariant: it runs
- * synchronously before the shared registry is created (which `pii-redactor.ts`
- * and `registry-bootstrap.ts` immediately consult) and is idempotent (guarded by
- * its own migration key). A separate function/key from `migrateP5Enablement`
- * keeps the migrations conflict-free.
- */
-function migratePiiRedactionEnablement(): void {
-  if (storageGet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const piiRedactionEnabled = storageGet('piiRedactionEnabled')
-
-  if (piiRedactionEnabled === true) disabled.delete(PII_REDACTION_PACK_ID)
-  else disabled.add(PII_REDACTION_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before the MCP-UI canvas became a pack. The
- * feature was opt-in (off by default via the `mcpUiArtefactsEnabled` setting), so
- * an absent or false value must disable the new `copse.mcp-ui-canvas` pack —
- * otherwise the migration would silently start rendering MCP-UI resources as
- * sandboxed artefacts (and connect the bundled canvas server) for every existing
- * user after upgrade. This preserves the default-OFF invariant: it runs
- * synchronously before the shared registry is created (which `mcp-registry.ts`
- * consults via `isCapabilityActive`) and is idempotent (guarded by its own key).
- */
-function migrateMcpUiCanvasEnablement(): void {
-  if (storageGet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const mcpUiArtefactsEnabled = storageGet('mcpUiArtefactsEnabled')
-
-  if (mcpUiArtefactsEnabled === true) disabled.delete(MCP_UI_CANVAS_PACK_ID)
-  else disabled.add(MCP_UI_CANVAS_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(MCP_UI_CANVAS_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before the DevTools shortcut became a pack.
- * The feature was opt-in (off by default via the `devtoolsShortcutEnabled`
- * setting), so an absent or false value must disable the new
- * `copse.devtools-shortcut` pack — otherwise the migration would silently
- * register the global Ctrl+Shift+I shortcut for every existing user after
- * upgrade. Runs synchronously before the shared registry is created (which
- * `create-main-window.ts` consults via `isCapabilityActive` at boot) and is
- * idempotent (guarded by its own key).
- */
-function migrateDevtoolsShortcutEnablement(): void {
-  if (storageGet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const devtoolsShortcutEnabled = storageGet('devtoolsShortcutEnabled')
-
-  if (devtoolsShortcutEnabled === true) disabled.delete(DEVTOOLS_SHORTCUT_PACK_ID)
-  else disabled.add(DEVTOOLS_SHORTCUT_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(DEVTOOLS_SHORTCUT_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before background tasks became a pack. The
- * feature was opt-in (off by default via the `backgroundTasksEnabled` setting),
- * so an absent or false value must disable the new `copse.background-tasks` pack
- * — otherwise the migration would silently register the `run_background` tool
- * (and advertise the loopback-bind sandbox relaxation) for every existing user
- * after upgrade. This preserves the default-OFF invariant: it runs synchronously
- * before the shared registry is created (which `registry-bootstrap.ts` consults
- * via `isEnabled`, and `permission-gate.ts` via `isPermissionDeclared`) and is
- * idempotent (guarded by its own key). A user who had previously turned the
- * setting on keeps background tasks enabled.
- */
-function migrateBackgroundTasksEnablement(): void {
-  if (storageGet(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const backgroundTasksEnabled = storageGet('backgroundTasksEnabled')
-
-  if (backgroundTasksEnabled === true) disabled.delete(BACKGROUND_TASKS_PACK_ID)
-  else disabled.add(BACKGROUND_TASKS_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(BACKGROUND_TASKS_ENABLEMENT_MIGRATION_KEY, true)
+function readEnablementPrefs(): Map<string, boolean> {
+  const prefs = new Map<string, boolean>()
+  const raw = storageGet(PACK_ENABLEMENT_KEY)
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [packId, enabled] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof enabled === 'boolean') prefs.set(packId, enabled)
+    }
+  }
+  for (const packId of parseStringList(storageGet(LEGACY_PACK_DISABLED_KEY))) {
+    if (!prefs.has(packId)) prefs.set(packId, false)
+  }
+  return prefs
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -433,15 +201,19 @@ export interface PackService {
 }
 
 /**
- * Build a pack service backed by the given registry. The persisted disable set
- * is applied before returning, so subsequent `getDefaultPackRegistry()` /
- * `createHookRegistry()` calls see the same enablement the Settings list will
- * show. Exposed for tests; production callers go through `getPackService`.
+ * Build a pack service backed by the given registry. The registry already
+ * carries each pack's declared default (applied in `PackRegistry.register`);
+ * this layers the user's explicit choices on top before returning, so
+ * subsequent `getDefaultPackRegistry()` / `createHookRegistry()` calls see the
+ * same enablement the Settings list will show. A pack the user never toggled is
+ * left exactly as its manifest declared. Exposed for tests; production callers
+ * go through `getPackService`.
  */
 export function createPackService(registry: PackRegistry): PackService {
-  const disabled = readDisabledIds()
-  for (const id of disabled) {
-    if (registry.has(id)) registry.disable(id)
+  for (const [packId, enabled] of readEnablementPrefs()) {
+    if (!registry.has(packId)) continue
+    if (enabled) registry.enable(packId)
+    else registry.disable(packId)
   }
 
   return {
@@ -453,11 +225,17 @@ export function createPackService(registry: PackRegistry): PackService {
       if (!registry.has(packId)) return
       if (enabled) registry.enable(packId)
       else registry.disable(packId)
-      await storageUpdate(PACK_DISABLED_KEY, (raw) => {
-        const set = new Set(parseStringList(raw))
-        if (enabled) set.delete(packId)
-        else set.add(packId)
-        return [...set].sort()
+      // Record the choice explicitly in both directions. Writing `true` matters
+      // as much as writing `false`: for a `defaultEnabled: false` pack it is the
+      // only way to say "the user opted in", which the old disabled-ids array
+      // had no way to represent.
+      await storageUpdate(PACK_ENABLEMENT_KEY, (raw) => {
+        const current: Record<string, unknown> =
+          raw && typeof raw === 'object' && !Array.isArray(raw)
+            ? { ...(raw as Record<string, unknown>) }
+            : {}
+        current[packId] = enabled
+        return current
       })
     },
     getSetting(packId: string, key: string): unknown {
@@ -491,16 +269,10 @@ export function createPackService(registry: PackRegistry): PackService {
  */
 export function getPackService(): PackService {
   if (singleton) return singleton
-  migrateP5Enablement()
-  migrateLongHorizonTasksEnablement()
-  migrateRoadmapPlansEnablement()
-  migrateAdvisorStrategyEnablement()
-  migrateOkfMemoriesEnablement()
-  migrateCiInvestigatorEnablement()
-  migratePiiRedactionEnablement()
-  migrateMcpUiCanvasEnablement()
-  migrateDevtoolsShortcutEnablement()
-  migrateBackgroundTasksEnablement()
+  // Enablement needs no migration: each pack declares its own default and
+  // `readEnablementPrefs()` folds the legacy `packDisabled` array in on read.
+  // The model-settings lift is not enablement — it moves values the user
+  // authored, which no manifest default can reconstruct — so it stays.
   migratePackModelSettings()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
