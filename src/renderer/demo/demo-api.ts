@@ -56,6 +56,15 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     browser: {
       onOpenTab: subscribe,
     },
+    security: {
+      getGuardedYolo: (threadId) =>
+        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
+      enableGuardedYolo: (threadId) =>
+        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
+      disableGuardedYolo: (threadId) =>
+        resolved({ threadId, phase: 'off', containment: 'unsandboxed', expiresAt: null }),
+      onGuardedYoloChanged: subscribe,
+    },
     fs: {
       readFile: () => resolved(''),
       writeFile: resolvedVoid,

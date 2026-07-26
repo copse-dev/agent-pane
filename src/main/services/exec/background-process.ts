@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { ChildProcess } from 'node:child_process'
-import { spawnBackgroundProcess } from '../../project-sandbox/index.ts'
+import { isProjectSandboxEnabled, spawnBackgroundProcess } from '../../project-sandbox/index.ts'
 import { getAgentExecutionRoot } from '../execution-root.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -14,6 +14,8 @@ import {
   requireThreadExecutionOwner,
   type ThreadExecutionOwner,
 } from '../thread-execution-context.ts'
+import { currentRunUsesGuardedYolo } from '../security/guarded-yolo.ts'
+import { shellRunsOutsideSandbox } from '../security/command-routing-config.ts'
 
 // The `run_background` tool is gated by the `copse.background-tasks` first-party
 // pack (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
@@ -44,6 +46,8 @@ interface BackgroundProcess {
   urlRemote: boolean
   exited: boolean
   exitCode: number | null
+  /** True when the process runs without the local project sandbox. */
+  unsandboxed: boolean
   owner: ThreadExecutionOwner
 }
 
@@ -58,6 +62,8 @@ export interface BackgroundProcessInfo {
   urlRemote: boolean
   running: boolean
   exitCode: number | null
+  /** True when the process runs without the local project sandbox. */
+  unsandboxed: boolean
   projectId: string
   threadId: string
 }
@@ -114,6 +120,7 @@ function toInfo(entry: BackgroundProcess): BackgroundProcessInfo {
     urlRemote: entry.urlRemote,
     running: !entry.exited,
     exitCode: entry.exitCode,
+    unsandboxed: entry.unsandboxed,
     projectId: entry.owner.projectId,
     threadId: entry.owner.threadId,
   }
@@ -170,11 +177,15 @@ export async function startBackgroundProcess(
   if (!cwd) throw new Error('No workspace open.')
   const portBinding = opts.allowPortBinding === true
   const owner = opts.owner ?? requireThreadExecutionOwner()
+  const unsandboxed =
+    !isProjectSandboxEnabled() ||
+    (currentRunUsesGuardedYolo(owner.threadId) && shellRunsOutsideSandbox(command))
 
   const proc = await spawnBackgroundProcess(command, {
     cwd,
     env: envForRendererChildProcess(),
     allowPortBinding: portBinding,
+    unsandboxed,
   })
 
   const entry: BackgroundProcess = {
@@ -185,6 +196,7 @@ export async function startBackgroundProcess(
     startedAt: Date.now(),
     output: new CappedOutputAccumulator(BACKGROUND_OUTPUT_MAX_BYTES),
     portBinding,
+    unsandboxed,
     url: null,
     urlRemote: false,
     exited: false,

@@ -9,6 +9,7 @@ import {
 } from '../services/exec/background-process.ts'
 
 function formatInfo(info: BackgroundProcessInfo): string {
+  const containment = info.unsandboxed ? ' · unsandboxed' : ''
   const state = info.running
     ? info.url
       ? info.urlRemote
@@ -16,7 +17,7 @@ function formatInfo(info: BackgroundProcessInfo): string {
         : `running at ${info.url}`
       : 'running'
     : `exited${info.exitCode !== null ? ` (code ${String(info.exitCode)})` : ''}`
-  return `[${info.id}] ${info.command} — ${state}`
+  return `[${info.id}] ${info.command} — ${state}${containment}`
 }
 
 /** Trim logs so a chatty process doesn't dominate the tool result. */

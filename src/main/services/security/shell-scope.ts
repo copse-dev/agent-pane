@@ -1,6 +1,13 @@
 import { homedir } from 'node:os'
-import { basename, resolve } from 'node:path'
-import { parse as parseShellCommand } from 'shell-quote'
+import { resolve } from 'node:path'
+import {
+  CODE_INTERPRETERS,
+  INLINE_CODE_FLAGS,
+  SCRIPT_EXTENSIONS,
+  SCRIPT_EXTENSION_ALTERNATION,
+  commandName,
+  shellSegments,
+} from './shell-argv.ts'
 
 export type ScopeVerdict = 'sandbox' | 'external' | 'ambiguous'
 
@@ -172,7 +179,12 @@ const EXTERNAL_PATTERNS: Array<{ re: RegExp; reason: string; ambiguous?: boolean
     // An interpreter executing a local script file (`node ./x.js`, `bash deploy.sh`).
     // The agent can write the script first, so its contents are invisible here — and
     // to the file-blind safety classifier — which is exactly why it must not auto-run.
-    re: /\b(?:python3?|node|deno|bun|ruby|perl|bash|sh|zsh)\s+(?:-\S+\s+)*[^\s|;&]*\.(?:js|cjs|mjs|ts|py|rb|pl|sh|bash|zsh)\b/i,
+    // The suffix list comes from shell-argv so this and the token pass below cannot
+    // drift apart (they were previously two hand-maintained copies).
+    re: new RegExp(
+      String.raw`\b(?:python3?|node|deno|bun|ruby|perl|bash|sh|zsh)\s+(?:-\S+\s+)*[^\s|;&]*\.(?:${SCRIPT_EXTENSION_ALTERNATION})\b`,
+      'i',
+    ),
     reason: 'runs a local script via an interpreter (contents opaque to analysis)',
   },
   {
@@ -235,28 +247,10 @@ const REGISTRY_REDIRECT_PATTERNS: Array<{ re: RegExp; reason: string }> = [
   },
 ]
 
-// Interpreters whose *first operand* is a script/inline body opaque to this
-// classifier. Keyed off `argv[0]` (the resolved executable, path-stripped) after
-// shell-quote lexing, so quoting/indirection can't hide the interpreter name.
-const TOKEN_INTERPRETERS = new Set([
-  'python',
-  'python2',
-  'python3',
-  'node',
-  'deno',
-  'bun',
-  'ruby',
-  'perl',
-  'bash',
-  'sh',
-  'zsh',
-])
-// Recognised script-file extensions — kept byte-for-byte in sync with the
-// interpreter-runs-file regex in EXTERNAL_PATTERNS so tokenization never diverges
-// from (only reinforces) the regex baseline.
-const TOKEN_SCRIPT_EXT = /\.(?:js|cjs|mjs|ts|py|rb|pl|sh|bash|zsh)$/i
-// Inline-code flags: the body is opaque, so an interpreter carrying one must prompt.
-const TOKEN_INLINE_FLAGS = new Set(['-c', '-e', '--eval'])
+// Interpreters, script suffixes, and inline-code flags all come from shell-argv:
+// the token pass keys off `argv[0]` (the resolved executable, path-stripped) so
+// quoting/indirection can't hide the interpreter name, and sharing the tables
+// means it cannot fall behind the regex baseline it is meant to reinforce.
 // Exact reason strings shared with the regex entries above, so token-derived and
 // regex-derived hits dedupe against each other.
 const REASON_INTERPRETER_FILE =
@@ -293,35 +287,21 @@ function isHostDependentBuildDriver(exe: string, args: string[]): boolean {
  * It is strictly ADDITIVE: it only ever appends reasons or promotes to `hasHard`,
  * and callers union its result with the regex baseline. It can never remove a reason
  * or downgrade a verdict, so it cannot make the permission gate more permissive than
- * the regex path alone. Anything shell-quote can't lex into a plain argv — operators,
- * command/process substitution, globs, comments, or a parse failure — is left
- * entirely to the regex fallback: such tokens merely delimit the simple-command
- * segments we inspect and are otherwise ignored here.
+ * the regex path alone. Segmentation comes from `shell-argv.ts`, shared with the
+ * harm gate and trusted-command routing; anything no lexer there can turn into a
+ * plain argv is left entirely to the regex fallback.
  */
 function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHard: boolean } {
   const reasons: string[] = []
   let hasHard = false
 
-  let tokens: ReturnType<typeof parseShellCommand>
-  try {
-    tokens = parseShellCommand(command)
-  } catch {
-    // Un-lexable input → defer entirely to the regex fallback.
-    return { reasons, hasHard }
-  }
-
   const addReason = (reason: string): void => {
     if (!reasons.includes(reason)) reasons.push(reason)
   }
 
-  // Split the token stream into simple-command segments at every non-string token
-  // (operator / substitution / glob / comment object). Each segment is a plain argv
-  // the shell would execute directly; structural tokens between them stay the regex
-  // path's responsibility.
-  let segment: string[] = []
-  const inspect = (): void => {
+  for (const segment of shellSegments(command)) {
     const exe0 = segment[0]
-    if (exe0 === undefined) return
+    if (exe0 === undefined) continue
     // argv[0] is a workspace-relative path (`./x`, `../x`, `bin/tool`) — the shell
     // executes the file directly from the cwd. Absolute paths are left to the
     // outside-path scanner; a bare name (no slash) is a PATH lookup, not a local
@@ -331,28 +311,22 @@ function tokenBasedExternalReasons(command: string): { reasons: string[]; hasHar
       addReason(REASON_LOCAL_EXECUTABLE)
       hasHard = true
     }
-    const exe = basename(exe0).toLowerCase()
+    const exe = commandName(exe0)
     const args = segment.slice(1)
     if (isHostDependentBuildDriver(exe, args)) {
       addReason(REASON_BUILD_DRIVER)
     }
-    if (TOKEN_INTERPRETERS.has(exe)) {
-      if (args.some((a) => TOKEN_INLINE_FLAGS.has(a))) {
+    if (CODE_INTERPRETERS.has(exe)) {
+      if (args.some((a) => INLINE_CODE_FLAGS.has(a))) {
         addReason(REASON_INTERPRETER_INLINE)
         hasHard = true
       }
-      if (args.some((a) => TOKEN_SCRIPT_EXT.test(a))) {
+      if (args.some((a) => SCRIPT_EXTENSIONS.test(a))) {
         addReason(REASON_INTERPRETER_FILE)
         hasHard = true
       }
     }
-    segment = []
   }
-  for (const token of tokens) {
-    if (typeof token === 'string') segment.push(token)
-    else inspect()
-  }
-  inspect()
 
   return { reasons, hasHard }
 }
@@ -428,19 +402,29 @@ function referencesOutsideWorkspace(command: string, workspaceRoot: string | nul
  * OS sandbox is active (see issue #103: sandboxed auto-allow was a blanket bypass
  * of the classifier).
  */
+/**
+ * Reasons the Guarded YOLO harm gate reports for the same signals from its own
+ * token-based inspectors. Shared as constants so the two agree on the wording and
+ * a command both of them see reports the fact once, not twice.
+ */
+export const REASON_RECURSIVE_DELETE = 'recursive/forced delete (rm -rf)'
+export const REASON_FIND_DELETE = 'find -delete bulk removal'
+export const REASON_PIPE_TO_INTERPRETER = 'piping output into an interpreter'
+
 const DANGEROUS_IN_SANDBOX_PATTERNS: Array<{ re: RegExp; reason: string }> = [
-  { re: /\brm\s+-\S*[rf]/i, reason: 'recursive/forced delete (rm -rf)' },
+  { re: /\brm\s+-\S*[rf]/i, reason: REASON_RECURSIVE_DELETE },
   { re: /\bgit\s+clean\s+-\S*[dfx]/i, reason: 'git clean removes untracked files' },
   { re: /\bgit\s+reset\s+--hard\b/i, reason: 'git reset --hard discards changes' },
   { re: /\bgit\s+checkout\s+--\s+\./i, reason: 'git checkout discards local changes' },
   { re: />\s*\/dev\/(?:sda|disk|null\s+2>&1\s*&\s*$)/i, reason: 'raw device write' },
-  { re: /\bfind\b[^\n|;&]*\s-delete\b/i, reason: 'find -delete bulk removal' },
+  { re: /\bfind\b[^\n|;&]*\s-delete\b/i, reason: REASON_FIND_DELETE },
   { re: /\btruncate\b|\bshred\b/i, reason: 'file truncation/shredding' },
   // Pipe-to-shell: `curl … | sh`, `wget … | bash`, etc. (the curl is also caught
   // as external, but this fires even for in-workspace scripts piped to a shell).
+  // `pwsh`/`powershell` come from the harm gate's former duplicate of this check.
   {
-    re: /\|\s*(?:sh|bash|zsh|python3?|node|ruby|perl)\b/i,
-    reason: 'piping output into an interpreter',
+    re: /\|\s*(?:sh|bash|zsh|python3?|node|ruby|perl|pwsh|powershell)\b/i,
+    reason: REASON_PIPE_TO_INTERPRETER,
   },
   // Classic shell fork bomb and obvious busy-loop fork patterns.
   { re: /:\(\)\s*\{\s*:\|:&\s*\}\s*;/, reason: 'fork bomb' },
