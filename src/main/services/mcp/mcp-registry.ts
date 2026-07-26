@@ -12,7 +12,6 @@ import type { McpServerConfig, McpServerStatus, McpToolAnnotations } from '@shar
 import type { ToolRegistry } from '../tool-registry.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
-import { getSetting } from '../storage/settings.ts'
 import { storageGet, storageUpdate } from '../storage/storage.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 import {
@@ -27,6 +26,8 @@ import {
 import { flattenMcpContent, sanitizeMcpInputSchema } from './mcp-schema.ts'
 import { createBundledMcpServers } from './bundled-mcp-server.ts'
 import { dispatchCanvasArtefacts } from '../canvas-dispatch.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { MCP_UI_CANVAS_CAPABILITY } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
 import { CURATED_MCP_SOURCE, getEnabledCuratedConfigs } from './mcp-curated.ts'
 import { isWorkspaceTrusted, setWorkspaceTrusted } from '../security/workspace-trust.ts'
 import { appendFlatCapped, COMMAND_OUTPUT_MAX_BYTES } from '../exec/subprocess-output-cap.ts'
@@ -289,8 +290,11 @@ async function registerClientTools(
         )
         // Experimental MCP-UI canvas: when enabled, recognised UI resources are
         // rendered as a sandboxed artefact and summarised for the model (raw
-        // body kept out of context) rather than inlined as tool output.
-        const summarizeUiResources = getSetting<boolean>('mcpUiArtefactsEnabled', false)
+        // body kept out of context) rather than inlined as tool output. Gated by
+        // the `copse.mcp-ui-canvas` first-party pack's capability — the pack
+        // toggle in Settings > Packs is the atomic master switch.
+        const summarizeUiResources =
+          getDefaultPackRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)
         if (summarizeUiResources) dispatchCanvasArtefacts(result.content)
         const text = flattenMcpContent(result.content, { summarizeUiResources })
         if (result.isError) {
@@ -313,7 +317,7 @@ async function connectBundledServers(
   registry: ToolRegistry,
   generation: number,
 ): Promise<McpServerStatus[]> {
-  if (!getSetting<boolean>('mcpUiArtefactsEnabled', false)) return []
+  if (!getDefaultPackRegistry().isCapabilityActive(MCP_UI_CANVAS_CAPABILITY)) return []
   const bundled = await createBundledMcpServers()
   if (generation !== loadGeneration) {
     await Promise.allSettled(bundled.map((b) => b.client.close()))

@@ -7,15 +7,18 @@ import { completeTextWithUsage } from './providers/llm-complete-text.ts'
 import { getResolvedExtraProviders } from './providers/extra-providers-store.ts'
 import { extraProviderPricingMap } from '@copse/llm/extra-providers.ts'
 import { estimateUsageCost } from '@copse/llm/estimate-cost.ts'
-import { getSetting, getSettingTrimmed } from './storage/settings.ts'
+import { getSetting } from './storage/settings.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
-import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
+import {
+  MODEL_COMPARISON_PACK_ID,
+  COMPARISON_MODEL_A_SETTING_ID,
+  COMPARISON_MODEL_B_SETTING_ID,
+  COMPARISON_JUDGE_MODEL_SETTING_ID,
+} from '@copse/agent/packs/model-comparison-pack.ts'
+import { readPackSettingValue } from './packs/pack-service.ts'
 import { requestApproval } from './approval.ts'
 import { runPostTurnReview } from './review-subagent-runner.ts'
 import {
-  COMPARISON_JUDGE_MODEL_SETTING,
-  COMPARISON_MODEL_A_SETTING,
-  COMPARISON_MODEL_B_SETTING,
   buildComparisonJudgePrompt,
   comparisonApprovalPickerIntro,
   comparisonNeedsApproval,
@@ -43,11 +46,24 @@ export interface ModelComparisonContext {
 // leakage the approval layer guards against.
 const approvedThreads = new Set<string>()
 
+/**
+ * Read one of the comparison models from the `copse.model-comparison` pack's
+ * settings bag (the pack now owns these — they replaced the retired top-level
+ * `comparisonModel*` store keys; a one-time migration in `pack-service.ts`
+ * lifted any existing value across). Returns the trimmed model id, or '' when
+ * unset — `resolveComparisonModels` then applies the chat-model / frontier
+ * fallbacks, preserving prior behaviour.
+ */
+function comparisonModelSetting(key: string): string {
+  const raw = readPackSettingValue(MODEL_COMPARISON_PACK_ID, key)
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
 function resolveModelsFromSettings(chatModel: string): ComparisonModels {
   return resolveComparisonModels({
-    modelA: getSettingTrimmed(COMPARISON_MODEL_A_SETTING, ''),
-    modelB: getSettingTrimmed(COMPARISON_MODEL_B_SETTING, ''),
-    judge: getSettingTrimmed(COMPARISON_JUDGE_MODEL_SETTING, ''),
+    modelA: comparisonModelSetting(COMPARISON_MODEL_A_SETTING_ID),
+    modelB: comparisonModelSetting(COMPARISON_MODEL_B_SETTING_ID),
+    judge: comparisonModelSetting(COMPARISON_JUDGE_MODEL_SETTING_ID),
     chatModel,
   })
 }

@@ -112,6 +112,7 @@ import {
   syncCiInvestigatorTools,
   syncLongHorizonTasksTools,
   syncModelComparisonTools,
+  syncBackgroundTasksTools,
   syncOkfMemoryTools,
   syncPiiTools,
   syncReadTerminalTools,
@@ -124,6 +125,8 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { getAutomationService } from '../services/automations/automation-service.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
@@ -206,11 +209,7 @@ import {
   type MockScriptStep,
 } from '@copse/llm/mock-script.ts'
 import { applyAppIcon } from '../app-icon.ts'
-import {
-  getMainWindow,
-  registerDevtoolsShortcut,
-  unregisterDevtoolsShortcut,
-} from '../windows/create-main-window.ts'
+import { getMainWindow, syncDevtoolsShortcut } from '../windows/create-main-window.ts'
 import { validateApiKey } from '../services/providers/validate-api-key.ts'
 import {
   invalidateProviderKeyStatus,
@@ -268,6 +267,11 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
+  // pack is enabled. The pack ships off (`defaultEnabled: false`) and
+  // getPackService() has already layered the user's explicit choices on top, so
+  // this is a no-op unless they opted in.
+  syncDevtoolsShortcut(win)
   const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
     if (!win.isDestroyed()) {
       win.webContents.send('security:guardedYoloChanged', getGuardedYoloState(threadId))
@@ -821,16 +825,6 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     if (k === READ_TERMINAL_ENABLED_SETTING) {
       syncReadTerminalTools(registry)
     }
-    // Toggle the DevTools shortcut registration when the setting changes.
-    if (k === 'devtoolsShortcutEnabled') {
-      const win = getMainWindow()
-      const enabled = typeof value === 'boolean' && value
-      if (enabled) {
-        if (win) registerDevtoolsShortcut(win)
-      } else {
-        unregisterDevtoolsShortcut()
-      }
-    }
   })
   ipcMain.handle('settings:setSecurity', async (event, raw: unknown) => {
     assertMainFrameSender(event, win)
@@ -1245,6 +1239,19 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     // the same pack enablement (see `pii-redactor.ts`, `agent-system-prompt.ts`).
     if (id === PII_REDACTION_PACK_ID) {
       syncPiiTools(registry)
+    }
+    // The `copse.devtools-shortcut` pack contributes no tool — it owns the
+    // `devtools-shortcut` capability. Toggling the pack registers/unregisters the
+    // global Ctrl+Shift+I shortcut so the atomic pack-disable turns it off
+    // without an app restart (mirrors the tool syncs above).
+    if (id === DEVTOOLS_SHORTCUT_PACK_ID) {
+      syncDevtoolsShortcut(win)
+    }
+    // Same for the `copse.background-tasks` pack's `run_background` tool — the
+    // atomic pack-disable also revokes the pack's declared `loopback-bind`
+    // sandbox relaxation (the permission-gate reads `isPermissionDeclared`).
+    if (id === BACKGROUND_TASKS_PACK_ID) {
+      syncBackgroundTasksTools(registry)
     }
     return { packs: getPackService().list() }
   })
