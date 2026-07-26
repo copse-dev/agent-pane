@@ -206,6 +206,32 @@ function rawTokens(segment: string): string[] {
   })
 }
 
+const RAW_REDIRECT_PREFIX = /^(?:\d*(?:<<<|<<|<&|<>|<|>>|>&|>\||>)|&>>?)(.*)$/
+
+/**
+ * Remove redirect syntax from the Windows-preserving fallback argv. The raw
+ * separator split may isolate an attached redirect after an escaped terminator
+ * (`find … \\; 2>/dev/null`), but the destination is still data, not a command.
+ * Actual write targets remain visible to {@link shellRedirects}.
+ */
+function withoutRawRedirects(argv: string[]): string[] {
+  const command: string[] = []
+  let awaitingTarget = false
+  for (const token of argv) {
+    if (awaitingTarget) {
+      awaitingTarget = false
+      continue
+    }
+    const redirect = RAW_REDIRECT_PREFIX.exec(token)
+    if (redirect) {
+      awaitingTarget = redirect[1] === ''
+      continue
+    }
+    command.push(token)
+  }
+  return command
+}
+
 /**
  * Argv arrays for every simple command in a command line, from two lexers whose
  * results are unioned:
@@ -280,7 +306,7 @@ export function shellSegments(command: string): string[][] {
   }
 
   for (const segment of command.split(/&&|\|\||[;&|(\r\n]+/)) {
-    const argv = rawTokens(segment)
+    const argv = withoutRawRedirects(rawTokens(segment))
     if (argv.length > 0) segments.push(argv)
   }
 
