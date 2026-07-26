@@ -12,6 +12,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
+import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 
 /**
  * Tier-1 ACP **capability probe** (issue #264): spawn an external ACP agent,
@@ -320,6 +321,10 @@ const UNSUPPORTED = (method: string) => (): Promise<never> =>
 function spawnProbeTransport(
   config: AcpProbeConfig,
 ): Promise<{ stream: Stream; dispose: () => void }> {
+  // Probe the agent where it will actually run: remotely when the active project
+  // is an opted-in SSH workspace (docs/plans/acp-over-ssh.md).
+  const sshTarget = acpSshTarget(config.cwd)
+  if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget)
   const child = spawn(config.command, config.args ?? [], {
     cwd: config.cwd,
     env: { ...process.env, ...(config.env ?? {}) },
