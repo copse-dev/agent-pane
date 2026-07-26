@@ -20,6 +20,7 @@ import { knowledgeDate } from './knowledge-date.ts'
 import { createThread, getThreadById, switchThread } from '@shared/store/thread-helpers.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
+import { checkIcon, refreshIcon } from '../dom/icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -40,6 +41,10 @@ const STATUS_OPTIONS: readonly RoadmapStatus[] = [
   'done',
   'archived',
 ]
+
+/** Statuses that earn a list chip. `ready` is the default (silent); `done` is
+ * title strikethrough only — see docs/ui-taste.md "Roadmap list rows". */
+const LIST_STATUS_BADGES = new Set<RoadmapStatus>(['blocked', 'conflicts', 'archived'])
 
 function roadmapModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -769,14 +774,23 @@ export function mountRoadmapPane(
       const status = itemStatus(item)
       const row = el('button', {
         type: 'button',
-        class: `git-change-row memories-row roadmap-row${isSelected ? ' is-selected' : ''}`,
+        class: [
+          'git-change-row',
+          'memories-row',
+          'roadmap-row',
+          isSelected ? 'is-selected' : '',
+          status === 'done' ? 'is-done' : '',
+          status === 'archived' ? 'is-archived' : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
       })
       const main = el('div', { class: 'memories-row-main' })
-      const meta = el(
-        'div',
-        { class: 'roadmap-row-meta' },
-        el('span', { class: `roadmap-status-badge is-${status}` }, status),
-      )
+      // Trailing indicators only — title leads; default `ready` is silent.
+      const meta = el('div', { class: 'roadmap-row-meta' })
+      if (LIST_STATUS_BADGES.has(status)) {
+        meta.append(el('span', { class: `roadmap-status-badge is-${status}` }, status))
+      }
       // Complexity is stamped in the background shortly after a save
       // (roadmap-complexity.ts); freshly saved items and older items that
       // predate stamping simply have no badge yet.
@@ -857,20 +871,18 @@ export function mountRoadmapPane(
           ),
         )
       }
-      // Items whose started thread is still around get a chip that jumps
+      // Items whose started thread is still around get an icon that jumps
       // straight back to it (tracked via the `thread` field on Start thread).
       const trackedThread = getThreadById(store, itemThreadId(item))
       if (trackedThread) {
-        const threadChip = el(
-          'span',
-          {
-            class: 'roadmap-thread-chip',
-            role: 'link',
-            tabindex: '0',
-            title: `Reopen thread "${trackedThread.title}"`,
-          },
-          'thread',
-        )
+        const threadChip = el('span', {
+          class: 'roadmap-thread-chip',
+          role: 'link',
+          tabindex: '0',
+          title: `Reopen thread "${trackedThread.title}"`,
+          'aria-label': `Reopen thread "${trackedThread.title}"`,
+        })
+        threadChip.append(attachmentIcon('thread', 'ui-icon roadmap-thread-chip-icon'))
         threadChip.addEventListener('click', (e) => {
           // The row itself selects the item; the chip only reopens the thread.
           e.stopPropagation()
@@ -887,22 +899,24 @@ export function mountRoadmapPane(
         meta.append(threadChip)
       }
 
-      // One-click status flip without opening the editor: ✓ marks a live item
-      // done, ↺ reopens a done one. Archived items keep the editor-only flow.
+      // One-click status flip without opening the editor: check marks a live
+      // item done, refresh reopens a done one. Hidden until row hover/focus so
+      // the list stays quiet at rest. Archived items keep the editor-only flow.
       // A span with role=button, like the issue chip — rows are <button>s and
       // buttons cannot nest.
       if (status !== 'archived') {
         const isDone = status === 'done'
-        const toggle = el(
-          'span',
-          {
-            class: 'roadmap-done-toggle',
-            role: 'button',
-            tabindex: '0',
-            title: isDone ? 'Reopen (set ready)' : 'Mark done',
-            'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
-          },
-          isDone ? '↺' : '✓',
+        const toggle = el('span', {
+          class: 'roadmap-done-toggle',
+          role: 'button',
+          tabindex: '0',
+          title: isDone ? 'Reopen (set ready)' : 'Mark done',
+          'aria-label': isDone ? 'Reopen roadmap item' : 'Mark roadmap item done',
+        })
+        toggle.append(
+          isDone
+            ? refreshIcon('ui-icon roadmap-done-toggle-icon')
+            : checkIcon('ui-icon roadmap-done-toggle-icon'),
         )
         toggle.addEventListener('click', (e) => {
           // The row itself selects the item; the toggle only flips status.
