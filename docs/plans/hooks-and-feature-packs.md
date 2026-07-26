@@ -180,6 +180,12 @@ revisiting this document, not silently diverging in an implementation PR.
     semantics: tools leave the model's tool list, hooks stop firing, prompt blocks drop
     out, UI contributions stop mounting _for new content_; pack storage persists like a
     disabled browser extension's data.
+18. **Hooks cannot weaken Guarded YOLO's host harm verdict.** A blocking hook may
+    deny, ask, or rewrite shell input under its dialect contract, but any resulting
+    command is assessed by the host-owned Guarded YOLO harm gate after the rewrite.
+    Hook allow results, ACP callers, remembered trust, classifier output, and model
+    routing hints cannot downgrade a host `prompt` or `deny`. Both the original and
+    effective command are retained in the durable `permission_decision` spine line.
 
 ## Target architecture
 

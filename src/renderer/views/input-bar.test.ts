@@ -75,6 +75,27 @@ function createApi(options: {
     fs: {
       onChanged: () => () => {},
     },
+    security: {
+      getGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      enableGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      disableGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      onGuardedYoloChanged: () => () => {},
+    },
     git: {
       branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
       checkoutBranch: options.onCheckoutBranch ?? (async (): Promise<void> => {}),

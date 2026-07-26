@@ -36,6 +36,7 @@ import type {
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
+import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 
 export type { DetectedAcpAgent }
 
@@ -71,6 +72,12 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+  }
+  security: {
+    getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
   }
   fs: {
     readFile: (path: string) => Promise<string>

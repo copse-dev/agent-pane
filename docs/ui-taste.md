@@ -445,3 +445,12 @@ The plan worth-it block sits between subscription bars and the local ledger: one
 fee field, one action that jumps to the value map’s Inference cost basis. Do not turn it into a
 dashboard (no sparkline grids, no multi-provider scorecards in v1). Keep the fee control plain —
 label + number input — and let verdict color come from `--success` / `--warning`, not custom hues.
+
+## Explicit danger modes
+
+A mode that materially relaxes routine confirmations must remain visible at the
+point of action. Use a full-width, square composer strip with the shared `--danger`
+token, plain containment copy, and an immediate Disable action; do not reduce it to
+a transient toast, icon-only state, or rounded status pill. The opt-in warning must
+name the scope, expiry, containment, and residual risk before activation. Visual
+eval: `tests/e2e/guarded-yolo.e2e.ts`.
