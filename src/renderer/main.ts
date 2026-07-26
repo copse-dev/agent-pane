@@ -9,11 +9,7 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import {
-  openNewThread,
-  sortThreadsNewestFirst,
-  switchThread,
-} from '@shared/store/thread-helpers.ts'
+import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -79,6 +75,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
+import { attachAutomationController } from './controller/automations.ts'
 import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
@@ -277,6 +274,7 @@ async function boot(): Promise<void> {
     startAgentController(store, api)
     attachAutosave(store, api)
     attachBestValueDefaultResolver(store, api)
+    attachAutomationController(store, api)
   }
   attachProjectThreadCache(store)
 
@@ -314,23 +312,6 @@ async function boot(): Promise<void> {
   api.menu.onShowBrowser(() => {
     ensureLayout()
     openRightPanelWithWorkspace(store, api, 'browser')
-  })
-
-  // A cron trigger writes the new draft task in main so it also works for an
-  // inactive project. When it belongs to the active project, merge just that
-  // authoritative thread into the renderer store without replacing any live
-  // composer/stream state or stealing focus from the current task.
-  api.automations.onTriggered((event) => {
-    if (store.getState().activeProjectId !== event.projectId) return
-    void api.threads.loadProject(event.projectId).then((loaded) => {
-      if (store.getState().activeProjectId !== event.projectId) return
-      const created = loaded.find((thread) => thread.id === event.threadId)
-      if (!created || store.getState().threads.some((thread) => thread.id === created.id)) return
-      store.setState({
-        threads: sortThreadsNewestFirst([created, ...store.getState().threads]),
-      })
-      store.emit('threads_changed')
-    })
   })
 
   // Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) opens the shortcut cheat sheet. Unlike

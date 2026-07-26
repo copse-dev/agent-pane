@@ -183,7 +183,7 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
-  /** Provenance for a draft task created by a project automation schedule. */
+  /** Provenance for a task created by a project automation schedule. */
   automation?: {
     scheduleId: string
     scheduleName: string
