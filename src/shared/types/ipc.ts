@@ -1,7 +1,6 @@
 import type { StreamChunk } from './stream.ts'
 import type { GitFileDiff, GitStatusResult, GitBranchStatus } from './git.ts'
 import type { McpServerStatus, CuratedMcpServerStatus } from './mcp.ts'
-import type { UsageDelta } from './thread.ts'
 
 type Provider =
   'anthropic' | 'openai' | 'lmstudio' | 'cursor' | 'openrouter' | 'mistral' | 'gemini' | 'deepseek'
@@ -63,6 +62,20 @@ export interface IpcInvokeMap {
   'agent:suggestFollowUps': {
     args: [contextJson: string]
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
+  }
+
+  // Explicit high-risk, session-only shell mode (issue #1249).
+  'security:getGuardedYolo': {
+    args: [threadId: string]
+    result: import('./guarded-yolo.ts').GuardedYoloState
+  }
+  'security:enableGuardedYolo': {
+    args: [threadId: string]
+    result: import('./guarded-yolo.ts').GuardedYoloState
+  }
+  'security:disableGuardedYolo': {
+    args: [threadId: string]
+    result: import('./guarded-yolo.ts').GuardedYoloState
   }
 
   // Diff approval
@@ -347,7 +360,6 @@ export interface IpcInvokeMap {
 export interface IpcEventMap {
   'workspace:opened': [root: string]
   'agent:chunk': [threadId: string, chunk: StreamChunk]
-  'agent:usage': [threadId: string, usage: UsageDelta]
   'agent:show_diff': [
     projectId: string,
     threadId: string,
@@ -379,6 +391,7 @@ export interface IpcEventMap {
     },
   ]
   'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
+  'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
   'ssh:prompt_request': [
     {
       id: string

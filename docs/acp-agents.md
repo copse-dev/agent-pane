@@ -1,12 +1,12 @@
 # Using other agents on the same device (ACP client)
 
 Copse can drive an external [ACP](https://agentclientprotocol.com/) agent that
-runs **locally on the same machine** — Gemini CLI, Claude (via an ACP adapter),
-or anything else that speaks the Agent Client Protocol over stdio. Copse acts as
-the **ACP client**: it spawns the agent, hands it your workspace, and renders its
-activity in the normal chat UI. The external agent runs its own model loop (and
-brings its own auth), while Copse keeps ownership of the workspace and the
-approval UX.
+runs **locally on the same machine** — or, with opt-in, on the remote host of an
+SSH workspace — Gemini CLI, Claude (via an ACP adapter), or anything else that
+speaks the Agent Client Protocol over stdio. Copse acts as the **ACP client**:
+it spawns the agent, hands it your workspace, and renders its activity in the
+normal chat UI. The external agent runs its own model loop (and brings its own
+auth), while Copse keeps ownership of the workspace and the approval UX.
 
 > **The agent is a separate program — it is not bundled with Copse.** Copse ships
 > only `@agentclientprotocol/sdk` (the client/protocol half). The agent half (the
@@ -73,16 +73,19 @@ approval UX.
 
 ### Settings panel (recommended)
 
-Open **Settings → Experimental → ACP agents** (it's opt-in and still evolving). It
-scans your device when you open the tab and shows:
+Open **Settings → ACP agents**. It scans your device when you open the tab and
+shows a **chip row** — one chip per agent — that hides each agent's details until
+you pick it, the same pattern as **Settings → Providers**. A dot marks the agents
+you've already added.
 
-- **Known agents** — a shortlist (Gemini CLI, Claude Agent, Claude Code, Cursor,
-  Codex) with, for each: whether it's installed, the **Install** command to get it,
-  the **Sign in** command to authenticate it (e.g. `claude setup-token`), and an
-  **Add** button.
-- **Configured agents** — edit / enable / remove what you've added.
-- **Add an agent** — a custom form (id, title, command, args one-per-line,
-  `KEY=value` env, enabled) for anything not in the shortlist.
+- **Known agents** lead the row (Gemini CLI, Claude Agent, Claude Code, Cursor,
+  Codex). Select one to see whether it's installed, the **Install** command to get
+  it, the **Sign in** command to authenticate it (e.g. `claude setup-token`), and
+  an **Add to my agents** button.
+- Once added, selecting an agent's chip opens its editor — change its model /
+  permission mode, enable/disable it, or **Remove** it.
+- The trailing **Add agent** chip is a custom form (id, title, command, args
+  one-per-line, `KEY=value` env, enabled) for anything not in the shortlist.
 
 Changes are saved immediately; reopen the model dropdown to see them. **Re-scan
 device** refreshes the installed/running status after you install something.
@@ -212,10 +215,13 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
   unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
   `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
   catalog agent out (#590).
-- **Not available on SSH workspaces.** ACP agents are local stdio processes; they
-  are hidden from the chat model picker and rejected at session open when the
-  active project is an SSH remote. Use a cloud/local model (or open a local
-  folder) instead. Remoting ACP over SSH is not implemented.
+- **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
+  chat model picker and are rejected at session open on an SSH remote. Turn on
+  **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the
+  agent on the **remote host** (stdio over the existing ControlMaster connection)
+  instead of blocking ACP. The agent binary must be installed and authenticated
+  on that host; Copse does not forward local credentials. See
+  [`docs/plans/acp-over-ssh.md`](plans/acp-over-ssh.md).
 
 ## Comparing agents (capability probe)
 
@@ -234,5 +240,7 @@ turn, use `npm run probe:acp:behavior` (issue #832; spends tokens). See
   (`npm run probe:acp` / `npm run probe:acp:behavior`).
 - [`docs/plans/acp-client-support.md`](plans/acp-client-support.md) — the design
   notes and phased rollout.
+- [`docs/plans/acp-over-ssh.md`](plans/acp-over-ssh.md) — opt-in ACP agents on
+  SSH workspaces (Phase 1: remote spawn over ControlMaster stdio).
 - [Agent Client Protocol](https://agentclientprotocol.com/) — the protocol spec
   and list of supported agents.

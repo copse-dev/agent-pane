@@ -2,7 +2,7 @@ import { el, on } from '../dom/helpers.ts'
 import { moreHorizontalIcon } from '../dom/icons.ts'
 
 export interface FooterOverflowItem {
-  label: string
+  label: string | (() => string)
   onClick: () => void
   hidden?: () => boolean
 }
@@ -46,7 +46,7 @@ export function mountFooterOverflow(
         const item = el(
           'button',
           { type: 'button', class: 'footer-overflow-item', role: 'menuitem' },
-          label,
+          typeof label === 'function' ? label() : label,
         )
         item.addEventListener('click', () => {
           onClick()

@@ -85,6 +85,9 @@ The allow-list model closes that:
 - `src/main/services/security/command-routing.ts` — pure `resolveCommandRouting`
   (allow/defer), quote- and escape-aware `splitSegments`, `shell-quote`-based
   `commandHead`, the safe-prep and non-trustable sets.
+- `src/main/services/security/shell-argv.ts` — the lexing primitives shared by all
+  three analyzers: segment splitting, wrapper unwrapping, and the interpreter,
+  script-suffix, and inline-code-flag tables.
 - `src/main/services/security/command-routing-config.ts` — `routeShellCommand`
   (auto-run + workspace-trust gating, cached allow-set) and `shellRunsOutsideSandbox`,
   the single unsandboxed-decision helper shared by the tool and todo checks.
@@ -92,6 +95,97 @@ The allow-list model closes that:
 - `shell-tool.ts` / `todo-verification.ts` — `shellRunsOutsideSandbox(command)`.
 - Settings: `trustedShellCommands` (validated by `trustedShellCommandsSchema`) +
   the "Trusted commands" fieldset.
+
+## Guarded YOLO: explicit one-turn broad execution
+
+Issue #1249 adds a separate, high-friction mode for a user who deliberately wants
+routine local, network, outside-workspace, or privileged shell work to proceed
+without scope prompts. It does **not** change standard-mode defaults or the trusted
+command list.
+
+- The user enables it from the composer overflow and confirms a host-owned warning.
+  The capability is held only in memory, belongs to one thread, is consumed by its
+  next agent turn, and expires after that turn, after 15 minutes unused, or on app
+  restart. It is never restored from settings or migrated data.
+- While active, `run_shell` and `run_background` still use the macOS project sandbox
+  where it can contain the command. Commands which require host/network scope run
+  unsandboxed; Linux and Windows always report that no OS sandbox is active. The
+  persistent composer strip and shell/background output state the actual containment.
+- Every effective command passes `shell-harm.ts` **after** blocking-hook rewrites. The
+  deterministic host verdict is authoritative: `allow` auto-runs, `prompt` requires a
+  one-time confirmation which cannot be remembered, and `deny` cannot be approved.
+  Missing assessment fails closed. Trusted commands, ACP clients, hook outcomes,
+  classifier output, and `expects_sandbox_block` are routing inputs only and cannot
+  downgrade the verdict.
+- **The harm gate is a denylist, and a denylist is not a security boundary.** It
+  recognises forms we have thought of. It cannot recognise the ones we have not, and
+  a determined or compromised agent can express destruction in ways no pattern list
+  enumerates. Treat it as a guardrail against plausible accidents, not as protection
+  against an adversary. The only real containment is the OS sandbox, and Guarded YOLO
+  exists precisely to step outside it — so on Linux and Windows, and for host-scope
+  commands on macOS, **there is no containment left and this list is all that stands
+  between the agent and the machine.** Enable it only where you would accept the
+  agent running arbitrary commands: a disposable VM, a container, a machine whose
+  loss you can absorb. Cursor's equivalent mode has been bypassed repeatedly in
+  public (CVE-2026-22708, `&&` chaining, shell built-ins); ours handles those
+  particular forms, which is evidence the class is hard, not evidence we have won.
+- What the analyzer does cover: it resolves home/workspace paths and symlinks, splits
+  compound commands, unwraps pass-through wrappers (`env`, `sudo`, `timeout`, `nice`,
+  `xargs`, …) including options whose value is a separate argument (`sudo -u root …`),
+  and inspects command/process substitutions (`$(…)`, backticks), `eval` bodies,
+  `find -exec` payloads, interpreter bodies, and readable script files, across common
+  Unix, macOS, PowerShell, and Windows forms.
+
+  Hard-denied: erasure of the filesystem root, home, workspace, or a system tree
+  (`/etc`, `/usr`, `/System`, `C:\Windows`, …) — with or without `-f`, since `rm -r`
+  deletes just the same; the same targets reached by recursive
+  `chown`/`chmod`/`chgrp`/`chattr`/`takeown` or by relocation (`mv`, `rsync --delete`),
+  which destroy access without deleting anything; raw-device destruction, including
+  verbs that name no `/dev` node in a recognised form (`wipefs`, `blkdiscard`,
+  `sgdisk --zap-all`, `cryptsetup luksFormat`); truncating redirects into a system
+  tree and any write to a host credential file (`/etc/sudoers`, `/etc/shadow`);
+  destruction of backups and recovery state (`vssadmin delete shadows`, `tmutil
+delete`, `journalctl --vacuum-*`, `bcdedit … recoveryenabled No`); disabling host
+  security controls (`csrutil disable`, `setenforce 0`, `Set-MpPreference -Disable*`);
+  account and registry-hive removal; signals that take out the whole session
+  (`kill -9 -1`, `pkill -u`); host shutdown and fork bombs; and attempts to rewrite
+  the permission surface.
+
+  Prompted: bounded deletion, `dd` overwrite of an existing path, forced symlink
+  replacement, `crontab -r`, writes landing on credential/startup paths (`~/.ssh`,
+  `~/.bashrc`, …) whether by redirect, `tee`, `cp`, or `install`, relocation of a
+  workspace tree out of the workspace, destructive version-control operations
+  (`git push --force`, `git branch -D`, `git reflog expire`, `git update-ref -d`,
+  `git filter-branch`, `git stash clear`, `git checkout .`, `git gc --prune=now`),
+  interpreter deletion whose target cannot be resolved, destructive targets a
+  different tool substitutes at run time (`xargs -I{}`), opaque scripts, dynamic
+  destructive paths, and resource-exhaustion signals.
+
+  Explicitly **not** modelled, and left as open scope rather than oversight: anything
+  whose blast radius is remote rather than local — `aws s3 rm --recursive`,
+  `terraform destroy`, `kubectl delete namespace`, `gh repo delete`, `dropdb`,
+  `redis-cli FLUSHALL` — and exfiltration of local secrets over the network, which
+  this mode deliberately permits (credential scrubbing covers the child environment,
+  not files on disk). Also unmodelled: system package removal (`apt-get remove
+--purge libc6`), which can brick a host but whose safe forms are too common to
+  prompt on.
+
+- Lexing, wrapper unwrapping, and the interpreter/script/inline-flag tables are shared
+  with the other two analyzers via `shell-argv.ts`. The wrapper list it exposes for
+  _routing_ is deliberately narrower than the one for harm analysis: seeing through
+  `sudo` is always right when asking "what damage can this do" and always wrong when
+  asking "which binary did the user authorise".
+- Each decision appends a `permission_decision` line to the thread spine with the
+  original/effective command, original/effective mode, actual sandbox state, harm and
+  policy verdicts, reasons, and user response. ACP-native tool bridge calls use the
+  same recording window.
+
+This is a prompt-reduction tool, not a complete security boundary. Deterministic
+analysis cannot prove arbitrary programs benign, an allowed executable can contain
+unknown behavior, and platforms without the macOS sandbox expose the user's full
+account. The short-lived explicit capability, truthful containment UI, credential
+scrubbing, and non-bypassable catastrophic checks reduce risk; they do not make
+untrusted repositories safe to run.
 
 ## Why the tiers were deferred
 

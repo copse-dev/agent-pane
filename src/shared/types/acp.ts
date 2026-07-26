@@ -52,6 +52,15 @@ export interface AcpAgentConfig {
    */
   availableModels?: AcpModelChoice[]
   /**
+   * Epoch-ms timestamp of the probe that produced {@link availableModels}. Used
+   * by the background staleness check (`acpModelsCacheStale`) to re-probe agents
+   * whose cache has aged past the TTL, so models the agent gains later (e.g. a
+   * new Opus release) reach the picker without a manual "Detect models". Absent
+   * on caches written before this field existed — treated as maximally stale, so
+   * they refresh on the next workspace open.
+   */
+  modelsProbedAt?: number
+  /**
    * Optional ACP **session mode** to select for each session, as a
    * `SessionModeId` advertised in the agent's `session/new` `modes`
    * (issue #607). ACP surfaces agent permission behavior as session modes —

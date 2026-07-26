@@ -1,4 +1,4 @@
-import type { StreamChunk, UsageDelta, ContextBreakdown } from '@shared/types'
+import type { StreamChunk, ContextBreakdown } from '@shared/types'
 import type { RightPanelMode, ActiveDiff } from '@shared/types/state.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
@@ -36,6 +36,7 @@ import type {
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
+import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 
 export type { DetectedAcpAgent }
 
@@ -71,6 +72,12 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+  }
+  security: {
+    getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
   }
   fs: {
     readFile: (path: string) => Promise<string>
@@ -131,7 +138,6 @@ export interface ApiClient {
       }) => void,
     ) => () => void
     onShellOutput: (handler: (data: string, toolCallId: string | null) => void) => () => void
-    onUsage: (handler: (threadId: string, usage: UsageDelta) => void) => () => void
     onRefreshContextEstimate: (handler: () => void) => () => void
     /**
      * An async hook's `queueMessage` output (decision 4), bridged from the host.
@@ -251,6 +257,17 @@ export interface ApiClient {
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => Promise<void>
     delete: (projectId: string, threadId: string) => Promise<void>
+    /**
+     * Seed a fork's provider-format history from the thread it branched off.
+     * Omit `throughMessageId` (or pass the source's last message id) to copy the
+     * sidecar verbatim; an earlier id rebuilds history from the transcript slice.
+     */
+    fork: (
+      projectId: string,
+      sourceThreadId: string,
+      targetThreadId: string,
+      throughMessageId?: string,
+    ) => Promise<import('@shared/types').ForkedHistoryResult>
     catalog: (
       projectId: string,
       query?: string,
@@ -275,6 +292,11 @@ export interface ApiClient {
       minimum: number
       bestAvailableContext: number | null
     }>
+    /**
+     * Concrete model id for the plan/price Pareto best-value default
+     * (`auto:best-value` setting expands to this on new chats / agent runs).
+     */
+    bestValueDefault: () => Promise<string>
   }
   intellect: {
     /** Live Artificial Analysis model feed; empty models when no key stored. */

@@ -73,51 +73,59 @@ describe('settings packs (about:addons)', function () {
     assert.equal(await todosRow.$('.pack-name').getText(), 'copse.todos')
     assert.equal(await packs.$('.pack-row[data-pack-id="copse.noop"]').isExisting(), false)
 
-    // Long-horizon tasks pack (#558 → pack migration): listed, default-OFF via
-    // the one-time enablement bridge (absent legacy setting ⇒ disabled).
+    // Long-horizon tasks pack (#558): listed, default-OFF (ships disabled).
     const longHorizonRow = packs.$('.pack-row[data-pack-id="copse.long-horizon-tasks"]')
     await expect(longHorizonRow).toBeDisplayed()
     assert.equal(await longHorizonRow.$('.pack-name').getText(), 'copse.long-horizon-tasks')
     await expect(longHorizonRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await longHorizonRow.getAttribute('data-enabled'), 'false')
-    // Roadmap plans pack (#556 → pack migration): listed, default-OFF via the
-    // one-time enablement bridge (absent legacy setting ⇒ disabled).
+    // Roadmap plans pack (#556): listed, default-OFF (ships disabled).
     const roadmapPlansRow = packs.$('.pack-row[data-pack-id="copse.roadmap-plans"]')
     await expect(roadmapPlansRow).toBeDisplayed()
     assert.equal(await roadmapPlansRow.$('.pack-name').getText(), 'copse.roadmap-plans')
     await expect(roadmapPlansRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await roadmapPlansRow.getAttribute('data-enabled'), 'false')
 
-    // Advisor strategy pack: listed, default-OFF via the one-time enablement
-    // bridge (absent legacy `advisorStrategyEnabled` ⇒ disabled).
+    // Advisor strategy pack: listed, default-OFF (ships disabled).
     const advisorRow = packs.$('.pack-row[data-pack-id="copse.advisor-strategy"]')
     await expect(advisorRow).toBeDisplayed()
     assert.equal(await advisorRow.$('.pack-name').getText(), 'copse.advisor-strategy')
     await expect(advisorRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await advisorRow.getAttribute('data-enabled'), 'false')
 
-    // OKF memories pack: listed, default-OFF via the one-time enablement bridge
-    // (absent legacy `okfMemoriesEnabled` ⇒ disabled).
+    // OKF memories pack: listed, default-OFF (ships disabled).
     const okfMemoriesRow = packs.$('.pack-row[data-pack-id="copse.okf-memories"]')
     await expect(okfMemoriesRow).toBeDisplayed()
     assert.equal(await okfMemoriesRow.$('.pack-name').getText(), 'copse.okf-memories')
     await expect(okfMemoriesRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await okfMemoriesRow.getAttribute('data-enabled'), 'false')
 
-    // CI investigator pack: listed, default-OFF via the one-time enablement
-    // bridge (absent legacy `ciInvestigatorEnabled` ⇒ disabled).
+    // CI investigator pack: listed, default-OFF (ships disabled).
     const ciInvestigatorRow = packs.$('.pack-row[data-pack-id="copse.ci-investigator"]')
     await expect(ciInvestigatorRow).toBeDisplayed()
     assert.equal(await ciInvestigatorRow.$('.pack-name').getText(), 'copse.ci-investigator')
     await expect(ciInvestigatorRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await ciInvestigatorRow.getAttribute('data-enabled'), 'false')
 
-    // PII redaction pack: listed, default-OFF via the one-time enablement bridge (absent legacy `piiRedactionEnabled` ⇒ disabled).
+    // PII redaction pack: listed, default-OFF (ships disabled).
     const packRow = packs.$('.pack-row[data-pack-id="copse.pii-redaction"]')
     await expect(packRow).toBeDisplayed()
     assert.equal(await packRow.$('.pack-name').getText(), 'copse.pii-redaction')
     await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await packRow.getAttribute('data-enabled'), 'false')
+
+    // Post-turn review pack: its pack-scoped `maxReviewCycles` setting renders
+    // as a generic number field seeded with the manifest default. This is the
+    // "does a failing review buy the agent another turn?" knob — 1 reports the
+    // failing verdict and stops, 2 (default) allows one remediation turn plus a
+    // re-review.
+    const postTurnReviewRow = packs.$('.pack-row[data-pack-id="copse.post-turn-review"]')
+    await expect(postTurnReviewRow).toBeDisplayed()
+    const reviewCyclesInput = postTurnReviewRow.$(
+      'input.pack-setting-number[data-setting-key="maxReviewCycles"]',
+    )
+    await expect(reviewCyclesInput).toBeDisplayed()
+    assert.equal(await reviewCyclesInput.getValue(), '2')
 
     // Trust tier badge is shown.
     await expect(todosRow.$('.pack-badge-first-party')).toBeDisplayed()
