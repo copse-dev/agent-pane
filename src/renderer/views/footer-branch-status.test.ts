@@ -79,6 +79,7 @@ describe('footer branch status', () => {
 
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread('feature/footer-copy', true)],
     })
@@ -117,6 +118,7 @@ describe('footer branch status', () => {
 
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread('feature/with-pr', true)],
     })
@@ -160,6 +162,7 @@ describe('footer branch status', () => {
   it('shows the branch picker for new chats without a copy action', async () => {
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread()],
     })

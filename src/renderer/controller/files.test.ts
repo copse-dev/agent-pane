@@ -7,7 +7,12 @@ import { detectLanguage, openWorkspaceFile } from './files.ts'
 function apiWithFile(content: string): ApiClient {
   return {
     fs: {
-      readFile: async () => content,
+      readFile: async (projectId: string, threadId: string, path: string) => {
+        assert.equal(projectId, 'project-1')
+        assert.equal(threadId, 'thread-1')
+        assert.equal(path, 'README.md')
+        return content
+      },
     },
   } as unknown as ApiClient
 }
@@ -20,7 +25,12 @@ describe('files controller', () => {
   })
 
   it('opens a workspace file in the explorer panel', async () => {
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'terminal' })
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'terminal',
+    })
     let panelEvents = 0
     let paneEvents = 0
     let modeEvents = 0

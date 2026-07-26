@@ -186,6 +186,7 @@ export function mountGitChangesPane(
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let refreshRequestId = 0
   const proposedDiffCachesByOwner = new Map<string, Map<string, ActiveDiff>>()
   let pendingNavigate: string | null = null
   // Path of a freshly proposed diff the pane should jump to on the next sync,
@@ -482,9 +483,13 @@ export function mountGitChangesPane(
     pendingSelect = { kind: 'git', path, staged }
     hideApprovalButtons()
     renderList()
-    const diff = await api.git.fileDiff(path, staged)
+    const owner = activeOwner()
+    if (!owner) return
+    const diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
     if (
       requestId !== selectRequestId ||
+      activeOwner()?.projectId !== owner.projectId ||
+      activeOwner()?.threadId !== owner.threadId ||
       pendingSelect.path !== path ||
       pendingSelect.staged !== staged
     ) {
@@ -610,7 +615,21 @@ export function mountGitChangesPane(
   }
 
   async function refresh(): Promise<void> {
-    gitAvailable = await api.git.isAvailable()
+    const requestId = ++refreshRequestId
+    const owner = activeOwner()
+    if (!owner) {
+      gitAvailable = false
+      return
+    }
+    const available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    const currentOwner = activeOwner()
+    if (
+      requestId !== refreshRequestId ||
+      currentOwner?.projectId !== owner.projectId ||
+      currentOwner.threadId !== owner.threadId
+    )
+      return
+    gitAvailable = available
     if (!gitAvailable) {
       status = null
       sessionBackup = null
@@ -619,9 +638,12 @@ export function mountGitChangesPane(
       await syncSelection()
       return
     }
-    status = await api.git.status()
-    const owner = activeOwner()
-    sessionBackup = owner ? await api.git.sessionBackup(owner.projectId, owner.threadId) : null
+    const nextStatus = await api.git.status(owner.projectId, owner.threadId)
+    if (requestId !== refreshRequestId) return
+    const nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
+    if (requestId !== refreshRequestId) return
+    status = nextStatus
+    sessionBackup = nextBackup
     renderRestoreBanner()
     renderList()
     await syncSelection()
@@ -677,6 +699,15 @@ export function mountGitChangesPane(
       pendingProposedNavigate = null
       clearSelection()
       conflictBanner.hidden = true
+      if (changesModeActive(store)) void refresh()
+      else renderList()
+    }),
+    store.on('threads_changed', () => {
+      refreshRequestId++
+      selectRequestId++
+      status = null
+      sessionBackup = null
+      selection = null
       if (changesModeActive(store)) void refresh()
       else renderList()
     }),

@@ -164,6 +164,17 @@ export const KNOWN_ACP_AGENTS: readonly KnownAcpAgent[] = [
     // auto-setup never installs it (Socket Firewall can't wrap `curl | bash`).
     requiresClient: 'cursor-agent',
     preset: true,
+    sandbox: {
+      // Cursor-owned infra wholesale: the API lives on cursor.com, but OAuth
+      // and telemetry move between subdomains (cursor.sh, etc.) — pinning
+      // individual hosts breaks auth when they do.
+      allowedDomains: ['cursor.com', '*.cursor.com', 'cursor.sh', '*.cursor.sh'],
+      homeDirs: ['.cursor', '.local/share/cursor-agent'],
+      // Cursor uses /tmp/.cursor for session bookkeeping (same pattern as
+      // Claude's /tmp/claude-<hex> dirs).
+      scratchPaths: ['/tmp/.cursor'],
+    },
+    sandboxedPermissionMode: 'acceptEdits',
     install: 'curl https://cursor.com/install | bash',
     setup: 'cursor-agent login',
     docsUrl: 'https://docs.cursor.com/en/cli/overview',

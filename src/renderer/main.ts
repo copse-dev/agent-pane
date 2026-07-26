@@ -605,8 +605,15 @@ async function confirmDeleteThread(): Promise<void> {
   const index = threads.findIndex((t) => t.id === activeThreadId)
   const remaining = threads.filter((t) => t.id !== activeThreadId)
   const newActive = remaining[Math.min(index, remaining.length - 1)]?.id ?? null
-  store.setState({ threads: remaining, activeThreadId: newActive })
+  store.setState({
+    threads: remaining,
+    activeThreadId: newActive,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+  })
   store.emit('threads_changed')
+  store.emit('panel_changed')
 }
 
 function switchToPrevThread(): void {

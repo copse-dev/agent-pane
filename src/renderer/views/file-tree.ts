@@ -12,6 +12,7 @@ import { WORKSPACE_PATH_MIME } from '../attachments/handle-file-drop.ts'
 import { openWorkspaceFile } from '../controller/files.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { PanelTab } from '@shared/types/state.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 function join(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child
@@ -34,6 +35,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
 
   let selectedRow: HTMLElement | null = null
   let rootLoad: Promise<void> | null = null
+  let loadGeneration = 0
   const rowByPath = new Map<string, HTMLElement>()
   const dirByPath = new Map<
     string,
@@ -80,6 +82,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     entry: { name: string; isDir: boolean },
     path: string,
     depth: number,
+    generation: number,
   ): HTMLElement {
     // Directories get a chevron that rotates to point down when expanded (see
     // `.tree-twisty.expanded` in layout.css); files leave the slot empty so their
@@ -119,7 +122,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
         childrenEl.hidden = false
         if (!loaded) {
           loaded = true
-          await loadInto(childrenEl, path, depth + 1)
+          await loadInto(childrenEl, path, depth + 1, generation)
         }
       }
       dirByPath.set(path, { expand })
@@ -147,18 +150,27 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     return container
   }
 
-  async function loadInto(target: HTMLElement, dirPath: string, depth: number): Promise<void> {
+  async function loadInto(
+    target: HTMLElement,
+    dirPath: string,
+    depth: number,
+    generation: number,
+  ): Promise<void> {
     try {
-      const entries = await api.fs.listDir(dirPath)
+      const owner = getActiveThreadOwner(store)
+      if (!owner) throw new Error('No active task')
+      const entries = await api.fs.listDir(owner.projectId, owner.threadId, dirPath)
+      if (generation !== loadGeneration) return
       clear(target)
       if (entries.length === 0) {
         target.append(el('div', { class: 'sidebar-empty' }, '(empty)'))
         return
       }
       for (const entry of entries) {
-        target.append(renderRow(entry, join(dirPath, entry.name), depth))
+        target.append(renderRow(entry, join(dirPath, entry.name), depth, generation))
       }
     } catch (err) {
+      if (generation !== loadGeneration) return
       clear(target)
       const message =
         err instanceof Error ? err.message : typeof err === 'string' ? err : 'Could not read folder'
@@ -167,6 +179,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   function refresh(): void {
+    const generation = ++loadGeneration
     if (!store.getState().workspaceRoot) {
       clear(treeEl)
       treeEl.append(el('div', { class: 'sidebar-empty' }, 'No folder open'))
@@ -175,7 +188,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     selectedRow = null
     rowByPath.clear()
     dirByPath.clear()
-    rootLoad = loadInto(treeEl, '', 0)
+    rootLoad = loadInto(treeEl, '', 0, generation)
     void rootLoad.then(() => {
       const openPath = store.getState().openFile?.path
       if (openPath) void revealPath(openPath)
@@ -183,8 +196,17 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
   }
 
   refreshBtn.addEventListener('click', refresh)
+  let lastOwnerKey = ''
+  function refreshForActiveTask(): void {
+    const owner = getActiveThreadOwner(store)
+    const nextKey = owner ? `${owner.projectId}\0${owner.threadId}` : ''
+    if (nextKey === lastOwnerKey) return
+    lastOwnerKey = nextKey
+    refresh()
+  }
   const unsubs = [
     store.on('workspace_changed', refresh),
+    store.on('threads_changed', refreshForActiveTask),
     store.on('panel_changed', () => {
       const path = store.getState().openFile?.path
       if (path) void revealPath(path)
@@ -194,7 +216,7 @@ export function mountFileTree(root: HTMLElement, store: AppStore, api: ApiClient
     }),
   ]
 
-  refresh()
+  refreshForActiveTask()
   const unregisterPopoutSeed = registerPopoutSeedHandlers('explorer', {
     capture: () => ({
       openFilePath: store.getState().openFile?.path ?? null,
