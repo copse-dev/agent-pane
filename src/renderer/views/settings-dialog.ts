@@ -431,7 +431,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </label>
               <label class="checkbox-label">
                 <input type="checkbox" name="preferAcpOverCloudAgent" />
-                Prefer ACP agent over Cloud Agent (uses subscription instead of API key billing)
+                Offer to switch to your Claude ACP agent when Cloud Agent can’t run (bad key or no
+                credit)
               </label>
             </fieldset>
 
