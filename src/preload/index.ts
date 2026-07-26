@@ -712,6 +712,27 @@ contextBridge.exposeInMainWorld('api', {
     setSetting: (id: string, key: string, value: unknown) =>
       ipcRenderer.invoke('packs:setSetting', id, key, value),
   },
+  automations: {
+    list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
+    upsert: (projectId: string, input: unknown) =>
+      ipcRenderer.invoke('automations:upsert', projectId, input),
+    remove: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:remove', projectId, scheduleId),
+    runNow: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:runNow', projectId, scheduleId),
+    onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: import('@shared/types').AutomationTriggerEvent,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('automations:triggered', listener)
+      return (): void => {
+        ipcRenderer.off('automations:triggered', listener)
+      }
+    },
+  },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
   },

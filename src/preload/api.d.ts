@@ -4,6 +4,11 @@ import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
+import type {
+  AutomationSchedule,
+  AutomationScheduleInput,
+  AutomationTriggerEvent,
+} from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
@@ -583,6 +588,13 @@ export interface ApiClient {
     setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
     /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
     setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
+  }
+  automations: {
+    list: (projectId: string) => Promise<AutomationSchedule[]>
+    upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
+    remove: (projectId: string, scheduleId: string) => Promise<void>
+    runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>
