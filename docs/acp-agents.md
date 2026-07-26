@@ -210,11 +210,11 @@ This first slice intentionally leaves the following for follow-ups (issue #264):
 - **Native-tool bridge is http-only.** Agents that support only stdio MCP
   servers don't get Copse's bridged tools this turn — a stdio shim is a
   possible follow-up (#602). Skills and todo/plan tools are not bridged.
-- **Sandboxing is macOS-only and catalog-scoped.** Agents with no
-  `KNOWN_ACP_AGENTS` sandbox entry (e.g. Cursor, custom agents) spawn
-  unsandboxed; add `sandbox` (`allowedDomains`, `homeDirs`) to their
-  `registeredAcpAgents` entry to opt them in, or `sandbox: false` to opt a
-  catalog agent out (#590).
+- **Sandboxing is macOS-only and catalog-scoped.** Known presets (Claude,
+  Gemini, Codex, Cursor) ship a catalog `sandbox` entry; custom agents spawn
+  unsandboxed unless you add `sandbox` (`allowedDomains`, `homeDirs`) to their
+  `registeredAcpAgents` entry, or set `sandbox: false` to opt a catalog agent
+  out (#590).
 - **SSH workspaces are opt-in.** Off by default, ACP agents stay hidden from the
   chat model picker and are rejected at session open on an SSH remote. Turn on
   **Settings → Experimental → ACP agents → Run ACP agents over SSH** to spawn the

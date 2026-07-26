@@ -73,7 +73,14 @@ describe('resolveAcpSandbox (issue #590)', () => {
 
   it('leaves agents with no catalog preset unsandboxed', () => {
     assert.equal(resolveAcpSandbox({ ...base, id: 'my-custom-agent' }), undefined)
-    assert.equal(resolveAcpSandbox({ ...base, id: 'cursor' }), undefined) // preset ships no sandbox
+  })
+
+  it('falls back to the Cursor catalog sandbox preset', () => {
+    const resolved = resolveAcpSandbox({ ...base, id: 'cursor' })
+    assert.ok(resolved)
+    assert.ok(resolved.allowedDomains.includes('*.cursor.sh'))
+    assert.ok(resolved.homeDirs?.includes('.cursor'))
+    assert.deepEqual(resolved.scratchPaths, ['/tmp/.cursor'])
   })
 })
 
