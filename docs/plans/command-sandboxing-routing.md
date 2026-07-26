@@ -96,7 +96,7 @@ The allow-list model closes that:
 - Settings: `trustedShellCommands` (validated by `trustedShellCommandsSchema`) +
   the "Trusted commands" fieldset.
 
-## Guarded YOLO: explicit one-turn broad execution
+## Guarded YOLO: explicit thread-scoped broad execution
 
 Issue #1249 adds a separate, high-friction mode for a user who deliberately wants
 routine local, network, outside-workspace, or privileged shell work to proceed
@@ -104,9 +104,9 @@ without scope prompts. It does **not** change standard-mode defaults or the trus
 command list.
 
 - The user enables it from the composer overflow and confirms a host-owned warning.
-  The capability is held only in memory, belongs to one thread, is consumed by its
-  next agent turn, and expires after that turn, after 15 minutes unused, or on app
-  restart. It is never restored from settings or migrated data.
+  The capability is held only in memory, belongs to one thread, becomes active when
+  that thread next runs, and remains active until the user disables it or restarts the
+  app. It is never restored from settings or migrated data.
 - While active, `run_shell` and `run_background` still use the macOS project sandbox
   where it can contain the command. Commands which require host/network scope run
   unsandboxed; Linux and Windows always report that no OS sandbox is active. The
