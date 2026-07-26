@@ -36,6 +36,8 @@ import { createGhCliSection } from './setup/gh-cli-section.ts'
 import { createModelRoutingSection } from './setup/model-routing-section.ts'
 import { createUsageSection } from './setup/usage-section.ts'
 import { createSshWorkspaceSection } from './setup/ssh-workspace-section.ts'
+import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
+import { createAutomationPackSettings } from './automation-pack-settings.ts'
 import {
   DEFAULT_WEB_ALLOWED_ORIGINS,
   WEB_ALLOWED_ORIGINS_SETTING,
@@ -1844,6 +1846,18 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         settingsBox.append(makePackSettingField(pack.id, field))
       }
       row.append(settingsBox)
+    }
+
+    // First-party level-3 settings detail. The manifest advertises the named
+    // slot in the contribution chips; shipped renderer code supplies the view
+    // (user packs cannot inject arbitrary renderer code, decision 15).
+    if (
+      pack.id === AUTOMATIONS_PACK_ID &&
+      pack.contributions.ui.some(
+        (contribution) => contribution.level === 3 && contribution.slot === 'settings-pack-detail',
+      )
+    ) {
+      row.append(createAutomationPackSettings(store, api, pack.enabled))
     }
 
     // Disabling greys the whole row so the effect of the toggle is immediately

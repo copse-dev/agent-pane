@@ -29,6 +29,27 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  security: {
+    getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:getGuardedYolo', threadId),
+    enableGuardedYolo: (threadId: string) =>
+      ipcRenderer.invoke('security:enableGuardedYolo', threadId),
+    disableGuardedYolo: (threadId: string) =>
+      ipcRenderer.invoke('security:disableGuardedYolo', threadId),
+    onGuardedYoloChanged: (
+      handler: (state: import('@shared/types/guarded-yolo.ts').GuardedYoloState) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        state: import('@shared/types/guarded-yolo.ts').GuardedYoloState,
+      ): void => {
+        handler(state)
+      }
+      ipcRenderer.on('security:guardedYoloChanged', listener)
+      return (): void => {
+        ipcRenderer.off('security:guardedYoloChanged', listener)
+      }
+    },
+  },
   fs: {
     readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
     writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:writeFile', path, content),
@@ -118,6 +139,15 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('agent:approval_request', listener)
       return (): void => {
         ipcRenderer.off('agent:approval_request', listener)
+      }
+    },
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => {
+      const listener = (_e: Electron.IpcRendererEvent, req: { id: string }): void => {
+        handler(req)
+      }
+      ipcRenderer.on('agent:approval_cancelled', listener)
+      return (): void => {
+        ipcRenderer.off('agent:approval_cancelled', listener)
       }
     },
     onAskUserRequest: (
@@ -398,6 +428,19 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
+    fork: (
+      projectId: string,
+      sourceThreadId: string,
+      targetThreadId: string,
+      throughMessageId?: string,
+    ) =>
+      ipcRenderer.invoke(
+        'threads:fork',
+        projectId,
+        sourceThreadId,
+        targetThreadId,
+        throughMessageId,
+      ),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
@@ -677,6 +720,27 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('packs:setEnabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
       ipcRenderer.invoke('packs:setSetting', id, key, value),
+  },
+  automations: {
+    list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),
+    upsert: (projectId: string, input: unknown) =>
+      ipcRenderer.invoke('automations:upsert', projectId, input),
+    remove: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:remove', projectId, scheduleId),
+    runNow: (projectId: string, scheduleId: string) =>
+      ipcRenderer.invoke('automations:runNow', projectId, scheduleId),
+    onTriggered: (handler: (event: import('@shared/types').AutomationTriggerEvent) => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        payload: import('@shared/types').AutomationTriggerEvent,
+      ): void => {
+        handler(payload)
+      }
+      ipcRenderer.on('automations:triggered', listener)
+      return (): void => {
+        ipcRenderer.off('automations:triggered', listener)
+      }
+    },
   },
   instructions: {
     list: () => ipcRenderer.invoke('instructions:list'),
