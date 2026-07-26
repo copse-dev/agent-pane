@@ -8,7 +8,7 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
-import type { ApiClient } from '../../preload/api.d.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 
 function thread(id: string, title: string): Thread {
@@ -20,12 +20,21 @@ function thread(id: string, title: string): Thread {
     usage: { inputTokens: 0, outputTokens: 0 },
     createdAt: 1,
     updatedAt: 1,
-  } as unknown as Thread
+  }
 }
 
-const apiStub = {
-  threads: { listOrphans: async (): Promise<never[]> => [] },
-} as unknown as ApiClient
+// mountProjectsPane refreshes orphan stores on mount (#997), so it needs a real
+// ApiClient shape. Built on the browser demo's implementation rather than an
+// `as unknown as ApiClient` cast, so this stays type-safe and adds nothing to
+// the lint-suppression baseline.
+const apiStub = createFakeApi()
+
+/** Query helper: asserts presence instead of asserting the type. */
+function must(selector: string): HTMLElement {
+  const found = document.querySelector<HTMLElement>(selector)
+  assert.ok(found, `expected to find ${selector}`)
+  return found
+}
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -55,22 +64,23 @@ describe('projects pane thread filter (component)', () => {
   }
 
   function setFilter(value: string): void {
-    const input = document.querySelector('.projects-search-input') as HTMLInputElement
+    const input = document.querySelector<HTMLInputElement>('.projects-search-input')
+    assert.ok(input, 'expected the thread-filter input')
     input.value = value
     input.dispatchEvent(new Event('input'))
   }
 
   it('hides the filter row until the search toggle is clicked', () => {
     mount()
-    const row = document.querySelector('.projects-search-row') as HTMLElement
+    const row = must('.projects-search-row')
     assert.equal(row.hidden, true)
-    ;(document.querySelector('.projects-search-btn') as HTMLElement).click()
+    must('.projects-search-btn').click()
     assert.equal(row.hidden, false)
   })
 
   it('narrows the thread list to title matches', () => {
     mount()
-    ;(document.querySelector('.projects-search-btn') as HTMLElement).click()
+    must('.projects-search-btn').click()
     assert.deepEqual(titles(), ['Fix login bug', 'Refactor sidebar', 'Login rate limiting'])
     setFilter('login')
     assert.deepEqual(titles(), ['Fix login bug', 'Login rate limiting'])
@@ -78,7 +88,7 @@ describe('projects pane thread filter (component)', () => {
 
   it('shows a no-matches note when nothing matches', () => {
     mount()
-    ;(document.querySelector('.projects-search-btn') as HTMLElement).click()
+    must('.projects-search-btn').click()
     setFilter('zzz-nothing')
     assert.deepEqual(titles(), [])
     const empty = document.querySelector('.chats-list .sidebar-empty')
@@ -87,12 +97,12 @@ describe('projects pane thread filter (component)', () => {
 
   it('clicking the toggle again clears and hides the filter', () => {
     mount()
-    const toggle = document.querySelector('.projects-search-btn') as HTMLElement
+    const toggle = must('.projects-search-btn')
     toggle.click()
     setFilter('login')
     assert.equal(titles().length, 2)
     toggle.click() // second click closes + clears
-    const row = document.querySelector('.projects-search-row') as HTMLElement
+    const row = must('.projects-search-row')
     assert.equal(row.hidden, true)
     assert.equal(titles().length, 3)
   })

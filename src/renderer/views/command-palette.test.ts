@@ -10,7 +10,8 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import type { Project, Thread } from '@shared/types'
+import type { Project, Thread, ThreadCatalogHit } from '@shared/types'
+import { createFakeApi } from '../fake-api.test-support.ts'
 import {
   mountCommandPalette,
   openCommandPalette,
@@ -27,27 +28,42 @@ function shimModal(dialog: HTMLDialogElement): void {
   })
 }
 
-interface CatalogHit {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
-  digest: string
-  path: string
-}
-
-function hit(id: string, title: string, updatedAt: number): CatalogHit {
-  return { id, title, createdAt: updatedAt, updatedAt, digest: '', path: `/tmp/${id}` }
+// The real catalog type, not a hand-rolled subset. The previous local interface
+// omitted `spinePath` and only compiled because the ApiClient double was cast;
+// using ThreadCatalogHit keeps the double honest about what the API returns.
+function hit(id: string, title: string, updatedAt: number): ThreadCatalogHit {
+  return {
+    id,
+    title,
+    createdAt: updatedAt,
+    updatedAt,
+    digest: '',
+    path: `/tmp/${id}`,
+    spinePath: `/tmp/${id}/spine.json`,
+  }
 }
 
 // Per-project thread catalog keyed by project id; api.threads.catalog reads it.
-function stubApi(catalog: Record<string, CatalogHit[]>): ApiClient {
+// Built by overriding one method on the browser demo's real ApiClient rather
+// than casting a partial literal, so the double stays type-safe and adds nothing
+// to the lint-suppression baseline.
+function stubApi(catalog: Record<string, ThreadCatalogHit[]>): ApiClient {
+  const api = createFakeApi()
   return {
+    ...api,
     threads: {
-      catalog: (projectId: string): Promise<CatalogHit[]> =>
+      ...api.threads,
+      catalog: (projectId: string): Promise<ThreadCatalogHit[]> =>
         Promise.resolve(catalog[projectId] ?? []),
     },
-  } as unknown as ApiClient
+  }
+}
+
+/** Query helper: asserts presence instead of asserting the type. */
+function must(root: ParentNode, selector: string): HTMLElement {
+  const found = root.querySelector<HTMLElement>(selector)
+  assert.ok(found, `expected to find ${selector}`)
+  return found
 }
 
 const tick = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -57,7 +73,15 @@ function project(id: string, name: string): Project {
 }
 
 function thread(id: string, title: string): Thread {
-  return { id, title } as unknown as Thread
+  return {
+    id,
+    title,
+    status: 'idle',
+    messages: [],
+    usage: { inputTokens: 0, outputTokens: 0 },
+    createdAt: 1,
+    updatedAt: 1,
+  }
 }
 
 function rowTexts(dialog: HTMLElement, kind: string): string[] {
@@ -67,7 +91,8 @@ function rowTexts(dialog: HTMLElement, kind: string): string[] {
 }
 
 function type(dialog: HTMLElement, value: string): void {
-  const input = dialog.querySelector('.command-palette-input') as HTMLInputElement
+  const input = dialog.querySelector<HTMLInputElement>('.command-palette-input')
+  assert.ok(input, 'expected the palette input')
   input.value = value
   input.dispatchEvent(new Event('input'))
 }
@@ -76,7 +101,7 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
   let dialog: HTMLDialogElement
   let store: ReturnType<typeof createStore>
 
-  function mount(catalog: Record<string, CatalogHit[]>): void {
+  function mount(catalog: Record<string, ThreadCatalogHit[]>): void {
     document.body.innerHTML = ''
     store = createStore()
     store.setState({
@@ -86,7 +111,9 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
       threads: [thread('t-live', 'Live active thread')],
     })
     mountCommandPalette(store, stubApi(catalog))
-    dialog = document.getElementById('command-palette-dialog') as HTMLDialogElement
+    const found = document.querySelector<HTMLDialogElement>('#command-palette-dialog')
+    assert.ok(found, 'expected the palette dialog')
+    dialog = found
     shimModal(dialog)
   }
 
@@ -158,14 +185,14 @@ describe('command palette (Cmd/Ctrl+Shift+K)', () => {
     await tick(0)
     type(dialog, 'zzzznomatch')
     assert.equal(dialog.querySelectorAll('.command-palette-item').length, 0)
-    assert.equal((dialog.querySelector('.command-palette-empty') as HTMLElement).hidden, false)
+    assert.equal(must(dialog, '.command-palette-empty').hidden, false)
   })
 
   it('choosing a panel opens that right-panel mode and closes', async () => {
     openCommandPalette()
     await tick(0)
     type(dialog, 'terminal')
-    const row = dialog.querySelector('.command-palette-item-panel') as HTMLElement
+    const row = must(dialog, '.command-palette-item-panel')
     row.dispatchEvent(new Event('mousedown'))
     assert.equal(store.getState().rightPanelMode, 'terminal')
     assert.equal(store.getState().filesPaneOpen, true)
