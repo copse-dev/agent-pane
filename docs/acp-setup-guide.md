@@ -54,7 +54,7 @@ npm install -g @zed-industries/claude-code-acp   # already installed for you
 claude /login                                     # only if not already logged in
 ```
 
-Then add it in Copse: **Settings → Experimental → ACP agents → Claude Code → Add**.
+Then add it in Copse: **Settings → ACP agents → Claude Code → Add to my agents**.
 Leave the `env` empty. **Do not** put `ANTHROPIC_API_KEY` there — with an OAuth
 subscription the adapter reads the keychain itself, and an `oat` token in
 `ANTHROPIC_API_KEY` would break it.

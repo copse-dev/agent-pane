@@ -25,6 +25,12 @@ every published entry.
 - Fixed: a project showing fewer threads than one sidebar page pinned its list to
   that size, so the next thread it gained (a new chat or a fork) appeared behind
   "Show more" instead of in the sidebar.
+- ACP agents graduated out of **Settings → Experimental** into their own
+  top-level **Settings → ACP agents** section. The panel now follows the
+  Providers pattern: a chip row lists each agent (known presets first, then your
+  custom ones, then **Add agent**) and reveals only the selected agent's install
+  guidance / editor, so agents are hidden away until picked rather than all
+  expanded at once. A dot marks the agents you've added.
 - CI: bounded the retention of every workflow artifact that previously inherited
   the 90-day default (per-shard PR screenshots, coverage report, and the three
   bench result sets), so routine PR runs stop accumulating against the org's
