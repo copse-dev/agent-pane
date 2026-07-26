@@ -98,9 +98,10 @@ code.
 
 The default-off `copse.automations` pack also exercises the first-party level-3
 boundary: its manifest declares a `settings-pack-detail` view and namespaced
-storage, while the Electron host supplies the local clock/thread-store service.
+storage, while the Electron host supplies the local clock/thread-store service
+and the shipped renderer submits due prompts through the interactive agent controller.
 See [`docs/plans/automations.md`](plans/automations.md) for the deliberately narrow
-desktop-online cron-to-draft prototype and its durable-supervisor boundary.
+desktop-online cron prototype and its durable-supervisor boundary.
 
 ## Level-2 declarative panels (P2)
 
