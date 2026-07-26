@@ -14,10 +14,11 @@
 // system prompt goes back to byte-identical.
 //
 // **Default off.** The pack changes the system prompt of every turn on a weaker
-// model, so it ships disabled and is opted into from Settings → Packs; the host
-// applies that default once via `migrateForcedPlanningDefaultOff` in
-// `src/main/services/packs/pack-service.ts` (the registry itself enables every
-// registered pack by default, matching VS Code's built-in-extension model).
+// model, so it ships disabled and is opted into from Settings → Packs. The
+// registry itself enables every registered pack (VS Code's built-in-extension
+// model), so the off-by-default set is declared host-side in
+// `DEFAULT_DISABLED_PACK_IDS` (`src/main/services/packs/pack-service.ts`) and
+// seeded into `packDisabled` on a profile that has never had one.
 //
 // **Depends on facts, not on the todos pack.** The steering names `update_todos`
 // only when the host reports it in the turn's tool list (`TurnStartPayload.toolNames`),

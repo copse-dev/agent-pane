@@ -30,7 +30,6 @@ import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-pac
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-summary.ts'
 import { MODEL_COMPARISON_PACK_ID } from '@copse/agent/packs/model-comparison-pack.ts'
-import { POST_TURN_REVIEW_PACK_ID } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
 import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pack.ts'
@@ -44,29 +43,29 @@ import { parseStringList } from '../storage/storage-schema.ts'
 /** Storage key holding the ids of packs the user disabled. */
 const PACK_DISABLED_KEY = 'packDisabled'
 
-/** One-time bridge from P5's retired standalone enablement settings. */
-const P5_ENABLEMENT_MIGRATION_KEY = 'packMigration.p5Enablement'
-
-/** One-time bridge from the retired `longHorizonTasksEnabled` standalone setting. */
-const LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY = 'packMigration.longHorizonTasksEnablement'
-
-/** One-time bridge from the retired `roadmapPlansEnabled` standalone setting. */
-const ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY = 'packMigration.roadmapPlansEnablement'
-
-/** One-time bridge from the retired `advisorStrategyEnabled` standalone setting. */
-const ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY = 'packMigration.advisorStrategyEnablement'
-
-/** One-time bridge from the retired `okfMemoriesEnabled` standalone setting. */
-const OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY = 'packMigration.okfMemoriesEnablement'
-
-/** One-time bridge from the retired `ciInvestigatorEnabled` standalone setting. */
-const CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY = 'packMigration.ciInvestigatorEnablement'
-
-/** One-time bridge from the retired `piiRedactionEnabled` standalone setting. */
-const PII_REDACTION_ENABLEMENT_MIGRATION_KEY = 'packMigration.piiRedactionEnablement'
-
-/** One-time seed marking the forced-planning pack opt-in (ships disabled). */
-const FORCED_PLANNING_DEFAULT_OFF_KEY = 'packMigration.forcedPlanningDefaultOff'
+/**
+ * Packs that ship registered but off.
+ *
+ * `createFirstPartyPackRegistry()` seeds every pack enabled, so the off-by-
+ * default set is declared here and written into `packDisabled` on a profile
+ * that has never had one. Every id below was opt-in before it became a pack,
+ * and `copse.pii-redaction` additionally rewrites model input — defaulting any
+ * of them on would hand an experimental surface to someone who never asked for
+ * it. `copse.forced-planning` never had a standalone setting to be opt-in
+ * through, but belongs here for the same reason: it rewrites the system prompt
+ * of every turn that runs on a below-threshold model.
+ * `copse.post-turn-review` is deliberately absent: it has always been on.
+ */
+const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
+  ADVISOR_STRATEGY_PACK_ID,
+  CI_INVESTIGATOR_PACK_ID,
+  FORCED_PLANNING_PACK_ID,
+  LONG_HORIZON_TASKS_PACK_ID,
+  MODEL_COMPARISON_PACK_ID,
+  OKF_MEMORIES_PACK_ID,
+  PII_REDACTION_PACK_ID,
+  ROADMAP_PLANS_PACK_ID,
+]
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -79,187 +78,18 @@ function readDisabledIds(): Set<string> {
 }
 
 /**
- * Preserve the enablement users had before post-turn review and model
- * comparison became packs. This must run synchronously before the shared
- * registry is created: `createRegistry()` immediately consults it to decide
- * whether `compare_models` belongs in the model's tool list.
+ * Write the default-off set, but only on a profile that has no `packDisabled`
+ * list at all. Once the key exists it is the user's own — including an empty
+ * list, which means "everything on" — and is never re-seeded, so a pack enabled
+ * in Settings stays enabled across relaunches.
  *
- * The old defaults were asymmetric — post-turn review on, model comparison
- * off. In particular, an absent `modelComparisonEnabled` value must disable
- * the new pack or P5 would expose an experimental, previously opt-in tool to
- * every existing user after upgrade.
+ * Runs synchronously before the shared registry is created: `createRegistry()`
+ * consults it immediately to decide whether `compare_models` belongs in the
+ * model's tool list, and `pii-redactor.ts` to decide whether to rewrite input.
  */
-function migrateP5Enablement(): void {
-  if (storageGet(P5_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const postTurnReviewEnabled = storageGet('postTurnReviewEnabled')
-  const modelComparisonEnabled = storageGet('modelComparisonEnabled')
-
-  if (postTurnReviewEnabled === false) disabled.add(POST_TURN_REVIEW_PACK_ID)
-  else if (postTurnReviewEnabled === true) disabled.delete(POST_TURN_REVIEW_PACK_ID)
-
-  if (modelComparisonEnabled === true) disabled.delete(MODEL_COMPARISON_PACK_ID)
-  else disabled.add(MODEL_COMPARISON_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(P5_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before long-horizon tasks became a pack.
- * Like model comparison, the feature was previously opt-in (off by default via
- * the `longHorizonTasksEnabled` setting), so an absent or false value must
- * disable the new `copse.long-horizon-tasks` pack — otherwise the migration
- * would expose a previously opt-in experimental tool to every existing user
- * after upgrade. Runs synchronously before the shared registry is created and
- * is idempotent (guarded by its own migration key).
- */
-function migrateLongHorizonTasksEnablement(): void {
-  if (storageGet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const longHorizonTasksEnabled = storageGet('longHorizonTasksEnabled')
-
-  if (longHorizonTasksEnabled === true) disabled.delete(LONG_HORIZON_TASKS_PACK_ID)
-  else disabled.add(LONG_HORIZON_TASKS_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(LONG_HORIZON_TASKS_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before roadmap plans became a pack. Like
- * model comparison, the feature was previously opt-in (off by default via the
- * `roadmapPlansEnabled` setting), so an absent or false value must disable the
- * new `copse.roadmap-plans` pack — otherwise the migration would expose a
- * previously opt-in experimental tool (and its Roadmap pane) to every existing
- * user after upgrade. Runs synchronously before the shared registry is created
- * and is idempotent (guarded by its own migration key).
- */
-function migrateRoadmapPlansEnablement(): void {
-  if (storageGet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const roadmapPlansEnabled = storageGet('roadmapPlansEnabled')
-
-  if (roadmapPlansEnabled === true) disabled.delete(ROADMAP_PLANS_PACK_ID)
-  else disabled.add(ROADMAP_PLANS_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(ROADMAP_PLANS_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before the advisor strategy became a pack.
- * Like model comparison, the feature was previously opt-in (off by default via
- * the `advisorStrategyEnabled` setting), so an absent or false value must
- * disable the new `copse.advisor-strategy` pack — otherwise the migration would
- * expose a previously opt-in experimental tool to every existing user after
- * upgrade. The orthogonal `advisorModel` setting is left untouched (it is not a
- * pack enablement flag). Runs synchronously before the shared registry is
- * created and is idempotent (guarded by its own migration key).
- */
-function migrateAdvisorStrategyEnablement(): void {
-  if (storageGet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const advisorStrategyEnabled = storageGet('advisorStrategyEnabled')
-
-  if (advisorStrategyEnabled === true) disabled.delete(ADVISOR_STRATEGY_PACK_ID)
-  else disabled.add(ADVISOR_STRATEGY_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(ADVISOR_STRATEGY_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before OKF memories became a pack. Like
- * model comparison, the feature was previously opt-in (off by default via the
- * `okfMemoriesEnabled` setting), so an absent or false value must disable the
- * new `copse.okf-memories` pack — otherwise the migration would expose a
- * previously opt-in experimental tool (and its prompt block + Memories pane) to
- * every existing user after upgrade. Runs synchronously before the shared
- * registry is created and is idempotent (guarded by its own migration key).
- */
-function migrateOkfMemoriesEnablement(): void {
-  if (storageGet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const okfMemoriesEnabled = storageGet('okfMemoriesEnabled')
-
-  if (okfMemoriesEnabled === true) disabled.delete(OKF_MEMORIES_PACK_ID)
-  else disabled.add(OKF_MEMORIES_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(OKF_MEMORIES_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before the CI investigator became a pack.
- * Like model comparison, the feature was previously opt-in (off by default via
- * the `ciInvestigatorEnabled` setting), so an absent or false value must disable
- * the new `copse.ci-investigator` pack — otherwise the migration would expose a
- * previously opt-in experimental tool to every existing user after upgrade. Runs
- * synchronously before the shared registry is created and is idempotent (guarded
- * by its own migration key).
- */
-function migrateCiInvestigatorEnablement(): void {
-  if (storageGet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const ciInvestigatorEnabled = storageGet('ciInvestigatorEnabled')
-
-  if (ciInvestigatorEnabled === true) disabled.delete(CI_INVESTIGATOR_PACK_ID)
-  else disabled.add(CI_INVESTIGATOR_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(CI_INVESTIGATOR_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Preserve the enablement users had before client-side PII redaction became a
- * pack. Like model comparison, the feature was previously opt-in (off by default
- * via the `piiRedactionEnabled` setting), so an absent or false value must
- * disable the new `copse.pii-redaction` pack — otherwise the migration would
- * silently start rewriting the input of, and expose the reveal tool to, every
- * existing user after upgrade. This preserves the default-OFF invariant: it runs
- * synchronously before the shared registry is created (which `pii-redactor.ts`
- * and `registry-bootstrap.ts` immediately consult) and is idempotent (guarded by
- * its own migration key). A separate function/key from `migrateP5Enablement`
- * keeps the migrations conflict-free.
- */
-function migratePiiRedactionEnablement(): void {
-  if (storageGet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  const piiRedactionEnabled = storageGet('piiRedactionEnabled')
-
-  if (piiRedactionEnabled === true) disabled.delete(PII_REDACTION_PACK_ID)
-  else disabled.add(PII_REDACTION_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(PII_REDACTION_ENABLEMENT_MIGRATION_KEY, true)
-}
-
-/**
- * Ship the forced-planning pack **disabled**. Unlike the migrations above there
- * is no retired standalone setting to read: the pack is new, and the registry
- * enables every registered pack by default (VS Code's built-in-extension
- * model). Since the pack rewrites the system prompt of every turn that runs on a
- * below-threshold model, that default is wrong for it — so the first boot after
- * it lands seeds the disable list once, and never again. A user who later
- * enables it from Settings keeps that choice across relaunches because the
- * migration key is already set.
- */
-function seedForcedPlanningDefaultOff(): void {
-  if (storageGet(FORCED_PLANNING_DEFAULT_OFF_KEY) === true) return
-
-  const disabled = readDisabledIds()
-  disabled.add(FORCED_PLANNING_PACK_ID)
-
-  storageSet(PACK_DISABLED_KEY, [...disabled].sort())
-  storageSet(FORCED_PLANNING_DEFAULT_OFF_KEY, true)
+function seedDefaultDisabledPacks(): void {
+  if (storageGet(PACK_DISABLED_KEY) !== undefined) return
+  storageSet(PACK_DISABLED_KEY, [...DEFAULT_DISABLED_PACK_IDS].sort())
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -352,14 +182,7 @@ export function createPackService(registry: PackRegistry): PackService {
  */
 export function getPackService(): PackService {
   if (singleton) return singleton
-  migrateP5Enablement()
-  migrateLongHorizonTasksEnablement()
-  migrateRoadmapPlansEnablement()
-  migrateAdvisorStrategyEnablement()
-  migrateOkfMemoriesEnablement()
-  migrateCiInvestigatorEnablement()
-  migratePiiRedactionEnablement()
-  seedForcedPlanningDefaultOff()
+  seedDefaultDisabledPacks()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)

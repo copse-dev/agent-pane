@@ -107,6 +107,31 @@ jobs:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
           # Same-repo runs keep credentials for the oracle's base ref fetches.
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      # Same-repository PRs already execute inside this job's check-fleet trust
+      # boundary. Scan them here so secret detection blocks the required
+      # `CI Passed` gate without dispatching a second GitHub-hosted job. Forks
+      # remain on the standalone hosted workflow in gitleaks.yml.
+      - name: Install pinned gitleaks CLI
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          path="${RUNNER_TEMP}/${archive}"
+          curl --fail --location --retry 3 \
+            --output "${path}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
+          tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
+          "${RUNNER_TEMP}/gitleaks" version
+      - name: Scan repository history for secrets
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner \
+            --log-opts="--full-history --diff-filter=tuxdb HEAD" .
       - uses: ./.github/actions/setup
       # Retry once on exit 137 (SIGKILL / cgroup OOM). The check fleet caps each
       # runner at ~6 GB; under load, tsc/eslint can get killed even though a
