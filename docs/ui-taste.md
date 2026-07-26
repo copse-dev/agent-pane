@@ -378,6 +378,16 @@ In-app **browser guest pages** (`<webview>`) use a native Electron `Menu` from t
 Copy Link Address, Copy Image / Copy Image Address / Save Image As…, Cut/Copy/Paste/Select All,
 Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.context-menu`.
 
+## Sources lists: origin on hover, not in the resting row
+
+Settings → Sources rows already carry a coarse source badge (`bundled`, `project`, …). When the
+useful origin is a long filesystem path, keep it out of the resting list: put it in
+`.sources-row-hover-detail` inside the header gutter (between title and badge), revealed on
+`:hover` / `:focus-within` without growing the row. Truncate with left-elision
+(`direction: rtl` + `text-overflow: ellipsis`, same trick as `.git-change-path`) so the leaf
+stays visible; mirror the full path on the row's `title` for the native tooltip. Spec:
+[`tests/e2e/settings-sources-skills.e2e.ts`](../tests/e2e/settings-sources-skills.e2e.ts).
+
 ## Prove visual changes with a focused e2e eval
 
 Per `AGENTS.md`, any user-visible change needs a focused WebdriverIO Electron spec that seeds the
