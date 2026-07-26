@@ -54,7 +54,7 @@ describe('roadmap start-thread tracking and reopen', () => {
     await startBtn.click()
     await expect($('.prompt-input')).toHaveText(PROMPT)
     await $('.roadmap-reopen-btn').waitForDisplayed({ timeout: 15_000 })
-    await $('.roadmap-thread-indicator').waitForDisplayed({ timeout: 15_000 })
+    await $('.roadmap-thread-chip').waitForDisplayed({ timeout: 15_000 })
     await browser.execute(() => {
       const viewer = document.querySelector<HTMLElement>('.memories-viewer-host')
       if (viewer) viewer.scrollTop = viewer.scrollHeight
