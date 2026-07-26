@@ -38,6 +38,14 @@ every published entry.
   custom ones, then **Add agent**) and reveals only the selected agent's install
   guidance / editor, so agents are hidden away until picked rather than all
   expanded at once. A dot marks the agents you've added.
+- Packs: new opt-in `copse.forced-planning` first-party pack. When the model
+  running a turn measures below a capability threshold, it requires an explicit
+  plan before any other tool call — `update_todos` when that tool is offered, a
+  written numbered plan when it is not — so smaller and heavily-quantized models
+  can carry longer tasks. Thresholds are configured per scale in Settings →
+  Packs (the Artificial Analysis Intelligence Index and the Copse composite are
+  not comparable, so each has its own), with a third setting for what to do with
+  unmeasured models. See docs/forced-planning.md.
 - CI: bounded the retention of every workflow artifact that previously inherited
   the 90-day default (per-shard PR screenshots, coverage report, and the three
   bench result sets), so routine PR runs stop accumulating against the org's

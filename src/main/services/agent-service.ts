@@ -871,10 +871,20 @@ export async function runAgent(
 
     const turnStart = await createHookRegistry().emit(
       'turnStart',
-      { userText: userTextForSteering, priorTodos },
+      {
+        userText: userTextForSteering,
+        priorTodos,
+        // The resolved run model + the tool list the model will actually see, so
+        // a steering hook can condition on which model is running (the
+        // forced-planning pack thresholds on its measured capability) and never
+        // name a tool this turn filtered out.
+        model,
+        toolNames: parentLoopTools.map((tool) => tool.name),
+      },
       {
         signal: controller.signal,
         resolveGithubRepoSlug: () => getGithubRepoSlug(),
+        resolvePackSetting: (packId, key) => getPackService().getSetting(packId, key),
         recordHookRun: recordFunctionHookRun,
       },
     )

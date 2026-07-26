@@ -20,6 +20,12 @@ import type { BlockingHook } from './canonical-events.ts'
 import { shouldSteerTodos, formatTodosForPrompt, TODO_STEERING_PROMPT } from '../todo-steering.ts'
 import { shouldSteerGithubLinks, buildGithubLinkSteeringPrompt } from '../github-link-steering.ts'
 import { shouldSteerCommit, buildCommitSteeringPrompt } from '../commit-steering.ts'
+import {
+  decideForcedPlanning,
+  resolveForcedPlanningConfig,
+  FORCED_PLANNING_PACK_ID,
+  PLAN_TOOL_NAME,
+} from '../forced-planning.ts'
 
 /** Todo multi-step steering block when the user message looks plan-worthy. */
 export const todoSteeringHook: BlockingHook<'turnStart'> = {
@@ -69,6 +75,42 @@ export const todoPinHook: BlockingHook<'turnStart'> = {
     const pinned = formatTodosForPrompt(payload.priorTodos)
     if (!pinned) return undefined
     return { injectContext: pinned.replace(/^\n+/, '') }
+  },
+}
+
+/**
+ * Force an explicit plan when the model running the turn measures below the
+ * configured capability threshold (the `copse.forced-planning` pack). Policy and
+ * text live in `../forced-planning.ts`; this hook only supplies the turn facts
+ * and its own configuration.
+ *
+ * Like the todos hooks it is **not** in {@link TURN_START_HOOKS} — the pack
+ * registers it, so disabling the pack drops it from new work in one flag flip.
+ *
+ * The tool-availability check is deliberately conservative: with no `toolNames`
+ * on the payload the hook cannot know `update_todos` is offered, so it steers
+ * toward a written plan rather than risking an instruction to call a tool that
+ * was filtered out of this turn's tool list.
+ */
+export const forcedPlanningHook: BlockingHook<'turnStart'> = {
+  id: 'forced-planning',
+  event: 'turnStart',
+  run(payload, context) {
+    const read = context.resolvePackSetting
+    const config = resolveForcedPlanningConfig(
+      read ? (key: string): unknown => read(FORCED_PLANNING_PACK_ID, key) : undefined,
+    )
+    const decision = decideForcedPlanning(
+      {
+        model: payload.model,
+        userText: payload.userText,
+        priorTodos: payload.priorTodos,
+        todosToolAvailable: payload.toolNames?.includes(PLAN_TOOL_NAME) ?? false,
+      },
+      config,
+    )
+    if (!decision) return undefined
+    return { injectContext: decision.prompt }
   },
 }
 
