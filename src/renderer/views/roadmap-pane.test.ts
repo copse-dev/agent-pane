@@ -410,7 +410,7 @@ beforeEach(() => {
 })
 
 describe('roadmap pane', () => {
-  it('lists items with their status badges when mounted with the pane active', async () => {
+  it('lists items quietly — ready is silent; only exceptional statuses chip', async () => {
     const store = createStore({ filesPaneOpen: true, rightPanelMode: 'roadmap' })
     const { api, calls } = makeApi([
       makeItem('a', 'Refactor the settings dialog', 'ready'),
@@ -424,8 +424,9 @@ describe('roadmap pane', () => {
       const titles = [...list.querySelectorAll('.roadmap-row-title')].map((e) => e.textContent)
       assert.deepEqual(titles, ['Refactor the settings dialog', 'Port e2e specs'])
       const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
-      assert.deepEqual(badges, ['ready', 'blocked'])
+      assert.deepEqual(badges, ['blocked'], 'default ready has no status chip')
       assert.ok(list.querySelector('.roadmap-status-badge.is-blocked'), 'status styles the badge')
+      assert.ok(list.querySelector('.roadmap-done-toggle'), 'mark-done affordance is in the DOM')
     } finally {
       unmount()
     }
@@ -562,8 +563,8 @@ describe('roadmap pane', () => {
       // Done items are filtered from the list until the show-done toggle is on.
       assert.equal(list.querySelector('.roadmap-row'), null)
       list.querySelector<HTMLButtonElement>('.roadmap-show-done-btn')?.click()
-      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
-      assert.deepEqual(badges, ['done'])
+      assert.ok(list.querySelector('.roadmap-row.is-done'), 'done is a row class, not a chip')
+      assert.equal(list.querySelectorAll('.roadmap-status-badge').length, 0)
     } finally {
       unmount()
     }
@@ -634,8 +635,8 @@ describe('roadmap pane', () => {
       list.querySelector<HTMLElement>('.roadmap-done-toggle')?.click()
       await flush()
       assert.deepEqual(calls.setStatus, [{ id: 'a', status: 'ready' }])
-      const badges = [...list.querySelectorAll('.roadmap-status-badge')].map((e) => e.textContent)
-      assert.deepEqual(badges, ['ready'])
+      assert.equal(list.querySelector('.roadmap-row.is-done'), null)
+      assert.equal(list.querySelectorAll('.roadmap-status-badge').length, 0)
     } finally {
       unmount()
     }
@@ -649,6 +650,12 @@ describe('roadmap pane', () => {
     try {
       await flush()
       assert.equal(list.querySelector('.roadmap-done-toggle'), null)
+      assert.ok(list.querySelector('.roadmap-row.is-archived'))
+      assert.equal(
+        list.querySelector('.roadmap-status-badge')?.textContent,
+        'archived',
+        'archived is an exceptional status chip',
+      )
     } finally {
       unmount()
     }
