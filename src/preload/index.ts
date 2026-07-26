@@ -442,6 +442,7 @@ contextBridge.exposeInMainWorld('api', {
       threadId: string,
       video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
     ) => ipcRenderer.invoke('video:attach', projectId, threadId, video),
+    read: (path: string) => ipcRenderer.invoke('video:read', path),
   },
   intellect: {
     liveModels: () => ipcRenderer.invoke('intellect:live-models'),

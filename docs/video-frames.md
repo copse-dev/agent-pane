@@ -34,6 +34,29 @@ turn asking why it cannot.
 
 Deleting the thread deletes its stored videos with it.
 
+### Playing it back
+
+The chip on a sent message is clickable: it opens the recording in a preview
+modal (`src/renderer/attachments/video-expand.ts`), so whoever attached the
+video can check what they attached. Nothing about this reaches a model — the
+video is still only ever a path as far as the agent is concerned.
+
+Two constraints shape it:
+
+- **The renderer has to be handed the bytes.** There is no custom protocol, and
+  `file://` is out for the same reason the decoder avoids it, so `video:read`
+  returns the file over IPC and the modal plays it from an object URL (revoked
+  on close — otherwise the whole recording stays pinned in renderer memory).
+- **That read is authorised to exactly two roots**: the chat store and the
+  workspace — the same places `video_frames` can already read. This grants the
+  _renderer_ what the agent has, so anything outside is refused and the preview
+  cannot become a general file-read channel.
+
+Playback is capped at **50 MB**, far below the 256 MB chat limit, because the
+extractor streams through a hidden window while a preview pins every byte in the
+visible one. Over the cap the modal says so and names the size rather than
+hanging on a load that will not finish.
+
 ## The thread remembers
 
 Sending a message with a video records it on the thread's `meta.json`

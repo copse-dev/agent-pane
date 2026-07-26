@@ -287,6 +287,12 @@ export interface ApiClient {
       threadId: string,
       video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
     ) => Promise<import('@shared/video/video-media.ts').VideoAttachmentRef>
+    /**
+     * Read an attached video back for inline playback. Rejects for anything
+     * outside the chat store or the workspace, and for files over the preview
+     * size limit — the message is meant to be shown to the user.
+     */
+    read: (path: string) => Promise<{ bytes: Uint8Array<ArrayBuffer>; mimeType: string }>
   }
   openRouter: {
     models: () => Promise<

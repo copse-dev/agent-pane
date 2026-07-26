@@ -75,6 +75,7 @@ import {
 import {
   describeWorkspaceVideo,
   storeVideoAttachment,
+  readVideoForPlayback,
 } from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
@@ -1119,6 +1120,14 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       })
     },
   )
+
+  // Read an attached video back so the preview modal can play it. Authorised to
+  // the chat store and the workspace only — see readVideoForPlayback.
+  ipcMain.handle('video:read', async (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const videoPath = parseIpcArgs(zPathString, [path])
+    return readVideoForPlayback(videoPath)
+  })
 
   ipcMain.handle('threads:listOrphans', (event) => {
     assertMainFrameSender(event, win)

@@ -997,6 +997,9 @@ export function mountInputBar(
       ...attachedVideos.map((v) => ({
         kind: 'video' as const,
         label: v.name,
+        // Carried so the sent chip can still play the recording after a reload,
+        // when the composer's own state is long gone.
+        path: v.path,
       })),
     ]
     const imageUrls = attachedImages.map((img) => img.dataUrl)
