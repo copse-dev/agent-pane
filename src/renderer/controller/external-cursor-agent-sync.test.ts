@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 import {
   mergeDiskThreadsPreferMemory,
   startExternalCursorAgentSync,
@@ -18,6 +19,16 @@ function thread(id: string, overrides: Partial<Thread> = {}): Thread {
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
+  }
+}
+
+function apiWithDiscover(
+  discoverExternal: ApiClient['remoteAgent']['discoverExternal'],
+): ApiClient {
+  const base = createFakeApi()
+  return {
+    ...base,
+    remoteAgent: { ...base.remoteAgent, discoverExternal },
   }
 }
 
@@ -53,20 +64,16 @@ describe('startExternalCursorAgentSync', () => {
     })
     let discoverCalls = 0
     const callbacks: Array<() => void> = []
-    const api = {
-      remoteAgent: {
-        discoverExternal: async () => {
-          discoverCalls += 1
-          return {
-            imported: [],
-            scanned: 0,
-            skippedLinked: 0,
-            skippedWrongRepo: 0,
-            skippedInactive: 0,
-          }
-        },
-      },
-    } as unknown as ApiClient
+    const api = apiWithDiscover(async () => {
+      discoverCalls += 1
+      return {
+        imported: [],
+        scanned: 0,
+        skippedLinked: 0,
+        skippedWrongRepo: 0,
+        skippedInactive: 0,
+      }
+    })
 
     const sync = startExternalCursorAgentSync(store, api, {
       intervalMs: 1_000,
@@ -102,27 +109,23 @@ describe('startExternalCursorAgentSync', () => {
       threadsChanged += 1
     })
 
-    const api = {
-      remoteAgent: {
-        discoverExternal: async (projectId?: string) => {
-          assert.equal(projectId, 'proj-1')
-          return {
-            imported: [
-              {
-                threadId: 'imported',
-                agentId: 'bc-1',
-                title: 'Outside',
-                url: 'https://cursor.com/agents/bc-1',
-              },
-            ],
-            scanned: 1,
-            skippedLinked: 0,
-            skippedWrongRepo: 0,
-            skippedInactive: 0,
-          }
-        },
-      },
-    } as unknown as ApiClient
+    const api = apiWithDiscover(async (projectId?: string) => {
+      assert.equal(projectId, 'proj-1')
+      return {
+        imported: [
+          {
+            threadId: 'imported',
+            agentId: 'bc-1',
+            title: 'Outside',
+            url: 'https://cursor.com/agents/bc-1',
+          },
+        ],
+        scanned: 1,
+        skippedLinked: 0,
+        skippedWrongRepo: 0,
+        skippedInactive: 0,
+      }
+    })
 
     const sync = startExternalCursorAgentSync(store, api, {
       intervalMs: 60_000,
@@ -148,14 +151,10 @@ describe('startExternalCursorAgentSync', () => {
   it('skips when no project is open and ignores discover failures', async () => {
     const store = createStore({ activeProjectId: null, threads: [] })
     let discoverCalls = 0
-    const api = {
-      remoteAgent: {
-        discoverExternal: async () => {
-          discoverCalls += 1
-          throw new Error('no key')
-        },
-      },
-    } as unknown as ApiClient
+    const api = apiWithDiscover(async () => {
+      discoverCalls += 1
+      throw new Error('no key')
+    })
 
     const sync = startExternalCursorAgentSync(store, api, {
       setIntervalFn: () => 1,
