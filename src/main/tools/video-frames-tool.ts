@@ -178,11 +178,10 @@ export const videoFramesTool = defineTool({
       ),
     interval: z
       .number()
-      .min(MIN_SAMPLE_INTERVAL_SECONDS)
-      .max(MAX_SAMPLE_INTERVAL_SECONDS)
+      .positive()
       .optional()
       .describe(
-        'Seconds between samples. Omit to derive one from the window — narrowing start/end already samples more finely. Set it only to go finer still (minimum ~0.033s, one video frame) when hunting something very short-lived.',
+        `Seconds between samples. Omit to derive one from the window — narrowing start/end already samples more finely. Set it only to go finer still when hunting something very short-lived. Clamped to ${MIN_SAMPLE_INTERVAL_SECONDS.toFixed(3)}–${String(MAX_SAMPLE_INTERVAL_SECONDS)}s rather than rejected, so asking for less is safe.`,
       ),
     max_width: z
       .number()
@@ -317,6 +316,19 @@ export const videoFramesTool = defineTool({
       // to make and which frames to make it between.
       header.push(
         'Each change is bracketed by the samples either side of it, so a brief one reads as before → change → after. Describe what moved between them, not what each frame contains.',
+      )
+    }
+    // A ranged call only decodes its range, so nothing above can say anything
+    // about the rest of the recording. Left unsaid, a model that finds a change
+    // in the window it was handed reports it and stops — even when the thing the
+    // user is describing happens later. Naming the unexamined remainder, in
+    // seconds, is what turns "here is what I found" into "here is what I found
+    // so far".
+    const examined = Math.min(windowEnd, decoded.durationSeconds) - window.start
+    const unexamined = decoded.durationSeconds - examined
+    if (unexamined > decoded.sampleIntervalSeconds) {
+      header.push(
+        `This covers only ${at(examined)} of the ${at(decoded.durationSeconds)} recording — the other ${at(unexamined)} has not been looked at. If what the user described is not here, survey the whole video (omit start/end) before concluding it does not happen.`,
       )
     }
     const peak = peakChange(candidates)

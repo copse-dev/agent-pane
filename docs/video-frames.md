@@ -111,7 +111,7 @@ Arguments:
 | `start`/`end` | whole video | Seconds (`12.5`, `12.5s`) or `mm:ss` / `hh:mm:ss`                   |
 | `max_frames`  | 10 (max 60) | Images, not changes — a change costs up to 3 with its context       |
 | `sensitivity` | `normal`    | `high` catches a changed line of text; `low` only major transitions |
-| `interval`    | derived     | Seconds between samples; set only to go finer than the window gives |
+| `interval`    | derived     | Seconds between samples; clamped, not rejected, if out of range     |
 | `max_width`   | 1280        | Longest edge — width _or_ height — of the returned frames           |
 
 Audio is never decoded.
@@ -129,6 +129,19 @@ This matters because of the blind spot it implies: an event shorter than the
 sampling gap can fall between two samples and never appear at all. A UI flicker
 is often one or two frames. So the manifest states the interval it used and says
 so outright, rather than letting "no distinct frames" read as "nothing happened".
+
+A ranged call has a second blind spot, and it is the one that actually bit in
+testing: it decodes only its range, so nothing in the result can say anything
+about the rest of the recording. Left unsaid, a model that finds a change in the
+window it was handed reports it and stops — even when the thing the user is
+describing happens later, and the user then has to say "try around 3s". So a
+result that covers less than the whole video names the remainder in seconds and
+says to survey before concluding.
+
+`interval` is also **clamped rather than rejected**. Asking for a finer gap than
+the decoder offers is a reasonable thing to want, and failing the call on it cost
+a whole turn: the model got a raw schema error back and had to retry with a legal
+value.
 
 `sensitivity: 'high'` also **drops the sub-second penalty** described below. The
 penalty exists to stop an animation becoming one frame per tick during a broad

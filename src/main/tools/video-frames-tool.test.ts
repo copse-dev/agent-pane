@@ -142,6 +142,36 @@ describe('video_frames tool', () => {
     assert.ok(!result.result.includes('00:00:04.500'), 'no second timestamp column to pay for')
   })
 
+  it('says how much of the recording it did not look at', async () => {
+    // A ranged call decodes only its range, so a model that finds a change in
+    // the window it was handed will report it and stop — even when the thing
+    // the user described happens later.
+    setVideoDecoderForTest(() => Promise.resolve(decodeResult([frame(0, 0)], 57.5)))
+    const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4', end: '5' }))
+    assert.match(result.result, /covers only 5\.000s of the 57\.500s recording/)
+    assert.match(result.result, /other 52\.500s has not been looked at/)
+    assert.match(result.result, /survey the whole video/)
+  })
+
+  it('says nothing about unexamined video when it covered all of it', async () => {
+    setVideoDecoderForTest(() => Promise.resolve(decodeResult([frame(0, 0)], 57.5)))
+    const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4' }))
+    assert.ok(!result.result.includes('has not been looked at'))
+  })
+
+  it('clamps an out-of-range interval rather than failing the call', async () => {
+    // Rejecting it cost a whole turn: the model asked for a finer interval than
+    // the decoder offers, got a raw schema error back, and had to retry.
+    let seen: number | null | undefined
+    setVideoDecoderForTest((input) => {
+      seen = input.sampleIntervalSeconds
+      return Promise.resolve(decodeResult([frame(0, 0)]))
+    })
+    const result = normalizeToolExecuteResult(await run({ path: 'capture.mp4', interval: 0.001 }))
+    assert.equal(seen, 0.001, 'the tool passes it through; the decoder does the clamping')
+    assert.ok(result.images, 'the call succeeds rather than returning a schema error')
+  })
+
   it('covers the whole video when no range is given', async () => {
     let seen: { startSeconds: number; endSeconds: number | null } | null = null
     setVideoDecoderForTest((input) => {
