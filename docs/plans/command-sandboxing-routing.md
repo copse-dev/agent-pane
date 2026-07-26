@@ -114,13 +114,30 @@ command list.
   Missing assessment fails closed. Trusted commands, ACP clients, hook outcomes,
   classifier output, and `expects_sandbox_block` are routing inputs only and cannot
   downgrade the verdict.
-- The analyzer resolves home/workspace paths and symlinks, splits compound commands,
-  inspects command/process substitutions, interpreter bodies, and readable script
-  files, and recognizes common Unix, macOS, PowerShell, and Windows destructive forms.
-  Root/home/workspace erasure, raw-device destruction, host shutdown/fork bombs, and
-  attempts to rewrite the permission surface are hard-denied. Bounded deletion,
-  destructive version-control operations, opaque scripts, dynamic destructive paths,
-  and resource-exhaustion signals prompt.
+- **The harm gate is a denylist, and a denylist is not a security boundary.** It
+  recognises forms we have thought of. It cannot recognise the ones we have not, and
+  a determined or compromised agent can express destruction in ways no pattern list
+  enumerates. Treat it as a guardrail against plausible accidents, not as protection
+  against an adversary. The only real containment is the OS sandbox, and Guarded YOLO
+  exists precisely to step outside it — so on Linux and Windows, and for host-scope
+  commands on macOS, **there is no containment left and this list is all that stands
+  between the agent and the machine.** Enable it only where you would accept the
+  agent running arbitrary commands: a disposable VM, a container, a machine whose
+  loss you can absorb. Cursor's equivalent mode has been bypassed repeatedly in
+  public (CVE-2026-22708, `&&` chaining, shell built-ins); ours handles those
+  particular forms, which is evidence the class is hard, not evidence we have won.
+- What the analyzer does cover: it resolves home/workspace paths and symlinks, splits
+  compound commands, unwraps pass-through wrappers (`env`, `sudo`, `timeout`, `nice`,
+  `xargs`, …), inspects command/process substitutions, interpreter bodies, and
+  readable script files, across common Unix, macOS, PowerShell, and Windows forms.
+  Hard-denied: erasure of the filesystem root, home, workspace, or a system tree
+  (`/etc`, `/usr`, `/System`, `C:\Windows`, …); the same targets reached by recursive
+  `chown`/`chmod`/`chgrp` or by relocation (`mv`), which destroy access without
+  deleting anything; raw-device destruction; host shutdown and fork bombs; and
+  attempts to rewrite the permission surface. Prompted: bounded deletion, `dd`
+  overwrite of an existing path, forced symlink replacement, `crontab -r`, destructive
+  version-control operations, opaque scripts, dynamic destructive paths, and
+  resource-exhaustion signals.
 - Each decision appends a `permission_decision` line to the thread spine with the
   original/effective command, original/effective mode, actual sandbox state, harm and
   policy verdicts, reasons, and user response. ACP-native tool bridge calls use the

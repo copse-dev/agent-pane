@@ -97,11 +97,39 @@ function destructiveTargetBase(target: string): string {
   return prefix.replace(/[\\/]+$/, '') || '.'
 }
 
+/**
+ * System trees whose loss bricks the host as surely as erasing `/`. Without
+ * these, `rm -rf /etc` or `mv /usr /tmp` read as ordinary bounded work because
+ * they are neither the filesystem root, the home directory, nor the workspace.
+ */
+const SYSTEM_ROOTS = [
+  '/bin',
+  '/boot',
+  '/etc',
+  '/lib',
+  '/sbin',
+  '/usr',
+  '/var',
+  '/System',
+  '/Library',
+  'C:\\Windows',
+  'C:\\Program Files',
+]
+
+function systemRootReason(resolved: string, target: string): string | null {
+  for (const root of SYSTEM_ROOTS) {
+    if (isAtOrAbove(resolved, root)) return `broad deletion targets system tree: ${target}`
+  }
+  return null
+}
+
 function catastrophicTargetReason(target: string, context: ShellHarmContext): string | null {
   const resolved = expandPathToken(destructiveTargetBase(target), context)
   const root = isWindowsPath(resolved) ? win32.parse(resolved).root : parsePath(resolved).root
   if (resolved.toLowerCase() === root.toLowerCase())
     return `broad deletion targets filesystem root: ${target}`
+  const systemReason = systemRootReason(resolved, target)
+  if (systemReason) return systemReason
   if (isAtOrAbove(resolved, context.homeDir)) return `broad deletion targets home root: ${target}`
   if (context.workspaceRoot && isAtOrAbove(resolved, context.workspaceRoot)) {
     return `broad deletion targets workspace root: ${target}`
@@ -250,6 +278,19 @@ function unwrapCommand(argv: string[]): string[] {
       }
       continue
     }
+    // Wrappers that pass their tail through unchanged. Without these, forms like
+    // `timeout 5 rm -rf ~` or `echo ~ | xargs rm -rf` never reach inspectDeletion
+    // with the real argv, so a catastrophic target degrades to a bare prompt.
+    if (head === 'timeout' || head === 'stdbuf') {
+      current.shift()
+      while ((current[0] ?? '').startsWith('-') || /^\d/.test(current[0] ?? '')) current.shift()
+      continue
+    }
+    if (head === 'xargs' || head === 'time' || head === 'nice' || head === 'ionice') {
+      current.shift()
+      while ((current[0] ?? '').startsWith('-')) current.shift()
+      continue
+    }
     if (head === 'command' || head === 'builtin' || head === 'nohup') {
       current.shift()
       while ((current[0] ?? '').startsWith('-')) current.shift()
@@ -315,6 +356,73 @@ function inspectDeletion(argv: string[], context: ShellHarmContext, out: Mutable
       if (catastrophic) addUnique(out.deny, catastrophic)
     }
     if (out.deny.length === 0) addUnique(out.prompt, 'recursive deletion requires confirmation')
+  }
+}
+
+const RECURSIVE_FLAG = /^(?:-[A-Za-z]*R[A-Za-z]*|--recursive)$/
+
+/**
+ * Ownership and permission destruction. `chown -R nobody /` or `chmod -R 000 ~`
+ * deletes nothing but renders the tree unusable — equivalent broad impact to
+ * erasure, so it earns the same verdict.
+ */
+function inspectOwnershipChange(
+  argv: string[],
+  context: ShellHarmContext,
+  out: MutableDecision,
+): void {
+  const command = basename(argv[0] ?? '').toLowerCase()
+  if (command !== 'chmod' && command !== 'chown' && command !== 'chgrp') return
+  const args = argv.slice(1)
+  if (!args.some((arg) => RECURSIVE_FLAG.test(arg))) return
+  // chmod/chown take a mode/owner operand before the paths; drop it.
+  const operands = nonOptionArgs(args).slice(1)
+  let flagged = false
+  for (const target of operands) {
+    const catastrophic = catastrophicTargetReason(target, context)
+    if (catastrophic) {
+      addUnique(out.deny, catastrophic.replace('broad deletion', `recursive ${command}`))
+      flagged = true
+    }
+  }
+  if (!flagged) addUnique(out.prompt, `recursive ${command} requires confirmation`)
+}
+
+/**
+ * Relocation is erasure by another name: `mv ~ /tmp/gone` leaves nothing at the
+ * original path. Every argument except the destination is a source.
+ */
+function inspectRelocation(argv: string[], context: ShellHarmContext, out: MutableDecision): void {
+  const command = basename(argv[0] ?? '').toLowerCase()
+  if (command !== 'mv' && command !== 'move' && command !== 'move-item') return
+  const operands = nonOptionArgs(argv.slice(1))
+  if (operands.length < 2) return
+  const sources = operands.slice(0, -1)
+  for (const source of sources) {
+    const catastrophic = catastrophicTargetReason(source, context)
+    if (catastrophic) addUnique(out.deny, catastrophic.replace('broad deletion', 'relocation'))
+  }
+}
+
+/** Overwrite/hijack of an existing path: dd onto a regular file, symlink swap. */
+function inspectOverwrite(argv: string[], context: ShellHarmContext, out: MutableDecision): void {
+  const command = basename(argv[0] ?? '').toLowerCase()
+  if (command === 'dd') {
+    const output = argv.slice(1).find((arg) => /^of=/i.test(arg))
+    if (output) {
+      const target = output.slice(3)
+      const catastrophic = catastrophicTargetReason(target, context)
+      if (catastrophic) addUnique(out.deny, catastrophic.replace('broad deletion', 'dd overwrite'))
+      else addUnique(out.prompt, `dd overwrites an existing path: ${target}`)
+    }
+    return
+  }
+  if (command === 'ln' && argv.slice(1).some((arg) => /^-[A-Za-z]*f/.test(arg))) {
+    addUnique(out.prompt, 'forced symlink replaces an existing path')
+    return
+  }
+  if (command === 'crontab' && argv.slice(1).some((arg) => arg === '-r')) {
+    addUnique(out.prompt, 'crontab -r removes all scheduled jobs')
   }
 }
 
@@ -496,6 +604,9 @@ function assess(
     const argv = unwrapCommand(segment)
     if (argv.length === 0) continue
     inspectDeletion(argv, context, out)
+    inspectOwnershipChange(argv, context, out)
+    inspectRelocation(argv, context, out)
+    inspectOverwrite(argv, context, out)
     inspectInterpreter(argv, context, out, depth, seenScripts)
   }
 

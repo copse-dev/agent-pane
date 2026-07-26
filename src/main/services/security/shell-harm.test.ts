@@ -37,6 +37,59 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it('denies destruction that deletes nothing: ownership, permissions, relocation', () => {
+    // The gate originally modelled deletion verbs only, so these ran silently
+    // under Guarded YOLO despite equivalent broad impact.
+    for (const command of [
+      'sudo chown -R nobody /',
+      'chmod -R 000 /',
+      'chmod -R 000 ~',
+      'chown -R nobody /etc',
+      'mv ~ /tmp/gone',
+      'mv /etc /tmp/gone',
+    ]) {
+      assert.equal(action(command), 'deny', command)
+    }
+  })
+
+  it('treats system trees as catastrophic targets', () => {
+    for (const command of ['rm -rf /etc', 'rm -rf /usr', 'rm -rf /System']) {
+      assert.equal(action(command), 'deny', command)
+    }
+    // Reading from a system tree stays routine — only destructive targets count.
+    for (const command of ['cat /etc/hosts', 'ls /usr/bin']) {
+      assert.equal(action(command), 'allow', command)
+    }
+  })
+
+  it('sees through pass-through wrappers instead of degrading to a prompt', () => {
+    for (const command of ['timeout 5 rm -rf ~', 'nice rm -rf ~', 'xargs rm -rf ~']) {
+      assert.equal(action(command), 'deny', command)
+    }
+  })
+
+  it('prompts for bounded overwrite and hijack forms', () => {
+    for (const command of [
+      'dd if=/dev/zero of=/Users/tester/.ssh/id_rsa',
+      'ln -sf /dev/null ~/.bashrc',
+      'crontab -r',
+      'chmod -R 755 /work/project/dist',
+    ]) {
+      assert.equal(action(command), 'prompt', command)
+    }
+  })
+
+  it('leaves routine permission and rename work alone', () => {
+    for (const command of [
+      'chmod +x scripts/build.sh',
+      'chmod 644 README.md',
+      'mv src/a.ts src/b.ts',
+      'ln -s ../shared shared',
+    ]) {
+      assert.equal(action(command), 'allow', command)
+    }
+  })
+
   it('denies broad deletion of filesystem, home, workspace, and ancestor roots', () => {
     for (const command of [
       'rm -rf /',
