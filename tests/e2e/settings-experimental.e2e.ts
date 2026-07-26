@@ -65,7 +65,7 @@ describe('experimental settings section', () => {
     assert.equal(
       await experimental.$('input[name="okfMemoriesEnabled"]').isExisting(),
       false,
-      'okfMemoriesEnabled must leave Settings > Experimental after pack migration',
+      'okfMemoriesEnabled must leave Settings > Experimental — the pack owns it',
     )
     assert.equal(
       await experimental.$('legend=Memories (Open Knowledge Format)').isExisting(),
@@ -107,7 +107,7 @@ describe('experimental settings section', () => {
     assert.equal(
       await experimental.$('input[name="roadmapPlansEnabled"]').isExisting(),
       false,
-      'roadmapPlansEnabled must leave Settings > Experimental after pack migration',
+      'roadmapPlansEnabled must leave Settings > Experimental — the pack owns it',
     )
     assert.equal(await experimental.$('legend=Roadmap plans').isExisting(), false)
 

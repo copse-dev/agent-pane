@@ -179,20 +179,9 @@ app
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
-    // One-time import of pre-#644 threads into the ~/.copse/workspace store.
-    // Self-contained — delete this block and thread-migration.ts to drop it.
-    recordStartupPhase('thread-migration')
-    const { migrateLegacyThreads } = await import('./services/thread-migration.ts')
-    const migration = await migrateLegacyThreads()
-    if (migration.ranMigration) {
-      console.log(
-        `[thread-migration] imported ${String(migration.migrated)} thread(s) from ${String(migration.projects)} project(s), skipped ${String(migration.skipped)}`,
-      )
-    }
-
     // Move provider-format history out of electron-store into per-thread
-    // sidecars (issue #993). Must run after legacy thread dirs exist so
-    // ownership can be resolved, and before the first window.
+    // sidecars (issue #993). Must run before the first window so ownership is
+    // resolved against the thread store the renderer is about to read.
     recordStartupPhase('llm-history-migration')
     const { migrateLlmHistory } = await import('./services/llm-history-migration.ts')
     const historyMigration = await migrateLlmHistory()

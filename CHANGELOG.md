@@ -8,6 +8,23 @@ every published entry.
 
 ## Unreleased
 
+- Threads can be forked. Right-click a thread in the sidebar and choose **Fork**
+  to branch the whole conversation, or hover any prompt in the transcript and
+  choose **Fork from here** to branch it as it stood at that point. The fork is a
+  new thread — the original is untouched — and it inherits the model context, so
+  the agent remembers the conversation the transcript shows. Forking the whole
+  thread copies the recorded provider history verbatim; forking from an earlier
+  prompt reconstructs it from the transcript, which cannot carry the expanded
+  contents of `@`-file / `@`-thread / paste attachments (the app says so when it
+  applies).
+- The last prompt in a thread can be resent. Hover it and choose **Resend** to
+  submit it again as a new turn — useful after a failed run or to get a second
+  attempt at the same question. History is appended to, never rewritten, and a
+  resend while the agent is running queues behind the current turn. Attachment
+  contents are not part of a resend (only the prompt's own words and images).
+- Fixed: a project showing fewer threads than one sidebar page pinned its list to
+  that size, so the next thread it gained (a new chat or a fork) appeared behind
+  "Show more" instead of in the sidebar.
 - Fixed SSH password, passphrase, and host-key prompts never appearing. The
   bundled askpass helper was emitted with a duplicate `#!/usr/bin/env node` on
   line 2 — a syntax error — so it crashed on every launch. OpenSSH treats an
