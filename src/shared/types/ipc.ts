@@ -400,6 +400,8 @@ export interface IpcEventMap {
       comparisonModels?: { a: string; b: string; judge: string }
     },
   ]
+  /** Main dismisses an approval the run cancelled (Stop / ACP permission RPC abort). */
+  'agent:approval_cancelled': [{ id: string }]
   'agent:ask_user_request': [
     {
       id: string

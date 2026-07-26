@@ -124,6 +124,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
         }
       },
       onApprovalRequest: subscribe,
+      onApprovalCancelled: subscribe,
       onAskUserRequest: subscribe,
       onShellOutput: subscribe,
       onRefreshContextEstimate: subscribe,

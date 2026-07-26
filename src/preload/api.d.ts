@@ -135,6 +135,7 @@ export interface ApiClient {
         comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => () => void
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
     onAskUserRequest: (
       handler: (req: {
         id: string

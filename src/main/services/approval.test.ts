@@ -36,7 +36,46 @@ describe('requestApproval pluggable transport', () => {
     setApprovalHandler(null)
     assert.equal((await requestApproval(req)).approved, false)
   })
+
+  it('returns denied immediately when the signal is already aborted', async () => {
+    let called = false
+    setApprovalHandler(async () => {
+      called = true
+      return { approved: true, remember: false }
+    })
+    assert.deepEqual(await requestApproval(req, AbortSignal.abort()), {
+      approved: false,
+      remember: false,
+    })
+    assert.equal(called, false)
+  })
+
+  it('passes the abort signal to the handler for in-flight cancellation', async () => {
+    setApprovalHandler(async (_req, signal) => {
+      assert.ok(signal)
+      await waitForAbort(signal)
+      return { approved: false, remember: false }
+    })
+    const controller = new AbortController()
+    const pending = requestApproval(req, controller.signal)
+    await Promise.resolve()
+    controller.abort()
+    assert.deepEqual(await pending, { approved: false, remember: false })
+  })
 })
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    signal.addEventListener(
+      'abort',
+      () => {
+        resolve()
+      },
+      { once: true },
+    )
+  })
+}
 
 describe('startDockAttention', () => {
   function fakeDock(): {
