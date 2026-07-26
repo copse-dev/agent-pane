@@ -199,8 +199,9 @@ function sendToWorker(w: Worker, request: Record<string, unknown>): Promise<Sand
  */
 export async function requestViaServer(
   request: Record<string, unknown>,
+  requestedRoot?: string,
 ): Promise<SandboxFsResponse> {
-  const root = getWorkspaceRoot()
+  const root = requestedRoot ?? getWorkspaceRoot()
   if (!root) throw new SandboxFsServerUnavailable('no workspace open')
   let worker: Worker
   try {

@@ -161,7 +161,13 @@ export function openNewThread(store: AppStore): string {
 export function switchThread(store: AppStore, id: string): void {
   if (id === store.getState().activeThreadId) return
   store.emit('composer_draft_flush')
-  store.setState({ activeThreadId: id })
+  store.setState({
+    activeThreadId: id,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+  })
+  store.emit('panel_changed')
   store.emit('threads_changed')
   pruneBlankThreads(store, new Set([id]))
   store.emit('threads_changed')
@@ -186,8 +192,13 @@ export function deleteThread(store: AppStore, id: string): void {
     activeThreadId === id
       ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null)
       : activeThreadId
-  store.setState({ threads: remaining, activeThreadId: newActive })
+  store.setState({
+    threads: remaining,
+    activeThreadId: newActive,
+    ...(activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
+  })
   store.emit('threads_changed')
+  if (activeThreadId === id) store.emit('panel_changed')
 }
 
 /**
@@ -216,8 +227,13 @@ export function archiveThread(store: AppStore, id: string): void {
     activeThreadId === id
       ? (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
       : activeThreadId
-  store.setState({ threads: updated, activeThreadId: newActive })
+  store.setState({
+    threads: updated,
+    activeThreadId: newActive,
+    ...(activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
+  })
   store.emit('threads_changed')
+  if (activeThreadId === id) store.emit('panel_changed')
 }
 
 export function recordContextTrim(
