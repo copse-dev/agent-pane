@@ -28,7 +28,7 @@ describes it to the agent, so changing the layout means updating that preamble.
                                      #   createdAt, updatedAt, digest, path}
   <threadId>/
     meta.json                        # mutable thread metadata (everything except messages)
-    events.jsonl                     # append-only spine: message + hook_run lines
+    events.jsonl                     # append-only spine: message + hook/audit lines
     agent-history.json               # provider-format LLM resume snapshot (issue #993)
     messages/<messageId>.md          # OKF: verbatim message content (frontmatter + body)
     messages/<messageId>.reasoning.md  # OKF: thinking text (optional)
@@ -41,7 +41,7 @@ describes it to the agent, so changing the layout means updating that preamble.
 ```
 
 - **`events.jsonl`** is the linear history — one JSON line per finalized message
-  (plus interleaved `hook_run` observability lines, below), oldest first. It is
+  (plus interleaved `hook_run` and `permission_decision` observability lines, below), oldest first. It is
   the source of ordering and structure; prose and large/opaque content live in
   referenced files (`messages/*.md`, `blobs/*`) so a draft keystroke rewrites
   one tiny file, not the whole thread.
@@ -154,6 +154,36 @@ spawned `command` hooks such as Cursor permission hooks) appends one line:
   staying anchored after the message line that preceded it, and the blobs they
   reference are exempt from stale-file pruning. Message-level appends
   (`appendMessage`) preserve them the same way.
+
+## Permission-decision line schema (`type: "permission_decision"`)
+
+Guarded YOLO shell authorization appends a host-owned audit line after each
+allow/prompt/deny result. This is observability only: a failed append is logged but
+cannot weaken or change the authorization result.
+
+```jsonc
+{
+  "v": 1,
+  "type": "permission_decision",
+  "id": "<uuid>",
+  "turnId": "<uuid>",
+  "step": 2,
+  "decidedAt": 1712345678901,
+  "originalCommand": "echo original",
+  "effectiveCommand": "rm -rf build", // optional; present after a hook rewrite
+  "originalMode": "guarded-yolo",
+  "effectiveMode": "guarded-yolo",
+  "sandboxState": "project-sandbox" | "unsandboxed",
+  "harmDecision": "allow" | "prompt" | "deny",
+  "policyDecision": "allow" | "prompt" | "deny",
+  "reasons": ["recursive/forced delete requires confirmation"],
+  "userResponse": "approved" | "declined" | "not-required"
+}
+```
+
+Like `hook_run`, these lines are skipped by transcript folding/export, preserved
+verbatim through full saves, and remain readable for audits even after the
+session-only capability expires.
 
 ## Catalog
 

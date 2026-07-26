@@ -64,6 +64,7 @@ import { showErrorToast, showToast } from './toast.ts'
 import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
+import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 
 interface MountInputBarOptions {
   /**
@@ -142,6 +143,10 @@ export function mountInputBar(
     checkoutBranchBtn,
     continueBranchBtn,
   )
+  let footerOverflow: ReturnType<typeof mountFooterOverflow> | null = null
+  const guardedYolo = mountGuardedYoloControl(api, getActiveThreadId, () => {
+    footerOverflow?.update()
+  })
   const footer = el('div', { class: 'input-footer' })
   const modelHost = el('div', { class: 'footer-model-host' })
   const checkoutHost = el('div', { class: 'footer-checkout-host' })
@@ -175,7 +180,12 @@ export function mountInputBar(
   const indexStatusChip = mountFooterIndexStatus(usageGroup, api)
   usageGroup.append(contextWheel.root, queueIndicator, usageBtn)
   footer.append(modelHost, checkoutHost, branchHost)
-  const footerOverflow = mountFooterOverflow(footer, [
+  footerOverflow = mountFooterOverflow(footer, [
+    {
+      label: guardedYolo.menuLabel,
+      hidden: (): boolean => !getActiveThreadId(),
+      onClick: guardedYolo.toggle,
+    },
     {
       label: 'Copy thread ID',
       hidden: (): boolean => !getActiveThreadId(),
@@ -304,7 +314,7 @@ export function mountInputBar(
     checkoutErrorText,
     checkoutRetryBtn,
   )
-  root.append(chips, branchWarning, checkoutError, inputRow, footer)
+  root.append(chips, guardedYolo.element, branchWarning, checkoutError, inputRow, footer)
   const portraitPanelHost = opts.portraitPanelHost ?? root
   portraitPanelHost.append(portraitPanelControls.element)
 
@@ -611,7 +621,7 @@ export function mountInputBar(
       usageBtn.hidden = tuckUsageIntoWheel
       usageBtn.textContent = usageText
     }
-    footerOverflow.update()
+    footerOverflow?.update()
     updateCheckoutControl()
     updateState()
     updateQueueIndicator()
@@ -1226,6 +1236,7 @@ export function mountInputBar(
     }),
     store.on('threads_changed', () => {
       syncComposerThread()
+      guardedYolo.refresh()
       hideBranchMismatch()
       updateState()
       updateFooter()
@@ -1289,6 +1300,7 @@ export function mountInputBar(
       unregisterAttachments()
       modelPicker.destroy()
       footerOverflow.destroy()
+      guardedYolo.destroy()
       footerCompact.destroy()
       portraitPanelControls.destroy()
       branchControl.destroy()

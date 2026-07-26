@@ -234,6 +234,13 @@ import {
   gatewayReaddir,
   gatewayWriteFile,
 } from '../project-sandbox/sandbox-fs-client.ts'
+import { requestApproval } from '../services/approval.ts'
+import {
+  armGuardedYolo,
+  disableGuardedYolo,
+  getGuardedYoloState,
+  onGuardedYoloChanged,
+} from '../services/security/guarded-yolo.ts'
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
@@ -242,6 +249,12 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const stopGuardedYoloEvents = onGuardedYoloChanged((threadId) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('security:guardedYoloChanged', getGuardedYoloState(threadId))
+    }
+  })
+  win.once('closed', stopGuardedYoloEvents)
   const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
@@ -965,6 +978,43 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   })
 
   const zThreadId = zNonEmptyString.max(256)
+  ipcMain.handle('security:getGuardedYolo', (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zThreadId, [threadId])
+    return getGuardedYoloState(id)
+  })
+  ipcMain.handle('security:enableGuardedYolo', async (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zThreadId, [threadId])
+    const current = getGuardedYoloState(id)
+    if (current.phase !== 'off') return current
+    const containment =
+      current.containment === 'project-sandbox'
+        ? 'The project sandbox remains in use where possible, but external commands may run unsandboxed.'
+        : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
+    const { approved } = await requestApproval({
+      title: 'Enable Guarded YOLO for this thread?',
+      body: [
+        'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
+        '',
+        containment,
+        '',
+        'A deterministic host-owned checker will still ask about bounded destructive work and permanently block obvious catastrophic commands. It reduces obvious harm, but it is not a complete security boundary and cannot understand every script or obfuscation.',
+        '',
+        'Guarded YOLO stays enabled for this thread until you disable it or restart the app.',
+      ].join('\n'),
+      type: 'shell',
+      allowRemember: false,
+    })
+    if (approved) armGuardedYolo(id)
+    return getGuardedYoloState(id)
+  })
+  ipcMain.handle('security:disableGuardedYolo', (event, threadId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zThreadId, [threadId])
+    disableGuardedYolo(id)
+    return getGuardedYoloState(id)
+  })
   ipcMain.handle('threads:loadProject', (event, projectId: unknown) => {
     assertMainFrameSender(event, win)
     const id = parseIpcArgs(zProjectId, [projectId])
