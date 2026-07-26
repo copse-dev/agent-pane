@@ -35,6 +35,9 @@ export const acpAgentConfigSchema = z.object({
     .array(z.object({ value: z.string().min(1).max(512), label: z.string().min(1).max(256) }))
     .max(256)
     .optional(),
+  // Epoch-ms timestamp of the probe that produced `availableModels`, used by the
+  // background staleness check to re-probe aged caches (see acp-auto-setup.ts).
+  modelsProbedAt: z.number().int().nonnegative().optional(),
   // ACP session (permission) mode to start each session in, and the cached set
   // of modes the agent advertised the last time it was probed (issue #607).
   permissionMode: z.string().min(1).max(256).optional(),

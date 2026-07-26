@@ -119,6 +119,8 @@ export function detectReasoningCircle(
 export interface ReasoningCheckpointPolicy {
   /** Token interval at which the current reasoning stream is reassessed. */
   intervalTokens: number
+  /** Maximum non-reasoning output before the ordinary runaway cap applies. */
+  maxNonReasoningTokens: number
   /** Maximum clean reasoning allowed before the ordinary runaway cap applies. */
   maxInitialTokens: number
   /** Maximum clean reasoning allowed after the one recovery nudge. */

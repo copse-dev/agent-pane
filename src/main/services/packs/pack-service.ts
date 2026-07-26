@@ -78,6 +78,15 @@ function packSettingsKey(packId: string): string {
 }
 
 /**
+ * Narrow a persisted `unknown` to a plain object bag. A type predicate rather
+ * than an `as` cast: everything here comes off disk and may be any shape at all,
+ * so the check has to be real (and `no-unsafe-type-assertion` agrees).
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
  * The user's explicit enablement choices. Reads the `packEnablement` map, then
  * folds in any legacy `packDisabled` array for ids the map does not already
  * mention — an explicit disable from before this key existed is still an
@@ -90,8 +99,8 @@ function packSettingsKey(packId: string): string {
 function readEnablementPrefs(): Map<string, boolean> {
   const prefs = new Map<string, boolean>()
   const raw = storageGet(PACK_ENABLEMENT_KEY)
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    for (const [packId, enabled] of Object.entries(raw as Record<string, unknown>)) {
+  if (isRecord(raw)) {
+    for (const [packId, enabled] of Object.entries(raw)) {
       if (typeof enabled === 'boolean') prefs.set(packId, enabled)
     }
   }
@@ -104,8 +113,7 @@ function readEnablementPrefs(): Map<string, boolean> {
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
 function readPackSettings(packId: string): Record<string, unknown> {
   const raw = storageGet(packSettingsKey(packId))
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  return raw as Record<string, unknown>
+  return isRecord(raw) ? raw : {}
 }
 
 /**
@@ -230,10 +238,7 @@ export function createPackService(registry: PackRegistry): PackService {
       // only way to say "the user opted in", which the old disabled-ids array
       // had no way to represent.
       await storageUpdate(PACK_ENABLEMENT_KEY, (raw) => {
-        const current: Record<string, unknown> =
-          raw && typeof raw === 'object' && !Array.isArray(raw)
-            ? { ...(raw as Record<string, unknown>) }
-            : {}
+        const current: Record<string, unknown> = isRecord(raw) ? { ...raw } : {}
         current[packId] = enabled
         return current
       })
@@ -251,10 +256,7 @@ export function createPackService(registry: PackRegistry): PackService {
         throw new Error(`pack "${packId}" declares no setting "${key}"`)
       }
       await storageUpdate(packSettingsKey(packId), (raw) => {
-        const current: Record<string, unknown> =
-          raw && typeof raw === 'object' && !Array.isArray(raw)
-            ? { ...(raw as Record<string, unknown>) }
-            : {}
+        const current: Record<string, unknown> = isRecord(raw) ? { ...raw } : {}
         current[key] = value
         return current
       })

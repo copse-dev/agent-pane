@@ -217,7 +217,8 @@ function profileHash(definition: ProfileDefinition): string {
 }
 
 export function parseTerminalBenchProfileId(value: string | undefined): TerminalBenchProfileId {
-  const candidate = value?.trim() || 'main-legacy'
+  const trimmed = value?.trim() ?? ''
+  const candidate = trimmed === '' ? 'main-legacy' : trimmed
   for (const id of TERMINAL_BENCH_PROFILE_IDS) {
     if (id === candidate) return id
   }
@@ -245,7 +246,8 @@ export function parseTerminalBenchProfileIds(
 export function parseTerminalBenchProfileSelectionId(
   value: string | undefined,
 ): TerminalBenchProfileSelectionId {
-  const candidate = value?.trim() || 'main-legacy'
+  const trimmed = value?.trim() ?? ''
+  const candidate = trimmed === '' ? 'main-legacy' : trimmed
   if (isVersionedProfileId(candidate)) return candidate
   return parseTerminalBenchProfileId(candidate)
 }
@@ -271,7 +273,8 @@ function isVersionedProfileId(value: string): value is TerminalBenchProfileVersi
 export function terminalBenchProfile(
   value: string | undefined = process.env['COPSE_TERMINAL_PROFILE'],
 ): TerminalBenchProfile {
-  const candidate = value?.trim() || 'main-legacy'
+  const trimmed = value?.trim() ?? ''
+  const candidate = trimmed === '' ? 'main-legacy' : trimmed
   const versionedId = isVersionedProfileId(candidate)
     ? candidate
     : CURRENT_PROFILE_VERSIONS[parseTerminalBenchProfileId(candidate)]
