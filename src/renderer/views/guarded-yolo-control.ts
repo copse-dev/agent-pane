@@ -56,7 +56,7 @@ export function mountGuardedYoloControl(
     }
     element.dataset['phase'] = state.phase
     element.dataset['containment'] = state.containment
-    const phase = state.phase === 'active' ? 'active for this turn' : 'armed for the next turn'
+    const phase = state.phase === 'active' ? 'active for this thread' : 'armed'
     const containment =
       state.containment === 'project-sandbox'
         ? 'Project sandbox where possible; external commands may run unsandboxed.'
@@ -108,7 +108,7 @@ export function mountGuardedYoloControl(
     element,
     menuLabel: () =>
       activeState()?.phase === 'off'
-        ? 'Enable Guarded YOLO for next turn…'
+        ? 'Enable Guarded YOLO'
         : 'Disable Guarded YOLO',
     toggle,
     refresh,

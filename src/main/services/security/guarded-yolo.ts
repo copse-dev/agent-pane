@@ -42,18 +42,11 @@ export class GuardedYoloRegistry {
 
   arm(threadId: string): void {
     this.clearEntry(threadId)
-    const expiresAt = this.now() + GUARDED_YOLO_ARM_TTL_MS
-    const cancelExpiry = this.schedule(() => {
-      const current = this.entries.get(threadId)
-      if (current?.phase !== 'armed' || current.expiresAt !== expiresAt) return
-      this.entries.delete(threadId)
-      this.emit(threadId)
-    }, GUARDED_YOLO_ARM_TTL_MS)
-    this.entries.set(threadId, { phase: 'armed', expiresAt, cancelExpiry })
+    this.entries.set(threadId, { phase: 'armed', expiresAt: null, cancelExpiry: null })
     this.emit(threadId)
   }
 
-  /** Consume an armed grant at run start. The active grant ends with that run. */
+  /** Consume an armed grant at run start. The active grant persists for the thread. */
   activateForRun(threadId: string): boolean {
     const entry = this.currentEntry(threadId)
     if (entry?.phase !== 'armed') return entry?.phase === 'active'
@@ -63,10 +56,9 @@ export class GuardedYoloRegistry {
     return true
   }
 
-  finishRun(threadId: string): void {
-    if (this.entries.get(threadId)?.phase !== 'active') return
-    this.entries.delete(threadId)
-    this.emit(threadId)
+  /** No-op: once active, YOLO stays active for the thread until the user disables it. */
+  finishRun(_threadId: string): void {
+    // Previously deleted the entry. Now a no-op so the active state persists across runs.
   }
 
   disable(threadId: string): void {
