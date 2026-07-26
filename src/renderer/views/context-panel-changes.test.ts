@@ -60,7 +60,12 @@ function makeMonacoStub(): typeof Monaco {
   } as unknown as typeof Monaco
 }
 
-type FsChangedHandler = (path: string, newContent?: string) => void
+type FsChangedHandler = (
+  projectId: string,
+  threadId: string,
+  path: string,
+  newContent: string | null,
+) => void
 
 function makeApi(
   diffByPath: Record<string, GitFileDiff | null>,
@@ -68,7 +73,8 @@ function makeApi(
 ): ApiClient {
   return {
     git: {
-      workingFileDiff: async (path: string) => diffByPath[path] ?? null,
+      workingFileDiff: async (_projectId: string, _threadId: string, path: string) =>
+        diffByPath[path] ?? null,
     },
     fs: {
       onChanged: (handler: FsChangedHandler) => {
@@ -111,7 +117,12 @@ function mount(
   openFile: OpenFile,
   capture?: { fsChanged?: FsChangedHandler },
 ): HTMLElement {
-  const store = createStore({ openFile, filesPaneOpen: true })
+  const store = createStore({
+    activeProjectId: 'project-1',
+    activeThreadId: 'thread-1',
+    openFile,
+    filesPaneOpen: true,
+  })
   const root = document.createElement('div')
   document.body.append(root)
   mountContextPanel(root, store, makeApi(diffByPath, capture), makeMonacoStub())
@@ -221,7 +232,7 @@ describe('file viewer Changes view', () => {
       after: 'export const a = 2\n',
       language: 'typescript',
     }
-    capture.fsChanged?.('src/app.ts', 'export const a = 2\n')
+    capture.fsChanged?.('project-1', 'thread-1', 'src/app.ts', 'export const a = 2\n')
     await flushAsync()
 
     assert.equal(query(root, '.file-viewer-toolbar').hidden, false)

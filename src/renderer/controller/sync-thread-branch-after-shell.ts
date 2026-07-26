@@ -14,7 +14,9 @@ export async function syncThreadGitBranchAfterShell(
   api: ApiClient,
   threadId: string,
 ): Promise<void> {
-  const { currentBranch } = await api.git.branchStatus()
+  const projectId = store.getState().activeProjectId
+  if (!projectId) return
+  const { currentBranch } = await api.git.branchStatus(projectId, threadId)
   if (syncThreadGitBranchIfChanged(store, threadId, currentBranch)) {
     store.emit('git_branch_changed')
   }

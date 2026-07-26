@@ -1,5 +1,6 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { getActiveThreadOwner, requireActiveThreadOwner } from './active-thread-owner.ts'
 
 const LANG: Record<string, string> = {
   ts: 'typescript',
@@ -56,7 +57,10 @@ export async function openWorkspaceFile(
   path: string,
   reveal?: { line: number; column?: number },
 ): Promise<void> {
-  const content = await api.fs.readFile(path)
+  const { projectId, threadId } = requireActiveThreadOwner(store)
+  const content = await api.fs.readFile(projectId, threadId, path)
+  const currentOwner = getActiveThreadOwner(store)
+  if (currentOwner?.projectId !== projectId || currentOwner.threadId !== threadId) return
   store.setState({
     openFile: { path, content, language: detectLanguage(path), ...(reveal ? { reveal } : {}) },
     panelTab: 'file',
