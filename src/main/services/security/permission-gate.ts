@@ -77,6 +77,8 @@ import {
 } from '../mcp/custom-tools-registry.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
+import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
+import { LOOPBACK_BIND_PERMISSION } from '@copse/agent/packs/background-tasks-pack.ts'
 import { assessShellHarm } from './shell-harm.ts'
 import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
 import { recordPermissionDecision } from './permission-audit.ts'
@@ -579,6 +581,14 @@ const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
  * carry no command and are not gated. On top of that, opting into loopback port
  * binding prompts the first time per workspace, then remembers the grant — the
  * same prompt-once model as browser origins and MCP servers.
+ *
+ * The loopback port-binding relaxation is an authority the `copse.background-tasks`
+ * pack DECLARES (its `loopback-bind` permission, issue #1190). It is grantable
+ * ONLY while the owning pack is enabled: the gate resolves the declaration
+ * through `getDefaultPackRegistry().isPermissionDeclared('loopback-bind')`, so
+ * disabling the pack revokes the relaxation in the same atomic flag flip that
+ * unregisters `run_background`. When the relaxation is undeclared the grant is
+ * refused (the task can still run fully sandboxed without binding a port).
  */
 async function checkBackgroundProcessPermission(
   args: unknown,
@@ -589,6 +599,19 @@ async function checkBackgroundProcessPermission(
   if (command && !(await checkShellPermission(args, originalCommand))) return false
 
   if (!backgroundAllowsPortBinding(args)) return true
+
+  // A declared sandbox relaxation is only honoured while the owning pack is
+  // enabled (issue #1190). If the `copse.background-tasks` pack no longer
+  // declares `loopback-bind` (it was disabled), refuse the relaxation rather
+  // than silently binding a port through a revoked authority.
+  if (!getDefaultPackRegistry().isPermissionDeclared(LOOPBACK_BIND_PERMISSION)) {
+    throw new Error(
+      'Loopback port binding is not available: the Background tasks pack ' +
+        '(copse.background-tasks) is disabled, so its loopback-bind sandbox ' +
+        'relaxation is revoked. Run the task without allow_port_binding, or ' +
+        'enable the pack in Settings > Packs.',
+    )
+  }
 
   const root = getAgentExecutionRoot()
   if (!root) throw new Error('No workspace open.')
