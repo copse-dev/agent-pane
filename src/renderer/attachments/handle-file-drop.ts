@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
+import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
@@ -31,9 +32,11 @@ async function attachWorkspacePath(
   handlers: PromptAttachmentHandlers,
   api: ApiClient,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null,
 ): Promise<void> {
+  if (!owner) return
   try {
-    const content = await api.fs.readFile(path)
+    const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
     handlers.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content })
   } catch {
     /* ignore read errors */
@@ -45,6 +48,7 @@ async function attachDroppedFile(
   handlers: PromptAttachmentHandlers,
   api: ApiClient,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null,
 ): Promise<void> {
   if (file.type.startsWith('image/')) {
     const dataUrl = await readAsDataUrl(file)
@@ -54,7 +58,7 @@ async function attachDroppedFile(
 
   const absPath = file.path
   if (absPath && workspaceRoot) {
-    await attachWorkspacePath(absPath, handlers, api, workspaceRoot)
+    await attachWorkspacePath(absPath, handlers, api, workspaceRoot, owner)
     return
   }
 
@@ -71,9 +75,10 @@ export async function attachFiles(
   handlers: PromptAttachmentHandlers,
   api: ApiClient,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null,
 ): Promise<void> {
   for (const file of files) {
-    await attachDroppedFile(file, handlers, api, workspaceRoot)
+    await attachDroppedFile(file, handlers, api, workspaceRoot, owner)
   }
 }
 
@@ -82,25 +87,26 @@ export async function handleFileDrop(
   handlers: PromptAttachmentHandlers,
   api: ApiClient,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null,
 ): Promise<void> {
   e.preventDefault()
   e.stopPropagation()
 
   const workspacePath = e.dataTransfer?.getData(WORKSPACE_PATH_MIME)
   if (workspacePath) {
-    await attachWorkspacePath(workspacePath, handlers, api, workspaceRoot)
+    await attachWorkspacePath(workspacePath, handlers, api, workspaceRoot, owner)
     return
   }
 
   const files = Array.from(e.dataTransfer?.files ?? []) as ElectronFile[]
-  await attachFiles(files, handlers, api, workspaceRoot)
+  await attachFiles(files, handlers, api, workspaceRoot, owner)
 }
 
 export function bindFileDropTarget(
   el: HTMLElement,
   getHandlers: () => PromptAttachmentHandlers | null,
   api: ApiClient,
-  getWorkspaceRoot: () => string | null,
+  getContext: () => { workspaceRoot: string | null; owner: ActiveThreadOwner | null },
 ): () => void {
   const onDragOver = (e: DragEvent): void => {
     if (!getHandlers()) return
@@ -119,7 +125,8 @@ export function bindFileDropTarget(
     el.classList.remove('is-drop-target')
     const handlers = getHandlers()
     if (!handlers) return
-    void handleFileDrop(e, handlers, api, getWorkspaceRoot())
+    const { workspaceRoot, owner } = getContext()
+    void handleFileDrop(e, handlers, api, workspaceRoot, owner)
   }
 
   el.addEventListener('dragover', onDragOver, true)

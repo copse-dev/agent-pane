@@ -65,6 +65,7 @@ import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 interface MountInputBarOptions {
   /**
@@ -728,12 +729,14 @@ export function mountInputBar(
 
   checkoutBranchBtn.addEventListener('click', () => {
     if (!mismatchBranch || checkoutInProgress) return
+    const { activeProjectId, activeThreadId } = store.getState()
+    if (!activeProjectId || !activeThreadId) return
     const branch = mismatchBranch
     checkoutInProgress = true
     showBranchMismatch(branch)
 
     void api.git
-      .checkoutBranch(branch)
+      .checkoutBranch(activeProjectId, activeThreadId, branch)
       .then(() => {
         hideBranchMismatch()
         showToast(`Checked out ${branch}`)
@@ -753,8 +756,10 @@ export function mountInputBar(
     if (!mismatchBranch || checkoutInProgress) return
     const id = getActiveThreadId()
     if (!id) return
+    const projectId = store.getState().activeProjectId
+    if (!projectId) return
     void api.git
-      .branchStatus()
+      .branchStatus(projectId, id)
       .then(({ currentBranch }) => {
         if (syncThreadGitBranchIfChanged(store, id, currentBranch)) {
           store.emit('git_branch_changed')
@@ -830,7 +835,9 @@ export function mountInputBar(
     const id = getActiveThreadId()
     if (!id) return
 
-    const branchStatus = await api.git.branchStatus()
+    const projectId = store.getState().activeProjectId
+    if (!projectId) return
+    const branchStatus = await api.git.branchStatus(projectId, id)
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
@@ -1121,7 +1128,13 @@ export function mountInputBar(
   const onFileInputChange = (): void => {
     const files = Array.from(fileInput.files ?? [])
     if (files.length === 0) return
-    void attachFiles(files, attachmentHandlers, api, store.getState().workspaceRoot)
+    void attachFiles(
+      files,
+      attachmentHandlers,
+      api,
+      store.getState().workspaceRoot,
+      getActiveThreadOwner(store),
+    )
     // Reset so re-selecting the same file fires `change` again.
     fileInput.value = ''
   }
@@ -1152,7 +1165,10 @@ export function mountInputBar(
     root,
     () => attachmentHandlers,
     api,
-    () => store.getState().workspaceRoot,
+    () => ({
+      workspaceRoot: store.getState().workspaceRoot,
+      owner: getActiveThreadOwner(store),
+    }),
   )
 
   initMentionPicker({

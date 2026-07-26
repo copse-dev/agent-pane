@@ -1,7 +1,11 @@
 import { join } from 'node:path'
 import { dirname } from 'node:path'
 import { MAX_FS_WRITE_BYTES } from '../ipc/ipc-guards.ts'
-import { assertWorkspaceWriteTarget, getWorkspaceRoot } from '../services/workspace.ts'
+import {
+  assertWorkspaceWriteTarget,
+  assertWriteTargetWithinRoot,
+  getWorkspaceRoot,
+} from '../services/workspace.ts'
 import {
   getActiveExecutionTarget,
   isSshExecutionTarget,
@@ -25,17 +29,18 @@ export const SANDBOX_FS_REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
 
 async function invokeWorker<T extends Record<string, unknown>>(
   request: Record<string, unknown>,
+  root?: string,
 ): Promise<T> {
   // Prefer the long-lived worker (no per-call process spawn). Only transport failures fall
   // back to a one-shot spawn; a `{ ok: false }` filesystem error is surfaced as-is.
   try {
-    const res = await requestViaServer(request)
+    const res = await requestViaServer(request, root)
     assertWorkerOk(res)
     return res as T
   } catch (err) {
     if (!(err instanceof SandboxFsServerUnavailable)) throw err
   }
-  return invokeWorkerOneShot<T>(request)
+  return invokeWorkerOneShot<T>(request, root)
 }
 
 function assertWorkerOk(parsed: { ok: boolean; error?: string }): void {
@@ -46,8 +51,9 @@ function assertWorkerOk(parsed: { ok: boolean; error?: string }): void {
 
 async function invokeWorkerOneShot<T extends Record<string, unknown>>(
   request: Record<string, unknown>,
+  requestedRoot?: string,
 ): Promise<T> {
-  const root = getWorkspaceRoot()
+  const root = requestedRoot ?? getWorkspaceRoot()
   if (!root) throw new Error('No workspace open. Use Open Folder first.')
 
   const workerPath = sandboxFsWorkerPath()
@@ -89,20 +95,23 @@ function useSandboxFsGateway(): boolean {
   return isProjectSandboxEnabled()
 }
 
-export async function gatewayReadFile(absPath: string): Promise<string> {
+export async function gatewayReadFile(absPath: string, root?: string): Promise<string> {
   if (!useSandboxFsGateway()) {
     return getActiveWorkspaceFs().readFile(absPath, 'utf-8')
   }
-  const res = await invokeWorker<{ data?: string }>({
-    op: 'readFile',
-    path: absPath,
-    encoding: 'utf-8',
-  })
+  const res = await invokeWorker<{ data?: string }>(
+    { op: 'readFile', path: absPath, encoding: 'utf-8' },
+    root,
+  )
   if (typeof res.data !== 'string') throw new Error('readFile: missing data')
   return res.data
 }
 
-export async function gatewayWriteFile(absPath: string, content: string): Promise<void> {
+export async function gatewayWriteFile(
+  absPath: string,
+  content: string,
+  root?: string,
+): Promise<void> {
   // Guard the write target against symlink escape before any mkdir/writeFile
   // follows it (#578). `resolveWorkspacePath` only realpaths a path's existing
   // prefix, so a repo shipping a *dangling* symlink (target not yet on disk) is
@@ -110,31 +119,35 @@ export async function gatewayWriteFile(absPath: string, content: string): Promis
   // The diff-queue write path already asserts this; the `fs:writeFile` IPC path
   // reaches the filesystem through here, so guarding at this chokepoint covers
   // both the direct-fs and sandbox-worker branches below.
-  await assertWorkspaceWriteTarget(absPath)
+  if (root) await assertWriteTargetWithinRoot(absPath, root)
+  else await assertWorkspaceWriteTarget(absPath)
   if (!useSandboxFsGateway()) {
     const fs = getActiveWorkspaceFs()
     await fs.mkdir(dirname(absPath), { recursive: true })
     await fs.writeFile(absPath, content, 'utf-8')
     return
   }
-  await invokeWorker({ op: 'writeFile', path: absPath, content, encoding: 'utf-8' })
+  await invokeWorker({ op: 'writeFile', path: absPath, content, encoding: 'utf-8' }, root)
 }
 
-export async function gatewayReaddir(absPath: string): Promise<string[]> {
+export async function gatewayReaddir(absPath: string, root?: string): Promise<string[]> {
   if (!useSandboxFsGateway()) {
     return getActiveWorkspaceFs().readdir(absPath)
   }
-  const res = await invokeWorker<{ entries?: string[] }>({ op: 'readdir', path: absPath })
+  const res = await invokeWorker<{ entries?: string[] }>({ op: 'readdir', path: absPath }, root)
   return res.entries ?? []
 }
 
-export async function gatewayListDir(absPath: string): Promise<{ name: string; isDir: boolean }[]> {
+export async function gatewayListDir(
+  absPath: string,
+  root?: string,
+): Promise<{ name: string; isDir: boolean }[]> {
   if (!useSandboxFsGateway()) {
     return getActiveWorkspaceFs().readdirWithTypes(absPath)
   }
-  const res = await invokeWorker<{ dirents?: { name: string; isDir: boolean }[] }>({
-    op: 'statDir',
-    path: absPath,
-  })
+  const res = await invokeWorker<{ dirents?: { name: string; isDir: boolean }[] }>(
+    { op: 'statDir', path: absPath },
+    root,
+  )
   return res.dirents ?? []
 }

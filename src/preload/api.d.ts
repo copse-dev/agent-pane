@@ -80,13 +80,19 @@ export interface ApiClient {
     onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
   }
   fs: {
-    readFile: (path: string) => Promise<string>
-    writeFile: (path: string, content: string) => Promise<void>
-    readdir: (path: string) => Promise<string[]>
-    listDir: (path: string) => Promise<{ name: string; isDir: boolean }[]>
-    watch: (path: string) => Promise<void>
-    unwatch: (path: string) => Promise<void>
-    onChanged: (handler: (path: string, content: string | null) => void) => () => void
+    readFile: (projectId: string, threadId: string, path: string) => Promise<string>
+    writeFile: (projectId: string, threadId: string, path: string, content: string) => Promise<void>
+    readdir: (projectId: string, threadId: string, path: string) => Promise<string[]>
+    listDir: (
+      projectId: string,
+      threadId: string,
+      path: string,
+    ) => Promise<{ name: string; isDir: boolean }[]>
+    watch: (projectId: string, threadId: string, path: string) => Promise<void>
+    unwatch: (projectId: string, threadId: string, path: string) => Promise<void>
+    onChanged: (
+      handler: (projectId: string, threadId: string, path: string, content: string | null) => void,
+    ) => () => void
   }
   agent: {
     run: (projectId: string, threadId: string, prompt: string) => Promise<void>
@@ -594,7 +600,7 @@ export interface ApiClient {
     create: (
       cols: number,
       rows: number,
-      meta?: { label?: string; threadId?: string | null },
+      meta: { label?: string; projectId: string; threadId: string | null },
     ) => Promise<string>
     write: (sessionId: string, data: string) => Promise<void>
     resize: (sessionId: string, cols: number, rows: number) => Promise<void>
@@ -608,17 +614,33 @@ export interface ApiClient {
     onExit: (handler: (sessionId: string, code: number) => void) => () => void
   }
   git: {
-    isAvailable: () => Promise<boolean>
-    status: () => Promise<GitStatusResult | null>
+    isAvailable: (projectId: string, threadId: string) => Promise<boolean>
+    status: (projectId: string, threadId: string) => Promise<GitStatusResult | null>
     /** Live +/- line totals across staged + unstaged changes, or null when clean. */
-    changeStats: () => Promise<{ additions: number; deletions: number } | null>
-    fileDiff: (path: string, staged: boolean) => Promise<GitFileDiff | null>
+    changeStats: (
+      projectId: string,
+      threadId: string,
+    ) => Promise<{ additions: number; deletions: number } | null>
+    fileDiff: (
+      projectId: string,
+      threadId: string,
+      path: string,
+      staged: boolean,
+    ) => Promise<GitFileDiff | null>
     /** Combined HEAD → working-tree diff for one file, or null when it matches HEAD. */
-    workingFileDiff: (path: string) => Promise<GitFileDiff | null>
-    branchStatus: (forBranch?: string) => Promise<GitBranchStatus>
-    checkoutBranch: (branch: string) => Promise<void>
-    listBranches: () => Promise<GitBranchInfo[]>
-    getDefaultBranch: () => Promise<string | null>
+    workingFileDiff: (
+      projectId: string,
+      threadId: string,
+      path: string,
+    ) => Promise<GitFileDiff | null>
+    branchStatus: (
+      projectId: string,
+      threadId: string,
+      forBranch?: string,
+    ) => Promise<GitBranchStatus>
+    checkoutBranch: (projectId: string, threadId: string, branch: string) => Promise<void>
+    listBranches: (projectId: string, threadId: string) => Promise<GitBranchInfo[]>
+    getDefaultBranch: (projectId: string, threadId: string) => Promise<string | null>
     /** The pre-session worktree backup taken this session, or null when none. */
     sessionBackup: (projectId: string, threadId: string) => Promise<SessionBackup | null>
     /** Revert the session backup's captured paths to their pre-session content. */
@@ -654,8 +676,8 @@ export interface ApiClient {
   editors: {
     /** Installed external editors plus the sticky last-used default. */
     list: () => Promise<ExternalEditorList>
-    /** Open the active workspace root in a detected editor. */
-    open: (editorId: string) => Promise<void>
+    /** Open the active task checkout in a detected editor. */
+    open: (projectId: string, threadId: string, editorId: string) => Promise<void>
   }
   panes: {
     /** Detach a right-panel pane into its own window. */
