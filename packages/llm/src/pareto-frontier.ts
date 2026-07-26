@@ -240,3 +240,32 @@ export function frontierForKnownModels(
   const grouped = groupByModelIdentity(candidates)
   return computeParetoFrontier(adjust ? grouped.map(adjust) : grouped)
 }
+
+/**
+ * Pick the single best-value model from a computed frontier for auto chat
+ * defaulting. Preference order:
+ *   1. Routable (non-discovery) frontier points only
+ *   2. Free via plan or local ($0) — highest intellect (Pareto already collapses
+ *      same-cost ties to one winner)
+ *   3. Otherwise maximize intellect per blended $/MTok (value for price)
+ *   4. Tie-break: higher intellect, then lower cost, then stable id
+ */
+export function pickBestValueFrontierModel(points: readonly FrontierPoint[]): FrontierPoint | null {
+  const frontier = points.filter((p) => p.onFrontier && p.discovery !== true)
+  if (frontier.length === 0) return null
+
+  const free = frontier.filter(
+    (p) => p.costPerMTok <= 0 || p.local === true || p.plan !== undefined,
+  )
+  const pool = free.length > 0 ? free : frontier
+
+  const ranked = [...pool].sort((a, b) => {
+    if (free.length === 0) {
+      const valueA = a.intellect / Math.max(a.costPerMTok, Number.EPSILON)
+      const valueB = b.intellect / Math.max(b.costPerMTok, Number.EPSILON)
+      if (valueB !== valueA) return valueB - valueA
+    }
+    return b.intellect - a.intellect || a.costPerMTok - b.costPerMTok || a.id.localeCompare(b.id)
+  })
+  return ranked[0] ?? null
+}

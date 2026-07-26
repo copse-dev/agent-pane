@@ -84,6 +84,17 @@ describe('settings model routing placement', () => {
 
     const general = settingsSection('general')
     await expect(general).toBeDisplayed()
+    await $('select[name="model"] option[value="auto:best-value"]').waitForExist({
+      timeout: 30_000,
+    })
+    await expect($('select[name="model"] option[value="auto:best-value"]')).toHaveText(
+      expect.stringContaining('Best value'),
+    )
+    await saveElementScreenshot(
+      '[data-testid="settings-chat-model"]',
+      'settings-chat-model-best-value.png',
+    )
+
     await $(
       'select[name="localDefaultModel"] option[value="lmstudio:qwen/qwen3.6-35b-a3b"]',
     ).waitForExist({

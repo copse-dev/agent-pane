@@ -1,11 +1,5 @@
-import { createHash } from 'node:crypto'
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
-import { splitSkillMarkdown } from '../services/skills/parse-skill-frontmatter.ts'
-import { getActiveProjectRoot } from '../services/workspace.ts'
 import {
   addKnowledgeNote,
   loadKnowledgeNotes,
@@ -44,7 +38,6 @@ export const rememberTool = defineTool({
     tags: z.array(z.string()).optional().describe('Optional tags to aid later retrieval.'),
   }),
   execute({ title, content, tags }) {
-    migrateLegacyMemories()
     const cleanTitle = title.trim()
     const existing = loadKnowledgeNotes(MEMORY_TYPE).find((note) => note.title === cleanTitle)
     const note = existing
@@ -66,7 +59,6 @@ export const recallTool = defineTool({
       .describe('Optional search terms — all must match. Omit to list every memory.'),
   }),
   execute({ query }) {
-    migrateLegacyMemories()
     const trimmed = query?.trim() ?? ''
     const memories = trimmed
       ? searchKnowledgeNotes(trimmed, MEMORY_TYPE)
@@ -80,104 +72,3 @@ export const recallTool = defineTool({
     return [header, ...memories.map(formatMemory)].join('\n\n')
   },
 })
-
-// --- one-time migration of legacy `~/.copse/memories` notes -------------------
-//
-// Before issue #645 memories were their own OKF store under
-// `~/.copse/memories/<workspace>/`. On first use we import any legacy notes into
-// the knowledge store as `Memory` notes (skipping titles that already exist),
-// then drop a marker so it never re-runs. Non-destructive: the legacy files are
-// left in place.
-
-const LEGACY_MARKER = '.migrated-to-knowledge'
-
-let legacyRootOverride: string | null = null
-let legacyMigrationDone = false
-
-/** @internal test helper — point the legacy memories dir at a temp path. */
-export function setLegacyMemoriesRootForTest(path: string | null): void {
-  legacyRootOverride = path
-  legacyMigrationDone = false
-}
-
-function legacyMemoriesBaseDir(): string {
-  return legacyRootOverride ?? join(homedir(), '.copse', 'memories')
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
-}
-
-function legacyMemoriesDir(): string {
-  const root = getActiveProjectRoot()
-  const ns = root
-    ? `${slugify(basename(root)) || 'workspace'}-${createHash('sha1').update(root).digest('hex').slice(0, 8)}`
-    : 'shared'
-  return join(legacyMemoriesBaseDir(), ns)
-}
-
-function legacyField(yaml: string, key: string): string | undefined {
-  const match = yaml.match(new RegExp(`^${key}:[ \\t]*(.*)$`, 'm'))
-  if (!match) return undefined
-  const v = (match[1] ?? '').trim()
-  return v.startsWith('"') && v.endsWith('"') ? v.slice(1, -1).replace(/\\"/g, '"') : v
-}
-
-function legacyTags(yaml: string): string[] {
-  const match = yaml.match(/^tags:[ \t]*\[(.*)\][ \t]*$/m)
-  if (!match) return []
-  return (match[1] ?? '')
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean)
-}
-
-/** Import legacy memories into the knowledge store once per process. Returns the
- * number imported. Safe to call repeatedly. */
-export function migrateLegacyMemories(): number {
-  if (legacyMigrationDone) return 0
-  legacyMigrationDone = true
-  const dir = legacyMemoriesDir()
-  let entries: string[]
-  try {
-    entries = readdirSync(dir)
-  } catch {
-    return 0 // No legacy memories for this project.
-  }
-  if (entries.includes(LEGACY_MARKER)) return 0
-
-  const existingTitles = new Set(loadKnowledgeNotes(MEMORY_TYPE).map((note) => note.title))
-  let imported = 0
-  for (const name of entries) {
-    if (!name.endsWith('.md')) continue
-    const file = join(dir, name)
-    try {
-      if (!statSync(file).isFile()) continue
-      const split = splitSkillMarkdown(readFileSync(file, 'utf8'))
-      if (!split) continue
-      const title = legacyField(split.frontmatter, 'title') || name.replace(/\.md$/, '')
-      if (existingTitles.has(title)) continue
-      addKnowledgeNote({
-        type: MEMORY_TYPE,
-        title,
-        body: split.body,
-        tags: legacyTags(split.frontmatter),
-      })
-      existingTitles.add(title)
-      imported++
-    } catch {
-      // Skip an unreadable or malformed legacy note rather than aborting.
-    }
-  }
-  try {
-    writeFileSync(join(dir, LEGACY_MARKER), `migrated ${String(imported)} note(s)\n`)
-  } catch {
-    // A read-only legacy dir just means we may re-scan next process; the
-    // title-existence check keeps re-import idempotent.
-  }
-  return imported
-}
