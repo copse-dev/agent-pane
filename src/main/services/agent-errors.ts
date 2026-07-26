@@ -160,6 +160,46 @@ function isAcpAuthFailure(
   return /^Authentication required\b/i.test(detail)
 }
 
+/** Why a provider refused a request, when the cause is credentials or billing. */
+export type ProviderAccessFailure = 'auth' | 'credit'
+
+/**
+ * Classify a provider failure as a credentials or billing problem — the two
+ * cases where re-running the turn on a subscription-billed agent would actually
+ * help. Everything else (rate limits, overload, network, bad request) is either
+ * transient or unrelated to billing and returns `null`, so a retryable blip
+ * never triggers a billing-path switch.
+ *
+ * Anthropic reports an exhausted balance three different ways depending on the
+ * account: `402`, a `403` typed `billing_error`, and a `400 invalid_request_error`
+ * whose message names the credit balance — all three are `credit`.
+ */
+export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailure | null {
+  const { status, type, code, message } = parseProviderError(err)
+  const detail = message ?? errorMessage(err)
+
+  if (
+    status === 402 ||
+    code === 'insufficient_quota' ||
+    type === 'insufficient_quota' ||
+    type === 'billing_error' ||
+    /credit balance is too low|billing|out of credit/i.test(detail)
+  )
+    return 'credit'
+
+  if (
+    status === 401 ||
+    type === 'authentication_error' ||
+    detail.includes('Unauthorized') ||
+    // 403 `permission_error` covers a key that is valid but not entitled to the
+    // Managed Agents beta — same user fix as a rejected key: sort out the key.
+    ((status === 403 || type === 'permission_error') && !/forbidden host/i.test(detail))
+  )
+    return 'auth'
+
+  return null
+}
+
 /** Map provider / local-model failures to user-facing chat text. */
 export function classifyAgentError(err: unknown, ctx?: ClassifyAgentErrorContext): string {
   const rpc = findJsonRpcError(err)
