@@ -1002,6 +1002,39 @@ export function seedGitSummaryMarkdownFixture(workspaceRoot: string): void {
   })
 }
 
+/** User prompt with newlines and inline markdown for transcript rendering eval. */
+export function seedUserPromptMarkdownFixture(workspaceRoot: string): void {
+  const projectId = 'e2e-user-prompt-markdown-project'
+  const threadId = 'e2e-user-prompt-markdown-thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title: 'User prompt markdown',
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-user-markdown',
+            role: 'user',
+            content: 'line one\nline two\n\n**bold item**',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        todos: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+  })
+}
+
 /** A representative completed coding turn for conversation hierarchy visual evaluation. */
 export function seedConversationVisualHierarchyFixture(workspaceRoot: string): void {
   const projectId = 'e2e-conversation-hierarchy-project'

@@ -240,6 +240,35 @@ function setAssistantMarkdown(
   void renderMermaidIn(el)
 }
 
+/** Turn composer single newlines into CommonMark hard breaks; skip fenced code. */
+function userPromptMarkdown(source: string): string {
+  const parts: string[] = []
+  const fenceRe = /```[\s\S]*?```/g
+  let last = 0
+  let match: RegExpExecArray | null
+  while ((match = fenceRe.exec(source)) !== null) {
+    parts.push(hardBreakSingleNewlines(source.slice(last, match.index)))
+    parts.push(match[0])
+    last = match.index + match[0].length
+  }
+  parts.push(hardBreakSingleNewlines(source.slice(last)))
+  return parts.join('')
+}
+
+function hardBreakSingleNewlines(text: string): string {
+  return text.replace(/(?<!\n)\n(?!\n)/g, '  \n')
+}
+
+/** Render a settled user prompt: markdown like assistant replies, without post-processing hooks. */
+function setUserMarkdown(el: HTMLElement, content: string): void {
+  if (!content) {
+    el.replaceChildren()
+    return
+  }
+  el.innerHTML = renderMarkdown(userPromptMarkdown(content))
+  attachCodeBlockCopyButtons(el)
+}
+
 function createSubagentMessageEl(content: string, streaming: boolean, api: ApiClient): HTMLElement {
   const textEl = el('div', {
     class: 'subagent-message subagent-message-assistant message-text streaming-markdown',
@@ -737,6 +766,8 @@ function appendMessageContent(
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else if (msg.role === 'user' && msg.attachments?.length) {
     renderUserTranscript(textEl, msg.content, msg.attachments, api)
+  } else if (msg.role === 'user') {
+    setUserMarkdown(textEl, msg.content)
   } else {
     textEl.textContent = msg.content
   }

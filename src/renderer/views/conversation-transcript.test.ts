@@ -83,4 +83,13 @@ describe('user transcript attachment chips', () => {
     assert.equal(textEl.textContent, 'just a normal message')
     assert.equal(textEl.querySelector('.transcript-attachment-chip'), null)
   })
+
+  it('renders user prompts with markdown and preserved line breaks', () => {
+    mountWithUserMessage('line one\nline two\n\n**bold**', undefined)
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.ok(textEl.querySelector('strong'), 'markdown emphasis is rendered')
+    assert.ok(textEl.querySelector('br'), 'single newlines render as line breaks')
+    assert.match(textEl.textContent, /line one\s*line two/)
+  })
 })
