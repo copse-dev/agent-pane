@@ -20,7 +20,6 @@ describe('conversation visual hierarchy', () => {
   })
 
   it('keeps the outcome prominent while completed trace details stay compact', async () => {
-    const reasoning = await $('.message-reasoning')
     const initialDisclosureState = await browser.execute(() => ({
       reasoningOpen: document.querySelector('.message-reasoning')?.hasAttribute('open') ?? false,
       toolOpen:
@@ -31,7 +30,16 @@ describe('conversation visual hierarchy', () => {
 
     // Exercise the compact completed-trace treatment without changing the
     // product's disclosure-state behavior as part of this visual-only change.
-    await reasoning.$('.message-reasoning-summary').click()
+    // A completed segment's reasoning now nests inside its (collapsed) tool
+    // rollup, so the summary isn't directly interactable — collapse it the way
+    // the summary click would (mark it user-toggled, then close it).
+    await browser.execute(() => {
+      const details = document.querySelector('.message-reasoning')
+      if (details instanceof HTMLDetailsElement) {
+        details.dataset['userToggled'] = '1'
+        details.open = false
+      }
+    })
     await browser.waitUntil(
       async () =>
         !(await browser.execute(

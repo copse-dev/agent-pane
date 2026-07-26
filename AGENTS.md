@@ -90,8 +90,10 @@ changed renderer UI or e2e fixtures, also run **`npm run build && npm run test:e
 ### Type-safety & lint discipline
 
 Minimise `as` casts, never cast object literals, and never reach for `eslint-disable` /
-`@ts-expect-error` to silence a real error. Conventions and the rules behind them:
-[`docs/type-safety.md`](docs/type-safety.md).
+`@ts-expect-error` to silence a real error. Two high-churn rules (`no-unsafe-type-assertion`,
+`prefer-nullish-coalescing`) run against a shrink-only baseline in `eslint-suppressions.json`: new
+violations fail `npm run lint`, and when you fix a baselined site run `npm run lint:prune` and commit
+the result. Conventions and the rules behind them: [`docs/type-safety.md`](docs/type-safety.md).
 
 ### Visual changes require evals
 
@@ -223,10 +225,20 @@ least one screenshot that reviewers can inspect.
 3. Launch with mock LLM: `COPSE_PANEL_MOCK_LLM=1 ANTHROPIC_API_KEY= OPENAI_API_KEY=`
 4. Run: `npm run test:e2e -- --spec tests/e2e/tool-display-live-mock.e2e.ts`
 5. Screenshots land in `tests/e2e/screenshots/`:
-   - `tool-display-live-mock.png` — live mock turn shows `List directory` (not `list_dir`)
+   - `tool-display-live-mock.png` — live mock turn shows `Listed directory` (not `list_dir`)
 
-Assertions to mirror: `.tool-card-group .tool-name` = group label; `.tool-count` = `×N`;
-failed tools stay `.tool-card[data-status=error]` with individual `getToolDisplayName` labels.
+**CI only commits the shots your diff owns.** The e2e tier re-renders far more than a change
+touches — a broad selection renders everything — so `commit-screenshots` writes back only the
+reference PNGs the test oracle maps to your diff (plus any you hand-committed on the branch), and
+merge conflicts against `main` resolve the same way: your version for what you own, `main`'s for
+everything else. Anything held is listed by name in the PR comment. If your change really does
+move a shot the oracle didn't map, add the `update-screenshots` label to take CI's render.
+The rule lives in [`scripts/lib/screenshot-scope.mts`](scripts/lib/screenshot-scope.mts).
+
+Assertions to mirror: a turn with ≥2 tools collapses to `.tool-card-rollup` (`Used N tools` /
+category past-tense like `Read files`); expand for nested `.tool-card-group` / individuals;
+`.tool-count` = `×N` when the rollup is a single category; failed tools stay outside their
+success group with individual past-tense labels. Labels are progressive while `running`.
 The seeded tool-card DOM assertions now run without Electron in the component test
 `src/renderer/views/tool-display.test.ts`; grouping logic in `src/shared/tools/tool-display.test.ts`.
 

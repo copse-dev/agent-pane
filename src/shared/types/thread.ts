@@ -182,8 +182,33 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
+  /** Provenance for a draft task created by a project automation schedule. */
+  automation?: {
+    scheduleId: string
+    scheduleName: string
+    triggeredAt: number
+  }
+  /**
+   * When set, the thread is archived: hidden from the sidebar and `@`-thread
+   * catalog, but kept on disk under `~/.copse/workspace/<projectId>/<id>/`.
+   * Soft-hide (not a delete) — restore is a later UI concern.
+   */
+  archivedAt?: number
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * How a fork's provider-format history was seeded from the thread it branched
+ * off (`threads:fork`). `copied` is the source sidecar verbatim — the
+ * highest-fidelity result. `rebuilt` was reconstructed from the copied
+ * transcript slice, which cannot carry content that only existed in the run
+ * payload (the fenced blocks inlined for `@`-file / `@`-thread / shell chips).
+ * `empty` means the source had no recorded history to inherit.
+ */
+export interface ForkedHistoryResult {
+  source: 'copied' | 'rebuilt' | 'empty'
+  messageCount: number
 }
 
 /**
@@ -237,6 +262,12 @@ export interface Message {
   toolCalls: ToolCall[]
   /** Small-model rollup label for this message's batch of shell commands. */
   commandSummary?: string
+  /**
+   * Small-model polish for the turn's tool rollup (`.tool-card-rollup`). The
+   * deterministic canned label shows immediately; this replaces it when ready
+   * and never blocks delivery.
+   */
+  toolSummary?: string
   /**
    * Primary-chat model that produced this assistant message (picker id for the
    * turn). Surfaced in the transcript only when the thread used more than one

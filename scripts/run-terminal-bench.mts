@@ -8,13 +8,17 @@ import {
   terminalBenchCompletedTaskNames,
   terminalBenchDiskSpaceError,
   terminalBenchFatalInfrastructureOutput,
+  terminalBenchResultsRoot,
 } from './lib/terminal-bench.mts'
 import { buildTerminalBenchAgentBundle } from './build-terminal-bench-agent.mts'
 import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mts'
+import { recordTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
 
 async function terminalBenchResultPaths(): Promise<Set<string>> {
   const paths = new Set<string>()
-  for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) paths.add(path)
+  for await (const path of glob(resolve(terminalBenchResultsRoot(), '*/*/result.json'))) {
+    paths.add(path)
+  }
   return paths
 }
 
@@ -22,7 +26,7 @@ async function resumeArgs(rawArgs: readonly string[]): Promise<string[]> {
   if (!rawArgs.includes('--resume')) return [...rawArgs]
   if (!rawArgs.includes('--all')) throw new Error('--resume requires --all')
   const records: unknown[] = []
-  for await (const path of glob('bench-results/terminal-bench/*/*/result.json')) {
+  for await (const path of glob(resolve(terminalBenchResultsRoot(), '*/*/result.json'))) {
     try {
       records.push(JSON.parse(await readFile(path, 'utf8')))
     } catch (error) {
@@ -145,8 +149,12 @@ for (const path of await terminalBenchResultPaths()) {
       throw new Error(`result ${path} has no task_name`)
     }
     await recordTerminalBenchTaskImage(taskName, path)
+    await recordTerminalBenchTrialProfile(
+      path,
+      launch.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'] ?? launch.env['COPSE_TERMINAL_PROFILE'],
+    )
   } catch (error) {
-    console.error(`bench:terminal: unable to retain task image metadata: ${String(error)}`)
+    console.error(`bench:terminal: unable to retain trial metadata: ${String(error)}`)
     metadataStatus = 1
   }
 }

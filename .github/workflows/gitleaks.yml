@@ -2,14 +2,19 @@ name: Secret scan
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    # `develop` is the default branch and where day-to-day PRs land, so it must
+    # be listed or fork PRs — the ones this standalone job exists for — would go
+    # unscanned entirely once PRs stopped targeting `main`.
+    branches: [main, develop]
   schedule:
     - cron: '41 6 * * 1'
 
-# A fork scan receives only the default read token and runs on a GitHub-hosted
-# runner. No secrets or self-hosted runners are exposed to the scanned history.
+# Same-repository PRs scan inside CI's existing self-hosted precheck. This
+# standalone hosted job remains for main pushes, the weekly safety net, and fork
+# PRs, which receive only the default read token and must never reach the
+# self-hosted fleet.
 permissions:
   contents: read
 
@@ -20,6 +25,7 @@ env:
 jobs:
   gitleaks:
     name: Scan repository history
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -42,6 +48,13 @@ jobs:
           echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
           tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
           "${RUNNER_TEMP}/gitleaks" version
+      # Default `gitleaks git` implies `--all --full-history`, which also walks
+      # every ref fetched by `fetch-depth: 0` — including machine-managed branches
+      # like `demo-previews` whose minified bundles trip entropy heuristics and
+      # fail unrelated PR tips (seen on #1192 via commit 22623c71). Keep the same
+      # history/diff filters, but limit the walk to the checked-out tip (PR merge
+      # commit or `main`) so preview artifacts cannot poison other scans.
       - name: Scan repository history
         run: |
-          "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner .
+          "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner \
+            --log-opts="--full-history --diff-filter=tuxdb HEAD" .

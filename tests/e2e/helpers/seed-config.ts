@@ -40,6 +40,26 @@ const USER_DATA = copsePanelUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
+/**
+ * Packs the host turns off on a profile with no `packDisabled` list — mirrors
+ * `DEFAULT_DISABLED_PACK_IDS` in `src/main/services/packs/pack-service.ts`.
+ * Seeding the list explicitly means a fixture never depends on that default.
+ */
+const DEFAULT_DISABLED_PACK_IDS = [
+  'copse.advisor-strategy',
+  'copse.ci-investigator',
+  'copse.long-horizon-tasks',
+  'copse.model-comparison',
+  'copse.okf-memories',
+  'copse.pii-redaction',
+  'copse.roadmap-plans',
+] as const
+
+/** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
+function packDisabledSeed(enabled: readonly string[]): string[] {
+  return DEFAULT_DISABLED_PACK_IDS.filter((id) => !enabled.includes(id))
+}
+
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
 /** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
@@ -239,9 +259,9 @@ export function seedMessageImageFixture(
       },
     ],
   }
-  if (options?.roadmapPlansEnabled) {
-    seedConfig.roadmapPlansEnabled = true
-  }
+  seedConfig.packDisabled = packDisabledSeed(
+    options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : [],
+  )
   writeSeedConfig(seedConfig)
 }
 
@@ -298,24 +318,13 @@ export function seedEmptyProject(
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     /**
      * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
-     * memory prompt block, and the Memories pane). The feature migrated off the
-     * retired `okfMemoriesEnabled` setting; `migrateOkfMemoriesEnablement()`
-     * treats an absent legacy value as "keep the experimental feature off" and
-     * disables the pack on first boot — so a test that needs the Memories pane
-     * visible seeds the legacy opt-in. Written to `config.json` (the unvalidated
-     * `electron-store` the migration reads via `storageGet`), not `settings.json`
-     * (whose writable schema retired the flag), mirroring `modelComparisonEnabled`.
+     * memory prompt block, and the Memories pane). The pack ships off, so a test
+     * that needs the Memories pane visible must lift it out of `packDisabled`.
      */
     okfMemoriesEnabled?: boolean
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
-     * Roadmap pane). Like `modelComparisonEnabled`, the one-time
-     * `migrateRoadmapPlansEnablement()` treats an absent legacy
-     * `roadmapPlansEnabled` as "keep the experimental feature off" and disables
-     * the pack on first boot — so a roadmap test must seed the legacy opt-in.
-     * Written to `config.json` (the unvalidated `electron-store` the migration
-     * reads via `storageGet`), not `settings.json` (whose writable schema
-     * retired the flag), mirroring pack-service.test.ts.
+     * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
@@ -323,20 +332,16 @@ export function seedEmptyProject(
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
-     * Pack ids to force-disable at boot. Written to the `packDisabled` list the
-     * host pack service reads (P3). Use this to opt out of packs that ship
-     * enabled by default (e.g. drop the `copse.model-comparison` pack for a test
-     * that must not surface the `compare_models` tool).
+     * The exact `packDisabled` list to write, replacing the host defaults. Use
+     * this to opt out of a pack that ships enabled (e.g. drop
+     * `copse.post-turn-review`); the per-pack opt-in flags below are ignored
+     * when this is set.
      */
     packDisabled?: readonly string[]
     /**
      * Opt into the `copse.model-comparison` pack (and its `compare_models`
-     * tool). P5's one-time `migrateP5Enablement()` treats an absent legacy
-     * `modelComparisonEnabled` as "keep the experimental tool off" and disables
-     * the pack on first boot — so a test exercising the comparison approval flow
-     * must seed the legacy opt-in. Written to `config.json` (the unvalidated
-     * `electron-store` the migration reads via `storageGet`), not `settings.json`
-     * (whose writable schema retired the flag), mirroring pack-service.test.ts.
+     * tool). Ships off, like the other experimental packs — a test exercising
+     * the comparison approval flow must lift it out of `packDisabled`.
      */
     modelComparisonEnabled?: boolean
   },
@@ -353,25 +358,16 @@ export function seedEmptyProject(
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
-  // Seed the legacy opt-in into `config.json` (the store `migrateP5Enablement`
-  // reads) so the migration keeps `copse.model-comparison` enabled instead of
-  // disabling it as a previously opt-in tool.
-  if (options?.modelComparisonEnabled) {
-    seedConfig.modelComparisonEnabled = true
-  }
-  // Same for the `copse.roadmap-plans` pack: seed the legacy opt-in into
-  // `config.json` so `migrateRoadmapPlansEnablement` keeps the pack (and its
-  // Roadmap pane) enabled instead of disabling it as a previously opt-in tool.
-  if (options?.roadmapPlansEnabled) {
-    seedConfig.roadmapPlansEnabled = true
-  }
-  // Same as modelComparisonEnabled: seed the retired `okfMemoriesEnabled` legacy
-  // opt-in into `config.json` so `migrateOkfMemoriesEnablement()` keeps the
-  // `copse.okf-memories` pack enabled instead of disabling it as a previously
-  // opt-in feature (which is what reveals the Memories pane).
-  if (options?.okfMemoriesEnabled) {
-    seedConfig.okfMemoriesEnabled = true
-  }
+  // Pack enablement lives in `config.json` under `packDisabled` (what the host
+  // pack service reads via `storageGet`). Write it explicitly: an explicit
+  // `packDisabled` wins, otherwise the host defaults with the opted-in packs
+  // lifted out.
+  const enabledPacks: string[] = []
+  if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
+  if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
+  if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
+  seedConfig.packDisabled =
+    options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
@@ -382,9 +378,6 @@ export function seedEmptyProject(
   }
   if (options?.model) {
     settings.model = options.model
-  }
-  if (options?.packDisabled !== undefined) {
-    settings.packDisabled = [...options.packDisabled]
   }
   if (options?.advisorModel) {
     settings.advisorModel = options.advisorModel
@@ -1434,9 +1427,8 @@ export function seedPortraitRightPanelFixture(
   options?: {
     okfMemoriesEnabled?: boolean
     /**
-     * Opt into the `copse.roadmap-plans` pack (Roadmap pane). Seeded into
-     * `config.json` so `migrateRoadmapPlansEnablement` keeps the pack enabled —
-     * the writable settings schema retired the flag (see `seedEmptyProject`).
+     * Opt into the `copse.roadmap-plans` pack (Roadmap pane), which ships off
+     * (see `seedEmptyProject`).
      */
     roadmapPlansEnabled?: boolean
     /** Pin panel placement; `bottom` forces portrait chrome without a tall window. */
@@ -1449,11 +1441,12 @@ export function seedPortraitRightPanelFixture(
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
-    ...(options?.roadmapPlansEnabled ? { roadmapPlansEnabled: true } : {}),
-    // The Memories pane is gated by the `copse.okf-memories` pack; seed the
-    // retired legacy opt-in into `config.json` so the enablement migration keeps
-    // the pack (and its pane) enabled (mirrors `seedEmptyProject`).
-    ...(options?.okfMemoriesEnabled ? { okfMemoriesEnabled: true } : {}),
+    // The Memories and Roadmap panes are gated by their packs; seed the
+    // `packDisabled` list the host reads (mirrors `seedEmptyProject`).
+    packDisabled: packDisabledSeed([
+      ...(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
+      ...(options?.okfMemoriesEnabled ? ['copse.okf-memories'] : []),
+    ]),
     [`threads:${projectId}`]: [
       {
         id: threadId,
@@ -2074,9 +2067,15 @@ export function seedQueuedMessageFixture(workspaceRoot: string): {
   return { threadId, queuedMessageId, queuedText }
 }
 
+/**
+ * Multi-segment tool-display fixture: a user bug report followed by several
+ * assistant bubbles (text-after-tools splits), each with Reasoning + a rolled-up
+ * tool burst — the shape Cursor cloud agent turns take in Copse.
+ */
 export function seedToolDisplayFixture(workspaceRoot: string): void {
   const projectId = 'e2e-tool-display-project'
   const threadId = 'e2e-tool-display-thread'
+  const now = Date.now()
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
@@ -2090,23 +2089,67 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
         status: 'idle',
         messages: [
           {
-            id: 'msg-assistant-1',
+            id: 'msg-user-flicker',
+            role: 'user',
+            content:
+              'When I open settings the chat model select flickers away and takes a while to come back. Same for the usage graph buttons — they show the button with no text. If we need to delay, hide the whole button, not just the label.',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            // Segment 1: search burst (empty body → Reasoning stays open).
+            id: 'msg-assistant-search',
             role: 'assistant',
-            content: 'Here is what I found in the repo.',
+            content: '',
+            reasoning: 'Searching for where settings model selects and usage buttons render.',
+            toolSummary: 'Searched the settings UI',
+            toolCalls: [
+              {
+                id: 'tc-search-1',
+                name: 'search_code',
+                args: { pattern: 'model-select|chatModel', path: 'src/renderer' },
+                status: 'done',
+                result: 'src/renderer/views/settings-dialog.ts:120',
+              },
+              {
+                id: 'tc-search-2',
+                name: 'search_code',
+                args: { pattern: 'usage-graph|unpricedBtn', path: 'src/renderer' },
+                status: 'done',
+                result: 'src/renderer/views/usage-panel.ts:40',
+              },
+              {
+                id: 'tc-search-3',
+                name: 'find_files',
+                args: { glob: '**/settings*.ts' },
+                status: 'done',
+                result: 'src/renderer/views/settings-dialog.ts',
+              },
+            ],
+            createdAt: now + 1,
+          },
+          {
+            // Segment 2: mixed reads with one failure — polished rollup + expand target.
+            id: 'msg-assistant-reads',
+            role: 'assistant',
+            content: '',
+            reasoning:
+              'Reading key files to diagnose the settings flicker and missing button text.',
+            toolSummary: 'Inspected the repo layout',
             toolCalls: [
               {
                 id: 'tc-read-1',
                 name: 'read_file',
-                args: { path: 'README.md' },
+                args: { path: 'src/renderer/views/settings-dialog.ts' },
                 status: 'done',
-                result: '# Copse\n',
+                result: 'export function openSettings() { /* … */ }\n',
               },
               {
                 id: 'tc-list-1',
                 name: 'list_dir',
-                args: { path: 'src' },
+                args: { path: 'src/renderer/views' },
                 status: 'done',
-                result: 'd main\nf index.ts',
+                result: 'f settings-dialog.ts\nf usage-panel.ts',
               },
               {
                 id: 'tc-read-2',
@@ -2116,12 +2159,62 @@ export function seedToolDisplayFixture(workspaceRoot: string): void {
                 result: 'Error: ENOENT',
               },
             ],
-            createdAt: Date.now(),
+            createdAt: now + 2,
+          },
+          {
+            // Segment 3: dig into HTML/template + more reads.
+            id: 'msg-assistant-html',
+            role: 'assistant',
+            content: '',
+            reasoning:
+              'Checking the settings HTML around the model selects and usage section loading patterns.',
+            toolSummary: 'Read settings template paths',
+            toolCalls: [
+              {
+                id: 'tc-grep-html',
+                name: 'search_code',
+                args: { pattern: 'syncZdrBtn|unpricedBtn', path: 'src/renderer' },
+                status: 'done',
+                result: 'src/renderer/views/usage-panel.ts:88',
+              },
+              {
+                id: 'tc-read-html-1',
+                name: 'read_file',
+                args: { path: 'src/renderer/views/usage-panel.ts' },
+                status: 'done',
+                result: 'function syncZdrBtn() {}\n',
+              },
+              {
+                id: 'tc-read-html-2',
+                name: 'read_file',
+                args: { path: 'src/renderer/styles/global/settings.css' },
+                status: 'done',
+                result: '.settings-model-select { opacity: 1; }\n',
+              },
+              {
+                id: 'tc-read-html-3',
+                name: 'read_file',
+                args: { path: 'src/renderer/views/settings-dialog.ts' },
+                status: 'done',
+                result: 'async function refreshModelOptions() {}\n',
+              },
+            ],
+            createdAt: now + 3,
+          },
+          {
+            // Final answer segment (no tools) — outcome text after the trace.
+            id: 'msg-assistant-answer',
+            role: 'assistant',
+            content:
+              'The selects clear too early while key-status refresh is still in flight. Delay clearing options until data is ready, and hide the whole usage button row until `render()` finishes — not just the label.',
+            reasoning: 'Planning a three-part fix for load ordering and placeholder chrome.',
+            toolCalls: [],
+            createdAt: now + 4,
           },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: now,
+        updatedAt: now + 4,
       },
     ],
   })
@@ -2625,10 +2718,25 @@ export function seedMultiModelChatFixture(workspaceRoot: string): void {
             toolCalls: [],
             createdAt: now + 3,
           },
+          {
+            id: 'msg-user-3',
+            role: 'user',
+            content: 'And one more clarification?',
+            toolCalls: [],
+            createdAt: now + 4,
+          },
+          {
+            id: 'msg-assistant-3',
+            role: 'assistant',
+            content: 'Same model again — this continuation should not get another model label.',
+            model: 'lmstudio:qwen/qwen3.6-35b-a3b',
+            toolCalls: [],
+            createdAt: now + 5,
+          },
         ],
         usage: { inputTokens: 0, outputTokens: 0 },
         createdAt: now,
-        updatedAt: now + 3,
+        updatedAt: now + 5,
       },
     ],
   })
@@ -2850,4 +2958,125 @@ export function seedThreadRunningStatusFixture(workspaceRoot: string): {
   })
   writeSettings({ model: 'claude-sonnet-4-6' })
   return { runningThreadTitle, idleThreadTitle }
+}
+
+/** Two named threads for sidebar rename / archive e2e. */
+export function seedThreadRenameArchiveFixture(workspaceRoot: string): {
+  projectId: string
+  keepTitle: string
+  archiveTitle: string
+} {
+  const projectId = 'e2e-thread-rename-archive-project'
+  const keepTitle = 'Keep this thread'
+  const archiveTitle = 'Archive this thread'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    activeThreadId: 'e2e-keep-thread',
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-keep-thread',
+        title: keepTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-keep',
+            role: 'user',
+            content: 'Stay visible.',
+            toolCalls: [],
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'e2e-archive-thread',
+        title: archiveTitle,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-archive',
+            role: 'user',
+            content: 'Soft-hide me.',
+            toolCalls: [],
+            createdAt: now - 1000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        createdAt: now - 1000,
+        updatedAt: now - 1000,
+      },
+    ],
+  })
+  writeSettings({ model: 'claude-sonnet-4-6' })
+  return { projectId, keepTitle, archiveTitle }
+}
+
+/**
+ * Thread-forking + resend visual eval. Seeds one idle thread holding two settled
+ * exchanges, so the transcript shows a prompt that is *not* the latest (Fork
+ * from here only) alongside the latest one (Fork from here + Resend).
+ */
+export function seedForkResendFixture(workspaceRoot: string): {
+  projectId: string
+  threadId: string
+  title: string
+} {
+  const projectId = 'e2e-fork-resend-project'
+  const threadId = 'e2e-fork-resend-thread'
+  const title = 'Fork and resend'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-fork-user-first',
+            role: 'user',
+            content: 'Where does the login redirect get decided?',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-fork-assistant-first',
+            role: 'assistant',
+            content: 'It is decided in `src/auth/redirect.ts`, in `resolveRedirect()`.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-fork-user-latest',
+            role: 'user',
+            content: 'Now make it fall back to the dashboard.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-fork-assistant-latest',
+            role: 'assistant',
+            content: 'Done — the fallback now points at `/dashboard`.',
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 1200, outputTokens: 400 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+  writeSettings({ model: 'claude-sonnet-4-6' })
+  return { projectId, threadId, title }
 }

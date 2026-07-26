@@ -42,7 +42,13 @@ describe('ACP permission-mode settings', () => {
     await $('[aria-label="Settings"]').click()
     const dialog = await $('#settings-dialog')
     await dialog.waitForDisplayed({ timeout: 10_000 })
-    await $('.settings-nav-btn[data-section="experimental"]').click()
+    await $('.settings-nav-btn[data-section="acp"]').click()
+
+    // Each agent hides behind a chip now — select the configured fixture's chip
+    // to reveal its form.
+    const chip = await $('.provider-chip[data-agent="fixture-agent"]')
+    await chip.waitForExist({ timeout: 15_000 })
+    await chip.click()
 
     const card = await $('.acp-agent-card')
     await card.waitForExist({ timeout: 15_000 })

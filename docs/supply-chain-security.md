@@ -127,11 +127,16 @@ Two defaults harden every invoked skill, trusted or not (both toggleable in
   invocation; audit all lifecycle scripts.
 - CI runs `npm audit --audit-level=high` against the lockfile-exact dependency
   tree. CodeQL analyzes JavaScript/TypeScript and the checksum-pinned, open-source
-  gitleaks CLI scans repository history on GitHub-hosted runners, including fork
-  pull requests without secrets. The CLI path avoids gitleaks-action's separate
-  organization-repository license requirement. This full-history CI scan is the
-  project's required secret-scanning gate; GitHub's built-in secret scanning and
-  push protection remain optional repository settings.
+  gitleaks CLI scans repository history. Same-repository pull requests scan in
+  CI's existing self-hosted precheck, where failures feed the required `CI Passed`
+  gate; the standalone GitHub-hosted workflow remains for fork pull requests,
+  main pushes, and the weekly safety net. Fork scans receive no secrets or access
+  to the self-hosted fleet. The CLI path avoids gitleaks-action's separate
+  organization-repository license requirement. The scan walks the full history of
+  the checked-out tip (PR merge commit or `main`) — not every fetched ref — so
+  machine-managed branches such as `demo-previews` cannot fail unrelated tips.
+  GitHub's built-in secret scanning and push protection remain optional
+  repository settings.
   Add Dependabot/Renovate and consider `--ignore-scripts` for CI installs.
 - Evaluate npm provenance / `npm audit signatures`.
 

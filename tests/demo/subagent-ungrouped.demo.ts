@@ -7,12 +7,12 @@ describe('browser-hosted subagent ungrouped beside reading tools (#728)', () => 
     await $('.tool-card-subagent').waitForExist()
   })
 
-  it('keeps Explore files as its own card next to Read file', async () => {
+  it('keeps Explored files as its own card next to Read file', async () => {
     await expect($$('.tool-card-subagent')).toBeElementsArrayOfSize(1)
     await expect($$('.tool-card-group')).toBeElementsArrayOfSize(0)
     await expect($$('[data-tool-id="demo-ungrouped-read"]')).toBeElementsArrayOfSize(1)
     const exploreName = await $('.tool-card-subagent .tool-name').getText()
-    expect(exploreName).toBe('Explore files')
+    expect(exploreName).toBe('Explored files')
     await saveAppScreenshot('subagent-ungrouped-beside-read.png')
   })
 })

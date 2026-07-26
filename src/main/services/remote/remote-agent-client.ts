@@ -9,7 +9,7 @@
  */
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import {
-  buildRemoteAgentContextPreamble,
+  applyRemoteAgentHandoffContext,
   formatRemoteGitSummary,
   isRemoteAgentStreamError,
   parseSseStream,
@@ -343,9 +343,10 @@ async function createRemoteAgent(input: {
 
 /**
  * The remote machine starts with no memory of the local chat that preceded it.
- * On the first hand-off (new agent), prepend the prior conversation and the
- * current branch so the remote agent continues rather than starting cold.
- * Follow-up runs reuse the same remote agent, which already has the history.
+ * On the first hand-off (new agent), prepend the prior conversation / branch
+ * and forward prior-turn images so the remote agent continues rather than
+ * starting cold. Follow-up runs reuse the same remote agent, which already
+ * has the history.
  */
 async function buildFirstHandoffPrompt(
   prompt: PromptPayload,
@@ -357,9 +358,7 @@ async function buildFirstHandoffPrompt(
   } catch (err) {
     console.warn('[remote-agent] branch lookup failed:', err)
   }
-  const preamble = buildRemoteAgentContextPreamble({ priorMessages, branch })
-  if (!preamble) return prompt
-  return { ...prompt, text: `${preamble}\n\n--- New message ---\n${prompt.text}` }
+  return applyRemoteAgentHandoffContext(prompt, { priorMessages, branch })
 }
 
 function remoteAgentLabel(provider: RemoteAgentProvider): string {

@@ -40,9 +40,14 @@ export function hasUnsubmittedPrompt(thread: Thread): boolean {
   return Boolean(thread.draftPrompt?.trim())
 }
 
+/** True once the user archived the thread (soft-hidden from the sidebar). */
+export function isThreadArchived(thread: Thread): boolean {
+  return thread.archivedAt != null
+}
+
 /** Blank thread with no draft — safe to collapse when switching away. */
 function isPrunableBlankThread(thread: Thread): boolean {
-  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread)
+  return isBlankThread(thread) && !hasUnsubmittedPrompt(thread) && !isThreadArchived(thread)
 }
 
 function pruneBlankThreads(store: AppStore, keepIds: ReadonlySet<string>): void {
@@ -60,7 +65,8 @@ function pruneBlankThreads(store: AppStore, keepIds: ReadonlySet<string>): void 
 /** Drop extra blank threads after load (keeps drafts and one empty blank). */
 export function normalizeBlankThreads(store: AppStore): void {
   const { threads, activeThreadId } = store.getState()
-  const blanks = threads.filter(isBlankThread)
+  // Archived blanks stay put — they are not part of the sidebar blank budget.
+  const blanks = threads.filter((t) => isBlankThread(t) && !isThreadArchived(t))
   const emptyBlanks = blanks.filter((t) => !hasUnsubmittedPrompt(t))
   if (emptyBlanks.length <= 1) return
   const keepEmptyId =
@@ -113,7 +119,9 @@ export function createThread(store: AppStore, draftPrompt?: string): string {
 /** Open a fresh composer: reuse an unused blank thread or create one. */
 export function openNewThread(store: AppStore): string {
   const { threads, activeThreadId } = store.getState()
-  const existing = threads.find((t) => isBlankThread(t) && !hasUnsubmittedPrompt(t))
+  const existing = threads.find(
+    (t) => isBlankThread(t) && !hasUnsubmittedPrompt(t) && !isThreadArchived(t),
+  )
   if (existing) {
     if (activeThreadId !== existing.id) {
       store.emit('composer_draft_flush')
@@ -178,6 +186,36 @@ export function deleteThread(store: AppStore, id: string): void {
       ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null)
       : activeThreadId
   store.setState({ threads: remaining, activeThreadId: newActive })
+  store.emit('threads_changed')
+}
+
+/**
+ * Soft-hide a thread from the sidebar (and `@`-catalog via persistence). The
+ * thread directory stays on disk; only `archivedAt` is stamped. When the last
+ * visible thread is archived, a fresh blank thread is created so the composer
+ * always has somewhere to land.
+ */
+export function archiveThread(store: AppStore, id: string): void {
+  const { threads, activeThreadId } = store.getState()
+  const target = threads.find((t) => t.id === id)
+  if (!target || isThreadArchived(target)) return
+
+  const now = Date.now()
+  const updated = threads.map((t) => (t.id !== id ? t : { ...t, archivedAt: now, updatedAt: now }))
+  const visible = updated.filter((t) => !isThreadArchived(t))
+
+  if (visible.length === 0) {
+    store.setState({ threads: updated, activeThreadId: null })
+    createThread(store)
+    return
+  }
+
+  const index = threads.findIndex((t) => t.id === id)
+  const newActive =
+    activeThreadId === id
+      ? (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
+      : activeThreadId
+  store.setState({ threads: updated, activeThreadId: newActive })
   store.emit('threads_changed')
 }
 
@@ -266,35 +304,47 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
   store.emit('thread_draft_changed', threadId)
 }
 
-export function appendToken(store: AppStore, messageId: string, text: string): void {
+/**
+ * Replace exactly one message in its owning thread, cloning only that thread and
+ * its `messages` array. Every unrelated thread — and every sibling message in the
+ * owning thread — keeps its object identity, so the per-chunk work of a stream is
+ * proportional to the owning thread's message count rather than to all loaded
+ * history (issue #1155). No `setState` happens when the id is unknown; returns the
+ * owning thread's id (or `null`) so callers can scope their emit.
+ */
+function replaceMessage(
+  store: AppStore,
+  messageId: string,
+  update: (message: Message) => Message,
+): string | null {
   const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, content: m.content + text })),
-  }))
-  store.setState({ threads: updated })
+  for (let ti = 0; ti < threads.length; ti++) {
+    const thread = threads[ti]
+    if (!thread) continue
+    const mi = thread.messages.findIndex((m) => m.id === messageId)
+    if (mi === -1) continue
+    const messages = thread.messages.slice()
+    messages[mi] = update(at(messages, mi))
+    const nextThreads = threads.slice()
+    nextThreads[ti] = { ...thread, messages }
+    store.setState({ threads: nextThreads })
+    return thread.id
+  }
+  return null
+}
+
+export function appendToken(store: AppStore, messageId: string, text: string): void {
+  replaceMessage(store, messageId, (m) => ({ ...m, content: m.content + text }))
   store.emit('message_token', messageId, text)
 }
 
 export function appendReasoning(store: AppStore, messageId: string, text: string): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) =>
-      m.id !== messageId ? m : { ...m, reasoning: (m.reasoning ?? '') + text },
-    ),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, reasoning: (m.reasoning ?? '') + text }))
   store.emit('message_reasoning', messageId, text)
 }
 
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, content })),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, content }))
   store.emit('message_token', messageId, content)
 }
 
@@ -303,30 +353,23 @@ export function setMessageCommandSummary(
   messageId: string,
   commandSummary: string,
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) => (m.id !== messageId ? m : { ...m, commandSummary })),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, commandSummary }))
   // Re-uses the tool-card refresh path so the shell group header updates in place.
   store.emit('tool_call_updated', messageId, '')
 }
 
+export function setMessageToolSummary(
+  store: AppStore,
+  messageId: string,
+  toolSummary: string,
+): void {
+  replaceMessage(store, messageId, (m) => ({ ...m, toolSummary }))
+  // Re-uses the tool-card refresh path so the turn rollup label updates in place.
+  store.emit('tool_call_updated', messageId, '')
+}
+
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) =>
-      m.id !== messageId
-        ? m
-        : {
-            ...m,
-            toolCalls: [...m.toolCalls, toolCall],
-          },
-    ),
-  }))
-  store.setState({ threads: updated })
+  replaceMessage(store, messageId, (m) => ({ ...m, toolCalls: [...m.toolCalls, toolCall] }))
   store.emit('tool_call_started', messageId, toolCall)
 }
 
@@ -350,19 +393,10 @@ export function updateToolCall(
   toolCallId: string,
   patch: Partial<ToolCall>,
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) =>
-      m.id !== messageId
-        ? m
-        : {
-            ...m,
-            toolCalls: m.toolCalls.map((tc) => (tc.id !== toolCallId ? tc : { ...tc, ...patch })),
-          },
-    ),
+  replaceMessage(store, messageId, (m) => ({
+    ...m,
+    toolCalls: m.toolCalls.map((tc) => (tc.id !== toolCallId ? tc : { ...tc, ...patch })),
   }))
-  store.setState({ threads: updated })
   store.emit('tool_call_updated', messageId, toolCallId)
 }
 
@@ -373,23 +407,13 @@ export function updateToolCall(
  * family. Deduped by spine id so a re-delivered chunk never doubles a card.
  */
 export function addHookCard(store: AppStore, messageId: string, card: HookCard): void {
-  const { threads } = store.getState()
-  let threadId: string | undefined
-  const updated = threads.map((t) => {
-    if (!t.messages.some((m) => m.id === messageId)) return t
-    threadId = t.id
-    return {
-      ...t,
-      messages: t.messages.map((m) => {
-        if (m.id !== messageId) return m
-        const existing = m.hookCards ?? []
-        if (existing.some((c) => c.id === card.id)) return m
-        return { ...m, hookCards: [...existing, card] }
-      }),
-    }
+  const threadId = replaceMessage(store, messageId, (m) => {
+    const existing = m.hookCards ?? []
+    // Deduped by spine id so a re-delivered chunk never doubles a card.
+    if (existing.some((c) => c.id === card.id)) return m
+    return { ...m, hookCards: [...existing, card] }
   })
-  if (threadId === undefined) return
-  store.setState({ threads: updated })
+  if (threadId === null) return
   store.emit('hook_card_added', threadId, messageId)
 }
 

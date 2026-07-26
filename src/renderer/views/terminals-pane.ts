@@ -2,6 +2,8 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { el } from '../dom/helpers.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
+import { bindRenameBlur } from '../dom/rename-blur.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
 import { registerTerminalSelectionToChatShortcut } from '../terminal/selection-to-chat.ts'
 import type { AppStore } from '@shared/store/store.ts'
@@ -12,6 +14,7 @@ import { at } from '@shared/array-utils.ts'
 import { readXtermScrollback } from '../terminal/xterm-scrollback.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
 import { READ_TERMINAL_DEFAULT_LINES } from '@shared/terminal/read-terminal.ts'
+import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
 const XTERM_THEME = {
   dark: {
@@ -112,7 +115,7 @@ export function mountTerminalsPane(
   function createXterm(): { term: Terminal; fitAddon: FitAddon } {
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: store.getState().fontSize,
+      fontSize: scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
       theme: XTERM_THEME[store.getState().theme],
     })
@@ -208,7 +211,8 @@ export function mountTerminalsPane(
         finish(false)
       }
     })
-    input.addEventListener('blur', () => {
+    bindRenameBlur(input, () => {
+      if (done) return
       finish(true)
     })
     for (const evt of ['click', 'dblclick', 'mousedown'] as const) {
@@ -405,6 +409,24 @@ export function mountTerminalsPane(
         })
       }
     })
+    tabBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      showContextMenu(e.clientX, e.clientY, [
+        {
+          label: 'Rename',
+          onSelect: (): void => {
+            beginRename(tab)
+          },
+        },
+        {
+          label: 'Archive',
+          onSelect: (): void => {
+            void removeTab(id)
+          },
+        },
+      ])
+    })
     labelSpan.addEventListener('dblclick', (e) => {
       e.stopPropagation()
       beginRename(tab)
@@ -506,7 +528,8 @@ export function mountTerminalsPane(
   }
 
   function onFontSizeChange(): void {
-    const size = store.getState().fontSize
+    const { fontSize, uiScale } = store.getState()
+    const size = scaledEditorFontSize(fontSize, uiScale)
     for (const tab of tabs.values()) {
       tab.term.options.fontSize = size
     }

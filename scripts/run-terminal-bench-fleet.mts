@@ -19,6 +19,7 @@ import {
   parseOptions,
   positiveInt,
   printHosts,
+  reconcileScalewayManagedVolumes,
   requireScalewayTool,
   requireTool,
   SCALEWAY_ZONES,
@@ -29,22 +30,25 @@ import {
   sleepAsync,
   type SshConfig,
   sshRunAsync,
+  terminateScalewayServer,
   terminateScalewayServersBestEffort,
   validateTagValue,
   waitForScalewayServers,
 } from './lib/cloud-hosts.mts'
 import { terminalBenchRequestedTaskNames } from './lib/terminal-bench.mts'
 import {
-  parseTerminalBenchProfileId,
   parseTerminalBenchProfileIds,
-  type TerminalBenchProfileId,
+  parseTerminalBenchProfileSelectionId,
+  type TerminalBenchProfileSelectionId,
 } from './lib/terminal-bench-profiles.mts'
 
 const DEFAULT_NAME = 'copse-terminal-bench'
 const DEFAULT_INSTANCES = 10
-const DEFAULT_TYPE = 'BASIC3-X4C-16G'
+const DEFAULT_TYPE = 'PRO2-XS'
+const DEFAULT_WORKERS_PER_INSTANCE = 1
 const DEFAULT_VOLUME_SIZE_GB = 100
 const DEFAULT_TTL_MINUTES = 360
+const HOST_RESULTS_ROOT = '/opt/copse/bench-results'
 const CLEANUP_ATTEMPTS = 3
 const CLEANUP_RETRY_DELAY_MS = 15_000
 /** Reconnects after SSH transport drops during long quiet Harbor turns. */
@@ -61,10 +65,11 @@ export interface RunConfig extends SshConfig {
   attempts: number
   baseImage: string
   instanceCount: number
+  shardCount: number
   maxTasks: number
   name: string
   objectPrefix: string
-  profiles: TerminalBenchProfileId[]
+  profiles: TerminalBenchProfileSelectionId[]
   securityGroupId: string | undefined
   steeredRerun: boolean
   taskNames: string[]
@@ -72,6 +77,7 @@ export interface RunConfig extends SshConfig {
   type: string
   volumeSizeGb: number
   workerImage: string
+  workersPerInstance: number
   zones: string[]
 }
 
@@ -86,18 +92,20 @@ function usage(): string {
   npm run bench:terminal:fleet -- status [--name ${DEFAULT_NAME}]
   npm run bench:terminal:fleet -- down --yes [--name ${DEFAULT_NAME}]
 
-The run command launches one disposable x86 Scaleway Instance per shard, starts
-the pre-baked worker image with the host Docker socket, streams all worker logs,
-and terminates the complete fleet after capsule upload. The same TTL cleanup used
-by Copse burst runners is installed on every host as a backstop.
+The run command launches disposable x86 Scaleway hosts, starts one or more
+logical shard workers per host with the shared Docker socket, streams all worker
+logs, and terminates each host after its workers upload their final checkpoints.
+The same TTL cleanup used by Copse burst runners is installed on every host as a
+backstop.
 
 Options:
-  --instances <n>          Parallel workers (default: ${String(DEFAULT_INSTANCES)}, max: 20)
+  --instances <n>          Physical Scaleway hosts (default: ${String(DEFAULT_INSTANCES)}, max: 20)
+  --workers-per-instance <n> Logical shard workers per host (default: ${String(DEFAULT_WORKERS_PER_INSTANCE)}, max: 8)
   --max-tasks <n>          Global task cap (default: same as instances, max: 89)
   --task-names <a,b,...>   Exact registry tasks to run, in the supplied order
   --attempts <n>           Attempts per task (default: 1, max: 5)
-  --profile <id>           main-legacy, pr-1149, or product-aligned (default: main-legacy)
-  --profiles <a,b,...>     Run unique profiles sequentially on each worker (overrides --profile)
+  --profile <id>           Base or versioned profile id (default: main-legacy)
+  --profiles <a,b,...>     Run task-major profile blocks with order rotated by task
   --scw-type <type>        x86 Instance type (default: ${DEFAULT_TYPE})
   --scw-image <image>      Ubuntu/custom snapshot image (default: ${DEFAULT_SCW_IMAGE})
   --volume-size-gb <n>     SBS root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB)})
@@ -144,6 +152,11 @@ export function runConfig(options: Options): RunConfig {
     89,
   )
   const taskNames = terminalBenchRequestedTaskNames(option(options, 'task-names')) ?? []
+  const workersPerInstance = boundedInt(
+    optionWithDefault(options, 'workers-per-instance', String(DEFAULT_WORKERS_PER_INSTANCE)),
+    'workers-per-instance',
+    8,
+  )
   const workerImage = option(options, 'worker-image')
   if (!workerImage || !workerImage.includes('/') || /\s/.test(workerImage)) {
     throw new Error('--worker-image must be a fully qualified registry image reference')
@@ -162,15 +175,17 @@ export function runConfig(options: Options): RunConfig {
   if (profile && profiles) throw new Error('pass only one of --profile or --profiles')
   const parsedProfiles = profiles
     ? parseTerminalBenchProfileIds(profiles)
-    : [parseTerminalBenchProfileId(profile)]
+    : [parseTerminalBenchProfileSelectionId(profile)]
   const steeredRerun = !hasFlag(options, 'no-steered-rerun')
   if (parsedProfiles.length > 1 && steeredRerun) {
     throw new Error('multi-profile fleet runs require --no-steered-rerun')
   }
+  const selectedTaskCount = Math.min(maxTasks, taskNames.length || maxTasks)
+  const shardCount = Math.min(instanceCount * workersPerInstance, selectedTaskCount)
   return {
     attempts: boundedInt(optionWithDefault(options, 'attempts', '1'), 'attempts', 5),
     baseImage,
-    instanceCount: Math.min(instanceCount, maxTasks, taskNames.length || maxTasks),
+    instanceCount: Math.min(instanceCount, Math.ceil(shardCount / workersPerInstance)),
     keyPath: optionWithDefault(options, 'key-path', ''),
     maxTasks,
     name: fleetName(options),
@@ -181,6 +196,7 @@ export function runConfig(options: Options): RunConfig {
     profiles: parsedProfiles,
     remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_SCW_REMOTE_USER),
     securityGroupId,
+    shardCount,
     sshHost: 'public',
     steeredRerun,
     taskNames,
@@ -194,17 +210,9 @@ export function runConfig(options: Options): RunConfig {
       'volume-size-gb',
     ),
     workerImage,
+    workersPerInstance,
     zones: configuredZones,
   }
-}
-
-export function rotateTerminalBenchProfiles(
-  profiles: readonly TerminalBenchProfileId[],
-  shardIndex: number,
-): TerminalBenchProfileId[] {
-  if (profiles.length === 0) throw new Error('at least one Terminal-Bench profile is required')
-  const offset = shardIndex % profiles.length
-  return [...profiles.slice(offset), ...profiles.slice(0, offset)]
 }
 
 function launchSpec(config: RunConfig, zone: string): ScalewayLaunchSpec {
@@ -233,7 +241,7 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
   const generativeKey = envValue('SCW_GENERATIVE_API_KEY')
   const objectRegion = process.env['SCW_OBJECT_STORAGE_REGION']?.trim() || 'fr-par'
   const runId = process.env['COPSE_BENCH_RUN_ID']?.trim() || `manual-${Date.now().toString(36)}`
-  const profiles = rotateTerminalBenchProfiles(config.profiles, shardIndex)
+  const profiles = config.profiles
   const firstProfile = profiles[0]
   if (!firstProfile) throw new Error('at least one Terminal-Bench profile is required')
   const values: Array<[string, string]> = [
@@ -250,8 +258,13 @@ function workerEnvironment(config: RunConfig, shardIndex: number): string {
     ],
     ['COPSE_BENCH_RUN_ID', `${runId}-shard-${String(shardIndex)}`],
     ['COPSE_TERMINAL_MAX_TASKS', String(config.maxTasks)],
-    ['COPSE_TERMINAL_SHARD_COUNT', String(config.instanceCount)],
+    ['COPSE_TERMINAL_INSTANCE_TYPE', config.type],
+    ['COPSE_TERMINAL_INSTANCE_COUNT', String(config.instanceCount)],
+    ['COPSE_TERMINAL_WORKERS_PER_INSTANCE', String(config.workersPerInstance)],
+    ['COPSE_TERMINAL_VOLUME_SIZE_GB', String(config.volumeSizeGb)],
+    ['COPSE_TERMINAL_SHARD_COUNT', String(config.shardCount)],
     ['COPSE_TERMINAL_SHARD_INDEX', String(shardIndex)],
+    ['COPSE_TERMINAL_RESULTS_ROOT', `${HOST_RESULTS_ROOT}/shard-${String(shardIndex)}`],
     ['COPSE_TERMINAL_ATTEMPTS', String(config.attempts)],
     ['COPSE_TERMINAL_PROFILE', firstProfile],
     ['COPSE_TERMINAL_PROFILES', profiles.join(',')],
@@ -363,6 +376,38 @@ async function followWorkerContainer(
 }
 
 async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number): Promise<void> {
+  const envPath = `/opt/copse-terminal/worker-${String(shardIndex)}.env`
+  const resultsPath = `${HOST_RESULTS_ROOT}/shard-${String(shardIndex)}`
+  await sshRunAsync(
+    config,
+    host,
+    `sudo install -d -m 700 /opt/copse-terminal ${shellQuote(resultsPath)}; sudo tee ${shellQuote(envPath)} >/dev/null; sudo chmod 600 ${shellQuote(envPath)}`,
+    workerEnvironment(config, shardIndex),
+  )
+  const container = `copse-terminal-shard-${String(shardIndex)}`
+  try {
+    await sshRunAsync(
+      config,
+      host,
+      [
+        `sudo docker rm -f ${container} >/dev/null 2>&1 || true`,
+        `sudo docker run --detach --name ${container} --env-file ${shellQuote(envPath)} ` +
+          '--volume /var/run/docker.sock:/var/run/docker.sock ' +
+          `--volume ${shellQuote(HOST_RESULTS_ROOT)}:${shellQuote(HOST_RESULTS_ROOT)} ` +
+          `${shellQuote(config.workerImage)} >/dev/null`,
+      ].join('; '),
+    )
+    await followWorkerContainer(config, host, container)
+  } finally {
+    try {
+      await sshRunAsync(config, host, `sudo rm -f ${shellQuote(envPath)}`)
+    } catch {
+      // Host may already be unreachable during teardown; env is on a disposable VM.
+    }
+  }
+}
+
+async function prepareWorkerHost(config: RunConfig, host: CloudHost): Promise<void> {
   await awaitHostReady(config, host)
   const registry = registryHost(config.workerImage)
   await sshRunAsync(
@@ -380,39 +425,63 @@ async function runWorker(config: RunConfig, host: CloudHost, shardIndex: number)
       `sudo docker logout ${shellQuote(registry)} >/dev/null 2>&1 || true; sudo rm -f /root/.docker/config.json`,
     )
   }
+}
 
-  const envPath = `/opt/copse-terminal/worker-${String(shardIndex)}.env`
-  await sshRunAsync(
-    config,
-    host,
-    `sudo install -d -m 700 /opt/copse-terminal /opt/copse/bench-results; sudo tee ${shellQuote(envPath)} >/dev/null; sudo chmod 600 ${shellQuote(envPath)}`,
-    workerEnvironment(config, shardIndex),
+export function terminalBenchHostShardIndices(
+  hostIndex: number,
+  shardCount: number,
+  workersPerInstance: number,
+): number[] {
+  const first = hostIndex * workersPerInstance
+  return Array.from(
+    { length: Math.max(0, Math.min(workersPerInstance, shardCount - first)) },
+    (_, offset) => first + offset,
   )
-  const container = `copse-terminal-shard-${String(shardIndex)}`
-  try {
-    await sshRunAsync(
-      config,
-      host,
-      [
-        `sudo docker rm -f ${container} >/dev/null 2>&1 || true`,
-        `sudo docker run --detach --name ${container} --env-file ${shellQuote(envPath)} ` +
-          '--volume /var/run/docker.sock:/var/run/docker.sock ' +
-          '--volume /opt/copse/bench-results:/opt/copse/bench-results ' +
-          `${shellQuote(config.workerImage)} >/dev/null`,
-      ].join('; '),
-    )
-    await followWorkerContainer(config, host, container)
-  } finally {
-    try {
-      await sshRunAsync(config, host, `sudo rm -f ${shellQuote(envPath)}`)
-    } catch {
-      // Host may already be unreachable during teardown; env is on a disposable VM.
-    }
+}
+
+async function runWorkerHost(config: RunConfig, host: CloudHost, hostIndex: number): Promise<void> {
+  await prepareWorkerHost(config, host)
+  const shardIndices = terminalBenchHostShardIndices(
+    hostIndex,
+    config.shardCount,
+    config.workersPerInstance,
+  )
+  console.log(
+    `${hostPrefix(host)}==> Starting logical shard(s) ${shardIndices.map(String).join(', ')}`,
+  )
+  const results = await Promise.allSettled(
+    shardIndices.map((shardIndex) => runWorker(config, host, shardIndex)),
+  )
+  const failures = results.flatMap((result, index) =>
+    result.status === 'rejected'
+      ? [
+          `shard ${String(shardIndices[index])}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        ]
+      : [],
+  )
+  if (failures.length > 0) {
+    throw new Error(`${String(failures.length)} logical worker(s) failed:\n${failures.join('\n')}`)
   }
 }
 
-function cleanupBatches(batches: readonly LaunchBatch[]): void {
-  for (const batch of batches) terminateScalewayServersBestEffort({ zone: batch.zone }, batch.ids)
+function cleanupBatches(
+  name: string,
+  zones: readonly string[],
+  batches: readonly LaunchBatch[],
+  activeServerIds?: ReadonlySet<string>,
+): void {
+  for (const batch of batches) {
+    const ids = activeServerIds
+      ? batch.ids.filter((serverId) => activeServerIds.has(serverId))
+      : batch.ids
+    terminateScalewayServersBestEffort({ zone: batch.zone }, ids)
+  }
+  const result = reconcileScalewayManagedVolumes({ name, tags: FLEET_TAGS }, zones, new Date())
+  if (result.failedIds.length > 0) {
+    console.error(
+      `==> Warning: failed to reconcile ${String(result.failedIds.length)} Terminal-Bench volume(s)`,
+    )
+  }
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -439,11 +508,12 @@ async function runFleet(options: Options): Promise<void> {
   envValue('SCW_SECRET_KEY')
 
   const batches: LaunchBatch[] = []
+  const activeServerIds = new Set<string>()
   let cleaned = false
   const cleanup = (): void => {
     if (cleaned) return
     cleaned = true
-    cleanupBatches(batches)
+    cleanupBatches(config.name, config.zones, batches, activeServerIds)
   }
   const interrupted = (): never => {
     console.error('terminal-bench fleet interrupted; terminating launched instances')
@@ -472,6 +542,7 @@ async function runFleet(options: Options): Promise<void> {
       }
       if (result.ids.length > 0) {
         batches.push({ zone, ids: result.ids })
+        for (const id of result.ids) activeServerIds.add(id)
         remaining -= result.ids.length
       }
       if (!result.quotaExceeded && result.ids.length === 0) {
@@ -490,20 +561,56 @@ async function runFleet(options: Options): Promise<void> {
     const hosts = batches.flatMap((batch) => getScalewayServers({ zone: batch.zone }, batch.ids))
     printHosts(hosts)
     const results = await Promise.allSettled(
-      hosts.map((host, index) => runWorker(config, host, index)),
+      hosts.map(async (host, index) => {
+        let workerFailure: Error | undefined
+        try {
+          await runWorkerHost(config, host, index)
+        } catch (error) {
+          workerFailure =
+            error instanceof Error
+              ? error
+              : new Error(typeof error === 'string' ? error : 'logical worker failed')
+        }
+        let terminationFailure: Error | undefined
+        if (host.zone) {
+          try {
+            console.log(`${hostPrefix(host)}==> Worker host complete; terminating immediately`)
+            terminateScalewayServer({ zone: host.zone }, host.providerId)
+            activeServerIds.delete(host.providerId)
+          } catch (error) {
+            terminationFailure =
+              error instanceof Error
+                ? error
+                : new Error(typeof error === 'string' ? error : 'host teardown failed')
+          }
+        } else {
+          terminationFailure = new Error(`host ${host.providerId} has no Scaleway zone`)
+        }
+        if (workerFailure && terminationFailure) {
+          throw new AggregateError(
+            [workerFailure, terminationFailure],
+            `worker and teardown failed for ${host.providerId}`,
+          )
+        }
+        if (workerFailure) throw workerFailure
+        if (terminationFailure) throw terminationFailure
+      }),
     )
     const failures = results.flatMap((result, index) =>
       result.status === 'rejected'
         ? [
-            `shard ${String(index)} (${hosts[index]?.providerId ?? 'unknown'}): ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+            `host ${String(index)} (${hosts[index]?.providerId ?? 'unknown'}): ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
           ]
         : [],
     )
     if (failures.length > 0) {
-      throw new Error(`${String(failures.length)} worker(s) failed:\n${failures.join('\n')}`)
+      throw new Error(
+        `${String(failures.length)} host worker group(s) failed:\n${failures.join('\n')}`,
+      )
     }
     console.log(
-      `==> ${String(hosts.length)} worker(s) completed; capsules: s3://${envValue('SCW_OBJECT_STORAGE_BUCKET')}/${cleanPrefix(config.objectPrefix)}/`,
+      `==> ${String(hosts.length)} host(s), ${String(config.shardCount)} logical worker(s) completed; ` +
+        `capsules: s3://${envValue('SCW_OBJECT_STORAGE_BUCKET')}/${cleanPrefix(config.objectPrefix)}/`,
     )
   } finally {
     cleanup()
@@ -525,26 +632,34 @@ async function downFleet(options: Options): Promise<void> {
   for (let attempt = 1; attempt <= CLEANUP_ATTEMPTS; attempt += 1) {
     const hosts = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
     if (attempt === 1) printHosts(hosts)
-    if (hosts.length === 0) {
-      console.log('==> Fleet teardown verified.')
-      return
-    }
-    terminateHosts(hosts)
+    if (hosts.length > 0) terminateHosts(hosts)
+    const volumes = reconcileScalewayManagedVolumes(
+      { name, tags: FLEET_TAGS },
+      configuredZones,
+      new Date(),
+    )
     const remaining = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
-    if (remaining.length === 0) {
+    if (remaining.length === 0 && volumes.remaining.length === 0) {
       console.log('==> Fleet teardown verified.')
       return
     }
     if (attempt < CLEANUP_ATTEMPTS) {
       console.log(
-        `==> ${String(remaining.length)} host(s) still present; retrying teardown in ${String(CLEANUP_RETRY_DELAY_MS / 1000)} seconds`,
+        `==> ${String(remaining.length)} host(s) and ${String(volumes.remaining.length)} volume(s) still present; ` +
+          `retrying teardown in ${String(CLEANUP_RETRY_DELAY_MS / 1000)} seconds`,
       )
       await delay(CLEANUP_RETRY_DELAY_MS)
     }
   }
   const remaining = listScalewayFleet({ name, tags: FLEET_TAGS }, configuredZones)
+  const remainingVolumes = reconcileScalewayManagedVolumes(
+    { name, tags: FLEET_TAGS },
+    configuredZones,
+    new Date(),
+  ).remaining
   throw new Error(
-    `Fleet teardown incomplete: ${String(remaining.length)} host(s) still match ${name}`,
+    `Fleet teardown incomplete: ${String(remaining.length)} host(s) and ` +
+      `${String(remainingVolumes.length)} volume(s) still match ${name}`,
   )
 }
 

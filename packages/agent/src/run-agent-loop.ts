@@ -52,6 +52,11 @@ import {
 import type { ContinuationGrant } from './hooks/continuation-budget.ts'
 import type { StreamCutRecord } from './stream-cut-record.ts'
 import { truncateStreamCutReasoning } from './stream-cut-record.ts'
+import {
+  detectReasoningCircle,
+  type ReasoningCheckpointPolicy,
+  type ReasoningCheckpointRecord,
+} from './reasoning-circle-detector.ts'
 
 const RECENT_FINGERPRINT_WINDOW = 16
 /** Consecutive reasoning-only runaway streams tolerated before the run gives up. */
@@ -146,6 +151,13 @@ export interface AgentLoopOptions {
    */
   reasoningRunawayTextToleranceChars?: number
   /**
+   * Optional adaptive reasoning cap. At each interval a clean reasoning-only
+   * stream may continue to the next checkpoint; strong circle signals cut it
+   * immediately and use the normal bounded reasoning-runaway recovery path.
+   * Absent keeps the existing single hard cap byte-identical.
+   */
+  reasoningCheckpointPolicy?: ReasoningCheckpointPolicy
+  /**
    * Whether conversation-pressure escalation may force a tool-less answer turn.
    * Defaults to true; terminal hosts can keep acting until their step budget.
    */
@@ -192,6 +204,8 @@ export interface AgentLoopOptions {
    * persists cut reasoning for eval; purely observational, never awaited.
    */
   recordStreamCut?: (record: StreamCutRecord) => void
+  /** Records each adaptive reasoning checkpoint; observational and never awaited. */
+  recordReasoningCheckpoint?: (record: ReasoningCheckpointRecord) => void
 }
 
 const FINALIZE_NUDGE =
@@ -233,6 +247,34 @@ function emitStreamCutRecord(
     })
   } catch (err) {
     console.warn('[run-agent-loop] recordStreamCut sink threw:', err)
+  }
+}
+
+function recordReasoningCheckpoint(
+  sink: ((record: ReasoningCheckpointRecord) => void) | undefined,
+  record: ReasoningCheckpointRecord,
+): void {
+  if (!sink) return
+  try {
+    sink(record)
+  } catch (error) {
+    console.warn('[run-agent-loop] reasoning checkpoint sink threw:', error)
+  }
+}
+
+function validateReasoningCheckpointPolicy(policy: ReasoningCheckpointPolicy): void {
+  const values = [
+    policy.intervalTokens,
+    policy.maxNonReasoningTokens,
+    policy.maxInitialTokens,
+    policy.maxRecoveryTokens,
+    ...(policy.maxTrailingReasoningTokens !== undefined ? [policy.maxTrailingReasoningTokens] : []),
+  ]
+  if (values.some((value) => !Number.isInteger(value) || value <= 0)) {
+    throw new Error('Reasoning checkpoint token limits must be positive integers.')
+  }
+  if (values.some((value) => value < policy.intervalTokens)) {
+    throw new Error('Reasoning checkpoint maxima must be at least one checkpoint interval.')
   }
 }
 
@@ -817,6 +859,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     reasoningRunawayRecoveryOutputTokens,
     reasoningRunawayRecoveryNudge,
     reasoningRunawayTextToleranceChars = 0,
+    reasoningCheckpointPolicy,
     allowForcedTextEscalation = true,
     stuckToolRecoveryNudge,
     runDeadline,
@@ -829,7 +872,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     recordAppliedNudge: appliedNudgeSink,
     onLlmCall,
     recordStreamCut,
+    recordReasoningCheckpoint: reasoningCheckpointSink,
   } = opts
+  if (reasoningCheckpointPolicy) validateReasoningCheckpointPolicy(reasoningCheckpointPolicy)
   const deadline = runDeadline ?? new AgentRunDeadline(runTimeoutMs, runHardMaxMs)
   const budget: LlmCallBudget = {
     llmCalls: 0,
@@ -1009,11 +1054,26 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
     let streamOutputChars = 0
     let streamReasoningChars = 0
     let streamReasoningText = ''
+    // Reasoning that arrives after a substantive answer has already streamed.
+    let trailingReasoningChars = 0
+    let trailingReasoningText = ''
+    let trailingReasoningCut = false
+    let trailingReasoningCutTokens: number | undefined
     let streamCappedAsRunaway = false
+    let streamCutReason: StreamCutRecord['cutReason'] = 'reasoning_runaway_cap'
     const effectiveMaxStreamOutputTokens =
       reasoningRunawayStreak > 0
         ? (reasoningRunawayRecoveryOutputTokens ?? maxStreamOutputTokens)
         : maxStreamOutputTokens
+    const reasoningCheckpointHardMax = reasoningCheckpointPolicy
+      ? reasoningRunawayStreak > 0
+        ? reasoningCheckpointPolicy.maxRecoveryTokens
+        : reasoningCheckpointPolicy.maxInitialTokens
+      : undefined
+    let nextReasoningCheckpoint = reasoningCheckpointPolicy?.intervalTokens
+    let nextTrailingReasoningCheckpoint = reasoningCheckpointPolicy?.maxTrailingReasoningTokens
+      ? reasoningCheckpointPolicy.intervalTokens
+      : undefined
 
     budget.deadline.pause()
     try {
@@ -1023,6 +1083,13 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
           streamOutputChars += chunk.text.length
           streamReasoningChars += chunk.text.length
           streamReasoningText += chunk.text
+          // Once an answer past the preamble tolerance is out, further reasoning
+          // is trailing: it steers nothing, and the user watches it pile up under
+          // a turn that already reads as finished. Track it on its own budget.
+          if (assistantText.trim().length > reasoningRunawayTextToleranceChars) {
+            trailingReasoningChars += chunk.text.length
+            trailingReasoningText += chunk.text
+          }
           onChunk(chunk)
         }
         if (chunk.type === 'text') {
@@ -1053,13 +1120,89 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
         // Backstop against a single runaway generation (common with local
         // OpenAI-compatible servers that ignore output caps): stop consuming and
         // treat the partial turn as truncated so the loop can recover (#489).
-        if (
-          !pendingToolCalls.length &&
-          isStreamOutputRunaway(streamOutputChars, effectiveMaxStreamOutputTokens)
-        ) {
-          stopReason = 'max_tokens'
-          streamCappedAsRunaway = true
-          break
+        if (!pendingToolCalls.length) {
+          if (reasoningCheckpointPolicy && reasoningCheckpointHardMax && nextReasoningCheckpoint) {
+            // Trailing reasoning is checkpointed first and on its own budget: the
+            // whole-stream checkpoints below classify any stream carrying a real
+            // answer as non-reasoning, so without this a post-answer loop rides
+            // the 32K response ceiling and is then handed a `continue` nudge that
+            // re-primes it — the #489 backstop is far too coarse to catch that.
+            const maxTrailingReasoningTokens = reasoningCheckpointPolicy.maxTrailingReasoningTokens
+            while (
+              maxTrailingReasoningTokens !== undefined &&
+              nextTrailingReasoningCheckpoint !== undefined &&
+              isStreamOutputRunaway(trailingReasoningChars, nextTrailingReasoningCheckpoint)
+            ) {
+              const signals = detectReasoningCircle(trailingReasoningText)
+              const atHardMax = nextTrailingReasoningCheckpoint >= maxTrailingReasoningTokens
+              const decision = signals.length > 0 || atHardMax ? 'cut' : 'continue'
+              recordReasoningCheckpoint(reasoningCheckpointSink, {
+                step: budget.llmCalls,
+                checkpointTokens: nextTrailingReasoningCheckpoint,
+                hardMaxTokens: maxTrailingReasoningTokens,
+                streamOutputChars,
+                streamReasoningChars,
+                visibleTextChars: assistantText.length,
+                decision,
+                signals,
+              })
+              if (decision === 'cut') {
+                trailingReasoningCut = true
+                trailingReasoningCutTokens = nextTrailingReasoningCheckpoint
+                streamCutReason =
+                  signals.length > 0 ? 'reasoning_circle_detected' : 'trailing_reasoning_cap'
+                break
+              }
+              nextTrailingReasoningCheckpoint += reasoningCheckpointPolicy.intervalTokens
+            }
+            // The answer is already streamed and in hand, so this stream ends the
+            // turn as it stands — no synthetic `max_tokens`, which would select
+            // the truncation-continue nudge and start the loop over.
+            if (trailingReasoningCut) break
+            while (isStreamOutputRunaway(streamOutputChars, nextReasoningCheckpoint)) {
+              const reasoningDominated =
+                streamReasoningChars > assistantText.length &&
+                assistantText.trim().length <= reasoningRunawayTextToleranceChars
+              if (!reasoningDominated) {
+                const nonReasoningHardMax = Math.min(
+                  reasoningCheckpointPolicy.maxNonReasoningTokens,
+                  reasoningCheckpointHardMax,
+                )
+                if (nextReasoningCheckpoint >= nonReasoningHardMax) {
+                  stopReason = 'max_tokens'
+                  streamCappedAsRunaway = true
+                  break
+                }
+                nextReasoningCheckpoint += reasoningCheckpointPolicy.intervalTokens
+                continue
+              }
+              const signals = detectReasoningCircle(streamReasoningText)
+              const atHardMax = nextReasoningCheckpoint >= reasoningCheckpointHardMax
+              const decision = signals.length > 0 || atHardMax ? 'cut' : 'continue'
+              recordReasoningCheckpoint(reasoningCheckpointSink, {
+                step: budget.llmCalls,
+                checkpointTokens: nextReasoningCheckpoint,
+                hardMaxTokens: reasoningCheckpointHardMax,
+                streamOutputChars,
+                streamReasoningChars,
+                visibleTextChars: assistantText.length,
+                decision,
+                signals,
+              })
+              if (decision === 'cut') {
+                stopReason = 'max_tokens'
+                streamCappedAsRunaway = true
+                if (signals.length > 0) streamCutReason = 'reasoning_circle_detected'
+                break
+              }
+              nextReasoningCheckpoint += reasoningCheckpointPolicy.intervalTokens
+            }
+            if (streamCappedAsRunaway) break
+          } else if (isStreamOutputRunaway(streamOutputChars, effectiveMaxStreamOutputTokens)) {
+            stopReason = 'max_tokens'
+            streamCappedAsRunaway = true
+            break
+          }
         }
       }
     } finally {
@@ -1114,17 +1257,21 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<void> {
       streamReasoningChars > assistantText.length &&
       assistantText.trim().length <= reasoningRunawayTextToleranceChars
 
-    if (streamCappedAsRunaway) {
+    if (streamCappedAsRunaway || trailingReasoningCut) {
       emitStreamCutRecord(recordStreamCut, {
         step: budget.llmCalls,
-        cutReason: 'reasoning_runaway_cap',
-        streamOutputTokenLimit: effectiveMaxStreamOutputTokens,
+        cutReason: streamCutReason,
+        streamOutputTokenLimit: trailingReasoningCut
+          ? trailingReasoningCutTokens
+          : reasoningCheckpointPolicy && nextReasoningCheckpoint
+            ? nextReasoningCheckpoint
+            : effectiveMaxStreamOutputTokens,
         streamOutputChars,
         streamReasoningChars,
         reasoningText: streamReasoningText,
         hasToolCalls: pendingToolCalls.length > 0,
         toolCallCount: pendingToolCalls.length,
-        stopReason: stopReason ?? 'max_tokens',
+        stopReason: stopReason ?? (trailingReasoningCut ? 'trailing_reasoning' : 'max_tokens'),
         streamCappedAsRunaway: true,
         reasoningRunawayStreak,
         willInjectReasoningRunawayNudge: reasoningRunawayNudge !== undefined,

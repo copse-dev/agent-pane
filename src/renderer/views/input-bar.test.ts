@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
+import type { SkillSummary } from '@shared/types/skills.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -50,6 +51,7 @@ function createApi(options: {
   onCheckoutBranch?: (branch: string) => Promise<void>
   onPrepareCheckout?: () => Promise<PreparedThreadCheckout>
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
+  listSkills?: () => Promise<SkillSummary[]>
 }): ApiClient {
   return {
     agent: {
@@ -72,6 +74,27 @@ function createApi(options: {
     },
     fs: {
       onChanged: () => () => {},
+    },
+    security: {
+      getGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      enableGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      disableGuardedYolo: async (threadId: string) => ({
+        threadId,
+        phase: 'off',
+        containment: 'unsandboxed',
+        expiresAt: null,
+      }),
+      onGuardedYoloChanged: () => () => {},
     },
     git: {
       branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
@@ -97,7 +120,7 @@ function createApi(options: {
       setSetting: async () => ({ packs: [] }),
     },
     skills: {
-      list: async () => [],
+      list: options.listSkills ?? (async (): Promise<SkillSummary[]> => []),
     },
     index: {
       status: async () => ({
@@ -395,10 +418,10 @@ describe('draft prompt preservation', () => {
       2,
     )
 
-    const showMore = projectsHost.querySelector<HTMLButtonElement>('.chats-show-more')
-    assert.ok(showMore)
-    showMore.click()
+    // All three fit inside one sidebar page, so they are all listed and no
+    // "Show more" appears (the window only pages past SIDEBAR_THREADS_PAGE_SIZE).
     assert.equal(projectsHost.querySelectorAll('.chats-list .chat-row').length, 3)
+    assert.equal(projectsHost.querySelector('.chats-show-more'), null)
   })
 })
 
@@ -603,5 +626,108 @@ describe('input bar two-step stop', () => {
     assert.equal(aborts, 1)
     assert.equal(runs, 0)
     assert.equal(stopBtn.classList.contains('stop-pending'), false)
+  })
+})
+
+describe('input bar skill invocation', () => {
+  it('invokes /checkup even when the skills cache was primed empty', async () => {
+    let runs = 0
+    let listCalls = 0
+    const checkup = {
+      name: 'checkup',
+      description: 'Run a Copse setup health check',
+      source: 'bundled' as const,
+      skillPath: '/app/assets/skills/checkup/SKILL.md',
+      externalLinks: [] as string[],
+    }
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      // Non-blank thread so submit skips checkout preparation.
+      threads: [
+        {
+          ...thread(),
+          messages: [{ id: 'm1', role: 'user', content: 'hi', toolCalls: [], createdAt: 1 }],
+        },
+      ],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(
+      host,
+      store,
+      createApi({
+        currentBranch: 'main',
+        listSkills: async () => {
+          listCalls += 1
+          // First call primes the mount-time cache as empty (registry still
+          // scanning). Later calls — picker open / submit — see checkup.
+          return listCalls === 1 ? [] : [checkup]
+        },
+        onRun: async () => {
+          runs += 1
+        },
+      }),
+    )
+    await flush()
+
+    const composer = host.querySelector<HTMLElement>('.prompt-input')
+    const submitBtn = host.querySelector<HTMLButtonElement>('.submit-btn')
+    assert.ok(composer)
+    assert.ok(submitBtn)
+
+    // Open the slash picker the way a user would: type `/checkup`.
+    composer.textContent = '/checkup'
+    composer.dispatchEvent(new Event('input', { bubbles: true }))
+    await flush()
+
+    const picker = host.querySelector<HTMLElement>('.skill-picker')
+    assert.ok(picker)
+    assert.equal(picker.hidden, false)
+    assert.equal(picker.querySelector('.skill-item-name')?.textContent, '/checkup')
+
+    submitBtn.click()
+    await flush()
+
+    assert.equal(
+      document.querySelector('.toast-error')?.textContent ?? '',
+      '',
+      'must not toast Unknown skill when checkup is registered',
+    )
+    assert.equal(runs, 1)
+  })
+})
+
+describe('input bar footer overflow menu', () => {
+  // The demo suite pins these labels and their order, but `build` (which runs it)
+  // is skipped on draft PRs — so the Guarded YOLO item was added to this menu and
+  // the stale count assertion only surfaced when #1251 left draft. Assert it here
+  // too, where it runs in the ordinary unit suite.
+  it('puts the Guarded YOLO action first among the thread actions', async () => {
+    const store = createStore({
+      workspaceRoot: '/repo',
+      projects: [{ id: 'project-1', name: 'Project', path: '/repo' }],
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      threads: [thread()],
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    mountInputBar(host, store, createApi({ currentBranch: 'main' }))
+    await settle()
+
+    const trigger = host.querySelector<HTMLButtonElement>('.footer-overflow-trigger')
+    assert.ok(trigger)
+    trigger.click()
+    await settle()
+
+    const labels = [...host.querySelectorAll('.footer-overflow-item')].map(
+      (item) => item.textContent,
+    )
+    // Export/Share are gated on the thread having exportable content, which this
+    // blank fixture does not — hence two items here and four in the demo scenario.
+    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Copy thread ID'])
   })
 })

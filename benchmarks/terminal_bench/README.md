@@ -15,13 +15,20 @@ regular-agent feature flags. Run `npm run bench:terminal:ablation-plan -- --phas
   and recovery behavior.
 - `pr-1149@1` retains PR #1149's constrained recovery writes and validation warnings as historical
   experimental behavior.
-- `product-aligned@1` exposes `run_shell` and an unconstrained `/app` `write_file`, reports nonzero
+- `product-aligned@2` exposes `run_shell` and a workspace-relative `write_file`, reports nonzero
   exits as tool errors, and contains no requested-path, forced-write, SIGINT, or task-specific
   recovery logic.
+- `product-aligned@3` keeps v2's prompt and tools but turns the 2k reasoning cap into a checkpoint.
+  Clean reasoning receives another 2k window, checked again up to the product's 32k hard ceiling;
+  explicit self-diagnosis, repeated blocks/headings/plans, or a 100-item list cuts the stream into
+  the existing bounded recovery path. Historical v1/v2 capsules remain readable; the unversioned
+  CLI and workflow selection resolves to v3.
 
 The four diagnostic tasks are a development cohort, not evidence of general improvement, and
 their historical 2.0 rewards are not comparable with 2.1 rewards. The frozen evidence and run
 links are in [`docs/spikes/terminal-bench-pr-1149.md`](../../docs/spikes/terminal-bench-pr-1149.md).
+The complete two-attempt 2.1 result and v2 follow-up rationale are in
+[`docs/spikes/terminal-bench-2.1-profile-ablation.md`](../../docs/spikes/terminal-bench-2.1-profile-ablation.md).
 
 ## Prerequisites
 
@@ -51,34 +58,59 @@ npm run bench:terminal:sync-dataset -- --source /path/to/terminal-bench-2-1
 
 Review every descriptor diff, especially image tags and task configuration checksums.
 
-## Run on a ten-instance Scaleway fleet
+## Run on a Scaleway fleet
 
 The manual `Terminal-Bench (Scaleway Fleet)` workflow uses GitHub only as the controller. It builds
-one immutable worker image, pushes it to a private Scaleway Container Registry, launches ten
-disposable x86 Scaleway Instances, and assigns each host one deterministic task shard. Each worker
-container controls Terminal-Bench's sibling task containers through that host's Docker socket.
-This is ten VMs, not ten containers sharing one fat VM.
+one immutable worker image, pushes it to a private Scaleway Container Registry, and launches
+disposable x86 Scaleway Instances. `instances` is the physical host cap;
+`workers_per_instance` controls how many logical task shards share each host. Each worker container
+uses an isolated `COPSE_TERMINAL_RESULTS_ROOT` below the shared host results mount while controlling
+Terminal-Bench's sibling task containers through the shared host Docker socket. The results parent
+is mounted at the same absolute path inside the worker and on the host: Harbor passes absolute bind
+sources to the host Docker daemon, so remapping that path would make verifier reward files invisible
+to Harbor.
 
 For an ablation, set the optional `profiles` input to a comma-separated list such as
-`main-legacy,pr-1149,product-aligned` and set `steered_rerun` to false. The workflow provisions one
-fleet, then each worker runs those profiles sequentially in fresh Harbor task containers. Profile
-order rotates by shard to counterbalance ordering effects; task images remain cached between
-profiles and are pruned only after the worker's final profile. Single-profile runs continue to use
-the `profile` choice input.
+`product-aligned@2,product-aligned@3` and set `steered_rerun` to false. The workflow provisions one
+fleet, then each worker runs one task across every profile before advancing to its next task. The
+profile order rotates by the task's global cohort position to counterbalance ordering effects:
+task 1 runs A/B/C, task 2 runs B/C/A, and task 3 runs C/A/B. All requested attempts for that
+task/profile pair run while the pinned image is resident; the image is pruned after the complete
+task block. Single-profile runs continue to use the `profile` choice input.
 
-Every completed profile is sealed and uploaded before the worker starts its next profile, so a
-later failure does not discard earlier full-shard evidence. The workflow concurrency group uses a
-FIFO queue; repeated workflow dispatches run one fleet at a time instead of canceling an older
-pending run. For large shards, increase `volume_size_gb` so pinned task images can stay cached
-between profiles. `ttl_minutes` is only a self-delete backstop; the controller still tears each
-fleet down immediately on completion.
+Every completed task block is checkpointed before the worker starts its next task. Previously
+sealed trial archives are reused, and a local digest receipt makes each checkpoint upload only new
+or changed capsules by exact Object Storage key. This keeps the worker credentials PutObject-only
+and makes checkpoint cost grow linearly instead of repeatedly recompressing and uploading the whole
+shard. A later failure therefore does not discard earlier paired evidence. An infrastructure-invalid
+profile is recorded and does not censor the remaining profiles or tasks on that worker; the worker
+reports a failure only after attempting its whole shard. The workflow concurrency group uses a FIFO queue;
+repeated workflow dispatches run one fleet at a time instead of canceling an older pending run.
+With one worker per host, only the current and one prefetched task image need to coexist, so the
+100 GiB default volume is normally sufficient. Packed hosts can hold twice that many live images;
+increase the volume until recorded disk telemetry demonstrates a smaller size is safe.
+`ttl_minutes` is only a self-delete backstop; the controller terminates each host as soon as all of
+that host's logical workers finish, then retains fleet-wide cleanup as a failure backstop.
+
+As a fleet-health circuit breaker, a worker stops after three consecutive task blocks in which no
+profile produces a valid result. Isolated invalid profiles and tasks still continue; the threshold
+is intended for systemic Docker, provider, or host failures where further spend cannot add paired
+evidence.
 
 Qwen inference stays on Scaleway's hosted Generative API. The worker Instances therefore do not
-need GPUs and the image contains no model weights. The default `BASIC3-X4C-16G` hosts provide Docker
+need GPUs and the image contains no model weights. The default `PRO2-XS` hosts provide Docker
 CPU, memory, and disk while API inference can proceed concurrently. All 89 pinned Terminal-Bench
 task images are AMD64, so the fleet deliberately uses x86 Instances.
 
-The controller terminates every VM in a `finally` path. Every host also receives a 420-minute
+Each logical worker uploads `host-metrics.jsonl` with 30-second host memory, load, disk, and Docker
+container samples. Use it to compare one-worker and packed runs without inferring utilisation from
+wall time alone. A conservative same-resource packing trial is 9 × `PRO2-S`, two workers per host,
+and a 200 GiB volume: it provides 18 logical shards while halving VM and public-IP count. Keep
+`workers_per_instance=1` for official comparisons until the packed smoke shows no increase in
+infrastructure-invalid trials or timeouts.
+
+The controller terminates every VM in a `finally` path if its immediate host teardown did not
+complete. Every host also receives a 420-minute
 self-termination timer which deletes the server, root SBS volume, and flexible IP if GitHub loses
 contact with it. Run evidence never becomes a GitHub artifact: each worker seals and uploads its
 own capsules before it exits.
@@ -133,10 +165,19 @@ PutObject-only keys.
 
 Open **Actions → Terminal-Bench (Scaleway Fleet) → Run workflow**. The default launches ten hosts
 and runs ten tasks, one on each host. Raise `max_tasks` to process more of the 89-task suite; with
-ten hosts, each host then processes its deterministic shard sequentially. `instances` is capped at
-20 and attempts at five. Hosted-model rate limits can still throttle the fleet even when Docker
-capacity is available. Use the Serverless model ID from Scaleway's `/models` catalogue (for
-example `qwen3.6-35b-a3b`), not an LM Studio or dedicated-deployment identifier.
+ten hosts and one worker per host, each worker then processes its deterministic shard sequentially.
+`instances` is capped at 20, `workers_per_instance` at eight, and attempts at five. The effective
+logical shard count is `min(max_tasks, instances × workers_per_instance)` and excess physical hosts
+are not provisioned. Hosted-model rate limits can still throttle the fleet even when Docker
+capacity is available. Use the Serverless model ID from Scaleway's `/models` catalogue (for example
+`qwen3.6-35b-a3b`), not an LM Studio or dedicated-deployment identifier.
+
+For a fast full-suite three-profile pass with the proven topology, use 18 `PRO2-XS` hosts, one
+worker per host, 89 tasks, and one attempt. This assigns at most five task blocks (15 trials) to a
+worker while preserving exact task-level pairing. For a packing smoke with the same nominal
+resources per logical worker, use nine `PRO2-S` hosts and two workers per host. Increasing
+`attempts` repeats each task/profile pair before the image is pruned; it improves within-task
+replication but increases wall time approximately linearly.
 
 For a targeted experiment, set `task_names` to a comma-separated list of exact registry names.
 Selection preserves that order, applies `max_tasks`, then shards the cohort; the fleet also limits
@@ -176,6 +217,7 @@ export SCW_OBJECT_STORAGE_BUCKET='...'
 
 npm run bench:terminal:fleet -- run \
   --instances 10 \
+  --workers-per-instance 1 \
   --max-tasks 10 \
   --worker-image rg.fr-par.scw.cloud/example/terminal-bench-worker:COMMIT \
   --key-path /path/to/scaleway-ssh-key
@@ -274,10 +316,12 @@ exceptions are retried:
 npm run bench:terminal -- --all --resume -n 1
 ```
 
-For long local runs, the sequential suite driver is safer: it checks that each task wrote a new
-valid result before advancing. `--resume` preserves valid prior outcomes, and `--prune-images`
-removes only the completed task's pinned benchmark image after Harbor has stopped its container
-and written the result. Shared Docker layers remain while another image references them.
+For long local runs, the sequential suite driver checks that each profile wrote a new result before
+advancing. With `--profiles=a,b,c`, it uses the same task-major rotation as the fleet and continues
+past infrastructure-invalid trials so the paired cohort is not censored. `--resume` preserves valid
+prior outcomes, and `--prune-images` removes only the completed task's pinned benchmark image after
+Harbor has stopped its containers and written the results. Shared Docker layers remain while
+another image references them.
 
 ```bash
 npm run bench:terminal:suite -- --resume --prune-images --prefetch-images
@@ -289,8 +333,10 @@ with `COPSE_TERMINAL_PREFETCH_MIN_FREE_DISK_GIB`; pair prefetching with `--prune
 Docker growth bounded.
 
 Use `--max-tasks=N` for a bounded batch, and `--task-names=a,b` to select exact registry tasks in
-the supplied order. The suite stops on a launcher failure or an
-infrastructure-invalid result; rerunning the same resumable command starts at that task.
+the supplied order. `--checkpoint-after-task` seals and uploads the accumulated capsules after each
+task when the worker Object Storage environment is configured. Launcher and infrastructure-invalid
+results make the suite exit nonzero after the shard, but do not prevent later task blocks from
+running.
 
 Inspect current coverage and lifecycle telemetry at any time without Docker:
 
@@ -334,6 +380,10 @@ hook-run sink in `agent/hook-runs.jsonl`, including the outcome of each pressure
 Because a host may apply a selected hook through a different mechanism or substitute recovery
 text, `agent/applied-nudges.jsonl` separately records the exact message and mechanism the model
 received.
+For adaptive profiles, every 2k reasoning decision is separately retained in
+`agent/reasoning-checkpoints.jsonl`, including the checkpoint and hard-limit token counts, whether
+the stream continued or was cut, and the concrete circle signals. Reports count expansions and
+circle cuts independently from ordinary hard-cap cuts.
 
 `agent/provider-requests.jsonl` records the complete normalized message history and tool schema
 presented to the OpenAI-compatible provider on every model call. Together with
@@ -368,9 +418,12 @@ inspection, then runs the relevant verifier tests from `/tests` when they are av
 than substituting an ad hoc smoke check.
 A capped reasoning turn may contain up to 256 visible planning characters without
 escaping the terminal recovery streak, and the configured stream cap still applies to
-finalization turns. The initial terminal cap is 2k tokens; the one bounded retry after the
-reasoning-runaway nudge gets a 4k cap so a complex local-model thought can reach a tool call
-without restoring an unbounded stream. The terminal prompt also tells the agent to preserve damaged or stateful
+finalization turns. The v1/v2 initial terminal cap is 2k tokens; the one bounded retry after the
+reasoning-runaway nudge gets a 4k cap so a complex local-model thought can reach a tool call.
+Product-aligned v3 instead checks a reasoning-dominated stream every 2k tokens. A clean checkpoint
+continues in the same provider stream up to the product's 32k absolute cap; a detected circle uses
+the same recovery machinery, whose retry remains capped at 4k. Visible final-answer streams do not
+receive reasoning expansions. The terminal prompt also tells the agent to preserve damaged or stateful
 inputs before programs that may checkpoint, recover, migrate, or rewrite them; this prevents an
 inspection command from destroying the only copy of forensic task data. Iterative work also uses
 copies instead of moving, deleting, or overwriting original task inputs before validation. Large task inputs should

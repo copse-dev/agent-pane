@@ -195,7 +195,7 @@ export const DEMO_SCENARIOS: readonly DemoScenario[] = [
   },
   {
     // #728: a subagent-backed explore must stay its own card when a sibling
-    // read_file would otherwise fold both into a "Reading files" group.
+    // read_file would otherwise fold both into a "Read files" group.
     id: 'subagent-ungrouped',
     label: 'Subagent stays ungrouped beside reading tools',
     project: project('demo-subagent-ungrouped-project'),

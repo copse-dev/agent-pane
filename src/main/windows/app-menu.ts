@@ -155,9 +155,30 @@ export function buildAppMenu(win: BrowserWindow): void {
         },
         { role: 'toggleDevTools' as const },
         { type: 'separator' as const },
-        { role: 'resetZoom' as const },
-        { role: 'zoomIn' as const },
-        { role: 'zoomOut' as const },
+        // Custom interface scale (CSS --ui-scale), not Chromium page zoom.
+        // The built-in zoomIn/Out/resetZoom roles were unreliable in this
+        // frameless shell; the renderer also binds the same accelerators.
+        {
+          label: 'Actual Size',
+          accelerator: 'CmdOrCtrl+0',
+          click: (): void => {
+            win.webContents.send('menu:uiScaleReset')
+          },
+        },
+        {
+          label: 'Zoom In',
+          accelerator: 'CmdOrCtrl+=',
+          click: (): void => {
+            win.webContents.send('menu:uiScaleZoomIn')
+          },
+        },
+        {
+          label: 'Zoom Out',
+          accelerator: 'CmdOrCtrl+-',
+          click: (): void => {
+            win.webContents.send('menu:uiScaleZoomOut')
+          },
+        },
         { type: 'separator' as const },
         { role: 'togglefullscreen' as const },
       ],

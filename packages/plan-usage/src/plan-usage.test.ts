@@ -217,7 +217,7 @@ describe('fetchClaudePlanUsage', () => {
     )
   })
 
-  it('keeps inactive session + scoped caps with severity (live Max shape)', async () => {
+  it('keeps session + scoped caps with severity when is_active is false (live Max shape)', async () => {
     const result = await fetchClaudePlanUsage('sk-ant-oat01-x', {
       fetch: jsonFetch({
         five_hour: { utilization: 0, resets_at: '2026-07-15T14:30:00Z' },
@@ -259,7 +259,7 @@ describe('fetchClaudePlanUsage', () => {
       [
         {
           id: 'five_hour',
-          label: '5-hour (inactive)',
+          label: '5-hour',
           usedPercent: 0,
           severity: 'normal',
         },
@@ -271,7 +271,7 @@ describe('fetchClaudePlanUsage', () => {
         },
         {
           id: 'seven_day_fable',
-          label: 'Weekly Fable (inactive)',
+          label: 'Weekly Fable',
           usedPercent: 89,
           severity: 'warning',
         },

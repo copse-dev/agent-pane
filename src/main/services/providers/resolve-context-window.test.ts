@@ -19,8 +19,17 @@ function stubFetch(impl: typeof fetch): () => void {
 }
 
 describe('resolveContextWindow', () => {
+  let prevMockLlm: string | undefined
+
   beforeEach(() => {
     invalidateLmStudioModelsCache()
+    prevMockLlm = process.env['COPSE_PANEL_MOCK_LLM']
+    delete process.env['COPSE_PANEL_MOCK_LLM']
+  })
+
+  afterEach(() => {
+    if (prevMockLlm === undefined) delete process.env['COPSE_PANEL_MOCK_LLM']
+    else process.env['COPSE_PANEL_MOCK_LLM'] = prevMockLlm
   })
 
   it('uses cloud model table', async () => {
@@ -72,6 +81,11 @@ describe('resolveContextWindow', () => {
     } finally {
       restoreFetch()
     }
+  })
+
+  it('uses the cloud floor under mock LLM even for local models', async () => {
+    process.env['COPSE_PANEL_MOCK_LLM'] = '1'
+    assert.equal(await resolveContextWindow('lmstudio:qwen'), 128_000)
   })
 })
 

@@ -10,6 +10,7 @@ required=(
   COPSE_TERMINAL_SHARD_COUNT
   COPSE_TERMINAL_SHARD_INDEX
   COPSE_TERMINAL_ATTEMPTS
+  COPSE_TERMINAL_RESULTS_ROOT
   SCW_OBJECT_STORAGE_BUCKET
   SCW_OBJECT_STORAGE_ENDPOINT
   SCW_OBJECT_STORAGE_PREFIX
@@ -26,74 +27,54 @@ if [[ -z "$profiles_csv" ]]; then
   echo "terminal-bench worker: missing COPSE_TERMINAL_PROFILES or COPSE_TERMINAL_PROFILE" >&2
   exit 2
 fi
-IFS=',' read -r -a profiles <<< "$profiles_csv"
-profile_count="${#profiles[@]}"
-
 benchmark_status=0
 analysis_status=0
 steered_status=0
-seal_status=0
-upload_status=0
-
-checkpoint_results() {
-  local label="$1"
-  npm run bench:terminal:report || true
-  npm run bench:terminal:seal || seal_status=$?
-
-  if [[ -d bench-results/terminal-bench-capsules ]]; then
-    aws s3 cp bench-results/terminal-bench-capsules/ \
-      "s3://${SCW_OBJECT_STORAGE_BUCKET}/${SCW_OBJECT_STORAGE_PREFIX}/" \
-      --recursive \
-      --sse AES256 \
-      --only-show-errors \
-      --endpoint-url "${SCW_OBJECT_STORAGE_ENDPOINT}" || upload_status=$?
-  else
-    echo "terminal-bench worker: capsule directory was not created" >&2
-    upload_status=1
+checkpoint_status=0
+checkpoint_script="benchmarks/terminal_bench/checkpoint-results.sh"
+metrics_path="${COPSE_TERMINAL_RESULTS_ROOT}/terminal-bench-host-metrics.jsonl"
+metrics_pid=""
+stop_metrics() {
+  if [[ -n "$metrics_pid" ]] && kill -0 "$metrics_pid" 2>/dev/null; then
+    kill -TERM "$metrics_pid" 2>/dev/null || true
+    wait "$metrics_pid" 2>/dev/null || true
   fi
-  echo "terminal-bench worker: checkpointed ${label}"
+  metrics_pid=""
 }
-
-for ((profile_offset = 0; profile_offset < profile_count; profile_offset += 1)); do
-  profile="${profiles[$profile_offset]}"
-  export COPSE_TERMINAL_PROFILE="$profile"
-  suite_args=(
-    --max-tasks="${COPSE_TERMINAL_MAX_TASKS}"
-    --shard-count="${COPSE_TERMINAL_SHARD_COUNT}"
-    --shard-index="${COPSE_TERMINAL_SHARD_INDEX}"
-    --prefetch-images
-    --profile="$profile"
-    -k "${COPSE_TERMINAL_ATTEMPTS}"
-  )
-  if (( profile_offset == profile_count - 1 )); then
-    suite_args+=(--prune-images)
-  fi
-  if [[ -n "${COPSE_TERMINAL_TASK_NAMES:-}" ]]; then
-    suite_args+=(--task-names="${COPSE_TERMINAL_TASK_NAMES}")
-  fi
-  echo "terminal-bench worker: profile $((profile_offset + 1))/${profile_count} $profile"
-  npm run bench:terminal:suite -- "${suite_args[@]}"
-  suite_status=$?
-  checkpoint_results "profile $((profile_offset + 1))/${profile_count} $profile"
-  if (( suite_status != 0 )); then
-    benchmark_status=$suite_status
-    break
-  fi
-  if (( seal_status != 0 )); then
-    break
-  fi
-done
+trap stop_metrics EXIT
+trap 'stop_metrics; exit 130' INT
+trap 'stop_metrics; exit 143' TERM
+node scripts/sample-terminal-bench-host.mts "$metrics_path" &
+metrics_pid=$!
+suite_args=(
+  --max-tasks="${COPSE_TERMINAL_MAX_TASKS}"
+  --shard-count="${COPSE_TERMINAL_SHARD_COUNT}"
+  --shard-index="${COPSE_TERMINAL_SHARD_INDEX}"
+  --profiles="$profiles_csv"
+  --checkpoint-after-task
+  --prefetch-images
+  --prune-images
+  -k "${COPSE_TERMINAL_ATTEMPTS}"
+)
+if [[ -n "${COPSE_TERMINAL_TASK_NAMES:-}" ]]; then
+  suite_args+=(--task-names="${COPSE_TERMINAL_TASK_NAMES}")
+fi
+echo "terminal-bench worker: task-major profiles ${profiles_csv}; attempts=${COPSE_TERMINAL_ATTEMPTS}"
+npm run bench:terminal:suite -- "${suite_args[@]}" || benchmark_status=$?
 
 if [[ -n "${BENCH_ANALYST_MODEL:-}" ]]; then
   npm run bench:terminal:analyze || analysis_status=$?
   if [[ "${COPSE_TERMINAL_STEERED_RERUN:-1}" == "1" && "$analysis_status" == "0" ]]; then
     npm run bench:terminal:steered || steered_status=$?
   fi
-  checkpoint_results "analysis"
 fi
 
-if (( benchmark_status != 0 || analysis_status != 0 || steered_status != 0 || seal_status != 0 || upload_status != 0 )); then
-  echo "terminal-bench worker: benchmark=$benchmark_status analysis=$analysis_status steered=$steered_status seal=$seal_status upload=$upload_status" >&2
+stop_metrics
+bash "$checkpoint_script" "final" || checkpoint_status=$?
+trap - EXIT INT TERM
+
+if (( benchmark_status != 0 || analysis_status != 0 || steered_status != 0 || checkpoint_status != 0 )); then
+  echo "terminal-bench worker: benchmark=$benchmark_status analysis=$analysis_status steered=$steered_status checkpoint=$checkpoint_status" >&2
   exit 1
 fi
 

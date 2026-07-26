@@ -14,6 +14,7 @@ import {
   isTransientProviderError,
   probeAcpAgentForSettings,
   permissionResponseFor,
+  mergeAcpPermissionAbortSignals,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
   runWithAcpRetry,
@@ -96,6 +97,36 @@ describe('permissionResponseFor', () => {
     assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a1' })
   })
 })
+
+describe('mergeAcpPermissionAbortSignals', () => {
+  it('returns the rpc signal when no turn signal is provided', () => {
+    const rpc = new AbortController().signal
+    assert.equal(mergeAcpPermissionAbortSignals(undefined, rpc), rpc)
+  })
+
+  it('combines turn and rpc signals so either abort is observed', async () => {
+    const turn = new AbortController()
+    const rpc = new AbortController()
+    const merged = mergeAcpPermissionAbortSignals(turn.signal, rpc.signal)
+    const pending = waitForAbort(merged)
+    turn.abort()
+    await pending
+    assert.equal(merged.aborted, true)
+  })
+})
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    signal.addEventListener(
+      'abort',
+      () => {
+        resolve()
+      },
+      { once: true },
+    )
+  })
+}
 
 describe('sliceLines', () => {
   const file = 'one\ntwo\nthree\nfour\n'
@@ -428,12 +459,13 @@ describe('ACP on SSH workspaces', () => {
     setWorkspaceRootForTest('/remote/project')
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     setWorkspaceRootForTest(null)
     storageSet('activeProjectId', null)
     storageSet('projects', [])
-    void setSetting('sshWorkspaceEnabled', false)
-    void setSetting('sshWorkspaceHosts', [])
+    await setSetting('sshWorkspaceEnabled', false)
+    await setSetting('sshWorkspaceHosts', [])
+    await setSetting('acpOverSshEnabled', false)
   })
 
   it('rejects session open and model detect with a clear unsupported message', async () => {
@@ -452,6 +484,24 @@ describe('ACP on SSH workspaces', () => {
     await assert.rejects(
       () => probeAcpAgentForSettings('cursor'),
       (err: unknown) => err instanceof Error && err.message === ACP_UNSUPPORTED_ON_SSH_MESSAGE,
+    )
+  })
+
+  it('lifts the SSH block once remote ACP is opted in', async () => {
+    await setSetting('acpOverSshEnabled', true)
+    // The agent isn't registered here, so it now fails PAST the SSH guard with a
+    // different error — proving the guard no longer short-circuits on SSH.
+    await assert.rejects(
+      () =>
+        runAcpAgentFromSettings({
+          threadId: 't1',
+          agentId: 'cursor',
+          userPrompt: 'hi',
+          priorMessages: [],
+          signal: new AbortController().signal,
+          onChunk: () => undefined,
+        }),
+      (err: unknown) => err instanceof Error && err.message !== ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
   })
 })

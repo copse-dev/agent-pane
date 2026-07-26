@@ -74,7 +74,14 @@ function runSeal(root: string, extraEnv: NodeJS.ProcessEnv = {}): ReturnType<typ
 describe('terminal benchmark capsule sealing', () => {
   it('writes a per-trial archive and a digest-bearing suite index', () => {
     const root = fixture()
-    const sealed = runSeal(root)
+    const sealed = runSeal(root, {
+      COPSE_TERMINAL_INSTANCE_TYPE: 'PRO2-S',
+      COPSE_TERMINAL_INSTANCE_COUNT: '1',
+      COPSE_TERMINAL_WORKERS_PER_INSTANCE: '2',
+      COPSE_TERMINAL_VOLUME_SIZE_GB: '200',
+      COPSE_TERMINAL_SHARD_COUNT: '2',
+      COPSE_TERMINAL_SHARD_INDEX: '1',
+    })
     assert.equal(sealed.status, 0, String(sealed.stderr))
 
     const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
@@ -116,6 +123,10 @@ describe('terminal benchmark capsule sealing', () => {
     const dataset = (trialManifest as Record<string, unknown>)['dataset'] as Record<string, unknown>
     const profile = (trialManifest as Record<string, unknown>)['profile'] as Record<string, unknown>
     const metrics = (trialManifest as Record<string, unknown>)['metrics'] as Record<string, unknown>
+    const infrastructure = (trialManifest as Record<string, unknown>)['infrastructure'] as Record<
+      string,
+      unknown
+    >
     assert.equal(dataset['revision'], TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision)
     assert.equal(
       dataset['taskConfigSha256'],
@@ -125,6 +136,66 @@ describe('terminal benchmark capsule sealing', () => {
     assert.match(String(profile['contentHash']), /^[a-f0-9]{64}$/)
     assert.equal(metrics['elapsedSeconds'], 60)
     assert.equal(metrics['toolCalls'], 4)
+    assert.deepEqual(infrastructure, {
+      instanceType: 'PRO2-S',
+      instanceCount: 1,
+      workersPerInstance: 2,
+      volumeSizeGb: 200,
+      shardCount: 2,
+      shardIndex: 1,
+    })
+  })
+
+  it('reuses an unchanged capsule on later checkpoints', () => {
+    const root = fixture()
+    const first = runSeal(root)
+    assert.equal(first.status, 0, String(first.stderr))
+    const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
+    const firstIndex = JSON.parse(readFileSync(join(capsules, 'index.json'), 'utf8')) as {
+      capsules: Array<{ archive: string; sha256: string }>
+    }
+    const archive = firstIndex.capsules[0]
+    assert.ok(archive)
+
+    const second = runSeal(root)
+    assert.equal(second.status, 0, String(second.stderr))
+    assert.match(String(second.stdout), new RegExp(`bench:terminal:seal reused ${archive.archive}`))
+    assert.doesNotMatch(String(second.stdout), /bench:terminal:seal bench-results\//)
+    const secondIndex = JSON.parse(readFileSync(join(capsules, 'index.json'), 'utf8')) as {
+      capsules: Array<{ archive: string; sha256: string }>
+    }
+    assert.deepEqual(secondIndex.capsules, firstIndex.capsules)
+  })
+
+  it('lists only capsules without a matching local upload receipt', () => {
+    const root = fixture()
+    const sealed = runSeal(root)
+    assert.equal(sealed.status, 0, String(sealed.stderr))
+    const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
+    const indexPath = join(capsules, 'index.json')
+    const receiptPath = join(capsules, '.uploaded-capsules.tsv')
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
+      capsules: Array<{ archive: string; sha256: string }>
+    }
+    const capsule = index.capsules[0]
+    assert.ok(capsule)
+
+    const pending = spawnSync(
+      process.execPath,
+      [resolve('scripts/list-terminal-bench-pending-capsules.mts'), indexPath, receiptPath],
+      { encoding: 'utf8' },
+    )
+    assert.equal(pending.status, 0, pending.stderr)
+    assert.equal(pending.stdout, `${capsule.sha256}\t${capsule.archive}\n`)
+
+    writeFileSync(receiptPath, pending.stdout)
+    const uploaded = spawnSync(
+      process.execPath,
+      [resolve('scripts/list-terminal-bench-pending-capsules.mts'), indexPath, receiptPath],
+      { encoding: 'utf8' },
+    )
+    assert.equal(uploaded.status, 0, uploaded.stderr)
+    assert.equal(uploaded.stdout, '')
   })
 
   it('refuses to seal a trial that leaked a configured secret', () => {
@@ -146,7 +217,7 @@ describe('terminal benchmark capsule sealing', () => {
     const agentResult = result['agent_result'] as Record<string, unknown>
     const metadata = agentResult['metadata'] as Record<string, unknown>
     metadata['profile'] = 'product-aligned@1'
-    metadata['profile_hash'] = terminalBenchProfile('product-aligned').contentHash
+    metadata['profile_hash'] = terminalBenchProfile('product-aligned@1').contentHash
     result['started_at'] = '2026-07-21T11:00:00Z'
     result['finished_at'] = '2026-07-21T11:01:00Z'
     writeFileSync(resultPath, JSON.stringify(result))
@@ -162,6 +233,36 @@ describe('terminal benchmark capsule sealing', () => {
         ['main-legacy@1', 1],
         ['product-aligned@1', 1],
       ],
+    )
+  })
+
+  it('seals an infrastructure-invalid trial under its retained profile', () => {
+    const root = fixture()
+    const trial = join(root, 'bench-results', 'terminal-bench', 'job', 'trial')
+    const resultPath = join(trial, 'result.json')
+    const result = JSON.parse(readFileSync(resultPath, 'utf8')) as Record<string, unknown>
+    result['agent_result'] = null
+    result['exception_info'] = { exception_type: 'RuntimeError', message: 'container failed' }
+    result['verifier_result'] = null
+    writeFileSync(resultPath, JSON.stringify(result))
+    const profile = terminalBenchProfile('product-aligned')
+    writeFileSync(
+      join(trial, 'terminal-bench-profile.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        profile: profile.versionedId,
+        contentHash: profile.contentHash,
+      }),
+    )
+
+    const sealed = runSeal(root, { COPSE_TERMINAL_PROFILE: 'main-legacy' })
+    assert.equal(sealed.status, 0, String(sealed.stderr))
+    const index = JSON.parse(
+      readFileSync(join(root, 'bench-results', 'terminal-bench-capsules', 'index.json'), 'utf8'),
+    ) as { capsules: Array<{ outcome: string; profile: string }> }
+    assert.deepEqual(
+      index.capsules.map(({ outcome, profile: id }) => [id, outcome]),
+      [['product-aligned@3', 'invalid']],
     )
   })
 })

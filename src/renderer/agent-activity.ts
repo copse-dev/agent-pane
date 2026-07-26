@@ -29,11 +29,12 @@ export function agentActivityLabel(thread: Thread | undefined, writing: boolean)
   const todoLabel = thread.todos?.length ? formatTodoProgress(thread.todos) : null
   const tool = runningToolName(thread)
   if (tool) {
-    const base = `Running ${getToolDisplayName(tool)}…`
+    // Progressive form while in flight — avoids "Running Explored files…".
+    const base = `${getToolDisplayName(tool, 'running')}…`
     return todoLabel ? `${base} (${todoLabel})` : base
   }
   if (writing) return todoLabel ? `Writing… (${todoLabel})` : 'Writing…'
-  return todoLabel ? `Thinking… (${todoLabel})` : 'Thinking…'
+  return todoLabel ? `Reasoning… (${todoLabel})` : 'Reasoning…'
 }
 
 export function syncAgentActivity(store: AppStore, threadId: string, writing: boolean): void {

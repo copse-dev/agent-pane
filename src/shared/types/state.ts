@@ -86,7 +86,8 @@ export interface AppState {
   layout: LayoutState
   theme: Theme // Resolved effective theme (never `system`); what panes render.
   themePreference: ThemePreference // The user's choice; `system` tracks the OS.
-  fontSize: number // 12–20, applied to app + Monaco
+  fontSize: number // 12–20, applied to Monaco + xterm (then multiplied by uiScale)
+  uiScale: number // 0.75–1.5 interface scale; drives CSS --ui-scale tokens
   autoPortraitRightPanel: boolean // Auto-stack the right panel below chat on portrait windows.
   rightPanelPosition: RightPanelPosition // Where the right panel (explorer/terminal/etc.) lives.
   openLinksInBuiltInBrowser: boolean // Clicked http(s) links open in the in-app browser vs the system browser.

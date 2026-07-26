@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { glob, lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { c as createTar } from 'tar'
 import { terminalBenchTrialOutcome } from './lib/terminal-bench-outcome.mts'
 import {
@@ -10,9 +10,15 @@ import {
   terminalBenchTaskMetadata,
 } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import { readTerminalBenchTrialProfile } from './lib/terminal-bench-trial-profile.mts'
+import {
+  terminalBenchAnalysisPlanPath,
+  terminalBenchCapsulesRoot,
+  terminalBenchResultsRoot,
+} from './lib/terminal-bench.mts'
 
-const RESULTS_ROOT = resolve('bench-results/terminal-bench')
-const CAPSULES_ROOT = resolve('bench-results/terminal-bench-capsules')
+const RESULTS_ROOT = terminalBenchResultsRoot()
+const CAPSULES_ROOT = terminalBenchCapsulesRoot()
 const SECRET_ENV_NAMES = [
   'SCW_GENERATIVE_API_KEY',
   'LM_STUDIO_API_KEY',
@@ -130,6 +136,11 @@ function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function environmentNonNegativeInteger(name: string): number | null {
+  const raw = process.env[name]?.trim()
+  return raw && /^(0|[1-9][0-9]*)$/.test(raw) ? Number(raw) : null
+}
+
 function elapsedSeconds(startedAt: unknown, finishedAt: unknown): number | null {
   if (typeof startedAt !== 'string' || typeof finishedAt !== 'string') return null
   const started = Date.parse(startedAt)
@@ -142,6 +153,91 @@ function elapsedSeconds(startedAt: unknown, finishedAt: unknown): number | null 
 interface StoredTrial {
   resultPath: string
   result: unknown
+}
+
+type CapsuleOutcome = ReturnType<typeof terminalBenchTrialOutcome>
+
+interface CapsuleEntry {
+  trialId: string
+  taskName: string
+  archive: string
+  bytes: number
+  sha256: string
+  startedAt: string | null
+  outcome: CapsuleOutcome
+  attemptIndex: number
+  profile: string
+  profileHash: string
+}
+
+function reusableCapsuleEntry(
+  value: unknown,
+  expected: {
+    archive: string
+    attemptIndex: number
+    profile: string
+    profileHash: string
+    taskName: string
+    trialId: string
+  },
+): CapsuleEntry | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const entry = value as Record<string, unknown>
+  const outcome = entry['outcome']
+  if (
+    entry['trialId'] !== expected.trialId ||
+    entry['taskName'] !== expected.taskName ||
+    entry['archive'] !== expected.archive ||
+    entry['attemptIndex'] !== expected.attemptIndex ||
+    entry['profile'] !== expected.profile ||
+    entry['profileHash'] !== expected.profileHash ||
+    typeof entry['bytes'] !== 'number' ||
+    typeof entry['sha256'] !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(entry['sha256']) ||
+    (entry['startedAt'] !== null && typeof entry['startedAt'] !== 'string') ||
+    (outcome !== 'pass' && outcome !== 'zero' && outcome !== 'timeout' && outcome !== 'invalid')
+  ) {
+    return undefined
+  }
+  return {
+    trialId: expected.trialId,
+    taskName: expected.taskName,
+    archive: expected.archive,
+    bytes: entry['bytes'],
+    sha256: entry['sha256'],
+    startedAt: entry['startedAt'],
+    outcome,
+    attemptIndex: expected.attemptIndex,
+    profile: expected.profile,
+    profileHash: expected.profileHash,
+  }
+}
+
+async function existingCapsulesByTrialId(): Promise<Map<string, unknown>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(join(CAPSULES_ROOT, 'index.json'), 'utf8'))
+    const values = nested(parsed, 'capsules')
+    if (!Array.isArray(values)) return new Map()
+    return new Map(
+      values.flatMap((value): Array<[string, unknown]> => {
+        const id = nested(value, 'trialId')
+        return typeof id === 'string' ? [[id, value]] : []
+      }),
+    )
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return new Map()
+    throw error
+  }
+}
+
+async function existingArchiveMatches(entry: CapsuleEntry): Promise<boolean> {
+  try {
+    const info = await lstat(join(CAPSULES_ROOT, entry.archive))
+    return info.isFile() && info.size === entry.bytes
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return false
+    throw error
+  }
 }
 
 const storedTrials: StoredTrial[] = []
@@ -164,18 +260,8 @@ storedTrials.sort((a, b) => {
 })
 
 await mkdir(CAPSULES_ROOT, { recursive: true })
-const capsules: Array<{
-  trialId: string
-  taskName: string
-  archive: string
-  bytes: number
-  sha256: string
-  startedAt: string | null
-  outcome: ReturnType<typeof terminalBenchTrialOutcome>
-  attemptIndex: number
-  profile: string
-  profileHash: string
-}> = []
+const existingCapsules = await existingCapsulesByTrialId()
+const capsules: CapsuleEntry[] = []
 const attemptsByTask = new Map<string, number>()
 
 for (const { resultPath, result } of storedTrials) {
@@ -188,9 +274,14 @@ for (const { resultPath, result } of storedTrials) {
       : 'unknown-task'
   const taskMetadata = terminalBenchTaskMetadata(taskName)
   const rawProfile = nested(result, 'agent_result', 'metadata', 'profile')
-  const profile = terminalBenchProfile(
-    typeof rawProfile === 'string' ? rawProfile.replace(/@1$/, '') : undefined,
-  )
+  const retainedProfile = await readTerminalBenchTrialProfile(resultPath)
+  const profile =
+    typeof rawProfile === 'string'
+      ? terminalBenchProfile(rawProfile)
+      : (retainedProfile ?? terminalBenchProfile())
+  if (retainedProfile && retainedProfile.versionedId !== profile.versionedId) {
+    throw new Error(`Retained profile metadata does not match agent metadata for ${taskName}.`)
+  }
   const attemptKey = `${profile.versionedId}:${taskName}`
   const attemptIndex = (attemptsByTask.get(attemptKey) ?? 0) + 1
   attemptsByTask.set(attemptKey, attemptIndex)
@@ -202,9 +293,24 @@ for (const { resultPath, result } of storedTrials) {
   const exceptionType =
     typeof rawExceptionType === 'string' && rawExceptionType ? rawExceptionType : undefined
   const outcome = terminalBenchTrialOutcome({ reward, exceptionType })
-  const recordedProfileHash = nested(result, 'agent_result', 'metadata', 'profile_hash')
+  const recordedProfileHash =
+    nested(result, 'agent_result', 'metadata', 'profile_hash') ?? retainedProfile?.contentHash
   if (recordedProfileHash !== profile.contentHash) {
     throw new Error(`Missing or inconsistent profile hash for ${taskName}.`)
+  }
+  const archiveName = `${safeName(taskName)}-${id}.tar.gz`
+  const reusable = reusableCapsuleEntry(existingCapsules.get(id), {
+    archive: archiveName,
+    attemptIndex,
+    profile: profile.versionedId,
+    profileHash: profile.contentHash,
+    taskName,
+    trialId: id,
+  })
+  if (reusable && (await existingArchiveMatches(reusable))) {
+    capsules.push(reusable)
+    console.log(`bench:terminal:seal reused ${archiveName} (${String(reusable.bytes)} bytes)`)
+    continue
   }
   const manifestPath = join(directory, 'run-manifest.json')
   const imageMetadataPath = join(directory, 'task-image.json')
@@ -286,6 +392,14 @@ for (const { resultPath, result } of storedTrials) {
       maxCommandTimeoutSeconds:
         process.env['COPSE_TERMINAL_MAX_COMMAND_TIMEOUT_SEC']?.trim() || '600',
     },
+    infrastructure: {
+      instanceType: process.env['COPSE_TERMINAL_INSTANCE_TYPE']?.trim() || null,
+      instanceCount: environmentNonNegativeInteger('COPSE_TERMINAL_INSTANCE_COUNT'),
+      workersPerInstance: environmentNonNegativeInteger('COPSE_TERMINAL_WORKERS_PER_INSTANCE'),
+      volumeSizeGb: environmentNonNegativeInteger('COPSE_TERMINAL_VOLUME_SIZE_GB'),
+      shardCount: environmentNonNegativeInteger('COPSE_TERMINAL_SHARD_COUNT'),
+      shardIndex: environmentNonNegativeInteger('COPSE_TERMINAL_SHARD_INDEX'),
+    },
     metrics: {
       elapsedSeconds: elapsedSeconds(rawStarted, rawFinished),
       inputTokens: finiteNumber(nested(result, 'agent_result', 'n_input_tokens')),
@@ -302,7 +416,6 @@ for (const { resultPath, result } of storedTrials) {
   }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
-  const archiveName = `${safeName(taskName)}-${id}.tar.gz`
   const archivePath = join(CAPSULES_ROOT, archiveName)
   await createTar({ cwd: directory, file: archivePath, gzip: true, portable: true }, ['.'])
   const archiveInfo = await lstat(archivePath)
@@ -327,7 +440,7 @@ const sourcePatch = git(['diff', '--binary', 'HEAD'])
 const sourcePatchPath = join(CAPSULES_ROOT, 'source.patch')
 await writeFile(sourcePatchPath, sourcePatch)
 await assertNoKnownSecrets(sourcePatchPath, secretValues())
-const sourceAnalysisPlan = resolve('bench-results/terminal-bench-analysis-plan.json')
+const sourceAnalysisPlan = terminalBenchAnalysisPlanPath()
 let analysisPlan: string | null = null
 try {
   const contents = await readFile(sourceAnalysisPlan)

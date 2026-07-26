@@ -27,6 +27,13 @@ import {
 } from '@copse/llm/data-policies.ts'
 
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
+
+export interface ModelOptionsApi {
+  settings: Pick<ApiClient['settings'], 'availableProviders' | 'extraProviders' | 'get'>
+  openRouter: Pick<ApiClient['openRouter'], 'models'>
+  remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
+  lmStudio: Pick<ApiClient['lmStudio'], 'models'>
+}
 import {
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
   REMOTE_AGENT_MODEL_PREFIX,
@@ -37,13 +44,26 @@ import {
   remoteAgentGroupLabel,
   remoteAgentModelValue,
 } from '@shared/remote-agent.ts'
-import { ACP_MODEL_PREFIX, acpGroupLabel, acpModelValue, parseAcpModel } from '@shared/acp.ts'
+import {
+  ACP_MODEL_PREFIX,
+  acpGroupLabel,
+  acpModelValue,
+  enabledClaudeAcpAgent,
+  parseAcpModel,
+} from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
+import {
+  BEST_VALUE_CHAT_MODEL,
+  BEST_VALUE_CHAT_MODEL_LABEL,
+  isBestValueChatModel,
+} from '@shared/lm-studio-defaults.ts'
 import { clear } from '../dom/helpers.ts'
 
 const ACP_GROUP = 'ACP agents'
 
 const OPENROUTER_GROUP = 'OpenRouter'
+
+const CHAT_DEFAULT_GROUP = 'Chat default'
 
 export interface ModelOption {
   value: string
@@ -53,6 +73,7 @@ export interface ModelOption {
 }
 
 export function modelDisplayLabel(model: string): string {
+  if (isBestValueChatModel(model)) return BEST_VALUE_CHAT_MODEL_LABEL
   if (model.startsWith('lmstudio:')) return model.slice('lmstudio:'.length)
   if (isOpenRouterModel(model)) return openRouterDisplayLabel(model)
   if (isExtraProviderModel(model)) return extraProviderDisplayLabel(model)
@@ -67,14 +88,9 @@ export function modelDisplayLabel(model: string): string {
 
 // External ACP agents the user has configured. Only enabled agents are offered;
 // a stale `acp:<id>` selection for a removed/disabled agent is surfaced via the
-// "(not configured)" fallback below rather than silently vanishing.
-async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
-  let agents: AcpAgentConfig[] = []
-  try {
-    agents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
-  } catch {
-    /* none configured */
-  }
+// "(not configured)" fallback below rather than silently vanishing. The agents
+// are fetched once by the caller (also used to decide the ACP-over-API ordering).
+function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
   const options: ModelOption[] = []
   for (const agent of agents.filter((agent) => agent.enabled)) {
     // Each agent gets its own heading ("<Title> Client (ACP)"), so models list
@@ -109,7 +125,7 @@ async function acpAgentOptions(api: ApiClient): Promise<ModelOption[]> {
 // When no key is configured we contribute nothing (the provider is hidden from
 // the picker rather than shown as a disabled "add a key" row).
 async function openRouterOptions(
-  api: ApiClient,
+  api: ModelOptionsApi,
   available: boolean,
   current: string,
 ): Promise<ModelOption[]> {
@@ -207,7 +223,7 @@ function extraProviderOptions(
     entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
-  for (const model of provider.models) add(model.id, model.label ?? model.id)
+  for (const model of provider.models) add(model.id, model.id)
   if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
@@ -215,9 +231,13 @@ function extraProviderOptions(
 }
 
 async function remoteAgentOptions(
-  api: ApiClient,
+  api: ModelOptionsApi,
   isAvailable: (provider: string) => boolean,
   current: string,
+  // When the user has an enabled Claude ACP agent, flag the Claude Cloud Agent
+  // group as API-billed so the ACP alternative (their own `claude` login) reads
+  // as the preferred option. Ordering is handled by the caller.
+  preferAcpForClaude = false,
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
 
@@ -261,7 +281,11 @@ async function remoteAgentOptions(
   }
 
   if (isAvailable(REMOTE_AGENT_PROVIDER_ANTHROPIC)) {
-    const group = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC)
+    const baseGroup = remoteAgentGroupLabel(REMOTE_AGENT_PROVIDER_ANTHROPIC)
+    // Claude Managed Agents bill against the Anthropic API key. When a Claude ACP
+    // agent is configured, note that in the heading so the user sees the ACP
+    // option (their own login) is the cheaper alternative.
+    const group = preferAcpForClaude ? `${baseGroup} — API-billed (ACP available)` : baseGroup
     const seen = new Set<string>()
     const add = (value: string, label: string): void => {
       if (seen.has(value)) return
@@ -308,15 +332,31 @@ export interface FetchModelOptionsOpts {
    * models that can execute a task in-process.
    */
   includeAgentModels?: boolean
+  /**
+   * When true, include the Settings-only `auto:best-value` chat default.
+   * The footer picker omits it — new chats resolve to a concrete model instead.
+   */
+  includeBestValue?: boolean
 }
 
 export async function fetchModelOptions(
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
   opts: FetchModelOptionsOpts = {},
 ): Promise<ModelOption[]> {
   const options: ModelOption[] = []
-  const sshWorkspace = opts.sshWorkspace === true
+  if (opts.includeBestValue === true) {
+    options.push({
+      value: BEST_VALUE_CHAT_MODEL,
+      label: `${BEST_VALUE_CHAT_MODEL_LABEL} — auto from plan / price frontier`,
+      group: CHAT_DEFAULT_GROUP,
+    })
+  }
+  // ACP agents are hidden on SSH workspaces UNLESS the user opted into remote ACP
+  // over SSH, in which case they spawn on the remote host (docs/plans/acp-over-ssh.md).
+  const isSshWorkspace = opts.sshWorkspace === true
+  const acpOverSsh = isSshWorkspace && (await api.settings.get('acpOverSshEnabled')) === true
+  const sshWorkspace = isSshWorkspace && !acpOverSsh
   const includeAgentModels = opts.includeAgentModels !== false
 
   let available: AvailableProviders = {}
@@ -349,15 +389,32 @@ export async function fetchModelOptions(
     options.push(...extraProviderOptions(provider, isAvailable(provider.id), current))
   }
 
-  // Remote agents (Cursor Cloud, Claude Cloud): expand into per-provider groups
-  // with concrete model rows — same pattern as ACP agents.
-  if (includeAgentModels) {
-    options.push(...(await remoteAgentOptions(api, isAvailable, current)))
-  }
-
-  // ACP agents (external coding agents Copse drives): local stdio only — hide on SSH.
+  // Configured ACP agents, fetched once: used both to build their picker rows
+  // and to decide whether to prefer ACP over the API-billed Claude Cloud agent.
+  // ACP agents are local stdio processes, so they are never offered on an SSH
+  // workspace — leave the list empty there (a stale `acp:*` selection is still
+  // surfaced as disabled by the fallback below).
+  let acpAgents: AcpAgentConfig[] = []
   if (includeAgentModels && !sshWorkspace) {
-    options.push(...(await acpAgentOptions(api)))
+    try {
+      acpAgents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
+    } catch {
+      /* none configured */
+    }
+  }
+  // An enabled Claude ACP agent drives Claude through the user's own `claude`
+  // login; prefer it over the API-billed Claude Cloud Agent by listing ACP first
+  // and flagging the Cloud Agent as API-billed.
+  const preferAcpForClaude = enabledClaudeAcpAgent(acpAgents) !== undefined
+
+  // Remote agents (Cursor Cloud, Claude Cloud) expand into per-provider groups
+  // with concrete model rows — same pattern as ACP agents. When ACP is preferred
+  // its agents lead; otherwise the remote agents keep their original position
+  // ahead of ACP.
+  if (includeAgentModels) {
+    const remote = await remoteAgentOptions(api, isAvailable, current, preferAcpForClaude)
+    const acp = acpAgentOptions(acpAgents)
+    options.push(...(preferAcpForClaude ? [...acp, ...remote] : [...remote, ...acp]))
   }
 
   // Local models: only listed when a local server is reachable and exposes some.
@@ -405,8 +462,9 @@ export async function fetchModelOptions(
   }
 
   // Only when nothing at all is configured (no cloud key, no provider, no local
-  // server) do we surface a single guiding message instead of an empty picker.
-  if (options.length === 0) {
+  // server — and no Settings best-value row) do we surface a guiding message.
+  const concreteCount = options.filter((o) => !isBestValueChatModel(o.value)).length
+  if (concreteCount === 0) {
     options.push({
       value: '',
       label: 'No models available — add a provider or API key in Settings',
@@ -425,16 +483,24 @@ function opt(value: string, label: string, disabled = false): HTMLOptionElement 
   return o
 }
 
+export interface PopulateModelSelectOpts {
+  /** Include Settings-only best-value chat default (chat model select only). */
+  includeBestValue?: boolean
+}
+
 // Fill a <select> with the cloud models plus a local optgroup of the models the
 // configured local server exposes (value `lmstudio:<id>`). Keeps the
 // `current` value selectable even if the server is offline.
 export async function populateModelSelect(
   select: HTMLSelectElement,
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
+  opts: PopulateModelSelectOpts = {},
 ): Promise<void> {
   clear(select)
-  const options = await fetchModelOptions(api, current)
+  const options = await fetchModelOptions(api, current, {
+    ...(opts.includeBestValue === true ? { includeBestValue: true } : {}),
+  })
   let lastGroup: string | undefined
   let groupEl: HTMLOptGroupElement | null = null
   for (const item of options) {
@@ -479,7 +545,7 @@ export function populateLocalModelSelect(
 /** Model picker for small tasks — cloud, local, or auto (empty value). */
 export async function populateSmallTasksModelSelect(
   select: HTMLSelectElement,
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
 ): Promise<void> {
   clear(select)
@@ -513,7 +579,7 @@ export async function populateSmallTasksModelSelect(
  */
 export async function populateRoleModelSelect(
   select: HTMLSelectElement,
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
   autoLabel = '(auto — prefer on-device)',
 ): Promise<void> {

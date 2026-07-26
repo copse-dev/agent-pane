@@ -35,6 +35,7 @@ import {
   serializeSpineEntries,
   serializeSpineLine,
   type SpineHookRunLine,
+  type SpinePermissionDecisionLine,
   type ThreadMeta,
 } from '@shared/threads/spine-schema.ts'
 import {
@@ -73,6 +74,7 @@ const AGENT_HISTORY_VERSION = 1
 const CATALOG_FILE = 'catalog.jsonl'
 const AGENT_PR_INDEX_FILE = 'agent-pr-index.jsonl'
 const STREAM_STATS_FILE = 'stream-stats.jsonl'
+const REASONING_CHECKPOINTS_FILE = 'reasoning-checkpoints.jsonl'
 const CONTENT_DIRS = ['messages', 'blobs', 'subagents']
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
@@ -102,6 +104,10 @@ function agentPrIndexPath(projectId: string): string {
 
 function streamStatsPath(projectId: string): string {
   return join(projectDir(projectId), STREAM_STATS_FILE)
+}
+
+function reasoningCheckpointsPath(projectId: string): string {
+  return join(projectDir(projectId), REASONING_CHECKPOINTS_FILE)
 }
 
 function metaOf(thread: Thread): ThreadMeta {
@@ -315,7 +321,9 @@ function digestOf(thread: Thread): string {
     .slice(0, 280)
 }
 
-function catalogEntryOf(thread: Thread): CatalogEntry {
+function catalogEntryOf(thread: Thread): CatalogEntry | null {
+  // Archived threads leave the `@`-picker index; the directory stays on disk.
+  if (thread.archivedAt != null) return null
   return {
     id: thread.id,
     title: thread.title,
@@ -350,7 +358,9 @@ function writeCatalog(projectId: string, entries: Map<string, CatalogEntry>): vo
 
 function upsertCatalogEntry(projectId: string, thread: Thread): void {
   const entries = readCatalog(projectId)
-  entries.set(thread.id, catalogEntryOf(thread))
+  const entry = catalogEntryOf(thread)
+  if (entry === null) entries.delete(thread.id)
+  else entries.set(thread.id, entry)
   writeCatalog(projectId, entries)
 }
 
@@ -373,6 +383,8 @@ function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry
   const dir = threadDir(projectId, threadId)
   const meta = readMeta(dir)
   if (meta === null) return null
+  // Soft-archived threads drop out of the `@`-picker index.
+  if (meta.archivedAt != null) return null
   const digest = [meta.title, meta.workingBrief ?? '', firstUserContent(dir)]
     .filter(Boolean)
     .join(' — ')
@@ -390,9 +402,13 @@ function catalogEntryFromDisk(projectId: string, threadId: string): CatalogEntry
 }
 
 function refreshCatalogLine(projectId: string, threadId: string): void {
-  const entry = catalogEntryFromDisk(projectId, threadId)
-  if (entry === null) return
   const entries = readCatalog(projectId)
+  const entry = catalogEntryFromDisk(projectId, threadId)
+  if (entry === null) {
+    // Missing meta or archived — drop any stale catalog line.
+    if (entries.delete(threadId)) writeCatalog(projectId, entries)
+    return
+  }
   entries.set(threadId, entry)
   writeCatalog(projectId, entries)
 }
@@ -400,7 +416,8 @@ function refreshCatalogLine(projectId: string, threadId: string): void {
 function rebuildCatalog(projectId: string): Map<string, CatalogEntry> {
   const entries = new Map<string, CatalogEntry>()
   for (const thread of readProjectThreads(projectId)) {
-    entries.set(thread.id, catalogEntryOf(thread))
+    const entry = catalogEntryOf(thread)
+    if (entry) entries.set(thread.id, entry)
   }
   writeCatalog(projectId, entries)
   return entries
@@ -615,7 +632,8 @@ export function saveProjectThreads(projectId: string, threads: Thread[]): Promis
     for (const thread of threads) {
       keepIds.add(thread.id)
       writeThread(projectId, thread)
-      entries.set(thread.id, catalogEntryOf(thread))
+      const entry = catalogEntryOf(thread)
+      if (entry) entries.set(thread.id, entry)
     }
     for (const threadId of listThreadIds(projectId)) {
       if (!keepIds.has(threadId)) {
@@ -698,10 +716,38 @@ export function appendHookRun(
   })
 }
 
+/** Append one durable Guarded YOLO shell authorization record. */
+export function appendPermissionDecision(
+  projectId: string,
+  threadId: string,
+  line: SpinePermissionDecisionLine,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
+    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+  })
+}
+
 /** Append one stream-cut observability record (project-level eval source). */
 export function appendStreamStat(projectId: string, line: unknown): Promise<void> {
   return runSerialized(queueKey(projectId), () => {
     const path = streamStatsPath(projectId)
+    mkdirSync(dirname(path), { recursive: true })
+    const existingRaw = safeRead(path) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(path, `${prefix}${JSON.stringify(line)}\n`)
+  })
+}
+
+/** Append one reasoning-checkpoint decision (project-level eval source). */
+export function appendReasoningCheckpoint(projectId: string, line: unknown): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const path = reasoningCheckpointsPath(projectId)
     mkdirSync(dirname(path), { recursive: true })
     const existingRaw = safeRead(path) ?? ''
     const prefix =

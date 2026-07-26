@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from './store.ts'
 import {
+  archiveThread,
   createThread,
   deleteThread,
   openNewThread,
@@ -11,10 +12,17 @@ import {
   getThreadById,
   getActiveThread,
   isBlankThread,
+  isThreadArchived,
   hasUnsubmittedPrompt,
   normalizeBlankThreads,
   setThreadDraftPrompt,
+  appendToken,
+  appendReasoning,
+  addToolCall,
+  updateToolCall,
 } from './thread-helpers.ts'
+import type { AppStore } from './store.ts'
+import type { Thread } from '@shared/types'
 
 describe('panel persistence on new thread', () => {
   it('createThread keeps the side/bottom panel open and resets viewer content', () => {
@@ -273,6 +281,164 @@ describe('draft prompt events', () => {
 
     setThreadDraftPrompt(store, id, 'same')
     assert.equal(draftChanged, 0)
+  })
+})
+
+describe('archiveThread', () => {
+  it('stamps archivedAt, keeps the thread in store, and switches away', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    const second = createThread(store)
+    addMessage(store, second, 'user', 'second')
+    switchThread(store, first)
+
+    archiveThread(store, first)
+
+    const archived = getThreadById(store, first)
+    assert.ok(archived)
+    assert.equal(isThreadArchived(archived), true)
+    assert.ok(archived.archivedAt)
+    assert.equal(store.getState().activeThreadId, second)
+  })
+
+  it('creates a fresh blank thread when the last visible thread is archived', () => {
+    const store = createStore()
+    const only = createThread(store)
+    addMessage(store, only, 'user', 'solo')
+
+    archiveThread(store, only)
+
+    const state = store.getState()
+    const archivedOnly = getThreadById(store, only)
+    assert.ok(archivedOnly)
+    assert.equal(isThreadArchived(archivedOnly), true)
+    assert.equal(state.threads.length, 2)
+    assert.notEqual(state.activeThreadId, only)
+    const active = getActiveThread(store)
+    assert.ok(active)
+    assert.equal(isBlankThread(active), true)
+    assert.equal(isThreadArchived(active), false)
+  })
+
+  it('is a no-op when the thread is already archived', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    createThread(store)
+    archiveThread(store, first)
+    const stamped = getThreadById(store, first)?.archivedAt
+    archiveThread(store, first)
+    assert.equal(getThreadById(store, first)?.archivedAt, stamped)
+  })
+})
+
+describe('per-chunk streaming updates avoid whole-history copies (#1155)', () => {
+  // Two non-blank threads, each with a streaming assistant message. addMessage
+  // prunes *other* blank threads on a thread's first message, so each thread is
+  // messaged right after it is created to keep both alive.
+  function seedTwoThreads(store: AppStore): { a: string; b: string; aMsg: string; bMsg: string } {
+    const a = createThread(store)
+    addMessage(store, a, 'user', 'a-user')
+    const aMsg = addMessage(store, a, 'assistant')
+    const b = createThread(store)
+    addMessage(store, b, 'user', 'b-user')
+    const bMsg = addMessage(store, b, 'assistant')
+    return { a, b, aMsg, bMsg }
+  }
+
+  const find = (store: AppStore, id: string): Thread => {
+    const thread = store.getState().threads.find((t) => t.id === id)
+    assert.ok(thread, `thread ${id} present`)
+    return thread
+  }
+
+  it('appendToken clones only the owning thread and only the target message', () => {
+    const store = createStore()
+    const { a, b, aMsg } = seedTwoThreads(store)
+
+    const aBefore = find(store, a)
+    const bBefore = find(store, b)
+    const siblingBefore = aBefore.messages.find((m) => m.role === 'user')
+    assert.ok(siblingBefore)
+
+    appendToken(store, aMsg, 'hello')
+
+    const aAfter = find(store, a)
+    // Unrelated thread keeps its object identity — it was not cloned.
+    assert.equal(find(store, b), bBefore)
+    // Owning thread is a fresh object with a fresh messages array...
+    assert.notEqual(aAfter, aBefore)
+    assert.notEqual(aAfter.messages, aBefore.messages)
+    // ...but its untouched sibling message keeps identity (only the target is replaced).
+    assert.equal(
+      aAfter.messages.find((m) => m.role === 'user'),
+      siblingBefore,
+    )
+    assert.equal(aAfter.messages.find((m) => m.id === aMsg)?.content, 'hello')
+  })
+
+  it('a burst of tokens never clones an unrelated thread', () => {
+    const store = createStore()
+    const { a, b, aMsg } = seedTwoThreads(store)
+    const bBefore = find(store, b)
+
+    for (const chunk of ['one ', 'two ', 'three']) appendToken(store, aMsg, chunk)
+
+    // The unrelated thread's identity survives every chunk in the burst.
+    assert.equal(find(store, b), bBefore)
+    assert.equal(find(store, a).messages.find((m) => m.id === aMsg)?.content, 'one two three')
+  })
+
+  it('concurrent streams update only their own thread and message', () => {
+    const store = createStore()
+    const { a, b, aMsg, bMsg } = seedTwoThreads(store)
+
+    appendToken(store, aMsg, 'from-a')
+    appendReasoning(store, bMsg, 'from-b')
+
+    // Writing to b left a untouched, and vice versa.
+    assert.equal(find(store, a).messages.find((m) => m.id === aMsg)?.content, 'from-a')
+    assert.equal(find(store, b).messages.find((m) => m.id === bMsg)?.reasoning, 'from-b')
+  })
+
+  it('addToolCall / updateToolCall leave unrelated threads referentially stable', () => {
+    const store = createStore()
+    const { a, b, aMsg } = seedTwoThreads(store)
+    const bBefore = find(store, b)
+
+    addToolCall(store, aMsg, {
+      id: 'tc1',
+      name: 'read_file',
+      args: { path: 'x.ts' },
+      status: 'running',
+      result: null,
+    })
+    assert.equal(find(store, b), bBefore)
+
+    updateToolCall(store, aMsg, 'tc1', { status: 'done', result: 'ok' })
+    assert.equal(find(store, b), bBefore)
+
+    const tc = find(store, a)
+      .messages.find((m) => m.id === aMsg)
+      ?.toolCalls.find((t) => t.id === 'tc1')
+    assert.ok(tc)
+    assert.equal(tc.status, 'done')
+    assert.equal(tc.result, 'ok')
+  })
+
+  it('an unknown message id is a no-op (no thread churn)', () => {
+    const store = createStore()
+    const { a, b } = seedTwoThreads(store)
+    const threadsBefore = store.getState().threads
+
+    appendToken(store, 'no-such-message', 'x')
+
+    // No message matched → no setState, so the threads array itself is unchanged.
+    assert.equal(store.getState().threads, threadsBefore)
+    // Both threads still resolve (find throws if either is missing).
+    assert.equal(find(store, a).id, a)
+    assert.equal(find(store, b).id, b)
   })
 })
 

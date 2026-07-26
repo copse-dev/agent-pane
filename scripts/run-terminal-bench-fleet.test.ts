@@ -4,10 +4,11 @@ import test from 'node:test'
 import {
   cleanPrefix,
   registryHost,
-  rotateTerminalBenchProfiles,
   runConfig,
+  terminalBenchHostShardIndices,
   workerFollowRemoteScript,
 } from './run-terminal-bench-fleet.mts'
+import { rotateTerminalBenchProfiles } from './lib/terminal-bench-profiles.mts'
 
 const workerImage = 'rg.fr-par.scw.cloud/example/terminal-bench-worker:abc123'
 
@@ -21,6 +22,7 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.match(workflow, /profiles:/)
   assert.match(workflow, /ttl_minutes:/)
   assert.match(workflow, /volume_size_gb:/)
+  assert.match(workflow, /workers_per_instance:/)
   assert.match(workflow, /queue: max/)
   assert.match(workflow, /default: main-legacy/)
   assert.match(workflow, /default: '2048'/)
@@ -29,6 +31,8 @@ test('Scaleway workflow defaults to a Serverless model ID', () => {
   assert.match(workflow, /--profiles "\$PROFILES"/)
   assert.match(workflow, /--ttl-minutes "\$TTL_MINUTES"/)
   assert.match(workflow, /--volume-size-gb "\$VOLUME_SIZE_GB"/)
+  assert.match(workflow, /--workers-per-instance "\$WORKERS_PER_INSTANCE"/)
+  assert.match(workflow, /default: PRO2-XS/)
 })
 
 test('Scaleway workflow probes Object Storage with PutObject, not HeadBucket', () => {
@@ -65,7 +69,33 @@ test('fleet limits workers to the number of selected tasks', () => {
   const config = runConfig({ instances: '10', 'max-tasks': '3', 'worker-image': workerImage })
   assert.equal(config.instanceCount, 3)
   assert.equal(config.maxTasks, 3)
+  assert.equal(config.shardCount, 3)
+  assert.equal(config.workersPerInstance, 1)
+  assert.equal(config.type, 'PRO2-XS')
   assert.deepEqual(config.profiles, ['main-legacy'])
+})
+
+test('fleet packs logical shards onto a bounded number of physical hosts', () => {
+  const config = runConfig({
+    instances: '10',
+    'max-tasks': '10',
+    'workers-per-instance': '2',
+    'worker-image': workerImage,
+  })
+  assert.equal(config.instanceCount, 5)
+  assert.equal(config.shardCount, 10)
+  assert.equal(config.workersPerInstance, 2)
+  assert.deepEqual(terminalBenchHostShardIndices(0, config.shardCount, 2), [0, 1])
+  assert.deepEqual(terminalBenchHostShardIndices(4, config.shardCount, 2), [8, 9])
+  assert.deepEqual(terminalBenchHostShardIndices(5, config.shardCount, 2), [])
+  assert.throws(
+    () =>
+      runConfig({
+        'workers-per-instance': '9',
+        'worker-image': workerImage,
+      }),
+    /workers-per-instance must not exceed 8/,
+  )
 })
 
 test('fleet validates and carries an explicit ablation profile', () => {
@@ -78,7 +108,16 @@ test('fleet validates and carries an explicit ablation profile', () => {
   )
 })
 
-test('fleet runs unique profiles sequentially and rotates their order by shard', () => {
+test('fleet carries explicit product profile versions for a paired study', () => {
+  const config = runConfig({
+    profiles: 'product-aligned@2,product-aligned@3',
+    'no-steered-rerun': true,
+    'worker-image': workerImage,
+  })
+  assert.deepEqual(config.profiles, ['product-aligned@2', 'product-aligned@3'])
+})
+
+test('fleet carries unique profiles for task-major rotation', () => {
   const config = runConfig({
     profiles: 'main-legacy,pr-1149,product-aligned',
     'no-steered-rerun': true,
@@ -124,13 +163,37 @@ test('fleet runs unique profiles sequentially and rotates their order by shard',
   )
 })
 
-test('worker checkpoints each profile and prunes task images only after the final profile', () => {
+test('worker runs task-major profiles with per-task checkpoints and pruning', () => {
   const script = readFileSync('benchmarks/terminal_bench/run-shard.sh', 'utf8')
+  const checkpoint = readFileSync('benchmarks/terminal_bench/checkpoint-results.sh', 'utf8')
+  const suite = readFileSync('scripts/run-terminal-bench-suite.mts', 'utf8')
   assert.match(script, /COPSE_TERMINAL_PROFILES/)
-  assert.match(script, /profile_offset < profile_count/)
-  assert.match(script, /profile_offset == profile_count - 1/)
-  assert.match(script, /checkpoint_results "profile/)
-  assert.doesNotMatch(script, /--prune-images\n\s+--prefetch-images/)
+  assert.match(script, /--profiles="\$profiles_csv"/)
+  assert.match(script, /--checkpoint-after-task/)
+  assert.match(script, /--prune-images/)
+  assert.match(script, /sample-terminal-bench-host\.mts/)
+  assert.match(script, /checkpoint_script" "final"/)
+  assert.doesNotMatch(script, /profile_offset/)
+  assert.match(checkpoint, /bench:terminal:seal/)
+  assert.match(checkpoint, /list-terminal-bench-pending-capsules\.mts/)
+  assert.match(checkpoint, /\.uploaded-capsules\.tsv/)
+  assert.doesNotMatch(checkpoint, /aws s3 sync/)
+  assert.match(checkpoint, /host-metrics\.jsonl/)
+  assert.match(checkpoint, /--sse AES256/)
+  assert.match(suite, /rotateTerminalBenchProfiles\(profiles, entry\.globalIndex\)/)
+  assert.match(suite, /MAX_CONSECUTIVE_FULLY_INVALID_TASKS = 3/)
+  assert.match(suite, /continuing the paired cohort/)
+  const fleet = readFileSync('scripts/run-terminal-bench-fleet.mts', 'utf8')
+  assert.match(fleet, /\$\{HOST_RESULTS_ROOT\}\/shard-\$\{String\(shardIndex\)\}/)
+  assert.match(fleet, /COPSE_TERMINAL_RESULTS_ROOT/)
+  assert.match(
+    fleet,
+    /--volume \$\{shellQuote\(HOST_RESULTS_ROOT\)\}:\$\{shellQuote\(HOST_RESULTS_ROOT\)\}/,
+  )
+  assert.doesNotMatch(fleet, /--volume \$\{shellQuote\(resultsPath\)\}:/)
+  assert.match(script, /COPSE_TERMINAL_RESULTS_ROOT/)
+  assert.match(checkpoint, /COPSE_TERMINAL_RESULTS_ROOT/)
+  assert.match(fleet, /Worker host complete; terminating immediately/)
 })
 
 test('fleet accepts only exact registry task names and limits workers to that cohort', () => {
@@ -141,6 +204,7 @@ test('fleet accepts only exact registry task names and limits workers to that co
     'worker-image': workerImage,
   })
   assert.equal(config.instanceCount, 2)
+  assert.equal(config.shardCount, 2)
   assert.deepEqual(config.taskNames, ['circuit-fibsqrt', 'break-filter-js-from-html'])
   assert.throws(
     () =>

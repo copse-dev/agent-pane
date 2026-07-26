@@ -9,7 +9,11 @@ import './styles/themes.css'
 import './styles/global/popout.css'
 
 import { createStore } from '@shared/store/store.ts'
-import { openNewThread, switchThread } from '@shared/store/thread-helpers.ts'
+import {
+  openNewThread,
+  sortThreadsNewestFirst,
+  switchThread,
+} from '@shared/store/thread-helpers.ts'
 import { mountWelcome } from './views/welcome.ts'
 import { mountTitlebar } from './views/titlebar.ts'
 import { mountProjectsPane } from './views/projects-pane.ts'
@@ -38,6 +42,12 @@ import {
   DEFAULT_ACCENT_COLOR,
 } from './views/settings-dialog.ts'
 import { resolveTheme, applyThemeToDocument, watchSystemTheme } from './dom/theme.ts'
+import {
+  restoreUiScale,
+  bumpUiScale,
+  resetUiScale,
+  attachUiScalePinchGestures,
+} from './dom/ui-scale.ts'
 import {
   mountOnboardingDialog,
   openOnboardingDialog,
@@ -69,6 +79,7 @@ import {
   isKeyboardShortcutsDialogOpen,
 } from './views/keyboard-shortcuts-dialog.ts'
 import { startAgentController } from './controller/agent.ts'
+import { attachBestValueDefaultResolver } from './controller/best-value-default.ts'
 import { loadProjects, attachAutosave } from './controller/persistence.ts'
 import {
   addProjectFromPath,
@@ -87,7 +98,11 @@ import { loadMonaco } from './monaco/setup.ts'
 import { mountPaneResizers, parseSavedLayout } from './views/pane-resizer.ts'
 import { bindChatComposerLayout } from './views/chat-layout.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
-import { registerPanelKeyboardShortcuts, matchFindInChatShortcut } from './keyboard-shortcuts.ts'
+import {
+  registerPanelKeyboardShortcuts,
+  matchFindInChatShortcut,
+  matchUiScaleShortcut,
+} from './keyboard-shortcuts.ts'
 import { showErrorToast } from './views/toast.ts'
 import { mountPortraitRightPanelLayout } from './views/portrait-right-panel-layout.ts'
 import {
@@ -206,6 +221,9 @@ async function boot(): Promise<void> {
     typeof savedFontSize === 'number' && savedFontSize >= 8 && savedFontSize <= 32
       ? savedFontSize
       : store.getState().fontSize
+  // Interface scale drives CSS --ui-scale (spacing + type tokens). Apply before
+  // paint so the shell does not flash at 100% then jump.
+  const uiScale = restoreUiScale(await api.settings.get('uiScale'))
   applyThemeToDocument(theme)
   // When the preference is `system`, follow OS light/dark flips live so the app
   // re-themes without a relaunch. Reads the preference from the store each time,
@@ -234,6 +252,7 @@ async function boot(): Promise<void> {
     theme,
     themePreference,
     fontSize,
+    uiScale,
     autoPortraitRightPanel:
       typeof savedAutoPortraitRightPanel === 'boolean' ? savedAutoPortraitRightPanel : true,
     rightPanelPosition: isRightPanelPosition(savedRightPanelPosition)
@@ -257,6 +276,7 @@ async function boot(): Promise<void> {
   if (!popoutMode) {
     startAgentController(store, api)
     attachAutosave(store, api)
+    attachBestValueDefaultResolver(store, api)
   }
   attachProjectThreadCache(store)
 
@@ -296,11 +316,40 @@ async function boot(): Promise<void> {
     openRightPanelWithWorkspace(store, api, 'browser')
   })
 
+  // A cron trigger writes the new draft task in main so it also works for an
+  // inactive project. When it belongs to the active project, merge just that
+  // authoritative thread into the renderer store without replacing any live
+  // composer/stream state or stealing focus from the current task.
+  api.automations.onTriggered((event) => {
+    if (store.getState().activeProjectId !== event.projectId) return
+    void api.threads.loadProject(event.projectId).then((loaded) => {
+      if (store.getState().activeProjectId !== event.projectId) return
+      const created = loaded.find((thread) => thread.id === event.threadId)
+      if (!created || store.getState().threads.some((thread) => thread.id === created.id)) return
+      store.setState({
+        threads: sortThreadsNewestFirst([created, ...store.getState().threads]),
+      })
+      store.emit('threads_changed')
+    })
+  })
+
   // Help ▸ Keyboard Shortcuts (Cmd/Ctrl+/) opens the shortcut cheat sheet. Unlike
   // the panel items it needs no workspace, so it works from the welcome screen too.
   api.menu.onKeyboardShortcuts(() => {
     openKeyboardShortcutsDialog()
   })
+
+  // View ▸ Zoom In/Out/Actual Size — CSS --ui-scale (not Chromium page zoom).
+  api.menu.onUiScaleZoomIn(() => {
+    void bumpUiScale(store, api, 1)
+  })
+  api.menu.onUiScaleZoomOut(() => {
+    void bumpUiScale(store, api, -1)
+  })
+  api.menu.onUiScaleReset(() => {
+    void resetUiScale(store, api)
+  })
+  attachUiScalePinchGestures(store, api)
 
   // MCP-UI canvas: an artefact from a (bundled or external) MCP server opens in
   // the Browser pane, rendered fully sandboxed.
@@ -473,6 +522,15 @@ function registerKeyboardShortcuts(): void {
     if (meta && e.key === '/') {
       e.preventDefault()
       openKeyboardShortcutsDialog()
+    }
+    // Cmd/Ctrl+=/−/0 adjust the CSS --ui-scale interface size. Bound here (not
+    // only via the View menu) because the old Chromium zoom roles were silent
+    // in this frameless shell — same pattern as Settings (Cmd/,).
+    const uiScaleAction = matchUiScaleShortcut(e)
+    if (uiScaleAction) {
+      e.preventDefault()
+      if (uiScaleAction === 'reset') void resetUiScale(store, api)
+      else void bumpUiScale(store, api, uiScaleAction === 'in' ? 1 : -1)
     }
     if (meta && e.key === 'w') {
       e.preventDefault()

@@ -2,6 +2,12 @@ import { createInterface } from 'node:readline'
 import { copyFileSync } from 'node:fs'
 import { dirname, join, posix } from 'node:path'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
+import {
+  PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS,
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_RECOVERY_MAX_TOKENS,
+} from '../packages/agent/src/reasoning-checkpoint-policy.ts'
+import type { ReasoningCheckpointPolicy } from '../packages/agent/src/reasoning-circle-detector.ts'
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import { OpenAIProvider } from '@copse/llm/openai-provider.ts'
@@ -22,8 +28,9 @@ import {
 import { TerminalBenchTranscript } from './lib/terminal-bench-transcript.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
-export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = 2_048
-export const DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS = 4_096
+export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS
+export const DEFAULT_TERMINAL_REASONING_RECOVERY_STREAM_OUTPUT_TOKENS =
+  PRODUCT_REASONING_RECOVERY_MAX_TOKENS
 export const DEFAULT_TERMINAL_MAX_COMMAND_TIMEOUT_SEC = 600
 const TERMINAL_COMMAND_TIMEOUT_DESCRIPTION =
   'Optional timeout for a command that is expected to run longer than the default, such as a final build, training run, or verifier. Keep the default for inspection and broad searches.'
@@ -48,6 +55,17 @@ export function terminalStuckToolRecoveryNudge(instruction: string): string {
     terminalBenchProfile('pr-1149').stuckToolRecoveryNudge,
     instruction,
   )
+}
+
+export function terminalReasoningCheckpointPolicy(
+  profile: TerminalBenchProfile,
+): ReasoningCheckpointPolicy | undefined {
+  if (profile.reasoningPolicy !== 'circle-gated-2k-checkpoints-v1') return undefined
+  return {
+    ...PRODUCT_REASONING_CHECKPOINT_POLICY,
+    // Terminal-Bench retains its action-oriented 2K visible-answer ceiling.
+    maxNonReasoningTokens: DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS,
+  }
 }
 
 export function terminalRequestedOutputPaths(instruction: string): string[] {
@@ -141,6 +159,7 @@ interface StartMessage {
   instruction: string
   model: string
   threadDir: string
+  workspaceRoot: string
 }
 
 type InputMessage = StartMessage | TerminalToolResult
@@ -175,12 +194,14 @@ function runShellTool(maxCommandTimeoutSec: number): LLMTool {
   }
 }
 
-function writeFileTool(outputPaths: string[] = []): LLMTool {
+function writeFileTool(profile: TerminalBenchProfile, outputPaths: string[] = []): LLMTool {
   const exactPaths = [...new Set(outputPaths)]
+  const workspaceRelative = profile.writeFilePolicy === 'workspace-relative'
   return {
     name: 'write_file',
-    description:
-      'Create or replace a text file under /app. Use this for the exact deliverable requested by the task; provide the complete file content.',
+    description: workspaceRelative
+      ? 'Create or replace a text file in the task workspace. Provide the complete file content and a path relative to the working directory.'
+      : 'Create or replace a text file under /app. Use this for the exact deliverable requested by the task; provide the complete file content.',
     parameters: {
       type: 'object',
       properties: {
@@ -189,7 +210,9 @@ function writeFileTool(outputPaths: string[] = []): LLMTool {
           description:
             exactPaths.length > 0
               ? `The exact requested output path: ${exactPaths.join(' or ')}`
-              : 'Absolute output path under /app, for example /app/result.txt',
+              : workspaceRelative
+                ? 'File path relative to the working directory, for example result.txt or src/result.txt'
+                : 'Absolute output path under /app, for example /app/result.txt',
           ...(exactPaths.length > 0 ? { enum: exactPaths } : {}),
         },
         content: { type: 'string', description: 'Complete text content to write' },
@@ -203,7 +226,7 @@ export function terminalRecoveryWriteTool(outputPaths: string[]): LLMTool {
   if (outputPaths.length === 0) {
     throw new Error('Recovery write tool requires at least one requested output path.')
   }
-  return writeFileTool(outputPaths)
+  return writeFileTool(terminalBenchProfile('pr-1149@1'), outputPaths)
 }
 
 function replaceTools(target: LLMTool[], replacement: LLMTool[]): void {
@@ -221,6 +244,45 @@ export function terminalWriteFileCommand(path: string, content: string): string 
   }
   const encoded = Buffer.from(content, 'utf8').toString('base64')
   return `printf '%s' '${encoded}' | base64 -d > '${normalized}'`
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+export function terminalWorkspaceWriteFileCommand(
+  path: string,
+  content: string,
+  workspaceRoot: string,
+): string {
+  const normalizedRoot = posix.normalize(workspaceRoot)
+  if (
+    !posix.isAbsolute(workspaceRoot) ||
+    workspaceRoot !== normalizedRoot ||
+    workspaceRoot.includes('\0')
+  ) {
+    throw new Error(`workspace root must be a normalized absolute path: '${workspaceRoot}'.`)
+  }
+  if (!path || path.includes('\0')) throw new Error('write_file path must be non-empty.')
+  const target = posix.isAbsolute(path)
+    ? posix.normalize(path)
+    : posix.resolve(normalizedRoot, path)
+  const relative = posix.relative(normalizedRoot, target)
+  if (
+    relative === '' ||
+    relative === '..' ||
+    relative.startsWith('../') ||
+    posix.isAbsolute(relative)
+  ) {
+    throw new Error(
+      `write_file path must remain inside the workspace '${normalizedRoot}': '${path}'.`,
+    )
+  }
+  const encoded = Buffer.from(content, 'utf8').toString('base64')
+  return (
+    `mkdir -p -- ${shellQuote(posix.dirname(target))} && ` +
+    `printf '%s' '${encoded}' | base64 -d > ${shellQuote(target)}`
+  )
 }
 
 export const TERMINAL_BENCH_SYSTEM_PROMPT = MAIN_LEGACY_SYSTEM_PROMPT
@@ -287,7 +349,13 @@ export async function runTerminalBenchAgent(): Promise<void> {
   if (typeof parsed.threadDir !== 'string' || !parsed.threadDir.trim()) {
     throw new Error('Terminal agent bridge expected a thread transcript directory.')
   }
-  const profile = terminalBenchProfile()
+  if (typeof parsed.workspaceRoot !== 'string' || !parsed.workspaceRoot.trim()) {
+    throw new Error('Terminal agent bridge expected a workspace root.')
+  }
+  const profile = terminalBenchProfile(
+    process.env['COPSE_TERMINAL_PROFILE_VERSIONED_ID'] ?? process.env['COPSE_TERMINAL_PROFILE'],
+  )
+  const reasoningCheckpointPolicy = terminalReasoningCheckpointPolicy(profile)
   const agentDirectory = dirname(parsed.threadDir)
   const baseProvider = profile.forcesRequestedOutputRecovery
     ? new OpenAIProvider(parsed.model, { baseURL: baseUrl, apiKey, includeUsage: true })
@@ -318,7 +386,10 @@ export async function runTerminalBenchAgent(): Promise<void> {
   const steeringPath = process.env['COPSE_TERMINAL_STEERING_FILE']?.trim()
   const steering = steeringPath ? loadTerminalBenchSteering(steeringPath).steering : undefined
   const messages = [
-    { role: 'system' as const, content: profile.systemPrompt },
+    {
+      role: 'system' as const,
+      content: profile.systemPrompt.replaceAll('{WORKSPACE_ROOT}', parsed.workspaceRoot),
+    },
     ...(steering
       ? [
           {
@@ -344,7 +415,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
   transcript.write()
   let traceEvents: AgentStreamChunk[] = []
   const standardTools = terminalBenchProfileToolNames(profile).map((name) =>
-    name === 'run_shell' ? runShellTool(maxCommandTimeoutSec) : writeFileTool(),
+    name === 'run_shell' ? runShellTool(maxCommandTimeoutSec) : writeFileTool(profile),
   )
   const terminalTools = [...standardTools]
   const flushTraceEvents = (): void => {
@@ -367,6 +438,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
         ? withOriginalTerminalTask(profile.reasoningRunawayRecoveryNudge, parsed.instruction)
         : profile.reasoningRunawayRecoveryNudge,
       reasoningRunawayTextToleranceChars: 256,
+      ...(reasoningCheckpointPolicy ? { reasoningCheckpointPolicy } : {}),
       allowForcedTextEscalation: false,
       stuckToolRecoveryNudge: profile.forcesRequestedOutputRecovery
         ? withOriginalTerminalTask(profile.stuckToolRecoveryNudge, parsed.instruction)
@@ -393,6 +465,9 @@ export async function runTerminalBenchAgent(): Promise<void> {
       },
       recordStreamCut: (record) => {
         transcript.recordStreamCut(record)
+      },
+      recordReasoningCheckpoint: (record) => {
+        transcript.recordReasoningCheckpoint(record)
       },
       onChunk: (chunk: AgentStreamChunk) => {
         if (chunk.type === 'tool_call') usage.toolCalls += 1
@@ -428,7 +503,10 @@ export async function runTerminalBenchAgent(): Promise<void> {
           if (!terminalRequestedOutputPaths(parsed.instruction).includes(path)) {
             validationText = content
           }
-          command = terminalWriteFileCommand(path, content)
+          command =
+            profile.writeFilePolicy === 'workspace-relative'
+              ? terminalWorkspaceWriteFileCommand(path, content, parsed.workspaceRoot)
+              : terminalWriteFileCommand(path, content)
         } else if (name === 'run_shell') {
           const requestedCommand =
             typeof args === 'object' && args !== null && 'command' in args

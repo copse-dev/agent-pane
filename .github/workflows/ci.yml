@@ -1,7 +1,12 @@
 name: CI
 on:
   push:
-    branches: [main]
+    # `develop` is the default branch and the integration target: day-to-day PRs
+    # land there under the LIGHT tier. `main` only ever receives promotion PRs
+    # from `develop`, and those run the FULL tier — so `main` is always in a
+    # state a release can be cut from. See the heavy-tier guards on `bench` /
+    # `e2e` below, and docs/testing-strategy.md.
+    branches: [main, develop]
     # A release tag must receive this exact same aggregate gate before the
     # publishing workflow will package it. See release-mac.yml's preflight.
     tags: ['v*']
@@ -12,13 +17,29 @@ on:
   # pull_request events GitHub reads these triggers from the BASE branch's
   # workflow, so this is only active once merged to main.)
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    # `ready_for_review` is required because the heavy tier (build / e2e / bench)
+    # is gated on `draft == false` below: without it, promoting a draft would
+    # never dispatch those jobs and `CI Passed` would sit on the draft's
+    # heavy-jobs-skipped result forever.
+    types: [opened, synchronize, reopened, labeled, ready_for_review]
+    # No `branches:` filter — PRs into `develop` and the promotion PRs into
+    # `main` both run this workflow. Which TIER they get is decided per job by
+    # `github.base_ref`, not here, so a PR retargeted from `develop` to `main`
+    # picks up the full tier on its next sync without touching this file.
   # Nightly full e2e on GitHub-hosted runners — the comprehensive safety net.
   # PR/push runs are oracle-thinned on self-hosted (see the e2e job), so the
   # full suite is no longer guaranteed on every main push; this catches anything
   # a partial map missed, within a day. Off-:00 minute to avoid the cron stampede.
   schedule:
     - cron: '17 6 * * *'
+  # NOTE: there is deliberately no `merge_group` trigger. GitHub's merge queue
+  # requires Enterprise Cloud for private repositories and this org is on Team,
+  # so the trigger could never fire. The `develop` -> `main` promotion flow is
+  # the stand-in: `develop` absorbs the day's merges under the light tier, and
+  # the promotion PR runs the full tier once for the whole batch. What we give
+  # up versus a real queue is automatic bisection — a red promotion names a
+  # batch, not a commit — which is why promotions should be frequent enough to
+  # stay small.
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -86,6 +107,31 @@ jobs:
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
           # Same-repo runs keep credentials for the oracle's base ref fetches.
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      # Same-repository PRs already execute inside this job's check-fleet trust
+      # boundary. Scan them here so secret detection blocks the required
+      # `CI Passed` gate without dispatching a second GitHub-hosted job. Forks
+      # remain on the standalone hosted workflow in gitleaks.yml.
+      - name: Install pinned gitleaks CLI
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_LINUX_X64_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          path="${RUNNER_TEMP}/${archive}"
+          curl --fail --location --retry 3 \
+            --output "${path}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          echo "${GITLEAKS_LINUX_X64_SHA256}  ${path}" | sha256sum --check --strict
+          tar -xzf "${path}" -C "${RUNNER_TEMP}" gitleaks
+          "${RUNNER_TEMP}/gitleaks" version
+      - name: Scan repository history for secrets
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          "${RUNNER_TEMP}/gitleaks" git --redact --verbose --no-banner \
+            --log-opts="--full-history --diff-filter=tuxdb HEAD" .
       - uses: ./.github/actions/setup
       # Retry once on exit 137 (SIGKILL / cgroup OOM). The check fleet caps each
       # runner at ~6 GB; under load, tsc/eslint can get killed even though a
@@ -229,7 +275,46 @@ jobs:
       # Electron/gortex processes then OOM-crash unrelated late-running specs.
       # `--shard` and the subset round-robin still partition specs disjointly.
       - id: shards
+        env:
+          PLAN_MODE: ${{ steps.plan.outputs.mode }}
+          PLAN_SPECS: ${{ steps.plan.outputs.specs }}
         run: |
+          # Size the matrix to the work the oracle actually planned. Previously
+          # this was always 8, so a screenshots-only commit (mode=skip) still
+          # dispatched 8 shards that each paid checkout + `npm ci` + dist
+          # download before hitting the early-exit in the run step — 8 self-hosted
+          # runners occupied to do nothing, on every bot screenshot push. Same for
+          # a subset smaller than 8: the surplus shards booted only to find an
+          # empty slice.
+          #
+          # An empty list must NOT reach the `e2e` matrix: GitHub Actions treats
+          # `strategy.matrix: []` as a job **failure**, not 'skipped' (observed on
+          # #1233 — `needs.e2e.result=failure` painted `CI Passed` red in skip
+          # mode). The `e2e` job `if:` therefore gates on `e2e_shard_total != 0`
+          # so a zero-shard plan skips the job cleanly; `ci-passed` then sees
+          # 'skipped' and its mode=skip branch accepts it.
+          if [ "$PLAN_MODE" = "skip" ]; then
+            echo "mode=skip -> no e2e shards dispatched"
+            { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$PLAN_MODE" = "subset" ]; then
+            # SHARD_TOTAL is the round-robin modulus in the run step, so total and
+            # the list must agree or specs would be assigned to shards that were
+            # never dispatched. Cap at 8 (the memory ceiling from #339).
+            n=0
+            for _ in $PLAN_SPECS; do n=$(( n + 1 )); done
+            [ "$n" -gt 8 ] && n=8
+            if [ "$n" -lt 1 ]; then
+              echo "mode=subset with no specs -> no e2e shards dispatched"
+              { echo "total=0"; echo "list=[]"; } >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            list="$(seq -s, 1 "$n")"
+            echo "mode=subset -> $n shard(s)"
+            { echo "total=$n"; echo "list=[$list]"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           { echo "total=8"; echo "list=[1,2,3,4,5,6,7,8]"; } >> "$GITHUB_OUTPUT"
 
   # Auto-fix the PR branch: run every autofix we have — ESLint `--fix` then
@@ -354,7 +439,28 @@ jobs:
   # degrading in-app search.
   bench:
     needs: precheck
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name != 'push' || github.ref != 'refs/heads/develop') &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' ||
+       github.base_ref == 'main' ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full')) &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.draft == false ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # HEAVY TIER. Runs on promotion PRs (base `main`), on pushes to `main`, on
+    # the nightly schedule and on release tags — not on the day-to-day PRs into
+    # `develop`, and not on pushes to `develop`. bench fetches gortex and runs
+    # the semantic-search + agent gates; paying that per PR when ~20 land a day
+    # is the cost the develop model exists to amortise. The `ci-full` label
+    # forces it on a develop-targeted PR that genuinely wants the signal.
+    # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
+    # signal has no consumer until the PR is promoted — and `ready_for_review`
+    # (see the trigger block) dispatches the full tier the moment it is. The
+    # `ci-full` label forces it earlier for a draft that genuinely wants it.
+    # `precheck` / `check` / `autoformat` still run on drafts, so lint, types,
+    # unit tests and the autofixer keep giving fast feedback.
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. No Electron/display need.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
@@ -437,7 +543,18 @@ jobs:
 
   build:
     needs: precheck
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.draft == false ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Draft PRs skip the heavy tier. Drafts cannot merge, so the expensive
+    # signal has no consumer until the PR is promoted — and `ready_for_review`
+    # (see the trigger block) dispatches the full tier the moment it is. The
+    # `ci-full` label forces it earlier for a draft that genuinely wants it.
+    # `precheck` / `check` / `autoformat` still run on drafts, so lint, types,
+    # unit tests and the autofixer keep giving fast feedback.
     # Prefer self-hosted (CHECKS_RUNNER) to save Actions minutes; hosted fallback
     # when unset. Produces the dist artifact consumed by the e2e shards below.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
@@ -502,7 +619,31 @@ jobs:
 
   e2e:
     needs: [build, precheck]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      needs.precheck.outputs.e2e_shard_total != '0' &&
+      (github.event_name != 'push' || github.ref != 'refs/heads/develop') &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository) &&
+      (github.event_name != 'pull_request' ||
+       github.base_ref == 'main' ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full') ||
+       contains(github.event.pull_request.labels.*.name, 'update-screenshots')) &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.draft == false ||
+       contains(github.event.pull_request.labels.*.name, 'ci-full'))
+    # Zero-shard plans (oracle mode=skip / empty subset) skip this job via
+    # `e2e_shard_total != 0` — an empty matrix is a GHA **failure**, not a skip
+    # (see the precheck shards step).
+    # HEAVY TIER, same rule as `bench` above: promotion PRs (base `main`),
+    # pushes to `main`, the nightly schedule and release tags. PRs into
+    # `develop` skip 8 Electron shards apiece, which is where most of the
+    # runner starvation came from. Two escape hatches on a develop-targeted PR:
+    # `ci-full` for the whole heavy tier, and `update-screenshots` for this job
+    # specifically — without the latter that label would be inert on develop
+    # PRs, since the screenshot commit is produced by the e2e run.
+    # Draft PRs skip e2e for the same reason as `build` above; `build` is also
+    # gated, so on a draft this job's `needs` are unsatisfied and it would skip
+    # regardless — the explicit clause keeps the intent readable at this job.
     # PR/push e2e runs on the self-hosted Docker runners (see ci-runners/):
     # free minutes, and a box big enough to avoid the 2-core/7GB hosted-runner
     # OOM that most of the shard quarantines exist to work around. The nightly
@@ -534,7 +675,7 @@ jobs:
     # launches too many Electron/gortex processes; a later unrelated spec then
     # fails to boot or OOM-crashes ("shutdown signal"). #339's data showed that
     # 8 shards stays under that limit even in the densest spec range.
-    # The per-attempt `timeout` is 480s (step cap 26 min for 3 attempts) so attempt
+    # The per-attempt `timeout` is 480s (step cap 18 min for 2 attempts) so attempt
     # 1 finishes instead of being SIGKILL'd mid-retry, letting attempt 2 relaunch.
     strategy:
       # Fail fast: the first shard to go red cancels the rest. On the self-hosted
@@ -591,7 +732,7 @@ jobs:
         if: >-
           needs.precheck.outputs.mode == 'full' ||
           needs.precheck.outputs.mode == 'subset'
-        timeout-minutes: 26
+        timeout-minutes: 18
         env:
           PLAN_MODE: ${{ needs.precheck.outputs.mode }}
           PLAN_SPECS: ${{ needs.precheck.outputs.specs }}
@@ -639,7 +780,11 @@ jobs:
           }
 
           trap cleanup_e2e_processes EXIT
-          for attempt in 1 2 3; do
+          # Two attempts, not three: attempt 2 absorbs the flaky-session-startup
+          # case this retry exists for, while a deterministic failure (e.g. a
+          # selector that can never match) previously burned three full 480s
+          # attempts before reporting. Halves the cost of a genuine red shard.
+          for attempt in 1 2; do
             cleanup_e2e_processes
             echo "::group::e2e shard ${{ matrix.shard }} attempt $attempt"
             if ${TIMEOUT:+$TIMEOUT -k 15 480} npm run test:e2e:ci -- $SHARD_ARGS $SPEC_ARGS; then
@@ -706,14 +851,19 @@ jobs:
   # branch) and only after a green e2e run, so we never commit half-rendered shots.
   # Deliberately NOT in `ci-passed`'s needs: it's a side effect, not a gate.
   #
-  # Write policy — UNCONTESTED SHOTS ONLY. A rendered shot is auto-committed only
-  # when nothing contests the write: the baseline was inherited from main (or is
-  # brand new) and neither this branch (by a non-bot author) nor main has touched
-  # it since the merge-base. A shot someone deliberately committed on the branch,
-  # or that main moved under the PR, is HELD — the branch's committed version
-  # always wins — and surfaced in the PR comment with a base-vs-branch image
-  # comparison. Adding the `update-screenshots` label is the explicit
-  # "regenerate and take CI's render" override. (filter-screenshots.mts decides.)
+  # Write policy — OWNED, UNCONTESTED SHOTS ONLY. A rendered shot is auto-committed
+  # only when this diff owns it AND nothing contests the write. Owned means the
+  # oracle maps the diff to a spec that renders it, or someone hand-committed it on
+  # this branch; the e2e tier re-renders far more than that (a broad selection
+  # renders everything), and committing the rest attributed unrelated render drift
+  # to whichever PR happened to run — a release-smoke fix once landed 17 refreshed
+  # shots. Uncontested means the baseline was inherited from main (or is brand new)
+  # and neither this branch (by a non-bot author) nor main has touched it since the
+  # merge-base. Everything else is HELD — the branch's committed version stands —
+  # and surfaced in the PR comment. Adding the `update-screenshots` label is the
+  # explicit "regenerate and take CI's render" override, and is the escape hatch
+  # when the oracle genuinely failed to map a render-affecting file to its shots.
+  # (filter-screenshots.mts decides; scripts/lib/screenshot-scope.mts owns the rule.)
   #
   # It also reconciles screenshot conflicts: if main re-rendered the same reference
   # PNG, that binary file can't 3-way merge and the PR goes `dirty`. The reconcile
@@ -740,6 +890,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      # True when this job pushed a new commit, i.e. the SHA the rest of CI
+      # gated is no longer the branch tip. Consumed by `ci-passed`.
+      superseded: ${{ steps.push.outputs.superseded }}
     steps:
       # The PR can merge while this trailing job is still queued (auto-merge fires
       # the moment the e2e gate goes green), and GitHub then deletes the head
@@ -879,11 +1033,14 @@ jobs:
       # and STAYS that way: the render commit above only updates the head branch, it
       # never incorporates main, so head's PNG keeps conflicting with main's PNG.
       # Bring main in here so the conflict actually resolves. Generated PNGs have no
-      # meaningful 3-way merge — for any screenshot-path conflict we keep the head
-      # branch's version (--ours). Because the filter step above already reverted
-      # contested renders, --ours here means: the fresh render for uncontested
-      # shots, and the branch's deliberately COMMITTED shot for contested ones —
-      # the branch always wins, but CI's render never displaces deliberate work.
+      # meaningful 3-way merge, so each conflicting shot is resolved by OWNERSHIP:
+      # the branch keeps (--ours) a shot the oracle maps to this diff or that
+      # someone hand-committed here, and takes main's (--theirs) for anything else.
+      # Because the filter step above already reverted contested and out-of-scope
+      # renders, --ours here means: the fresh render for uncontested owned shots,
+      # and the branch's deliberately COMMITTED shot for contested ones — the
+      # branch wins for what it owns, CI's render never displaces deliberate work,
+      # and an unrelated re-render never reverts main.
       # We NEVER auto-resolve source code:
       # if anything outside tests/e2e/screenshots/ conflicts, abort and leave it to
       # a human (the `manual` output drives a PR comment below).
@@ -900,6 +1057,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch --no-tags origin main
+
+          # Resolve ownership BEFORE any merge attempt: --own-paths reads the
+          # branch's diff from the working tree, and a conflicted merge in progress
+          # would fold main's incoming changes into it and over-grant ownership.
+          mapfile -t owned < <(node scripts/check-screenshots.mts --own-paths --base origin/main)
+          echo "Branch owns ${#owned[@]} reference shot(s)"
 
           # `git merge` returns non-zero for real conflicts AND for "untracked
           # working tree files would be overwritten" (no MERGE_HEAD). Only the
@@ -953,8 +1116,43 @@ jobs:
             git merge --abort
             exit 0
           fi
-          echo "Screenshot-only conflict — keeping the freshly re-rendered shots"
-          git checkout --ours -- tests/e2e/screenshots/
+          # Per-file resolution, not a blanket --ours. A shot this branch OWNS
+          # (the oracle maps the diff to a spec that renders it, or someone
+          # hand-committed it here) keeps the branch version. Anything else takes
+          # main's — otherwise a branch that merely *re-rendered* an unrelated shot
+          # reverts main's newer version on merge, the next PR flips it back, and
+          # the shot ping-pongs between render states across PRs. `*` means scope
+          # is unavailable (no merge-base) and every shot keeps --ours, the
+          # pre-scope policy. See scripts/lib/screenshot-scope.mts.
+          echo "Screenshot-only conflict — resolving by ownership"
+          resolve_shot() {
+            # `git checkout --ours/--theirs` reads the conflict's index stage, which
+            # is absent when that side DELETED the shot (modify/delete). Removing
+            # the file is the correct resolution for that side, so fall back to it
+            # rather than dying under `set -e` mid-merge. `git add <dir>` below
+            # stages the removal.
+            local side="$1" path="$2"
+            git checkout "--${side}" -- "$path" 2>/dev/null && return 0
+            echo "    ${side} side deleted this shot — taking the deletion"
+            git rm -q -f -- "$path"
+          }
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            keep_ours=0
+            for o in "${owned[@]}"; do
+              if [ "$o" = '*' ] || [ "$o" = "$path" ]; then
+                keep_ours=1
+                break
+              fi
+            done
+            if [ "$keep_ours" = 1 ]; then
+              echo "  ours   $path (owned by this branch)"
+              resolve_shot ours "$path"
+            else
+              echo "  theirs $path (not owned by this diff — keeping main's render)"
+              resolve_shot theirs "$path"
+            fi
+          done <<< "$conflicts"
           git add tests/e2e/screenshots/
           # The push authenticates with SCREENSHOTS_PAT, a classic PAT without
           # `workflow` scope. If main advanced a file under .github/workflows/, the
@@ -983,12 +1181,25 @@ jobs:
       - name: Push
         if: steps.head.outputs.exists == 'true'
         id: push
+        env:
+          RUN_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           # No-op ("Everything up-to-date") when nothing was committed or merged, so
           # this is safe to run unconditionally — even on the manual-merge path it
           # just pushes the render commit (the aborted merge left HEAD untouched).
           git push
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          NEW_SHA="$(git rev-parse HEAD)"
+          echo "sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+          # Did this job move the branch? If so the SHA this run gated is no
+          # longer the tip, and `ci-passed` must not report green for it — see
+          # the supersession check there. Covers both the screenshot commit and
+          # the reconcile merge, since either advances HEAD.
+          if [ -n "$RUN_HEAD_SHA" ] && [ "$NEW_SHA" != "$RUN_HEAD_SHA" ]; then
+            echo "Head advanced ${RUN_HEAD_SHA} -> ${NEW_SHA}; this run's SHA is superseded."
+            echo "superseded=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "superseded=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Comment on PR with updated screenshots
         # Always run: when there's something to report (refreshed shots, ignored
         # noise, held flapping/contested renders, or a source conflict needing a
@@ -1003,6 +1214,7 @@ jobs:
           IGNORED_JSON: ${{ steps.filter.outputs.ignored-json }}
           FLAPPING_JSON: ${{ steps.filter.outputs.flapping-json }}
           CONTESTED_JSON: ${{ steps.filter.outputs.contested-json }}
+          OUT_OF_SCOPE_JSON: ${{ steps.filter.outputs.out-of-scope-json }}
           MAIN_SHA: ${{ steps.filter.outputs.main-sha }}
           MANUAL_MERGE_FILES: ${{ steps.reconcile.outputs.manual-files }}
           WORKFLOW_MERGE_FILES: ${{ steps.reconcile.outputs.workflow-files }}
@@ -1015,6 +1227,7 @@ jobs:
             const ignored = JSON.parse(process.env.IGNORED_JSON || '[]');
             const flapping = JSON.parse(process.env.FLAPPING_JSON || '[]');
             const contested = JSON.parse(process.env.CONTESTED_JSON || '[]');
+            const outOfScope = JSON.parse(process.env.OUT_OF_SCOPE_JSON || '[]');
             const mainSha = process.env.MAIN_SHA || '';
             const manualMerge = (process.env.MANUAL_MERGE_FILES || '').split('\n').filter(Boolean);
             const workflowMerge = (process.env.WORKFLOW_MERGE_FILES || '').split('\n').filter(Boolean);
@@ -1107,6 +1320,24 @@ jobs:
                   lines.join('\n'),
               );
             }
+            if (outOfScope.length) {
+              // Named individually rather than counted: a silent hold reads as
+              // "nothing drifted", which is exactly the failure mode this replaces.
+              const lines = outOfScope.map((s) => {
+                const diff = s.diffPixels == null ? 'differs' : `${s.diffPixels} px (${s.ratioPct})`;
+                return `- \`${s.name}\` — ${diff} vs committed`;
+              });
+              sections.push(
+                `### Held — not owned by this diff (${outOfScope.length})\n\n` +
+                  `The e2e run re-rendered these, but no spec the test oracle maps to this diff ` +
+                  `produces them, so the difference is drift belonging to some other change — it ` +
+                  `was **not** committed. This stops an unrelated PR rewriting screens it never ` +
+                  `touched (and, on merge, reverting \`main\`'s newer render). If your change ` +
+                  `really does move these shots and the oracle missed the mapping, add the ` +
+                  `\`update-screenshots\` label to take CI's render:\n\n` +
+                  lines.join('\n'),
+              );
+            }
             const body = sections.length
               ? [
                   marker,
@@ -1172,7 +1403,7 @@ jobs:
   ci-passed:
     name: CI Passed
     if: always()
-    needs: [precheck, check, bench, build, e2e]
+    needs: [precheck, check, bench, build, e2e, commit-screenshots]
     # Tiny aggregate gate. Prefer self-hosted (CHECKS_RUNNER) to save Actions
     # minutes; hosted fallback when unset. Fails closed either way: if the fleet
     # is saturated this stays pending (never green), so it can't wave a run
@@ -1216,6 +1447,24 @@ jobs:
             fi
             echo "Fork PR safe check tier passed; privileged jobs were intentionally skipped."
             exit 0
+          fi
+          # The screenshot job runs AFTER e2e and pushes reference PNGs to the PR
+          # head. Before this check, `ci-passed` could go green on a SHA that job
+          # was about to supersede — so auto-merge (which fires the moment the
+          # gate is green) could merge the PR before its screenshots landed. The
+          # head branch is then deleted, the job no-ops green by design (#1001),
+          # and the shots are silently lost: `main` keeps stale references for a
+          # change that moved them.
+          #
+          # Fail closed on the superseded SHA instead. The screenshot commit
+          # creates a new head, that run is screenshots-only so the oracle
+          # reports mode=skip, this job finds nothing to push, and the gate goes
+          # green on a tip whose references are final. Terminates in exactly one
+          # extra cheap cycle.
+          if [ "${{ needs.commit-screenshots.outputs.superseded }}" = "true" ]; then
+            echo "Reference screenshots were committed on top of ${RUN_HEAD_SHA}."
+            echo "This SHA is superseded; the gate will report on the new tip."
+            exit 1
           fi
           MODE="${{ needs.precheck.outputs.mode }}"
           ANY_FAILURE=${{ contains(needs.*.result, 'failure') }}

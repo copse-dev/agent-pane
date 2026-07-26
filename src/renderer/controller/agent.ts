@@ -9,6 +9,7 @@ import {
   findToolCall,
   setMessageContent,
   setMessageCommandSummary,
+  setMessageToolSummary,
   setThreadStatus,
   addUsageDelta,
   recordContextTrim,
@@ -21,7 +22,7 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import { syncThreadGitBranchAfterShell } from './sync-thread-branch-after-shell.ts'
 import { shellCommandMayChangeBranch } from '@shared/git/sync-thread-branch.ts'
-import { shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
+import { getToolCallLabel, shellCommandsFromToolCalls } from '@shared/tools/tool-display.ts'
 import {
   initSubagent,
   appendSubagentText,
@@ -82,6 +83,9 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
     // shell-command count, so we re-summarize only when more commands arrive.
     summaryMsgId: string | null
     summaryCount: number
+    // Same guard for the whole-turn tool rollup polish (`toolSummary`).
+    toolSummaryMsgId: string | null
+    toolSummaryCount: number
   }
   const state = new Map<string, ThreadStreamState>()
   const get = (tid: string): ThreadStreamState => {
@@ -94,6 +98,8 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         writing: false,
         summaryMsgId: null,
         summaryCount: 0,
+        toolSummaryMsgId: null,
+        toolSummaryCount: 0,
       }
       state.set(tid, st)
     }
@@ -215,10 +221,11 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
             }
             tryOpenFileFromResult(store, chunk.result)
           }
-          // Tools are now executing — the model is idle. Kick off a small-model
-          // rollup summary for this message's shell batch so the group header is
-          // ready by the time the commands finish.
+          // Tools are now executing — the model is idle. Kick off small-model
+          // rollups (shell batch + whole-turn polish) so labels are ready by the
+          // time the tools finish — never blocks delivery.
           maybeSummarizeCommands(store, api, threadId, st)
+          maybeSummarizeToolTurn(store, api, threadId, st)
         }
         st.writing = false
         activity(threadId)
@@ -328,6 +335,14 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         activity(threadId)
         break
       }
+      case 'panel_update': {
+        // P4: the todos pack emits `panel_update` alongside `todo_update` (the
+        // ACP bridge maps it for external clients). The renderer already drives
+        // the plan panel from `thread.todos` via the `todo_update` above, so the
+        // chunk is redundant here — ignore it explicitly rather than through a
+        // fall-through so the exhaustiveness check stays meaningful.
+        break
+      }
       case 'todo_worker_start':
       case 'todo_worker_done': {
         activity(threadId)
@@ -390,12 +405,6 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
     }
-  })
-
-  // Legacy path: some callers may still emit agent:usage directly.
-  api.agent.onUsage((threadId, usage) => {
-    recordUsageToLedger(api, store, threadId, usage)
-    addUsageDelta(store, threadId, usage)
   })
 
   api.diff.onShowDiff((projectId, threadId, path, before, after, language) => {
@@ -461,6 +470,8 @@ type AgentState = {
   msgId: string | null
   summaryMsgId: string | null
   summaryCount: number
+  toolSummaryMsgId: string | null
+  toolSummaryCount: number
 }
 
 // Generate (or regenerate) a rolled-up label for the current message's batch of
@@ -493,6 +504,38 @@ function maybeSummarizeCommands(
       summary = null
     }
     if (summary?.trim()) setMessageCommandSummary(store, msgId, summary.trim())
+  })()
+}
+
+// Polish the turn's canned tool rollup (`Used N tools`) with a short past-tense
+// phrase from the small-tasks model. Non-blocking: the deterministic label stays
+// until this resolves. Skips subagent cards and single-tool turns.
+function maybeSummarizeToolTurn(
+  store: AppStore,
+  api: ApiClient,
+  threadId: string,
+  st: AgentState,
+): void {
+  const msgId = st.msgId
+  if (!msgId) return
+  const msg = getThreadById(store, threadId)?.messages.find((m) => m.id === msgId)
+  if (!msg) return
+
+  const regular = msg.toolCalls.filter((tc) => !tc.subagent)
+  if (regular.length < 2) return
+  if (st.toolSummaryMsgId === msgId && st.toolSummaryCount === regular.length) return
+  st.toolSummaryMsgId = msgId
+  st.toolSummaryCount = regular.length
+
+  const actions = regular.map((tc) => getToolCallLabel(tc))
+  void (async (): Promise<void> => {
+    let summary: string | null
+    try {
+      summary = await api.agent.suggestToolTurnSummary(actions)
+    } catch {
+      summary = null
+    }
+    if (summary?.trim()) setMessageToolSummary(store, msgId, summary.trim())
   })()
 }
 

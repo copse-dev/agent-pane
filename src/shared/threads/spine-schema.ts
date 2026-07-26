@@ -83,6 +83,8 @@ export interface SpineMessageLine {
   reasoning?: ContentRef
   images?: ImageRef[]
   commandSummary?: string
+  /** Small-model polish for the turn tool rollup; optional, display-only. */
+  toolSummary?: string
   /** Display-only transcript attachment chips (user messages); short, inlined here. */
   attachments?: TranscriptAttachment[]
   /**
@@ -210,8 +212,28 @@ export interface SpineHookRunLine {
   toolset?: string
 }
 
+/** Durable host-owned shell authorization record (issue #1249 / #656). */
+export interface SpinePermissionDecisionLine {
+  v: number
+  type: 'permission_decision'
+  id: string
+  turnId?: string
+  step?: number
+  decidedAt: number
+  originalCommand: string
+  /** Present when a blocking hook rewrote the command before host policy ran. */
+  effectiveCommand?: string
+  originalMode: 'guarded-yolo'
+  effectiveMode: 'guarded-yolo'
+  sandboxState: 'project-sandbox' | 'unsandboxed'
+  harmDecision: 'allow' | 'prompt' | 'deny'
+  policyDecision: 'allow' | 'prompt' | 'deny'
+  reasons: string[]
+  userResponse: 'approved' | 'declined' | 'not-required'
+}
+
 /** Discriminated union of every line type this schema version can write. */
-export type SpineLine = SpineMessageLine | SpineHookRunLine
+export type SpineLine = SpineMessageLine | SpineHookRunLine | SpinePermissionDecisionLine
 
 /** Thread-relative ref of the content-addressed toolset fingerprint blob. */
 export function toolsetBlobRef(hash: string): string {
@@ -231,6 +253,66 @@ export function serializeSpineLine(line: SpineLine): string {
   return JSON.stringify(line)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isContentRef(value: unknown): value is ContentRef {
+  return isRecord(value) && typeof value['ref'] === 'string' && typeof value['sha256'] === 'string'
+}
+
+function isSpineMessageLine(value: unknown): value is SpineMessageLine {
+  if (!isRecord(value)) return false
+  const role = value['role']
+  return (
+    value['type'] === 'message' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    (role === 'user' || role === 'assistant' || role === 'error') &&
+    isContentRef(value['content']) &&
+    (value['toolCalls'] === undefined || Array.isArray(value['toolCalls']))
+  )
+}
+
+function isSpineHookRunLine(value: unknown): value is SpineHookRunLine {
+  if (!isRecord(value)) return false
+  const executor = value['executor']
+  return (
+    value['type'] === 'hook_run' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['event'] === 'string' &&
+    typeof value['hookId'] === 'string' &&
+    (executor === 'function' || executor === 'command') &&
+    typeof value['startedAt'] === 'number' &&
+    typeof value['durationMs'] === 'number' &&
+    typeof value['parseOk'] === 'boolean' &&
+    isRecord(value['decision'])
+  )
+}
+
+function isSpinePermissionDecisionLine(value: unknown): value is SpinePermissionDecisionLine {
+  if (!isRecord(value)) return false
+  const harm = value['harmDecision']
+  const policy = value['policyDecision']
+  const response = value['userResponse']
+  return (
+    value['type'] === 'permission_decision' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['decidedAt'] === 'number' &&
+    typeof value['originalCommand'] === 'string' &&
+    value['originalMode'] === 'guarded-yolo' &&
+    value['effectiveMode'] === 'guarded-yolo' &&
+    (value['sandboxState'] === 'project-sandbox' || value['sandboxState'] === 'unsandboxed') &&
+    (harm === 'allow' || harm === 'prompt' || harm === 'deny') &&
+    (policy === 'allow' || policy === 'prompt' || policy === 'deny') &&
+    Array.isArray(value['reasons']) &&
+    value['reasons'].every((reason) => typeof reason === 'string') &&
+    (response === 'approved' || response === 'declined' || response === 'not-required')
+  )
+}
+
 /** Parse one spine line into the {@link SpineLine} union. Null on malformed/unknown. */
 export function parseSpineLine(raw: string): SpineLine | null {
   let parsed: unknown
@@ -239,23 +321,15 @@ export function parseSpineLine(raw: string): SpineLine | null {
   } catch {
     return null
   }
-  if (
-    typeof parsed !== 'object' ||
-    parsed === null ||
-    typeof (parsed as { id?: unknown }).id !== 'string'
-  ) {
-    return null
-  }
-  const type = (parsed as { type?: unknown }).type
-  if (type === 'message') {
-    const line = parsed as SpineMessageLine
+  if (!isRecord(parsed) || typeof parsed['id'] !== 'string') return null
+  const type = parsed['type']
+  if (type === 'message' && isSpineMessageLine(parsed)) {
     // Tolerate an absent toolCalls array (forward/backward compatibility).
-    if (!Array.isArray(line.toolCalls)) line.toolCalls = []
-    return line
+    if (!Array.isArray(parsed.toolCalls)) parsed.toolCalls = []
+    return parsed
   }
-  if (type === 'hook_run') {
-    return parsed as SpineHookRunLine
-  }
+  if (type === 'hook_run' && isSpineHookRunLine(parsed)) return parsed
+  if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
   return null
 }
 

@@ -25,7 +25,7 @@ So the durable fix is to make your chosen context length part of the model's
 **saved configuration in LM Studio**. Do that once and every future load — manual,
 auto-load, or on-demand (JIT) — uses it.
 
-## Fix A — Save a per-model default config (simplest)
+## Save a per-model default config (simplest)
 
 LM Studio stores load settings _per model_. Bake the context length in once:
 
@@ -42,7 +42,7 @@ Verify from Copse: **Settings → Providers → LM Studio → Test connection**.
 context length Copse reports should now match what you set, and the low-context
 advisory should disappear.
 
-## Fix B — Load on startup with the `lms` CLI (fully restart-proof)
+## Load on startup with the `lms` CLI (fully restart-proof)
 
 For a deterministic “after every reboot the model is up at the right context”
 setup, drive LM Studio's CLI from a login/startup script. The CLI ships with LM
@@ -74,7 +74,7 @@ Run that at login so it re-applies on every boot:
 This is the most robust option because the context length lives in _your_ script,
 not in any LM Studio setting that a future update or profile reset could revert.
 
-## Fix C — Raise the default for on-demand (JIT) loads
+## Raise the default for on-demand (JIT) loads
 
 If you rely on **Just-In-Time loading** (LM Studio auto-loads a model the first
 time an API request names it), set a sane floor so JIT loads don't come up tiny:
@@ -97,8 +97,8 @@ low-context advisory.
 
 ## Checklist
 
-- [ ] Set the context length and **save it as the model's default** (Fix A), or
-      script `lms load … --context-length …` at login (Fix B).
-- [ ] If you use JIT loading, raise its default context length (Fix C).
+- [ ] Set the context length and **save it as the model's default** (per-model default), or
+      script `lms load … --context-length …` at login (startup script).
+- [ ] If you use JIT loading, raise its default context length (JIT default).
 - [ ] Reboot, then **Test connection** in Copse and confirm the reported context
       length is what you set and the advisory is gone.

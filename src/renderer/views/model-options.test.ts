@@ -71,13 +71,26 @@ describe('fetchModelOptions visibility', () => {
     )
   })
 
-  it('shows a single guiding message when nothing is configured', async () => {
+  it('shows a guiding message when nothing is configured (footer / default)', async () => {
     const options = await fetchModelOptions(mockApi(), '')
     assert.equal(options.length, 1)
     const [option] = options
     assert.ok(option)
     assert.match(option.label, /No models available/)
     assert.equal(option.disabled, true)
+  })
+
+  it('offers best-value only when includeBestValue is set (Settings chat model)', async () => {
+    const options = await fetchModelOptions(mockApi(), '', { includeBestValue: true })
+    assert.equal(options.length, 2)
+    const [bestValue, empty] = options
+    assert.ok(bestValue)
+    assert.equal(bestValue.value, 'auto:best-value')
+    assert.match(bestValue.label, /Best value/)
+    assert.ok(empty)
+    assert.match(empty.label, /No models available/)
+    assert.equal(empty.disabled, true)
+    assert.ok(!(await fetchModelOptions(mockApi(), '')).some((o) => o.value === 'auto:best-value'))
   })
 
   it('omits unconfigured providers entirely (no "add a key" rows)', async () => {
@@ -178,6 +191,54 @@ describe('fetchModelOptions visibility', () => {
         { value: 'remote-agent:cursor#composer-2', label: 'Composer 2' },
       ],
     )
+  })
+
+  it('prefers a Claude ACP agent over the API-billed Claude Cloud Agent', async () => {
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { anthropic: true },
+        acpAgents: [
+          {
+            id: 'claude-agent-acp',
+            title: 'Claude',
+            command: 'claude-agent-acp',
+            enabled: true,
+          },
+        ],
+      }),
+      '',
+    )
+    // The Claude Cloud Agent heading is flagged as API-billed so ACP reads as
+    // the preferred (own-login) alternative.
+    const claudeCloud = options.filter(
+      (o) => o.group === 'Claude Cloud Agent — API-billed (ACP available)',
+    )
+    assert.ok(claudeCloud.some((o) => o.value === 'remote-agent:anthropic#claude-opus-4-8'))
+    // No un-annotated Claude Cloud Agent heading remains.
+    assert.ok(!options.some((o) => o.group === 'Claude Cloud Agent'))
+
+    // The ACP agent's rows come before the Claude Cloud Agent's rows.
+    const firstAcpIdx = options.findIndex((o) => o.value.startsWith('acp:'))
+    const firstRemoteIdx = options.findIndex((o) => o.value.startsWith('remote-agent:anthropic'))
+    assert.ok(firstAcpIdx >= 0 && firstRemoteIdx >= 0)
+    assert.ok(firstAcpIdx < firstRemoteIdx)
+  })
+
+  it('keeps the Claude Cloud Agent first (unflagged) with no enabled Claude ACP agent', async () => {
+    // A non-Claude ACP agent (Gemini) does not trigger the preference.
+    const options = await fetchModelOptions(
+      mockApi({
+        available: { anthropic: true },
+        acpAgents: [{ id: 'gemini-cli', title: 'Gemini CLI', command: 'gemini', enabled: true }],
+      }),
+      '',
+    )
+    assert.ok(options.some((o) => o.group === 'Claude Cloud Agent'))
+    assert.ok(!options.some((o) => o.group?.includes('API-billed')))
+    const firstRemoteIdx = options.findIndex((o) => o.value.startsWith('remote-agent:anthropic'))
+    const firstAcpIdx = options.findIndex((o) => o.value.startsWith('acp:'))
+    assert.ok(firstRemoteIdx >= 0 && firstAcpIdx >= 0)
+    assert.ok(firstRemoteIdx < firstAcpIdx)
   })
 
   it('lists an ACP agent without models as a single bare entry under its own heading', async () => {

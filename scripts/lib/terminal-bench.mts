@@ -1,4 +1,4 @@
-import { delimiter, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import {
   TERMINAL_BENCH_DATASET_DESCRIPTOR,
   TERMINAL_BENCH_TASK_NAMES,
@@ -12,6 +12,23 @@ export const TERMINAL_BENCH_DATASET = TERMINAL_BENCH_DATASET_DESCRIPTOR.datasetI
 export const TERMINAL_BENCH_AGENT = 'benchmarks.terminal_bench.copse_agent:CopseTerminalAgent'
 export const DEFAULT_TERMINAL_BENCH_MIN_FREE_DISK_GIB = 15
 export const DEFAULT_TERMINAL_BENCH_PREFETCH_MIN_FREE_DISK_GIB = 30
+
+export function terminalBenchArtifactRoot(env: NodeJS.ProcessEnv = process.env): string {
+  const root = env['COPSE_TERMINAL_RESULTS_ROOT']?.trim() ?? ''
+  return resolve(root === '' ? 'bench-results' : root)
+}
+
+export function terminalBenchResultsRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return join(terminalBenchArtifactRoot(env), 'terminal-bench')
+}
+
+export function terminalBenchCapsulesRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return join(terminalBenchArtifactRoot(env), 'terminal-bench-capsules')
+}
+
+export function terminalBenchAnalysisPlanPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(terminalBenchArtifactRoot(env), 'terminal-bench-analysis-plan.json')
+}
 
 export interface TerminalBenchLaunch {
   command: string
@@ -46,6 +63,22 @@ export function terminalBenchShard<T>(
   shardCount: number,
   shardIndex: number,
 ): T[] {
+  return terminalBenchShardEntries(values, maxTasks, shardCount, shardIndex).map(
+    (entry) => entry.value,
+  )
+}
+
+export interface TerminalBenchShardEntry<T> {
+  globalIndex: number
+  value: T
+}
+
+export function terminalBenchShardEntries<T>(
+  values: readonly T[],
+  maxTasks: number | undefined,
+  shardCount: number,
+  shardIndex: number,
+): Array<TerminalBenchShardEntry<T>> {
   if (!Number.isInteger(shardCount) || shardCount <= 0) {
     throw new Error(`shard count must be a positive integer, received '${String(shardCount)}'`)
   }
@@ -55,7 +88,9 @@ export function terminalBenchShard<T>(
     )
   }
   const selected = maxTasks === undefined ? values : values.slice(0, maxTasks)
-  return selected.filter((_, index) => index % shardCount === shardIndex)
+  return selected
+    .map((value, globalIndex) => ({ globalIndex, value }))
+    .filter((entry) => entry.globalIndex % shardCount === shardIndex)
 }
 
 export function terminalBenchRequestedTaskNames(raw: string | undefined): string[] | undefined {
@@ -195,11 +230,11 @@ export function buildTerminalBenchLaunch(
   )
   const model = terminalBenchModel(env)
   const repositoryRoot = resolve()
-  const jobsDir = resolve('bench-results/terminal-bench')
+  const jobsDir = terminalBenchResultsRoot(env)
   const pythonPath = env['PYTHONPATH']
+  const prebuiltBundle = env['COPSE_TERMINAL_PREBUILT_AGENT_BUNDLE']?.trim() ?? ''
   const agentBundle =
-    env['COPSE_TERMINAL_PREBUILT_AGENT_BUNDLE']?.trim() ||
-    resolve('dist-test/terminal-bench-agent.cjs')
+    prebuiltBundle === '' ? resolve('dist-test/terminal-bench-agent.cjs') : prebuiltBundle
 
   const harborArgs = [
     '--from',
@@ -230,6 +265,7 @@ export function buildTerminalBenchLaunch(
       ...env,
       COPSE_TERMINAL_AGENT_BUNDLE: agentBundle,
       COPSE_TERMINAL_PROFILE: profile.id,
+      COPSE_TERMINAL_PROFILE_VERSIONED_ID: profile.versionedId,
       COPSE_TERMINAL_PROFILE_HASH: profile.contentHash,
       PYTHONPATH: pythonPath ? `${repositoryRoot}${delimiter}${pythonPath}` : repositoryRoot,
     },

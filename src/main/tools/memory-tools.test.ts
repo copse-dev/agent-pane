@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import { setKnowledgeRootForTest } from '../services/storage/knowledge-store.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
-import { recallTool, rememberTool, setLegacyMemoriesRootForTest } from './memory-tools.ts'
+import { recallTool, rememberTool } from './memory-tools.ts'
 
 const noSignal = new AbortController().signal
 
@@ -16,23 +16,18 @@ async function run(tool: typeof rememberTool | typeof recallTool, args: unknown)
 
 describe('memory-tools', () => {
   let knowledgeRoot: string
-  let legacyRoot: string
   let restoreWorkspace: () => void
 
   beforeEach(() => {
     knowledgeRoot = mkdtempSync(join(tmpdir(), 'knowledge-'))
-    legacyRoot = mkdtempSync(join(tmpdir(), 'legacy-memories-'))
     setKnowledgeRootForTest(knowledgeRoot)
-    setLegacyMemoriesRootForTest(legacyRoot)
     restoreWorkspace = setWorkspaceRootForTest('/home/dev/proj')
   })
 
   afterEach(() => {
     setKnowledgeRootForTest(null)
-    setLegacyMemoriesRootForTest(null)
     restoreWorkspace()
     rmSync(knowledgeRoot, { recursive: true, force: true })
-    rmSync(legacyRoot, { recursive: true, force: true })
   })
 
   it('remember persists and recall returns the note', async () => {
@@ -74,23 +69,5 @@ describe('memory-tools', () => {
   it('recall on an empty project explains how to add one', async () => {
     const empty = await run(recallTool, {})
     assert.match(empty, /No memories stored yet/)
-  })
-
-  it('imports legacy ~/.copse/memories notes on first use', async () => {
-    // Seed a legacy OKF note in the same slug+hash namespace the store uses
-    // (slug(basename) + '-' + sha1(root).slice(0,8)) so the migration finds it.
-    const { createHash } = await import('node:crypto')
-    const hash = createHash('sha1').update('/home/dev/proj').digest('hex').slice(0, 8)
-    const dir = join(legacyRoot, `proj-${hash}`)
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(
-      join(dir, 'deploy.md'),
-      '---\ntype: Memory\ntitle: "Deploy steps"\ntags: [ops, deploy]\n---\n\nRun the release script.\n',
-      'utf8',
-    )
-
-    const all = await run(recallTool, {})
-    assert.match(all, /## Deploy steps \[ops, deploy\]/)
-    assert.match(all, /Run the release script\./)
   })
 })

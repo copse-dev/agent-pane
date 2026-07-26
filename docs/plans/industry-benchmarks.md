@@ -65,13 +65,20 @@ optional one-image-ahead prefetch overlaps the next pull with inference, guarded
 30 GiB free-space floor so provisioning latency can be hidden without recreating unbounded disk
 pressure.
 
-The adapter now targets Terminal-Bench 2.1 and exposes three versioned experiment profiles:
+The adapter now targets Terminal-Bench 2.1 and exposes four versioned experiment profiles:
 `main-legacy@1` (the unchanged original adapter), `pr-1149@1` (the exact constrained-write and
-validation-warning experiment), and `product-aligned@1` (regular shell error semantics without
-task-specific recovery). `main-legacy` remains the default. Dataset revision, task configuration
+validation-warning experiment), and `product-aligned@2` (workspace-aware regular shell/write
+semantics without task-specific recovery). `product-aligned@3` preserves v2's prompt/tools and
+reassesses a reasoning-dominated stream every 2k tokens: clean streams may expand to the product's
+32k hard cap, while high-confidence self-reported or structural circles enter the existing bounded
+recovery. Historical `product-aligned@1` and v2 capsules remain readable.
+`main-legacy` remains the default. Dataset revision, task configuration
 checksum, resolved image digest, profile ID, and profile content hash are retained with every
 trial. The complete negative and protocol-progress evidence behind `pr-1149@1` is preserved in
 [`docs/spikes/terminal-bench-pr-1149.md`](../spikes/terminal-bench-pr-1149.md).
+The two-attempt 2.1 result, adapter defects, corrected v2 targeted follow-up, and compact evidence
+retention policy are recorded in the canonical findings note
+[`docs/spikes/terminal-bench-2.1-profile-ablation.md`](../spikes/terminal-bench-2.1-profile-ablation.md).
 
 The ablation is precommitted in code: the four #1149 tasks form a one-attempt diagnostic cohort,
 while the held-out cohort excludes them and selects 12 tasks by sorting
@@ -81,7 +88,10 @@ paired per-task differences with a task bootstrap 95% interval, solves, tokens, 
 time, and failure categories. A non-default profile is eligible only when the held-out interval
 excludes zero, all expected attempts are present, and median tokens and elapsed time stay within
 25% of the baseline unless it adds solved tasks. Otherwise `main-legacy@1` remains the benchmark
-default; no mechanism in this slice changes the regular Copse agent.
+default. The #1149 forced-write and task-specific warning mechanisms remain benchmark-only. After
+two paired targeted runs favored v3, the generic reasoning checkpoint policy is also used by the
+built-in Copse agent: 2K reasoning checkpoints inside the existing 32K product ceiling, with a 4K
+recovery ceiling. ACP and other externally hosted agents are unchanged.
 
 ## The framing: benchmarks as harness evals, not model evals
 
@@ -262,7 +272,7 @@ truth:
 
 ## Relationship to existing pieces
 
-- [`docs/plans/skillsbench.md`](skillsbench.md) defines the paired SkillsBench v1.1 study. It keeps
+- `docs/plans/skillsbench.md` (planned, not yet written) defines the paired SkillsBench v1.1 study. It keeps
   skill content value, autonomous discovery, and explicit `/skill` injection as separate arms so a
   selection failure cannot be mistaken for a useless skill.
 - The product-host runtime contract remains tracked by

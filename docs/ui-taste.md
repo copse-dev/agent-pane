@@ -15,19 +15,36 @@ Thread message images (`.message-image`) and roadmap plan image chips
 `attachImageExpand` rather than inventing a second overlay. Visual eval:
 [`tests/e2e/image-expand.e2e.ts`](../tests/e2e/image-expand.e2e.ts).
 
+### Native `<dialog>` and `display`
+
+Never set `display: flex` (or any `display`) on a `<dialog>` without scoping it to
+`dialog[open]`. Author `display` outranks the UA `dialog { display: none }`, so
+`close()` exits the top layer but the node stays painted in the page — typically a
+ghost lightbox showing the cleared image’s alt (“Expanded attachment”) and Close.
+`forms.css` forces `dialog:not([open]) { display: none !important; }` as a backstop
+(same idea as `[hidden]` in `base.css`). Put flex layout on an inner shell when you
+can; when the dialog itself must flex, use `.foo-dialog[open] { display: flex; }`.
+
 ## Design tokens, not magic numbers
 
 All spacing, radii, colors, and fonts come from CSS custom properties in
 [`src/renderer/styles/tokens.css`](../src/renderer/styles/tokens.css). Reach for a token before
 typing a raw pixel value; if you find yourself writing `padding: 8px 20px`, that's a smell.
 
-| Token          | Value | Token              | Value |
-| -------------- | ----- | ------------------ | ----- |
-| `--spacing-xs` | 4px   | `--radius`         | 4px   |
-| `--spacing-sm` | 8px   | `--radius-lg`      | 8px   |
-| `--spacing-md` | 12px  | `--font-size-sm`   | 12px  |
-| `--spacing-lg` | 16px  | `--font-size-base` | 14px  |
-| `--spacing-xl` | 24px  | `--font-size-lg`   | 16px  |
+Interface scale (`--ui-scale`, Settings → Appearance, ⌘+/−/0, trackpad pinch) multiplies the
+font-size and spacing tokens (and chrome band heights) via `calc(… * var(--ui-scale))`. Radii,
+layout max-widths, and `--traffic-light-inset` stay unscaled so OS chrome alignment does not drift.
+Prefer tokens over hardcoded `px` so scale reaches the surface. Helpers live in
+[`src/shared/ui-scale.ts`](../src/shared/ui-scale.ts); the renderer applies the var through
+[`src/renderer/dom/ui-scale.ts`](../src/renderer/dom/ui-scale.ts).
+
+| Token          | Base | Token              | Base |
+| -------------- | ---- | ------------------ | ---- |
+| `--spacing-xs` | 4px  | `--radius`         | 6px  |
+| `--spacing-sm` | 8px  | `--radius-lg`      | 8px  |
+| `--spacing-md` | 12px | `--font-size-sm`   | 12px |
+| `--spacing-lg` | 16px | `--font-size-base` | 14px |
+| `--spacing-xl` | 24px | `--font-size-lg`   | 16px |
 
 Chrome band tokens (not spacing, but reach for these before inventing heights):
 `--chrome-action-band-height`, `--browser-chrome-band-height`.
@@ -283,6 +300,37 @@ reachable without a crowded titlebar:
   or scrolling. Spec:
   [`tests/e2e/portrait-panel-controls.e2e.ts`](../tests/e2e/portrait-panel-controls.e2e.ts).
 
+## Tool actions: past when settled, progressive while running, one rollup per turn
+
+Tool-call chrome in the transcript should stay quiet — muted inline text, not a stack of
+elevated boxes. Conventions (owned by `tool-display.ts` + `tool-cards.css`):
+
+- **Tense follows status.** Progressive while any member is `running` (`Reading files`,
+  `Using 3 tools`, activity line `Listing directory…`); past once settled (`Read files`,
+  `Used 3 tools`, `Listed directory`). Do not paint a finished past-tense label on a live
+  tool, and do not keep progressive wording on a completed card.
+- **One rollup for the turn.** Two or more non-subagent tool calls on a message collapse into
+  `.tool-card-rollup`. The collapsed summary is **italic muted text** (like reasoning) — click
+  to expand nested category groups and individuals. Subagent cards stay outside the rollup.
+- **Reasoning nests with its tools.** When a segment has both `reasoning` and tools, do **not**
+  render a standalone Reasoning block above the rollup. Put it inside the expanded rollup
+  body (above the tool rows) so the collapsed view is only the italic heading. Standalone
+  Reasoning remains for answer-only / no-tool segments. Title tense matches tools:
+  `Reasoning` while live, `Reasoned` when settled.
+- **Say Reasoning, not Thinking.** The disclosure and activity row use `Reasoning` /
+  `Reasoned` / `Reasoning…` — clearer about the model step, and aligned with the
+  `reasoning` field / provider events.
+- **Canned first, small-model polish later.** Show the deterministic label immediately
+  (`Used N tools` / `Read files`). A non-blocking small-tasks call may replace it with
+  `message.toolSummary` (e.g. “Read the settings UI”) when ready — never delay the turn on
+  that call. Keep failure callouts (`· N failed`) even after polish.
+- **No card chrome by default.** Collapsed tool rows drop fill/border; nested items inside an
+  expanded rollup stay flat under a hairline indent. Reach for `--text-muted` / italics on the
+  rollup summary, not `--bg-elevated` panels.
+
+Specs: `src/shared/tools/tool-display.test.ts`, `src/renderer/views/tool-display.test.ts`,
+`tests/e2e/tool-display-rollup.e2e.ts`, `tests/e2e/browser-tools.e2e.ts`.
+
 ## Hook cards are a distinct card family — right-aligned, blue, not a user message
 
 Hook executions, deny/ask decisions, and halts (decision 10 of
@@ -317,12 +365,18 @@ card family in [`hook-cards.css`](../src/renderer/styles/global/hook-cards.css).
 
 ## Context menus (right-click)
 
-Right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
+App-chrome right-click menus use a fixed-position `.context-menu` / `.context-menu-item` pair (see
 [`layout.css`](../src/renderer/styles/global/layout.css)), not the anchored `.browser-menu` wrap.
 Pin to `clientX`/`clientY`, clamp into the viewport, and dismiss on outside pointerdown / Escape /
 window blur. First use: project rows → **Remove from sidebar**
 ([`projects-pane.ts`](../src/renderer/views/projects-pane.ts)); visual eval
 [`tests/e2e/projects-remove-sidebar.e2e.ts`](../tests/e2e/projects-remove-sidebar.e2e.ts).
+
+In-app **browser guest pages** (`<webview>`) use a native Electron `Menu` from the main-process
+`context-menu` event instead — guest content cannot host our DOM menu. Standard items live in
+[`browser-context-menu.ts`](../src/main/windows/browser-context-menu.ts): Open Link in New Tab /
+Copy Link Address, Copy Image / Copy Image Address / Save Image As…, Cut/Copy/Paste/Select All,
+Inspect Element. Keep that set browser-like; do not reinvent it as a renderer `.context-menu`.
 
 ## Sources lists: origin on hover, not in the resting row
 
@@ -342,7 +396,8 @@ manual VNC glance.
 
 - Primary-chat model labels (`.message-model`) appear only when a thread's assistant turns used more
   than one picker model — keep them muted chrome (`--font-size-xs`, tertiary text), never inside
-  `.message-text`. Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
+  `.message-text`. The footer model picker shows the active route (including best-value auto-picks).
+  Spec: [`tests/e2e/chat-multi-model-labels.e2e.ts`](../tests/e2e/chat-multi-model-labels.e2e.ts).
 - For the footer / settings-column layout,
   [`tests/demo/settings-footer.demo.ts`](../tests/demo/settings-footer.demo.ts) asserts (a) the
   scroll panel fills the body beside the nav while the form column stays at
@@ -380,6 +435,29 @@ wash through otherwise neutral surfaces. Derive hover and link shades from the a
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
 
+## Roadmap list rows
+
+Roadmap backlog rows (`.roadmap-row` in
+[`roadmap-pane.ts`](../src/renderer/views/roadmap-pane.ts) /
+[`roadmap.css`](../src/renderer/styles/global/roadmap.css)) follow the same quiet
+sidebar taste as thread rows and PR status icons:
+
+- **Title first, one line.** Title on the left; trailing indicators on the right.
+  No second meta row of chips under every title.
+- **Hide the default state.** `ready` items show no status badge — the title is
+  the signal. `done` is strikethrough on the title only (`.roadmap-row.is-done`),
+  not a "done" pill. Only exceptional statuses (`blocked`, `conflicts`,
+  `archived`) get a lowercase status chip.
+- **Icons over labels.** Linked threads use the muted messages icon (tooltip /
+  `aria-label` carries the thread title); attachments are a muted paperclip +
+  count with no pill wash. Mark-done / reopen are check / refresh icons, hidden
+  until row hover or focus (same idea as `.chat-delete`).
+- **Palette matches.** Cmd/Ctrl+P roadmap hits follow the same hide-ready rule.
+
+Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.ts).
+Complexity / fit / review chips stay when present (they are rare); tuck those
+further only if the list gets noisy again.
+
 ## Sidebar selections
 
 Chat rows use flat, square, full-bleed selection and hover fills with a slim inset accent rail on
@@ -400,3 +478,12 @@ The plan worth-it block sits between subscription bars and the local ledger: one
 fee field, one action that jumps to the value map’s Inference cost basis. Do not turn it into a
 dashboard (no sparkline grids, no multi-provider scorecards in v1). Keep the fee control plain —
 label + number input — and let verdict color come from `--success` / `--warning`, not custom hues.
+
+## Explicit danger modes
+
+A mode that materially relaxes routine confirmations must remain visible at the
+point of action. Use a full-width, square composer strip with the shared `--danger`
+token, plain containment copy, and an immediate Disable action; do not reduce it to
+a transient toast, icon-only state, or rounded status pill. The opt-in warning must
+name the scope, expiry, containment, and residual risk before activation. Visual
+eval: `tests/e2e/guarded-yolo.e2e.ts`.

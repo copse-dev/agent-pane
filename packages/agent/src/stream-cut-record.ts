@@ -1,5 +1,6 @@
 /** Reason a provider stream was cut before natural completion. */
-export type StreamCutReason = 'reasoning_runaway_cap'
+export type StreamCutReason =
+  'reasoning_runaway_cap' | 'reasoning_circle_detected' | 'trailing_reasoning_cap'
 
 /** Max reasoning body stored in stream-stats (256 KiB); larger cuts are truncated. */
 export const MAX_STREAM_CUT_REASONING_CHARS = 256 * 1024
