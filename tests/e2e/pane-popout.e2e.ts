@@ -13,30 +13,41 @@ import { E2E_SCREENSHOT_DIR, waitForImagesSettled } from './helpers/screenshot.t
 // Terminal is omitted: opening it spawns a PTY (node-pty), which isn't built in
 // this sandbox. The pop-out path is identical to the panes covered here — the
 // only difference is the pane the detached window renders.
+// `probe` proves the list container mounted; `rowProbe` proves it has content,
+// which is a later stage for lists filled from an async read. `minImages` is the
+// stage after that — see {@link waitForImagesSettled}.
 const PANES = [
   {
     mode: 'explorer',
     openLabel: 'Toggle right panel',
     listHost: '#file-tree-host',
     probe: '#file-tree-host .file-tree',
+    rowProbe: '#file-tree-host .tree-row',
+    minImages: 1,
   },
   {
     mode: 'changes',
     openLabel: 'Open changes',
     listHost: '#git-changes-host',
     probe: '#git-changes-host .git-changes-list',
+    rowProbe: null,
+    minImages: 0,
   },
   {
     mode: 'prs',
     openLabel: 'Open pull requests',
     listHost: '#pr-list-host',
     probe: '.pr-list-body',
+    rowProbe: null,
+    minImages: 0,
   },
   {
     mode: 'browser',
     openLabel: 'Open browser',
     listHost: '#browser-tabs-host',
     probe: '#browser-tabs-host .browser-tabs-list',
+    rowProbe: null,
+    minImages: 0,
   },
 ] as const
 
@@ -115,10 +126,11 @@ describe('Pane pop-out (mock gh)', () => {
         })
       }
 
-      // The probe above proves the list element exists, not that its icons have
-      // painted — `pane-popout-explorer.png` has been drifting ~3.3% between runs
-      // on that gap alone.
-      await waitForImagesSettled(pane.listHost)
+      // The probe above proves the list element exists, not that it has rows, and
+      // rows are a stage before their icons paint. Capture only once every stage
+      // this pane has is done.
+      if (pane.rowProbe) await $(pane.rowProbe).waitForExist({ timeout: 30_000 })
+      await waitForImagesSettled(pane.listHost, { minImages: pane.minImages })
       await browser.saveScreenshot(join(E2E_SCREENSHOT_DIR, `pane-popout-${pane.mode}.png`))
 
       // Close this pop-out before opening the next so handles stay unambiguous.

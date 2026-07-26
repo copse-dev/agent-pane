@@ -57,10 +57,13 @@ describe('theme boot before first paint (#41)', () => {
 
     // The assertions above only need `documentElement`, which exists the moment
     // the window does — so without these waits the capture below races the
-    // explorer's two async render stages (rows, then icons) and commits whatever
-    // it happens to catch. See {@link waitForImagesSettled}.
+    // explorer's async render stages and commits whatever it happens to catch.
+    // `.file-tree` is appended empty and filled from a directory read, so waiting
+    // on it (or on images, of which an empty tree has none) still lands on a
+    // blank pane; the row wait is what makes the capture wait for content.
     await $('#file-tree-host .file-tree').waitForDisplayed({ timeout: 30_000 })
-    await waitForImagesSettled('#file-tree-host')
+    await $('#file-tree-host .tree-row').waitForExist({ timeout: 30_000 })
+    await waitForImagesSettled('#file-tree-host', { minImages: 1 })
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'theme-boot-popout-light.png'))
 
     await browser.closeWindow()

@@ -128,18 +128,40 @@ export async function savePreparedElementScreenshot(
  * stage the popout had reached. The ping-pong guard from #609 does not catch it,
  * since each render is a state that was never committed before and so reads as
  * "clearly different" every time.
+ *
+ * Pass `minImages` whenever the settled pane is known to contain icons. The
+ * explorer's `.file-tree` is appended empty and filled asynchronously, so a host
+ * still showing a blank list contains no `<img>` — and a wait over zero images
+ * succeeds immediately, capturing exactly the blank frame it was meant to avoid.
  */
-export async function waitForImagesSettled(selector: string, timeout = 15_000): Promise<void> {
+export async function waitForImagesSettled(
+  selector: string,
+  options: { minImages?: number; timeout?: number } = {},
+): Promise<void> {
+  const { minImages = 0, timeout = 15_000 } = options
   await browser.waitUntil(
     () =>
-      browser.execute((sel: string) => {
-        const host = document.querySelector(sel)
-        if (!host) return false
-        return Array.from(host.querySelectorAll('img')).every(
-          (img) => img.complete && img.naturalWidth > 0,
-        )
-      }, selector),
-    { timeout, timeoutMsg: `images inside ${selector} did not finish loading` },
+      browser.execute(
+        (sel: string, min: number) => {
+          const host = document.querySelector(sel)
+          if (!host) return false
+          const images = Array.from(host.querySelectorAll('img'))
+          // An empty host has no <img> at all, so `every` would report settled
+          // while the list is still blank. Callers that know the settled pane
+          // must contain icons pass `minImages` to close that hole.
+          if (images.length < min) return false
+          return images.every((img) => img.complete && img.naturalWidth > 0)
+        },
+        selector,
+        minImages,
+      ),
+    {
+      timeout,
+      timeoutMsg:
+        minImages > 0
+          ? `${selector} did not settle with at least ${String(minImages)} loaded image(s)`
+          : `images inside ${selector} did not finish loading`,
+    },
   )
 }
 
