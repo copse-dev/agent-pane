@@ -50,7 +50,6 @@ async function attachWorkspacePath(
   workspaceRoot: string | null,
   owner: ActiveThreadOwner | null,
 ): Promise<void> {
-  if (!owner) return
   const name = path.split(/[\\/]/).pop() ?? path
   // A video already in the workspace is referenced where it lies; reading it as
   // text would inline binary into the prompt.
@@ -58,6 +57,7 @@ async function attachWorkspacePath(
     await handlers.attachVideo({ name, mimeType: '', path })
     return
   }
+  if (!owner) return
   try {
     const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
     handlers.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content })
@@ -71,7 +71,7 @@ async function attachDroppedFile(
   handlers: PromptAttachmentHandlers,
   api: FileDropApi,
   workspaceRoot: string | null,
-  owner: ActiveThreadOwner | null,
+  owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   if (file.type.startsWith('image/')) {
     const dataUrl = await readAsDataUrl(file)
@@ -111,7 +111,7 @@ export async function attachFiles(
   handlers: PromptAttachmentHandlers,
   api: FileDropApi,
   workspaceRoot: string | null,
-  owner: ActiveThreadOwner | null,
+  owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   for (const file of files) {
     await attachDroppedFile(file, handlers, api, workspaceRoot, owner)
@@ -123,7 +123,7 @@ export async function handleFileDrop(
   handlers: PromptAttachmentHandlers,
   api: FileDropApi,
   workspaceRoot: string | null,
-  owner: ActiveThreadOwner | null,
+  owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   e.preventDefault()
   e.stopPropagation()
