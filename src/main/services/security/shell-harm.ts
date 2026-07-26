@@ -122,9 +122,27 @@ function commandSegments(command: string): string[][] {
     if (current.length > 0) segments.push(current)
     current = []
   }
+  let consumesRedirectTarget = false
   for (const token of tokens) {
-    if (typeof token === 'string') current.push(token)
-    else flush()
+    if (consumesRedirectTarget) {
+      consumesRedirectTarget = false
+      continue
+    }
+    if (typeof token === 'string') {
+      current.push(token)
+      continue
+    }
+    if (
+      'op' in token &&
+      typeof token.op === 'string' &&
+      ['<', '<<', '<<<', '>', '>>', '<>', '<&', '>&', '>|', '&>', '&>>'].includes(token.op)
+    ) {
+      // Redirection remains part of the current command. Its destination is
+      // data, not a new executable/script segment (for example 2>/dev/null).
+      consumesRedirectTarget = true
+      continue
+    }
+    flush()
   }
   flush()
   return segments

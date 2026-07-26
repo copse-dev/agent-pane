@@ -24,6 +24,17 @@ describe('Guarded YOLO shell harm gate', () => {
     }
   })
 
+  it('does not treat an attached file-descriptor redirect as a script', () => {
+    for (const command of [
+      '2>/dev/null',
+      'printf ok 2>/dev/null',
+      'printf ok 2>./logs/errors.sh',
+      String.raw`cd /work/project && find . -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.json' \) ! -path '*/node_modules/*' ! -path '*/dist/*' ! -path '*/.git/*' -exec grep -li 'yolo' {} \; 2>/dev/null`,
+    ]) {
+      assert.equal(action(command), 'allow', command)
+    }
+  })
+
   it('prompts for bounded destructive work', () => {
     for (const command of [
       'rm -rf build',
