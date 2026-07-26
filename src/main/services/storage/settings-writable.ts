@@ -247,6 +247,11 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   // Experimental: route shell/terminal/background spawns through the SSH workspace
   // connection when the active project has an `sshHost`. See ssh-remote-repo.md.
   sshWorkspaceEnabled: z.boolean(),
+  // Experimental: when the active project is an SSH workspace, spawn external ACP
+  // agents on the remote host (stdio over the SSH connection) instead of blocking
+  // ACP. Only meaningful when `sshWorkspaceEnabled` is also on. See
+  // docs/plans/acp-over-ssh.md.
+  acpOverSshEnabled: z.boolean(),
   // SSH workspace hosts (Phase 1 connection manager). See ssh-remote-repo.md.
   sshWorkspaceHosts: z
     .array(
