@@ -52,7 +52,6 @@ import {
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
 import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
-import { migrateApprovedProviderHosts } from '../services/providers/approved-provider-hosts.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -243,9 +242,6 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  // Issue #438: persist grandfathered custom-provider hosts once so Settings
-  // and runtime gates share the same allowlist after upgrade.
-  void migrateApprovedProviderHosts()
   const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)

@@ -89,7 +89,6 @@ function setup(
         chunkHandler = h
         return (): void => {}
       },
-      onUsage: () => (): void => {},
       onHookQueueMessage: () => (): void => {},
       suggestTitle: async (text: string): Promise<string | null> => {
         titleCalls.push(text)
