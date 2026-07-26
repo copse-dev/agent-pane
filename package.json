@@ -198,7 +198,7 @@
     "pngjs": "^7.0.0",
     "prettier": "^3.9.5",
     "tar": "^7.5.22",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "typescript-eslint": "^8.63.0",
     "webdriverio": "^9.29.0"
   },
