@@ -62,6 +62,7 @@ import { advisorStrategyPack } from './advisor-strategy-pack.ts'
 import { okfMemoriesPack } from './okf-memories-pack.ts'
 import { ciInvestigatorPack } from './ci-investigator-pack.ts'
 import { piiRedactionPack } from './pii-redaction-pack.ts'
+import { automationsPack } from './automations-pack.ts'
 
 /**
  * Every pack Copse ships. Order is preserved as the Settings pack-list
@@ -80,6 +81,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   okfMemoriesPack,
   ciInvestigatorPack,
   piiRedactionPack,
+  automationsPack,
 ]
 
 /** A fresh {@link PackRegistry} seeded with the shipped first-party packs (all enabled). */
