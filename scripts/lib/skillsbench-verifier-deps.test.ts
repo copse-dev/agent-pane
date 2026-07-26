@@ -6,6 +6,8 @@ interface DepEntry {
   uv: string[]
   uvxWith: string[]
   pip: string[]
+  /** Packages upstream left unpinned; staged at whatever version build time resolves. */
+  pipUnpinned: string[]
   apt: string[]
 }
 
@@ -30,6 +32,7 @@ function isDepEntry(value: unknown): value is DepEntry {
     isStringArray(value['uv']) &&
     isStringArray(value['uvxWith']) &&
     isStringArray(value['pip']) &&
+    isStringArray(value['pipUnpinned']) &&
     isStringArray(value['apt'])
   )
 }
@@ -77,7 +80,7 @@ const PINNED = /^[A-Za-z][A-Za-z0-9_.[\]-]*==[0-9][^\s]*$/
 
 describe('SkillsBench verifier dependency inventory', () => {
   it('is pinned to the same dataset revision as the task descriptor', () => {
-    assert.equal(inventory.schemaVersion, 1)
+    assert.equal(inventory.schemaVersion, 2)
     assert.equal(inventory.datasetRevision, descriptor.revision)
   })
 
@@ -100,6 +103,17 @@ describe('SkillsBench verifier dependency inventory', () => {
     }
   })
 
+  it('keeps unpinned entries to bare package names', () => {
+    // A flag or a pin leaking into pipUnpinned would either break the build or
+    // silently double-install; both are worse than the miss they replaced.
+    for (const [task, entry] of Object.entries(inventory.tasks)) {
+      for (const pkg of entry.pipUnpinned) {
+        assert.match(pkg, /^[A-Za-z][A-Za-z0-9_.[\]-]*$/, `${task}: '${pkg}' is not a bare name`)
+        assert.ok(!pkg.includes('=='), `${task}: '${pkg}' is pinned and belongs in pip`)
+      }
+    }
+  })
+
   it('carries no shell-construct artefacts in the apt lists', () => {
     // The inventory is extracted by parsing shell; keywords leaking into the
     // package list would make the pre-bake layer fail the image build.
@@ -116,7 +130,12 @@ describe('SkillsBench verifier dependency inventory', () => {
     // A task with an entry but nothing to stage would produce an empty layer
     // while still marking the capsule as pre-baked.
     for (const [task, entry] of Object.entries(inventory.tasks)) {
-      const total = entry.uv.length + entry.uvxWith.length + entry.pip.length + entry.apt.length
+      const total =
+        entry.uv.length +
+        entry.uvxWith.length +
+        entry.pip.length +
+        entry.pipUnpinned.length +
+        entry.apt.length
       assert.ok(total > 0, `${task}: listed but stages nothing`)
     }
   })

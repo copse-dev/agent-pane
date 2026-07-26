@@ -100,7 +100,11 @@ def verifier_prebake_layer(task_name: str) -> str:
             + " ".join(sorted(apt))
             + " && rm -rf /var/lib/apt/lists/*"
         )
-    pip = deps.get("pip") or []
+    # `pipUnpinned` is upstream's own choice, not ours: some verifiers run a bare
+    # `pip install pytest`. Installing the current version at build time still
+    # makes the grading-time install report the requirement already satisfied,
+    # which is all that is needed offline.
+    pip = (deps.get("pip") or []) + (deps.get("pipUnpinned") or [])
     if pip:
         lines.append(
             "RUN pip3 install --break-system-packages --no-cache-dir "
