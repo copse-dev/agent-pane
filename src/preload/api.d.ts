@@ -4,6 +4,11 @@ import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
+import type {
+  AutomationSchedule,
+  AutomationScheduleInput,
+  AutomationTriggerEvent,
+} from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
@@ -36,6 +41,7 @@ import type {
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
+import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 
 export type { DetectedAcpAgent }
 
@@ -71,6 +77,12 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+  }
+  security: {
+    getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
   }
   fs: {
     readFile: (path: string) => Promise<string>
@@ -123,6 +135,7 @@ export interface ApiClient {
         comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => () => void
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
     onAskUserRequest: (
       handler: (req: {
         id: string
@@ -250,6 +263,17 @@ export interface ApiClient {
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => Promise<void>
     delete: (projectId: string, threadId: string) => Promise<void>
+    /**
+     * Seed a fork's provider-format history from the thread it branched off.
+     * Omit `throughMessageId` (or pass the source's last message id) to copy the
+     * sidecar verbatim; an earlier id rebuilds history from the transcript slice.
+     */
+    fork: (
+      projectId: string,
+      sourceThreadId: string,
+      targetThreadId: string,
+      throughMessageId?: string,
+    ) => Promise<import('@shared/types').ForkedHistoryResult>
     catalog: (
       projectId: string,
       query?: string,
@@ -565,6 +589,13 @@ export interface ApiClient {
     setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
     /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
     setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
+  }
+  automations: {
+    list: (projectId: string) => Promise<AutomationSchedule[]>
+    upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
+    remove: (projectId: string, scheduleId: string) => Promise<void>
+    runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

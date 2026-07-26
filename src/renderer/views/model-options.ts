@@ -27,6 +27,13 @@ import {
 } from '@copse/llm/data-policies.ts'
 
 type AvailableProviders = Awaited<ReturnType<ApiClient['settings']['availableProviders']>>
+
+export interface ModelOptionsApi {
+  settings: Pick<ApiClient['settings'], 'availableProviders' | 'extraProviders' | 'get'>
+  openRouter: Pick<ApiClient['openRouter'], 'models'>
+  remoteAgent: Pick<ApiClient['remoteAgent'], 'models'>
+  lmStudio: Pick<ApiClient['lmStudio'], 'models'>
+}
 import {
   MANAGED_AGENT_PICKER_MODELS_WITH_DEFAULT,
   REMOTE_AGENT_MODEL_PREFIX,
@@ -118,7 +125,7 @@ function acpAgentOptions(agents: readonly AcpAgentConfig[]): ModelOption[] {
 // When no key is configured we contribute nothing (the provider is hidden from
 // the picker rather than shown as a disabled "add a key" row).
 async function openRouterOptions(
-  api: ApiClient,
+  api: ModelOptionsApi,
   available: boolean,
   current: string,
 ): Promise<ModelOption[]> {
@@ -216,7 +223,7 @@ function extraProviderOptions(
     entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
-  for (const model of provider.models) add(model.id, model.label ?? model.id)
+  for (const model of provider.models) add(model.id, model.id)
   if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
@@ -224,7 +231,7 @@ function extraProviderOptions(
 }
 
 async function remoteAgentOptions(
-  api: ApiClient,
+  api: ModelOptionsApi,
   isAvailable: (provider: string) => boolean,
   current: string,
   // When the user has an enabled Claude ACP agent, flag the Claude Cloud Agent
@@ -333,7 +340,7 @@ export interface FetchModelOptionsOpts {
 }
 
 export async function fetchModelOptions(
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
   opts: FetchModelOptionsOpts = {},
 ): Promise<ModelOption[]> {
@@ -486,7 +493,7 @@ export interface PopulateModelSelectOpts {
 // `current` value selectable even if the server is offline.
 export async function populateModelSelect(
   select: HTMLSelectElement,
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
   opts: PopulateModelSelectOpts = {},
 ): Promise<void> {
@@ -538,7 +545,7 @@ export function populateLocalModelSelect(
 /** Model picker for small tasks — cloud, local, or auto (empty value). */
 export async function populateSmallTasksModelSelect(
   select: HTMLSelectElement,
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
 ): Promise<void> {
   clear(select)
@@ -572,7 +579,7 @@ export async function populateSmallTasksModelSelect(
  */
 export async function populateRoleModelSelect(
   select: HTMLSelectElement,
-  api: ApiClient,
+  api: ModelOptionsApi,
   current: string,
   autoLabel = '(auto — prefer on-device)',
 ): Promise<void> {

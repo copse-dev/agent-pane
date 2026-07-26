@@ -2,6 +2,7 @@ import { basename } from 'node:path'
 import { parse as parseShellCommand } from 'shell-quote'
 import type { McpToolAnnotations } from '@shared/types/mcp.ts'
 import { analyzeShellCommand, dangerousInSandboxReasons } from './shell-scope.ts'
+import type { ShellHarmDecision } from './shell-harm.ts'
 import type { ClassificationResult } from './safety-classifier.ts'
 import { isWebOriginAllowed, parseFetchUrl, webOriginKey } from './web-origin-policy.ts'
 
@@ -73,6 +74,8 @@ export type ShellPermissionDecision =
   | { action: 'prompt'; reasons: string[] }
   | { action: 'deny'; reasons: string[] }
 
+export type ShellPermissionMode = 'standard' | 'guarded-yolo'
+
 export type TerminalPermissionDecision =
   | { action: 'allow' }
   | { action: 'prompt'; reason: 'sandbox-unavailable' | 'remote-target' | 'widened-network' }
@@ -102,6 +105,10 @@ export function decideShellPermission(
     sandboxEnabled: boolean
     autoRun: boolean
     classification: ClassificationResult | null
+    /** Explicit per-run mode. Guarded YOLO still requires a host-owned harm verdict. */
+    mode?: ShellPermissionMode
+    /** Deterministic harm verdict computed after all hook rewrites. Required in Guarded YOLO. */
+    harmDecision?: ShellHarmDecision
     /**
      * Strict-mode hard-deny bar: when the classifier is at least this confident a
      * command is `external` *and* a deterministic destructive signal fires, the
@@ -112,6 +119,21 @@ export function decideShellPermission(
     externalDenyThreshold?: number
   },
 ): ShellPermissionDecision {
+  if (opts.mode === 'guarded-yolo') {
+    const harm = opts.harmDecision
+    if (!harm) {
+      return {
+        action: 'deny',
+        reasons: ['Guarded YOLO harm assessment unavailable — fail closed'],
+      }
+    }
+    if (harm.action !== 'allow') return harm
+    return {
+      action: 'allow',
+      reasons: ['Guarded YOLO explicitly enabled for this run', ...harm.reasons],
+    }
+  }
+
   if (!opts.autoRun) {
     return { action: 'prompt', reasons: ['auto-run for sandbox commands is disabled in Settings'] }
   }
