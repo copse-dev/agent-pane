@@ -1,6 +1,10 @@
 import { errorMessage } from './internal-utils.ts'
 import { runAgentLoop } from './run-agent-loop.ts'
 import { defaultMaxLlmCallsForSteps } from './agent-loop-limits.ts'
+import {
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+} from './reasoning-checkpoint-policy.ts'
 import type { LLMProvider, LLMMessage, LLMTool } from '@copse/llm/wire-types.ts'
 import type {
   AgentStreamChunk,
@@ -263,6 +267,8 @@ export async function runSubagent(opts: RunSubagentOptions): Promise<RunSubagent
       tools,
       maxSteps,
       maxLlmCalls: defaultMaxLlmCallsForSteps(maxSteps),
+      reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+      reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
       toolSchemaReserveTokens,
       // Fallback only: used when a provider does not emit per-stream usage
       // chunks. The loop prefers in-stream usage to avoid the shared-field race.
