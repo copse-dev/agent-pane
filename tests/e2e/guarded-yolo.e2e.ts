@@ -24,11 +24,11 @@ async function enableGuardedYolo(captureWarning = false): Promise<void> {
 
   const dialog = await $('#approval-dialog')
   await dialog.waitForDisplayed({ timeout: 10_000 })
-  await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for the next turn?')
+  await expect(dialog.$('.approval-heading')).toHaveText('Enable Guarded YOLO for this thread?')
   const body = await dialog.$('.approval-body').getText()
-  expect(body).toContain('will run without approval for this thread’s next agent turn')
+  expect(body).toContain('will run without approval in this thread')
   expect(body).toContain('deterministic host-owned checker')
-  expect(body).toContain('expires after the next agent turn')
+  expect(body).toContain('stays enabled for this thread until you disable it or restart the app')
   if (captureWarning) {
     await saveElementScreenshot('#approval-dialog', 'guarded-yolo-opt-in.png')
   }
@@ -55,7 +55,7 @@ describe('Guarded YOLO shell mode', function () {
     resetUserData()
   })
 
-  it('requires explicit opt-in, shows active containment, and expires after one turn', async () => {
+  it('requires explicit opt-in and stays active for the thread across turns', async () => {
     await enableGuardedYolo(true)
 
     await setComposerValue('[[mock:delay_ms 3000]] [[mcp:run_shell {"command":"cat /etc/hosts"}]]')
@@ -64,17 +64,26 @@ describe('Guarded YOLO shell mode', function () {
     const banner = await $('.guarded-yolo-banner')
     await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
     const bannerText = await banner.getText()
-    expect(bannerText).toContain('active for this turn')
+    expect(bannerText).toContain('active for this thread')
     expect(bannerText).toMatch(/Project sandbox|No OS sandbox/)
     await saveElementScreenshot('.guarded-yolo-banner', 'guarded-yolo-active.png')
 
     await waitForAgentIdle()
-    await banner.waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await expect(banner).toBeDisplayed()
+    await expect(banner).toHaveAttribute('data-phase', 'active')
+    await expect($('#approval-dialog')).not.toBeDisplayed()
+
+    await setComposerValue('[[mock:delay_ms 1000]] [[mcp:run_shell {"command":"pwd"}]]')
+    await $('.submit-btn').click()
+    await expect(banner).toHaveAttribute('data-phase', 'active', { wait: 10_000 })
+    await waitForAgentIdle()
+    await expect(banner).toHaveAttribute('data-phase', 'active')
     await expect($('#approval-dialog')).not.toBeDisplayed()
   })
 
   it('keeps a non-bypassable confirmation for bounded destructive work', async () => {
-    await enableGuardedYolo()
+    const banner = await $('.guarded-yolo-banner')
+    await expect(banner).toHaveAttribute('data-phase', 'active')
     await setComposerValue(
       '[[mcp:run_shell {"command":"rm -rf tests/e2e/.bounded-delete-missing"}]]',
     )
@@ -83,17 +92,15 @@ describe('Guarded YOLO shell mode', function () {
     const dialog = await $('#approval-dialog')
     await dialog.waitForDisplayed({ timeout: 30_000 })
     await expect(dialog.$('.approval-heading')).toHaveText('Guarded YOLO safety check')
-    expect(await dialog.$('.approval-body').getText()).toContain(
-      'recursive/forced delete requires confirmation',
-    )
+    expect(await dialog.$('.approval-body').getText()).toContain('recursive/forced delete')
     await saveElementScreenshot('#approval-dialog', 'guarded-yolo-harm-prompt.png')
     await dialog.$('.approval-reject').click()
     await waitForAgentIdle()
-    await $('.guarded-yolo-banner').waitForDisplayed({ reverse: true, timeout: 10_000 })
+    await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
   })
 
   it('hard-denies catastrophic deletion without offering approval', async () => {
-    await enableGuardedYolo()
+    await expect($('.guarded-yolo-banner')).toHaveAttribute('data-phase', 'active')
     await setComposerValue('[[mcp:run_shell {"command":"rm -rf /"}]]')
     await $('.submit-btn').click()
     await waitForAgentIdle()
