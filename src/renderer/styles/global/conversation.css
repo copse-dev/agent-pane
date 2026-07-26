@@ -234,6 +234,42 @@
 .message-body:hover:has(.code-block-shell:focus-within) .msg-copy {
   opacity: 0;
 }
+/* Per-prompt actions (fork the conversation from here / resend the prompt).
+   Mirrors .msg-copy's hover affordance, anchored to the bubble's bottom-right
+   so it never covers the first line of a long prompt. */
+.msg-actions {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: var(--spacing-xs);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.message-body:hover .msg-actions,
+.msg-actions:focus-within {
+  opacity: 1;
+}
+.msg-action {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.msg-action:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.msg-action:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.msg-action[hidden] {
+  display: none;
+}
 /* The user's own replies read as "yours" through a restrained accent-tinted
    fill and matching hairline — distinct from the trace without becoming a
    full-width blue slab. */
