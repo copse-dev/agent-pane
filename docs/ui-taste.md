@@ -425,6 +425,29 @@ wash through otherwise neutral surfaces. Derive hover and link shades from the a
 and derive foreground text from the chosen solid accent so custom colours do not leave primary
 buttons unreadable. Do not introduce one-off component blues that bypass these tokens.
 
+## Roadmap list rows
+
+Roadmap backlog rows (`.roadmap-row` in
+[`roadmap-pane.ts`](../src/renderer/views/roadmap-pane.ts) /
+[`roadmap.css`](../src/renderer/styles/global/roadmap.css)) follow the same quiet
+sidebar taste as thread rows and PR status icons:
+
+- **Title first, one line.** Title on the left; trailing indicators on the right.
+  No second meta row of chips under every title.
+- **Hide the default state.** `ready` items show no status badge — the title is
+  the signal. `done` is strikethrough on the title only (`.roadmap-row.is-done`),
+  not a "done" pill. Only exceptional statuses (`blocked`, `conflicts`,
+  `archived`) get a lowercase status chip.
+- **Icons over labels.** Linked threads use the muted messages icon (tooltip /
+  `aria-label` carries the thread title); attachments are a muted paperclip +
+  count with no pill wash. Mark-done / reopen are check / refresh icons, hidden
+  until row hover or focus (same idea as `.chat-delete`).
+- **Palette matches.** Cmd/Ctrl+P roadmap hits follow the same hide-ready rule.
+
+Spec: [`tests/e2e/roadmap-list-rows.e2e.ts`](../tests/e2e/roadmap-list-rows.e2e.ts).
+Complexity / fit / review chips stay when present (they are rare); tuck those
+further only if the list gets noisy again.
+
 ## Sidebar selections
 
 Chat rows use flat, square, full-bleed selection and hover fills with a slim inset accent rail on
