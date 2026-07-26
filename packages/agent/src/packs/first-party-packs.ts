@@ -45,6 +45,13 @@
 //    drops all three from the model tool list (`registry-bootstrap.ts` reads the
 //    pack registry, ANDing `gh` availability into the register direction) and
 //    re-points the "Investigate CI failure" follow-up.
+//  - `forcedPlanningPack` — the first-party pack for the experimental
+//    forced-planning feature. Contributes one turn-start hook that thresholds on
+//    the *measured capability of the model running the turn* and injects a
+//    mandatory plan-first block below it; the pack toggle atomically drops the
+//    hook from the assembly pipeline (`createHookRegistry` folds pack hooks in),
+//    restoring a byte-identical system prompt. Ships disabled — its id is in the
+//    declared `DEFAULT_DISABLED_PACK_IDS` set in `pack-service.ts`.
 //  - `piiRedactionPack` — the first-party pack for the experimental client-side
 //    PII redaction feature. Declares the `reveal_pii` tool + the redaction
 //    steering prompt block; the pack toggle atomically drops the tool from the
@@ -82,6 +89,7 @@ import { advisorStrategyPack } from './advisor-strategy-pack.ts'
 import { okfMemoriesPack } from './okf-memories-pack.ts'
 import { ciInvestigatorPack } from './ci-investigator-pack.ts'
 import { piiRedactionPack } from './pii-redaction-pack.ts'
+import { forcedPlanningPack } from './forced-planning-pack.ts'
 import { mcpUiCanvasPack } from './mcp-ui-canvas-pack.ts'
 import { devtoolsShortcutPack } from './devtools-shortcut-pack.ts'
 import { backgroundTasksPack } from './background-tasks-pack.ts'
@@ -92,9 +100,10 @@ import { automationsPack } from './automations-pack.ts'
  * enumeration order (P3): the pilot todos pack, then P5's two extracted
  * feature packs (post-turn review + model comparison), then long-horizon
  * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
- * the CI investigator, then PII redaction, then the two capability-only packs
- * (MCP-UI canvas + DevTools shortcut), then the background-tasks pack (which
- * declares a permission / sandbox relaxation, issue #1190).
+ * the CI investigator, then PII redaction, then forced planning, then the two
+ * capability-only packs (MCP-UI canvas + DevTools shortcut), then the
+ * background-tasks pack (which declares a permission / sandbox relaxation,
+ * issue #1190), then the automations prototype.
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
@@ -106,6 +115,7 @@ export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   okfMemoriesPack,
   ciInvestigatorPack,
   piiRedactionPack,
+  forcedPlanningPack,
   mcpUiCanvasPack,
   devtoolsShortcutPack,
   backgroundTasksPack,
