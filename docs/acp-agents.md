@@ -73,16 +73,19 @@ approval UX.
 
 ### Settings panel (recommended)
 
-Open **Settings → Experimental → ACP agents** (it's opt-in and still evolving). It
-scans your device when you open the tab and shows:
+Open **Settings → ACP agents**. It scans your device when you open the tab and
+shows a **chip row** — one chip per agent — that hides each agent's details until
+you pick it, the same pattern as **Settings → Providers**. A dot marks the agents
+you've already added.
 
-- **Known agents** — a shortlist (Gemini CLI, Claude Agent, Claude Code, Cursor,
-  Codex) with, for each: whether it's installed, the **Install** command to get it,
-  the **Sign in** command to authenticate it (e.g. `claude setup-token`), and an
-  **Add** button.
-- **Configured agents** — edit / enable / remove what you've added.
-- **Add an agent** — a custom form (id, title, command, args one-per-line,
-  `KEY=value` env, enabled) for anything not in the shortlist.
+- **Known agents** lead the row (Gemini CLI, Claude Agent, Claude Code, Cursor,
+  Codex). Select one to see whether it's installed, the **Install** command to get
+  it, the **Sign in** command to authenticate it (e.g. `claude setup-token`), and
+  an **Add to my agents** button.
+- Once added, selecting an agent's chip opens its editor — change its model /
+  permission mode, enable/disable it, or **Remove** it.
+- The trailing **Add agent** chip is a custom form (id, title, command, args
+  one-per-line, `KEY=value` env, enabled) for anything not in the shortlist.
 
 Changes are saved immediately; reopen the model dropdown to see them. **Re-scan
 device** refreshes the installed/running status after you install something.
