@@ -65,7 +65,7 @@ describe('experimental settings section', () => {
     assert.equal(
       await experimental.$('input[name="okfMemoriesEnabled"]').isExisting(),
       false,
-      'okfMemoriesEnabled must leave Settings > Experimental after pack migration',
+      'okfMemoriesEnabled must leave Settings > Experimental — the pack owns it',
     )
     assert.equal(
       await experimental.$('legend=Memories (Open Knowledge Format)').isExisting(),
@@ -107,9 +107,17 @@ describe('experimental settings section', () => {
     assert.equal(
       await experimental.$('input[name="roadmapPlansEnabled"]').isExisting(),
       false,
-      'roadmapPlansEnabled must leave Settings > Experimental after pack migration',
+      'roadmapPlansEnabled must leave Settings > Experimental — the pack owns it',
     )
     assert.equal(await experimental.$('legend=Roadmap plans').isExisting(), false)
+
+    // ACP agents graduated out of Experimental into their own top-level section,
+    // so the panel's legend must no longer appear here.
+    assert.equal(
+      await experimental.$('legend=ACP agents').isExisting(),
+      false,
+      'ACP agents must leave Settings > Experimental after graduating to its own section',
+    )
 
     // The model classifier speaks the shared intellect scale, not a separate
     // tier vocabulary (docs/plans/advisor-strategy.md).

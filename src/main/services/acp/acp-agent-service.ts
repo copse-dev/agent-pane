@@ -18,6 +18,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { promptPayloadFromUserContent } from '@shared/remote-agent-stream.ts'
 import { ACP_UNSUPPORTED_ON_SSH_MESSAGE, acpModelValue } from '@shared/acp.ts'
 import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
+import { isAcpOverSshEnabled } from './acp-ssh-transport.ts'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
   sleepMs,
@@ -267,7 +268,10 @@ export async function runWithAcpRetry<T>(
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
-  if (isActiveSshWorkspace()) {
+  // On an SSH workspace, ACP is blocked unless the user opted into remote ACP
+  // (docs/plans/acp-over-ssh.md), in which case the agent spawns on the remote
+  // host via the SSH-aware transport.
+  if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
 
@@ -475,7 +479,7 @@ export async function runAcpAgentFromSettings(
  * exposes none of that kind.
  */
 export async function probeAcpAgentForSettings(agentId: string): Promise<AcpAgentProbe> {
-  if (isActiveSshWorkspace()) {
+  if (isActiveSshWorkspace() && !isAcpOverSshEnabled()) {
     throw new Error(ACP_UNSUPPORTED_ON_SSH_MESSAGE)
   }
   const agent = getAcpAgent(agentId)

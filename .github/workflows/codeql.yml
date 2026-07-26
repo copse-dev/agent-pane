@@ -3,14 +3,16 @@ name: CodeQL
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
     - cron: '23 6 * * 1'
 
-# The workflow runs untrusted fork code only on GitHub-hosted runners. This
-# repository does not currently have GitHub Code Security enabled, so retain the
-# SARIF as a workflow artifact instead of asking the API to ingest it.
+# CodeQL is advisory rather than a required PR check. Scan the trusted main tip
+# after merges plus a weekly safety-net run instead of scanning every PR update.
+# Both triggers stay on the self-hosted check fleet; there is intentionally no
+# GitHub-hosted fallback here because the scan can wait for fleet capacity.
+#
+# This repository does not currently have GitHub Code Security enabled, so
+# retain the SARIF as a workflow artifact instead of asking the API to ingest it.
 permissions:
   actions: read
   contents: read
@@ -18,7 +20,7 @@ permissions:
 jobs:
   analyze:
     name: Analyze JavaScript and TypeScript
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CHECKS_RUNNER }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.0
