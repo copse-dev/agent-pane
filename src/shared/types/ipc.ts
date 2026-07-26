@@ -64,6 +64,20 @@ export interface IpcInvokeMap {
     result: import('@shared/follow-ups/types.ts').FollowUpSuggestion[]
   }
 
+  // Explicit high-risk, session-only shell mode (issue #1249).
+  'security:getGuardedYolo': {
+    args: [threadId: string]
+    result: import('./guarded-yolo.ts').GuardedYoloState
+  }
+  'security:enableGuardedYolo': {
+    args: [threadId: string]
+    result: import('./guarded-yolo.ts').GuardedYoloState
+  }
+  'security:disableGuardedYolo': {
+    args: [threadId: string]
+    result: import('./guarded-yolo.ts').GuardedYoloState
+  }
+
   // Diff approval
   'diff:approve': {
     args: [projectId: string, threadId: string, path: string]
@@ -377,6 +391,7 @@ export interface IpcEventMap {
     },
   ]
   'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
+  'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
   'ssh:prompt_request': [
     {
       id: string
