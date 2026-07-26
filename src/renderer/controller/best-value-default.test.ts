@@ -2,12 +2,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import { createThread, getActiveThread } from '@shared/store/thread-helpers.ts'
-import {
-  resolveBestValueForActiveBlankThread,
-  type BestValueDefaultApi,
-} from './best-value-default.ts'
+import type { ApiClient } from '../../preload/api.d.ts'
+import { resolveBestValueForActiveBlankThread } from './best-value-default.ts'
 
-function mockApi(resolved = 'claude-sonnet-4-6'): BestValueDefaultApi {
+function mockApi(resolved = 'claude-sonnet-4-6'): {
+  models: Pick<ApiClient['models'], 'bestValueDefault'>
+} {
   return {
     models: {
       bestValueDefault: async () => resolved,
