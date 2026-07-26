@@ -156,7 +156,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   }): void {
     document.body.innerHTML = ''
     calls = { queries: [], reads: [], roadmapLists: 0 }
-    store = createStore()
+    store = createStore({ activeProjectId: 'project-1', activeThreadId: 'thread-1' })
     mountFileSearchDialog(
       store,
       stubApi(calls, () => result, options),
