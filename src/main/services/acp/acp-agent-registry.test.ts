@@ -73,7 +73,14 @@ describe('resolveAcpSandbox (issue #590)', () => {
 
   it('leaves agents with no catalog preset unsandboxed', () => {
     assert.equal(resolveAcpSandbox({ ...base, id: 'my-custom-agent' }), undefined)
-    assert.equal(resolveAcpSandbox({ ...base, id: 'cursor' }), undefined) // preset ships no sandbox
+  })
+
+  it('falls back to the Cursor catalog sandbox preset', () => {
+    const resolved = resolveAcpSandbox({ ...base, id: 'cursor' })
+    assert.ok(resolved)
+    assert.ok(resolved.allowedDomains.includes('*.cursor.sh'))
+    assert.ok(resolved.homeDirs?.includes('.cursor'))
+    assert.deepEqual(resolved.scratchPaths, ['/tmp/.cursor'])
   })
 })
 
@@ -95,9 +102,9 @@ describe('resolveAcpPermissionMode (issue #607)', () => {
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'claude-agent-acp' }, false), undefined)
   })
 
-  it('leaves presets without a sandboxed default alone (Gemini, Cursor, custom)', () => {
+  it('uses the Cursor sandbox default and leaves Gemini/custom agents alone', () => {
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'gemini-cli' }, true), undefined)
-    assert.equal(resolveAcpPermissionMode({ ...base, id: 'cursor' }, true), undefined)
+    assert.equal(resolveAcpPermissionMode({ ...base, id: 'cursor' }, true), 'acceptEdits')
     assert.equal(resolveAcpPermissionMode({ ...base, id: 'my-custom-agent' }, true), undefined)
   })
 })
