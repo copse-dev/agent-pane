@@ -237,6 +237,13 @@ export interface ThreadCatalogHit extends ThreadCatalogEntry {
 export interface TranscriptAttachment {
   kind: 'paste' | 'file' | 'thread' | 'shell' | 'video'
   label: string
+  /**
+   * Where the attached file lives, for the chips that can act on it. Only
+   * `video` sets it today: the chip plays the recording in a preview modal, and
+   * the label alone (a bare filename) cannot find the file again after a
+   * reload. Absent for every other kind, which are display-only.
+   */
+  path?: string
 }
 
 export interface Message {

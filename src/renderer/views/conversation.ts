@@ -40,6 +40,7 @@ import {
 } from '@shared/threads/message-model.ts'
 import { attachmentIcon } from '../dom/attachment-icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
+import { attachVideoExpand } from '../attachments/video-expand.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { agentActivityLabel } from '../agent-activity.ts'
@@ -732,7 +733,7 @@ function appendMessageContent(
   if (msg.role === 'assistant' && msg.content) {
     setAssistantMarkdown(textEl, msg.content, false, api)
   } else if (msg.role === 'user' && msg.attachments?.length) {
-    renderUserTranscript(textEl, msg.content, msg.attachments)
+    renderUserTranscript(textEl, msg.content, msg.attachments, api)
   } else {
     textEl.textContent = msg.content
   }
@@ -764,13 +765,25 @@ function isReasoningDisclosureLive(
   return thread.messages[thread.messages.length - 1]?.id === msg.id
 }
 
-/** A display-only transcript chip: an outline icon + its (clipped) label. */
-function transcriptChip(kind: TranscriptAttachment['kind'], label: string): HTMLElement {
+/**
+ * A transcript chip: an outline icon + its (clipped) label. Display-only except
+ * for a video, which becomes a button that plays the recording — the file is on
+ * disk and the person who attached it otherwise has no way to see what they
+ * sent, since the video deliberately never becomes model content.
+ */
+function transcriptChip(
+  attachment: Pick<TranscriptAttachment, 'kind' | 'label' | 'path'>,
+  api: ApiClient,
+): HTMLElement {
+  const { kind, label } = attachment
   const chip = el('span', { class: `transcript-attachment-chip transcript-attachment-${kind}` })
   chip.append(
     attachmentIcon(kind, 'transcript-attachment-icon'),
     el('span', { class: 'transcript-attachment-label' }, label),
   )
+  if (kind === 'video' && attachment.path) {
+    attachVideoExpand(chip, api, attachment.path, label)
+  }
   return chip
 }
 
@@ -783,6 +796,7 @@ function renderUserTranscript(
   host: HTMLElement,
   content: string,
   attachments: TranscriptAttachment[],
+  api: ApiClient,
 ): void {
   const pastes = attachments.filter((a) => a.kind === 'paste')
   const trailing = attachments.filter((a) => a.kind !== 'paste')
@@ -791,13 +805,13 @@ function renderUserTranscript(
   parts.forEach((part, i) => {
     if (part) host.append(document.createTextNode(part))
     if (i < parts.length - 1) {
-      host.append(transcriptChip('paste', pastes[i]?.label ?? 'Pasted text'))
+      host.append(transcriptChip({ kind: 'paste', label: pastes[i]?.label ?? 'Pasted text' }, api))
     }
   })
 
   if (trailing.length) {
     const row = el('div', { class: 'transcript-attachment-row' })
-    for (const a of trailing) row.append(transcriptChip(a.kind, a.label))
+    for (const a of trailing) row.append(transcriptChip(a, api))
     host.append(row)
   }
 }

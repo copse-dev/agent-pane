@@ -467,6 +467,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     // rejects rather than handing back a path nothing could read.
     video: {
       attach: () => Promise.reject(new Error('Video attachments are unavailable in the demo')),
+      read: () => Promise.reject(new Error('Video playback is unavailable in the demo')),
     },
   }
 

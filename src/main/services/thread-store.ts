@@ -86,6 +86,11 @@ function workspaceRoot(): string {
   return join(homedir(), '.copse', 'workspace')
 }
 
+/** Root of the chat store, for callers that need to authorise a path against it. */
+export function chatStoreRoot(): string {
+  return workspaceRoot()
+}
+
 function projectDir(projectId: string): string {
   return join(workspaceRoot(), projectId)
 }
