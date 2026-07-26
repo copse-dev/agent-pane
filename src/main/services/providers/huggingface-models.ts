@@ -124,7 +124,6 @@ export function parseHuggingFaceModels(json: unknown): ExtraProviderModel[] {
     out.push({
       // Pin the chosen provider so routing (and thus price/context) can't drift.
       id: `${id}:${best.provider}`,
-      label: id,
       ...(best.contextLength ? { contextWindow: best.contextLength } : {}),
       inputPricePerMTok: best.inputPricePerMTok,
       outputPricePerMTok: best.outputPricePerMTok,
