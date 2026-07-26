@@ -244,6 +244,24 @@ export interface IpcInvokeMap {
     result: import('./state.ts').OrphanProjectStore[]
   }
 
+  // Project-scoped automations (copse.automations pack).
+  'automations:list': {
+    args: [projectId: string]
+    result: import('./automations.ts').AutomationSchedule[]
+  }
+  'automations:upsert': {
+    args: [projectId: string, input: import('./automations.ts').AutomationScheduleInput]
+    result: import('./automations.ts').AutomationSchedule
+  }
+  'automations:remove': {
+    args: [projectId: string, scheduleId: string]
+    result: undefined
+  }
+  'automations:runNow': {
+    args: [projectId: string, scheduleId: string]
+    result: import('./automations.ts').AutomationTriggerEvent
+  }
+
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
   'index:status': { args: []; result: import('./index-status.ts').WorkspaceIndexStatus }
@@ -382,6 +400,8 @@ export interface IpcEventMap {
       comparisonModels?: { a: string; b: string; judge: string }
     },
   ]
+  /** Main dismisses an approval the run cancelled (Stop / ACP permission RPC abort). */
+  'agent:approval_cancelled': [{ id: string }]
   'agent:ask_user_request': [
     {
       id: string
@@ -392,6 +412,7 @@ export interface IpcEventMap {
   ]
   'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
+  'automations:triggered': [event: import('./automations.ts').AutomationTriggerEvent]
   'ssh:prompt_request': [
     {
       id: string

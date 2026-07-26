@@ -20,19 +20,20 @@ describe('GuardedYoloRegistry', () => {
     assert.equal(registry.isActive('thread-1'), true)
     assert.equal(registry.state('thread-1', true).expiresAt, null)
 
-    // finishRun is now a no-op — YOLO stays active for the thread.
-    registry.finishRun('thread-1')
+    assert.equal(registry.activateForRun('thread-1'), true)
     assert.equal(registry.state('thread-1', true).phase, 'active')
     assert.equal(registry.isActive('thread-1'), true)
     assert.deepEqual(changed, ['thread-1', 'thread-1'])
   })
 
-  it('arms without an expiry timer — armed state persists until activated or disabled', () => {
+  it('keeps an unused grant armed until it is activated or disabled', () => {
     const registry = new GuardedYoloRegistry()
 
     registry.arm('thread-1')
     assert.equal(registry.state('thread-1', true).phase, 'armed')
     assert.equal(registry.state('thread-1', true).expiresAt, null)
+    registry.disable('thread-1')
+    assert.equal(registry.state('thread-1', true).phase, 'off')
   })
 
   it('reports the effective containment state truthfully', () => {
