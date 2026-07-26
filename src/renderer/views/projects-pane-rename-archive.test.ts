@@ -94,7 +94,7 @@ describe('projects pane thread rename + archive (component)', () => {
     assert.ok(rowFor('Renamed chat'))
   })
 
-  it('right-click offers Rename and Archive; Archive soft-hides the row', () => {
+  it('right-click offers Rename, Fork and Archive; Archive soft-hides the row', () => {
     const store = createStore({
       projects: [{ id: 'a', path: '/a', name: 'Alpha' }],
       activeProjectId: 'a',
@@ -117,7 +117,7 @@ describe('projects pane thread rename + archive (component)', () => {
     const menu = document.querySelector<HTMLElement>('.context-menu')
     assert.ok(menu)
     const labels = Array.from(menu.querySelectorAll('.context-menu-item')).map((i) => i.textContent)
-    assert.deepEqual(labels, ['Rename', 'Archive'])
+    assert.deepEqual(labels, ['Rename', 'Fork', 'Archive'])
 
     const archiveItem = Array.from(
       menu.querySelectorAll<HTMLButtonElement>('.context-menu-item'),
