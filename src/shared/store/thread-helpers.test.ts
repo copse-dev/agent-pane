@@ -333,7 +333,7 @@ describe('archiveThread', () => {
   })
 })
 
-describe('per-chunk streaming updates avoid whole-history copies (#1155)', () => {
+describe('per-chunk streaming updates mutate in place, independent of loaded history (#1155/#1255)', () => {
   // Two non-blank threads, each with a streaming assistant message. addMessage
   // prunes *other* blank threads on a thread's first message, so each thread is
   // messaged right after it is created to keep both alive.
@@ -353,58 +353,64 @@ describe('per-chunk streaming updates avoid whole-history copies (#1155)', () =>
     return thread
   }
 
-  it('appendToken clones only the owning thread and only the target message', () => {
+  it('appendToken mutates the target message in place, cloning nothing', () => {
     const store = createStore()
     const { a, b, aMsg } = seedTwoThreads(store)
 
     const aBefore = find(store, a)
     const bBefore = find(store, b)
-    const siblingBefore = aBefore.messages.find((m) => m.role === 'user')
-    assert.ok(siblingBefore)
+    const messagesBefore = aBefore.messages
+    const targetBefore = aBefore.messages.find((m) => m.id === aMsg)
+    assert.ok(targetBefore)
 
     appendToken(store, aMsg, 'hello')
 
-    const aAfter = find(store, a)
-    // Unrelated thread keeps its object identity — it was not cloned.
-    assert.equal(find(store, b), bBefore)
-    // Owning thread is a fresh object with a fresh messages array...
-    assert.notEqual(aAfter, aBefore)
-    assert.notEqual(aAfter.messages, aBefore.messages)
-    // ...but its untouched sibling message keeps identity (only the target is replaced).
+    // Nothing is cloned: the owning thread, its messages array, and the target
+    // message itself all keep identity — only the message's content field grows.
+    assert.equal(find(store, a), aBefore)
+    assert.equal(find(store, a).messages, messagesBefore)
     assert.equal(
-      aAfter.messages.find((m) => m.role === 'user'),
-      siblingBefore,
+      find(store, a).messages.find((m) => m.id === aMsg),
+      targetBefore,
     )
-    assert.equal(aAfter.messages.find((m) => m.id === aMsg)?.content, 'hello')
+    assert.equal(targetBefore.content, 'hello')
+    // The unrelated thread is untouched.
+    assert.equal(find(store, b), bBefore)
   })
 
-  it('a burst of tokens never clones an unrelated thread', () => {
+  it('a burst of tokens allocates no new threads array (no per-chunk copy)', () => {
     const store = createStore()
     const { a, b, aMsg } = seedTwoThreads(store)
+    const threadsBefore = store.getState().threads
     const bBefore = find(store, b)
 
     for (const chunk of ['one ', 'two ', 'three']) appendToken(store, aMsg, chunk)
 
-    // The unrelated thread's identity survives every chunk in the burst.
+    // The whole threads array — and the unrelated thread — keep identity across
+    // the entire burst: per-chunk work is independent of loaded history.
+    assert.equal(store.getState().threads, threadsBefore)
     assert.equal(find(store, b), bBefore)
     assert.equal(find(store, a).messages.find((m) => m.id === aMsg)?.content, 'one two three')
   })
 
-  it('concurrent streams update only their own thread and message', () => {
+  it('concurrent streams update only their own message', () => {
     const store = createStore()
     const { a, b, aMsg, bMsg } = seedTwoThreads(store)
 
     appendToken(store, aMsg, 'from-a')
     appendReasoning(store, bMsg, 'from-b')
 
-    // Writing to b left a untouched, and vice versa.
+    // Each write landed on its own message and left the other's streamed fields be.
     assert.equal(find(store, a).messages.find((m) => m.id === aMsg)?.content, 'from-a')
+    assert.equal(find(store, a).messages.find((m) => m.id === aMsg)?.reasoning, undefined)
     assert.equal(find(store, b).messages.find((m) => m.id === bMsg)?.reasoning, 'from-b')
+    assert.equal(find(store, b).messages.find((m) => m.id === bMsg)?.content, '')
   })
 
-  it('addToolCall / updateToolCall leave unrelated threads referentially stable', () => {
+  it('addToolCall / updateToolCall mutate in place and leave the threads array stable', () => {
     const store = createStore()
     const { a, b, aMsg } = seedTwoThreads(store)
+    const threadsBefore = store.getState().threads
     const bBefore = find(store, b)
 
     addToolCall(store, aMsg, {
@@ -414,9 +420,10 @@ describe('per-chunk streaming updates avoid whole-history copies (#1155)', () =>
       status: 'running',
       result: null,
     })
-    assert.equal(find(store, b), bBefore)
-
     updateToolCall(store, aMsg, 'tc1', { status: 'done', result: 'ok' })
+
+    // No copy-on-write: the threads array and the unrelated thread keep identity.
+    assert.equal(store.getState().threads, threadsBefore)
     assert.equal(find(store, b), bBefore)
 
     const tc = find(store, a)
@@ -427,16 +434,15 @@ describe('per-chunk streaming updates avoid whole-history copies (#1155)', () =>
     assert.equal(tc.result, 'ok')
   })
 
-  it('an unknown message id is a no-op (no thread churn)', () => {
+  it('an unknown message id is a no-op', () => {
     const store = createStore()
     const { a, b } = seedTwoThreads(store)
     const threadsBefore = store.getState().threads
 
     appendToken(store, 'no-such-message', 'x')
 
-    // No message matched → no setState, so the threads array itself is unchanged.
+    // No message matched → nothing mutated, threads array unchanged.
     assert.equal(store.getState().threads, threadsBefore)
-    // Both threads still resolve (find throws if either is missing).
     assert.equal(find(store, a).id, a)
     assert.equal(find(store, b).id, b)
   })

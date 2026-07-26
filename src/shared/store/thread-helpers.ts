@@ -305,47 +305,83 @@ export function setThreadDraftPrompt(store: AppStore, threadId: string, draftPro
   store.emit('thread_draft_changed', threadId)
 }
 
+interface MessageLocation {
+  thread: Thread
+  message: Message
+}
+
+// Per-store index of message id → its message and owning thread, memoized on the
+// `threads`-array reference. The streaming mutators below update a message *in
+// place* (issue #1255): the store is emit-reactive (`setState` is a shallow merge
+// with no reference-equality selectors) and persistence diffs by value, so an
+// append needs no copy-on-write. In-place appends leave the `threads` reference
+// untouched, so this stays a cache hit across a whole token burst; any membership
+// change (add message, delete/fork/archive thread, load) produces a fresh
+// `threads` array, so the index rebuilds automatically and can never go stale.
+// Keyed weakly so a discarded store's index is collected with it.
+const messageIndexByStore = new WeakMap<
+  AppStore,
+  { threads: readonly Thread[]; byId: Map<string, MessageLocation> }
+>()
+
+function messageLocations(store: AppStore): Map<string, MessageLocation> {
+  const { threads } = store.getState()
+  const cached = messageIndexByStore.get(store)
+  if (cached && cached.threads === threads) return cached.byId
+  const byId = new Map<string, MessageLocation>()
+  for (const thread of threads) {
+    for (const message of thread.messages) {
+      // Message ids are globally unique (forks reissue them); first match wins,
+      // matching the previous whole-history seek.
+      if (!byId.has(message.id)) byId.set(message.id, { thread, message })
+    }
+  }
+  messageIndexByStore.set(store, { threads, byId })
+  return byId
+}
+
+/** O(1) locate of a message and its owning thread (undefined for unknown ids). */
+export function locateMessage(store: AppStore, messageId: string): MessageLocation | undefined {
+  return messageLocations(store).get(messageId)
+}
+
 /**
- * Replace exactly one message in its owning thread, cloning only that thread and
- * its `messages` array. Every unrelated thread — and every sibling message in the
- * owning thread — keeps its object identity, so the per-chunk work of a stream is
- * proportional to the owning thread's message count rather than to all loaded
- * history (issue #1155). No `setState` happens when the id is unknown; returns the
- * owning thread's id (or `null`) so callers can scope their emit.
+ * Apply an in-place update to exactly one message, located in O(1). Because the
+ * store is emit-reactive and persistence is value-based, a streamed append can
+ * mutate the message directly — no thread/`messages`-array copies, every object
+ * keeps its identity, and per-chunk work is independent of loaded-history size
+ * (issue #1255). Returns the owning thread's id, or `null` when the id is unknown
+ * so callers can scope (or skip) their emit.
  */
-function replaceMessage(
+function updateMessage(
   store: AppStore,
   messageId: string,
-  update: (message: Message) => Message,
+  mutate: (message: Message) => void,
 ): string | null {
-  const { threads } = store.getState()
-  for (let ti = 0; ti < threads.length; ti++) {
-    const thread = threads[ti]
-    if (!thread) continue
-    const mi = thread.messages.findIndex((m) => m.id === messageId)
-    if (mi === -1) continue
-    const messages = thread.messages.slice()
-    messages[mi] = update(at(messages, mi))
-    const nextThreads = threads.slice()
-    nextThreads[ti] = { ...thread, messages }
-    store.setState({ threads: nextThreads })
-    return thread.id
-  }
-  return null
+  const loc = locateMessage(store, messageId)
+  if (!loc) return null
+  mutate(loc.message)
+  return loc.thread.id
 }
 
 export function appendToken(store: AppStore, messageId: string, text: string): void {
-  replaceMessage(store, messageId, (m) => ({ ...m, content: m.content + text }))
+  updateMessage(store, messageId, (m) => {
+    m.content += text
+  })
   store.emit('message_token', messageId, text)
 }
 
 export function appendReasoning(store: AppStore, messageId: string, text: string): void {
-  replaceMessage(store, messageId, (m) => ({ ...m, reasoning: (m.reasoning ?? '') + text }))
+  updateMessage(store, messageId, (m) => {
+    m.reasoning = (m.reasoning ?? '') + text
+  })
   store.emit('message_reasoning', messageId, text)
 }
 
 export function setMessageContent(store: AppStore, messageId: string, content: string): void {
-  replaceMessage(store, messageId, (m) => ({ ...m, content }))
+  updateMessage(store, messageId, (m) => {
+    m.content = content
+  })
   store.emit('message_token', messageId, content)
 }
 
@@ -354,7 +390,9 @@ export function setMessageCommandSummary(
   messageId: string,
   commandSummary: string,
 ): void {
-  replaceMessage(store, messageId, (m) => ({ ...m, commandSummary }))
+  updateMessage(store, messageId, (m) => {
+    m.commandSummary = commandSummary
+  })
   // Re-uses the tool-card refresh path so the shell group header updates in place.
   store.emit('tool_call_updated', messageId, '')
 }
@@ -364,13 +402,17 @@ export function setMessageToolSummary(
   messageId: string,
   toolSummary: string,
 ): void {
-  replaceMessage(store, messageId, (m) => ({ ...m, toolSummary }))
+  updateMessage(store, messageId, (m) => {
+    m.toolSummary = toolSummary
+  })
   // Re-uses the tool-card refresh path so the turn rollup label updates in place.
   store.emit('tool_call_updated', messageId, '')
 }
 
 export function addToolCall(store: AppStore, messageId: string, toolCall: ToolCall): void {
-  replaceMessage(store, messageId, (m) => ({ ...m, toolCalls: [...m.toolCalls, toolCall] }))
+  updateMessage(store, messageId, (m) => {
+    m.toolCalls.push(toolCall)
+  })
   store.emit('tool_call_started', messageId, toolCall)
 }
 
@@ -379,13 +421,7 @@ export function findToolCall(
   messageId: string,
   toolCallId: string,
 ): ToolCall | undefined {
-  for (const thread of store.getState().threads) {
-    for (const message of thread.messages) {
-      if (message.id !== messageId) continue
-      return message.toolCalls.find((tc) => tc.id === toolCallId)
-    }
-  }
-  return undefined
+  return locateMessage(store, messageId)?.message.toolCalls.find((tc) => tc.id === toolCallId)
 }
 
 export function updateToolCall(
@@ -394,10 +430,10 @@ export function updateToolCall(
   toolCallId: string,
   patch: Partial<ToolCall>,
 ): void {
-  replaceMessage(store, messageId, (m) => ({
-    ...m,
-    toolCalls: m.toolCalls.map((tc) => (tc.id !== toolCallId ? tc : { ...tc, ...patch })),
-  }))
+  updateMessage(store, messageId, (m) => {
+    const toolCall = m.toolCalls.find((tc) => tc.id === toolCallId)
+    if (toolCall) Object.assign(toolCall, patch)
+  })
   store.emit('tool_call_updated', messageId, toolCallId)
 }
 
@@ -408,11 +444,10 @@ export function updateToolCall(
  * family. Deduped by spine id so a re-delivered chunk never doubles a card.
  */
 export function addHookCard(store: AppStore, messageId: string, card: HookCard): void {
-  const threadId = replaceMessage(store, messageId, (m) => {
-    const existing = m.hookCards ?? []
+  const threadId = updateMessage(store, messageId, (m) => {
+    const cards = m.hookCards ?? (m.hookCards = [])
     // Deduped by spine id so a re-delivered chunk never doubles a card.
-    if (existing.some((c) => c.id === card.id)) return m
-    return { ...m, hookCards: [...existing, card] }
+    if (!cards.some((c) => c.id === card.id)) cards.push(card)
   })
   if (threadId === null) return
   store.emit('hook_card_added', threadId, messageId)
