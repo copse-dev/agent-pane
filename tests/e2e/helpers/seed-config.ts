@@ -3018,3 +3018,68 @@ export function seedThreadRenameArchiveFixture(workspaceRoot: string): {
   writeSettings({ model: 'claude-sonnet-4-6' })
   return { projectId, keepTitle, archiveTitle }
 }
+
+/**
+ * Thread-forking + resend visual eval. Seeds one idle thread holding two settled
+ * exchanges, so the transcript shows a prompt that is *not* the latest (Fork
+ * from here only) alongside the latest one (Fork from here + Resend).
+ */
+export function seedForkResendFixture(workspaceRoot: string): {
+  projectId: string
+  threadId: string
+  title: string
+} {
+  const projectId = 'e2e-fork-resend-project'
+  const threadId = 'e2e-fork-resend-thread'
+  const title = 'Fork and resend'
+  const now = Date.now()
+  mkdirSync(USER_DATA, { recursive: true })
+  writeSeedConfig({
+    projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
+    activeProjectId: projectId,
+    expandedProjectId: projectId,
+    activeThreadId: threadId,
+    [`threads:${projectId}`]: [
+      {
+        id: threadId,
+        title,
+        status: 'idle',
+        messages: [
+          {
+            id: 'msg-fork-user-first',
+            role: 'user',
+            content: 'Where does the login redirect get decided?',
+            toolCalls: [],
+            createdAt: now,
+          },
+          {
+            id: 'msg-fork-assistant-first',
+            role: 'assistant',
+            content: 'It is decided in `src/auth/redirect.ts`, in `resolveRedirect()`.',
+            toolCalls: [],
+            createdAt: now + 1,
+          },
+          {
+            id: 'msg-fork-user-latest',
+            role: 'user',
+            content: 'Now make it fall back to the dashboard.',
+            toolCalls: [],
+            createdAt: now + 2,
+          },
+          {
+            id: 'msg-fork-assistant-latest',
+            role: 'assistant',
+            content: 'Done — the fallback now points at `/dashboard`.',
+            toolCalls: [],
+            createdAt: now + 3,
+          },
+        ],
+        usage: { inputTokens: 1200, outputTokens: 400 },
+        createdAt: now,
+        updatedAt: now + 3,
+      },
+    ],
+  })
+  writeSettings({ model: 'claude-sonnet-4-6' })
+  return { projectId, threadId, title }
+}
