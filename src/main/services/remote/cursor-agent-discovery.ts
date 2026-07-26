@@ -113,14 +113,15 @@ function resolveCursorApiKey(): string {
   return apiKey
 }
 
-async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
+async function readJsonResponse(response: Response, label: string): Promise<unknown> {
   const text = await response.text()
   if (!response.ok) {
     const details = text ? `: ${text}` : ''
     throw new Error(`${label} failed with HTTP ${String(response.status)}${details}`)
   }
   try {
-    return (text ? JSON.parse(text) : {}) as T
+    const parsed: unknown = text ? JSON.parse(text) : {}
+    return parsed
   } catch {
     throw new Error(`${label} returned invalid JSON`)
   }
@@ -138,10 +139,14 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed ? trimmed : null
 }
 
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 /** Parse one list/detail agent row; returns null when required identity fields are missing. */
 export function parseCursorAgentSummary(raw: unknown): CursorAgentSummary | null {
-  if (!raw || typeof raw !== 'object') return null
-  const rec = raw as Record<string, unknown>
+  if (!isUnknownRecord(raw)) return null
+  const rec = raw
   const id = asNonEmptyString(rec['id'])
   const name = asNonEmptyString(rec['name'])
   const status = asNonEmptyString(rec['status'])
@@ -162,8 +167,8 @@ export function parseCursorAgentSummary(raw: unknown): CursorAgentSummary | null
 }
 
 export function parseCursorAgentListPage(raw: unknown): CursorAgentListPage {
-  if (!raw || typeof raw !== 'object') return { items: [] }
-  const rec = raw as Record<string, unknown>
+  if (!isUnknownRecord(raw)) return { items: [] }
+  const rec = raw
   const itemsRaw = rec['items']
   const items: CursorAgentSummary[] = []
   if (Array.isArray(itemsRaw)) {
@@ -178,14 +183,14 @@ export function parseCursorAgentListPage(raw: unknown): CursorAgentListPage {
 
 export function parseCursorAgentDetail(raw: unknown): CursorAgentDetail | null {
   const summary = parseCursorAgentSummary(raw)
-  if (!summary || !raw || typeof raw !== 'object') return null
-  const rec = raw as Record<string, unknown>
+  if (!summary || !isUnknownRecord(raw)) return null
+  const rec = raw
   const reposRaw = rec['repos']
   const repos: Array<{ url: string; startingRef?: string }> = []
   if (Array.isArray(reposRaw)) {
     for (const row of reposRaw) {
-      if (!row || typeof row !== 'object') continue
-      const repoRec = row as Record<string, unknown>
+      if (!isUnknownRecord(row)) continue
+      const repoRec = row
       const url = asNonEmptyString(repoRec['url'])
       if (!url) continue
       const startingRef = asNonEmptyString(repoRec['startingRef'])
@@ -220,7 +225,9 @@ export function cursorAgentMatchesRepository(
 }
 
 /** Agent ids already linked on local threads (Copse-launched or previously imported). */
-export function collectLinkedCursorAgentIds(threads: readonly Thread[]): Set<string> {
+export function collectLinkedCursorAgentIds(
+  threads: readonly Pick<Thread, 'remoteAgentLink'>[],
+): Set<string> {
   const linked = new Set<string>()
   for (const thread of threads) {
     const link = thread.remoteAgentLink

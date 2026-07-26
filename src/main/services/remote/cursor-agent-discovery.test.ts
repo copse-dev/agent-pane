@@ -61,7 +61,7 @@ describe('cursorAgentMatchesRepository', () => {
 
 describe('collectLinkedCursorAgentIds', () => {
   it('collects only Cursor-linked agent ids', () => {
-    const threads = [
+    const threads: Array<Pick<Thread, 'remoteAgentLink'>> = [
       {
         remoteAgentLink: {
           provider: 'cursor',
@@ -77,7 +77,7 @@ describe('collectLinkedCursorAgentIds', () => {
         },
       },
       {},
-    ] as Thread[]
+    ]
     assert.deepEqual([...collectLinkedCursorAgentIds(threads)], ['bc-1'])
   })
 })
@@ -117,7 +117,7 @@ describe('discoverExternalCursorAgents', () => {
     const ids = ['thread-a', 'msg-a', 'thread-b', 'msg-b']
     let idIdx = 0
 
-    const fetchImpl = mock.fn(async (input: RequestInfo | URL) => {
+    const fetchImpl = mock.fn<typeof fetch>(async (input) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (url.includes('/v1/agents?')) {
         return new Response(
@@ -190,7 +190,7 @@ describe('discoverExternalCursorAgents', () => {
       const result = await discoverExternalCursorAgents({
         projectId: 'proj-1',
         repositoryUrl: 'https://github.com/acme/project',
-        fetchImpl: fetchImpl as unknown as typeof fetch,
+        fetchImpl,
         loadThreadsImpl: async () => [
           {
             id: 'existing',
