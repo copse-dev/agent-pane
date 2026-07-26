@@ -370,7 +370,7 @@ Each phase leaves `npm run check` + `npm run test:e2e` green.
 
 - **Phase 0** — `src/shared/threads/` format module (spine + OKF + fold/explode), 21 tests. ✅
 - **Phase 1** — `thread-store.ts` on `~/.copse/workspace`, 11 tests; legacy store deleted. ✅
-- **Migration** — `thread-migration.ts` (self-contained one-time import of the pre-#644 file store + one call site in `main/index.ts`), 4 tests. Delete both to drop it, or swap its body for a cleanup. ✅
+- **Migration** — `thread-migration.ts` (self-contained one-time import of the pre-#644 file store + one call site in `main/index.ts`), 4 tests. ✅ **Removed** once the import had run everywhere it could: #644 pinned "break the old format, no dual-read/migration", and the module was courtesy work beyond that. Its remaining cost was a single `existsSync` per launch. Legacy `<userData>/threads/` trees are left in place rather than deleted. ✅
 - **Benchmark** — `scripts/bench-thread-store*.ts` + `npm run bench:thread-store`. ✅
 - **Phase 2** — event-level store API (`createThread`/`appendMessage`/`updateMeta`) + IPC
   (`threads:create`/`appendMessage`/`updateMeta`/`delete`/`catalog`, `loadProject` kept;
