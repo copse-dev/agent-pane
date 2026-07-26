@@ -25,6 +25,29 @@ describe('approved-provider-hosts', () => {
     assert.deepEqual(getApprovedProviderHosts(), ['api.together.xyz'])
   })
 
+  it('treats an unwritten setting as an empty allowlist, not the stored customs', async () => {
+    // Until #438's grandfathering was dropped, an `approvedProviderHosts` that
+    // had never been written synthesised an allowlist from the hosts of every
+    // non-builtin `extraProviders` entry. It no longer does: an unset setting
+    // approves nothing, and the host goes through the prompt once like any
+    // other. `null` stands in for "never written" — `getSetting` falls back on
+    // it exactly as it does on a missing key.
+    await setSetting('extraProviders', [
+      { slug: 'acme-custom', baseUrl: 'https://api.acme.example/v1' },
+    ])
+    await setSetting('approvedProviderHosts', null)
+
+    assert.deepEqual(getApprovedProviderHosts(), [])
+
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: true, remember: true }
+    })
+    await ensureProviderHostApproved('https://api.acme.example/v1')
+    assert.equal(prompted, true)
+  })
+
   it('prompts and persists on ensureProviderHostApproved', async () => {
     let prompted = false
     setApprovalHandler(async () => {

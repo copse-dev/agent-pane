@@ -5,10 +5,6 @@ import {
   isProviderHostAllowed,
   providerHostKey,
 } from '@copse/llm/provider-host-policy.ts'
-import {
-  BUILTIN_EXTRA_PROVIDER_SLUGS,
-  type StoredExtraProvider,
-} from '@copse/llm/extra-providers.ts'
 import { normalizeHostname } from '@copse/llm/credential-url.ts'
 import {
   APPROVED_PROVIDER_HOSTS_SETTING,
@@ -29,48 +25,12 @@ function normalizeApprovedHosts(hosts: readonly string[]): string[] {
   return out
 }
 
-/** Hosts already implied by persisted custom (non-builtin) providers. */
-function hostsFromStoredCustoms(): string[] {
-  const stored = getSetting<StoredExtraProvider[]>('extraProviders', [])
-  if (!Array.isArray(stored)) return []
-  const hosts: string[] = []
-  for (const record of stored) {
-    if (BUILTIN_EXTRA_PROVIDER_SLUGS.includes(record.slug)) continue
-    const baseUrl = record.baseUrl?.trim()
-    if (!baseUrl) continue
-    try {
-      hosts.push(providerHostKey(baseUrl))
-    } catch {
-      /* skip malformed */
-    }
-  }
-  return hosts
-}
-
 /**
- * Current approved custom-provider hosts (lowercase).
- *
- * When the setting has never been written, hosts of already-stored custom
- * providers are treated as approved so an upgrade does not break existing
- * configurations (issue #438). Call {@link migrateApprovedProviderHosts} once
- * at startup to persist that grandfathered list.
+ * Current approved custom-provider hosts (lowercase). Empty until a host is
+ * approved — every custom host goes through {@link ensureProviderHostApproved}.
  */
 export function getApprovedProviderHosts(): string[] {
-  const saved = getSetting<string[] | null>(APPROVED_PROVIDER_HOSTS_SETTING, null)
-  if (saved !== null) {
-    return normalizeApprovedHosts(saved)
-  }
-  return normalizeApprovedHosts(hostsFromStoredCustoms())
-}
-
-/**
- * Persist the grandfathered allowlist when the setting has never been written.
- * Idempotent — safe to call on every app start.
- */
-export async function migrateApprovedProviderHosts(): Promise<void> {
-  const saved = getSetting<string[] | null>(APPROVED_PROVIDER_HOSTS_SETTING, null)
-  if (saved !== null) return
-  await setApprovedProviderHosts(hostsFromStoredCustoms())
+  return normalizeApprovedHosts(getSetting<string[]>(APPROVED_PROVIDER_HOSTS_SETTING, []))
 }
 
 export async function setApprovedProviderHosts(hosts: readonly string[]): Promise<string[]> {
