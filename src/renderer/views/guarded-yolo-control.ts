@@ -107,9 +107,7 @@ export function mountGuardedYoloControl(
   return {
     element,
     menuLabel: () =>
-      activeState()?.phase === 'off'
-        ? 'Enable Guarded YOLO'
-        : 'Disable Guarded YOLO',
+      activeState()?.phase === 'off' ? 'Enable Guarded YOLO' : 'Disable Guarded YOLO',
     toggle,
     refresh,
     destroy: (): void => {
