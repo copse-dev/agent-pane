@@ -34,3 +34,28 @@ describe('codeql.yml workflow invariants', () => {
     assert.match(workflow, /^ {4}runs-on: \$\{\{ vars\.CHECKS_RUNNER \}\}$/m)
   })
 })
+
+describe('gitleaks workflow invariants', () => {
+  const ciWorkflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
+  const gitleaksWorkflow = readFileSync(resolve('.github/workflows/gitleaks.yml'), 'utf8')
+  const sameRepositoryPr =
+    "github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository"
+
+  it('scans same-repository PRs in precheck and leaves fork scans on hosted runners', () => {
+    const precheckJob = ciWorkflow.match(/^ {2}precheck:\n[\s\S]*?(?=^ {2}[a-zA-Z0-9_-]+:\n)/m)?.[0]
+    assert.ok(precheckJob, 'expected a `precheck:` job in ci.yml')
+    assert.match(
+      precheckJob,
+      new RegExp(`- name: Install pinned gitleaks CLI\\n {8}if: ${sameRepositoryPr}`),
+    )
+    assert.match(
+      precheckJob,
+      new RegExp(`- name: Scan repository history for secrets\\n {8}if: ${sameRepositoryPr}`),
+    )
+    assert.match(
+      gitleaksWorkflow,
+      /^ {4}if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.head\.repo\.full_name != github\.repository$/m,
+    )
+    assert.match(gitleaksWorkflow, /^ {4}runs-on: ubuntu-latest$/m)
+  })
+})
