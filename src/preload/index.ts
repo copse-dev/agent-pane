@@ -398,6 +398,19 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
+    fork: (
+      projectId: string,
+      sourceThreadId: string,
+      targetThreadId: string,
+      throughMessageId?: string,
+    ) =>
+      ipcRenderer.invoke(
+        'threads:fork',
+        projectId,
+        sourceThreadId,
+        targetThreadId,
+        throughMessageId,
+      ),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
