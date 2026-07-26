@@ -114,6 +114,12 @@ describe('settings packs (about:addons)', function () {
     await expect(packRow.$('.pack-badge-first-party')).toBeDisplayed()
     assert.equal(await packRow.getAttribute('data-enabled'), 'false')
 
+    // Local cron-to-draft automations are a new, explicit opt-in. Upgrading
+    // must not arm a clock-driven feature until the user enables the pack.
+    const automationsRow = packs.$('.pack-row[data-pack-id="copse.automations"]')
+    await expect(automationsRow).toBeDisplayed()
+    assert.equal(await automationsRow.getAttribute('data-enabled'), 'false')
+
     // Post-turn review pack: its pack-scoped `maxReviewCycles` setting renders
     // as a generic number field seeded with the manifest default. This is the
     // "does a failing review buy the agent another turn?" knob — 1 reports the
