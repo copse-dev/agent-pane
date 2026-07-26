@@ -50,8 +50,8 @@
 //    the *measured capability of the model running the turn* and injects a
 //    mandatory plan-first block below it; the pack toggle atomically drops the
 //    hook from the assembly pipeline (`createHookRegistry` folds pack hooks in),
-//    restoring a byte-identical system prompt. Ships disabled — the host applies
-//    that default once in `pack-service.ts`.
+//    restoring a byte-identical system prompt. Ships disabled — its id is in the
+//    declared `DEFAULT_DISABLED_PACK_IDS` set in `pack-service.ts`.
 //  - `piiRedactionPack` — the first-party pack for the experimental client-side
 //    PII redaction feature. Declares the `reveal_pii` tool + the redaction
 //    steering prompt block; the pack toggle atomically drops the tool from the
@@ -77,7 +77,8 @@ import { automationsPack } from './automations-pack.ts'
  * enumeration order (P3): the pilot todos pack, then P5's two extracted
  * feature packs (post-turn review + model comparison), then long-horizon
  * tasks, then roadmap plans, then advisor strategy, then OKF memories, then
- * the CI investigator, then PII redaction, then forced planning.
+ * the CI investigator, then PII redaction, then forced planning, then the
+ * automations prototype.
  */
 export const FIRST_PARTY_PACKS: readonly RegisteredPack[] = [
   todosPack,
