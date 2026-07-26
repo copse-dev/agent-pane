@@ -8,6 +8,7 @@ import type {
 } from 'openai/resources/responses/responses'
 import { parseToolArgs } from './parse-tool-args.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
+import { toolResultImageFollowUp } from './tool-result-images.ts'
 import type { LLMMessage, LLMProvider, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 
 /**
@@ -178,11 +179,26 @@ export function toResponsesInput(messages: LLMMessage[]): ResponseInput {
       }))
     }
     if (message.role === 'tool') {
-      return message.toolResults.map((result) => ({
+      const outputs: ResponseInput = message.toolResults.map((result) => ({
         type: 'function_call_output',
         call_id: result.toolCallId,
         output: result.result,
       }))
+      // A function_call_output is a plain string here too, so images a tool
+      // produced follow as their own user message rather than being lost.
+      const images = toolResultImageFollowUp(message.toolResults)
+      if (!images || typeof images === 'string') return outputs
+      return [
+        ...outputs,
+        {
+          role: 'user',
+          content: images.map((part) =>
+            part.type === 'image'
+              ? { type: 'input_image', image_url: part.dataUrl, detail: 'auto' }
+              : { type: 'input_text', text: part.text },
+          ),
+        },
+      ]
     }
     return []
   })

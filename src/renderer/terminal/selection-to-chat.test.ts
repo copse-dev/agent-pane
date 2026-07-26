@@ -57,6 +57,7 @@ describe('terminal selection-to-chat', () => {
         attachedLabel = label
       },
       attachImage: () => {},
+      attachVideo: () => Promise.resolve(),
       focusComposer: () => {
         focused = true
       },

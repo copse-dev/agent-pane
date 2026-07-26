@@ -83,6 +83,18 @@ describe('modern CSS adoptions', () => {
     )
   })
 
+  it('strokes transcript attachment icons instead of filling them', () => {
+    const css = read('conversation.css')
+    // outline-icon.ts emits lucide-style paths with no presentation attributes,
+    // so an unstyled icon takes SVG's default black fill and renders as a solid
+    // blob. Only a screenshot shows it, so pin the rule here.
+    assert.ok(
+      declares(css, '.transcript-attachment-icon', /fill:\s*none/) &&
+        declares(css, '.transcript-attachment-icon', /stroke:\s*currentColor/),
+      '.transcript-attachment-icon must set fill: none and stroke: currentColor',
+    )
+  })
+
   it('keeps the centered new-thread composer on a single hairline ring', () => {
     const css = read('layout.css')
     // Docked `#input-bar` uses a real CSS border; the empty-thread centered

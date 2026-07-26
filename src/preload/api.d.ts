@@ -4,6 +4,11 @@ import type { SkillSummary } from '@shared/types/skills.ts'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
 import type { HooksListResult, HookTestRequest, HookTestResult } from '@shared/types/hooks.ts'
 import type { PacksListResult } from '@shared/types/packs.ts'
+import type {
+  AutomationSchedule,
+  AutomationScheduleInput,
+  AutomationTriggerEvent,
+} from '@shared/types/automations.ts'
 import type { ProjectInstructionSummary } from '@shared/types/instructions.ts'
 import type { CursorRuleSummary } from '@shared/types/cursor-rules.ts'
 import type {
@@ -130,6 +135,7 @@ export interface ApiClient {
         comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => () => void
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
     onAskUserRequest: (
       handler: (req: {
         id: string
@@ -274,6 +280,25 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
+  }
+  video: {
+    /**
+     * Store a video the user attached to a chat and return the reference the
+     * agent is given. Pass `bytes` for a file dropped from outside the app, or
+     * `path` for one already in the workspace (referenced, not copied). The
+     * video itself never becomes model content — see `video_frames`.
+     */
+    attach: (
+      projectId: string,
+      threadId: string,
+      video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
+    ) => Promise<import('@shared/video/video-media.ts').VideoAttachmentRef>
+    /**
+     * Read an attached video back for inline playback. Rejects for anything
+     * outside the chat store or the workspace, and for files over the preview
+     * size limit — the message is meant to be shown to the user.
+     */
+    read: (path: string) => Promise<{ bytes: Uint8Array<ArrayBuffer>; mimeType: string }>
   }
   openRouter: {
     models: () => Promise<
@@ -583,6 +608,13 @@ export interface ApiClient {
     setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
     /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
     setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
+  }
+  automations: {
+    list: (projectId: string) => Promise<AutomationSchedule[]>
+    upsert: (projectId: string, input: AutomationScheduleInput) => Promise<AutomationSchedule>
+    remove: (projectId: string, scheduleId: string) => Promise<void>
+    runNow: (projectId: string, scheduleId: string) => Promise<AutomationTriggerEvent>
+    onTriggered: (handler: (event: AutomationTriggerEvent) => void) => () => void
   }
   instructions: {
     list: () => Promise<ProjectInstructionSummary[]>

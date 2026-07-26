@@ -106,6 +106,16 @@ scripts/         esbuild dev/build and test runner
 
 Path alias `@shared/*` maps to `src/shared/*` (see tsconfig).
 
+## Screen recordings
+
+Drop a video (`.mp4`, `.mov`, `.webm`, …) into the chat and it is **not** sent to
+the model. It is stored alongside the thread and the agent reads it as a handful
+of stills through the `video_frames` tool, which samples the recording and
+returns only the frames that are visually different from one another — a
+recording of a static screen costs one image, not hundreds. Each frame is named
+for its timestamp, so the agent can quote a moment back to you or zoom into a
+range. Audio is ignored. See [`docs/video-frames.md`](./docs/video-frames.md).
+
 ## MCP servers
 
 The agent is an MCP (Model Context Protocol) host and ships with no servers connected. Add them in `.cursor/mcp.json` / `.mcp.json` (project) or `~/.cursor/mcp.json` (global), using the standard `mcpServers` format (same as Cursor / Claude Desktop); reference secrets with `${env:VAR}`. See [`mcp.json.example`](./mcp.json.example) for optional MCP servers. Status, reload, and approval settings live under **Settings → MCP servers**.

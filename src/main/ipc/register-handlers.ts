@@ -73,6 +73,11 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import {
+  describeWorkspaceVideo,
+  storeVideoAttachment,
+  readVideoForPlayback,
+} from '../services/video/video-attachment-store.ts'
 import { forkThreadHistory } from '../services/thread-fork.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
@@ -118,6 +123,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { getAutomationService } from '../services/automations/automation-service.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -129,6 +135,7 @@ import {
   setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
+
 import {
   deleteAllKnowledgeAttachments,
   deleteKnowledgeAttachmentFiles,
@@ -229,6 +236,7 @@ import {
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
+
 import {
   gatewayListDir,
   gatewayReadFile,
@@ -242,6 +250,15 @@ import {
   getGuardedYoloState,
   onGuardedYoloChanged,
 } from '../services/security/guarded-yolo.ts'
+
+const zAutomationScheduleInput = z.object({
+  id: z.string().min(1).max(256).optional(),
+  name: z.string().trim().min(1).max(160),
+  cron: z.string().trim().min(1).max(160),
+  prompt: z.string().trim().min(1).max(100_000),
+  model: z.string().trim().min(1).max(1024),
+  enabled: z.boolean(),
+})
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
@@ -1084,6 +1101,47 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ])
     return loadProjectCatalog(pid, q)
   })
+  // A video attached in the composer. It is stored, never inlined — the
+  // renderer gets back a path to hand the agent (see video-attachment-store).
+  ipcMain.handle(
+    'video:attach',
+    async (event, projectId: unknown, threadId: unknown, video: unknown) => {
+      assertMainFrameSender(event, win)
+      const [pid, tid, payload] = parseIpcArgs(
+        z.tuple([
+          zProjectId,
+          zThreadId,
+          z.object({
+            name: zNonEmptyString.max(255),
+            mimeType: z.string().max(128),
+            bytes: z.instanceof(Uint8Array).optional(),
+            path: zPathString.optional(),
+          }),
+        ]),
+        [projectId, threadId, video],
+      )
+      if (payload.path !== undefined) {
+        // Already on disk in the workspace: reference it in place rather than
+        // storing a second copy of a potentially very large file.
+        return describeWorkspaceVideo(payload.path, payload.name, payload.mimeType)
+      }
+      if (!payload.bytes) throw new IpcValidationError('A video needs either bytes or a path')
+      return storeVideoAttachment(pid, tid, {
+        name: payload.name,
+        mimeType: payload.mimeType,
+        bytes: payload.bytes,
+      })
+    },
+  )
+
+  // Read an attached video back so the preview modal can play it. Authorised to
+  // the chat store and the workspace only — see readVideoForPlayback.
+  ipcMain.handle('video:read', async (event, path: unknown) => {
+    assertMainFrameSender(event, win)
+    const videoPath = parseIpcArgs(zPathString, [path])
+    return readVideoForPlayback(videoPath)
+  })
+
   ipcMain.handle('threads:listOrphans', (event) => {
     assertMainFrameSender(event, win)
     const projects =
@@ -1193,6 +1251,50 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       )
       await getPackService().setSetting(id, key, value)
       return { packs: getPackService().list() }
+    },
+  )
+
+  // Local cron-to-draft prototype (`copse.automations`). Every operation is
+  // project-scoped; the service repeats that ownership check for update/delete
+  // so a renderer cannot address a schedule through another project id.
+  ipcMain.handle('automations:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAutomationService().list(projectId)
+  })
+  ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const input = parseIpcArgs(zAutomationScheduleInput, [rawInput])
+    return getAutomationService().upsert(projectId, {
+      ...(input.id !== undefined ? { id: input.id } : {}),
+      name: input.name,
+      cron: input.cron,
+      prompt: input.prompt,
+      model: input.model,
+      enabled: input.enabled,
+    })
+  })
+  ipcMain.handle(
+    'automations:remove',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      await getAutomationService().remove(projectId, scheduleId)
+    },
+  )
+  ipcMain.handle(
+    'automations:runNow',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().runNow(projectId, scheduleId)
     },
   )
 
