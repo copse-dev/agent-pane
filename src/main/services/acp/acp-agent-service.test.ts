@@ -14,6 +14,7 @@ import {
   isTransientProviderError,
   probeAcpAgentForSettings,
   permissionResponseFor,
+  mergeAcpPermissionAbortSignals,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
   runWithAcpRetry,
@@ -96,6 +97,36 @@ describe('permissionResponseFor', () => {
     assert.deepEqual(res.outcome, { outcome: 'selected', optionId: 'a1' })
   })
 })
+
+describe('mergeAcpPermissionAbortSignals', () => {
+  it('returns the rpc signal when no turn signal is provided', () => {
+    const rpc = new AbortController().signal
+    assert.equal(mergeAcpPermissionAbortSignals(undefined, rpc), rpc)
+  })
+
+  it('combines turn and rpc signals so either abort is observed', async () => {
+    const turn = new AbortController()
+    const rpc = new AbortController()
+    const merged = mergeAcpPermissionAbortSignals(turn.signal, rpc.signal)
+    const pending = waitForAbort(merged)
+    turn.abort()
+    await pending
+    assert.equal(merged.aborted, true)
+  })
+})
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+  return new Promise((resolve) => {
+    signal.addEventListener(
+      'abort',
+      () => {
+        resolve()
+      },
+      { once: true },
+    )
+  })
+}
 
 describe('sliceLines', () => {
   const file = 'one\ntwo\nthree\nfour\n'
