@@ -94,6 +94,8 @@ export interface ShellCommandPermissionOptions {
   projectRoot?: string | null
   /** Raw tool command before any blocking hook rewrite. */
   originalCommand?: string
+  /** When aborted, pending approval prompts settle as denied and callers treat as cancelled. */
+  signal?: AbortSignal
 }
 
 export interface TerminalPermissionOptions {
@@ -113,15 +115,20 @@ async function requestEscalationApproval(
   command: string,
   title: string,
   body: string,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   const trustable = offerableTrustedCommand(command)
-  const { approved, remember } = await requestApproval({
-    title,
-    body,
-    type: 'shell',
-    allowRemember: trustable !== null,
-    ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
-  })
+  const { approved, remember } = await requestApproval(
+    {
+      title,
+      body,
+      type: 'shell',
+      allowRemember: trustable !== null,
+      ...(trustable ? { rememberLabel: `Always allow \`${trustable}\` in trusted projects` } : {}),
+    },
+    signal,
+  )
   if (approved && remember && trustable) await addTrustedShellCommand(trustable)
   return approved
 }
@@ -130,7 +137,9 @@ async function promptShell(
   command: string,
   reasons: string[],
   outsideSandbox: boolean,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false
   // The trusted-command tick box only makes sense on an escalation to OUTSIDE the
   // sandbox (a trusted command runs unsandboxed); an in-sandbox prompt never offers it.
   if (outsideSandbox) {
@@ -138,13 +147,17 @@ async function promptShell(
       command,
       'Run outside sandbox?',
       formatExternalSandboxPromptBody(command, reasons),
+      signal,
     )
   }
-  const { approved } = await requestApproval({
-    title: 'Run shell command?',
-    body: formatShellPromptBody(command, reasons),
-    type: 'shell',
-  })
+  const { approved } = await requestApproval(
+    {
+      title: 'Run shell command?',
+      body: formatShellPromptBody(command, reasons),
+      type: 'shell',
+    },
+    signal,
+  )
   return approved
 }
 
@@ -395,6 +408,7 @@ export async function ensureShellCommandPermitted(
   command: string,
   opts: ShellCommandPermissionOptions = {},
 ): Promise<boolean> {
+  if (opts.signal?.aborted) return false
   const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
   // ASRT's network allowlist is process-global. While an ACP agent or a
   // port-binding background task has widened it, an otherwise-contained shell
@@ -406,6 +420,7 @@ export async function ensureShellCommandPermitted(
       command,
       ['sandbox network access is temporarily widened for another process'],
       false,
+      opts.signal,
     )
   }
 
@@ -508,11 +523,12 @@ export async function ensureShellCommandPermitted(
             }),
             type: 'shell',
           },
+      opts.signal,
     )
     return approved
   }
 
-  return promptShell(command, decision.reasons, outsideSandbox)
+  return promptShell(command, decision.reasons, outsideSandbox, opts.signal)
 }
 
 function browserUrlFromArgs(args: unknown): string | null {

@@ -699,11 +699,30 @@ export async function getCurrentBranchName(
   return branch && branch !== 'HEAD' ? branch : null
 }
 
+const ORIGIN_HEAD_PREFIX = 'refs/remotes/origin/'
+
+/** Parse `git symbolic-ref refs/remotes/origin/HEAD` into a branch name. */
+export function parseOriginHeadSymbolicRef(ref: string): string | null {
+  const trimmed = ref.trim()
+  if (!trimmed.startsWith(ORIGIN_HEAD_PREFIX)) return null
+  const branch = trimmed.slice(ORIGIN_HEAD_PREFIX.length)
+  return branch || null
+}
+
 /** Return the default branch name for the current repository. */
 export async function getDefaultBranch(
   root: string | null = getAgentExecutionRoot(),
 ): Promise<string | null> {
   if (!root) return null
+
+  const { stdout: originHeadStdout, code: originHeadCode } = await runGit(
+    ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+    root,
+  )
+  if (originHeadCode === 0) {
+    const fromOriginHead = parseOriginHeadSymbolicRef(originHeadStdout)
+    if (fromOriginHead) return fromOriginHead
+  }
 
   const { stdout: remoteStdout, code: remoteCode } = await runGit(
     ['remote', 'show', 'origin', '-n'],

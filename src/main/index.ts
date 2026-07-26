@@ -89,6 +89,7 @@ import {
 } from './services/diagnostics/event-loop-watchdog.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import { closeVideoDecoder } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -98,6 +99,7 @@ import {
   prepareThreadCheckout,
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
+import { getAutomationService } from './services/automations/automation-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -230,6 +232,9 @@ app
     const disposeTerminalHandlers = initTerminal(win)
     recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
+    getAutomationService().start((event) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -558,6 +563,7 @@ let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
+  getAutomationService().stop()
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -576,6 +582,9 @@ app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
+  // The hidden video-decoder window is not the main window, so nothing else
+  // closes it — left open it would keep the app alive past the last quit.
+  closeVideoDecoder()
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true

@@ -25,9 +25,27 @@ export interface ToolCallContent {
   args: unknown
 }
 
+/**
+ * An image a tool produced as part of its result (e.g. `video_frames` stills).
+ * `name` is a short label — a frame's timestamped filename — so the model can
+ * refer to a specific image by name in its reply and in follow-up tool calls.
+ */
+export interface ToolResultImage {
+  dataUrl: string
+  name?: string
+}
+
 export interface ToolResult {
   toolCallId: string
   result: string
+  /**
+   * Images to show the model alongside `result`. Anthropic accepts image blocks
+   * directly inside a `tool_result`; the OpenAI-shaped providers do not, so they
+   * follow the tool message with a user message carrying the images (see
+   * `toolResultImageFollowUp`). Either way `result` alone must still describe
+   * what was found — a provider or a trimmed history may drop the images.
+   */
+  images?: ToolResultImage[]
 }
 
 /** A tool exposed to the model. `parameters` is a JSON Schema object. */
