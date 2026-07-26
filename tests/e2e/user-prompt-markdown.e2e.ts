@@ -26,7 +26,9 @@ describe('user prompt markdown in transcript', () => {
     const textEl = await $('[data-message-id="msg-user-markdown"] .message-text')
     await expect(textEl.$('strong')).toExist()
     await expect(textEl.$('br')).toExist()
-    await expect(textEl).toHaveText(expect.stringMatching(/line one[\s\S]*line two[\s\S]*bold item/))
+    await expect(textEl).toHaveText(
+      expect.stringMatching(/line one[\s\S]*line two[\s\S]*bold item/),
+    )
 
     await saveAppScreenshot('user-prompt-markdown.png')
   })
