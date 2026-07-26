@@ -183,26 +183,6 @@ export interface PackManifest {
   description?: string
   /** Shipped by Copse vs user-installed (decision 15). */
   trust: PackTrust
-  /**
-   * Whether the pack is on for a user who has never touched its toggle. Omitted
-   * (or `true`) ships enabled, matching VS Code's built-in-extension model.
-   *
-   * `false` is how an *experimental* pack declares that it ships off — the
-   * canvas, the DevTools shortcut, background tasks. Default enablement is a
-   * property of the pack, stated here and readable in review, rather than an
-   * emergent side effect of a one-shot host migration having seeded a disabled
-   * list on some past boot. Two consequences worth knowing:
-   *
-   *  - {@link PackRegistry.register} applies it, so *every* registry — including
-   *    the uninitialized `getDefaultPackRegistry()` fallback — reports a
-   *    default-off pack as disabled. Read sites that gate real authority (the
-   *    permission-gate's `loopback-bind` relaxation) can no longer fail open
-   *    just because they ran before the host wired the shared registry.
-   *  - The persisted enablement bag holds only *explicit* user choices, so an
-   *    untouched pack follows this declaration forever, not the value it
-   *    happened to have when it first shipped.
-   */
-  defaultEnabled?: boolean
   /** Existing plugin.json slot: relative skills directory. */
   skills?: string
   /** Tools slot: native names (first-party) or an MCP config path (user). */
@@ -317,7 +297,6 @@ export function packManifestFromPluginJson(
     permissions?: readonly PackPermissionDecl[]
     settings?: PackSettingsSchema
     storage?: PackStorageDecl
-    defaultEnabled?: boolean
   },
   opts?: {
     /**
@@ -355,10 +334,5 @@ export function packManifestFromPluginJson(
   if (raw.permissions) manifest.permissions = raw.permissions
   if (raw.settings) manifest.settings = raw.settings
   if (raw.storage) manifest.storage = raw.storage
-  // Only `false` is honoured from a user pack. The default is already "enabled",
-  // so a self-declared `true` buys nothing, while `false` lets a pack ship off
-  // until the user opts in — the one direction that can only reduce what a
-  // discovered pack does on first load.
-  if (raw.defaultEnabled === false) manifest.defaultEnabled = false
   return manifest
 }

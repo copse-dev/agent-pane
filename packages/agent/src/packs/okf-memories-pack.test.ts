@@ -79,10 +79,7 @@ describe('copse.okf-memories pack', () => {
 
   it('atomically drops both tools from the active seed on disable', () => {
     const registry = createFirstPartyPackRegistry()
-    // Experimental: the manifest declares `defaultEnabled: false`, so a fresh
-    // seed ships it off. Opt in explicitly to exercise the disable path below.
-    assert.equal(registry.isEnabled(OKF_MEMORIES_PACK_ID), false)
-    registry.enable(OKF_MEMORIES_PACK_ID)
+    assert.equal(registry.isEnabled(OKF_MEMORIES_PACK_ID), true)
     for (const name of OKF_MEMORIES_TOOL_NAMES) {
       assert.ok(registry.activeToolNames().includes(name))
     }

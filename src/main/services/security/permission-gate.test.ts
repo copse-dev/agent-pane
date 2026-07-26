@@ -324,15 +324,6 @@ describe('run_background permission', () => {
 
   it('prompts a port-binding start, then remembers the grant per workspace', async () => {
     setPermissionGateForTests(null)
-    // The loopback relaxation only exists while `copse.background-tasks` is
-    // enabled, and that pack ships off (`defaultEnabled: false`) — so opt in
-    // before exercising the grant. This used to pass without a registry at all,
-    // by leaning on the uninitialized fallback reporting every pack enabled;
-    // that fallback now honours the declared default, so the precondition has
-    // to be stated.
-    const packs = createFirstPartyPackRegistry()
-    packs.enable(BACKGROUND_TASKS_PACK_ID)
-    setDefaultPackRegistry(packs)
     const restore = setWorkspaceRootForTest('/tmp/port-binding-project')
     // The start command itself may also prompt through the shell gate depending
     // on the platform's sandbox posture, so count only port-binding prompts.
@@ -353,7 +344,6 @@ describe('run_background permission', () => {
     } finally {
       setApprovalHandler(null)
       restore()
-      setDefaultPackRegistry(null)
     }
   })
 
@@ -381,17 +371,10 @@ describe('run_background permission', () => {
   // pack revokes the relaxation in one flag flip.
   it('only offers the loopback grant while the background-tasks pack declares it', async () => {
     setPermissionGateForTests(null)
-    // `copse.background-tasks` declares `defaultEnabled: false`, so a fresh seed
-    // ships it off and the relaxation is undeclared from the start. Opt in to
-    // reach the enabled half of the contract; the disable below then exercises
-    // the revocation.
+    // A fresh first-party seed enables every pack (default-OFF is a pack-service
+    // migration concern, not the raw seed), so background-tasks declares
+    // loopback-bind here.
     const registry = createFirstPartyPackRegistry()
-    assert.equal(
-      registry.isPermissionDeclared('loopback-bind'),
-      false,
-      'the relaxation must not exist until the owning pack is enabled',
-    )
-    registry.enable(BACKGROUND_TASKS_PACK_ID)
     setDefaultPackRegistry(registry)
     const restore = setWorkspaceRootForTest('/tmp/loopback-gated-project')
     setApprovalHandler(async () => ({ approved: true, remember: false }))

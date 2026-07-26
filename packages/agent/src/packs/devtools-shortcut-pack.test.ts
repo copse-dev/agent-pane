@@ -59,10 +59,7 @@ describe('copse.devtools-shortcut pack', () => {
 
   it('atomically drops the capability on disable', () => {
     const registry = createFirstPartyPackRegistry()
-    // Experimental: the manifest declares `defaultEnabled: false`, so a fresh
-    // seed ships it off. Opt in explicitly to exercise the disable path below.
-    assert.equal(registry.isEnabled(DEVTOOLS_SHORTCUT_PACK_ID), false)
-    registry.enable(DEVTOOLS_SHORTCUT_PACK_ID)
+    assert.equal(registry.isEnabled(DEVTOOLS_SHORTCUT_PACK_ID), true)
     assert.equal(registry.isCapabilityActive(DEVTOOLS_SHORTCUT_CAPABILITY), true)
 
     registry.disable(DEVTOOLS_SHORTCUT_PACK_ID)

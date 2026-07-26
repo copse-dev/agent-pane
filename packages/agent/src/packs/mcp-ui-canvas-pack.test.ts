@@ -62,10 +62,7 @@ describe('copse.mcp-ui-canvas pack', () => {
 
   it('atomically drops the capability on disable', () => {
     const registry = createFirstPartyPackRegistry()
-    // Experimental: the manifest declares `defaultEnabled: false`, so a fresh
-    // seed ships it off. Opt in explicitly to exercise the disable path below.
-    assert.equal(registry.isEnabled(MCP_UI_CANVAS_PACK_ID), false)
-    registry.enable(MCP_UI_CANVAS_PACK_ID)
+    assert.equal(registry.isEnabled(MCP_UI_CANVAS_PACK_ID), true)
     assert.equal(registry.isCapabilityActive(MCP_UI_CANVAS_CAPABILITY), true)
 
     registry.disable(MCP_UI_CANVAS_PACK_ID)

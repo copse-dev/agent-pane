@@ -11,6 +11,15 @@ export const PRODUCT_REASONING_RECOVERY_MAX_TOKENS = 4_096
 export const PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS = 256
 
 /**
+ * Reasoning that keeps streaming after the answer has landed is bounded well
+ * below the 32K response ceiling: nothing downstream consumes it, and the user
+ * watches it accumulate under a turn that already looks finished. Two
+ * checkpoints' worth is enough room for a model that thinks briefly between an
+ * answer and a follow-up tool call.
+ */
+export const PRODUCT_TRAILING_REASONING_MAX_TOKENS = 4_096
+
+/**
  * Product policy for internal Copse agent loops. Ordinary visible responses retain
  * the existing 32K ceiling; only reasoning-dominated streams are reconsidered at
  * each 2K checkpoint.
@@ -20,4 +29,5 @@ export const PRODUCT_REASONING_CHECKPOINT_POLICY: Readonly<ReasoningCheckpointPo
   maxNonReasoningTokens: MAX_STREAM_OUTPUT_TOKENS,
   maxInitialTokens: MAX_STREAM_OUTPUT_TOKENS,
   maxRecoveryTokens: PRODUCT_REASONING_RECOVERY_MAX_TOKENS,
+  maxTrailingReasoningTokens: PRODUCT_TRAILING_REASONING_MAX_TOKENS,
 }

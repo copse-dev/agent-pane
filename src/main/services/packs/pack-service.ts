@@ -4,9 +4,8 @@
 //  - owns the **shared** `PackRegistry` (first-party packs registered), and
 //    installs it via `setDefaultPackRegistry` so `createHookRegistry` (called
 //    every turn) reads through the same instance the Settings UI toggles;
-//  - applies the user's explicit enablement choices from `electron-store` on top
-//    of each manifest's declared default, before wiring the provider, so a pack
-//    the user toggled stays that way across relaunches;
+//  - applies the persisted disable set from `electron-store` before wiring the
+//    provider, so a pack the user turned off stays off across relaunches;
 //  - persists pack-scoped settings values under a namespaced storage key so
 //    the manifest's declarative `settings` schema round-trips through Settings
 //    generically (P3's "the about:addons of Copse");
@@ -18,27 +17,14 @@
 // the active getters at once (tools, hooks, prompt blocks, panels). There is
 // no partial state; persistence is a write-behind snapshot of `registry`.
 //
-// **Default enablement is the manifest's job, not this file's.** A pack declares
-// `defaultEnabled: false` to ship off (`pack-manifest.ts`), and
-// `PackRegistry.register` applies it. This service persists only the choices a
-// user actually made, so an untouched pack keeps following its declaration and a
-// registry built without this service is still correct. That replaces the tower
-// of one-shot `migrate*Enablement()` functions this file used to carry: each
-// retired standalone setting needed its own function, storage key, and pair of
-// tests, and each one silently baked "whatever the default was on the boot it
-// happened to run" into persisted state.
-//
 // Storage layout under the shared `electron-store`:
-//   `packEnablement`         → Record<string, boolean> (EXPLICIT user choices only)
+//   `packDisabled`         → readonly string[]   (pack ids the user disabled)
 //   `pack.<packId>.settings` → Record<string, unknown> (values keyed by field id)
 //
-// Absence from `packEnablement` means "no opinion — use the manifest default",
-// which is why it replaced the older `packDisabled` array: a bare list of
-// disabled ids cannot distinguish "off by default" from "the user turned this
-// off", so it could not express a user enabling a default-off pack. A legacy
-// `packDisabled` array is folded in on read (see {@link readEnablementPrefs}).
-// Pack settings are bagged per pack to keep the top-level key namespace clean
-// and let the P4 todos pack lift/shift its config into a single record.
+// The disable list stays a plain array (like `mcpDisabledServers`) so it is
+// still readable / editable by hand and easy to migrate. Pack settings are
+// bagged per pack to keep the top-level key namespace clean and let the P4
+// todos pack lift/shift its config into a single record.
 import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
@@ -49,28 +35,57 @@ import {
   COMPARISON_MODEL_B_SETTING_ID,
   COMPARISON_JUDGE_MODEL_SETTING_ID,
 } from '@copse/agent/packs/model-comparison-pack.ts'
+import { LONG_HORIZON_TASKS_PACK_ID } from '@copse/agent/packs/long-horizon-tasks-pack.ts'
+import { ROADMAP_PLANS_PACK_ID } from '@copse/agent/packs/roadmap-plans-pack.ts'
 import {
   ADVISOR_STRATEGY_PACK_ID,
   ADVISOR_MODEL_SETTING_ID,
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
+import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
+import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
+import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { MCP_UI_CANVAS_PACK_ID } from '@copse/agent/packs/mcp-ui-canvas-pack.ts'
+import { DEVTOOLS_SHORTCUT_PACK_ID } from '@copse/agent/packs/devtools-shortcut-pack.ts'
+import { BACKGROUND_TASKS_PACK_ID } from '@copse/agent/packs/background-tasks-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
 
-/**
- * Storage key holding the user's EXPLICIT pack enablement choices, keyed by pack
- * id. Absence means "no choice made" — the pack follows its manifest default.
- */
-const PACK_ENABLEMENT_KEY = 'packEnablement'
-
-/**
- * The pre-`packEnablement` shape: a bare array of disabled pack ids. Folded into
- * the preference map on read so an existing user's explicit disables survive.
- */
-const LEGACY_PACK_DISABLED_KEY = 'packDisabled'
-
 /** One-time bridge from the retired top-level model settings now owned by packs. */
 const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
+
+/** Storage key holding the ids of packs the user disabled. */
+const PACK_DISABLED_KEY = 'packDisabled'
+
+/**
+ * Packs that ship registered but off.
+ *
+ * `createFirstPartyPackRegistry()` seeds every pack enabled, so the off-by-
+ * default set is declared here and written into `packDisabled` on a profile
+ * that has never had one. Every id below was opt-in before it became a pack,
+ * and `copse.pii-redaction` additionally rewrites model input — defaulting any
+ * of them on would hand an experimental surface to someone who never asked for
+ * it. `copse.post-turn-review` is deliberately absent: it has always been on.
+ *
+ * The three packs added with the contribution kinds (#1188-#1190) join the list
+ * for the same reason — each replaces a retired opt-in boolean
+ * (`mcpUiArtefactsEnabled`, `devtoolsShortcutEnabled`, `backgroundTasksEnabled`).
+ * `copse.background-tasks` matters most: beyond registering `run_background` it
+ * declares the `loopback-bind` sandbox relaxation, so defaulting it on would
+ * advertise an authority nobody asked for.
+ */
+const DEFAULT_DISABLED_PACK_IDS: readonly string[] = [
+  ADVISOR_STRATEGY_PACK_ID,
+  BACKGROUND_TASKS_PACK_ID,
+  CI_INVESTIGATOR_PACK_ID,
+  DEVTOOLS_SHORTCUT_PACK_ID,
+  LONG_HORIZON_TASKS_PACK_ID,
+  MCP_UI_CANVAS_PACK_ID,
+  MODEL_COMPARISON_PACK_ID,
+  OKF_MEMORIES_PACK_ID,
+  PII_REDACTION_PACK_ID,
+  ROADMAP_PLANS_PACK_ID,
+]
 
 /** Storage key holding one pack's settings values (`packId` scoped). */
 function packSettingsKey(packId: string): string {
@@ -79,35 +94,31 @@ function packSettingsKey(packId: string): string {
 
 /**
  * Narrow a persisted `unknown` to a plain object bag. A type predicate rather
- * than an `as` cast: everything here comes off disk and may be any shape at all,
- * so the check has to be real (and `no-unsafe-type-assertion` agrees).
+ * than an `as` cast: these values come off disk and may be any shape, so the
+ * check has to be real (and `no-unsafe-type-assertion` agrees).
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Read the persisted disable set. */
+function readDisabledIds(): Set<string> {
+  return new Set(parseStringList(storageGet(PACK_DISABLED_KEY)))
+}
+
 /**
- * The user's explicit enablement choices. Reads the `packEnablement` map, then
- * folds in any legacy `packDisabled` array for ids the map does not already
- * mention — an explicit disable from before this key existed is still an
- * explicit choice, so it must outrank the manifest default.
+ * Write the default-off set, but only on a profile that has no `packDisabled`
+ * list at all. Once the key exists it is the user's own — including an empty
+ * list, which means "everything on" — and is never re-seeded, so a pack enabled
+ * in Settings stays enabled across relaunches.
  *
- * Deliberately a read-time fold rather than a one-shot migration: there is no
- * migration key to guard, nothing to re-run, and no way for it to bake a
- * default into persisted state. Ids the user never touched simply stay absent.
+ * Runs synchronously before the shared registry is created: `createRegistry()`
+ * consults it immediately to decide whether `compare_models` belongs in the
+ * model's tool list, and `pii-redactor.ts` to decide whether to rewrite input.
  */
-function readEnablementPrefs(): Map<string, boolean> {
-  const prefs = new Map<string, boolean>()
-  const raw = storageGet(PACK_ENABLEMENT_KEY)
-  if (isRecord(raw)) {
-    for (const [packId, enabled] of Object.entries(raw)) {
-      if (typeof enabled === 'boolean') prefs.set(packId, enabled)
-    }
-  }
-  for (const packId of parseStringList(storageGet(LEGACY_PACK_DISABLED_KEY))) {
-    if (!prefs.has(packId)) prefs.set(packId, false)
-  }
-  return prefs
+function seedDefaultDisabledPacks(): void {
+  if (storageGet(PACK_DISABLED_KEY) !== undefined) return
+  storageSet(PACK_DISABLED_KEY, [...DEFAULT_DISABLED_PACK_IDS].sort())
 }
 
 /** Read one pack's persisted settings bag (`{}` when nothing stored). */
@@ -209,19 +220,15 @@ export interface PackService {
 }
 
 /**
- * Build a pack service backed by the given registry. The registry already
- * carries each pack's declared default (applied in `PackRegistry.register`);
- * this layers the user's explicit choices on top before returning, so
- * subsequent `getDefaultPackRegistry()` / `createHookRegistry()` calls see the
- * same enablement the Settings list will show. A pack the user never toggled is
- * left exactly as its manifest declared. Exposed for tests; production callers
- * go through `getPackService`.
+ * Build a pack service backed by the given registry. The persisted disable set
+ * is applied before returning, so subsequent `getDefaultPackRegistry()` /
+ * `createHookRegistry()` calls see the same enablement the Settings list will
+ * show. Exposed for tests; production callers go through `getPackService`.
  */
 export function createPackService(registry: PackRegistry): PackService {
-  for (const [packId, enabled] of readEnablementPrefs()) {
-    if (!registry.has(packId)) continue
-    if (enabled) registry.enable(packId)
-    else registry.disable(packId)
+  const disabled = readDisabledIds()
+  for (const id of disabled) {
+    if (registry.has(id)) registry.disable(id)
   }
 
   return {
@@ -233,14 +240,11 @@ export function createPackService(registry: PackRegistry): PackService {
       if (!registry.has(packId)) return
       if (enabled) registry.enable(packId)
       else registry.disable(packId)
-      // Record the choice explicitly in both directions. Writing `true` matters
-      // as much as writing `false`: for a `defaultEnabled: false` pack it is the
-      // only way to say "the user opted in", which the old disabled-ids array
-      // had no way to represent.
-      await storageUpdate(PACK_ENABLEMENT_KEY, (raw) => {
-        const current: Record<string, unknown> = isRecord(raw) ? { ...raw } : {}
-        current[packId] = enabled
-        return current
+      await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+        const set = new Set(parseStringList(raw))
+        if (enabled) set.delete(packId)
+        else set.add(packId)
+        return [...set].sort()
       })
     },
     getSetting(packId: string, key: string): unknown {
@@ -271,10 +275,7 @@ export function createPackService(registry: PackRegistry): PackService {
  */
 export function getPackService(): PackService {
   if (singleton) return singleton
-  // Enablement needs no migration: each pack declares its own default and
-  // `readEnablementPrefs()` folds the legacy `packDisabled` array in on read.
-  // The model-settings lift is not enablement — it moves values the user
-  // authored, which no manifest default can reconstruct — so it stays.
+  seedDefaultDisabledPacks()
   migratePackModelSettings()
   const registry = createFirstPartyPackRegistry()
   const service = createPackService(registry)

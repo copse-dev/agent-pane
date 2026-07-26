@@ -57,11 +57,7 @@ describe('pii-redactor', () => {
   // reads a stable instance we can toggle.
   beforeEach(() => {
     setRampartLoaderForTest(() => Promise.resolve(fakeModule()))
-    // `copse.pii-redaction` ships off (`defaultEnabled: false`); these tests
-    // exercise the armed path, so opt in explicitly.
-    const seeded = createFirstPartyPackRegistry()
-    seeded.enable(PII_REDACTION_PACK_ID)
-    setDefaultPackRegistry(seeded)
+    setDefaultPackRegistry(createFirstPartyPackRegistry())
   })
 
   afterEach(() => {

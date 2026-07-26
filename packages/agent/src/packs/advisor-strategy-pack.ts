@@ -67,7 +67,6 @@ export const advisorStrategyPack: RegisteredPack = definePack(
     description:
       'Advisor strategy — consult a larger advisor model mid-task via the `advisor` tool, forwarding the full transcript and verified repo state for strategic guidance (planning, getting unstuck, final review), so the everyday loop can run on a cheaper or on-device model.',
     trust: 'first-party',
-    defaultEnabled: false,
     tools: { native: [ADVISOR_STRATEGY_TOOL_NAME] },
     settings: {
       [ADVISOR_MODEL_SETTING_ID]: {

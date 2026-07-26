@@ -55,7 +55,6 @@ export const ciInvestigatorPack: RegisteredPack = definePack(
     description:
       'CI investigator subagent — delegates to a read-only subagent that reads failing CI run logs in depth and reports the root cause via the `investigate_ci` tool (with the `gh_run_list` / `gh_run_view` log helpers), and points the "Investigate CI failure" follow-up at it.',
     trust: 'first-party',
-    defaultEnabled: false,
     tools: { native: [...CI_INVESTIGATOR_PACK_TOOL_NAMES] },
     storage: { namespace: CI_INVESTIGATOR_PACK_ID },
   },

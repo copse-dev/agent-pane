@@ -20,14 +20,13 @@
 // also feeds the Settings pack-list enumeration and the future install-time
 // capability/permission review (#1082).
 //
-// **Default DISABLED.** Background tasks are opt-in, declared as
-// `defaultEnabled: false` on the manifest so `PackRegistry.register` starts the
-// pack disabled in every registry — including the fallback
-// `getDefaultPackRegistry()` hands out before the host wires the shared one.
-// That matters more here than for the other experimental packs: it is what stops
-// `isPermissionDeclared('loopback-bind')` answering "granted" from an unwired
-// registry, so the sandbox relaxation cannot be reached before the host has
-// applied the user's actual choice.
+// **Default DISABLED.** Background tasks were opt-in (off by default via the
+// `backgroundTasksEnabled` setting); this pack must not silently enable them for
+// existing users. Default-off is expressed the same way as every other
+// experimental pack: the pack-service enablement migration
+// (`migrateBackgroundTasksEnablement`) seeds the persisted `packDisabled` set
+// (an absent/false old setting → disabled) before the shared registry is built.
+// A user who had previously turned the setting on keeps background tasks enabled.
 //
 // **No-double-registration.** The `backgroundTasksEnabled` standalone setting is
 // gone (removed from the zod schema and the settings dialog) — the pack toggle
@@ -77,7 +76,6 @@ export const backgroundTasksPack: RegisteredPack = definePack(
     description:
       'Background tasks — run a long-lived command (dev server, watcher, build) via the `run_background` tool that stays alive across turns, with list / logs / stop actions. A task can opt into binding a local port (reporting its http://localhost:<port> URL), which relaxes the sandbox to allow loopback binding, gated by a per-project permission grant.',
     trust: 'first-party',
-    defaultEnabled: false,
     tools: { native: [BACKGROUND_TASKS_TOOL_NAME] },
     permissions: [LOOPBACK_BIND_PERMISSION_DECL],
   },

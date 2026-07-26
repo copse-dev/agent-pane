@@ -40,7 +40,6 @@ export const longHorizonTasksPack: RegisteredPack = definePack(
     description:
       'Long-horizon tasks — a durable, resumable checklist for a grind task within a PR (clearing a lint/type backlog, a deep research pass) via the `track_long_task` tool, with done/remaining state that survives across sessions.',
     trust: 'first-party',
-    defaultEnabled: false,
     tools: { native: [LONG_HORIZON_TASKS_TOOL_NAME] },
     storage: { namespace: LONG_HORIZON_TASKS_PACK_ID },
   },

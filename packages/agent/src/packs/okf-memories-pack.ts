@@ -69,7 +69,6 @@ export const okfMemoriesPack: RegisteredPack = definePack(
     description:
       'OKF memories — the agent persists and recalls durable project knowledge (conventions, decisions, gotchas) across sessions via the `remember`/`recall` tools, saved per project as portable Open Knowledge Format markdown notes, with a Memories pane to browse and edit them.',
     trust: 'first-party',
-    defaultEnabled: false,
     tools: { native: [...OKF_MEMORIES_TOOL_NAMES] },
     prompt: [OKF_MEMORIES_PROMPT_BLOCK],
     storage: { namespace: OKF_MEMORIES_PACK_ID },

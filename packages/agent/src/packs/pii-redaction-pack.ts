@@ -65,7 +65,6 @@ export const piiRedactionPack: RegisteredPack = definePack(
     description:
       'PII redaction — replaces personal data you type (names, emails, phone numbers, SSNs, card numbers) with stable placeholders on-device before your message reaches any model provider; the agent calls the `reveal_pii` tool, gated by your approval, when it genuinely needs a real value.',
     trust: 'first-party',
-    defaultEnabled: false,
     tools: { native: [PII_REDACTION_TOOL_NAME] },
     prompt: [PII_REDACTION_PROMPT_BLOCK],
     storage: { namespace: PII_REDACTION_PACK_ID },

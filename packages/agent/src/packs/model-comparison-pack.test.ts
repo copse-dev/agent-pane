@@ -99,10 +99,7 @@ describe('copse.model-comparison pack (P5)', () => {
 
   it('atomically drops the tool from the active seed on disable', () => {
     const registry = createFirstPartyPackRegistry()
-    // Experimental: the manifest declares `defaultEnabled: false`, so a fresh
-    // seed ships it off. Opt in explicitly to exercise the disable path below.
-    assert.equal(registry.isEnabled(MODEL_COMPARISON_PACK_ID), false)
-    registry.enable(MODEL_COMPARISON_PACK_ID)
+    assert.equal(registry.isEnabled(MODEL_COMPARISON_PACK_ID), true)
     assert.ok(registry.activeToolNames().includes(MODEL_COMPARISON_TOOL_NAME))
 
     // Pack storage survives disable (decision 17).

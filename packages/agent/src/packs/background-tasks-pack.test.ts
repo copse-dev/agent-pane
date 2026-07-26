@@ -80,10 +80,7 @@ describe('copse.background-tasks pack', () => {
 
   it('atomically drops the tool AND revokes the loopback-bind permission on disable', () => {
     const registry = createFirstPartyPackRegistry()
-    // Experimental: the manifest declares `defaultEnabled: false`, so a fresh
-    // seed ships it off. Opt in explicitly to exercise the disable path below.
-    assert.equal(registry.isEnabled(BACKGROUND_TASKS_PACK_ID), false)
-    registry.enable(BACKGROUND_TASKS_PACK_ID)
+    assert.equal(registry.isEnabled(BACKGROUND_TASKS_PACK_ID), true)
     assert.ok(registry.activeToolNames().includes(BACKGROUND_TASKS_TOOL_NAME))
     assert.equal(registry.isPermissionDeclared(LOOPBACK_BIND_PERMISSION), true)
 

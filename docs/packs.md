@@ -72,14 +72,12 @@ groups every pack's contributions by pack id and owns the lifecycle:
   the grant, so the authority exists only while the owning pack is enabled — the
   same flag flip that unregisters the pack's tools revokes it. The declaration
   also feeds the Settings enumeration and the install-time review.
-- **Default enablement** — a pack declares `defaultEnabled: false` to ship off
-  (every experimental pack does); omitting it ships enabled. `register()` applies
-  the declaration, so it holds in **every** registry, including the fallback
-  `getDefaultPackRegistry()` returns before the host installs the shared one — a
-  read site cannot see a default-off pack as enabled just because it ran early.
-  The host persists only _explicit_ user choices (`packEnablement`, a
-  `packId → boolean` map) and layers them on top, so an untouched pack keeps
-  following its manifest rather than whatever the default was when it shipped.
+- **Default enablement** — `createFirstPartyPackRegistry()` seeds every pack
+  enabled, so the off-by-default set is declared once as
+  `DEFAULT_DISABLED_PACK_IDS` in `pack-service.ts` and written into `packDisabled`
+  on a profile that has never had one. Every experimental pack is in that list;
+  `copse.post-turn-review` is deliberately absent. Once `packDisabled` exists it
+  is the user's own and is never re-seeded.
 - **Atomic enable/disable** — `disable(id)` flips a single flag, so every one of
   a pack's contribution kinds drops from the active getters at once: tools leave
   the model tool list, hooks stop firing, prompt blocks drop out, UI stops

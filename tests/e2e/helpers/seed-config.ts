@@ -40,6 +40,29 @@ const USER_DATA = copsePanelUserDataDir()
 const CONFIG_PATH = join(USER_DATA, 'config.json')
 const SETTINGS_PATH = join(USER_DATA, 'settings.json')
 
+/**
+ * Packs the host turns off on a profile with no `packDisabled` list — mirrors
+ * `DEFAULT_DISABLED_PACK_IDS` in `src/main/services/packs/pack-service.ts`.
+ * Seeding the list explicitly means a fixture never depends on that default.
+ */
+const DEFAULT_DISABLED_PACK_IDS = [
+  'copse.advisor-strategy',
+  'copse.background-tasks',
+  'copse.ci-investigator',
+  'copse.devtools-shortcut',
+  'copse.long-horizon-tasks',
+  'copse.mcp-ui-canvas',
+  'copse.model-comparison',
+  'copse.okf-memories',
+  'copse.pii-redaction',
+  'copse.roadmap-plans',
+] as const
+
+/** The `packDisabled` list that leaves exactly `enabled` on, defaults otherwise. */
+function packDisabledSeed(enabled: readonly string[]): string[] {
+  return DEFAULT_DISABLED_PACK_IDS.filter((id) => !enabled.includes(id))
+}
+
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 
 /** New-format chat-store root; mirrors `thread-store.ts` (COPSE_WORKSPACE_DIR override). */
@@ -239,9 +262,9 @@ export function seedMessageImageFixture(
       },
     ],
   }
-  if (options?.roadmapPlansEnabled) {
-    seedConfig.roadmapPlansEnabled = true
-  }
+  seedConfig.packDisabled = packDisabledSeed(
+    options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : [],
+  )
   writeSeedConfig(seedConfig)
 }
 
@@ -298,17 +321,13 @@ export function seedEmptyProject(
     rightPanelPosition?: 'auto' | 'side' | 'bottom'
     /**
      * Opt into the `copse.okf-memories` pack (its `remember`/`recall` tools, the
-     * memory prompt block, and the Memories pane). The pack declares
-     * `defaultEnabled: false`, so a test that needs the Memories pane visible
-     * must opt in — this writes `{'copse.okf-memories': true}` into the
-     * `packEnablement` map.
+     * memory prompt block, and the Memories pane). The pack ships off, so a test
+     * that needs the Memories pane visible must lift it out of `packDisabled`.
      */
     okfMemoriesEnabled?: boolean
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
-     * Roadmap pane). The pack declares `defaultEnabled: false`, so a roadmap
-     * test must opt in — this writes `{'copse.roadmap-plans': true}` into the
-     * `packEnablement` map.
+     * Roadmap pane). Ships off, like the other experimental packs.
      */
     roadmapPlansEnabled?: boolean
     registeredAcpAgents?: AcpAgentConfig[]
@@ -316,22 +335,16 @@ export function seedEmptyProject(
     /** Bind the seeded project to an SSH host id (requires matching sshWorkspaceHosts). */
     sshHost?: string
     /**
-     * Pack ids to force-disable at boot, written as explicit `false` entries in
-     * the `packEnablement` map (`config.json`). Only needed for packs that ship
-     * enabled — an experimental pack is already off by default.
+     * The exact `packDisabled` list to write, replacing the host defaults. Use
+     * this to opt out of a pack that ships enabled (e.g. drop
+     * `copse.post-turn-review`); the per-pack opt-in flags below are ignored
+     * when this is set.
      */
     packDisabled?: readonly string[]
     /**
-     * Pack ids to force-enable at boot, written as explicit `true` entries in the
-     * `packEnablement` map. The generic form of `modelComparisonEnabled` and
-     * friends: use it for any pack that declares `defaultEnabled: false`.
-     */
-    packEnabled?: readonly string[]
-    /**
      * Opt into the `copse.model-comparison` pack (and its `compare_models`
-     * tool). The pack declares `defaultEnabled: false`, so a test exercising the
-     * comparison approval flow must opt in — this writes
-     * `{'copse.model-comparison': true}` into the `packEnablement` map.
+     * tool). Ships off, like the other experimental packs — a test exercising
+     * the comparison approval flow must lift it out of `packDisabled`.
      */
     modelComparisonEnabled?: boolean
   },
@@ -348,20 +361,16 @@ export function seedEmptyProject(
     activeProjectId: projectId,
     [`threads:${projectId}`]: [],
   }
-  // Pack enablement is one `packEnablement` map in `config.json`, holding only
-  // explicit choices — the same shape `PackService.setEnabled` writes. Each pack
-  // ships at its manifest's `defaultEnabled`, so a spec only seeds the packs it
-  // needs flipped: `true` to opt into an experimental pack (all of these ship
-  // off), `false` to force one off.
-  const packEnablement: Record<string, boolean> = {}
-  if (options?.modelComparisonEnabled) packEnablement['copse.model-comparison'] = true
-  if (options?.roadmapPlansEnabled) packEnablement['copse.roadmap-plans'] = true
-  if (options?.okfMemoriesEnabled) packEnablement['copse.okf-memories'] = true
-  for (const packId of options?.packEnabled ?? []) packEnablement[packId] = true
-  for (const packId of options?.packDisabled ?? []) packEnablement[packId] = false
-  if (Object.keys(packEnablement).length > 0) {
-    seedConfig.packEnablement = packEnablement
-  }
+  // Pack enablement lives in `config.json` under `packDisabled` (what the host
+  // pack service reads via `storageGet`). Write it explicitly: an explicit
+  // `packDisabled` wins, otherwise the host defaults with the opted-in packs
+  // lifted out.
+  const enabledPacks: string[] = []
+  if (options?.modelComparisonEnabled) enabledPacks.push('copse.model-comparison')
+  if (options?.roadmapPlansEnabled) enabledPacks.push('copse.roadmap-plans')
+  if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
+  seedConfig.packDisabled =
+    options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}
   if (options?.subagentsEnabled !== undefined) {
@@ -373,8 +382,6 @@ export function seedEmptyProject(
   if (options?.model) {
     settings.model = options.model
   }
-  // Legacy top-level `advisorModel` in settings.json — `migratePackModelSettings`
-  // lifts it into `pack.copse.advisor-strategy.settings` via getSetting on boot.
   if (options?.advisorModel) {
     settings.advisorModel = options.advisorModel
   }
@@ -1423,9 +1430,8 @@ export function seedPortraitRightPanelFixture(
   options?: {
     okfMemoriesEnabled?: boolean
     /**
-     * Opt into the `copse.roadmap-plans` pack (Roadmap pane). Seeded into
-     * `config.json` so `migrateRoadmapPlansEnablement` keeps the pack enabled —
-     * the writable settings schema retired the flag (see `seedEmptyProject`).
+     * Opt into the `copse.roadmap-plans` pack (Roadmap pane), which ships off
+     * (see `seedEmptyProject`).
      */
     roadmapPlansEnabled?: boolean
     /** Pin panel placement; `bottom` forces portrait chrome without a tall window. */
@@ -1438,11 +1444,12 @@ export function seedPortraitRightPanelFixture(
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
-    ...(options?.roadmapPlansEnabled ? { roadmapPlansEnabled: true } : {}),
-    // The Memories pane is gated by the `copse.okf-memories` pack; seed the
-    // retired legacy opt-in into `config.json` so the enablement migration keeps
-    // the pack (and its pane) enabled (mirrors `seedEmptyProject`).
-    ...(options?.okfMemoriesEnabled ? { okfMemoriesEnabled: true } : {}),
+    // The Memories and Roadmap panes are gated by their packs; seed the
+    // `packDisabled` list the host reads (mirrors `seedEmptyProject`).
+    packDisabled: packDisabledSeed([
+      ...(options?.roadmapPlansEnabled ? ['copse.roadmap-plans'] : []),
+      ...(options?.okfMemoriesEnabled ? ['copse.okf-memories'] : []),
+    ]),
     [`threads:${projectId}`]: [
       {
         id: threadId,
