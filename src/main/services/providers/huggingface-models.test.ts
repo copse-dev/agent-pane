@@ -80,7 +80,6 @@ describe('parseHuggingFaceModels', () => {
     assert.equal(models.length, 1)
     assert.deepEqual(models[0], {
       id: 'zai-org/GLM-5.2:together',
-      label: 'zai-org/GLM-5.2',
       contextWindow: 131_072,
       inputPricePerMTok: 0.6,
       outputPricePerMTok: 2.2,
