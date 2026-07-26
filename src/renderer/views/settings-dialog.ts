@@ -18,12 +18,12 @@ import {
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
-import { DEFAULT_ADVISOR_MODEL, validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
+import { validateAdvisorPair } from '../../main/services/advisor-strategy.ts'
 import { DEFAULT_ORCHESTRATION_WORKER_MODEL } from '../../main/services/orchestration-strategy.ts'
 import {
-  DEFAULT_COMPARISON_MODEL_B,
-  DEFAULT_COMPARISON_JUDGE_MODEL,
-} from '../../main/services/model-comparison.ts'
+  ADVISOR_STRATEGY_PACK_ID,
+  ADVISOR_MODEL_SETTING_ID,
+} from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
 import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
@@ -169,15 +169,16 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'acpAutoApproveEditsWithBackup', kind: 'checkbox', default: true, save: true },
   { name: 'acpAutoApproveNativeBridgeTools', kind: 'checkbox', default: true, save: true },
   { name: 'acpOverSshEnabled', kind: 'checkbox', default: false, save: true },
-  // Experimental, opt-in features (off by default).
-  { name: 'mcpUiArtefactsEnabled', kind: 'checkbox', default: false, save: true },
+  // Experimental, opt-in features (off by default). The MCP-UI artefacts
+  // (canvas) toggle moved to Settings > Packs (`copse.mcp-ui-canvas`).
   { name: 'modelClassifierEnabled', kind: 'checkbox', default: false, save: true },
   { name: 'orchestrationStrategyEnabled', kind: 'checkbox', default: false, save: true },
   // P5: the master model-comparison toggle moved to Settings > Packs
   // (`copse.model-comparison`); the auto-on-review sub-toggle stays here.
   { name: 'modelComparisonAutoOnReview', kind: 'checkbox', default: false, save: true },
-  { name: 'backgroundTasksEnabled', kind: 'checkbox', default: false, save: true },
-  { name: 'devtoolsShortcutEnabled', kind: 'checkbox', default: false, save: true },
+  // Background tasks moved to Settings > Packs (`copse.background-tasks`), which
+  // also declares the `loopback-bind` sandbox relaxation (issue #1190).
+  // The DevTools shortcut toggle moved to Settings > Packs (`copse.devtools-shortcut`).
   // Loaded here; saved as part of the setSecurity() bundle below.
   { name: 'safetyClassifierEnabled', kind: 'checkbox', default: true, save: false },
   { name: 'autoRunSandboxCommands', kind: 'checkbox', default: true, save: false },
@@ -1002,19 +1003,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
             </p>
 
             <fieldset>
-              <legend>MCP UI artefacts (canvas)</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="mcpUiArtefactsEnabled" />
-                Render MCP-UI artefacts as a sandboxed canvas
-              </label>
-              <p class="field-hint">
-                When an MCP tool returns a UI resource (self-contained HTML or a URL), Copse
-                recognises it and will render it as a fully sandboxed artefact in the Browser pane —
-                no Node, no app access. While off, UI resources are treated as plain tool output.
-              </p>
-            </fieldset>
-
-            <fieldset>
               <legend>Model classifier</legend>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelClassifierEnabled" />
@@ -1029,22 +1017,16 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               </p>
             </fieldset>
 
-            <fieldset id="advisor-strategy-fieldset">
+            <fieldset>
               <legend>Advisor model</legend>
-              <label class="field-label" for="advisorModel">Advisor model</label>
-              <select id="advisorModel" name="advisorModel">
-                <option value="">(loading…)</option>
-              </select>
               <p class="field-hint">
-                Model used for advisor consultations, and for the advisor/executor pairing shown
-                below. Any configured provider works; defaults to <code>claude-opus-4-8</code>. The
-                advisor strategy itself — the <code>advisor</code> tool that forwards your full
-                conversation transcript to this model for strategic guidance — is now the
-                <code>copse.advisor-strategy</code> pack in Settings → Packs; while that pack is off,
-                the tool is not registered, but this model choice still applies wherever the advisor
-                model is used.
+                The advisor strategy — the <code>advisor</code> tool that forwards your full
+                conversation transcript to a larger model for strategic guidance — is the
+                <code>copse.advisor-strategy</code> pack in
+                <strong>Settings &rsaquo; Packs</strong>. Which model it consults (and the
+                executor/advisor pairing hint) now lives with that pack as its
+                <em>Advisor model</em> setting; defaults to <code>claude-opus-4-8</code>.
               </p>
-              <p class="field-hint advisor-pair-hint" id="advisorPairHint" hidden></p>
             </fieldset>
 
             <fieldset>
@@ -1079,7 +1061,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
                 adds a <code>compare_models</code> tool that reviews the current diff
                 through two models independently and a judge model compares their
                 verdicts. Since a run makes up to three model calls, it asks for approval
-                before spending on any paid model.
+                before spending on any paid model. The three models it uses (Reviewer A,
+                Reviewer B, and the Judge) are configured with that pack in
+                <strong>Settings &rsaquo; Packs</strong>.
               </p>
               <label class="checkbox-label">
                 <input type="checkbox" name="modelComparisonAutoOnReview" />
@@ -1088,57 +1072,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               <p class="field-hint">
                 When on, the comparison runs as part of the post-turn review (still gated by the
                 spend approval). When off, run it on demand via the <code>compare_models</code> tool.
-              </p>
-              <label class="field-label" for="comparisonModelA">Reviewer A</label>
-              <select id="comparisonModelA" name="comparisonModelA">
-                <option value="">(loading…)</option>
-              </select>
-              <p class="field-hint">First reviewer. Leave blank to use your current chat model.</p>
-              <label class="field-label" for="comparisonModelB">Reviewer B</label>
-              <select id="comparisonModelB" name="comparisonModelB">
-                <option value="">(loading…)</option>
-              </select>
-              <p class="field-hint">
-                Second reviewer — pick a different model than Reviewer A. Defaults to
-                <code>claude-opus-4-8</code>.
-              </p>
-              <label class="field-label" for="comparisonJudgeModel">Judge</label>
-              <select id="comparisonJudgeModel" name="comparisonJudgeModel">
-                <option value="">(loading…)</option>
-              </select>
-              <p class="field-hint">
-                Model that compares the two reviews. Defaults to <code>claude-opus-4-8</code>.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>Background tasks</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="backgroundTasksEnabled" />
-                Let the agent run long-lived background commands (dev servers, watchers)
-              </label>
-              <p class="field-hint">
-                Adds a <code>run_background</code> tool that starts a long-running command
-                (<code>npm run dev</code>, a build/test watcher, …) and keeps it alive across turns,
-                with list / logs / stop actions. A task can opt into binding a local port — for a
-                dev server — which reports its <code>http://localhost:&lt;port&gt;</code> URL so the
-                agent can open it in the built-in browser; that asks for your permission the first
-                time per project and relaxes the sandbox only to allow binding on localhost.
-                Otherwise a task stays fully sandboxed (workspace-only, no network). Tasks are
-                stopped when the app quits. While off, the tool is not registered.
-              </p>
-            </fieldset>
-
-            <fieldset>
-              <legend>DevTools shortcut</legend>
-              <label class="checkbox-label">
-                <input type="checkbox" name="devtoolsShortcutEnabled" />
-                Enable <code>Ctrl+Shift+I</code> to toggle Developer Tools
-              </label>
-              <p class="field-hint">
-                Registers a keyboard shortcut to open the Electron DevTools window. Useful for
-                debugging the app itself (not the agent conversation). While off, no shortcut is
-                registered and the DevTools window cannot be opened.
               </p>
             </fieldset>
           </section>
@@ -1688,6 +1621,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     }
   }
 
+  // The advisor model now lives with the `copse.advisor-strategy` pack (Settings
+  // → Packs), so its select + pairing-hint elements are created by
+  // `refreshPacks()` (in `makePackRow`) and handed to `updateAdvisorPairHint`
+  // via these refs — both null until the packs list has rendered; the executor
+  // is still the global chat-model select in the General section.
+  let advisorModelSelectEl: HTMLSelectElement | null = null
+  let advisorPairHintEl: HTMLElement | null = null
+  // A pack `model` field fills its `<select>` asynchronously (`populateModelSelect`
+  // clears then refills from the live catalogue). Its populate promise is stashed
+  // here so the advisor pack row can re-grade the pairing hint once the advisor
+  // select actually has options + a selected value — otherwise the synchronous
+  // grade at row-render time reads an empty `value` and leaves the hint hidden.
+  const modelFieldPopulated = new WeakMap<HTMLSelectElement, Promise<void>>()
+
   /**
    * Render one pack row for the Settings → Packs list (P3 of
    * docs/plans/hooks-and-feature-packs.md). Each row shows the pack's name and
@@ -1817,6 +1764,22 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           .join(', '),
       })
     }
+    if (contributions.capabilities.length > 0) {
+      chips.push({
+        label: 'Capabilities',
+        count: contributions.capabilities.length,
+        title: contributions.capabilities.map((c) => `${c.title} (${c.name})`).join(', '),
+      })
+    }
+    if (contributions.permissions.length > 0) {
+      chips.push({
+        label: 'Permissions',
+        count: contributions.permissions.length,
+        title: contributions.permissions
+          .map((p) => `${p.title} (${p.name}${p.scope ? `, ${p.scope}` : ''})`)
+          .join(', '),
+      })
+    }
     if (chips.length > 0) {
       const chipRow = document.createElement('div')
       chipRow.className = 'pack-chips'
@@ -1847,6 +1810,43 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         settingsBox.append(makePackSettingField(pack.id, field))
       }
       row.append(settingsBox)
+      // The advisor model field owns the live executor/advisor pairing hint (it
+      // moved here from the Experimental section with the model itself). Wire the
+      // advisor select + a hint element into the shared refs, keep the `#advisorModel`
+      // / `#advisorPairHint` ids other code (and the e2e) locate them by, and
+      // re-grade on any change to the advisor model.
+      if (pack.id === ADVISOR_STRATEGY_PACK_ID) {
+        const advisorSelect = settingsBox.querySelector<HTMLSelectElement>(
+          `.pack-setting-model[data-setting-key="${ADVISOR_MODEL_SETTING_ID}"]`,
+        )
+        if (advisorSelect) {
+          advisorSelect.id = 'advisorModel'
+          const hint = document.createElement('p')
+          hint.className = 'field-hint advisor-pair-hint'
+          hint.id = 'advisorPairHint'
+          hint.hidden = true
+          settingsBox.append(hint)
+          advisorModelSelectEl = advisorSelect
+          advisorPairHintEl = hint
+          advisorSelect.addEventListener('change', () => {
+            updateAdvisorPairHint()
+          })
+          // Grade now (covers the case where options are already present), and
+          // again once this select's async population settles — the synchronous
+          // pass reads an empty `value` before `populateModelSelect` resolves, so
+          // without the deferred re-grade the hint would stay hidden until the
+          // user interacts. Pairs with the executor-side re-grade in
+          // `settings-open`; whichever of the two async populations finishes last
+          // is the one that reveals the hint.
+          updateAdvisorPairHint()
+          const populated = modelFieldPopulated.get(advisorSelect)
+          if (populated) {
+            void populated.then(() => {
+              updateAdvisorPairHint()
+            })
+          }
+        }
+      }
     }
 
     // First-party level-3 settings detail. The manifest advertises the named
@@ -1904,6 +1904,20 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       number.value = String(field.value)
       number.className = 'pack-setting-input pack-setting-number'
       input = number
+    } else if (field.kind === 'model') {
+      // A `model` field renders as the grouped model picker fed by the live
+      // catalogue — the same `populateModelSelect` (provider-grouped optgroups)
+      // the footer/settings pickers use, resolved renderer-side (no frozen
+      // option list ships in the manifest). Populate is async; it clears the
+      // select and fills it, keeping the current / default id selectable (even
+      // when it is offline/unknown).
+      const select = document.createElement('select')
+      select.className = 'pack-setting-input pack-setting-model'
+      const current = typeof field.value === 'string' ? field.value : ''
+      // Record the populate promise so dependent UI (the advisor pairing hint)
+      // can re-grade after the options + selected value land, not before.
+      modelFieldPopulated.set(select, populateModelSelect(select, api, current))
+      input = select
     } else {
       const text = document.createElement('input')
       text.type = 'text'
@@ -2238,11 +2252,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // (executor, advisor) pairing from the model capability annotations — cloud
   // tiers and the local catalog — whenever either picker changes, so the user
   // learns up front whether the advisor is actually stronger than the executor.
+  //
   function updateAdvisorPairHint(): void {
+    const hint = advisorPairHintEl
+    const advisorSelect = advisorModelSelectEl
+    if (!hint || !advisorSelect) return
     const form = qsRequired<HTMLFormElement>(overlay, 'form')
-    const hint = qsRequired(overlay, '#advisorPairHint')
     const executor = (form.elements.namedItem('model') as HTMLSelectElement).value
-    const advisor = (form.elements.namedItem('advisorModel') as HTMLSelectElement).value
+    const advisor = advisorSelect.value
     if (!executor || !advisor) {
       hint.hidden = true
       return
@@ -2286,6 +2303,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         model ?? DEFAULT_APP_CHAT_MODEL,
         { includeBestValue: true },
       )
+      // The executor (chat) model just settled — re-grade the advisor pairing
+      // hint, which lives with the advisor pack in the Packs section. No-op until
+      // that pack row has rendered (its select/hint refs are still null); pairs
+      // with the `updateAdvisorPairHint()` call in `refreshPacks()` so whichever
+      // of the two async renders finishes last shows the hint.
+      updateAdvisorPairHint()
       const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
       const roleModels =
         ((await api.settings.get('roleModels')) as Record<string, string> | undefined) ?? {}
@@ -2294,38 +2317,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         api,
         roleModels['small-tasks'] ?? smallTasksModel ?? '',
       )
-      const advisorModel = (await api.settings.get('advisorModel')) as string | undefined
-      await populateModelSelect(
-        form.elements.namedItem('advisorModel') as HTMLSelectElement,
-        api,
-        advisorModel ?? DEFAULT_ADVISOR_MODEL,
-      )
+      // The advisor model and the three comparison models are no longer form
+      // fields: they are pack-scoped `model` settings rendered in Settings →
+      // Packs (advisor pair hint included), populated by `refreshPacks()`.
       const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
         string | undefined
       await populateModelSelect(
         form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
         api,
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
-      )
-      updateAdvisorPairHint()
-      const comparisonModelA = (await api.settings.get('comparisonModelA')) as string | undefined
-      await populateModelSelect(
-        form.elements.namedItem('comparisonModelA') as HTMLSelectElement,
-        api,
-        comparisonModelA ?? '',
-      )
-      const comparisonModelB = (await api.settings.get('comparisonModelB')) as string | undefined
-      await populateModelSelect(
-        form.elements.namedItem('comparisonModelB') as HTMLSelectElement,
-        api,
-        comparisonModelB ?? DEFAULT_COMPARISON_MODEL_B,
-      )
-      const comparisonJudgeModel = (await api.settings.get('comparisonJudgeModel')) as
-        string | undefined
-      await populateModelSelect(
-        form.elements.namedItem('comparisonJudgeModel') as HTMLSelectElement,
-        api,
-        comparisonJudgeModel ?? DEFAULT_COMPARISON_JUDGE_MODEL,
       )
       await loadSimpleFields(form, api)
       wireSafetySliders(form)
@@ -2396,10 +2396,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   if (!settingsForm) throw new Error('Settings dialog template is missing "form"')
   settingsForm.addEventListener('change', (e) => {
     const target = e.target
-    if (
-      target instanceof HTMLSelectElement &&
-      (target.name === 'model' || target.name === 'advisorModel')
-    ) {
+    // The executor (chat) model changed — re-grade the advisor pairing hint,
+    // which now lives with the advisor pack's model field (Settings → Packs).
+    if (target instanceof HTMLSelectElement && target.name === 'model') {
       updateAdvisorPairHint()
     }
   })
@@ -2457,15 +2456,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         'smallTasksModel',
         ((data.get('smallTasksModel') as string | null) ?? '').trim(),
       )
-      for (const key of [
-        'advisorModel',
+      // `advisorModel` and the three `comparisonModel*` values are no longer
+      // saved here — they are pack-scoped `model` settings persisted on change
+      // via `packs:setSetting` from Settings → Packs.
+      await api.settings.set(
         'orchestrationWorkerModel',
-        'comparisonModelA',
-        'comparisonModelB',
-        'comparisonJudgeModel',
-      ] as const) {
-        await api.settings.set(key, ((data.get(key) as string | null) ?? '').trim())
-      }
+        ((data.get('orchestrationWorkerModel') as string | null) ?? '').trim(),
+      )
       await saveSimpleFields(data, api)
       await api.settings.set('theme', themePreference)
       await api.settings.set('fontSize', fontSize)

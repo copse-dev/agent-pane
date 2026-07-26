@@ -25,6 +25,10 @@ import {
   modelComparisonPack,
   MODEL_COMPARISON_PACK_ID,
   MODEL_COMPARISON_TOOL_NAME,
+  COMPARISON_MODEL_A_SETTING_ID,
+  COMPARISON_MODEL_B_SETTING_ID,
+  COMPARISON_JUDGE_MODEL_SETTING_ID,
+  DEFAULT_COMPARISON_MODEL_ID,
 } from './model-comparison-pack.ts'
 import { createFirstPartyPackRegistry, FIRST_PARTY_PACKS } from './first-party-packs.ts'
 
@@ -53,6 +57,34 @@ describe('copse.model-comparison pack (P5)', () => {
     assert.deepEqual(modelComparisonPack.contributions.asyncHooks, [])
     assert.deepEqual(modelComparisonPack.contributions.promptBlocks, [])
     assert.deepEqual(modelComparisonPack.contributions.uiContributions, [])
+  })
+
+  it('owns reviewer A / reviewer B / judge as pack-scoped `model` settings', () => {
+    // The three comparison models moved off their top-level store keys onto the
+    // pack's own `model` fields. Reviewer A has no default (blank = chat model);
+    // reviewer B and the judge default to the frontier model.
+    const settings = modelComparisonPack.manifest.settings
+    assert.ok(settings)
+
+    const a = settings[COMPARISON_MODEL_A_SETTING_ID]
+    assert.ok(a)
+    assert.equal(a.kind, 'model')
+    assert.equal(a.default, undefined)
+
+    const b = settings[COMPARISON_MODEL_B_SETTING_ID]
+    assert.ok(b)
+    assert.equal(b.kind, 'model')
+    assert.equal(b.default, DEFAULT_COMPARISON_MODEL_ID)
+
+    const judge = settings[COMPARISON_JUDGE_MODEL_SETTING_ID]
+    assert.ok(judge)
+    assert.equal(judge.kind, 'model')
+    assert.equal(judge.default, DEFAULT_COMPARISON_MODEL_ID)
+
+    assert.equal(DEFAULT_COMPARISON_MODEL_ID, 'claude-opus-4-8')
+    assert.equal(COMPARISON_MODEL_A_SETTING_ID, 'comparisonModelA')
+    assert.equal(COMPARISON_MODEL_B_SETTING_ID, 'comparisonModelB')
+    assert.equal(COMPARISON_JUDGE_MODEL_SETTING_ID, 'comparisonJudgeModel')
   })
 
   it('contributes compare_models exactly once across all first-party packs', () => {

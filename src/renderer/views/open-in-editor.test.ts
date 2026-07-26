@@ -14,9 +14,19 @@ function createApi(
   return {
     editors: {
       list: async () => list,
-      open: onOpen,
+      open: async (_projectId: string, _threadId: string, editorId: string) => {
+        await onOpen(editorId)
+      },
     },
   } as unknown as ApiClient
+}
+
+function createActiveStore(workspaceRoot: string | null = '/repo'): ReturnType<typeof createStore> {
+  return createStore({
+    workspaceRoot,
+    activeProjectId: 'project-1',
+    activeThreadId: 'thread-1',
+  })
 }
 
 async function settle(): Promise<void> {
@@ -30,7 +40,7 @@ afterEach(() => {
 
 describe('open-in-editor titlebar control', () => {
   it('hides entirely when no editors are detected', async () => {
-    const store = createStore({ workspaceRoot: '/repo' })
+    const store = createActiveStore()
     const host = document.createElement('div')
     document.body.append(host)
 
@@ -41,7 +51,7 @@ describe('open-in-editor titlebar control', () => {
   })
 
   it('hides while no folder is open even when editors exist', async () => {
-    const store = createStore({ workspaceRoot: null })
+    const store = createActiveStore(null)
     const host = document.createElement('div')
     document.body.append(host)
 
@@ -57,7 +67,7 @@ describe('open-in-editor titlebar control', () => {
 
   it('shows a single editor with no caret and launches it on primary click', async () => {
     let opened: string | null = null
-    const store = createStore({ workspaceRoot: '/repo' })
+    const store = createActiveStore()
     const host = document.createElement('div')
     document.body.append(host)
 
@@ -80,7 +90,7 @@ describe('open-in-editor titlebar control', () => {
   })
 
   it('defaults the primary button to the last-used editor', async () => {
-    const store = createStore({ workspaceRoot: '/repo' })
+    const store = createActiveStore()
     const host = document.createElement('div')
     document.body.append(host)
 
@@ -104,7 +114,7 @@ describe('open-in-editor titlebar control', () => {
 
   it('opens the menu from the caret and launches the picked editor', async () => {
     let opened: string | null = null
-    const store = createStore({ workspaceRoot: '/repo' })
+    const store = createActiveStore()
     const host = document.createElement('div')
     document.body.append(host)
 
@@ -139,7 +149,7 @@ describe('open-in-editor titlebar control', () => {
   })
 
   it('dismisses the menu when the backdrop is clicked', async () => {
-    const store = createStore({ workspaceRoot: '/repo' })
+    const store = createActiveStore()
     const host = document.createElement('div')
     document.body.append(host)
 
@@ -167,7 +177,7 @@ describe('open-in-editor titlebar control', () => {
   })
 
   it('returns the control element so callers can reposition it', async () => {
-    const store = createStore({ workspaceRoot: '/repo' })
+    const store = createActiveStore()
     const host = document.createElement('div')
     document.body.append(host)
 
@@ -182,7 +192,7 @@ describe('open-in-editor titlebar control', () => {
   })
 
   it('appears when a folder is opened after mount', async () => {
-    const store = createStore({ workspaceRoot: null })
+    const store = createActiveStore(null)
     const host = document.createElement('div')
     document.body.append(host)
 

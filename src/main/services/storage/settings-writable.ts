@@ -220,7 +220,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   acpAutoApproveNativeBridgeTools: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
-  mcpUiArtefactsEnabled: z.boolean(),
+  //
+  // The MCP-UI artefacts (canvas) gate moved to the `copse.mcp-ui-canvas`
+  // first-party pack's `mcp-ui-canvas` capability (Settings > Packs), so the
+  // former `mcpUiArtefactsEnabled` top-level boolean is retired.
   modelClassifierEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
@@ -236,10 +239,15 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   comparisonModelA: z.string().max(256),
   comparisonModelB: z.string().max(256),
   comparisonJudgeModel: z.string().max(256),
-  backgroundTasksEnabled: z.boolean(),
+  // Background tasks moved to the `copse.background-tasks` first-party pack
+  // (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
+  // relaxation (issue #1190), so the former `backgroundTasksEnabled` top-level
+  // boolean is retired — the pack toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
-  devtoolsShortcutEnabled: z.boolean(),
+  // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party
+  // pack's `devtools-shortcut` capability (Settings > Packs), so the former
+  // `devtoolsShortcutEnabled` top-level boolean is retired.
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
   // Opt-in consent for scanning the shell environment / start-up files for

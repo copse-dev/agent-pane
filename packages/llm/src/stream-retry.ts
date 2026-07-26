@@ -3,6 +3,26 @@ import OpenAI from 'openai'
 
 export const DEFAULT_STREAM_MAX_ATTEMPTS = 4
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** Duck-typed HTTP status on SDK / proxy errors (and plain `{ status }` test doubles). */
+function errorStatus(err: unknown): number | undefined {
+  if (!isRecord(err)) return undefined
+  const status = err['status']
+  return typeof status === 'number' ? status : undefined
+}
+
+/** Duck-typed `{ error: { type } }` body used by Anthropic-style overloaded responses. */
+function errorBodyType(err: unknown): string | undefined {
+  if (!isRecord(err)) return undefined
+  const body = err['error']
+  if (!isRecord(body)) return undefined
+  const type = body['type']
+  return typeof type === 'string' ? type : undefined
+}
+
 function errorHeaders(err: unknown): Headers | undefined {
   // Both SDKs type APIError.headers via an unconstrained generic (`any` here);
   // the `instanceof Headers` guard narrows it to the runtime Fetch `Headers`.
@@ -27,6 +47,27 @@ export function isRoutingPolicyError(err: unknown): boolean {
   )
 }
 
+/**
+ * The server rejected the request because of an image in it.
+ *
+ * Two causes, indistinguishable from the response: the model has no vision at
+ * all, or the server only accepts certain encodings. OpenAI-compatible local
+ * servers surface both as a 400 — LM Studio's is
+ * `'url' field must be a base64 encoded image`. Deterministic, so a plain retry
+ * would only fail again; the caller retries *without* the images instead.
+ *
+ * Matched narrowly on message: a false positive would silently strip images
+ * from a request that could have carried them.
+ */
+export function isImageUnsupportedError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  const status = errorStatus(err)
+  if (status !== 400 && status !== 415 && status !== 422) return false
+  return /must be a base64 encoded image|image_url|invalid image|unsupported image|does not support image|no vision|not a vision model/i.test(
+    err.message,
+  )
+}
+
 export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof Anthropic.APIUserAbortError) return false
   if (err instanceof OpenAI.APIUserAbortError) return false
@@ -43,18 +84,11 @@ export function isRetryableStreamError(err: unknown): boolean {
   if (err instanceof OpenAI.APIConnectionError) return true
   if (err instanceof OpenAI.InternalServerError) return true
 
-  // err is an unknown thrown value and can be null/undefined; the cast type hides
-  // that, so the optional chain guards the genuine runtime case.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const status = (err as { status?: number })?.status
+  const status = errorStatus(err)
   if (status === 429 || status === 529) return true
-  if (typeof status === 'number' && status >= 500 && status < 600) return true
+  if (status !== undefined && status >= 500 && status < 600) return true
 
-  // err is an unknown thrown value and can be null/undefined; the cast type hides
-  // that, so the optional chain guards the genuine runtime case.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const body = (err as { error?: { type?: string } })?.error
-  if (body?.type === 'overloaded_error') return true
+  if (errorBodyType(err) === 'overloaded_error') return true
 
   return false
 }

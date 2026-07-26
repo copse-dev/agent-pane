@@ -73,19 +73,22 @@ export function parseGhOpenPrList(raw: string): GitOpenPr | null {
   }
 }
 
-async function getOpenPrForBranch(branch: string): Promise<GitOpenPr | null> {
-  const ghResult = await runGh([
-    'pr',
-    'list',
-    '--head',
-    branch,
-    '--state',
-    'open',
-    '--json',
-    'number,title,url',
-    '--limit',
-    '1',
-  ])
+async function getOpenPrForBranch(branch: string, root?: string): Promise<GitOpenPr | null> {
+  const ghResult = await runGh(
+    [
+      'pr',
+      'list',
+      '--head',
+      branch,
+      '--state',
+      'open',
+      '--json',
+      'number,title,url',
+      '--limit',
+      '1',
+    ],
+    root ? { cwd: root } : {},
+  )
   return ghResult.code === 0 ? parseGhOpenPrList(ghResult.stdout.trim()) : null
 }
 
@@ -171,13 +174,16 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
 }
 
 /** Branch name and open PR (when `gh` is available) for the status bar. */
-export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchStatus> {
+export async function getGitBranchStatus(
+  forBranch?: string,
+  root: string | null = getWorkspaceRoot(),
+): Promise<GitBranchStatus> {
   const empty: GitBranchStatus = { currentBranch: null, pr: null }
-  if (!getWorkspaceRoot()) return empty
+  if (!root) return empty
 
   // Routes through getCurrentBranchName so the e2e branch override (screenshot
   // determinism) is honored here too, not just bypassed by a raw rev-parse.
-  const currentBranch = await getCurrentBranchName()
+  const currentBranch = await getCurrentBranchName(root)
   if (!currentBranch) return empty
 
   // gh may be absent (minimal installs, the e2e runner image) — checkToolAvailability
@@ -188,9 +194,9 @@ export async function getGitBranchStatus(forBranch?: string): Promise<GitBranchS
 
   let pr: GitOpenPr | null
   if (forBranch && forBranch !== currentBranch) {
-    pr = await getOpenPrForBranch(forBranch)
+    pr = await getOpenPrForBranch(forBranch, root)
   } else {
-    const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'])
+    const ghResult = await runGh(['pr', 'view', '--json', 'state,number,title,url'], { cwd: root })
     pr = ghResult.code === 0 ? parseGhOpenPr(ghResult.stdout) : null
   }
 

@@ -129,6 +129,34 @@ describe('blank thread reuse', () => {
     assert.equal(hasUnsubmittedPrompt(draftBlank), true)
   })
 
+  it('clears task-scoped file and diff models when switching threads', () => {
+    const store = createStore()
+    const first = createThread(store)
+    addMessage(store, first, 'user', 'first')
+    const second = createThread(store)
+    addMessage(store, second, 'user', 'second')
+    store.setState({
+      openFile: { path: 'same.txt', content: 'from second', language: 'plaintext' },
+      activeDiff: {
+        path: 'same.txt',
+        before: 'base',
+        after: 'from second',
+        language: 'plaintext',
+      },
+      stagedDiffs: [{ path: 'same.txt', language: 'plaintext' }],
+    })
+    let panelChanges = 0
+    store.on('panel_changed', () => panelChanges++)
+
+    switchThread(store, first)
+
+    assert.equal(store.getState().activeThreadId, first)
+    assert.equal(store.getState().openFile, null)
+    assert.equal(store.getState().activeDiff, null)
+    assert.deepEqual(store.getState().stagedDiffs, [])
+    assert.equal(panelChanges, 1)
+  })
+
   it('openNewThread creates a new blank when the only blank has a draft', () => {
     const store = createStore()
     const usedId = createThread(store)

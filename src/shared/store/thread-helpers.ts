@@ -15,6 +15,7 @@ import type {
 import type { TodoItem } from '@shared/types/todo.ts'
 import type { HookCard, ModelComparison, Thread, ThreadReview } from '@shared/types'
 import type { PreparedThreadCheckout } from '@shared/types/worktree.ts'
+import type { VideoAttachmentRef } from '@shared/video/video-media.ts'
 
 export function sortThreadsNewestFirst(threads: Thread[]): Thread[] {
   return [...threads].sort((a, b) => b.createdAt - a.createdAt)
@@ -160,7 +161,13 @@ export function openNewThread(store: AppStore): string {
 export function switchThread(store: AppStore, id: string): void {
   if (id === store.getState().activeThreadId) return
   store.emit('composer_draft_flush')
-  store.setState({ activeThreadId: id })
+  store.setState({
+    activeThreadId: id,
+    openFile: null,
+    activeDiff: null,
+    stagedDiffs: [],
+  })
+  store.emit('panel_changed')
   store.emit('threads_changed')
   pruneBlankThreads(store, new Set([id]))
   store.emit('threads_changed')
@@ -185,8 +192,13 @@ export function deleteThread(store: AppStore, id: string): void {
     activeThreadId === id
       ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null)
       : activeThreadId
-  store.setState({ threads: remaining, activeThreadId: newActive })
+  store.setState({
+    threads: remaining,
+    activeThreadId: newActive,
+    ...(activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
+  })
   store.emit('threads_changed')
+  if (activeThreadId === id) store.emit('panel_changed')
 }
 
 /**
@@ -215,8 +227,13 @@ export function archiveThread(store: AppStore, id: string): void {
     activeThreadId === id
       ? (visible[Math.min(index, visible.length - 1)]?.id ?? at(visible, 0).id)
       : activeThreadId
-  store.setState({ threads: updated, activeThreadId: newActive })
+  store.setState({
+    threads: updated,
+    activeThreadId: newActive,
+    ...(activeThreadId === id ? { openFile: null, activeDiff: null, stagedDiffs: [] } : {}),
+  })
   store.emit('threads_changed')
+  if (activeThreadId === id) store.emit('panel_changed')
 }
 
 export function recordContextTrim(
@@ -600,6 +617,32 @@ export function setThreadGitBranch(store: AppStore, threadId: string, branch: st
   const updated = threads.map((t) =>
     t.id !== threadId ? t : { ...t, gitBranch: branch, updatedAt: Date.now() },
   )
+  store.setState({ threads: updated })
+  store.emit('threads_changed')
+}
+
+/**
+ * Record videos sent with a message on the thread, so the attachment outlives
+ * the message that carried it (see {@link Thread.videos}). Called at send, not
+ * at attach: a video chipped and then removed was never part of the
+ * conversation. Deduped by path so re-sending the same recording in a later
+ * message does not list it twice.
+ */
+export function recordThreadVideos(
+  store: AppStore,
+  threadId: string,
+  videos: VideoAttachmentRef[],
+): void {
+  if (videos.length === 0) return
+  const { threads } = store.getState()
+  const updated = threads.map((t) => {
+    if (t.id !== threadId) return t
+    const existing = t.videos ?? []
+    const known = new Set(existing.map((v) => v.path))
+    const added = videos.filter((v) => !known.has(v.path))
+    if (added.length === 0) return t
+    return { ...t, videos: [...existing, ...added], updatedAt: Date.now() }
+  })
   store.setState({ threads: updated })
   store.emit('threads_changed')
 }

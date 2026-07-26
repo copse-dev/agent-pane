@@ -1,21 +1,42 @@
 // Subagent helpers — mutate ToolCall.subagent on parent tool calls.
 import type { AppStore } from './store.ts'
+import { at } from '@shared/array-utils.ts'
 import type { ModelUsage, SubagentSession, ToolCall } from '@shared/types'
 
-function findToolCall(
+/**
+ * Replace exactly one tool call on one message, cloning only the owning thread,
+ * its `messages` array, and that message's `toolCalls` array. Every unrelated
+ * thread — and every sibling message and sibling tool call — keeps its object
+ * identity, so a subagent stream's per-chunk work is proportional to the owning
+ * thread's size rather than to all loaded history (issue #1155, subagent path).
+ * Bumps the owning thread's `updatedAt` and emits `tool_call_updated`, matching
+ * the prior behavior; a no-op (no `setState`/emit) when the tool call is absent.
+ */
+function replaceToolCall(
   store: AppStore,
   messageId: string,
   toolCallId: string,
-): { msgIdx: number; tcIdx: number } | null {
+  update: (toolCall: ToolCall) => ToolCall,
+): void {
   const { threads } = store.getState()
-  for (const t of threads) {
-    const msgIdx = t.messages.findIndex((m) => m.id === messageId)
-    const message = t.messages[msgIdx]
-    if (!message) continue
-    const tcIdx = message.toolCalls.findIndex((tc) => tc.id === toolCallId)
-    if (tcIdx >= 0) return { msgIdx: threads.indexOf(t), tcIdx }
+  for (let ti = 0; ti < threads.length; ti++) {
+    const thread = threads[ti]
+    if (!thread) continue
+    const mi = thread.messages.findIndex((m) => m.id === messageId)
+    if (mi === -1) continue
+    const message = at(thread.messages, mi)
+    const ci = message.toolCalls.findIndex((tc) => tc.id === toolCallId)
+    if (ci === -1) return
+    const toolCalls = message.toolCalls.slice()
+    toolCalls[ci] = update(at(message.toolCalls, ci))
+    const messages = thread.messages.slice()
+    messages[mi] = { ...message, toolCalls }
+    const nextThreads = threads.slice()
+    nextThreads[ti] = { ...thread, messages, updatedAt: Date.now() }
+    store.setState({ threads: nextThreads })
+    store.emit('tool_call_updated', messageId, toolCallId)
+    return
   }
-  return null
 }
 
 function updateSubagentOnToolCall(
@@ -24,28 +45,9 @@ function updateSubagentOnToolCall(
   toolCallId: string,
   updater: (session: SubagentSession) => SubagentSession,
 ): void {
-  const loc = findToolCall(store, messageId, toolCallId)
-  if (!loc) return
-  const { threads } = store.getState()
-  const updatedThreads = threads.map((t, ti) => {
-    if (ti !== loc.msgIdx) return t
-    return {
-      ...t,
-      messages: t.messages.map((m) => {
-        if (m.id !== messageId) return m
-        return {
-          ...m,
-          toolCalls: m.toolCalls.map((tc) => {
-            if (tc.id !== toolCallId || !tc.subagent) return tc
-            return { ...tc, subagent: updater(tc.subagent) }
-          }),
-        }
-      }),
-      updatedAt: Date.now(),
-    }
-  })
-  store.setState({ threads: updatedThreads })
-  store.emit('tool_call_updated', messageId, toolCallId)
+  replaceToolCall(store, messageId, toolCallId, (tc) =>
+    tc.subagent ? { ...tc, subagent: updater(tc.subagent) } : tc,
+  )
 }
 
 export function initSubagent(
@@ -54,23 +56,7 @@ export function initSubagent(
   toolCallId: string,
   session: SubagentSession,
 ): void {
-  const { threads } = store.getState()
-  const updated = threads.map((t) => ({
-    ...t,
-    messages: t.messages.map((m) =>
-      m.id !== messageId
-        ? m
-        : {
-            ...m,
-            toolCalls: m.toolCalls.map((tc) =>
-              tc.id !== toolCallId ? tc : { ...tc, subagent: session },
-            ),
-          },
-    ),
-    updatedAt: Date.now(),
-  }))
-  store.setState({ threads: updated })
-  store.emit('tool_call_updated', messageId, toolCallId)
+  replaceToolCall(store, messageId, toolCallId, (tc) => ({ ...tc, subagent: session }))
 }
 
 export function appendSubagentText(

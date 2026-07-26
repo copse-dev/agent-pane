@@ -8,6 +8,7 @@ import {
   searchIcon,
 } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -90,6 +91,18 @@ function webviewTitle(tab: BrowserTab): string | undefined {
 }
 
 const WEBVIEW_PREFS = 'contextIsolation=true'
+
+interface BrowserPopoutSeed {
+  tabs: Array<{ url: string; label?: string; artefactTitle?: string | null }>
+  activeTabIndex: number
+}
+
+function isBrowserPopoutSeed(seed: unknown): seed is BrowserPopoutSeed {
+  if (!seed || typeof seed !== 'object') return false
+  // `in` narrowing rather than an assertion: no-unsafe-type-assertion (#508)
+  // rejects narrowing away from `unknown`, and this is the safer check anyway.
+  return 'tabs' in seed && Array.isArray(seed.tabs)
+}
 
 function browserModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -597,6 +610,74 @@ export function mountBrowserPane(
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKeydown)
 
+  function purgeAllTabs(): void {
+    for (const tab of tabs.values()) {
+      tab.webview?.remove()
+      tab.tabBtn.remove()
+      tab.panel.remove()
+    }
+    tabs.clear()
+    activeTabId = null
+  }
+
+  function captureBrowserSeed(): BrowserPopoutSeed {
+    const ordered = [...tabs.values()]
+    const activeIndex = activeTabId
+      ? Math.max(
+          0,
+          ordered.findIndex((tab) => tab.id === activeTabId),
+        )
+      : 0
+    return {
+      tabs: ordered.map((tab) => ({
+        // `.find` + `??` rather than a `||` chain: prefer-nullish-coalescing
+        // (#508) rejects `||`, but `??` alone would change behaviour — these
+        // fall back on EMPTY strings, not just null/undefined.
+        url:
+          [tab.urlInput.value, webviewUrl(tab), tab.pendingUrl].find((value) => value) ??
+          'about:blank',
+        label: tab.label,
+        artefactTitle: tab.artefactTitle,
+      })),
+      activeTabIndex: activeIndex,
+    }
+  }
+
+  function applyBrowserSeed(raw: unknown): void {
+    if (!isBrowserPopoutSeed(raw) || raw.tabs.length === 0) return
+    purgeAllTabs()
+    const createdIds: string[] = []
+    for (const entry of raw.tabs) {
+      const id = addTab({ activate: false })
+      createdIds.push(id)
+      const tab = tabs.get(id)
+      if (!tab) continue
+      if (entry.artefactTitle) {
+        tab.artefactTitle = entry.artefactTitle
+        tab.urlInput.placeholder = entry.artefactTitle
+      }
+      if (entry.url && entry.url !== 'about:blank') {
+        tab.pendingUrl = entry.url
+        tab.urlInput.value = entry.url
+      }
+      if (entry.label) {
+        tab.label = entry.label
+        tab.tabLabelEl.textContent = entry.label
+      } else if (entry.url && entry.url !== 'about:blank') {
+        tab.label = browserTabLabel(entry.url)
+        tab.tabLabelEl.textContent = tab.label
+      }
+    }
+    const index = Math.min(Math.max(raw.activeTabIndex, 0), createdIds.length - 1)
+    const target = createdIds[index]
+    if (target) setActiveTab(target)
+  }
+
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('browser', {
+    capture: captureBrowserSeed,
+    apply: applyBrowserSeed,
+  })
+
   const unsubs = [
     store.on('right_panel_mode_changed', onBrowserModeChange),
     store.on('files_pane_changed', onBrowserModeChange),
@@ -614,6 +695,7 @@ export function mountBrowserPane(
   ]
 
   return () => {
+    unregisterPopoutSeed()
     unsubs.forEach((u) => u?.())
     resizeObserver?.disconnect()
     for (const tab of tabs.values()) {
