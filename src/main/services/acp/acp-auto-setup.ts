@@ -1,10 +1,12 @@
 import { KNOWN_ACP_AGENTS, type KnownAcpAgent } from '@shared/acp-known-agents.ts'
-import type { AcpAgentConfig, AcpAutoSetupResult } from '@shared/types/acp.ts'
+import type { AcpAgentConfig, AcpAgentProbe, AcpAutoSetupResult } from '@shared/types/acp.ts'
 import { probeAcpAgent } from './acp-client.ts'
 import { listAcpAgents, upsertAcpAgent } from './acp-agent-registry.ts'
+import { probeAcpAgentForSettings } from './acp-agent-service.ts'
 import { resolveOnPath } from './acp-detect.ts'
 import { installGlobalNpmPackage } from '../security/socket-firewall.ts'
 import { getActiveProjectRoot, getWorkspaceRoot } from '../workspace.ts'
+import { isActiveSshWorkspace } from '../ssh-workspace/execution-target.ts'
 import { requestApproval } from '../approval.ts'
 
 /**
@@ -224,7 +226,10 @@ export async function requestAcpPackageInstallApproval(
  * found neither (or failed) — callers still register the agent, and the user can
  * fill these in later with "Detect models".
  */
-type ProbedSelectorFields = Pick<AcpAgentConfig, 'availableModels' | 'availablePermissionModes'>
+type ProbedSelectorFields = Pick<
+  AcpAgentConfig,
+  'availableModels' | 'availablePermissionModes' | 'modelsProbedAt'
+>
 
 /**
  * Best-effort probe of a known agent's models and session modes (issue #607).
@@ -244,11 +249,79 @@ async function probeSelectors(
       ...(known.args.length ? { args: known.args } : {}),
       ...(known.sandbox ? { sandbox: known.sandbox } : {}),
     })
-    return {
+    const fields: ProbedSelectorFields = {
       ...(probe.models?.choices.length ? { availableModels: probe.models.choices } : {}),
       ...(probe.modes?.choices.length ? { availablePermissionModes: probe.modes.choices } : {}),
     }
+    // Stamp the probe time whenever we actually reached the agent, so the
+    // TTL-based background revalidation doesn't immediately re-probe an agent we
+    // just detected. Only meaningful alongside availableModels (staleness is
+    // keyed off a non-empty model list), but harmless when only modes came back.
+    return probe.models || probe.modes ? { ...fields, modelsProbedAt: Date.now() } : fields
   } catch {
     return {}
   }
+}
+
+/** Re-probe a cached model list at most this often (24h). */
+export const ACP_MODELS_TTL_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Whether an agent's cached model list should be re-probed. Pure so the decision
+ * is unit-tested without spawning anything. Only agents that are enabled and
+ * already have a cached list qualify (the empty-cache first-probe is handled by
+ * {@link planAcpAutoSetup}'s `refreshModels`); a cache with no `modelsProbedAt`
+ * (written before the field existed) counts as maximally stale.
+ */
+export function acpModelsCacheStale(
+  agent: AcpAgentConfig,
+  now: number,
+  ttl: number = ACP_MODELS_TTL_MS,
+): boolean {
+  if (!agent.enabled) return false
+  if (!agent.availableModels?.length) return false
+  return now - (agent.modelsProbedAt ?? 0) >= ttl
+}
+
+/** Ids currently being revalidated, so overlapping triggers don't double-spawn. */
+const revalidating = new Set<string>()
+
+/**
+ * Non-blocking, best-effort refresh of stale cached ACP model lists (issue: new
+ * models like a fresh Opus release never appeared until the user re-detected).
+ * For each enabled agent whose cache has aged past the TTL, re-probe it in the
+ * background and REPLACE its cached `availableModels`/`availablePermissionModes`
+ * wholesale — so models the agent added *or removed* since the last probe are
+ * reflected on the picker's next open (the picker reads settings live). Kicked
+ * off fire-and-forget from `workspace:set`; never awaited, never throws. A probe
+ * that fails or surfaces no selector leaves the existing cache untouched, so a
+ * transient auth/spawn hiccup can't wipe a good list.
+ */
+export function revalidateStaleAcpModels(now: number = Date.now()): void {
+  if (isActiveSshWorkspace()) return // ACP agents are not spawned on SSH remotes
+  for (const agent of listAcpAgents()) {
+    if (!acpModelsCacheStale(agent, now)) continue
+    if (revalidating.has(agent.id)) continue
+    revalidating.add(agent.id)
+    void revalidateAcpAgentModels(agent.id).finally(() => {
+      revalidating.delete(agent.id)
+    })
+  }
+}
+
+/** Probe one agent and replace its cached selectors; keep the cache on failure. */
+async function revalidateAcpAgentModels(agentId: string): Promise<void> {
+  let probe: AcpAgentProbe
+  try {
+    probe = await probeAcpAgentForSettings(agentId)
+  } catch {
+    return // no open folder, SSH, or a spawn/auth failure — keep the existing cache
+  }
+  // A probe that surfaced no selector at all must not wipe a good cache.
+  if (!probe.models && !probe.modes) return
+  await updateCurrentAcpAgentSelectors(agentId, {
+    ...(probe.models ? { availableModels: probe.models.choices } : {}),
+    ...(probe.modes ? { availablePermissionModes: probe.modes.choices } : {}),
+    modelsProbedAt: Date.now(),
+  })
 }

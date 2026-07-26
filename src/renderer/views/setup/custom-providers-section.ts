@@ -7,6 +7,7 @@ import {
   type PrivacyBadge,
   type ProviderDataPolicy,
 } from '@copse/llm/data-policies.ts'
+import { blendedRate } from '@copse/llm/pareto-frontier.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon } from '../../dom/icons.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
@@ -162,11 +163,27 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       step: 'any',
       placeholder: 'out $/Mtok',
     })
-    const label = el('input', {
-      type: 'text',
-      placeholder: 'label (optional)',
-      autocomplete: 'off',
-    })
+    const blended = el('span', { class: 'provider-model-blended' })
+    const updateBlended = (): void => {
+      const inStr = inPrice.value.trim()
+      const outStr = outPrice.value.trim()
+      const inNum = Number(inStr)
+      const outNum = Number(outStr)
+      if (inStr && outStr && Number.isFinite(inNum) && Number.isFinite(outNum)) {
+        blended.textContent = blendedRate(inNum, outNum).toFixed(2)
+      } else if (
+        typeof model?.inputPricePerMTok === 'number' &&
+        typeof model.outputPricePerMTok === 'number'
+      ) {
+        blended.textContent = String(blendedRate(model.inputPricePerMTok, model.outputPricePerMTok))
+      } else if (model?.blendedCostPerMTok != null) {
+        blended.textContent = String(model.blendedCostPerMTok)
+      } else {
+        blended.textContent = ''
+      }
+    }
+    inPrice.addEventListener('input', updateBlended)
+    outPrice.addEventListener('input', updateBlended)
     if (model) {
       id.value = model.id
       if (model.contextWindow) ctx.value = String(model.contextWindow)
@@ -174,7 +191,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
         inPrice.value = String(model.inputPricePerMTok)
       if (typeof model.outputPricePerMTok === 'number')
         outPrice.value = String(model.outputPricePerMTok)
-      if (model.label) label.value = model.label
+      updateBlended()
     }
     const remove = el(
       'button',
@@ -188,7 +205,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       ctx,
       inPrice,
       outPrice,
-      label,
+      blended,
       remove,
     )
     remove.addEventListener('click', () => {
@@ -211,7 +228,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
     el('span', {}, 'Context'),
     el('span', {}, 'In $/Mtok'),
     el('span', {}, 'Out $/Mtok'),
-    el('span', {}, 'Label'),
+    el('span', {}, 'Blended $/MTok'),
     el('span', {}, ''),
   )
 
@@ -220,7 +237,7 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
   const read = (): ExtraProviderModel[] => {
     const out: ExtraProviderModel[] = []
     for (const row of rows.querySelectorAll('.provider-model-row')) {
-      const [idEl, ctxEl, inEl, outEl, labelEl] = row.querySelectorAll('input')
+      const [idEl, ctxEl, inEl, outEl] = row.querySelectorAll('input')
       const id = (idEl as HTMLInputElement).value.trim()
       if (!id) continue
       const ctx = Number((ctxEl as HTMLInputElement).value)
@@ -228,16 +245,21 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
       const outPrice = (outEl as HTMLInputElement).value.trim()
       const inNum = Number(inPrice)
       const outNum = Number(outPrice)
-      const label = (labelEl as HTMLInputElement).value.trim()
-      out.push({
+      const entry: ExtraProviderModel = {
         id,
-        ...(label ? { label } : {}),
         ...(Number.isFinite(ctx) && ctx > 0 ? { contextWindow: ctx } : {}),
         ...(inPrice && Number.isFinite(inNum) && inNum >= 0 ? { inputPricePerMTok: inNum } : {}),
         ...(outPrice && Number.isFinite(outNum) && outNum >= 0
           ? { outputPricePerMTok: outNum }
           : {}),
-      })
+      }
+      if (
+        typeof entry.inputPricePerMTok === 'number' &&
+        typeof entry.outputPricePerMTok === 'number'
+      ) {
+        entry.blendedCostPerMTok = blendedRate(entry.inputPricePerMTok, entry.outputPricePerMTok)
+      }
+      out.push(entry)
     }
     return out
   }

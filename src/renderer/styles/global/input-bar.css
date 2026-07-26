@@ -65,6 +65,48 @@
   font-size: 12px;
   overflow: hidden;
 }
+.guarded-yolo-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  border-top: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-base));
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.guarded-yolo-banner[hidden] {
+  display: none;
+}
+.guarded-yolo-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--spacing-lg) + var(--spacing-xs));
+  height: calc(var(--spacing-lg) + var(--spacing-xs));
+  border-radius: 50%;
+  background: var(--danger);
+  color: white;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+.guarded-yolo-text {
+  min-width: 0;
+  flex: 1;
+  line-height: 1.35;
+}
+.guarded-yolo-disable {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--danger) 60%, var(--border));
+  border-radius: var(--radius);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+}
+.guarded-yolo-disable:hover {
+  border-color: var(--danger);
+}
 .composer-branch-warning[hidden] {
   display: none;
 }
