@@ -1,6 +1,10 @@
 import { runCommand } from './exec/command-runner.ts'
-import { probeIndexedGrepBackends } from './search/indexed-grep.ts'
-import { isSemanticBackendBundled, probeSemanticBackends } from './search/semantic-index.ts'
+import { probeIndexedGrepBackends, type IndexedGrepBackend } from './search/indexed-grep.ts'
+import {
+  isSemanticBackendBundled,
+  probeSemanticBackends,
+  type SemanticBackend,
+} from './search/semantic-index.ts'
 import type { ExecutionTarget } from './ssh-workspace/execution-target.ts'
 import {
   getActiveExecutionTarget,
@@ -13,7 +17,30 @@ let rgAvail: boolean | null = null
 let gitAvail: boolean | null = null
 let ghAvail: boolean | null = null
 
-export async function checkToolAvailability(): Promise<void> {
+/**
+ * The probes {@link checkToolAvailability} runs, injectable so a test can drive
+ * them without spawning processes. Mirrors the `LlmHistoryMigrationDeps` shape
+ * used by the other startup-path module.
+ */
+export interface ToolAvailabilityDeps {
+  probeRg: () => Promise<boolean>
+  probeGit: () => Promise<boolean>
+  probeGh: () => Promise<boolean>
+  probeGrepBackend: () => Promise<IndexedGrepBackend>
+  probeSemanticBackend: () => Promise<SemanticBackend | null>
+}
+
+const defaultDeps: ToolAvailabilityDeps = {
+  probeRg: () => probe('rg', ['--version']),
+  probeGit: () => probe('git', ['--version']),
+  probeGh: probeGhAccessible,
+  probeGrepBackend: probeIndexedGrepBackends,
+  probeSemanticBackend: probeSemanticBackends,
+}
+
+export async function checkToolAvailability(
+  deps: ToolAvailabilityDeps = defaultDeps,
+): Promise<void> {
   // The e2e app relaunches Electron once per spec (~47×/full run); these probes
   // run before the window opens on every launch. Under e2e, skip them: ripgrep
   // and git are provisioned in the e2e environment, so assume them present (the
@@ -26,11 +53,21 @@ export async function checkToolAvailability(): Promise<void> {
     ghAvail = false
     return
   }
-  rgAvail = await probe('rg', ['--version'])
-  gitAvail = await probe('git', ['--version'])
-  ghAvail = await probeGhAccessible()
-  const grepBackend = await probeIndexedGrepBackends()
-  const semanticBackend = await probeSemanticBackends()
+  // Five independent probes, so run them concurrently rather than paying the sum
+  // of their process spawns. (`probeIndexedGrepBackends` and
+  // `probeSemanticBackends` still walk their own candidate lists in order —
+  // each picks the first backend that answers, so that part is inherently
+  // sequential.) `gh auth status` is the slow one: it makes a network call.
+  const [rg, git, gh, grepBackend, semanticBackend] = await Promise.all([
+    deps.probeRg(),
+    deps.probeGit(),
+    deps.probeGh(),
+    deps.probeGrepBackend(),
+    deps.probeSemanticBackend(),
+  ])
+  rgAvail = rg
+  gitAvail = git
+  ghAvail = gh
   if (!rgAvail)
     console.warn('[copse-panel] ripgrep (rg) not found — search_code will use slow fallback')
   else if (grepBackend !== 'rg')

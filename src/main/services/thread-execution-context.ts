@@ -2,10 +2,18 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import type { AgentHost } from '@copse/agent/agent-host.ts'
 import type { StreamChunk } from '@shared/types'
 import { classifyAgentError } from './agent-errors.ts'
-import { getThreadMeta } from './thread-store.ts'
+import { getThreadMeta, updateMeta } from './thread-store.ts'
 import { getProjectRoot } from './workspace.ts'
 import { validateThreadWorktree, type ValidatedThreadWorktree } from './worktree-manager.ts'
 import type { ThreadWorktree } from '@shared/types/worktree.ts'
+
+async function syncAdoptedWorktreeBranch(
+  projectId: string,
+  threadId: string,
+  worktree: ThreadWorktree,
+): Promise<void> {
+  await updateMeta(projectId, threadId, { worktree, gitBranch: worktree.branch })
+}
 
 export type ThreadCheckoutMode = 'shared' | 'worktree'
 
@@ -37,6 +45,12 @@ export interface ThreadExecutionContextDependencies {
     projectRoot: string
     worktree: ThreadWorktree
   }) => Promise<ValidatedThreadWorktree>
+  /** Persist adopted live branch when Git HEAD drifted inside the worktree. */
+  syncWorktreeBranch?: (
+    projectId: string,
+    threadId: string,
+    worktree: ThreadWorktree,
+  ) => Promise<void>
 }
 
 const storage = new AsyncLocalStorage<ThreadExecutionContext>()
@@ -45,6 +59,7 @@ const defaultDependencies: ThreadExecutionContextDependencies = {
   getProjectRoot,
   getThreadMeta,
   validateWorktree: validateThreadWorktree,
+  syncWorktreeBranch: syncAdoptedWorktreeBranch,
 }
 
 /**
@@ -75,6 +90,20 @@ export async function resolveThreadExecutionContext(
       projectRoot,
       worktree: threadMeta.worktree,
     })
+    if (
+      worktree.branch !== threadMeta.worktree.branch ||
+      threadMeta.gitBranch !== worktree.branch
+    ) {
+      const adopted: ThreadWorktree = {
+        path: threadMeta.worktree.path,
+        branch: worktree.branch,
+        baseBranch: threadMeta.worktree.baseBranch,
+        baseCommit: threadMeta.worktree.baseCommit,
+        createdAt: threadMeta.worktree.createdAt,
+        seededFromDirtyProject: threadMeta.worktree.seededFromDirtyProject,
+      }
+      await dependencies.syncWorktreeBranch?.(projectId, threadId, adopted)
+    }
     return Object.freeze({
       projectId,
       threadId,

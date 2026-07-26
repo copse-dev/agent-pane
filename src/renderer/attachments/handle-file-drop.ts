@@ -1,9 +1,26 @@
 import type { ApiClient } from '../../preload/api.d.ts'
+import { isVideoFile } from '@shared/video/video-media.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
+import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
 type ElectronFile = File & { path?: string }
+
+/** Only `fs.readFile` is used for workspace-path drops; keep the surface narrow for tests. */
+export type FileDropApi = {
+  fs: Pick<ApiClient['fs'], 'readFile'>
+}
+
+/** Structural drop event so tests can pass a plain object without `as DragEvent`. */
+export type FileDropEvent = {
+  preventDefault(): void
+  stopPropagation(): void
+  dataTransfer?: {
+    getData(format: string): string
+    files: ArrayLike<File>
+  } | null
+}
 
 function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((res, rej) => {
@@ -29,11 +46,20 @@ function relativeWorkspacePath(absPath: string, workspaceRoot: string | null): s
 async function attachWorkspacePath(
   path: string,
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null,
 ): Promise<void> {
+  const name = path.split(/[\\/]/).pop() ?? path
+  // A video already in the workspace is referenced where it lies; reading it as
+  // text would inline binary into the prompt.
+  if (isVideoFile({ name })) {
+    await handlers.attachVideo({ name, mimeType: '', path })
+    return
+  }
+  if (!owner) return
   try {
-    const content = await api.fs.readFile(path)
+    const content = await api.fs.readFile(owner.projectId, owner.threadId, path)
     handlers.attachFile({ path: relativeWorkspacePath(path, workspaceRoot) || path, content })
   } catch {
     /* ignore read errors */
@@ -43,8 +69,9 @@ async function attachWorkspacePath(
 async function attachDroppedFile(
   file: ElectronFile,
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   if (file.type.startsWith('image/')) {
     const dataUrl = await readAsDataUrl(file)
@@ -52,9 +79,22 @@ async function attachDroppedFile(
     return
   }
 
+  // Videos are stored and referenced, never inlined — a screen recording is far
+  // too much media to put in a model's context. Checked before the
+  // workspace-path branch so a recording that happens to live in the repo still
+  // becomes a video attachment rather than an attempted text read.
+  if (isVideoFile(file)) {
+    await handlers.attachVideo({
+      name: file.name,
+      mimeType: file.type || 'video/mp4',
+      bytes: await file.arrayBuffer(),
+    })
+    return
+  }
+
   const absPath = file.path
   if (absPath && workspaceRoot) {
-    await attachWorkspacePath(absPath, handlers, api, workspaceRoot)
+    await attachWorkspacePath(absPath, handlers, api, workspaceRoot, owner)
     return
   }
 
@@ -69,38 +109,40 @@ async function attachDroppedFile(
 export async function attachFiles(
   files: ElectronFile[],
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   for (const file of files) {
-    await attachDroppedFile(file, handlers, api, workspaceRoot)
+    await attachDroppedFile(file, handlers, api, workspaceRoot, owner)
   }
 }
 
 export async function handleFileDrop(
-  e: DragEvent,
+  e: FileDropEvent,
   handlers: PromptAttachmentHandlers,
-  api: ApiClient,
+  api: FileDropApi,
   workspaceRoot: string | null,
+  owner: ActiveThreadOwner | null = null,
 ): Promise<void> {
   e.preventDefault()
   e.stopPropagation()
 
   const workspacePath = e.dataTransfer?.getData(WORKSPACE_PATH_MIME)
   if (workspacePath) {
-    await attachWorkspacePath(workspacePath, handlers, api, workspaceRoot)
+    await attachWorkspacePath(workspacePath, handlers, api, workspaceRoot, owner)
     return
   }
 
   const files = Array.from(e.dataTransfer?.files ?? []) as ElectronFile[]
-  await attachFiles(files, handlers, api, workspaceRoot)
+  await attachFiles(files, handlers, api, workspaceRoot, owner)
 }
 
 export function bindFileDropTarget(
   el: HTMLElement,
   getHandlers: () => PromptAttachmentHandlers | null,
-  api: ApiClient,
-  getWorkspaceRoot: () => string | null,
+  api: FileDropApi,
+  getContext: () => { workspaceRoot: string | null; owner: ActiveThreadOwner | null },
 ): () => void {
   const onDragOver = (e: DragEvent): void => {
     if (!getHandlers()) return
@@ -119,7 +161,8 @@ export function bindFileDropTarget(
     el.classList.remove('is-drop-target')
     const handlers = getHandlers()
     if (!handlers) return
-    void handleFileDrop(e, handlers, api, getWorkspaceRoot())
+    const { workspaceRoot, owner } = getContext()
+    void handleFileDrop(e, handlers, api, workspaceRoot, owner)
   }
 
   el.addEventListener('dragover', onDragOver, true)

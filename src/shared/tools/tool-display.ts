@@ -53,6 +53,7 @@ const TOOL_DISPLAY_NAMES: Record<string, DualLabel | string> = {
   run_shell: { running: 'Running command', done: 'Ran command' },
   run_background: { running: 'Starting background task', done: 'Started background task' },
   read_terminal: { running: 'Reading shell', done: 'Read shell' },
+  video_frames: { running: 'Reading video', done: 'Read video' },
   ask_user: { running: 'Asking user', done: 'Asked user' },
   update_todos: { running: 'Updating plan', done: 'Updated plan' },
   run_checkup: { running: 'Running checkup', done: 'Ran checkup' },
@@ -65,7 +66,7 @@ interface ToolGroupDef {
 
 const TOOL_GROUPS: Record<string, ToolGroupDef> = {
   reading: {
-    tools: ['explore', 'read_file', 'list_dir'],
+    tools: ['explore', 'read_file', 'list_dir', 'video_frames'],
     label: { running: 'Reading files', done: 'Read files' },
   },
   searching: {

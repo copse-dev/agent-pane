@@ -6,17 +6,14 @@ import {
 import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 import {
   REMOTE_AGENT_MODELS,
-  REMOTE_AGENT_PROVIDER_ANTHROPIC,
   REMOTE_AGENT_PROVIDER_CURSOR,
   parseRemoteAgentModel,
   parseRemoteAgentModelSelection,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
-import { acpModelValue } from '@shared/acp.ts'
 import { isProviderKeyUsable } from './provider-key-status.ts'
 import { buildProvider } from './provider-selection.ts'
-import { getSetting, isProviderAvailable } from '../storage/settings.ts'
-import { listEnabledAcpAgents } from '../acp/acp-agent-registry.ts'
+import { isProviderAvailable } from '../storage/settings.ts'
 import { resolveBestValueChatModel } from './best-value-model.ts'
 
 export interface ResolvedAgentChatModel {
@@ -27,6 +24,18 @@ export interface ResolvedAgentChatModel {
    * the assistant stream so the fallback is explicit in the transcript.
    */
   fallbackNotice?: string
+  /**
+   * Set when the user picked a remote agent whose provider key is unusable, so
+   * `model` is a stand-in rather than what they asked for. Interactive turn
+   * paths use it to offer a subscription-billed ACP agent before accepting the
+   * demotion to a local chat model; non-interactive callers (post-turn review,
+   * model comparison) ignore it and just run on `model`.
+   */
+  blockedRemoteAgent?: {
+    provider: RemoteAgentProvider
+    /** Upstream model half of the selection, when the picker pinned one. */
+    model?: string
+  }
 }
 
 function remoteProviderKeySlug(provider: RemoteAgentProvider): string {
@@ -79,51 +88,24 @@ async function pickFallbackChatModel(): Promise<string> {
   return FALLBACK_APP_CHAT_MODEL
 }
 
-/** ACP agent ids that are Claude-based and use subscription billing. */
-const CLAUDE_ACP_AGENT_IDS = new Set(['claude-agent-acp', 'claude-code-acp'])
-
-/**
- * When the user selected Claude Cloud Agent (`remote-agent:anthropic`) and has
- * an enabled ACP Claude agent, redirect to the ACP path so turns are
- * subscription-billed rather than API-key-billed. Returns the ACP model value,
- * or `null` to stay on the Cloud Agent path.
- */
-function tryAcpClaudeRedirect(requested: string): string | null {
-  if (!getSetting<boolean>('preferAcpOverCloudAgent', true)) return null
-  const selection = parseRemoteAgentModelSelection(requested)
-  if (!selection || selection.provider !== REMOTE_AGENT_PROVIDER_ANTHROPIC) return null
-
-  const enabled = listEnabledAcpAgents()
-  const claude = enabled.find((agent) => CLAUDE_ACP_AGENT_IDS.has(agent.id))
-  if (!claude) return null
-
-  return acpModelValue(claude.id, selection.model)
-}
-
 /**
  * Resolve the chat model for an agent turn. Expands the best-value sentinel to a
- * concrete routable model; when the user picked a remote agent but has no valid
- * API key, fall back to a runnable local/cloud chat model and return a notice
- * so the transcript states what happened.
+ * concrete routable model. A remote-agent selection is honoured whenever its
+ * provider key is usable — the Claude Cloud Agent runs the managed Agents API,
+ * which is API-key billed and has no subscription equivalent, so a user who
+ * picked it gets it.
  *
- * When `preferAcpOverCloudAgent` is on (default) and a Claude Cloud Agent
- * request can be served by an enabled ACP Claude agent, redirect to the ACP
- * path so turns count against subscription headroom instead of API credit.
+ * When the key is unusable the turn cannot run as asked: fall back to a runnable
+ * local/cloud chat model, return a notice so the transcript states what
+ * happened, and flag the blocked selection so an interactive caller can offer a
+ * subscription-billed ACP agent instead of accepting the demotion silently.
  */
 export async function resolveAgentChatModel(requested: string): Promise<ResolvedAgentChatModel> {
   // Sentinel expansion first: the best-value value is never a remote-agent
-  // selection, so the ACP redirect below still sees the user's literal choice.
+  // selection, so the remote-agent handling below only ever sees the user's
+  // literal choice — an unexpanded sentinel would fall through as a bare model id.
   if (isBestValueChatModel(requested)) {
     return { model: await resolveBestValueChatModel() }
-  }
-
-  const acpRedirect = tryAcpClaudeRedirect(requested)
-  if (acpRedirect) {
-    return {
-      model: acpRedirect,
-      fallbackNotice:
-        '_Using **Claude Code (ACP)** instead of Claude Cloud Agent — subscription-billed, no API key cost._\n\n',
-    }
   }
 
   const remoteProvider = parseRemoteAgentModel(requested)
@@ -133,6 +115,7 @@ export async function resolveAgentChatModel(requested: string): Promise<Resolved
   if (await isProviderKeyUsable(slug)) return { model: requested }
 
   const fallbackModel = await pickFallbackChatModel()
+  const selection = parseRemoteAgentModelSelection(requested)
   return {
     model: fallbackModel,
     fallbackNotice: buildFallbackNotice({
@@ -140,5 +123,9 @@ export async function resolveAgentChatModel(requested: string): Promise<Resolved
       fallbackModel,
       reason: 'no valid API key',
     }),
+    blockedRemoteAgent: {
+      provider: remoteProvider,
+      ...(selection?.model ? { model: selection.model } : {}),
+    },
   }
 }

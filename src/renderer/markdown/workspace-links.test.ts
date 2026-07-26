@@ -33,7 +33,12 @@ describe('markdown workspace links', () => {
   it('opens resolved workspace markdown links in the explorer panel', async () => {
     const root = document.createElement('div')
     root.innerHTML = renderMarkdown('[guide](/docs/experiments/v2.md)')
-    const store = createStore({ filesPaneOpen: false, rightPanelMode: 'terminal' })
+    const store = createStore({
+      activeProjectId: 'project-1',
+      activeThreadId: 'thread-1',
+      filesPaneOpen: false,
+      rightPanelMode: 'terminal',
+    })
     const api = apiWithFileReferences([
       { candidate: 'docs/experiments/v2.md', path: 'docs/experiments/v2.md' },
     ])

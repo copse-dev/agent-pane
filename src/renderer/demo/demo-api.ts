@@ -482,7 +482,17 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ editors: [], lastUsedId: null }),
       open: resolvedVoid,
     },
-    panes: { popout: resolvedVoid },
+    panes: {
+      popout: resolvedVoid,
+      takePopoutSeed: () => Promise.resolve(null),
+      onSwitchMode: () => () => {},
+    },
+    // The demo build has no main process to store a file, so attaching a video
+    // rejects rather than handing back a path nothing could read.
+    video: {
+      attach: () => Promise.reject(new Error('Video attachments are unavailable in the demo')),
+      read: () => Promise.reject(new Error('Video playback is unavailable in the demo')),
+    },
   }
 
   return api

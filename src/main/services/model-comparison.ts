@@ -23,10 +23,12 @@ import { DEFAULT_CLOUD_MODEL } from '@copse/llm/model-catalog.ts'
 // (`copse.model-comparison`) is now the atomic master switch consulted by the
 // tool registration in `registry-bootstrap.ts` and the auto-on-review trigger
 // in `agent-service.ts` / `isAutoComparisonEnabled()`.
+//
+// The three model choices (reviewer A / reviewer B / judge) are now the pack's
+// own `model` setting fields (see `model-comparison-pack.ts`), read by
+// `model-comparison-runner.ts`; the former top-level `comparisonModel*` store
+// keys are retired. The `modelComparisonAutoOnReview` opt-in stays top-level.
 export const MODEL_COMPARISON_AUTO_ON_REVIEW_SETTING = 'modelComparisonAutoOnReview'
-export const COMPARISON_MODEL_A_SETTING = 'comparisonModelA'
-export const COMPARISON_MODEL_B_SETTING = 'comparisonModelB'
-export const COMPARISON_JUDGE_MODEL_SETTING = 'comparisonJudgeModel'
 
 /** Default second reviewer and judge when the settings are left blank (a frontier Claude). */
 export const DEFAULT_COMPARISON_MODEL_B = 'claude-opus-4-8'

@@ -191,10 +191,14 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   remoteAgentBaseUrl: remoteAgentBaseUrlSchema,
   remoteAgentAutoCreatePR: z.boolean(),
   remoteAgentWorkOnCurrentBranch: z.boolean(),
-  // When true (default) and the user selects Claude Cloud Agent
-  // (remote-agent:anthropic, API-key-billed), redirect to an enabled ACP Claude
-  // agent if one is registered — routing through the subscription login instead
-  // of the API key so turns count against plan headroom, not API credit.
+  // When true (default) and a Claude Cloud Agent turn cannot run — the stored
+  // Anthropic key is missing/rejected, or the API account is out of credit —
+  // offer to re-run it on an enabled ACP Claude agent, which authenticates
+  // against the user's own `claude` login and bills against plan headroom.
+  // The offer always asks: the managed Agents API has no subscription billing
+  // mode, and the two paths differ (remote sandbox + PR vs. local worktree),
+  // so a working Cloud Agent selection is never redirected behind the user's
+  // back. Off means the turn falls back to a local chat model instead.
   preferAcpOverCloudAgent: z.boolean(),
   // External ACP agents Copse drives as a client (model value `acp:<id>`).
   registeredAcpAgents: registeredAcpAgentsSchema,
@@ -216,7 +220,10 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   acpAutoApproveNativeBridgeTools: z.boolean(),
   // Experimental features, opt-in and off by default. See the experimental
   // section in Settings.
-  mcpUiArtefactsEnabled: z.boolean(),
+  //
+  // The MCP-UI artefacts (canvas) gate moved to the `copse.mcp-ui-canvas`
+  // first-party pack's `mcp-ui-canvas` capability (Settings > Packs), so the
+  // former `mcpUiArtefactsEnabled` top-level boolean is retired.
   modelClassifierEnabled: z.boolean(),
   advisorModel: z.string().max(256),
   // Experimental orchestration strategy: the chat model orchestrates and a
@@ -232,10 +239,15 @@ export const RENDERER_WRITABLE_SETTING_SCHEMAS = {
   comparisonModelA: z.string().max(256),
   comparisonModelB: z.string().max(256),
   comparisonJudgeModel: z.string().max(256),
-  backgroundTasksEnabled: z.boolean(),
+  // Background tasks moved to the `copse.background-tasks` first-party pack
+  // (Settings > Packs), which also DECLARES the `loopback-bind` sandbox
+  // relaxation (issue #1190), so the former `backgroundTasksEnabled` top-level
+  // boolean is retired — the pack toggle is the master switch.
   /** When false, hide read_terminal and @shell (on by default). */
   readTerminalEnabled: z.boolean(),
-  devtoolsShortcutEnabled: z.boolean(),
+  // The DevTools shortcut moved to the `copse.devtools-shortcut` first-party
+  // pack's `devtools-shortcut` capability (Settings > Packs), so the former
+  // `devtoolsShortcutEnabled` top-level boolean is retired.
   customInstructions: z.string().max(8192),
   onboardingCompleted: z.boolean(),
   // Opt-in consent for scanning the shell environment / start-up files for
