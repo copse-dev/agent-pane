@@ -20,8 +20,8 @@ export class CopseUiActions extends HTMLElement {
     const align = this.getAttribute('align')
     if (align === 'start' || align === 'end' || align === 'stretch') {
       this.dataset['align'] = align
-    } else if (!this.dataset['align']) {
-      this.dataset['align'] = 'end'
+    } else {
+      this.dataset['align'] ??= 'end'
     }
   }
 }
