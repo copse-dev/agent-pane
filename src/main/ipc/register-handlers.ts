@@ -117,6 +117,7 @@ import { ADVISOR_STRATEGY_PACK_ID } from '@copse/agent/packs/advisor-strategy-pa
 import { OKF_MEMORIES_PACK_ID } from '@copse/agent/packs/okf-memories-pack.ts'
 import { CI_INVESTIGATOR_PACK_ID } from '@copse/agent/packs/ci-investigator-pack.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { getAutomationService } from '../services/automations/automation-service.ts'
 import { READ_TERMINAL_ENABLED_SETTING } from '@shared/terminal/read-terminal.ts'
 import { MEMORY_TYPE } from '../tools/memory-tools.ts'
 import { ROADMAP_STATUSES, ROADMAP_TYPE, roadmapTitleFromPrompt } from '../tools/roadmap-tools.ts'
@@ -128,6 +129,7 @@ import {
   setKnowledgeNoteStatus,
   updateKnowledgeNote,
 } from '../services/storage/knowledge-store.ts'
+
 import {
   deleteAllKnowledgeAttachments,
   deleteKnowledgeAttachmentFiles,
@@ -228,6 +230,7 @@ import {
   listCursorCloudModels,
 } from '../services/remote/cursor-cloud-models.ts'
 import { listActiveProjectAgentPrLinks } from '../services/remote/remote-agent-link-store.ts'
+
 import {
   gatewayListDir,
   gatewayReadFile,
@@ -241,6 +244,15 @@ import {
   getGuardedYoloState,
   onGuardedYoloChanged,
 } from '../services/security/guarded-yolo.ts'
+
+const zAutomationScheduleInput = z.object({
+  id: z.string().min(1).max(256).optional(),
+  name: z.string().trim().min(1).max(160),
+  cron: z.string().trim().min(1).max(160),
+  prompt: z.string().trim().min(1).max(100_000),
+  model: z.string().trim().min(1).max(1024),
+  enabled: z.boolean(),
+})
 
 const SKILLS_RELOAD_KEYS = new Set([
   'skillsEnabled',
@@ -1192,6 +1204,50 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       )
       await getPackService().setSetting(id, key, value)
       return { packs: getPackService().list() }
+    },
+  )
+
+  // Local cron-to-draft prototype (`copse.automations`). Every operation is
+  // project-scoped; the service repeats that ownership check for update/delete
+  // so a renderer cannot address a schedule through another project id.
+  ipcMain.handle('automations:list', (event, rawProjectId: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    return getAutomationService().list(projectId)
+  })
+  ipcMain.handle('automations:upsert', async (event, rawProjectId: unknown, rawInput: unknown) => {
+    assertMainFrameSender(event, win)
+    const projectId = parseIpcArgs(zProjectId, [rawProjectId])
+    const input = parseIpcArgs(zAutomationScheduleInput, [rawInput])
+    return getAutomationService().upsert(projectId, {
+      ...(input.id !== undefined ? { id: input.id } : {}),
+      name: input.name,
+      cron: input.cron,
+      prompt: input.prompt,
+      model: input.model,
+      enabled: input.enabled,
+    })
+  })
+  ipcMain.handle(
+    'automations:remove',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      await getAutomationService().remove(projectId, scheduleId)
+    },
+  )
+  ipcMain.handle(
+    'automations:runNow',
+    async (event, rawProjectId: unknown, rawScheduleId: unknown) => {
+      assertMainFrameSender(event, win)
+      const [projectId, scheduleId] = parseIpcArgs(
+        z.tuple([zProjectId, zNonEmptyString.max(256)]),
+        [rawProjectId, rawScheduleId],
+      )
+      return getAutomationService().runNow(projectId, scheduleId)
     },
   )
 

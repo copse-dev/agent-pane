@@ -411,6 +411,13 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
     },
+    automations: {
+      list: emptyArray,
+      upsert: unsupported,
+      remove: unsupported,
+      runNow: unsupported,
+      onTriggered: subscribe,
+    },
     instructions: { list: emptyArray },
     cursorRules: { list: emptyArray },
     terminal: {
