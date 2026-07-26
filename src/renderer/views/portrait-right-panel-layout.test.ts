@@ -147,4 +147,23 @@ describe('portrait right panel layout', () => {
 
     unmount()
   })
+
+  it('never enables portrait chrome inside a pop-out window', () => {
+    document.documentElement.classList.add('is-popout')
+    const app = document.createElement('div')
+    app.id = 'app'
+    const body = document.createElement('div')
+    app.append(body)
+    document.body.append(app)
+    const store = createStore({ autoPortraitRightPanel: true, filesPaneOpen: true })
+
+    setViewport(640, 1000)
+    const unmount = mountPortraitRightPanelLayout(body, store)
+    assert.equal(body.classList.contains(PORTRAIT_RIGHT_PANEL_CLASS), false)
+    assert.equal(body.classList.contains(PORTRAIT_CHROME_CLASS), false)
+    assert.equal(app.classList.contains(PORTRAIT_CHROME_CLASS), false)
+
+    unmount()
+    document.documentElement.classList.remove('is-popout')
+  })
 })

@@ -2,6 +2,7 @@ import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -82,6 +83,16 @@ const STATUS_LABEL: Record<GitChangeStatus, string> = {
 
 type ChangeSelection =
   { kind: 'proposed'; path: string } | { kind: 'git'; path: string; staged: boolean }
+
+/** Validates a pop-out seed before it drives selection. The previous assertion
+ * trusted the shape outright, so a malformed seed reached selectGitChange with
+ * `staged` undefined. */
+function isChangeSelection(seed: unknown): seed is ChangeSelection {
+  if (!seed || typeof seed !== 'object') return false
+  if (!('kind' in seed) || !('path' in seed) || typeof seed.path !== 'string') return false
+  if (seed.kind === 'proposed') return true
+  return seed.kind === 'git' && 'staged' in seed && typeof seed.staged === 'boolean'
+}
 
 function changesModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -727,7 +738,17 @@ export function mountGitChangesPane(
   // catch up to the current state here, or the diff never renders. See #459.
   if (changesModeActive(store)) void refresh()
 
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('changes', {
+    capture: () => selection,
+    apply: (seed) => {
+      if (!isChangeSelection(seed)) return
+      if (seed.kind === 'proposed') void selectProposed(seed.path)
+      else void selectGitChange(seed.path, seed.staged)
+    },
+  })
+
   return () => {
+    unregisterPopoutSeed()
     if (refreshTimer) clearTimeout(refreshTimer)
     stopObservingLayout()
     unsubDiffConflict()

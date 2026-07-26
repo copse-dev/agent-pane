@@ -92,6 +92,16 @@ describe('Pane pop-out (mock gh)', () => {
       const popoutBtn = await $(`${pane.listHost} .pane-popout-btn`)
       await popoutBtn.waitForClickable({ timeout: 10_000 })
 
+      if (pane.mode === 'browser') {
+        await $('.browser-url-input').waitForDisplayed({ timeout: 10_000 })
+        await $('.browser-url-input').setValue('https://example.com')
+        await $('.browser-go-btn').click()
+        await browser.waitUntil(
+          async () => (await $('.browser-url-input').getValue()).includes('example.com'),
+          { timeout: 20_000, timeoutMsg: 'browser address bar did not update before pop-out' },
+        )
+      }
+
       const before = await browser.getWindowHandles()
       await popoutBtn.click()
       await browser.waitUntil(
@@ -118,6 +128,22 @@ describe('Pane pop-out (mock gh)', () => {
       await expect(await $('#pane-projects')).not.toBeDisplayed()
       await expect(await $('#pane-chat')).not.toBeDisplayed()
       await expect(await $('.pane-popout-btn')).not.toBeDisplayed()
+      await expect(await $('.popout-panel-bar')).toBeDisplayed()
+      const portraitChrome = await browser.execute(
+        () => document.getElementById('app')?.classList.contains('is-portrait-chrome') === true,
+      )
+      expect(portraitChrome).toBe(false)
+
+      if (pane.mode === 'browser') {
+        await browser.waitUntil(async () => (await $$('.browser-tabs-tab')).length >= 1, {
+          timeout: 20_000,
+          timeoutMsg: 'pop-out browser lost its tabs',
+        })
+        await browser.waitUntil(
+          async () => (await $('.browser-url-input').getValue()).includes('example.com'),
+          { timeout: 20_000, timeoutMsg: 'pop-out browser did not inherit the active tab URL' },
+        )
+      }
 
       if (pane.mode === 'prs') {
         await browser.waitUntil(async () => (await $$('.pr-list-row')).length >= 2, {
