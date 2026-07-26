@@ -182,6 +182,12 @@ export interface Thread {
   draftPrompt?: string
   /** Per-thread model override; absent means "use the global default". */
   model?: string
+  /** Provenance for a draft task created by a project automation schedule. */
+  automation?: {
+    scheduleId: string
+    scheduleName: string
+    triggeredAt: number
+  }
   /**
    * When set, the thread is archived: hidden from the sidebar and `@`-thread
    * catalog, but kept on disk under `~/.copse/workspace/<projectId>/<id>/`.
