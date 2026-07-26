@@ -48,6 +48,91 @@ def freeze_no_network(task: Any) -> None:
     task.config.environment.allow_internet = False
 
 
+#: Inventory of what each upstream verifier fetches at grading time. 74 of the 87
+#: v1.1 verifiers bootstrap their own test runner — `curl | sh` for `uv`, then
+#: `uvx --with pytest==...`, or a bare `pip install`. Under the spike's
+#: no-network run condition those fetches fail and the verifier scores 0 even
+#: when the task's own `solve.sh` is correct: an oracle sweep measured 1 of 9
+#: sampled tasks eligible, and the one that passed is among the 13 whose
+#: verifier installs nothing at test time.
+VERIFIER_DEPS_PATH = Path(__file__).with_name("verifier-deps.json")
+
+#: Where the pre-warmed uv cache lives inside the task image.
+UV_CACHE_DIR = "/opt/copse/uv-cache"
+
+
+def _verifier_deps(task_name: str) -> dict[str, list[str]] | None:
+    """Pinned test-time dependencies for one task, or None when it needs none."""
+    try:
+        doc = json.loads(VERIFIER_DEPS_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    entry = doc.get("tasks", {}).get(task_name)
+    return entry if isinstance(entry, dict) else None
+
+
+def verifier_prebake_layer(task_name: str) -> str:
+    """Dockerfile lines that pre-install a verifier's test-time dependencies.
+
+    The image build has network; the rollout does not. Installing the pinned
+    dependencies here lets the verifier's own bootstrap become a no-op at
+    grading time — `apt-get install` finds the package already newest, `pip
+    install` reports it already satisfied, the `curl | sh` fetch fails
+    harmlessly (only 4 of the 45 uv verifiers use `set -e`), and `uvx --with`
+    resolves out of the warmed cache under ``UV_OFFLINE``.
+
+    Returns an empty string when the task's verifier fetches nothing, so
+    self-contained tasks keep a byte-identical Dockerfile.
+    """
+    deps = _verifier_deps(task_name)
+    if not deps:
+        return ""
+    lines = [
+        "",
+        "# --- copse skillsbench: pre-baked verifier test-time dependencies.",
+        "# The verifier bootstraps its own runner from the network, which the",
+        "# rollout forbids. Staged here, at build time, so grading works offline.",
+    ]
+    apt = deps.get("apt") or []
+    if apt:
+        lines.append(
+            "RUN apt-get update && apt-get install -y --no-install-recommends "
+            + " ".join(sorted(apt))
+            + " && rm -rf /var/lib/apt/lists/*"
+        )
+    pip = deps.get("pip") or []
+    if pip:
+        lines.append(
+            "RUN pip3 install --break-system-packages --no-cache-dir "
+            + " ".join(shlex.quote(p) for p in sorted(pip))
+        )
+    uv_versions = deps.get("uv") or []
+    uvx_with = deps.get("uvxWith") or []
+    if uv_versions:
+        version = sorted(uv_versions)[0]
+        lines.append(f"ENV UV_CACHE_DIR={UV_CACHE_DIR}")
+        # Install to $HOME/.local/bin so the verifier's `source
+        # $HOME/.local/bin/env` keeps working unchanged.
+        lines.append(
+            "RUN curl -LsSf https://astral.sh/uv/"
+            + version
+            + "/install.sh | sh"
+        )
+        if uvx_with:
+            # Warm the cache by resolving the exact pins the verifier will ask
+            # for. Done before UV_OFFLINE is set, so this step may use network.
+            warm = " ".join(shlex.quote(p) for p in sorted(uvx_with))
+            lines.append(
+                'RUN . "$HOME/.local/bin/env" && uv venv /tmp/copse-warm '
+                f"&& uv pip install --python /tmp/copse-warm/bin/python {warm} "
+                "&& rm -rf /tmp/copse-warm"
+            )
+        # Only now pin offline, so the rollout cannot silently reach the network
+        # even if the container's policy were ever relaxed by mistake.
+        lines.append("ENV UV_OFFLINE=1")
+    return "\n".join(lines) + "\n"
+
+
 class _SessionAdapter:
     def on_ask_user(self, _handler: Any) -> None:
         return None
@@ -340,7 +425,29 @@ async def _run_prompt(client: _CopseClient, prompt: str) -> dict[str, Any]:
         client.process = None
 
 
-class CopseRolloutPlanes(DefaultRolloutPlanes):
+class _PrebakeVerifierDepsMixin:
+    """Stage each verifier's test-time dependencies into the task image.
+
+    Applied to both plane stacks: the oracle only calibrates the agent trials if
+    it grades under the same image and the same network condition.
+    """
+
+    def stage_dockerfile_deps(self, task_path: Path, context_root: Path) -> None:
+        super().stage_dockerfile_deps(task_path, context_root)  # type: ignore[misc]
+        layer = verifier_prebake_layer(task_path.name)
+        if not layer:
+            return
+        dockerfile = task_path / "environment" / "Dockerfile"
+        if not dockerfile.is_file():
+            return
+        existing = dockerfile.read_text()
+        if "copse skillsbench: pre-baked verifier" in existing:
+            return
+        separator = "" if existing.endswith("\n") else "\n"
+        dockerfile.write_text(existing + separator + layer)
+
+
+class CopseRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
     def __init__(self, *, bundle: Path, profile: str) -> None:
         super().__init__()
         self.bundle = bundle
@@ -386,7 +493,8 @@ class CopseRolloutPlanes(DefaultRolloutPlanes):
         )
 
 
-class OracleRolloutPlanes(DefaultRolloutPlanes):
+
+class OracleRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
     """Stock planes with only the spike's network condition applied.
 
     The oracle runs the task's own ``solve.sh`` through BenchFlow's normal agent

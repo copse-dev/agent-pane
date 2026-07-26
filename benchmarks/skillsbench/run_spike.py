@@ -17,7 +17,12 @@ from typing import Any
 
 from benchflow.rollout import Rollout, RolloutConfig
 
-from copse_planes import NETWORK_POLICY, CopseRolloutPlanes, OracleRolloutPlanes
+from copse_planes import (
+    NETWORK_POLICY,
+    VERIFIER_DEPS_PATH,
+    CopseRolloutPlanes,
+    OracleRolloutPlanes,
+)
 
 
 PROFILES = ("skills-none", "skills-product", "skills-explicit")
@@ -147,6 +152,27 @@ def _profile_metadata(script: Path, profile: str) -> dict[str, str]:
     ):
         raise ValueError("profile metadata script returned invalid provenance")
     return value
+
+
+def _verifier_deps_provenance(task_name: str) -> dict[str, Any]:
+    """Record that the task image carries pre-baked verifier dependencies.
+
+    Rewards graded on a pre-baked image are not comparable with rewards graded
+    on a stock one, so the capsule states which it was and pins the inventory
+    by digest.
+    """
+    try:
+        raw = VERIFIER_DEPS_PATH.read_bytes()
+    except OSError:
+        return {"prebaked": False, "reason": "inventory missing"}
+    doc = json.loads(raw)
+    entry = doc.get("tasks", {}).get(task_name)
+    return {
+        "prebaked": bool(entry),
+        "inventoryDigest": f"sha256:{hashlib.sha256(raw).hexdigest()}",
+        "datasetRevision": doc.get("datasetRevision"),
+        "staged": entry or {},
+    }
 
 
 def _result_mapping(result: Any) -> dict[str, Any]:
@@ -285,6 +311,7 @@ async def _run_oracle(
         "sourceCommit": _git_commit(),
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
         "networkPolicy": NETWORK_POLICY,
+        "verifierDeps": _verifier_deps_provenance(task_name),
         "elapsedSeconds": round(elapsed, 3),
         "officialReward": reward,
         "requiredReward": ORACLE_REQUIRED_REWARD,
@@ -409,6 +436,7 @@ async def _run_trial(
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
         "model": model,
         "networkPolicy": NETWORK_POLICY,
+        "verifierDeps": _verifier_deps_provenance(task_name),
         "budgets": {
             "agentTimeoutSeconds": getattr(rollout, "_timeout", None),
             "defaultCommandTimeoutSeconds": 120,

@@ -1,0 +1,508 @@
+{
+  "datasetRevision": "b63b7b2850226b6aa4fb5929a8c1ac7bc4d9a6af",
+  "note": "Test-time dependencies each SkillsBench verifier fetches from the network. Pre-baked into the task image at build time so the verifier can grade under the spike's no-network run condition. Regenerate with scripts/extract-skillsbench-verifier-deps.mts.",
+  "schemaVersion": 1,
+  "tasks": {
+    "3d-scan-calc": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "azure-bgp-oscillation-route-leak": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "citation-check": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "civ6-adjacency-optimizer": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.5", "pytest==8.3.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "crystallographic-wyckoff-position-analysis": {
+      "apt": [],
+      "pip": ["pytest-json-report==1.5.0", "pytest==8.3.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "dapt-intrusion-detection": {
+      "apt": [],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "dialogue-parser": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.6", "pytest==8.3.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "drone-planning-control": {
+      "apt": [],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": [
+        "numpy==1.26.4",
+        "pytest-json-ctrf==0.3.5",
+        "pytest==8.4.1",
+        "pyyaml==6.0.1",
+        "scipy==1.13.0"
+      ]
+    },
+    "dynamic-object-aware-egomotion": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "earthquake-phase-association": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["numpy==2.3.5", "pandas==2.3.3", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "earthquake-plate-calculation": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "econ-detrending-correlation": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.5", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "edit-pdf": {
+      "apt": [],
+      "pip": ["pytesseract==0.3.13", "pytest-json-ctrf==0.3.6", "pytest==8.3.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "energy-ac-optimal-power-flow": {
+      "apt": ["curl", "libgfortran5"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["casadi==3.6.7", "numpy==1.26.4", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "enterprise-information-search": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "exceltable-in-ppt": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.5", "pandas==2.2.3", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "exoplanet-detection-period": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "financial-modeling-qa": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "fix-druid-loophole-cve": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1", "requests==2.31.0"]
+    },
+    "fix-erlang-ssh-cve": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["paramiko==3.5.1", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "fix-visual-stability": {
+      "apt": [],
+      "pip": ["Pillow==11.0.0", "playwright==1.49.1", "pytest-json-ctrf==0.5.2", "pytest==8.3.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "flink-query": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "flood-risk-analysis": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.6", "pytest==9.0.2"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "grid-dispatch-operator": {
+      "apt": [],
+      "pip": ["cvxpy==1.4.2", "numpy==1.26.4", "scipy==1.11.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "invoice-fraud-detection": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "jax-computing-basics": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["numpy==2.4.1", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "jpg-ocr-stat": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.5", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "lake-warming-attribution": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.6", "pytest==9.0.2"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "latex-formula-extraction": {
+      "apt": [],
+      "pip": [],
+      "uv": [],
+      "uvxWith": [
+        "pillow==10.4.0",
+        "playwright==1.57.0",
+        "pytest-json-ctrf==0.3.5",
+        "pytest==8.4.1"
+      ]
+    },
+    "lean4-proof": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "llm-prefix-cache-replay": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "manufacturing-codebook-normalization": {
+      "apt": [],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "manufacturing-equipment-maintenance": {
+      "apt": [],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "manufacturing-fjsp-optimization": {
+      "apt": [],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "mario-coin-counting": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "multilingual-video-dubbing": {
+      "apt": [],
+      "pip": [
+        "numpy==1.26.4",
+        "pysrt==1.1.2",
+        "pytest-json-ctrf==0.3.6",
+        "pytest==9.0.2",
+        "soundfile==0.13.1"
+      ],
+      "uv": [],
+      "uvxWith": []
+    },
+    "offer-letter-generator": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1", "python-docx==1.1.2"]
+    },
+    "organize-messy-files": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["PyPDF2==3.0.1", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "paper-anonymizer": {
+      "apt": ["curl", "poppler-utils"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "parallel-tfidf-search": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "pddl-airport-planning": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": [
+        "numpy==2.4.1",
+        "pytest-json-ctrf==0.3.5",
+        "pytest==8.4.1",
+        "unified_planning==1.3.0",
+        "up-pyperplan==1.1.0"
+      ]
+    },
+    "pddl-tpp-planning": {
+      "apt": [],
+      "pip": [],
+      "uv": [],
+      "uvxWith": [
+        "numpy==2.4.1",
+        "pytest-json-ctrf==0.3.5",
+        "pytest==8.4.1",
+        "unified_planning==1.3.0",
+        "up-pyperplan==1.1.0"
+      ]
+    },
+    "pdf-excel-diff": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "pptx-reference-formatting": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": [
+        "defusedxml==0.7.1",
+        "lxml==5.3.0",
+        "pytest-json-ctrf==0.3.5",
+        "pytest==8.4.1",
+        "rapidfuzz==3.14.3",
+        "six==1.17.0"
+      ]
+    },
+    "python-scala-translation": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": []
+    },
+    "quantum-numerical-simulation": {
+      "apt": ["curl"],
+      "pip": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "radar-vital-signs": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.5", "pytest==8.3.2"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "react-performance-debugging": {
+      "apt": [],
+      "pip": ["pytest-asyncio==0.24.0", "pytest==8.3.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "reserves-at-risk-calc": {
+      "apt": ["curl", "gnumeric"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.5", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "sales-pivot-analysis": {
+      "apt": [],
+      "pip": ["openpyxl==3.1.5", "pytest-json-ctrf==0.3.6", "pytest==8.3.4"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "sec-financial-report": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pandas==2.3.3", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "seismic-phase-picking": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pandas==2.3.3", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "setup-fuzzing-py": {
+      "apt": ["bc", "curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "shock-analysis-demand": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.5", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "shock-analysis-supply": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.5", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "simpo-code-reproduction": {
+      "apt": ["curl"],
+      "pip": ["pytest-json-ctrf==0.3.5"],
+      "uv": ["0.9.7"],
+      "uvxWith": [
+        "accelerate==0.29.2",
+        "datasets==2.18.0",
+        "numpy==1.24.2",
+        "peft==0.9.0",
+        "pytest-json-ctrf==0.3.5",
+        "pytest==8.4.1",
+        "torch==2.1.2+cpu",
+        "transformers==4.39.3",
+        "trl==0.9.6"
+      ]
+    },
+    "software-dependency-audit": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "spring-boot-jakarta-migration": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "suricata-custom-exfil": {
+      "apt": [],
+      "pip": [],
+      "uv": [],
+      "uvxWith": ["pytest==8.4.1", "scapy==2.6.1"]
+    },
+    "threejs-structure-parser": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "threejs-to-obj": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["numpy==2.1.3", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "tictoc-unnecessary-abort-detection": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "travel-planning": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "video-silence-remover": {
+      "apt": [],
+      "pip": ["pytest-json-ctrf==0.3.6", "pytest==9.0.2"],
+      "uv": [],
+      "uvxWith": []
+    },
+    "weighted-gdp-calc": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.5", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    },
+    "xlsx-recover-data": {
+      "apt": ["curl"],
+      "pip": [],
+      "uv": ["0.9.7"],
+      "uvxWith": ["openpyxl==3.1.2", "pytest-json-ctrf==0.3.5", "pytest==8.4.1"]
+    }
+  },
+  "union": {
+    "apt": ["bc", "curl", "gnumeric", "libgfortran5", "poppler-utils"],
+    "pip": [
+      "Pillow==11.0.0",
+      "cvxpy==1.4.2",
+      "numpy==1.26.4",
+      "openpyxl==3.1.5",
+      "playwright==1.49.1",
+      "pysrt==1.1.2",
+      "pytesseract==0.3.13",
+      "pytest-asyncio==0.24.0",
+      "pytest-json-ctrf==0.3.5",
+      "pytest-json-ctrf==0.3.6",
+      "pytest-json-ctrf==0.5.2",
+      "pytest-json-report==1.5.0",
+      "pytest==8.3.2",
+      "pytest==8.3.4",
+      "pytest==8.4.1",
+      "pytest==9.0.2",
+      "scipy==1.11.4",
+      "soundfile==0.13.1"
+    ],
+    "uv": ["0.9.7"],
+    "uvxWith": [
+      "PyPDF2==3.0.1",
+      "accelerate==0.29.2",
+      "casadi==3.6.7",
+      "datasets==2.18.0",
+      "defusedxml==0.7.1",
+      "lxml==5.3.0",
+      "numpy==1.24.2",
+      "numpy==1.26.4",
+      "numpy==2.1.3",
+      "numpy==2.3.5",
+      "numpy==2.4.1",
+      "openpyxl==3.1.2",
+      "openpyxl==3.1.5",
+      "pandas==2.2.3",
+      "pandas==2.3.3",
+      "paramiko==3.5.1",
+      "peft==0.9.0",
+      "pillow==10.4.0",
+      "playwright==1.57.0",
+      "pytest-json-ctrf==0.3.5",
+      "pytest==8.4.1",
+      "python-docx==1.1.2",
+      "pyyaml==6.0.1",
+      "rapidfuzz==3.14.3",
+      "requests==2.31.0",
+      "scapy==2.6.1",
+      "scipy==1.13.0",
+      "six==1.17.0",
+      "torch==2.1.2+cpu",
+      "transformers==4.39.3",
+      "trl==0.9.6",
+      "unified_planning==1.3.0",
+      "up-pyperplan==1.1.0"
+    ]
+  }
+}
