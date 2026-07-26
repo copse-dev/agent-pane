@@ -36,6 +36,7 @@ import {
   serializeSpineEntries,
   serializeSpineLine,
   type SpineHookRunLine,
+  type SpinePermissionDecisionLine,
   type ThreadMeta,
 } from '@shared/threads/spine-schema.ts'
 import {
@@ -714,6 +715,22 @@ export function appendHookRun(
       const full = join(dir, blob.ref)
       if (!existsSync(full)) writeFileEnsuringDir(full, blob.contents)
     }
+    const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+    const prefix =
+      existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`
+    writeFileSync(join(dir, EVENTS_FILE), `${prefix}${serializeSpineLine(line)}\n`)
+  })
+}
+
+/** Append one durable Guarded YOLO shell authorization record. */
+export function appendPermissionDecision(
+  projectId: string,
+  threadId: string,
+  line: SpinePermissionDecisionLine,
+): Promise<void> {
+  return runSerialized(queueKey(projectId), () => {
+    const dir = threadDir(projectId, threadId)
+    mkdirSync(dir, { recursive: true })
     const existingRaw = safeRead(join(dir, EVENTS_FILE)) ?? ''
     const prefix =
       existingRaw === '' || existingRaw.endsWith('\n') ? existingRaw : `${existingRaw}\n`

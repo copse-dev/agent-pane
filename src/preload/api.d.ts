@@ -36,6 +36,7 @@ import type {
   ThreadCheckoutPreview,
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
+import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
 
 export type { DetectedAcpAgent }
 
@@ -71,6 +72,12 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+  }
+  security: {
+    getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    enableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    disableGuardedYolo: (threadId: string) => Promise<GuardedYoloState>
+    onGuardedYoloChanged: (handler: (state: GuardedYoloState) => void) => () => void
   }
   fs: {
     readFile: (path: string) => Promise<string>
@@ -250,6 +257,17 @@ export interface ApiClient {
       patch: Partial<Omit<import('@shared/types').Thread, 'messages'>>,
     ) => Promise<void>
     delete: (projectId: string, threadId: string) => Promise<void>
+    /**
+     * Seed a fork's provider-format history from the thread it branched off.
+     * Omit `throughMessageId` (or pass the source's last message id) to copy the
+     * sidecar verbatim; an earlier id rebuilds history from the transcript slice.
+     */
+    fork: (
+      projectId: string,
+      sourceThreadId: string,
+      targetThreadId: string,
+      throughMessageId?: string,
+    ) => Promise<import('@shared/types').ForkedHistoryResult>
     catalog: (
       projectId: string,
       query?: string,

@@ -73,6 +73,9 @@ import {
   sendQueuedMessageNow,
   updateQueuedMessageText,
 } from '../controller/message-queue.ts'
+import { forkThread } from '../controller/fork-thread.ts'
+import { lastResendableMessage, resendLastMessage } from '../controller/resend-message.ts'
+import { showToast } from './toast.ts'
 import type { QueuedUserMessage } from '@shared/types'
 
 function statusIcon(status: ToolCall['status']): SVGSVGElement {
@@ -1571,6 +1574,9 @@ export function mountConversation(
     if (msg.role === 'assistant' && msg.content.trim()) {
       attachCopyButton(body, msgId, store)
     }
+    // Every settled prompt can start a fork of the conversation as it stood at
+    // that point; only the latest one can be resent (see syncUserActions).
+    if (msg.role === 'user') body.append(buildUserActions(threadId, msgId))
 
     // Keep the trailing comparison card (if any) last in the transcript: a new
     // message belongs above a comparison produced for an earlier turn. Review
@@ -1597,7 +1603,72 @@ export function mountConversation(
     // earlier boundaries when the second model arrives. (Best-value auto-picks
     // show in the footer picker.)
     syncModelLabels()
+    syncUserActions()
     scrollToBottom(msg.role === 'user')
+  }
+
+  /**
+   * Per-prompt actions. **Fork from here** branches the conversation as it stood
+   * at that message into a new thread; **Resend** submits the prompt again as a
+   * fresh turn. Both are hover affordances on the user bubble, matching the
+   * assistant bubble's Copy.
+   */
+  function buildUserActions(threadId: string, msgId: string): HTMLElement {
+    const fork = el(
+      'button',
+      { class: 'msg-action msg-fork', type: 'button', title: 'Fork the thread from this message' },
+      'Fork from here',
+    )
+    fork.addEventListener('click', () => {
+      fork.disabled = true
+      void runFork(threadId, msgId).finally(() => (fork.disabled = false))
+    })
+    const resend = el(
+      'button',
+      { class: 'msg-action msg-resend', type: 'button', title: 'Send this prompt again' },
+      'Resend',
+    )
+    resend.addEventListener('click', () => {
+      runResend(threadId)
+    })
+    return el('div', { class: 'msg-actions' }, fork, resend)
+  }
+
+  /**
+   * Only the prompt a resend would actually repeat — the thread's last settled
+   * one — offers the button; the rest keep Fork alone. Re-run after every append
+   * so the affordance moves down with the conversation.
+   */
+  function syncUserActions(): void {
+    const thread = getActiveThread(store)
+    const resendableId = thread ? lastResendableMessage(thread)?.id : undefined
+    list.querySelectorAll<HTMLButtonElement>('.msg-resend').forEach((button) => {
+      const owner = button.closest<HTMLElement>('[data-message-id]')?.dataset['messageId']
+      button.hidden = owner !== resendableId
+    })
+  }
+
+  async function runFork(threadId: string, msgId: string): Promise<void> {
+    const result = await forkThread(store, api, threadId, { throughMessageId: msgId })
+    if (!result) {
+      showToast('Nothing to fork from this message.', { variant: 'error' })
+      return
+    }
+    showToast(
+      result.droppedAttachments
+        ? 'Forked into a new thread. Attached file contents were not carried over.'
+        : 'Forked into a new thread.',
+    )
+  }
+
+  function runResend(threadId: string): void {
+    const result = resendLastMessage(store, api, threadId)
+    if (!result) return
+    if (result.droppedAttachments) {
+      showToast('Resent without the original attachments.')
+    } else if (result.queued) {
+      showToast('Resend queued behind the running turn.')
+    }
   }
 
   /**

@@ -1,5 +1,5 @@
 import * as esbuild from 'esbuild'
-import { execSync } from 'node:child_process'
+import { execSync, spawnSync } from 'node:child_process'
 import { accessSync, cpSync, copyFileSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
@@ -20,6 +20,19 @@ function fetchBundledCursorSkillsForBuild(): void {
     execSync('node scripts/fetch-bundled-cursor-skills.mts', { stdio: 'inherit' })
   } catch {
     console.warn('[build] bundled Cursor skills fetch failed — continuing without bundled skills')
+  }
+}
+
+/**
+ * Syntax-check a bundle that is exec'd as a standalone script rather than
+ * required by another bundle. Nothing else loads these at build or test time,
+ * so a malformed emit (see the askpass hashbang note below) otherwise only
+ * surfaces as a runtime crash in a shipped app.
+ */
+function assertParses(outfile: string): void {
+  const check = spawnSync(process.execPath, ['--check', outfile], { encoding: 'utf8' })
+  if (check.status !== 0) {
+    throw new Error(`[build] ${outfile} is not parseable by Node:\n${check.stderr.trim()}`)
   }
 }
 
@@ -68,12 +81,17 @@ if (!isDemo) {
     entryPoints: ['src/main/project-sandbox/sandbox-fs-worker.ts'],
     outfile: 'dist/main/sandbox-fs-worker.js',
   })
+  // No `banner` here: askpass-helper.ts already starts with `#!/usr/bin/env node`
+  // and esbuild preserves a source hashbang verbatim. Adding the banner too put a
+  // second `#!…` on line 2 of the bundle, where it is not a hashbang but a syntax
+  // error — every SSH password/passphrase/host-key prompt died in the helper, so
+  // OpenSSH silently skipped the prompt and burned through auth attempts instead.
   await esbuild.build({
     ...nodeOpts,
     entryPoints: ['src/main/services/ssh-workspace/askpass-helper.ts'],
     outfile: 'dist/main/ssh-askpass-helper.js',
-    banner: { js: '#!/usr/bin/env node' },
   })
+  assertParses('dist/main/ssh-askpass-helper.js')
   await esbuild.build({
     ...nodeOpts,
     entryPoints: ['src/preload/index.ts'],
