@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -69,16 +70,19 @@ describe('roadmap items in the quick-open palette (Cmd/Ctrl+P)', () => {
     )
 
     // Only the quokka item matches; it renders under the "Roadmap" section
-    // header with its status badge. Both elements uppercase via CSS
-    // text-transform and toHaveText compares rendered text, so ignore case.
+    // header. Default `ready` stays silent (no status chip) — same rule as the
+    // Roadmap list.
     const section = await $('.file-search-section')
     await expect(section).toHaveText('roadmap', { ignoreCase: true })
     const rows = await $$('.file-search-roadmap-item')
     expect(rows.length).toBe(1)
     const name = await $('.file-search-roadmap-item .file-search-name')
     await expect(name).toHaveText('Polish the quokka onboarding flow')
-    const badge = await $('.file-search-roadmap-item .roadmap-status-badge')
-    await expect(badge).toHaveText('ready', { ignoreCase: true })
+    assert.equal(
+      await $('.file-search-roadmap-item .roadmap-status-badge').isExisting(),
+      false,
+      'ready items omit the status chip in the palette',
+    )
 
     await saveAppScreenshot('roadmap-search-palette.png')
 
