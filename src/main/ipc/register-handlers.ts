@@ -52,7 +52,6 @@ import {
   securitySettingsSchema,
 } from '../services/storage/settings-writable.ts'
 import { storedExtraProviderSchema } from '../services/storage/settings-schema.ts'
-import { migrateApprovedProviderHosts } from '../services/providers/approved-provider-hosts.ts'
 import {
   getResolvedExtraProviders,
   saveExtraProvider,
@@ -241,12 +240,10 @@ const SKILLS_RELOAD_KEYS = new Set([
 ])
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
-  // Issue #438: persist grandfathered custom-provider hosts once so Settings
-  // and runtime gates share the same allowlist after upgrade.
-  void migrateApprovedProviderHosts()
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
-  // pack is enabled (getPackService() has already applied the persisted disable
-  // set to the shared registry). Off by default, so a no-op for fresh installs.
+  // pack is enabled. The pack ships off (`defaultEnabled: false`) and
+  // getPackService() has already layered the user's explicit choices on top, so
+  // this is a no-op unless they opted in.
   syncDevtoolsShortcut(win)
   const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
