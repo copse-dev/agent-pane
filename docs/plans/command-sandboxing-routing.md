@@ -131,22 +131,45 @@ command list.
   particular forms, which is evidence the class is hard, not evidence we have won.
 - What the analyzer does cover: it resolves home/workspace paths and symlinks, splits
   compound commands, unwraps pass-through wrappers (`env`, `sudo`, `timeout`, `nice`,
-  `xargs`, …), inspects command/process substitutions, interpreter bodies, and
-  readable script files, across common Unix, macOS, PowerShell, and Windows forms.
-  Wrapper unwrapping currently only skips flag-shaped arguments, so a wrapper option
-  that takes a _separate_ value (`sudo -u root …`, `nice -n 10 …`) still hides the real
-  argv and degrades a hard deny to a prompt.
+  `xargs`, …) including options whose value is a separate argument (`sudo -u root …`),
+  and inspects command/process substitutions (`$(…)`, backticks), `eval` bodies,
+  `find -exec` payloads, interpreter bodies, and readable script files, across common
+  Unix, macOS, PowerShell, and Windows forms.
+
   Hard-denied: erasure of the filesystem root, home, workspace, or a system tree
-  (`/etc`, `/usr`, `/System`, `C:\Windows`, …); the same targets reached by recursive
-  `chown`/`chmod`/`chgrp` or by relocation (`mv`), which destroy access without
-  deleting anything; raw-device destruction; host shutdown and fork bombs; and
-  attempts to rewrite the permission surface. Prompted: bounded deletion, `dd`
-  overwrite of an existing path, forced symlink replacement, `crontab -r`, destructive
-  version-control operations, opaque scripts, dynamic destructive paths, and
-  resource-exhaustion signals. "Destructive version-control operations" means the four
-  patterns in `DANGEROUS_IN_SANDBOX_PATTERNS` (`git clean -fdx`, `git reset --hard`,
-  `git checkout -- .`, and `rm -rf`) — `git push --force`, `git branch -D`,
-  `git reflog expire`, and `git update-ref -d` are not yet modelled.
+  (`/etc`, `/usr`, `/System`, `C:\Windows`, …) — with or without `-f`, since `rm -r`
+  deletes just the same; the same targets reached by recursive
+  `chown`/`chmod`/`chgrp`/`chattr`/`takeown` or by relocation (`mv`, `rsync --delete`),
+  which destroy access without deleting anything; raw-device destruction, including
+  verbs that name no `/dev` node in a recognised form (`wipefs`, `blkdiscard`,
+  `sgdisk --zap-all`, `cryptsetup luksFormat`); truncating redirects into a system
+  tree and any write to a host credential file (`/etc/sudoers`, `/etc/shadow`);
+  destruction of backups and recovery state (`vssadmin delete shadows`, `tmutil
+delete`, `journalctl --vacuum-*`, `bcdedit … recoveryenabled No`); disabling host
+  security controls (`csrutil disable`, `setenforce 0`, `Set-MpPreference -Disable*`);
+  account and registry-hive removal; signals that take out the whole session
+  (`kill -9 -1`, `pkill -u`); host shutdown and fork bombs; and attempts to rewrite
+  the permission surface.
+
+  Prompted: bounded deletion, `dd` overwrite of an existing path, forced symlink
+  replacement, `crontab -r`, writes landing on credential/startup paths (`~/.ssh`,
+  `~/.bashrc`, …) whether by redirect, `tee`, `cp`, or `install`, relocation of a
+  workspace tree out of the workspace, destructive version-control operations
+  (`git push --force`, `git branch -D`, `git reflog expire`, `git update-ref -d`,
+  `git filter-branch`, `git stash clear`, `git checkout .`, `git gc --prune=now`),
+  interpreter deletion whose target cannot be resolved, destructive targets a
+  different tool substitutes at run time (`xargs -I{}`), opaque scripts, dynamic
+  destructive paths, and resource-exhaustion signals.
+
+  Explicitly **not** modelled, and left as open scope rather than oversight: anything
+  whose blast radius is remote rather than local — `aws s3 rm --recursive`,
+  `terraform destroy`, `kubectl delete namespace`, `gh repo delete`, `dropdb`,
+  `redis-cli FLUSHALL` — and exfiltration of local secrets over the network, which
+  this mode deliberately permits (credential scrubbing covers the child environment,
+  not files on disk). Also unmodelled: system package removal (`apt-get remove
+--purge libc6`), which can brick a host but whose safe forms are too common to
+  prompt on.
+
 - Lexing, wrapper unwrapping, and the interpreter/script/inline-flag tables are shared
   with the other two analyzers via `shell-argv.ts`. The wrapper list it exposes for
   _routing_ is deliberately narrower than the one for harm analysis: seeing through

@@ -60,6 +60,12 @@ interface WrapperSpec {
   assignments?: boolean
   /** Also consume a bare numeric operand (`timeout 5 cmd`). */
   numeric?: boolean
+  /**
+   * Options whose value is a *separate* argument. Without these the value itself
+   * becomes argv[0]: `sudo -u root rm -rf /` left `root` as the head, so the real
+   * `rm -rf /` was never inspected and a hard deny degraded to a bare prompt.
+   */
+  valueFlags?: ReadonlySet<string>
 }
 
 /**
@@ -68,17 +74,59 @@ interface WrapperSpec {
  * as `rm -rf ~` does, and a gate that only sees `timeout` sees nothing.
  */
 export const PASS_THROUGH_WRAPPERS: ReadonlyMap<string, WrapperSpec> = new Map([
-  ['env', { assignments: true }],
-  ['timeout', { numeric: true }],
-  ['stdbuf', { numeric: true }],
-  ['xargs', {}],
-  ['time', {}],
-  ['nice', {}],
-  ['ionice', {}],
+  ['env', { assignments: true, valueFlags: new Set(['-u', '--unset', '-C', '--chdir']) }],
+  ['timeout', { numeric: true, valueFlags: new Set(['-s', '--signal', '-k', '--kill-after']) }],
+  ['stdbuf', { numeric: true, valueFlags: new Set(['-i', '-o', '-e']) }],
+  [
+    'xargs',
+    {
+      valueFlags: new Set([
+        '-n',
+        '-L',
+        '-I',
+        '-i',
+        '-P',
+        '-s',
+        '-E',
+        '-d',
+        '-a',
+        '--max-args',
+        '--max-procs',
+        '--replace',
+        '--delimiter',
+      ]),
+    },
+  ],
+  ['time', { valueFlags: new Set(['-f', '--format', '-o', '--output']) }],
+  ['nice', { valueFlags: new Set(['-n', '--adjustment']) }],
+  ['ionice', { valueFlags: new Set(['-c', '--class', '-n', '--classdata', '-p', '--pid']) }],
   ['command', {}],
   ['builtin', {}],
   ['nohup', {}],
-  ['sudo', {}],
+  [
+    'sudo',
+    {
+      valueFlags: new Set([
+        '-u',
+        '--user',
+        '-g',
+        '--group',
+        '-U',
+        '-p',
+        '--prompt',
+        '-C',
+        '-h',
+        '--host',
+        '-r',
+        '--role',
+        '-t',
+        '--type',
+        '-D',
+        '--chdir',
+      ]),
+    },
+  ],
+  ['doas', { valueFlags: new Set(['-u', '-C']) }],
 ])
 
 /**
@@ -127,6 +175,9 @@ export function unwrapWrappers(argv: readonly string[]): string[] {
         (spec.numeric === true && /^\d/.test(next))
       if (!consumable) break
       current.shift()
+      // `-u root` — the value is a separate argument, so drop it too. An attached
+      // value (`-I{}`, `-n1`) was already consumed with the flag above.
+      if (spec.valueFlags?.has(next) === true) current.shift()
     }
   }
 }
@@ -170,6 +221,18 @@ function rawTokens(segment: string): string[] {
  * see a segment the shell would never execute as one, which costs at most an
  * extra prompt.
  */
+/** `>` truncates its target to zero length before writing; `>>` appends. */
+const WRITE_REDIRECTS = new Set(['>', '>>'])
+
+/**
+ * Every redirect operator, write or read. The token after any of these names a
+ * file or file descriptor, never a command, so it must not become a segment head:
+ * `tee out.txt < src/in.txt` was reporting "script contents could not be
+ * inspected safely: src/in.txt" because `src/in.txt` looked like a relative
+ * executable.
+ */
+const REDIRECTS = new Set([...WRITE_REDIRECTS, '<', '<<', '<<<', '>&', '<&', '&>', '>|'])
+
 export function shellSegments(command: string): string[][] {
   const segments: string[][] = []
 
@@ -181,12 +244,22 @@ export function shellSegments(command: string): string[][] {
   }
   if (tokens) {
     let current: string[] = []
+    let awaitingRedirectTarget = false
     const flush = (): void => {
       if (current.length > 0) segments.push(current)
       current = []
     }
     for (const token of tokens) {
       if (typeof token === 'string') {
+        // The word after `>` is a file the shell opens, not a command to run.
+        // Treating it as a segment head made `echo x >> ~/.bashrc` report
+        // "script contents could not be inspected safely: ~/.bashrc" — the gate
+        // thought the redirect target was an executable. Redirect targets are
+        // inspected as writes, via `shellRedirects`.
+        if (awaitingRedirectTarget) {
+          awaitingRedirectTarget = false
+          continue
+        }
         current.push(token)
         continue
       }
@@ -195,6 +268,10 @@ export function shellSegments(command: string): string[][] {
       // gate looking at a bare `rm -rf`.
       if ('op' in token && token.op === 'glob') {
         current.push(token.pattern)
+        continue
+      }
+      if ('op' in token && REDIRECTS.has(token.op)) {
+        awaitingRedirectTarget = true
         continue
       }
       flush()
@@ -208,4 +285,47 @@ export function shellSegments(command: string): string[][] {
   }
 
   return segments
+}
+
+export interface ShellRedirect {
+  target: string
+  /** True for `>` — the file's previous contents are gone whether or not the write succeeds. */
+  truncates: boolean
+}
+
+/**
+ * Files a command line opens for writing via redirection.
+ *
+ * A redirect is the plainest destructive verb the shell has and it has no command
+ * name at all, so no argv-based inspector can see it: `echo "" > /etc/passwd`
+ * erases the password file with nothing in argv but `echo`. `>&` (file-descriptor
+ * duplication, as in `2>&1`) is deliberately excluded — it writes no file.
+ */
+export function shellRedirects(command: string): ShellRedirect[] {
+  let tokens: ReturnType<typeof parseShellCommand>
+  try {
+    tokens = parseShellCommand(command)
+  } catch {
+    return []
+  }
+  const redirects: ShellRedirect[] = []
+  let pending: boolean | null = null
+  for (const token of tokens) {
+    if (typeof token === 'string') {
+      if (pending !== null) {
+        redirects.push({ target: token, truncates: pending })
+        pending = null
+      }
+      continue
+    }
+    if ('op' in token && token.op === 'glob') {
+      if (pending !== null) {
+        redirects.push({ target: token.pattern, truncates: pending })
+        pending = null
+      }
+      continue
+    }
+    pending = 'op' in token && WRITE_REDIRECTS.has(token.op) ? token.op === '>' : null
+  }
+  return redirects
 }
