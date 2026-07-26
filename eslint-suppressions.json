@@ -902,11 +902,6 @@
       "count": 1
     }
   },
-  "src/main/services/thread-migration.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
   "src/main/services/thread-store.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 5
