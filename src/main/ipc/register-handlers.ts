@@ -987,15 +987,15 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         ? 'The project sandbox remains in use where possible, but external commands may run unsandboxed.'
         : 'No OS sandbox is active on this platform, so commands run with your full user permissions.'
     const { approved } = await requestApproval({
-      title: 'Enable Guarded YOLO for the next turn?',
+      title: 'Enable Guarded YOLO for this thread?',
       body: [
-        'Routine shell commands, including network and outside-workspace commands, will run without approval for this thread’s next agent turn.',
+        'Routine shell commands, including network and outside-workspace commands, will run without approval in this thread.',
         '',
         containment,
         '',
         'A deterministic host-owned checker will still ask about bounded destructive work and permanently block obvious catastrophic commands. It reduces obvious harm, but it is not a complete security boundary and cannot understand every script or obfuscation.',
         '',
-        'The grant expires after the next agent turn, after 15 minutes unused, or when the app restarts.',
+        'Guarded YOLO stays enabled for this thread until you disable it or restart the app.',
       ].join('\n'),
       type: 'shell',
       allowRemember: false,
