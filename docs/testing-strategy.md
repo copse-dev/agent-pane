@@ -160,6 +160,43 @@ branch's committed version stands, and the PR comment shows a base-vs-branch
 comparison instead. Add the `update-screenshots` label to explicitly regenerate
 and take CI's render (`scripts/filter-screenshots.mts` implements the policy).
 
+## Where each tier runs: `develop` and `main`
+
+`develop` is the default branch and the integration target. `main` only ever
+receives promotion PRs from `develop`, so it stays in a state a release can be
+cut from.
+
+| Event                                     | Tier                                          |
+| ----------------------------------------- | --------------------------------------------- |
+| PR into `develop` (the normal case)       | light — precheck, check, build (no e2e/bench) |
+| Push to `develop` (a merge landed)        | light                                         |
+| PR from `develop` into `main` (promotion) | **full** — adds e2e (8 shards) and bench      |
+| Push to `main` (a promotion landed)       | **full**                                      |
+| Nightly `schedule`, release tags          | **full**, on GitHub-hosted runners            |
+
+The point is that e2e and bench are paid once per _promotion_ rather than once
+per PR. At ~20 merges a day that is the difference between ~20 heavy runs and a
+handful.
+
+Two escape hatches on a `develop`-targeted PR, both labels:
+
+- `ci-full` — run the whole heavy tier now, for a change that genuinely needs
+  the signal before it merges (also forces the tier on a draft).
+- `update-screenshots` — run e2e specifically, because the screenshot commit is
+  produced by the e2e run. Without this the label would be inert on a
+  `develop` PR.
+
+**What this costs.** GitHub's merge queue would bisect a failing batch
+automatically; a red promotion names a batch, not a commit. Keep promotions
+frequent enough that the batch stays small, and read the failing e2e spec name
+first — it usually identifies its own owner. There is no merge queue to fall
+back on: it requires GitHub Enterprise Cloud for private repositories and this
+org is on Team.
+
+**Hotfixes.** A commit pushed straight to `main` must be merged back into
+`develop` immediately, or the branches drift and the next promotion carries a
+spurious conflict.
+
 ## Quick rule of thumb
 
 | Question the test answers              | Tier             |
