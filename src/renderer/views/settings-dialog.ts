@@ -54,7 +54,7 @@ import {
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
 import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
-import { DEVELOPER_MODE_SETTING, LEGACY_DEVTOOLS_SHORTCUT_SETTING } from '@shared/developer-mode.ts'
+import { DEVELOPER_MODE_SETTING } from '@shared/developer-mode.ts'
 
 export type SettingsSection =
   | 'general'
@@ -219,10 +219,7 @@ async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<
     if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) {
       throw new Error(`Settings dialog template is missing ${JSON.stringify(field.name)}`)
     }
-    let saved = await api.settings.get(field.name)
-    if (field.name === DEVELOPER_MODE_SETTING && typeof saved !== 'boolean') {
-      saved = await api.settings.get(LEGACY_DEVTOOLS_SHORTCUT_SETTING)
-    }
+    const saved = await api.settings.get(field.name)
     if (field.kind === 'checkbox') {
       if (!(input instanceof HTMLInputElement)) {
         throw new Error(`Settings field ${JSON.stringify(field.name)} must be an input`)
