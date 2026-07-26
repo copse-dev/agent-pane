@@ -10,9 +10,8 @@ describe('model comparison approval', () => {
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    // P5: `migrateP5Enablement()` keeps the experimental `compare_models` tool
-    // off by default (it was previously opt-in), so this flow must seed the
-    // legacy opt-in to enable the `copse.model-comparison` pack.
+    // The experimental `compare_models` tool ships off, so this flow must seed
+    // the `copse.model-comparison` pack on.
     seedEmptyProject(process.cwd(), 'e2e-model-compare-approval-project', {
       subagentsEnabled: false,
       model: 'claude-sonnet-4-6',
