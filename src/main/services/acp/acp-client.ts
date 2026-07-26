@@ -36,6 +36,7 @@ import type {
 } from '@shared/types/acp.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
 import { acpAgentSandboxOverlay, ensureWorkspaceTmpDir } from '../../project-sandbox/config.ts'
@@ -423,6 +424,11 @@ export type AcpTransportFactory = (
 async function spawnTransport(
   config: AcpAgentSpawnConfig,
 ): Promise<{ stream: Stream; dispose: () => void }> {
+  // When the active project is an SSH workspace and the user opted in, spawn the
+  // agent on the remote host (stdio over SSH) instead of locally — see
+  // docs/plans/acp-over-ssh.md. Otherwise fall through to the local spawn.
+  const sshTarget = acpSshTarget(config.cwd)
+  if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget)
   const child = await spawnAcpAgentProcess(config)
   if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>

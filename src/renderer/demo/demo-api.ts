@@ -117,7 +117,6 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       onApprovalRequest: subscribe,
       onAskUserRequest: subscribe,
       onShellOutput: subscribe,
-      onUsage: subscribe,
       onRefreshContextEstimate: subscribe,
       onHookQueueMessage: subscribe,
     },
@@ -211,6 +210,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
           minimum: 100_000,
           bestAvailableContext: 200_000,
         }),
+      bestValueDefault: () => resolved('lmstudio:qwen/qwen3.6-35b-a3b'),
     },
     intellect: {
       liveModels: () => resolved({ ok: false, models: [], error: 'Unavailable in demo' }),

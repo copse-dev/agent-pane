@@ -4,9 +4,11 @@ import { describe, it } from 'node:test'
 import { createStore } from '@shared/store/store.ts'
 import type { ProviderPlanResult } from '@copse/plan-usage'
 import type { PlanWorthItPayload } from '@shared/usage/plan-worth-it.ts'
+import type { ModelUsageBreakdown } from '@shared/usage/aggregate-usage.ts'
 import {
   claudeReasonNeedsLogin,
   createClaudeSignInHandler,
+  renderModelTable,
   renderPlanProvider,
   renderPlanWorthItSection,
 } from './usage-section.ts'
@@ -112,6 +114,53 @@ describe('createClaudeSignInHandler', () => {
 
   it('returns null without a store to route through', () => {
     assert.equal(createClaudeSignInHandler(undefined), null)
+  })
+})
+
+describe('renderModelTable alignment', () => {
+  function row(model: string, over: Partial<ModelUsageBreakdown> = {}): ModelUsageBreakdown {
+    return {
+      model,
+      inputTokens: 1000,
+      outputTokens: 200,
+      estimatedCostUsd: 0.5,
+      isLocal: false,
+      ...over,
+    }
+  }
+
+  /** The `<col>` class sequence that defines a table's shared column grid. */
+  function colTemplate(table: Element): string[] {
+    return [...table.querySelectorAll('colgroup > col')].map((c) => c.className)
+  }
+
+  it('gives the Cloud and Local tables an identical column template so they align', () => {
+    const host = document.createElement('div')
+    // Deliberately different content widths between the two tables — under a
+    // shared fixed template the columns must still line up regardless.
+    renderModelTable(host, 'Cloud models', [row('scaleway:qwen3-235b-a22b-instruct-2507')], 'none')
+    renderModelTable(
+      host,
+      'Local models (free)',
+      [row('lmstudio:q', { isLocal: true, estimatedCostUsd: 0 })],
+      'none',
+    )
+    const [cloud, local] = host.querySelectorAll('table.usage-table')
+    assert.ok(cloud && local, 'expected both tables to render')
+    const cloudCols = colTemplate(cloud)
+    // One model column plus five numeric columns, in the same order for both.
+    assert.deepEqual(cloudCols, [
+      'usage-col-model',
+      'usage-col-num',
+      'usage-col-num',
+      'usage-col-num',
+      'usage-col-num',
+      'usage-col-num',
+    ])
+    assert.deepEqual(colTemplate(local), cloudCols)
+    // The column template must have one <col> per header cell, or the widths
+    // would map to the wrong columns.
+    assert.equal(cloud.querySelectorAll('thead th').length, cloudCols.length)
   })
 })
 
