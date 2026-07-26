@@ -6,33 +6,59 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import {
-  scoreDoctrineCompliance,
-  type DoctrineRuleId,
-  type DoctrineTranscript,
-} from './doctrine-compliance.ts'
+import { z } from 'zod'
+import { DOCTRINE_RULE_IDS, scoreDoctrineCompliance } from './doctrine-compliance.ts'
 
-interface CorpusCase {
-  id: string
-  description: string
-  expectPass: boolean
-  expectViolations?: DoctrineRuleId[]
-  transcript: DoctrineTranscript
-}
-
-interface DoctrineCorpus {
-  cases: CorpusCase[]
-}
+const doctrineRuleIdSchema = z.enum(DOCTRINE_RULE_IDS)
+const doctrineTranscriptSchema = z.object({
+  userMessage: z.string(),
+  userIntent: z.enum(['question', 'request', 'unknown']).optional(),
+  inScopePaths: z.array(z.string()).optional(),
+  toolCalls: z.array(
+    z.object({
+      name: z.string(),
+      args: z.record(z.string(), z.unknown()).optional(),
+      result: z.string().optional(),
+      status: z.string().optional(),
+    }),
+  ),
+  finalMessage: z.string(),
+})
+const doctrineCorpusSchema = z.object({
+  cases: z.array(
+    z.object({
+      id: z.string(),
+      description: z.string(),
+      expectPass: z.boolean(),
+      expectViolations: z.array(doctrineRuleIdSchema).optional(),
+      transcript: doctrineTranscriptSchema,
+    }),
+  ),
+})
 
 const corpusPath = join(process.cwd(), 'tests/fixtures/doctrine-compliance-corpus.json')
-const corpus = JSON.parse(readFileSync(corpusPath, 'utf8')) as DoctrineCorpus
+const corpus = doctrineCorpusSchema.parse(JSON.parse(readFileSync(corpusPath, 'utf8')))
 
 describe('doctrine compliance corpus', () => {
   assert.ok(corpus.cases.length >= 8, 'corpus should cover compliant and violation arms')
 
   for (const c of corpus.cases) {
     it(`${c.id} — ${c.description}`, () => {
-      const report = scoreDoctrineCompliance(c.transcript)
+      const transcript = {
+        userMessage: c.transcript.userMessage,
+        toolCalls: c.transcript.toolCalls.map((call) => ({
+          name: call.name,
+          ...(call.args !== undefined ? { args: call.args } : {}),
+          ...(call.result !== undefined ? { result: call.result } : {}),
+          ...(call.status !== undefined ? { status: call.status } : {}),
+        })),
+        finalMessage: c.transcript.finalMessage,
+        ...(c.transcript.userIntent !== undefined ? { userIntent: c.transcript.userIntent } : {}),
+        ...(c.transcript.inScopePaths !== undefined
+          ? { inScopePaths: c.transcript.inScopePaths }
+          : {}),
+      }
+      const report = scoreDoctrineCompliance(transcript)
       if (c.expectPass) {
         assert.equal(report.pass, true, `violations: ${report.violations.join(', ')}`)
         assert.deepEqual(report.violations, [])

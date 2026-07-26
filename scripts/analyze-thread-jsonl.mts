@@ -56,6 +56,7 @@ type JsonlRecord = {
         name: string
         status?: string | undefined
         args?: Record<string, unknown> | undefined
+        result?: unknown
         subagent?:
           | {
               prompt?: string | undefined
@@ -85,29 +86,27 @@ const nestedToolCallSchema = z.object({
   name: z.string(),
   args: z.record(z.string(), z.unknown()).optional(),
 })
+const toolCallSchema = z.object({
+  id: z.string().optional(),
+  name: z.string(),
+  status: z.string().optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
+  result: z.unknown().optional(),
+  subagent: z
+    .object({
+      prompt: z.string().optional(),
+      usage: usageSchema.optional(),
+      messages: z
+        .array(z.object({ toolCalls: z.array(nestedToolCallSchema).optional() }))
+        .optional(),
+    })
+    .optional(),
+})
 const jsonlRecordSchema: z.ZodType<JsonlRecord> = z.object({
   type: z.string(),
   role: z.string().optional(),
   content: z.string().optional(),
-  toolCalls: z
-    .array(
-      z.object({
-        id: z.string().optional(),
-        name: z.string(),
-        status: z.string().optional(),
-        args: z.record(z.string(), z.unknown()).optional(),
-        subagent: z
-          .object({
-            prompt: z.string().optional(),
-            usage: usageSchema.optional(),
-            messages: z
-              .array(z.object({ toolCalls: z.array(nestedToolCallSchema).optional() }))
-              .optional(),
-          })
-          .optional(),
-      }),
-    )
-    .optional(),
+  toolCalls: z.array(toolCallSchema).optional(),
   usage: usageSchema.optional(),
   title: z.string().optional(),
 })
@@ -127,6 +126,9 @@ const scenarioSchema: z.ZodType<Scenario> = z.object({
       maxInputTokens: z.number().optional(),
       requireUpdateTodos: z.boolean().optional(),
       forbidParallelExploreTurn1: z.boolean().optional(),
+      requireDoctrineCompliance: z.boolean().optional(),
+      userIntent: z.enum(['question', 'request', 'unknown']).optional(),
+      inScopePaths: z.array(z.string()).optional(),
     })
     .optional(),
 })
@@ -229,7 +231,7 @@ function analyze(path: string, scenario?: Scenario): void {
       const doctrineCall: DoctrineToolCall = { name: tc.name }
       if (tc.args) doctrineCall.args = tc.args
       if (tc.status) doctrineCall.status = tc.status
-      const resultText = (tc as { result?: unknown }).result
+      const resultText = tc.result
       if (typeof resultText === 'string') doctrineCall.result = resultText
       doctrineToolCalls.push(doctrineCall)
     }
