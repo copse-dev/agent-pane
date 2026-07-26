@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   DEFAULT_STREAM_MAX_ATTEMPTS,
+  isImageUnsupportedError,
   isRetryableStreamError,
   streamRetryDelayMs,
   sleepMs,
@@ -210,5 +211,36 @@ describe('yieldStreamWithRetry', () => {
 
   it('defaults to DEFAULT_STREAM_MAX_ATTEMPTS', () => {
     assert.equal(DEFAULT_STREAM_MAX_ATTEMPTS, 4)
+  })
+})
+
+describe('isImageUnsupportedError', () => {
+  it('matches LM Studio rejecting an image payload', () => {
+    const err = Object.assign(new Error("'url' field must be a base64 encoded image."), {
+      status: 400,
+    })
+    assert.equal(isImageUnsupportedError(err), true)
+  })
+
+  it('matches a server that says it has no vision', () => {
+    const err = Object.assign(new Error('this model does not support image input'), { status: 400 })
+    assert.equal(isImageUnsupportedError(err), true)
+  })
+
+  it('ignores unrelated 400s, so images are never stripped by mistake', () => {
+    const err = Object.assign(new Error('context length exceeded'), { status: 400 })
+    assert.equal(isImageUnsupportedError(err), false)
+  })
+
+  it('ignores retryable statuses even when the message mentions images', () => {
+    const err = Object.assign(new Error('invalid image'), { status: 500 })
+    assert.equal(isImageUnsupportedError(err), false)
+  })
+
+  it('is not treated as a plain retry — replaying it unchanged would fail again', () => {
+    const err = Object.assign(new Error("'url' field must be a base64 encoded image."), {
+      status: 400,
+    })
+    assert.equal(isRetryableStreamError(err), false)
   })
 })

@@ -68,6 +68,7 @@ import {
 } from '@shared/terminal/read-terminal.ts'
 import { readTerminalTool } from '../tools/read-terminal-tool.ts'
 import { runCheckupTool } from '../tools/checkup-tool.ts'
+import { videoFramesTool } from '../tools/video-frames-tool.ts'
 
 export function createRegistry(): ToolRegistry {
   const registry = new ToolRegistry()
@@ -182,6 +183,11 @@ export function createRegistry(): ToolRegistry {
   // approval. Live toggles route through {@link syncPiiTools} on
   // `packs:setEnabled`.
   syncPiiTools(registry)
+  // Reading a video as stills. Registered unconditionally because a video can
+  // be attached to any thread at any time, but withheld per turn from threads
+  // that have never had one (see `parentTools`) — most threads never will, and
+  // the schema is not free.
+  registry.register(videoFramesTool)
   registry.register(webSearchTool)
   registry.register(fetchUrlTool)
   registry.register(updateTodosTool)

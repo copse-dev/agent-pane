@@ -3,6 +3,7 @@ import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wi
 import { anthropicMaxOutputTokens } from './model-catalog.ts'
 import { yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { toolResultContentBlocks } from './tool-result-images.ts'
 
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
@@ -206,11 +207,16 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
       return [
         {
           role: 'user',
-          content: m.toolResults.map((tr) => ({
-            type: 'tool_result' as const,
-            tool_use_id: tr.toolCallId,
-            content: tr.result,
-          })),
+          content: m.toolResults.map((tr) => {
+            // Anthropic accepts text + image blocks inside a tool_result, so a
+            // tool's images stay attributed to the call that produced them.
+            const blocks = toolResultContentBlocks(tr)
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: tr.toolCallId,
+              content: blocks ? toAnthropicContent(blocks) : tr.result,
+            }
+          }),
         },
       ]
     }
@@ -218,9 +224,11 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
   })
 }
 
+// Narrower than ContentBlockParam on purpose: text and image are the only
+// shapes produced here, and a tool_result's content accepts exactly those two.
 function toAnthropicContent(
   content: Array<{ type: string; text?: string; dataUrl?: string }>,
-): Anthropic.ContentBlockParam[] {
+): Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
   return content.map((c) => {
     if (c.type === 'text') return { type: 'text', text: c.text ?? '' }
     if (c.type === 'image' && c.dataUrl) {

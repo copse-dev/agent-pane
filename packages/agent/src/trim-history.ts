@@ -26,6 +26,23 @@ function estimateUserContentTokens(content: UserContent): number {
   return total
 }
 
+/**
+ * Correction for images carried on a tool result. Every estimator here starts
+ * from `JSON.stringify(...).length / 4`, which prices a base64 data URL at its
+ * literal size — off by orders of magnitude for a screenshot. Swap each one for
+ * the same flat per-image estimate user-attached images already use.
+ */
+function toolResultImageAdjustment(toolResults: LLMMessage & { role: 'tool' }): number {
+  let adjustment = 0
+  for (const result of toolResults.toolResults) {
+    for (const image of result.images ?? []) {
+      adjustment -= image.dataUrl.length / 4
+      adjustment += ESTIMATED_IMAGE_TOKENS
+    }
+  }
+  return adjustment
+}
+
 function estimateSingleMessageTokens(message: LLMMessage): number {
   switch (message.role) {
     case 'system':
@@ -36,7 +53,7 @@ function estimateSingleMessageTokens(message: LLMMessage): number {
       if (typeof message.content === 'string') return message.content.length / 4
       return JSON.stringify(message.content).length / 4
     case 'tool':
-      return JSON.stringify(message.toolResults).length / 4
+      return JSON.stringify(message.toolResults).length / 4 + toolResultImageAdjustment(message)
     default:
       return 0
   }
@@ -95,6 +112,7 @@ export function estimateConversationTokens(messages: LLMMessage[]): number {
   const conv = conversationMessages(messages)
   let total = JSON.stringify(conv).length / 4
   for (const m of conv) {
+    if (m.role === 'tool') total += toolResultImageAdjustment(m)
     if (m.role === 'user' && Array.isArray(m.content)) {
       for (const block of m.content) {
         if (block.type === 'image') {
@@ -126,6 +144,7 @@ export function effectiveConversationTokens(messages: LLMMessage[]): number {
  */
 function conversationMessageEstimate(message: LLMMessage): number {
   let tokens = (JSON.stringify(message).length + 1) / 4
+  if (message.role === 'tool') tokens += toolResultImageAdjustment(message)
   if (message.role === 'user' && Array.isArray(message.content)) {
     for (const block of message.content) {
       if (block.type === 'image') {
