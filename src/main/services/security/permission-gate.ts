@@ -1,3 +1,5 @@
+import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { getAgentExecutionRoot, getAgentProjectRoot } from '../execution-root.ts'
 import {
@@ -75,6 +77,9 @@ import {
 } from '../mcp/custom-tools-registry.ts'
 import { isAgentRunReadonly } from '../agent-run-readonly.ts'
 import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
+import { assessShellHarm } from './shell-harm.ts'
+import { currentRunUsesGuardedYolo } from './guarded-yolo.ts'
+import { recordPermissionDecision } from './permission-audit.ts'
 
 export type { ShellPermissionDecision, PermissionCheck } from './permission-policy.ts'
 export { decideShellPermission } from './permission-policy.ts'
@@ -87,6 +92,8 @@ export interface ShellCommandPermissionOptions {
   networkScopeAlreadyApplies?: boolean
   executionRoot?: string | null
   projectRoot?: string | null
+  /** Raw tool command before any blocking hook rewrite. */
+  originalCommand?: string
 }
 
 export interface TerminalPermissionOptions {
@@ -139,6 +146,34 @@ async function promptShell(
     type: 'shell',
   })
   return approved
+}
+
+async function promptGuardedYoloHarm(command: string, reasons: string[]): Promise<boolean> {
+  const { approved } = await requestApproval({
+    title: 'Guarded YOLO safety check',
+    body: [
+      command,
+      '',
+      `Potential harm: ${reasons.join('; ')}`,
+      '',
+      'Guarded YOLO cannot skip this confirmation. Approve this bounded destructive action once?',
+    ].join('\n'),
+    type: 'shell',
+    allowRemember: false,
+  })
+  return approved
+}
+
+const MAX_HARM_SCRIPT_BYTES = 256 * 1024
+
+function readScriptForHarm(path: string): string | null {
+  try {
+    const stat = statSync(path)
+    if (!stat.isFile() || stat.size > MAX_HARM_SCRIPT_BYTES) return null
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
 }
 
 /** Prompt when a sandboxed command failed and may succeed unsandboxed. */
@@ -345,11 +380,14 @@ function firePermissionDecision(
   })
 }
 
-async function checkShellPermission(args: unknown): Promise<boolean> {
+async function checkShellPermission(args: unknown, originalCommand?: string): Promise<boolean> {
   const command = shellCommandFromArgs(args)
   if (!command) return promptShell('(invalid command)', ['missing command argument'], false)
 
-  return ensureShellCommandPermitted(command)
+  return ensureShellCommandPermitted(
+    command,
+    originalCommand !== undefined ? { originalCommand } : {},
+  )
 }
 
 /** Gate a raw shell command string through the same approval flow as run_shell. */
@@ -357,12 +395,13 @@ export async function ensureShellCommandPermitted(
   command: string,
   opts: ShellCommandPermissionOptions = {},
 ): Promise<boolean> {
+  const guardedYolo = currentRunUsesGuardedYolo(getActiveRunThread())
   // ASRT's network allowlist is process-global. While an ACP agent or a
   // port-binding background task has widened it, an otherwise-contained shell
   // command could inherit that egress. Suspend every auto-run path — including
   // explicit trusted-command routing — until the scope releases. Manual approval
   // is still available for deliberate overlapping work. (#803)
-  if (isSandboxNetworkScopeActive() && !opts.networkScopeAlreadyApplies) {
+  if (!guardedYolo && isSandboxNetworkScopeActive() && !opts.networkScopeAlreadyApplies) {
     return promptShell(
       command,
       ['sandbox network access is temporarily widened for another process'],
@@ -376,16 +415,26 @@ export async function ensureShellCommandPermitted(
   // (e.g. xcodebuild). routeShellCommand internally requires auto-run to be on
   // AND the workspace to be trusted, and never waives analysis for an untrusted
   // co-segment, so this can only fire for a genuinely safe command line.
-  if (routeShellCommand(command).outcome === 'allow') return true
+  if (!guardedYolo && routeShellCommand(command).outcome === 'allow') return true
 
   const autoRun = opts.autoRun ?? getSetting<boolean>('autoRunSandboxCommands', true)
   const workspaceRoot = opts.executionRoot ?? getAgentExecutionRoot()
   const sandboxEnabled = opts.sandboxEnabled ?? isProjectSandboxEnabled()
+  const harmDecision = guardedYolo
+    ? assessShellHarm(command, {
+        workspaceRoot,
+        homeDir: homedir(),
+        canonicalizePath: realpathSync.native,
+        readScript: readScriptForHarm,
+      })
+    : undefined
   const decision = decideShellPermission(command, {
     workspaceRoot,
     sandboxEnabled,
     autoRun,
-    classification: sandboxEnabled ? null : await classifyShellScope(command),
+    classification: sandboxEnabled || guardedYolo ? null : await classifyShellScope(command),
+    mode: guardedYolo ? 'guarded-yolo' : 'standard',
+    ...(harmDecision ? { harmDecision } : {}),
     externalDenyThreshold: getSetting<number>('safetyExternalDenyThreshold', 1),
   })
 
@@ -398,15 +447,43 @@ export async function ensureShellCommandPermitted(
     ...(opts.projectRoot !== undefined ? { projectRoot: opts.projectRoot } : {}),
   })
 
-  if (decision.action === 'allow') return true
+  const outsideSandbox =
+    shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled) ||
+    (guardedYolo && sandboxEnabled && routeShellCommand(command).outcome === 'allow')
+  const auditGuardedYolo = (userResponse: 'approved' | 'declined' | 'not-required'): void => {
+    if (!guardedYolo || !harmDecision) return
+    const originalCommand = opts.originalCommand ?? command
+    recordPermissionDecision({
+      originalCommand,
+      ...(originalCommand !== command ? { effectiveCommand: command } : {}),
+      originalMode: 'guarded-yolo',
+      effectiveMode: 'guarded-yolo',
+      sandboxState: sandboxEnabled && !outsideSandbox ? 'project-sandbox' : 'unsandboxed',
+      harmDecision: harmDecision.action,
+      policyDecision: decision.action,
+      reasons: decision.reasons,
+      userResponse,
+    })
+  }
+
+  if (decision.action === 'allow') {
+    auditGuardedYolo('not-required')
+    return true
+  }
 
   // Strict-mode refusal: surface the reason to the agent rather than silently
   // returning false (which reads as a plain user rejection).
   if (decision.action === 'deny') {
-    throw new Error(`Command blocked by strict-mode safety policy: ${decision.reasons.join('; ')}`)
+    auditGuardedYolo('not-required')
+    const policy = guardedYolo ? 'Guarded YOLO harm gate' : 'strict-mode safety policy'
+    throw new Error(`Command blocked by ${policy}: ${decision.reasons.join('; ')}`)
   }
 
-  const outsideSandbox = shellRequiresOutsideSandbox(command, workspaceRoot, sandboxEnabled)
+  if (guardedYolo) {
+    const approved = await promptGuardedYoloHarm(command, decision.reasons)
+    auditGuardedYolo(approved ? 'approved' : 'declined')
+    return approved
+  }
 
   // A plain package install gets a dedicated, readable approval rather than the
   // generic external-command reason list. Only when the install is the *sole*
@@ -487,10 +564,13 @@ const PORT_BINDING_ALLOWED_ROOTS_SETTING = 'portBindingAllowedRoots'
  * binding prompts the first time per workspace, then remembers the grant — the
  * same prompt-once model as browser origins and MCP servers.
  */
-async function checkBackgroundProcessPermission(args: unknown): Promise<boolean> {
+async function checkBackgroundProcessPermission(
+  args: unknown,
+  originalCommand?: string,
+): Promise<boolean> {
   // Only a `start` action carries a command; management actions leave it empty.
   const command = backgroundCommandFromArgs(args)
-  if (command && !(await checkShellPermission(args))) return false
+  if (command && !(await checkShellPermission(args, originalCommand))) return false
 
   if (!backgroundAllowsPortBinding(args)) return true
 
@@ -689,6 +769,10 @@ async function applyToolGateHooks(check: PermissionCheck): Promise<ToolGateHookO
  * diff queue or get an explicit case here; do not rely on the default branch.
  */
 export async function ensureToolPermitted(check: PermissionCheck): Promise<boolean> {
+  const originalShellCommand =
+    check.toolName === 'run_shell' || check.toolName === 'run_background'
+      ? shellCommandFromArgs(check.args)
+      : null
   const gate = await applyToolGateHooks(check)
   if (!gate.ok) return false
 
@@ -762,11 +846,11 @@ export async function ensureToolPermitted(check: PermissionCheck): Promise<boole
   }
 
   if (toolName === 'run_shell') {
-    return checkShellPermission(args)
+    return checkShellPermission(args, originalShellCommand ?? undefined)
   }
 
   if (toolName === 'run_background') {
-    return checkBackgroundProcessPermission(args)
+    return checkBackgroundProcessPermission(args, originalShellCommand ?? undefined)
   }
 
   // Default-allow: read-only/in-process tools (and mutating tools that are
