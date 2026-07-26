@@ -24,6 +24,43 @@ describe('ci.yml workflow invariants', () => {
       'e2e job if: must require e2e_shard_total != 0 so empty matrices never evaluate',
     )
   })
+
+  it('keeps the heavy tier off `develop` so day-to-day PRs stay cheap', () => {
+    // The develop model only pays for itself if e2e/bench run once per PROMOTION
+    // rather than once per PR. Both guards are easy to lose when someone edits an
+    // unrelated clause in the same `if:`, and losing them is silent — CI simply
+    // gets expensive again. Pin both halves: no heavy tier on a `develop` push,
+    // and on a PR only when it targets `main` (or is force-labelled).
+    for (const name of ['bench', 'e2e']) {
+      const job = workflow.match(new RegExp(`^ {2}${name}:\\n(?: {4}.*\\n)+`, 'm'))?.[0]
+      assert.ok(job, `expected a \`${name}:\` job in ci.yml`)
+      assert.match(
+        job,
+        /github\.event_name != 'push' \|\| github\.ref != 'refs\/heads\/develop'/,
+        `${name} must not run on pushes to develop`,
+      )
+      assert.match(
+        job,
+        /github\.base_ref == 'main'/,
+        `${name} must only run on PRs that target main (promotion PRs)`,
+      )
+    }
+  })
+
+  it('has no merge_group trigger (queue needs Enterprise Cloud; org is on Team)', () => {
+    // Re-adding the trigger would look harmless but can never fire, and its
+    // presence previously justified `github.event_name != 'merge_group'` guards
+    // that are now dead weight in every heavy-tier `if:`.
+    assert.doesNotMatch(workflow, /^ {2}merge_group:/m)
+  })
+
+  it('runs CI on pushes to both integration branches', () => {
+    assert.match(
+      workflow,
+      /^ {4}branches: \[main, develop\]$/m,
+      'push must cover develop (where merges land) and main (where promotions land)',
+    )
+  })
 })
 
 describe('codeql.yml workflow invariants', () => {
