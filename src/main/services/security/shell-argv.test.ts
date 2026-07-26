@@ -7,6 +7,7 @@ import {
   TRUST_TRANSPARENT_WRAPPERS,
   commandName,
   inlineCodeBody,
+  shellRedirects,
   shellSegments,
   unwrapWrappers,
 } from './shell-argv.ts'
@@ -75,6 +76,22 @@ describe('unwrapWrappers', () => {
     }
   })
 
+  it('consumes a wrapper option whose value is a separate argument', () => {
+    // Only flag-shaped tokens were dropped, so `root` became argv[0] and the real
+    // command was never reached.
+    for (const command of [
+      'sudo -u root rm -rf /',
+      'sudo --user root rm -rf /',
+      'nice -n 10 rm -rf /',
+      'ionice -c 3 -n 7 rm -rf /',
+      'xargs -n 1 rm -rf /',
+      'xargs -I {} rm -rf /',
+      'timeout -s KILL 5 rm -rf /',
+    ]) {
+      assert.ok(reaches(command, 'rm'), command)
+    }
+  })
+
   it('leaves a non-wrapper head alone', () => {
     assert.deepEqual(unwrapWrappers(['git', 'status']), ['git', 'status'])
     assert.deepEqual(unwrapWrappers([]), [])
@@ -110,6 +127,39 @@ describe('shared interpreter and script tables', () => {
     assert.equal(inlineCodeBody(['node', '--eval', 'x']), 'x')
     assert.equal(inlineCodeBody(['pwsh', '-Command', 'x']), 'x')
     assert.equal(inlineCodeBody(['bash', 'script.sh']), null)
+  })
+})
+
+describe('shellRedirects', () => {
+  it('reports write targets and whether the write truncates', () => {
+    assert.deepEqual(shellRedirects('echo x > out.txt'), [{ target: 'out.txt', truncates: true }])
+    assert.deepEqual(shellRedirects('echo x >> a.log'), [{ target: 'a.log', truncates: false }])
+    assert.deepEqual(shellRedirects(': > ~/.ssh/id_rsa'), [
+      { target: '~/.ssh/id_rsa', truncates: true },
+    ])
+  })
+
+  it('ignores reads and file-descriptor duplication, which write no file', () => {
+    assert.deepEqual(shellRedirects('sort < src/in.txt'), [])
+    assert.deepEqual(shellRedirects('cmd 2>&1'), [])
+  })
+
+  it('finds the write target on either side of a control operator', () => {
+    assert.deepEqual(shellRedirects('echo a > one.txt && echo b > two.txt'), [
+      { target: 'one.txt', truncates: true },
+      { target: 'two.txt', truncates: true },
+    ])
+  })
+
+  it('keeps redirect targets out of the argv segments', () => {
+    // A relative path after `>` or `<` used to become a segment head, so callers
+    // mistook the file for an executable they should read.
+    for (const command of ['echo x > dist/out.txt', 'sort < src/in.txt']) {
+      for (const argv of shellSegments(command)) {
+        assert.notEqual(argv[0], 'dist/out.txt', command)
+        assert.notEqual(argv[0], 'src/in.txt', command)
+      }
+    }
   })
 })
 
