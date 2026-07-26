@@ -124,7 +124,7 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
     const icon = el('span', { class: 'file-search-icon file-search-roadmap-icon' })
     icon.append(outlineIcon('roadmap', ROADMAP_ICON_PATHS, 'file-search-roadmap-svg'))
     const status = item.status ?? 'ready'
-    return el(
+    const row = el(
       'div',
       {
         class: `file-search-item file-search-roadmap-item${selected ? ' selected' : ''}`,
@@ -133,8 +133,13 @@ export function mountFileSearchDialog(store: AppStore, api: ApiClient): void {
       },
       icon,
       el('span', { class: 'file-search-name' }, item.title || '(untitled)'),
-      el('span', { class: `roadmap-status-badge is-${status}` }, status),
     )
+    // Match the Roadmap list: default `ready` (and `done`) stay silent; only
+    // exceptional statuses get a chip.
+    if (status === 'blocked' || status === 'conflicts' || status === 'archived') {
+      row.append(el('span', { class: `roadmap-status-badge is-${status}` }, status))
+    }
+    return row
   }
 
   function renderResults(): void {

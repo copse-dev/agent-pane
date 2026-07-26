@@ -56,7 +56,7 @@ describe('importDetectedPreset', () => {
 
   it('merges with a curated model list instead of replacing it', async () => {
     // User curated a model with a custom label.
-    await saveExtraProvider({ slug: 'ollama', models: [{ id: 'my-model', label: 'My Model' }] })
+    await saveExtraProvider({ slug: 'ollama', models: [{ id: 'my-model' }] })
     // A re-scan finds the curated id plus a new one.
     await importDetectedPreset(fakeApi(), reachable('ollama', ['my-model', 'fresh-model']))
     const models = getResolvedExtraProvider('ollama')?.models ?? []

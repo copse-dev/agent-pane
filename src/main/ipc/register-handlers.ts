@@ -72,6 +72,7 @@ import {
   loadProjectCatalog,
   listOrphanProjectStores,
 } from '../services/thread-store.ts'
+import { forkThreadHistory } from '../services/thread-fork.ts'
 import { detectAcpAgents } from '../services/acp/acp-detect.ts'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import {
@@ -1004,6 +1005,26 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const [pid, tid] = parseIpcArgs(z.tuple([zProjectId, zThreadId]), [projectId, threadId])
     return deleteProjectThread(pid, tid)
   })
+  // Seed a freshly created fork's provider-format history from the thread it was
+  // branched off. The renderer owns the visible transcript copy; this is the
+  // half it cannot do, since `agent-history.json` never leaves the main process.
+  ipcMain.handle(
+    'threads:fork',
+    (
+      event,
+      projectId: unknown,
+      sourceThreadId: unknown,
+      targetThreadId: unknown,
+      throughMessageId: unknown,
+    ) => {
+      assertMainFrameSender(event, win)
+      const [pid, sourceId, targetId, messageId] = parseIpcArgs(
+        z.tuple([zProjectId, zThreadId, zThreadId, zNonEmptyString.max(256).optional()]),
+        [projectId, sourceThreadId, targetThreadId, throughMessageId],
+      )
+      return forkThreadHistory(pid, sourceId, targetId, messageId)
+    },
+  )
   ipcMain.handle('threads:catalog', (event, projectId: unknown, query: unknown) => {
     assertMainFrameSender(event, win)
     const [pid, q] = parseIpcArgs(z.tuple([zProjectId, z.string().max(512).optional()]), [
