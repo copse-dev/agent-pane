@@ -40,11 +40,12 @@ safety net, not a substitute for commits or external backups.
 ## Migrations
 
 The current thread store is versioned and documented in
-[thread-store-format.md](thread-store-format.md). On first launch after the
-filesystem-native store migration, Copse imports the legacy
-`<userData>/threads/` tree and renames it to
-`<userData>/threads.pre-copse-workspace` when possible. Existing destination
-threads are not overwritten.
+[thread-store-format.md](thread-store-format.md). The one-time import of the
+pre-#644 `<userData>/threads/` tree has been removed: a profile that never ran
+it keeps that directory untouched on disk, and its threads are not carried
+forward. Nothing is deleted, so the JSON files remain readable and can be
+imported by hand if they are still wanted. A profile that already migrated has
+its archived copy at `<userData>/threads.pre-copse-workspace`.
 
 Before installing a release that announces a data migration:
 

@@ -27,6 +27,13 @@ Object.assign(globalThis, {
   Event: win.Event,
   CustomEvent: win.CustomEvent,
   ErrorEvent: win.ErrorEvent,
+  // MouseEvent / PointerEvent are required for tip-layer and pointer tests that
+  // construct real events (`new MouseEvent(...)`) instead of casting object
+  // literals through `as MouseEvent`.
+  MouseEvent: win.MouseEvent,
+  PointerEvent: win.PointerEvent,
+  // DOMRect backs getBoundingClientRect stubs without `as DOMRect` casts.
+  DOMRect: win.DOMRect,
   Element: win.Element,
   // HTMLElement is what renderer DOM helpers / tip layers return. Expose it so
   // `instanceof HTMLElement` works under happy-dom the same way Element does —

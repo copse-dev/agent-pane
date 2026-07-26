@@ -1,4 +1,8 @@
 import { runAgentLoop, type AgentLoopOptions } from '@copse/agent/run-agent-loop.ts'
+import {
+  PRODUCT_REASONING_CHECKPOINT_POLICY,
+  PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
+} from '@copse/agent/reasoning-checkpoint-policy.ts'
 import type { CoerceToolArgsFn } from '@copse/agent/parse-text-tool-calls.ts'
 import type { ContinuationGrant } from '@copse/agent/hooks/continuation-budget.ts'
 import {
@@ -9,6 +13,7 @@ import {
   type ParsedReviewVerdict,
 } from '@copse/agent/review-subagent.ts'
 import { runSubagent } from '@copse/agent/run-subagent.ts'
+import { resolveMaxReviewCycles } from '@copse/agent/packs/post-turn-review-pack.ts'
 import { conversationTokenBudget } from '@copse/agent/trim-history.ts'
 import { readFileLimitsForSubagent } from '@copse/agent/read-file-limits.ts'
 import { hasOpenTodos } from '@copse/agent/agent-loop-guards.ts'
@@ -67,6 +72,8 @@ export interface RunParentContinuationOptions {
   /** Spine-recording sink + step attribution for hooks fired in continuation loops (decision 6). */
   recordHookRun?: AgentLoopOptions['recordHookRun']
   onLlmCall?: AgentLoopOptions['onLlmCall']
+  recordStreamCut?: AgentLoopOptions['recordStreamCut']
+  recordReasoningCheckpoint?: AgentLoopOptions['recordReasoningCheckpoint']
   /**
    * Shared auto-continuation budget for this turn tree (decision 5). Each
    * pre-review todo attempt consumes one grant, so the gate runs at most
@@ -117,6 +124,8 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
     messages: opts.messages,
     tools: opts.tools,
     maxSteps: opts.maxSteps,
+    reasoningCheckpointPolicy: PRODUCT_REASONING_CHECKPOINT_POLICY,
+    reasoningRunawayTextToleranceChars: PRODUCT_REASONING_CHECKPOINT_TEXT_TOLERANCE_CHARS,
     maxContextTokens: opts.contextWindow,
     toolSchemaReserveTokens: opts.toolSchemaReserve,
     signal: opts.signal,
@@ -130,6 +139,10 @@ export async function runParentContinuationTurn(opts: RunParentContinuationOptio
       : {}),
     ...(opts.recordHookRun !== undefined ? { recordHookRun: opts.recordHookRun } : {}),
     ...(opts.onLlmCall !== undefined ? { onLlmCall: opts.onLlmCall } : {}),
+    ...(opts.recordStreamCut !== undefined ? { recordStreamCut: opts.recordStreamCut } : {}),
+    ...(opts.recordReasoningCheckpoint !== undefined
+      ? { recordReasoningCheckpoint: opts.recordReasoningCheckpoint }
+      : {}),
     ...(opts.continuationBudget !== undefined
       ? { continuationBudget: opts.continuationBudget }
       : {}),
@@ -245,7 +258,8 @@ export async function runPostTurnReviewOnce(
  * remediation cycles while the reviewer asks for follow-up and the parent keeps
  * editing. Each remediation cycle is a machine-initiated new turn (decision 5),
  * so it draws from the shared {@link ContinuationGrant}: the local cap
- * (`MAX_POST_TURN_REVIEW_CYCLES`) tightens inside the shared budget.
+ * (`maxCycles`, defaulting to `MAX_POST_TURN_REVIEW_CYCLES`) tightens inside the
+ * shared budget.
  */
 export interface RunPostTurnReviewCycleOptions {
   /** Model id the review runs under (drives the "not approved" skip note). */
@@ -261,6 +275,16 @@ export interface RunPostTurnReviewCycleOptions {
   emitChunk: (chunk: StreamChunk) => void
   /** Shared auto-continuation budget for this turn tree (decision 5). */
   continuationBudget: ContinuationGrant
+  /**
+   * How many review passes this turn may run, from the pack-scoped
+   * `maxReviewCycles` setting. A failing verdict (`requestFollowUp`) buys one
+   * remediation turn plus a re-review — i.e. the next pass — so `1` reports a
+   * failing review and stops without another turn. Omitted → the shipped
+   * {@link MAX_POST_TURN_REVIEW_CYCLES} default; the host resolves the persisted
+   * value through `resolveMaxReviewCycles`, and this stays defensive so a
+   * caller passing a raw number can't turn the bound into `Infinity` or 0.
+   */
+  maxCycles?: number
   /**
    * Run one read-only review over `todos` and return its verdict + usage. The
    * host supplies this (it owns the review route, provider, and usage plumbing);
@@ -313,7 +337,8 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
     return
   }
 
-  for (let cycle = 0; cycle < MAX_POST_TURN_REVIEW_CYCLES; cycle++) {
+  const maxCycles = resolveMaxReviewCycles(opts.maxCycles)
+  for (let cycle = 0; cycle < maxCycles; cycle++) {
     opts.emitChunk({ type: 'post_turn_review', status: 'running', summary: '' })
     try {
       const review = await opts.runReviewOnce(opts.getTodos())
@@ -335,13 +360,13 @@ export async function runPostTurnReviewCycle(opts: RunPostTurnReviewCycleOptions
       // skipped / errored review never emits the event.
       opts.onReviewVerdict?.(review)
 
-      const lastCycle = cycle >= MAX_POST_TURN_REVIEW_CYCLES - 1
+      const lastCycle = cycle >= maxCycles - 1
       if (!review.verdict.requestFollowUp || lastCycle || opts.signal.aborted) break
 
       // A remediation cycle is a machine-initiated new turn (decision 5): consume
       // one grant from the shared budget before running it. The local cap
-      // (MAX_POST_TURN_REVIEW_CYCLES) tightens inside the shared cap — once the
-      // budget is exhausted, no further remediation runs.
+      // (`maxCycles`, from the pack's `maxReviewCycles` setting) tightens inside
+      // the shared cap — once the budget is exhausted, no further remediation runs.
       if (!opts.continuationBudget.tryGrant()) break
 
       const { madeEdits } = await opts.runRemediationTurn(

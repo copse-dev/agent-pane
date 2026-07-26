@@ -30,8 +30,9 @@ import {
   waitForScalewayServers,
 } from './lib/cloud-hosts.mts'
 import {
-  parseSkillsBenchProfileId,
-  type SkillsBenchProfileId,
+  parseSkillsBenchProfileIds,
+  parseSkillsBenchProfileSelectionId,
+  type SkillsBenchProfileSelectionId,
 } from './lib/skillsbench-profiles.mts'
 
 const DEFAULT_NAME = 'copse-skillsbench-spike'
@@ -51,7 +52,7 @@ interface RunConfig extends SshConfig {
   instanceCount: number
   name: string
   objectPrefix: string
-  profile: SkillsBenchProfileId
+  profiles: SkillsBenchProfileSelectionId[]
   securityGroupId: string | undefined
   taskNames: string[]
   ttlMinutes: number
@@ -76,7 +77,8 @@ Options:
   --instances <n>          Disposable workers (default: 1, max: 8)
   --task-names <a,b,...>   SkillsBench v1.1 tasks (default: offer-letter-generator)
   --attempts <n>           Attempts per task/profile (default: 1, max: 5)
-  --profile <id>           skills-none, skills-product, or skills-explicit (required)
+  --profile <id>           Base or versioned profile, e.g. skills-product or skills-product@2
+  --profiles <a,b>         Paired arms run on the same fleet, e.g. skills-product@1,skills-product@2
   --scw-type <type>        x86 Instance type (default: ${DEFAULT_TYPE})
   --scw-image <image>      Ubuntu/custom image (default: ${DEFAULT_SCW_IMAGE})
   --volume-size-gb <n>     Root volume (default: ${String(DEFAULT_VOLUME_SIZE_GB)})
@@ -127,7 +129,14 @@ export function skillsBenchFleetConfig(options: Options): RunConfig {
     throw new Error('--worker-image must be a fully qualified registry image reference')
   }
   const profileInput = option(options, 'profile')
-  if (!profileInput) throw new Error('--profile is required during the SkillsBench spike')
+  const profilesInput = option(options, 'profiles')
+  if (profileInput && profilesInput) throw new Error('pass only one of --profile or --profiles')
+  if (!profileInput && !profilesInput) {
+    throw new Error('--profile or --profiles is required during the SkillsBench spike')
+  }
+  const profiles = profilesInput
+    ? parseSkillsBenchProfileIds(profilesInput)
+    : [parseSkillsBenchProfileSelectionId(profileInput)]
   const names = taskNames(option(options, 'task-names'))
   const instanceCount = Math.min(
     boundedInt(optionWithDefault(options, 'instances', '1'), 'instances', 8),
@@ -148,7 +157,7 @@ export function skillsBenchFleetConfig(options: Options): RunConfig {
       option(options, 'object-prefix') ??
       process.env['SCW_OBJECT_STORAGE_PREFIX']?.trim() ??
       `skillsbench-spike/manual/${Date.now().toString(36)}`,
-    profile: parseSkillsBenchProfileId(profileInput),
+    profiles,
     remoteUser: optionWithDefault(options, 'remote-user', DEFAULT_SCW_REMOTE_USER),
     securityGroupId,
     sshHost: 'public',
@@ -189,20 +198,26 @@ function envLine(name: string, value: string): string {
   return `${name}=${value}`
 }
 
+/** Trimmed env value, or `fallback` when unset/blank (same empty-string policy as `||`). */
+function envTrimmedOr(name: string, fallback: string): string {
+  const value = process.env[name]?.trim()
+  return value !== undefined && value !== '' ? value : fallback
+}
+
 export function skillsBenchWorkerEnvironment(config: RunConfig, shardIndex: number): string {
+  const firstProfile = config.profiles[0]
+  if (!firstProfile) throw new Error('at least one SkillsBench profile is required')
   const generativeKey = envValue('SCW_GENERATIVE_API_KEY')
-  const objectRegion = process.env['SCW_OBJECT_STORAGE_REGION']?.trim() || 'fr-par'
-  const runId = process.env['COPSE_BENCH_RUN_ID']?.trim() || `manual-${Date.now().toString(36)}`
+  const objectRegion = envTrimmedOr('SCW_OBJECT_STORAGE_REGION', 'fr-par')
+  const runId = envTrimmedOr('COPSE_BENCH_RUN_ID', `manual-${Date.now().toString(36)}`)
   const values: Array<[string, string]> = [
-    [
-      'LM_STUDIO_URL',
-      process.env['SCW_GENERATIVE_API_URL']?.trim() || 'https://api.scaleway.ai/v1',
-    ],
+    ['LM_STUDIO_URL', envTrimmedOr('SCW_GENERATIVE_API_URL', 'https://api.scaleway.ai/v1')],
     ['LM_STUDIO_MODEL', envValue('LM_STUDIO_MODEL')],
     ['LM_STUDIO_API_KEY', generativeKey],
     ['COPSE_BENCH_RUN_ID', `${runId}-shard-${String(shardIndex)}`],
     ['COPSE_SKILLSBENCH_TASK_NAMES', config.taskNames.join(',')],
-    ['COPSE_SKILLSBENCH_PROFILE', config.profile],
+    ['COPSE_SKILLSBENCH_PROFILE', firstProfile],
+    ['COPSE_SKILLSBENCH_PROFILES', config.profiles.join(',')],
     ['COPSE_SKILLSBENCH_ATTEMPTS', String(config.attempts)],
     ['COPSE_SKILLSBENCH_SHARD_COUNT', String(config.instanceCount)],
     ['COPSE_SKILLSBENCH_SHARD_INDEX', String(shardIndex)],
@@ -219,8 +234,8 @@ export function skillsBenchWorkerEnvironment(config: RunConfig, shardIndex: numb
       'SCW_OBJECT_STORAGE_PREFIX',
       `${cleanPrefix(config.objectPrefix)}/shard-${String(shardIndex)}`,
     ],
-    ['GITHUB_REPOSITORY', process.env['GITHUB_REPOSITORY']?.trim() || 'manual/local'],
-    ['GITHUB_SHA', process.env['GITHUB_SHA']?.trim() || 'manual'],
+    ['GITHUB_REPOSITORY', envTrimmedOr('GITHUB_REPOSITORY', 'manual/local')],
+    ['GITHUB_SHA', envTrimmedOr('GITHUB_SHA', 'manual')],
   ]
   for (const name of [
     'COPSE_SKILLSBENCH_MAX_STEPS',
