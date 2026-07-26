@@ -87,6 +87,7 @@ import {
   startEventLoopWatchdog,
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
+import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
 import { closeVideoDecoder } from './services/video/video-decoder.ts'
@@ -561,6 +562,11 @@ app
     await loadCustomTools(registry)
 
     recordStartupPhase('boot-complete')
+    // Print the boot timeline and flag any phase over its ceiling (#994). Every
+    // expensive thing above scales with something CI does not have — profile
+    // size, workspace size, MCP server count — so this is the one place the
+    // number is observable on a real machine.
+    reportStartupBudget()
     disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)
