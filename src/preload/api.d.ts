@@ -199,7 +199,7 @@ export interface ApiClient {
     respond: (id: string, answers: string[]) => Promise<void>
   }
   sshPrompt: {
-    respond: (id: string, value: string) => Promise<void>
+    respond: (id: string, value: string, remember?: boolean) => Promise<void>
     onRequest: (
       handler: (req: { id: string; prompt: string; kind: 'confirm' | 'secret' }) => void,
     ) => () => void

@@ -25,6 +25,19 @@
   padding: var(--spacing-sm);
   font-size: var(--font-size-sm);
 }
+.ssh-prompt-remember {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ssh-prompt-remember-input {
+  margin: 0;
+  cursor: pointer;
+}
 .ssh-prompt-buttons {
   display: flex;
   gap: var(--spacing-sm);
