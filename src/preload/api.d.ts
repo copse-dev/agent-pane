@@ -135,6 +135,7 @@ export interface ApiClient {
         comparisonModels?: { a: string; b: string; judge: string }
       }) => void,
     ) => () => void
+    onApprovalCancelled: (handler: (req: { id: string }) => void) => () => void
     onAskUserRequest: (
       handler: (req: {
         id: string
@@ -279,6 +280,25 @@ export interface ApiClient {
     ) => Promise<import('@shared/types').ThreadCatalogHit[]>
     /** Store dirs with threads but no project entry — orphans to re-attach (#997). */
     listOrphans: () => Promise<import('@shared/types').OrphanProjectStore[]>
+  }
+  video: {
+    /**
+     * Store a video the user attached to a chat and return the reference the
+     * agent is given. Pass `bytes` for a file dropped from outside the app, or
+     * `path` for one already in the workspace (referenced, not copied). The
+     * video itself never becomes model content — see `video_frames`.
+     */
+    attach: (
+      projectId: string,
+      threadId: string,
+      video: { name: string; mimeType: string; bytes?: Uint8Array; path?: string },
+    ) => Promise<import('@shared/video/video-media.ts').VideoAttachmentRef>
+    /**
+     * Read an attached video back for inline playback. Rejects for anything
+     * outside the chat store or the workspace, and for files over the preview
+     * size limit — the message is meant to be shown to the user.
+     */
+    read: (path: string) => Promise<{ bytes: Uint8Array<ArrayBuffer>; mimeType: string }>
   }
   openRouter: {
     models: () => Promise<

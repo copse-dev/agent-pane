@@ -89,6 +89,7 @@ import {
 } from './services/diagnostics/event-loop-watchdog.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import { closeVideoDecoder } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -581,6 +582,9 @@ app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
+  // The hidden video-decoder window is not the main window, so nothing else
+  // closes it — left open it would keep the app alive past the last quit.
+  closeVideoDecoder()
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true
