@@ -8,6 +8,13 @@ every published entry.
 
 ## Unreleased
 
+- Fixed SSH password, passphrase, and host-key prompts never appearing. The
+  bundled askpass helper was emitted with a duplicate `#!/usr/bin/env node` on
+  line 2 — a syntax error — so it crashed on every launch. OpenSSH treats an
+  askpass that exits non-zero as "no answer" and moves on, so connecting to a
+  password-auth host silently burned through the server's auth attempts and
+  failed with `Too many authentication failures` instead of asking for a
+  password. The build now syntax-checks that bundle before shipping it.
 - ACP agents graduated out of **Settings → Experimental** into their own
   top-level **Settings → ACP agents** section. The panel now follows the
   Providers pattern: a chip row lists each agent (known presets first, then your
