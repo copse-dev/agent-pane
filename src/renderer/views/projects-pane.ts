@@ -42,7 +42,8 @@ import {
   switchProjectThread,
 } from '../controller/projects.ts'
 import { openSettingsDialog } from './settings-dialog.ts'
-import { showErrorToast } from './toast.ts'
+import { showErrorToast, showToast } from './toast.ts'
+import { forkThread } from '../controller/fork-thread.ts'
 import { isThreadAwaitingAttention } from '../controller/attention.ts'
 import { isSshWorkspaceEnabled } from '../controller/ssh-workspace-ui.ts'
 
@@ -197,6 +198,22 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
     const next = draft.trim()
     if (save && next) setThreadTitle(store, threadId, next)
     else render()
+  }
+
+  /**
+   * Branch the whole conversation into a new thread. Only the active project's
+   * threads are in memory (and only its store dir is the fork IPC's subject), so
+   * a background project's row switches to it first.
+   */
+  function forkProjectThread(projectId: string, threadId: string): void {
+    if (projectId !== store.getState().activeProjectId) return
+    void forkThread(store, api, threadId).then((result) => {
+      if (!result) {
+        showToast('That thread has no messages to fork.', { variant: 'error' })
+        return
+      }
+      showToast('Forked into a new thread.')
+    })
   }
 
   function archiveProjectThread(projectId: string, threadId: string): void {
@@ -435,7 +452,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
         visibleLimit,
         activeId,
       )
-      if (visibleCount !== visibleLimit) {
+      // Only remember a window that had to GROW to reveal the active thread.
+      // `paginateSidebarThreads` also clamps the count down to the thread total,
+      // and caching that shrunken value would stick: a project showing 1 thread
+      // would pin the window at 1, so the next thread it gains (a new chat, a
+      // fork) lands behind "Show more" instead of appearing in the sidebar.
+      if (visibleCount > visibleLimit) {
         visibleThreadCounts.set(project.id, visibleCount)
       }
 
@@ -504,6 +526,12 @@ export function mountProjectsPane(root: HTMLElement, store: AppStore, api: ApiCl
               label: 'Rename',
               onSelect: (): void => {
                 beginThreadRename(thread.id, displayTitle)
+              },
+            },
+            {
+              label: 'Fork',
+              onSelect: (): void => {
+                forkProjectThread(project.id, thread.id)
               },
             },
             {

@@ -205,6 +205,19 @@ export interface Thread {
 }
 
 /**
+ * How a fork's provider-format history was seeded from the thread it branched
+ * off (`threads:fork`). `copied` is the source sidecar verbatim — the
+ * highest-fidelity result. `rebuilt` was reconstructed from the copied
+ * transcript slice, which cannot carry content that only existed in the run
+ * payload (the fenced blocks inlined for `@`-file / `@`-thread / shell chips).
+ * `empty` means the source had no recorded history to inherit.
+ */
+export interface ForkedHistoryResult {
+  source: 'copied' | 'rebuilt' | 'empty'
+  messageCount: number
+}
+
+/**
  * One line of a project's `catalog.jsonl` — a cheap, rebuildable index of its
  * threads used for cross-thread lookup (the `@`-thread picker) without folding
  * every thread. `path` is the thread id (its directory name under the project).

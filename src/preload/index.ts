@@ -29,6 +29,27 @@ contextBridge.exposeInMainWorld('api', {
       }
     },
   },
+  security: {
+    getGuardedYolo: (threadId: string) => ipcRenderer.invoke('security:getGuardedYolo', threadId),
+    enableGuardedYolo: (threadId: string) =>
+      ipcRenderer.invoke('security:enableGuardedYolo', threadId),
+    disableGuardedYolo: (threadId: string) =>
+      ipcRenderer.invoke('security:disableGuardedYolo', threadId),
+    onGuardedYoloChanged: (
+      handler: (state: import('@shared/types/guarded-yolo.ts').GuardedYoloState) => void,
+    ) => {
+      const listener = (
+        _e: Electron.IpcRendererEvent,
+        state: import('@shared/types/guarded-yolo.ts').GuardedYoloState,
+      ): void => {
+        handler(state)
+      }
+      ipcRenderer.on('security:guardedYoloChanged', listener)
+      return (): void => {
+        ipcRenderer.off('security:guardedYoloChanged', listener)
+      }
+    },
+  },
   fs: {
     readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
     writeFile: (path: string, content: string) => ipcRenderer.invoke('fs:writeFile', path, content),
@@ -398,6 +419,19 @@ contextBridge.exposeInMainWorld('api', {
     ) => ipcRenderer.invoke('threads:updateMeta', projectId, threadId, patch),
     delete: (projectId: string, threadId: string) =>
       ipcRenderer.invoke('threads:delete', projectId, threadId),
+    fork: (
+      projectId: string,
+      sourceThreadId: string,
+      targetThreadId: string,
+      throughMessageId?: string,
+    ) =>
+      ipcRenderer.invoke(
+        'threads:fork',
+        projectId,
+        sourceThreadId,
+        targetThreadId,
+        throughMessageId,
+      ),
     catalog: (projectId: string, query?: string) =>
       ipcRenderer.invoke('threads:catalog', projectId, query),
     listOrphans: () => ipcRenderer.invoke('threads:listOrphans'),
