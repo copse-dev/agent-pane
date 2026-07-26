@@ -18,6 +18,7 @@
 import { OPENROUTER_MODEL_PREFIX } from './openrouter.ts'
 import { isSafeCredentialBaseUrl } from './credential-url.ts'
 import { LMSTUDIO_MODEL_PREFIX, REMOTE_AGENT_MODEL_PREFIX } from './reserved-prefixes.ts'
+import { blendedRate } from './pareto-frontier.ts'
 
 /** Fallback context window for any provider/model whose size we don't know. */
 export const DEFAULT_EXTRA_PROVIDER_CONTEXT = 128_000
@@ -56,14 +57,22 @@ export function isLocalBaseUrl(baseUrl: string): boolean {
 export interface ExtraProviderModel {
   /** Upstream model id sent to the provider. */
   id: string
-  /** Human label shown in the picker (defaults to the id). */
-  label?: string
   /** Context window (tokens) used for history trimming; falls back per provider. */
   contextWindow?: number
   /** USD per million input tokens, when the provider reports a rate (e.g. HF router). */
   inputPricePerMTok?: number
   /** USD per million output tokens, when the provider reports a rate. */
   outputPricePerMTok?: number
+  /** 80/20 blended price (0.8 * input + 0.2 * output), pre-calculated for comparison. */
+  blendedCostPerMTok?: number
+}
+
+/** Display label for an extra-provider selection: the raw upstream model id. */
+export function extraProviderDisplayLabel(
+  model: string,
+  _providers: readonly ExtraProvider[] = [],
+): string {
+  return model
 }
 
 export interface ExtraProvider {
@@ -214,15 +223,13 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     models: [
       {
         id: 'mistral-small-latest',
-        label: 'Mistral Small (free tier)',
         contextWindow: MISTRAL_CONTEXT,
       },
       {
         id: 'open-mistral-nemo',
-        label: 'Mistral Nemo (free tier)',
         contextWindow: MISTRAL_CONTEXT,
       },
-      { id: 'mistral-large-latest', label: 'Mistral Large', contextWindow: MISTRAL_CONTEXT },
+      { id: 'mistral-large-latest', contextWindow: MISTRAL_CONTEXT },
     ],
   },
   {
@@ -244,22 +251,18 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     models: [
       {
         id: 'gemini-2.5-flash',
-        label: 'Gemini 2.5 Flash (free tier)',
         contextWindow: GEMINI_CONTEXT,
       },
       {
         id: 'gemini-2.5-flash-lite',
-        label: 'Gemini 2.5 Flash-Lite (free tier)',
         contextWindow: GEMINI_CONTEXT,
       },
       {
         id: 'gemini-2.0-flash',
-        label: 'Gemini 2.0 Flash (free tier)',
         contextWindow: GEMINI_CONTEXT,
       },
       {
         id: 'gemini-2.0-flash-lite',
-        label: 'Gemini 2.0 Flash-Lite (free tier)',
         contextWindow: GEMINI_CONTEXT,
       },
     ],
@@ -284,7 +287,6 @@ export const BUILTIN_EXTRA_PROVIDERS: readonly ExtraProvider[] = [
     models: [
       {
         id: 'deepseek-chat',
-        label: 'DeepSeek V3 (deepseek-chat)',
         contextWindow: DEEPSEEK_CONTEXT,
       },
     ],
@@ -427,22 +429,6 @@ export function extraProviderForModel(
 }
 
 /**
- * Display label for an extra-provider selection: the curated model label when
- * the provider list is available and knows the model, else the raw upstream id.
- * Passing no list (or an unknown model) degrades to the stripped model id.
- */
-export function extraProviderDisplayLabel(
-  model: string,
-  providers: readonly ExtraProvider[] = [],
-): string {
-  const slug = extraProviderSlugFromModel(model)
-  if (!slug) return model
-  const id = model.slice(slug.length + 1)
-  const provider = providers.find((p) => p.id === slug)
-  return provider?.models.find((m) => m.id === id)?.label ?? id
-}
-
-/**
  * Context window for an extra-provider selection: the model's own size, else the
  * provider's fallback, else `null` (caller applies the global default). Resolution
  * order is per-model override/known → per-provider fallback → caller default.
@@ -511,13 +497,11 @@ function normalizeModels(models: unknown): ExtraProviderModel[] {
     if (!raw || typeof raw !== 'object') continue
     const id = (raw as ExtraProviderModel).id
     if (typeof id !== 'string' || !id.trim()) continue
-    const label = (raw as ExtraProviderModel).label
     const contextWindow = (raw as ExtraProviderModel).contextWindow
     const inputPrice = (raw as ExtraProviderModel).inputPricePerMTok
     const outputPrice = (raw as ExtraProviderModel).outputPricePerMTok
-    out.push({
+    const entry: ExtraProviderModel = {
       id: id.trim(),
-      ...(typeof label === 'string' && label.trim() ? { label: label.trim() } : {}),
       ...(typeof contextWindow === 'number' && contextWindow > 0 ? { contextWindow } : {}),
       ...(typeof inputPrice === 'number' && inputPrice >= 0
         ? { inputPricePerMTok: inputPrice }
@@ -525,7 +509,14 @@ function normalizeModels(models: unknown): ExtraProviderModel[] {
       ...(typeof outputPrice === 'number' && outputPrice >= 0
         ? { outputPricePerMTok: outputPrice }
         : {}),
-    })
+    }
+    if (
+      typeof entry.inputPricePerMTok === 'number' &&
+      typeof entry.outputPricePerMTok === 'number'
+    ) {
+      entry.blendedCostPerMTok = blendedRate(entry.inputPricePerMTok, entry.outputPricePerMTok)
+    }
+    out.push(entry)
   }
   return out
 }

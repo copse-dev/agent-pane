@@ -179,17 +179,6 @@ app
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
 
-    // One-time import of pre-#644 threads into the ~/.copse/workspace store.
-    // Self-contained — delete this block and thread-migration.ts to drop it.
-    recordStartupPhase('thread-migration')
-    const { migrateLegacyThreads } = await import('./services/thread-migration.ts')
-    const migration = await migrateLegacyThreads()
-    if (migration.ranMigration) {
-      console.log(
-        `[thread-migration] imported ${String(migration.migrated)} thread(s) from ${String(migration.projects)} project(s), skipped ${String(migration.skipped)}`,
-      )
-    }
-
     recordStartupPhase('window-create')
     const win = createMainWindow()
     applyAppIcon([win])
