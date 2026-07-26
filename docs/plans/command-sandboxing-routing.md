@@ -93,6 +93,46 @@ The allow-list model closes that:
 - Settings: `trustedShellCommands` (validated by `trustedShellCommandsSchema`) +
   the "Trusted commands" fieldset.
 
+## Guarded YOLO: explicit one-turn broad execution
+
+Issue #1249 adds a separate, high-friction mode for a user who deliberately wants
+routine local, network, outside-workspace, or privileged shell work to proceed
+without scope prompts. It does **not** change standard-mode defaults or the trusted
+command list.
+
+- The user enables it from the composer overflow and confirms a host-owned warning.
+  The capability is held only in memory, belongs to one thread, is consumed by its
+  next agent turn, and expires after that turn, after 15 minutes unused, or on app
+  restart. It is never restored from settings or migrated data.
+- While active, `run_shell` and `run_background` still use the macOS project sandbox
+  where it can contain the command. Commands which require host/network scope run
+  unsandboxed; Linux and Windows always report that no OS sandbox is active. The
+  persistent composer strip and shell/background output state the actual containment.
+- Every effective command passes `shell-harm.ts` **after** blocking-hook rewrites. The
+  deterministic host verdict is authoritative: `allow` auto-runs, `prompt` requires a
+  one-time confirmation which cannot be remembered, and `deny` cannot be approved.
+  Missing assessment fails closed. Trusted commands, ACP clients, hook outcomes,
+  classifier output, and `expects_sandbox_block` are routing inputs only and cannot
+  downgrade the verdict.
+- The analyzer resolves home/workspace paths and symlinks, splits compound commands,
+  inspects command/process substitutions, interpreter bodies, and readable script
+  files, and recognizes common Unix, macOS, PowerShell, and Windows destructive forms.
+  Root/home/workspace erasure, raw-device destruction, host shutdown/fork bombs, and
+  attempts to rewrite the permission surface are hard-denied. Bounded deletion,
+  destructive version-control operations, opaque scripts, dynamic destructive paths,
+  and resource-exhaustion signals prompt.
+- Each decision appends a `permission_decision` line to the thread spine with the
+  original/effective command, original/effective mode, actual sandbox state, harm and
+  policy verdicts, reasons, and user response. ACP-native tool bridge calls use the
+  same recording window.
+
+This is a prompt-reduction tool, not a complete security boundary. Deterministic
+analysis cannot prove arbitrary programs benign, an allowed executable can contain
+unknown behavior, and platforms without the macOS sandbox expose the user's full
+account. The short-lived explicit capability, truthful containment UI, credential
+scrubbing, and non-bypassable catastrophic checks reduce risk; they do not make
+untrusted repositories safe to run.
+
 ## Why the tiers were deferred
 
 The original exploration proposed `read`/`write`/`container`/`allow` tiers. A code
