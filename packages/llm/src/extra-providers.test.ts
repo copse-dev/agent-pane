@@ -65,16 +65,18 @@ describe('extra provider lookups against a resolved list', () => {
   })
 
   it('returns the raw model id (labels removed)', () => {
+    // #1241 reduced this to the identity function: the selection id IS the label,
+    // prefix included. A known model, an unknown one, and no provider list at all
+    // all take the same path — nothing is stripped and `providers` is unused.
     assert.equal(
       extraProviderDisplayLabel('deepseek:deepseek-chat', providers),
       'deepseek:deepseek-chat',
     )
     assert.equal(
       extraProviderDisplayLabel('gemini:some-unknown-model', providers),
-      'some-unknown-model',
+      'gemini:some-unknown-model',
     )
-    // No list → degrade to the stripped id.
-    assert.equal(extraProviderDisplayLabel('gemini:gemini-2.5-flash'), 'gemini-2.5-flash')
+    assert.equal(extraProviderDisplayLabel('gemini:gemini-2.5-flash'), 'gemini:gemini-2.5-flash')
   })
 
   it('reports per-model, then per-provider fallback, context windows', () => {
