@@ -203,7 +203,6 @@ export type StartupPhase =
   | 'reap-gortex'
   | 'tool-availability'
   | 'sandbox-init'
-  | 'llm-history-migration'
   | 'window-create'
   | 'register-handlers'
   | 'skills-mcp'

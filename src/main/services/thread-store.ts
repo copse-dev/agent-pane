@@ -876,8 +876,8 @@ export function agentHistoryExists(projectId: string, threadId: string): Promise
 
 /**
  * Project store ids that own a thread directory for `threadId` (have
- * `meta.json`). Used by the #993 legacy `llm-history:*` migration to resolve
- * exactly one owner before writing a sidecar.
+ * `meta.json`). Resolves a bare thread id to the project that holds it when the
+ * caller has no project context.
  */
 export function findThreadOwners(threadId: string): Promise<string[]> {
   return runSerialized('thread-store:owners', () => {
