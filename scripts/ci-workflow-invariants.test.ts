@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 /**
- * Structural pins for `.github/workflows/ci.yml` contracts that unit tests
- * can enforce without spinning Actions. Keep these narrow — they exist to
- * catch accidental regressions of known fail-closed / skip-mode gotchas.
+ * Structural pins for workflow contracts that unit tests can enforce without
+ * spinning Actions. Keep these narrow — they exist to catch accidental
+ * regressions of known cost, fail-closed, and skip-mode gotchas.
  */
 describe('ci.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')
@@ -23,5 +23,14 @@ describe('ci.yml workflow invariants', () => {
       /needs\.precheck\.outputs\.e2e_shard_total\s*!=\s*'0'/,
       'e2e job if: must require e2e_shard_total != 0 so empty matrices never evaluate',
     )
+  })
+})
+
+describe('codeql.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/codeql.yml'), 'utf8')
+
+  it('scans trusted main and schedule events without spending hosted PR minutes', () => {
+    assert.doesNotMatch(workflow, /^ {2}pull_request:/m)
+    assert.match(workflow, /^ {4}runs-on: \$\{\{ vars\.CHECKS_RUNNER \}\}$/m)
   })
 })
