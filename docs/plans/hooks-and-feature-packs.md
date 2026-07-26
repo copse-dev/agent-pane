@@ -586,6 +586,17 @@ Collected from design review — each of these was _almost_ a bug in the plan it
   is not a general response cap. The primary host persists metadata-only decisions (never reasoning
   text) to `reasoning-checkpoints.jsonl`. ACP and other externally hosted agent loops remain outside
   this policy.
+- **Reasoning after the answer is policed on its own budget.** The checkpoint above classifies a
+  stream as reasoning-dominated only while no visible answer has landed, so a model that answers and
+  _then_ keeps thinking used to ride the 32K non-reasoning ceiling and be handed a
+  `truncation-continue` nudge that re-primed the same loop. Reasoning that arrives after visible text
+  passes the preamble tolerance is therefore counted separately and checkpointed against
+  `maxTrailingReasoningTokens` (product: 4K, one eighth of the response ceiling). A trailing cut is
+  terminal for the stream: the answer already streamed _is_ the turn, so the loop finalizes it rather
+  than synthesizing `max_tokens` and continuing. The field is optional — omitting it keeps a host on
+  the pre-existing ceiling (SkillsBench profiles construct their policy explicitly and stay opted
+  out; Terminal-Bench spreads the product policy and inherits it). Ordinary long visible answers are
+  untouched: only reasoning is counted against this budget.
 
 ## Codebase impact
 

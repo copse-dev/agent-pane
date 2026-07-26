@@ -216,7 +216,7 @@ function extraProviderOptions(
     entries.push({ value, label: hint ? `${label} — ${hint}` : label, group })
   }
 
-  for (const model of provider.models) add(model.id, model.label ?? model.id)
+  for (const model of provider.models) add(model.id, model.id)
   if (extraProviderSlugFromModel(current) === provider.id) {
     add(extraProviderModelId(current), modelDisplayLabel(current))
   }
@@ -345,7 +345,11 @@ export async function fetchModelOptions(
       group: CHAT_DEFAULT_GROUP,
     })
   }
-  const sshWorkspace = opts.sshWorkspace === true
+  // ACP agents are hidden on SSH workspaces UNLESS the user opted into remote ACP
+  // over SSH, in which case they spawn on the remote host (docs/plans/acp-over-ssh.md).
+  const isSshWorkspace = opts.sshWorkspace === true
+  const acpOverSsh = isSshWorkspace && (await api.settings.get('acpOverSshEnabled')) === true
+  const sshWorkspace = isSshWorkspace && !acpOverSsh
   const includeAgentModels = opts.includeAgentModels !== false
 
   let available: AvailableProviders = {}

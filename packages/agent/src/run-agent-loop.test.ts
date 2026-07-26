@@ -13,6 +13,11 @@ import type { LLMMessage, LLMProvider, ProviderStreamChunk } from '@copse/llm/wi
 import type { AgentStreamChunk, TodoItem } from './wire-types.ts'
 import { STUCK_FINALIZE_NUDGE } from './agent-loop-guards.ts'
 
+/** A visible answer comfortably past the trailing-reasoning text tolerance. */
+const ANSWER_PAST_TOLERANCE =
+  'Done. I capped the files pane at a third of the shared area, and updated the ' +
+  'matching resizer test to expect the narrower default width.'
+
 function mockProvider(chunks: ProviderStreamChunk[][]): LLMProvider {
   let call = 0
   return {
@@ -536,6 +541,138 @@ describe('runAgentLoop', () => {
     )
     assert.equal(cuts[0]?.cutReason, 'reasoning_runaway_cap')
     assert.equal(cuts[0].streamOutputTokenLimit, 60)
+  })
+
+  it('ends the turn when reasoning keeps circling after the answer has streamed', async () => {
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    const answer = ANSWER_PAST_TOLERANCE
+    const circling =
+      'I need to reconsider what the user is asking, because the files pane should be ' +
+      'one third of the shared area and the chat keeps the other two thirds. '
+    let streamCalls = 0
+    let trailingReasoningChars = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        yield { type: 'text', text: answer }
+        // The answer is out and the model never stops "thinking".
+        for (let index = 0; index < 500; index++) {
+          trailingReasoningChars += circling.length
+          yield { type: 'reasoning', text: circling }
+        }
+        yield { type: 'done' }
+      },
+    }
+    const texts: string[] = []
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 3,
+      reasoningRunawayTextToleranceChars: 100,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 100,
+        maxNonReasoningTokens: 32_000,
+        maxInitialTokens: 32_000,
+        maxRecoveryTokens: 200,
+        maxTrailingReasoningTokens: 200,
+      },
+      onChunk: (chunk) => {
+        if (chunk.type === 'text') texts.push(chunk.text)
+      },
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    // Cut at the first trailing checkpoint rather than riding the 32K ceiling…
+    assert.equal(checkpoints[0]?.decision, 'cut')
+    assert.equal(checkpoints[0].checkpointTokens, 100)
+    assert.ok(checkpoints[0].signals.includes('repeated_sentence'))
+    assert.equal(cuts[0]?.cutReason, 'reasoning_circle_detected')
+    assert.ok(trailingReasoningChars <= 100 * 4 + circling.length)
+    // …and the answer already in hand ends the turn, with no `continue` nudge
+    // re-priming the same loop on a second stream.
+    assert.equal(streamCalls, 1)
+    assert.deepEqual(texts, [answer])
+  })
+
+  it('cuts clean trailing reasoning at its own ceiling once the answer is out', async () => {
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    let streamCalls = 0
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        streamCalls++
+        yield { type: 'text', text: ANSWER_PAST_TOLERANCE }
+        for (let index = 0; index < 500; index++) {
+          yield { type: 'reasoning', text: `Distinct follow-up thought number ${String(index)}. ` }
+        }
+        yield { type: 'done' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 3,
+      reasoningRunawayTextToleranceChars: 100,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 100,
+        maxNonReasoningTokens: 32_000,
+        maxInitialTokens: 32_000,
+        maxRecoveryTokens: 200,
+        maxTrailingReasoningTokens: 200,
+      },
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.deepEqual(
+      checkpoints.map((record) => [record.checkpointTokens, record.decision]),
+      [
+        [100, 'continue'],
+        [200, 'cut'],
+      ],
+    )
+    assert.deepEqual(checkpoints[1]?.signals, [])
+    assert.equal(cuts[0]?.cutReason, 'trailing_reasoning_cap')
+    assert.equal(cuts[0].streamOutputTokenLimit, 200)
+    assert.equal(streamCalls, 1)
+  })
+
+  it('leaves trailing reasoning to the host ceiling when the policy omits a budget', async () => {
+    const checkpoints: import('./reasoning-circle-detector.ts').ReasoningCheckpointRecord[] = []
+    const cuts: import('./stream-cut-record.ts').StreamCutRecord[] = []
+    const provider: LLMProvider = {
+      async *stream(): AsyncGenerator<ProviderStreamChunk> {
+        yield { type: 'text', text: ANSWER_PAST_TOLERANCE }
+        for (let index = 0; index < 200; index++) {
+          yield { type: 'reasoning', text: 'Still thinking about the very same thing. ' }
+        }
+        yield { type: 'done', stopReason: 'stop' }
+      },
+    }
+    await runAgentLoop({
+      provider,
+      messages: [{ role: 'user', content: 'go' }],
+      tools: [],
+      maxSteps: 1,
+      reasoningRunawayTextToleranceChars: 100,
+      reasoningCheckpointPolicy: {
+        intervalTokens: 100,
+        maxNonReasoningTokens: 32_000,
+        maxInitialTokens: 32_000,
+        maxRecoveryTokens: 200,
+      },
+      onChunk: () => {},
+      executeTool: async () => 'ok',
+      recordReasoningCheckpoint: (record) => checkpoints.push(record),
+      recordStreamCut: (record) => cuts.push(record),
+    })
+    assert.deepEqual(checkpoints, [])
+    assert.deepEqual(cuts, [])
   })
 
   it('preserves the host non-reasoning ceiling across earlier reasoning checkpoints', async () => {
