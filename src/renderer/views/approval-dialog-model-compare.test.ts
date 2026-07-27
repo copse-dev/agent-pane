@@ -7,6 +7,7 @@ import { mountSettingsDialog } from './settings-dialog.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 import { resetAttention } from '../controller/attention.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 type ApprovalHandler = (req: {
   id: string
@@ -33,8 +34,8 @@ function makeApi(): {
 } {
   let handler: ApprovalHandler = () => {}
   const responses: Responded[] = []
-  const overrides: Record<string, unknown> = {
-    'agent.onApprovalRequest': (h: ApprovalHandler) => {
+  const overrides = {
+    'agent.onApprovalRequest': (h: ApprovalHandler): (() => void) => {
       handler = h
       return () => {}
     },
@@ -43,27 +44,20 @@ function makeApi(): {
       approved: boolean,
       remember: boolean,
       comparisonModels?: { a: string; b: string; judge: string },
-    ) => {
+    ): Promise<void> => {
       const entry: Responded = { id, approved, remember }
       if (comparisonModels) entry.comparisonModels = comparisonModels
       responses.push(entry)
       return Promise.resolve()
     },
-    'settings.availableProviders': () =>
-      Promise.resolve({ anthropic: true, openai: true, openrouter: false }),
-    'lmStudio.models': () => Promise.resolve([]),
+    'settings.availableProviders': (): Promise<{
+      anthropic: boolean
+      openai: boolean
+      openrouter: boolean
+    }> => Promise.resolve({ anthropic: true, openai: true, openrouter: false }),
+    'lmStudio.models': (): Promise<string[]> => Promise.resolve([]),
   }
-  const make = (path: string): unknown =>
-    new Proxy(() => new Promise(() => {}), {
-      get: (_t, prop) => make(path ? `${path}.${String(prop)}` : String(prop)),
-      apply: (_t, _this, args): unknown => {
-        const override = overrides[path]
-        if (typeof override === 'function')
-          return (override as (...a: unknown[]) => unknown)(...(args as unknown[]))
-        return new Promise(() => {})
-      },
-    })
-  const api = make('') as ApiClient
+  const api = createPendingApi(overrides)
   return {
     api,
     responses,

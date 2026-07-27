@@ -1,8 +1,8 @@
 /** A repository's allowed merge methods, as reported by the GitHub API. */
 export interface RepoMergeConfig {
-  squash?: boolean
-  merge?: boolean
-  rebase?: boolean
+  squash?: boolean | undefined
+  merge?: boolean | undefined
+  rebase?: boolean | undefined
 }
 
 export type AutoMergeStrategy = 'squash' | 'merge' | 'rebase'

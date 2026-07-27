@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { readFileSync } from 'node:fs'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   discoverPlanUsageCredentials,
   invalidatePlanUsageCache,
@@ -169,12 +170,13 @@ describe('updateClaudeOAuthJson', () => {
       expiresAt: 2,
     })
     assert.ok(updated)
-    const parsed = JSON.parse(updated) as { claudeAiOauth: Record<string, unknown> }
-    assert.equal(parsed.claudeAiOauth['accessToken'], 'new-acc')
-    assert.equal(parsed.claudeAiOauth['refreshToken'], 'new-ref')
-    assert.equal(parsed.claudeAiOauth['expiresAt'], 2)
-    assert.deepEqual(parsed.claudeAiOauth['scopes'], ['user:inference', 'user:profile'])
-    assert.equal(parsed.claudeAiOauth['subscriptionType'], 'max')
+    const parsed = expectRecord(parseJsonUnknown(updated))
+    const oauth = expectRecord(parsed['claudeAiOauth'])
+    assert.equal(oauth['accessToken'], 'new-acc')
+    assert.equal(oauth['refreshToken'], 'new-ref')
+    assert.equal(oauth['expiresAt'], 2)
+    assert.deepEqual(oauth['scopes'], ['user:inference', 'user:profile'])
+    assert.equal(oauth['subscriptionType'], 'max')
   })
 
   it('refuses to touch an unfamiliar payload', () => {
@@ -215,13 +217,12 @@ describe('persistRefreshedClaudeToken', () => {
       home,
       noKeychain,
     )
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
-      claudeAiOauth: Record<string, unknown>
-    }
-    assert.equal(parsed.claudeAiOauth['accessToken'], 'new-acc')
-    assert.equal(parsed.claudeAiOauth['refreshToken'], 'new-ref')
-    assert.equal(parsed.claudeAiOauth['expiresAt'], 999)
-    assert.deepEqual(parsed.claudeAiOauth['scopes'], ['a'])
+    const parsed = expectRecord(parseJsonUnknown(readFileSync(path, 'utf8')))
+    const oauth = expectRecord(parsed['claudeAiOauth'])
+    assert.equal(oauth['accessToken'], 'new-acc')
+    assert.equal(oauth['refreshToken'], 'new-ref')
+    assert.equal(oauth['expiresAt'], 999)
+    assert.deepEqual(oauth['scopes'], ['a'])
   })
 
   it('is a no-op for env-sourced tokens and never throws', async () => {

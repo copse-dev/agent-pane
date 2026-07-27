@@ -94,6 +94,14 @@ export function parseJsonUnknown(text: string): unknown {
   return JSON.parse(text) as unknown
 }
 
+/** Narrow an untyped stored value to the runtime shape represented by a fallback value. */
+export function matchesFallbackType<T>(value: unknown, fallback: T): value is T {
+  if (fallback === null) return value === null
+  if (Array.isArray(fallback)) return Array.isArray(value)
+  if (isRecord(fallback)) return isRecord(value)
+  return typeof value === typeof fallback
+}
+
 /** Returns the first string that is present and non-empty, preserving `||` fallback semantics. */
 export function firstNonEmptyString(
   ...values: readonly (string | null | undefined)[]

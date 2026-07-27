@@ -4,6 +4,11 @@ import type { RightPanelMode } from '@shared/types/state.ts'
 import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
 
+type KeyboardShortcutEvent = Pick<
+  KeyboardEvent,
+  'altKey' | 'code' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'
+>
+
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (target === null || !('tagName' in target) || typeof target.tagName !== 'string') return false
   const tag = target.tagName
@@ -12,14 +17,14 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /** Cmd/Ctrl+N starts a new thread, matching the File ▸ New Thread menu item. */
-export function matchNewThreadShortcut(e: KeyboardEvent): boolean {
+export function matchNewThreadShortcut(e: KeyboardShortcutEvent): boolean {
   const meta = e.ctrlKey || e.metaKey
   if (!meta || e.altKey || e.shiftKey) return false
   return e.key === 'n' || e.key === 'N'
 }
 
 /** Cmd/Ctrl+F opens the in-conversation find bar (find-in-page for the chat). */
-export function matchFindInChatShortcut(e: KeyboardEvent): boolean {
+export function matchFindInChatShortcut(e: KeyboardShortcutEvent): boolean {
   const meta = e.ctrlKey || e.metaKey
   if (!meta || e.altKey || e.shiftKey) return false
   return e.key === 'f' || e.key === 'F'
@@ -33,7 +38,7 @@ export type UiScaleShortcutAction = 'in' | 'out' | 'reset'
  * resets. These replace Chromium page-zoom roles so scale stays crisp via
  * `--ui-scale` (see `src/shared/ui-scale.ts`).
  */
-export function matchUiScaleShortcut(e: KeyboardEvent): UiScaleShortcutAction | null {
+export function matchUiScaleShortcut(e: KeyboardShortcutEvent): UiScaleShortcutAction | null {
   const meta = e.ctrlKey || e.metaKey
   if (!meta || e.altKey || e.shiftKey) return null
   if (e.key === '0' || e.code === 'Digit0' || e.code === 'Numpad0') return 'reset'
@@ -46,7 +51,7 @@ export function matchUiScaleShortcut(e: KeyboardEvent): UiScaleShortcutAction | 
 
 export type PanelShortcutAction = 'togglePanel' | { openPanel: RightPanelMode }
 
-export function matchPanelShortcut(e: KeyboardEvent): PanelShortcutAction | null {
+export function matchPanelShortcut(e: KeyboardShortcutEvent): PanelShortcutAction | null {
   const meta = e.ctrlKey || e.metaKey
   if (!meta || e.altKey) return null
 

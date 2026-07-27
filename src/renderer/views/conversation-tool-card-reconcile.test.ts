@@ -118,9 +118,9 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     const cardBefore = host.querySelector('.tool-card-subagent')
     assert.ok(cardBefore)
     const streamBefore = cardBefore.querySelector('.subagent-message-assistant')
-    assert.ok(streamBefore, 'expected a streaming subagent message element')
+    assert.ok(streamBefore instanceof HTMLElement, 'expected a streaming subagent message element')
     // Tag the element so recreation (not just a moved node) is detectable.
-    ;(streamBefore as HTMLElement).dataset['sentinel'] = 'kept'
+    streamBefore.dataset['sentinel'] = 'kept'
 
     updateToolCall(store, messageId, 'tc-sub-1', {
       subagent: subagentSession('Analyzing the code'),
@@ -134,7 +134,8 @@ describe('tool card reconciliation on tool_call_updated (#728)', () => {
     )
     const streamAfter = cardAfter.querySelector('.subagent-message-assistant')
     assert.strictEqual(streamAfter, streamBefore, 'streaming message element was recreated')
-    assert.equal((streamAfter as HTMLElement).dataset['sentinel'], 'kept')
+    assert.ok(streamAfter instanceof HTMLElement)
+    assert.equal(streamAfter.dataset['sentinel'], 'kept')
     assert.match(streamAfter.textContent, /Analyzing the code/)
   })
 

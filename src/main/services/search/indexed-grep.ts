@@ -188,8 +188,8 @@ export async function parseRipgrepJson(
   const entries = stdout
     .split('\n')
     .filter(Boolean)
-    .map((line) => safeJsonParse<Record<string, unknown>>(line))
-    .filter((entry): entry is Record<string, unknown> => entry !== null)
+    .map((line) => safeJsonParse(line))
+    .filter(isRecord)
 
   // Context lines (rg --context) arrive as separate `context` events; render
   // them with a `-` separator (like rg's own output) so the model sees the

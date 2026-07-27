@@ -6,25 +6,60 @@ import { isInsideGitWorkTree, getCurrentBranchName } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { decodeWithSchema } from '@shared/safe-json.ts'
+import { z } from 'zod'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { ghPrHasCiFailures } from './github-ci-service.ts'
 
 interface GhPrView {
-  state?: string
-  number?: number
-  title?: string
-  url?: string
-  mergeable?: string
-  mergeStateStatus?: string
-  statusCheckRollup?: Array<{
-    __typename?: string
-    name?: string
-    context?: string
-    status?: string
-    conclusion?: string
-    state?: string
-  }>
+  state?: string | undefined
+  number?: number | undefined
+  title?: string | undefined
+  url?: string | undefined
+  mergeable?: string | undefined
+  mergeStateStatus?: string | undefined
+  statusCheckRollup?:
+    | Array<{
+        __typename?: string | undefined
+        name?: string | undefined
+        context?: string | undefined
+        status?: string | undefined
+        conclusion?: string | undefined
+        state?: string | undefined
+      }>
+    | undefined
 }
+
+const optionalString = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().optional(),
+)
+const optionalNumber = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.number().optional(),
+)
+const ghPrViewSchema = z.object({
+  state: optionalString,
+  number: optionalNumber,
+  title: optionalString,
+  url: optionalString,
+  mergeable: optionalString,
+  mergeStateStatus: optionalString,
+  statusCheckRollup: z
+    .array(
+      z.object({
+        __typename: optionalString,
+        name: optionalString,
+        context: optionalString,
+        status: optionalString,
+        conclusion: optionalString,
+        state: optionalString,
+      }),
+    )
+    .optional(),
+})
+const ghPrListSchema = z.array(ghPrViewSchema)
+const decodeGhPr = decodeWithSchema(ghPrViewSchema)
 
 /** Sum line add/delete counts from `git diff --numstat` output. */
 export function parseDiffNumstat(raw: string): { additions: number; deletions: number } {
@@ -63,7 +98,7 @@ export function ghPrHasMergeConflicts(pr: GhPrView): boolean {
 /** Parse `gh pr list --json` output for the first open PR entry. */
 export function parseGhOpenPrList(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null
-  const list = safeJsonParse<GhPrView[]>(raw)
+  const list = safeJsonParse(raw, decodeWithSchema(ghPrListSchema))
   if (!Array.isArray(list) || list.length === 0) return null
   const pr = list[0]
   if (!pr || typeof pr.number !== 'number' || !pr.url) return null
@@ -96,7 +131,7 @@ async function getOpenPrForBranch(branch: string, root?: string): Promise<GitOpe
 /** Parse `gh pr view --json` output into an open PR summary, or null. */
 export function parseGhOpenPr(raw: string): GitOpenPr | null {
   if (!raw.trim()) return null
-  const pr = safeJsonParse<GhPrView>(raw)
+  const pr = safeJsonParse(raw, decodeGhPr)
   if (!pr || pr.state !== 'OPEN') return null
   if (typeof pr.number !== 'number' || !pr.url) return null
   return {
@@ -157,7 +192,7 @@ export async function getPrWorkspaceContext(): Promise<PrWorkspaceContext> {
     'state,mergeable,mergeStateStatus,statusCheckRollup',
   ])
   if (ghResult.code === 0 && ghResult.stdout.trim()) {
-    const pr = parseGhJson<GhPrView>(ghResult.stdout)
+    const pr = parseGhJson(ghResult.stdout, decodeGhPr)
     if (pr?.state === 'OPEN') {
       hasOpenPr = true
       hasMergeConflicts = hasMergeConflicts || ghPrHasMergeConflicts(pr)

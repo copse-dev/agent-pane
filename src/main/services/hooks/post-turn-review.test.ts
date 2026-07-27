@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
   userCopseHooksConfigPath,
@@ -78,12 +79,9 @@ describe('postTurnReview (F2, Copse-native observation)', () => {
     assert.equal(result.ran, 1)
     await result.settled
     assert.equal(existsSync(stdinFile), true)
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as {
-      issues_found?: boolean
-      summary?: string
-    }
-    assert.equal(stdin.issues_found, true)
-    assert.equal(stdin.summary, 'found a leak')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['issues_found'], true)
+    assert.equal(stdin['summary'], 'found a leak')
   })
 
   it('is observation-only — a crashing hook never throws or blocks', async () => {

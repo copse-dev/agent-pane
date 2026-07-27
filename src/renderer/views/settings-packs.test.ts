@@ -13,6 +13,7 @@ import { createStore, type AppStore } from '@shared/store/store.ts'
 import type { PackSummary, PacksListResult } from '@shared/types/packs.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 /** Records the last mutation the stub received so click-through assertions can inspect it. */
 interface StubApiSpy {
@@ -22,58 +23,44 @@ interface StubApiSpy {
 
 function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
   let current = initial
-  const fallback: unknown = new Proxy(() => new Promise(() => {}), {
-    get: () => fallback,
-    apply: () => new Promise(() => {}),
+  return createPendingApi({
+    'instructions.list': () => Promise.resolve([]),
+    'cursorRules.list': () => Promise.resolve([]),
+    'skills.list': () => Promise.resolve([]),
+    'plugins.list': () => Promise.resolve([]),
+    'hooks.list': () => Promise.resolve({ hooks: [], warnings: [] }),
+    'packs.list': () => Promise.resolve(current),
+    'packs.setEnabled': (id: string, enabled: boolean) => {
+      spy.lastSetEnabled = { id, enabled }
+      current = {
+        packs: current.packs.map((p) => (p.id === id ? { ...p, enabled } : p)),
+      }
+      return Promise.resolve(current)
+    },
+    'packs.setSetting': (id: string, key: string, value: unknown) => {
+      spy.lastSetSetting = { id, key, value }
+      current = {
+        packs: current.packs.map((p) => {
+          if (p.id !== id) return p
+          return {
+            ...p,
+            settings: p.settings.map((f) => {
+              if (f.id !== key) return f
+              if (
+                typeof value === 'boolean' ||
+                typeof value === 'number' ||
+                typeof value === 'string'
+              ) {
+                return { ...f, value }
+              }
+              return f
+            }),
+          }
+        }),
+      }
+      return Promise.resolve(current)
+    },
   })
-  const overrides: Record<string, unknown> = {
-    instructions: { list: () => Promise.resolve([]) },
-    cursorRules: { list: () => Promise.resolve([]) },
-    skills: { list: () => Promise.resolve([]) },
-    plugins: { list: () => Promise.resolve([]) },
-    hooks: { list: () => Promise.resolve({ hooks: [], warnings: [] }) },
-    packs: {
-      list: () => Promise.resolve(current),
-      setEnabled: (id: string, enabled: boolean) => {
-        spy.lastSetEnabled = { id, enabled }
-        current = {
-          packs: current.packs.map((p) => (p.id === id ? { ...p, enabled } : p)),
-        }
-        return Promise.resolve(current)
-      },
-      setSetting: (id: string, key: string, value: unknown) => {
-        spy.lastSetSetting = { id, key, value }
-        current = {
-          packs: current.packs.map((p) => {
-            if (p.id !== id) return p
-            return {
-              ...p,
-              settings: p.settings.map((f) => {
-                if (f.id !== key) return f
-                if (
-                  typeof value === 'boolean' ||
-                  typeof value === 'number' ||
-                  typeof value === 'string'
-                ) {
-                  return { ...f, value }
-                }
-                return f
-              }),
-            }
-          }),
-        }
-        return Promise.resolve(current)
-      },
-    },
-  }
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get: (_target, prop) =>
-        typeof prop === 'string' && prop in overrides ? overrides[prop] : fallback,
-    },
-  )
-  return proxy as ApiClient
 }
 
 const demoPack: PackSummary = {

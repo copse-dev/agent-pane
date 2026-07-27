@@ -518,9 +518,9 @@ test('restoreProject quarantines a missing project instead of deleting it (#997)
   assert.equal(projects.find((p) => p.id === 'a')?.missing, true)
   assert.equal(store.getState().activeProjectId, 'b')
   assert.equal(store.getState().workspaceRoot, '/b')
-  const lastProjects = [...persisted].reverse().find((p) => p.key === 'projects')?.value as
-    Array<{ id: string }> | undefined
-  assert.equal(lastProjects?.length, 2)
+  const lastProjects: unknown = [...persisted].reverse().find((p) => p.key === 'projects')?.value
+  assert.ok(Array.isArray(lastProjects))
+  assert.equal(lastProjects.length, 2)
 })
 
 test('restoreProject keeps an SSH project active when connect fails (disconnect banner)', async () => {

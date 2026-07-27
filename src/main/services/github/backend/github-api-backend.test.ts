@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { expectRecord } from '@shared/unknown-value.ts'
 import { githubApiBackend } from './github-api-backend.ts'
 import { resetGitHubApiTokenCacheForTest } from './github-token.ts'
 
@@ -48,8 +49,8 @@ afterEach((): void => {
 })
 
 function variablesOf(body: unknown): Record<string, unknown> {
-  const vars = (body as { variables?: Record<string, unknown> }).variables
-  return vars ?? {}
+  const vars = expectRecord(body)['variables']
+  return vars === undefined ? {} : expectRecord(vars)
 }
 
 describe('githubApiBackend', () => {
