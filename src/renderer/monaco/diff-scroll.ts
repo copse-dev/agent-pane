@@ -90,7 +90,10 @@ export async function waitForViewModelDiff(
 
 /** Re-apply collapse after setModel; Monaco can drop hidden regions until options refresh (#4903). */
 export async function refreshGitChangesDiffCollapse(
-  diffEditor: Monaco.editor.IStandaloneDiffEditor,
+  diffEditor: DiffUpdateEditor & {
+    layout(): void
+    updateOptions(options: Monaco.editor.IDiffEditorOptions): void
+  },
 ): Promise<void> {
   diffEditor.updateOptions({
     ...GIT_CHANGES_DIFF_EDITOR_OPTIONS,

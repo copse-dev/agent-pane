@@ -8,8 +8,19 @@ import {
   matchUiScaleShortcut,
 } from './keyboard-shortcuts.ts'
 
-function keyEvent(init: KeyboardEventInit): KeyboardEvent {
-  return { ...init } as KeyboardEvent
+function keyEvent(
+  init: KeyboardEventInit,
+): Required<
+  Pick<KeyboardEventInit, 'altKey' | 'code' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>
+> {
+  return {
+    altKey: init.altKey ?? false,
+    code: init.code ?? '',
+    ctrlKey: init.ctrlKey ?? false,
+    key: init.key ?? '',
+    metaKey: init.metaKey ?? false,
+    shiftKey: init.shiftKey ?? false,
+  }
 }
 
 function fakeElement(tagName: string, contentEditable = false): EventTarget {

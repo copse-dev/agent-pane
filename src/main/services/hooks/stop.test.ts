@@ -13,6 +13,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   userHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
@@ -86,8 +87,8 @@ describe('stop (turn-end / abort fire site — B3)', () => {
     // test affordance) before inspecting what it captured.
     await result.settled
     assert.equal(existsSync(stdinFile), true)
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { status?: string }
-    assert.equal(stdin.status, 'completed')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['status'], 'completed')
   })
 
   it('fires on abort with status "aborted"', async () => {
@@ -98,8 +99,8 @@ describe('stop (turn-end / abort fire site — B3)', () => {
     const result = await fireStop('aborted')
     assert.equal(result.ran, 1)
     await result.settled
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as { status?: string }
-    assert.equal(stdin.status, 'aborted')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['status'], 'aborted')
   })
 
   it('is detached — a slow stop hook does not block the caller (no drain barrier, decision 3)', async () => {

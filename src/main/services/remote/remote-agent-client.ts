@@ -27,6 +27,7 @@ import {
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
+import { z } from 'zod'
 import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
@@ -131,24 +132,42 @@ interface RemoteAgentSession {
   url?: string
 }
 
-interface CursorCreateAgentResponse {
-  agent?: { id?: string; url?: string }
-  run?: { id?: string; agentId?: string }
-}
-
-interface CursorCreateRunResponse {
-  run?: { id?: string; agentId?: string }
-}
-
-interface CursorUsageResponse {
-  runs?: Array<{
-    id?: string
-    usage?: {
-      inputTokens?: number
-      outputTokens?: number
-    }
-  }>
-}
+const optionalString = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().optional(),
+)
+const optionalNumber = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.number().optional(),
+)
+const runSchema = z.object({ id: optionalString, agentId: optionalString })
+const cursorCreateAgentResponseSchema = z
+  .object({
+    agent: z.preprocess(
+      (value) => (value === null ? undefined : value),
+      z.object({ id: optionalString, url: optionalString }).optional(),
+    ),
+    run: runSchema.optional(),
+  })
+  .loose()
+const cursorCreateRunResponseSchema = z.object({ run: runSchema.optional() }).loose()
+type CursorCreateAgentResponse = z.infer<typeof cursorCreateAgentResponseSchema>
+type CursorCreateRunResponse = z.infer<typeof cursorCreateRunResponseSchema>
+const cursorUsageResponseSchema = z
+  .object({
+    runs: z
+      .array(
+        z.object({
+          id: optionalString,
+          usage: z.preprocess(
+            (value) => (value === null ? undefined : value),
+            z.object({ inputTokens: optionalNumber, outputTokens: optionalNumber }).optional(),
+          ),
+        }),
+      )
+      .optional(),
+  })
+  .loose()
 
 export interface RemoteAgentArtifact {
   path: string
@@ -156,18 +175,22 @@ export interface RemoteAgentArtifact {
   updatedAt?: string
 }
 
-interface CursorArtifactsResponse {
-  items?: Array<{
-    path?: string
-    sizeBytes?: number
-    updatedAt?: string
-  }>
-}
-
-interface CursorArtifactDownloadResponse {
-  url?: string
-  expiresAt?: string
-}
+const cursorArtifactsResponseSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          path: optionalString,
+          sizeBytes: optionalNumber,
+          updatedAt: optionalString,
+        }),
+      )
+      .optional(),
+  })
+  .loose()
+const cursorArtifactDownloadResponseSchema = z
+  .object({ url: optionalString, expiresAt: optionalString })
+  .loose()
 
 function sessionKey(threadId: string): string {
   return `${REMOTE_AGENT_SESSION_PREFIX}${threadId}`
@@ -231,14 +254,15 @@ function assertAgentId(response: CursorCreateAgentResponse): string {
   return agentId
 }
 
-async function readJsonResponse<T>(response: Response, label: string): Promise<T> {
+async function readJsonResponse(response: Response, label: string): Promise<unknown> {
   const text = await response.text()
   if (!response.ok) {
     const details = text ? `: ${text}` : ''
     throw new Error(`${label} failed with HTTP ${String(response.status)}${details}`)
   }
   try {
-    return (text ? JSON.parse(text) : {}) as T
+    const value: unknown = text ? JSON.parse(text) : {}
+    return value
   } catch {
     throw new Error(`${label} returned invalid JSON`)
   }
@@ -339,7 +363,9 @@ async function createRemoteAgent(input: {
     },
     body: JSON.stringify(body),
   })
-  const json = await readJsonResponse<CursorCreateAgentResponse>(response, 'Remote agent create')
+  const json = cursorCreateAgentResponseSchema.parse(
+    await readJsonResponse(response, 'Remote agent create'),
+  )
   return {
     agentId: assertAgentId(json),
     runId: assertRunId(json),
@@ -422,7 +448,9 @@ async function createRemoteRun(input: {
       await sleepMs(remoteAgentBusyRetryDelayMs(attempt), input.signal)
       continue
     }
-    const json = await readJsonResponse<CursorCreateRunResponse>(response, 'Remote agent follow-up')
+    const json = cursorCreateRunResponseSchema.parse(
+      await readJsonResponse(response, 'Remote agent follow-up'),
+    )
     return assertRunId(json)
   }
   throw new Error('Remote agent follow-up failed: exhausted agent_busy retries')
@@ -469,7 +497,9 @@ async function fetchRunUsage(input: {
       headers: { Authorization: cursorAuthHeader(input.apiKey) },
     },
   )
-  const json = await readJsonResponse<CursorUsageResponse>(response, 'Remote agent usage')
+  const json = cursorUsageResponseSchema.parse(
+    await readJsonResponse(response, 'Remote agent usage'),
+  )
   const usage = json.runs?.find((run) => run.id === input.runId)?.usage
   return {
     inputTokens: usage?.inputTokens ?? 0,
@@ -490,7 +520,9 @@ export async function listRemoteArtifacts(input: {
       headers: { Authorization: cursorAuthHeader(input.apiKey) },
     },
   )
-  const json = await readJsonResponse<CursorArtifactsResponse>(response, 'Remote agent artifacts')
+  const json = cursorArtifactsResponseSchema.parse(
+    await readJsonResponse(response, 'Remote agent artifacts'),
+  )
   return (json.items ?? [])
     .filter((item): item is RemoteAgentArtifact => typeof item.path === 'string')
     .map((item) => ({
@@ -514,9 +546,8 @@ export async function resolveRemoteArtifactDownloadUrl(input: {
   const response = await fetchImpl(remoteArtifactDownloadEndpoint(baseUrl, input.agentId, path), {
     headers: { Authorization: cursorAuthHeader(apiKey) },
   })
-  const json = await readJsonResponse<CursorArtifactDownloadResponse>(
-    response,
-    'Remote agent artifact download',
+  const json = cursorArtifactDownloadResponseSchema.parse(
+    await readJsonResponse(response, 'Remote agent artifact download'),
   )
   if (!json.url) throw new Error('Remote agent artifact download response did not include a URL')
   return json.url
@@ -600,14 +631,27 @@ export function formatRemoteArtifactsSummary(input: {
   return `\n\n---\n_Remote agent artifacts:_\n${lines.join('\n')}`
 }
 
-interface CursorRunResponse {
-  id?: string
-  status?: string
-  result?: string
-  git?: {
-    branches?: Array<{ repoUrl?: string; branch?: string; prUrl?: string }>
-  }
-}
+const cursorRunResponseSchema = z
+  .object({
+    id: optionalString,
+    status: optionalString,
+    result: optionalString,
+    git: z
+      .object({
+        branches: z
+          .array(
+            z.object({
+              repoUrl: optionalString,
+              branch: optionalString,
+              prUrl: optionalString,
+            }),
+          )
+          .optional(),
+      })
+      .optional(),
+  })
+  .loose()
+type CursorRunResponse = z.infer<typeof cursorRunResponseSchema>
 
 function isTerminalRunStatus(status: string | null | undefined): boolean {
   return (
@@ -633,7 +677,7 @@ async function fetchCursorRun(input: {
       signal: input.signal,
     },
   )
-  return readJsonResponse<CursorRunResponse>(response, 'Remote agent get run')
+  return cursorRunResponseSchema.parse(await readJsonResponse(response, 'Remote agent get run'))
 }
 
 function applyCursorRunSnapshot(

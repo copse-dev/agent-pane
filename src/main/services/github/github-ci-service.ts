@@ -5,6 +5,8 @@ import {
 } from '../exec/subprocess-output-cap.ts'
 import { parseGhJson, runGh } from './gh-service.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
+import { decodeWithSchema } from '@shared/safe-json.ts'
+import { z } from 'zod'
 
 export type CiOverallState = 'pending' | 'success' | 'failure' | 'no_checks'
 
@@ -29,40 +31,92 @@ export interface CiStatus {
 }
 
 interface GhPrView {
-  state?: string
-  number?: number
-  title?: string
-  url?: string
-  headRefName?: string
-  headRefOid?: string
-  statusCheckRollup?: Array<{
-    __typename?: string
-    name?: string
-    context?: string
-    status?: string
-    conclusion?: string
-    state?: string
-    detailsUrl?: string
-  }>
+  state?: string | undefined
+  number?: number | undefined
+  title?: string | undefined
+  url?: string | undefined
+  headRefName?: string | undefined
+  headRefOid?: string | undefined
+  statusCheckRollup?:
+    | Array<{
+        __typename?: string | undefined
+        name?: string | undefined
+        context?: string | undefined
+        status?: string | undefined
+        conclusion?: string | undefined
+        state?: string | undefined
+        detailsUrl?: string | undefined
+      }>
+    | undefined
 }
 
 interface GhPrCheckRow {
-  name?: string
-  state?: string
-  bucket?: string
-  link?: string
-  workflow?: string
+  name?: string | undefined
+  state?: string | undefined
+  bucket?: string | undefined
+  link?: string | undefined
+  workflow?: string | undefined
 }
 
 interface GhWorkflowRun {
-  databaseId?: number
-  headSha?: string
-  conclusion?: string
-  status?: string
-  url?: string
-  name?: string
-  displayTitle?: string
+  databaseId?: number | undefined
+  headSha?: string | undefined
+  conclusion?: string | undefined
+  status?: string | undefined
+  url?: string | undefined
+  name?: string | undefined
+  displayTitle?: string | undefined
 }
+
+const optionalString = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().optional(),
+)
+const optionalNumber = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.number().optional(),
+)
+const ghPrViewSchema = z.object({
+  state: optionalString,
+  number: optionalNumber,
+  title: optionalString,
+  url: optionalString,
+  headRefName: optionalString,
+  headRefOid: optionalString,
+  statusCheckRollup: z
+    .array(
+      z.object({
+        __typename: optionalString,
+        name: optionalString,
+        context: optionalString,
+        status: optionalString,
+        conclusion: optionalString,
+        state: optionalString,
+        detailsUrl: optionalString,
+      }),
+    )
+    .optional(),
+})
+const ghPrChecksSchema = z.array(
+  z.object({
+    name: optionalString,
+    state: optionalString,
+    bucket: optionalString,
+    link: optionalString,
+    workflow: optionalString,
+  }),
+)
+const ghWorkflowRunsSchema = z.array(
+  z.object({
+    databaseId: optionalNumber,
+    headSha: optionalString,
+    conclusion: optionalString,
+    status: optionalString,
+    url: optionalString,
+    name: optionalString,
+    displayTitle: optionalString,
+  }),
+)
 
 export function normalizeCheckBucket(raw: string | undefined): CiCheck['bucket'] {
   const bucket = (raw ?? '').toLowerCase()
@@ -135,7 +189,7 @@ export function deriveOverallState(
 }
 
 export function parseGhPrChecks(raw: string): CiCheck[] {
-  const rows = parseGhJson<GhPrCheckRow[]>(raw)
+  const rows = parseGhJson(raw, decodeWithSchema(ghPrChecksSchema))
   if (!Array.isArray(rows)) return []
   return rows
     .filter(
@@ -190,7 +244,7 @@ async function loadOpenPr(prNumber?: number): Promise<GhPrView | null> {
   if (result.code !== 0) {
     throw new Error(result.stderr.trim() || result.stdout.trim() || 'gh pr view failed')
   }
-  const pr = parseGhJson<GhPrView>(result.stdout)
+  const pr = parseGhJson(result.stdout, decodeWithSchema(ghPrViewSchema))
   if (!pr || pr.state !== 'OPEN') return null
   return pr
 }
@@ -236,7 +290,7 @@ async function loadLatestRun(
     'databaseId,headSha,conclusion,status,url,name,displayTitle',
   ])
   if (result.code !== 0) return null
-  const runs = parseGhJson<GhWorkflowRun[]>(result.stdout)
+  const runs = parseGhJson(result.stdout, decodeWithSchema(ghWorkflowRunsSchema))
   if (!Array.isArray(runs)) return null
   return pickLatestRunForHead(runs, headSha)
 }

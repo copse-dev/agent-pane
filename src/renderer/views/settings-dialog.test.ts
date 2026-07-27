@@ -18,6 +18,7 @@ import {
   applyUiAccent,
 } from './settings-dialog.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 // Recursive stub: api.<anything>.<nested>() returns a never-settling promise, so
 // the dialog can mount without a hand-written ApiClient. Mounting fires off some
@@ -25,11 +26,7 @@ import { qsRequired } from '../dom/helpers.ts'
 // resolving to a shape they'd then read into — keeps the test to the synchronous
 // open/close contract without post-test unhandled rejections.
 function stubApi(): ApiClient {
-  const proxy: unknown = new Proxy(() => new Promise(() => {}), {
-    get: () => proxy,
-    apply: () => new Promise(() => {}),
-  })
-  return proxy as ApiClient
+  return createPendingApi()
 }
 
 // happy-dom doesn't implement modal dialogs; track open state through the methods
@@ -185,6 +182,8 @@ describe('settings search (cross-section block filter)', () => {
     // Back to exactly one active section (General, the default).
     const active = document.querySelectorAll('.settings-section.active')
     assert.equal(active.length, 1)
-    assert.equal((active[0] as HTMLElement).dataset['section'], 'general')
+    const activeSection = active.item(0)
+    assert.ok(activeSection instanceof HTMLElement)
+    assert.equal(activeSection.dataset['section'], 'general')
   })
 })

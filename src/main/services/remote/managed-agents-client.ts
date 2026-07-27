@@ -26,6 +26,7 @@ import {
   resolveManagedAgentModelId,
 } from '@shared/remote-agent.ts'
 import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
+import { z } from 'zod'
 import { getSetting, resolveApiKey } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
@@ -66,21 +67,23 @@ interface ManagedAgentSession {
   usageOutput: number
 }
 
-interface AgentCreateResponse {
-  id?: string
-}
-interface EnvironmentCreateResponse {
-  id?: string
-}
-interface SessionCreateResponse {
-  id?: string
-}
-interface SessionGetResponse {
-  usage?: {
-    input_tokens?: number
-    output_tokens?: number
-  }
-}
+const optionalString = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().optional(),
+)
+const optionalNumber = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.number().optional(),
+)
+const idResponseSchema = z.object({ id: optionalString }).loose()
+const sessionGetResponseSchema = z
+  .object({
+    usage: z.preprocess(
+      (value) => (value === null ? undefined : value),
+      z.object({ input_tokens: optionalNumber, output_tokens: optionalNumber }).optional(),
+    ),
+  })
+  .loose()
 
 function sessionKey(threadId: string): string {
   return `${MANAGED_AGENT_SESSION_PREFIX}${threadId}`
@@ -168,7 +171,7 @@ function resolveGithubToken(): string {
   return token
 }
 
-async function readJson<T>(response: Response, label: string): Promise<T> {
+async function readJson(response: Response, label: string): Promise<unknown> {
   const text = await response.text()
   if (!response.ok) {
     throw new Error(
@@ -176,7 +179,8 @@ async function readJson<T>(response: Response, label: string): Promise<T> {
     )
   }
   try {
-    return (text ? JSON.parse(text) : {}) as T
+    const value: unknown = text ? JSON.parse(text) : {}
+    return value
   } catch {
     throw new Error(`${label} returned invalid JSON`)
   }
@@ -220,7 +224,7 @@ async function createAgent(input: {
     headers: authHeaders(input.apiKey),
     body: JSON.stringify(body),
   })
-  const json = await readJson<AgentCreateResponse>(response, 'Claude Agent create')
+  const json = idResponseSchema.parse(await readJson(response, 'Claude Agent create'))
   if (!json.id) throw new Error('Claude Agent create response did not include an agent id')
   return json.id
 }
@@ -239,7 +243,7 @@ async function createEnvironment(input: {
     headers: authHeaders(input.apiKey),
     body: JSON.stringify(body),
   })
-  const json = await readJson<EnvironmentCreateResponse>(response, 'Claude Agent environment')
+  const json = idResponseSchema.parse(await readJson(response, 'Claude Agent environment'))
   if (!json.id) throw new Error('Claude Agent environment response did not include an id')
   return json.id
 }
@@ -278,7 +282,7 @@ async function createSession(input: {
     headers: authHeaders(input.apiKey),
     body: JSON.stringify(body),
   })
-  const json = await readJson<SessionCreateResponse>(response, 'Claude Agent session')
+  const json = idResponseSchema.parse(await readJson(response, 'Claude Agent session'))
   if (!json.id) throw new Error('Claude Agent session response did not include an id')
   return json.id
 }
@@ -349,7 +353,7 @@ async function fetchSessionUsage(input: {
     joinUrl(input.baseUrl, `/v1/sessions/${encodeURIComponent(input.sessionId)}`),
     { headers: authHeaders(input.apiKey) },
   )
-  const json = await readJson<SessionGetResponse>(response, 'Claude Agent usage')
+  const json = sessionGetResponseSchema.parse(await readJson(response, 'Claude Agent usage'))
   return {
     inputTokens: json.usage?.input_tokens ?? 0,
     outputTokens: json.usage?.output_tokens ?? 0,

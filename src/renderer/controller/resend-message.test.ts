@@ -6,7 +6,7 @@ import type { Thread } from '@shared/types'
 import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from './message-queue.ts'
-import { safeJsonParse } from '@shared/safe-json.ts'
+import { parseAgentRunPayload } from '@copse/agent/parse-agent-run-payload.ts'
 import { lastResendableMessage, resendLastMessage } from './resend-message.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
@@ -17,9 +17,18 @@ function createProjectStore(): ReturnType<typeof createStore> {
 }
 
 function parsePayload(json: string): AgentRunPayload {
-  const parsed = safeJsonParse<AgentRunPayload>(json)
-  if (!parsed) throw new Error('expected a JSON run payload')
-  return parsed
+  const parsed = parseAgentRunPayload(json)
+  return {
+    content: parsed.userContent,
+    ...(parsed.invokedSkills.length > 0 ? { invokedSkills: parsed.invokedSkills } : {}),
+    ...(parsed.priorTodos.length > 0 ? { priorTodos: parsed.priorTodos } : {}),
+    ...(parsed.workingBrief !== undefined ? { workingBrief: parsed.workingBrief } : {}),
+    ...(parsed.model !== undefined ? { model: parsed.model } : {}),
+    ...(parsed.turnTreeId !== undefined ? { turnTreeId: parsed.turnTreeId } : {}),
+    ...(parsed.continuationBudgetUsed !== undefined
+      ? { continuationBudgetUsed: parsed.continuationBudgetUsed }
+      : {}),
+  }
 }
 
 /** Records every dispatched run; the rest of the surface is the demo double. */

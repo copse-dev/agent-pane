@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm, mkdir, symlink, stat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   clearAllowedWorkspaceRootsForTest,
   registerAllowedWorkspaceRoot,
@@ -94,9 +95,9 @@ describe('sandbox-fs-client', () => {
         },
       )
       assert.equal(code, 0)
-      const parsed = JSON.parse(stdout.trim()) as { ok: boolean; data: string }
-      assert.equal(parsed.ok, true)
-      assert.equal(parsed.data, content)
+      const parsed = expectRecord(parseJsonUnknown(stdout.trim()))
+      assert.equal(parsed['ok'], true)
+      assert.equal(parsed['data'], content)
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

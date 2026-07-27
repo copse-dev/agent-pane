@@ -1,7 +1,6 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type * as Monaco from 'monaco-editor'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult, SessionBackup } from '@shared/types/git.ts'
@@ -18,7 +17,6 @@ import { createFakeApi } from '../fake-api.test-support.ts'
 // pane surfaces the session backup and lets the user one-click revert it.
 
 const emptyStatus: GitStatusResult = { staged: [], unstaged: [] }
-const monacoStub = {} as unknown as typeof Monaco
 
 function makeApi(opts: {
   sessionBackup: SessionBackup | null
@@ -85,7 +83,7 @@ function mount(api: ApiClient): HTMLElement {
   const listRoot = document.createElement('div')
   const viewerRoot = document.createElement('div')
   document.body.append(listRoot, viewerRoot)
-  mountGitChangesPane(listRoot, viewerRoot, store, api, monacoStub)
+  mountGitChangesPane(listRoot, viewerRoot, store, api, null)
   return listRoot
 }
 
