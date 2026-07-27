@@ -61,7 +61,7 @@ export function createAutomationPackSettings(
     'p',
     { class: 'automation-notice' },
     packEnabled
-      ? 'A match creates a model-pinned draft task for review; it does not run tools automatically.'
+      ? 'A match starts a model-pinned task. Normal tool permission prompts still apply.'
       : 'Enable this pack to arm schedules. Existing schedules remain editable while disabled.',
   )
   const status = el('div', { class: 'automation-status', hidden: true })
@@ -106,7 +106,7 @@ export function createAutomationPackSettings(
       el('span', { class: 'automation-hint' }, 'minute hour day month weekday'),
     ),
     el('label', { class: 'automation-label' }, 'Model', modelSelect),
-    el('label', { class: 'automation-label' }, 'Draft prompt', promptInput),
+    el('label', { class: 'automation-label' }, 'Prompt', promptInput),
     el('label', { class: 'automation-enabled-label' }, enabledInput, 'Schedule enabled'),
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
@@ -184,7 +184,7 @@ export function createAutomationPackSettings(
           type: 'button',
           class: 'automation-row-btn automation-run-btn',
           disabled: packEnabled ? undefined : true,
-          title: packEnabled ? 'Create a draft task now' : 'Enable the pack to run',
+          title: packEnabled ? 'Start a scheduled task now' : 'Enable the pack to run',
         },
         'Run now',
       )
@@ -198,7 +198,7 @@ export function createAutomationPackSettings(
         run.disabled = true
         void api.automations.runNow(projectId, schedule.id).then(
           () => {
-            showStatus(`Created “${schedule.name}” as a draft task.`)
+            showStatus(`Started “${schedule.name}”.`)
             void refresh()
           },
           (error: unknown) => {

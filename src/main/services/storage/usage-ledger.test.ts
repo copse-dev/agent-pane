@@ -6,7 +6,7 @@ import { getUsageSummary, recordUsageEvent } from './usage-ledger.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
 
 describe('usage ledger', () => {
-  it('persists events and exposes them in day/month summaries', () => {
+  it('persists events and exposes them in day/month summaries', async () => {
     storageSet(USAGE_EVENTS_STORAGE_KEY, [])
     storageSet('activeProjectId', 'proj-1')
     storageSet('projects', [{ id: 'proj-1', path: '/tmp', name: 'tmp' }])
@@ -21,7 +21,7 @@ describe('usage ledger', () => {
       projectId: 'proj-1',
     })
 
-    const summary = getUsageSummary()
+    const summary = await getUsageSummary()
     assert.equal(summary.ledgerEventCount, 1)
     assert.equal(summary.day.cloudModels.length, 1)
     assert.equal(summary.day.cloudModels[0]?.inputTokens, 500)
@@ -29,7 +29,7 @@ describe('usage ledger', () => {
     assert.equal(summary.allTime.totalInputTokens, 0)
   })
 
-  it('records local lmstudio models in day summaries', () => {
+  it('records local lmstudio models in day summaries', async () => {
     storageSet(USAGE_EVENTS_STORAGE_KEY, [])
     recordUsageEvent({
       model: 'lmstudio:qwen/qwen3.6-35b-a3b',
@@ -38,13 +38,13 @@ describe('usage ledger', () => {
       outputTokens: 300,
       threadId: 'thread-2',
     })
-    const summary = getUsageSummary()
+    const summary = await getUsageSummary()
     assert.equal(summary.day.localModels.length, 1)
     assert.equal(at(summary.day.localModels, 0).model, 'lmstudio:qwen/qwen3.6-35b-a3b')
     assert.equal(at(summary.day.localModels, 0).estimatedCostUsd, 0)
   })
 
-  it('dedupes identical back-to-back records from main and renderer', () => {
+  it('dedupes identical back-to-back records from main and renderer', async () => {
     storageSet(USAGE_EVENTS_STORAGE_KEY, [])
     const input = {
       model: 'gpt-4o',
@@ -55,6 +55,6 @@ describe('usage ledger', () => {
     }
     recordUsageEvent(input)
     recordUsageEvent(input)
-    assert.equal(getUsageSummary().ledgerEventCount, 1)
+    assert.equal((await getUsageSummary()).ledgerEventCount, 1)
   })
 })

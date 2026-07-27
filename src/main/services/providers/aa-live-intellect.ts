@@ -10,6 +10,7 @@
 
 import type { LiveAaModel } from '@copse/llm/live-intellect.ts'
 import { getApiKey } from '../storage/settings.ts'
+import { optionalRecord } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and the stored AA key. */
 const MOCK_ENV = 'COPSE_AA_INTELLECT_MOCK'
@@ -85,7 +86,7 @@ function reportedIndexVersion(
     'artificial_analysis_intelligence_index_version',
     'intelligence_index_version',
   ]) {
-    const v = payload[key] ?? (payload['metadata'] as Record<string, unknown> | undefined)?.[key]
+    const v = payload[key] ?? optionalRecord(payload['metadata'])?.[key]
     if (typeof v === 'string' || typeof v === 'number') return v
   }
   for (const m of models) {

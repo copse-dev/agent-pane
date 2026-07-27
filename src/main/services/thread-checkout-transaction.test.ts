@@ -178,6 +178,41 @@ describe('first-message checkout transaction', () => {
     assert.equal(patches.length, 0)
   })
 
+  it('adopts and persists a live worktree branch that drifted from meta', async () => {
+    const stale: ThreadWorktree = {
+      path: '/worktrees/thread-1',
+      branch: 'copse/stale',
+      baseBranch: 'main',
+      baseCommit: 'd'.repeat(40),
+      createdAt: 3,
+      seededFromDirtyProject: false,
+    }
+    const { prepare, getThread, patches } = fixture({
+      getThread: async () =>
+        blankThread({
+          worktreeChoice: 'worktree',
+          gitBranch: 'copse/stale',
+          worktree: stale,
+        }),
+      validate: async () => ({ branch: 'feat/live' }),
+    })
+
+    const result = await prepare({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      prompt: 'Continue after rename',
+      choice: 'worktree',
+    })
+
+    assert.equal(result.checkoutMode, 'worktree')
+    assert.equal(result.branch, 'feat/live')
+    assert.equal(result.worktree?.branch, 'feat/live')
+    assert.equal(getThread().gitBranch, 'feat/live')
+    assert.equal(getThread().worktree?.branch, 'feat/live')
+    assert.equal(patches.length, 1)
+    assert.equal(patches[0]?.gitBranch, 'feat/live')
+  })
+
   it('reclaims an unpersisted dirty worktree when meta write failed earlier', async () => {
     const recovered: ThreadWorktree = {
       path: '/worktrees/thread-1',

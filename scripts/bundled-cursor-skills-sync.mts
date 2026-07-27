@@ -1,5 +1,6 @@
 import * as fsp from 'node:fs/promises'
 import { join } from 'node:path'
+import { z } from 'zod'
 
 /** Pinned upstream commit from https://github.com/cursor/plugins */
 export const BUNDLED_CURSOR_PLUGINS_COMMIT = 'e46364b8be46000b7df0f260550cd712afbb8d36'
@@ -22,8 +23,18 @@ interface MarketplaceManifest {
 interface GitHubContentEntry {
   name: string
   type: 'file' | 'dir' | 'symlink' | 'submodule'
-  download_url: string | null
 }
+
+const marketplaceManifestSchema: z.ZodType<MarketplaceManifest> = z.object({
+  plugins: z.array(z.object({ name: z.string(), source: z.string() })),
+})
+
+const gitHubContentEntriesSchema: z.ZodType<GitHubContentEntry[]> = z.array(
+  z.object({
+    name: z.string(),
+    type: z.enum(['file', 'dir', 'symlink', 'submodule']),
+  }),
+)
 
 export interface BundledCursorSkillsSource {
   repository: string
@@ -34,12 +45,21 @@ export interface BundledCursorSkillsSource {
   slim: true
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
+export const bundledCursorSkillsSourceSchema: z.ZodType<BundledCursorSkillsSource> = z.object({
+  repository: z.string(),
+  commit: z.string(),
+  syncedAt: z.string(),
+  pluginCount: z.number(),
+  skillCount: z.number(),
+  slim: z.literal(true),
+})
+
+async function fetchJson<T>(url: string, schema: z.ZodType<T>): Promise<T> {
   const res = await fetch(url, { headers: GITHUB_HEADERS })
   if (!res.ok) {
     throw new Error(`GitHub fetch failed (${String(res.status)}): ${url}`)
   }
-  return (await res.json()) as T
+  return schema.parse(await res.json())
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -52,7 +72,7 @@ async function fetchText(url: string): Promise<string> {
 
 async function listSkillDirs(pluginSource: string): Promise<string[]> {
   const url = `${API_BASE}/${pluginSource}/skills?ref=${BUNDLED_CURSOR_PLUGINS_COMMIT}`
-  const entries = await fetchJson<GitHubContentEntry[]>(url)
+  const entries = await fetchJson(url, gitHubContentEntriesSchema)
   return entries.filter((entry) => entry.type === 'dir').map((entry) => entry.name)
 }
 
@@ -60,8 +80,9 @@ async function listSkillDirs(pluginSource: string): Promise<string[]> {
 export async function syncBundledCursorSkills(
   cacheDir: string,
 ): Promise<BundledCursorSkillsSource> {
-  const marketplace = await fetchJson<MarketplaceManifest>(
+  const marketplace = await fetchJson(
     `${RAW_BASE}/.cursor-plugin/marketplace.json`,
+    marketplaceManifestSchema,
   )
 
   const pluginsDir = join(cacheDir, 'plugins')

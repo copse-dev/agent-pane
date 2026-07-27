@@ -33,6 +33,8 @@ const XTERM_THEME = {
 
 interface TerminalTab {
   id: string
+  /** Project that owns the shell; paired with scopeId to resolve its trusted cwd. */
+  scopeProjectId: string | null
   /** Thread this shell belongs to; only the active thread's tabs are shown. */
   scopeId: string | null
   label: string
@@ -242,7 +244,7 @@ export function mountTerminalsPane(
 
   async function ensureSession(tab: TerminalTab): Promise<void> {
     if (tab.sessionId || tab.creating) return
-    if (!store.getState().workspaceRoot) {
+    if (!store.getState().workspaceRoot || !tab.scopeProjectId) {
       tab.term.writeln('\x1b[90mOpen a folder to use the terminal.\x1b[0m')
       return
     }
@@ -252,6 +254,7 @@ export function mountTerminalsPane(
       fitTab(tab)
       tab.sessionId = await api.terminal.create(tab.term.cols, tab.term.rows, {
         label: tab.label,
+        projectId: tab.scopeProjectId,
         threadId: tab.scopeId,
       })
       publishActive(tab)
@@ -372,6 +375,7 @@ export function mountTerminalsPane(
     const fileLinks = installTerminalFileLinks(term, store, api)
     const tab: TerminalTab = {
       id,
+      scopeProjectId: store.getState().activeProjectId,
       scopeId: currentThreadId(),
       label,
       labelSpan,
@@ -395,7 +399,7 @@ export function mountTerminalsPane(
     }
 
     tabBtn.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.terminals-tab-close')) return
+      if (e.target instanceof Element && e.target.closest('.terminals-tab-close')) return
       setActiveTab(id)
       // Reclaim the viewer from any agent-task panel that was showing. Done after
       // setActiveTab so a same-tab click (which setActiveTab skips) still returns

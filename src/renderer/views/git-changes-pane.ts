@@ -2,6 +2,7 @@ import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { at } from '@shared/array-utils.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -82,6 +83,16 @@ const STATUS_LABEL: Record<GitChangeStatus, string> = {
 
 type ChangeSelection =
   { kind: 'proposed'; path: string } | { kind: 'git'; path: string; staged: boolean }
+
+/** Validates a pop-out seed before it drives selection. The previous assertion
+ * trusted the shape outright, so a malformed seed reached selectGitChange with
+ * `staged` undefined. */
+function isChangeSelection(seed: unknown): seed is ChangeSelection {
+  if (!seed || typeof seed !== 'object') return false
+  if (!('kind' in seed) || !('path' in seed) || typeof seed.path !== 'string') return false
+  if (seed.kind === 'proposed') return true
+  return seed.kind === 'git' && 'staged' in seed && typeof seed.staged === 'boolean'
+}
 
 function changesModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -175,6 +186,7 @@ export function mountGitChangesPane(
   let restoreInFlight = false
   let selection: ChangeSelection | null = null
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
+  let refreshRequestId = 0
   const proposedDiffCachesByOwner = new Map<string, Map<string, ActiveDiff>>()
   let pendingNavigate: string | null = null
   // Path of a freshly proposed diff the pane should jump to on the next sync,
@@ -471,9 +483,13 @@ export function mountGitChangesPane(
     pendingSelect = { kind: 'git', path, staged }
     hideApprovalButtons()
     renderList()
-    const diff = await api.git.fileDiff(path, staged)
+    const owner = activeOwner()
+    if (!owner) return
+    const diff = await api.git.fileDiff(owner.projectId, owner.threadId, path, staged)
     if (
       requestId !== selectRequestId ||
+      activeOwner()?.projectId !== owner.projectId ||
+      activeOwner()?.threadId !== owner.threadId ||
       pendingSelect.path !== path ||
       pendingSelect.staged !== staged
     ) {
@@ -599,7 +615,21 @@ export function mountGitChangesPane(
   }
 
   async function refresh(): Promise<void> {
-    gitAvailable = await api.git.isAvailable()
+    const requestId = ++refreshRequestId
+    const owner = activeOwner()
+    if (!owner) {
+      gitAvailable = false
+      return
+    }
+    const available = await api.git.isAvailable(owner.projectId, owner.threadId)
+    const currentOwner = activeOwner()
+    if (
+      requestId !== refreshRequestId ||
+      currentOwner?.projectId !== owner.projectId ||
+      currentOwner.threadId !== owner.threadId
+    )
+      return
+    gitAvailable = available
     if (!gitAvailable) {
       status = null
       sessionBackup = null
@@ -608,9 +638,12 @@ export function mountGitChangesPane(
       await syncSelection()
       return
     }
-    status = await api.git.status()
-    const owner = activeOwner()
-    sessionBackup = owner ? await api.git.sessionBackup(owner.projectId, owner.threadId) : null
+    const nextStatus = await api.git.status(owner.projectId, owner.threadId)
+    if (requestId !== refreshRequestId) return
+    const nextBackup = await api.git.sessionBackup(owner.projectId, owner.threadId)
+    if (requestId !== refreshRequestId) return
+    status = nextStatus
+    sessionBackup = nextBackup
     renderRestoreBanner()
     renderList()
     await syncSelection()
@@ -669,6 +702,15 @@ export function mountGitChangesPane(
       if (changesModeActive(store)) void refresh()
       else renderList()
     }),
+    store.on('threads_changed', () => {
+      refreshRequestId++
+      selectRequestId++
+      status = null
+      sessionBackup = null
+      selection = null
+      if (changesModeActive(store)) void refresh()
+      else renderList()
+    }),
     store.on('theme_changed', (theme) => {
       monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
@@ -696,7 +738,17 @@ export function mountGitChangesPane(
   // catch up to the current state here, or the diff never renders. See #459.
   if (changesModeActive(store)) void refresh()
 
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('changes', {
+    capture: () => selection,
+    apply: (seed) => {
+      if (!isChangeSelection(seed)) return
+      if (seed.kind === 'proposed') void selectProposed(seed.path)
+      else void selectGitChange(seed.path, seed.staged)
+    },
+  })
+
   return () => {
+    unregisterPopoutSeed()
     if (refreshTimer) clearTimeout(refreshTimer)
     stopObservingLayout()
     unsubDiffConflict()

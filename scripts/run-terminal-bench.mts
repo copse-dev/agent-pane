@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { firstNonEmptyString } from '../src/shared/unknown-value.mts'
 import { existsSync, statfsSync } from 'node:fs'
 import { glob, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -63,7 +64,8 @@ const docker = spawnSync('docker', ['info', '--format', '{{.ServerVersion}}'], {
   encoding: 'utf8',
 })
 if (docker.error || docker.status !== 0) {
-  const detail = docker.error?.message || docker.stderr.trim() || docker.stdout.trim()
+  const detail =
+    firstNonEmptyString(docker.error?.message, docker.stderr.trim(), docker.stdout.trim()) ?? ''
   console.error(`bench:terminal: Docker is unavailable: ${detail}`)
   process.exit(1)
 }

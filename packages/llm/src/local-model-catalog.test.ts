@@ -12,7 +12,6 @@ import {
   recommendLocalModelsForRole,
   recommendedLocalSetup,
   recommendedSetupForClass,
-  type Benchmark,
 } from './local-model-catalog.ts'
 
 describe('local model catalog', () => {
@@ -44,10 +43,12 @@ describe('local model catalog', () => {
   })
 
   it('stores every present benchmark score with a source and date (no bare guesses)', () => {
-    const known = new Set<Benchmark>(BENCHMARKS)
     for (const m of LOCAL_MODEL_CATALOG) {
       for (const [bench, score] of Object.entries(m.benchmarks)) {
-        assert.ok(known.has(bench as Benchmark), `${m.id}: unknown benchmark '${bench}'`)
+        assert.ok(
+          BENCHMARKS.some((candidate) => candidate === bench),
+          `${m.id}: unknown benchmark '${bench}'`,
+        )
         assert.ok(Number.isFinite(score.value), `${m.id}/${bench}: value`)
         assert.ok(score.source.trim().length > 0, `${m.id}/${bench}: source required`)
         assert.ok(score.asOf.trim().length > 0, `${m.id}/${bench}: asOf required`)

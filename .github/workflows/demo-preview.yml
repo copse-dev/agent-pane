@@ -1,0 +1,211 @@
+name: Demo preview
+
+# Publishes browser demos under the Pages /demo/ namespace:
+#   /demo/main/ and /demo/develop/ are persistent branch builds.
+#   /demo/pr-<n>/ is an ephemeral build with a sticky PR comment.
+#
+# Triggered on push (not workflow_run) so the workflow runs from the pushed
+# branch's own definition — which makes the whole flow testable on the PR that
+# introduces it, before merge. This is safe because only same-repo branches can
+# push here: forks push to their own fork and never trigger this repo's push
+# workflows, so untrusted code never reaches the write token or the deploy. Each
+# qualifying push rebuilds the demo, releases it into the machine-managed
+# demo-previews branch, and redeploys Pages. Feature branches without an open PR
+# build nothing.
+#
+# The deploy always republishes site/ from `main` (see pages.yml), so a preview
+# push can only change content below /demo/ — never the marketing site.
+
+on:
+  push:
+    branches-ignore:
+      - demo-previews
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  pages: write
+  id-token: write
+
+# A newer push to the same branch supersedes an in-flight preview build.
+concurrency:
+  group: demo-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    # Skip forks entirely (their pushes don't trigger this anyway; explicit for
+    # clarity). Prefer the self-hosted check fleet when configured.
+    if: github.repository == 'copse-dev/agent-pane'
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    outputs:
+      found: ${{ steps.target.outputs.found }}
+      pr: ${{ steps.target.outputs.pr }}
+      published: ${{ steps.commit.outputs.published }}
+      scenarios: ${{ steps.scenarios.outputs.json }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # main/develop always publish to their persistent slots. Other branches
+      # belong to an open PR; no PR means nothing to preview or comment on.
+      - id: target
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const branch = context.ref.replace('refs/heads/', '');
+            if (branch === 'main' || branch === 'develop') {
+              core.setOutput('found', 'true');
+              core.setOutput('path', branch);
+              core.setOutput('label', branch);
+              core.setOutput('pr', '');
+              return;
+            }
+            const { data } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open',
+            });
+            if (data.length === 0) {
+              console.log(`No open PR for ${branch}; skipping preview.`);
+              core.setOutput('found', 'false');
+              return;
+            }
+            const pr = String(data[0].number);
+            core.setOutput('found', 'true');
+            core.setOutput('path', `pr-${pr}`);
+            core.setOutput('label', `PR #${pr}`);
+            core.setOutput('pr', pr);
+      - if: steps.target.outputs.found == 'true'
+        uses: ./.github/actions/setup
+      - if: steps.target.outputs.found == 'true'
+        run: npm run build:demo
+      - id: scenarios
+        if: steps.target.outputs.found == 'true'
+        run: |
+          {
+            echo 'json<<SCENARIOS_EOF'
+            tr -d '\n' < dist/demo/scenarios.json 2>/dev/null || echo '[]'
+            echo
+            echo 'SCENARIOS_EOF'
+          } >> "$GITHUB_OUTPUT"
+      - id: commit
+        if: steps.target.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET: ${{ steps.target.outputs.path }}
+          LABEL: ${{ steps.target.outputs.label }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$TARGET" != "main" && "$TARGET" != "develop" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+            echo "Invalid demo target: $TARGET" >&2
+            exit 1
+          fi
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          # Work on an isolated clone of the previews branch so the demo build in
+          # dist/ is never disturbed. Create the orphan branch on first publish.
+          if git clone --depth=1 --branch demo-previews "$remote" previews-branch 2>/dev/null; then
+            echo "Updating existing demo-previews branch"
+          else
+            git clone --depth=1 "$remote" previews-branch
+            git -C previews-branch checkout --orphan demo-previews
+            git -C previews-branch rm -rf . >/dev/null 2>&1 || true
+          fi
+          git -C previews-branch config user.name "github-actions[bot]"
+          git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf "previews-branch/${TARGET}"
+          mkdir -p "previews-branch/${TARGET}"
+          cp -R dist/demo/. "previews-branch/${TARGET}/"
+          # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
+          # and high-entropy map contents fail Secret scan on unrelated tips.
+          find "previews-branch/${TARGET}" -type f -name '*.map' -delete
+          printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
+          git -C previews-branch add "$TARGET"
+          if git -C previews-branch diff --cached --quiet; then
+            echo "No preview change for ${LABEL}"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          else
+            git -C previews-branch commit -m "demo preview: ${LABEL} (${SHA})"
+            git -C previews-branch push origin demo-previews
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    uses: ./.github/workflows/pages.yml
+    secrets: inherit
+
+  comment:
+    needs: [publish, deploy]
+    if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
+    runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v9
+        env:
+          PR: ${{ needs.publish.outputs.pr }}
+          BASE_URL: ${{ needs.deploy.outputs.page_url }}
+          SCENARIOS: ${{ needs.publish.outputs.scenarios }}
+        with:
+          script: |
+            const marker = '<!-- copse-demo-preview -->';
+            const pr = Number(process.env.PR);
+            // page_url is the Pages root; normalise to exactly one trailing
+            // slash, then use the shared /demo/ namespace. The final trailing
+            // slash matters because the demo's assets are document-relative.
+            const base = (
+              process.env.BASE_URL || 'https://copse-dev.github.io/agent-pane/'
+            ).replace(/\/*$/, '/');
+            const previewUrl = `${base}demo/pr-${pr}/`;
+            let scenarios = [];
+            try {
+              scenarios = JSON.parse(process.env.SCENARIOS || '[]');
+            } catch {
+              scenarios = [];
+            }
+            const links = scenarios
+              .map((s) => `- [${s.label}](${previewUrl}?scenario=${encodeURIComponent(s.id)})`)
+              .join('\n');
+            const body = [
+              marker,
+              '## 🖥️ Demo preview',
+              '',
+              `A browser build of this PR is live at **[${previewUrl}](${previewUrl})**.`,
+              '',
+              links ? 'Interactive, with a mocked backend — jump to a scenario:' : '',
+              links,
+              '',
+              '<sub>Static demo of the renderer against a mock API — the browser pane, terminal, and all main-process IPC are stubbed, so it never proves main-process behaviour. Refreshed on each push; removed when the PR closes.</sub>',
+            ]
+              .filter((line) => line !== '')
+              .join('\n');
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr,
+            });
+            const existing = comments.find(
+              (c) =>
+                c.user?.type === 'Bot' &&
+                typeof c.body === 'string' &&
+                c.body.includes(marker),
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr,
+                body,
+              });
+            }

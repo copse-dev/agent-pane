@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import Anthropic from '@anthropic-ai/sdk'
 import { anthropicMaxOutputTokens, getModelInfo } from './model-catalog.ts'
 import { isRetryableStreamError, streamRetryDelayMs } from './stream-retry.ts'
-import type { ProviderStreamChunk } from './wire-types.ts'
+import type { LLMProvider } from './wire-types.ts'
 import {
   createExtraCloudProvider,
   createLocalOpenAIProvider,
@@ -88,25 +88,19 @@ interface CapturedRequestBody {
   prompt_cache_key?: string
   store?: boolean
   provider?: { require_parameters?: boolean; zdr?: boolean; data_collection?: string }
+  stream_options?: { include_usage?: boolean }
+}
+
+function expectOpenAIProvider(provider: LLMProvider): OpenAIProvider {
+  assert.ok(provider instanceof OpenAIProvider)
+  return provider
 }
 
 // Capture the request body a provider sends by stubbing its private OpenAI client.
 async function captureRequest(provider: OpenAIProvider): Promise<CapturedRequestBody> {
   const captured: { request?: CapturedRequestBody } = {}
-  ;(
-    provider as unknown as {
-      client: {
-        chat: {
-          completions: {
-            create: (request: CapturedRequestBody) => AsyncIterable<{
-              choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
-            }>
-          }
-        }
-      }
-    }
-  ).client.chat.completions.create = (
-    request,
+  const create = (
+    request: CapturedRequestBody,
   ): AsyncIterable<{
     choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
   }> => {
@@ -117,33 +111,33 @@ async function captureRequest(provider: OpenAIProvider): Promise<CapturedRequest
       yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }
     })()
   }
+  Object.defineProperty(provider, 'client', {
+    value: { chat: { completions: { create } } },
+    configurable: true,
+  })
   for await (const _ of provider.stream([{ role: 'user', content: 'hi' }], [])) void _
   return captured.request ?? {}
 }
 
 describe('createProvider prompt cache key', () => {
   it('threads promptCacheKey into the OpenAI request body', async () => {
-    const provider = createProvider(
-      'gpt-4o',
-      { openAiApiKey: 'test-openai' },
-      'thread-xyz',
-    ) as OpenAIProvider
+    const provider = expectOpenAIProvider(
+      createProvider('gpt-4o', { openAiApiKey: 'test-openai' }, 'thread-xyz'),
+    )
     const request = await captureRequest(provider)
     assert.equal(request.prompt_cache_key, 'thread-xyz')
   })
 
   it('threads promptCacheKey into the OpenRouter request body', async () => {
-    const provider = createOpenRouterProvider(
-      'openai/gpt-4o',
-      'sk-or-test',
-      'thread-xyz',
-    ) as OpenAIProvider
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', 'thread-xyz'),
+    )
     const request = await captureRequest(provider)
     assert.equal(request.prompt_cache_key, 'thread-xyz')
   })
 
   it('omits prompt_cache_key when no key is supplied', async () => {
-    const provider = createProvider('gpt-4o', { openAiApiKey: 'test-openai' }) as OpenAIProvider
+    const provider = expectOpenAIProvider(createProvider('gpt-4o', { openAiApiKey: 'test-openai' }))
     const request = await captureRequest(provider)
     assert.equal(request.prompt_cache_key, undefined)
   })
@@ -151,22 +145,21 @@ describe('createProvider prompt cache key', () => {
 
 describe('provider data-retention request defaults', () => {
   it('sends store:false to direct OpenAI so responses are not retained as app state', async () => {
-    const provider = createProvider('gpt-4o', { openAiApiKey: 'test-openai' }) as OpenAIProvider
+    const provider = expectOpenAIProvider(createProvider('gpt-4o', { openAiApiKey: 'test-openai' }))
     const request = await captureRequest(provider)
     assert.equal(request.store, false)
   })
 
   it('does not send store to OpenAI-compatible local servers', async () => {
-    const provider = createLocalOpenAIProvider(
-      'http://localhost:1234/v1',
-      'qwen-local',
-    ) as OpenAIProvider
+    const provider = expectOpenAIProvider(
+      createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen-local'),
+    )
     const request = await captureRequest(provider)
     assert.equal(request.store, undefined)
   })
 
   it('requests ZDR-only, non-training OpenRouter routing by default', async () => {
-    const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test') as OpenAIProvider
+    const provider = expectOpenAIProvider(createOpenRouterProvider('openai/gpt-4o', 'sk-or-test'))
     const request = await captureRequest(provider)
     assert.deepEqual(request.provider, {
       require_parameters: true,
@@ -176,18 +169,22 @@ describe('provider data-retention request defaults', () => {
   })
 
   it('keeps the training exclusion when only zdrOnly is turned off', async () => {
-    const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
-      zdrOnly: false,
-    }) as OpenAIProvider
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
+        zdrOnly: false,
+      }),
+    )
     const request = await captureRequest(provider)
     assert.deepEqual(request.provider, { require_parameters: true, data_collection: 'deny' })
   })
 
   it('drops data_collection only with the explicit allowTraining opt-in', async () => {
-    const provider = createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
-      zdrOnly: false,
-      allowTraining: true,
-    }) as OpenAIProvider
+    const provider = expectOpenAIProvider(
+      createOpenRouterProvider('openai/gpt-4o', 'sk-or-test', undefined, {
+        zdrOnly: false,
+        allowTraining: true,
+      }),
+    )
     const request = await captureRequest(provider)
     assert.deepEqual(request.provider, { require_parameters: true })
   })
@@ -195,43 +192,11 @@ describe('provider data-retention request defaults', () => {
 
 describe('createLocalOpenAIProvider', () => {
   it('requests streamed usage so local models populate the usage ledger', async () => {
-    const provider = createLocalOpenAIProvider(
-      'http://localhost:1234/v1',
-      'qwen/qwen3.6-35b-a3b',
-    ) as OpenAIProvider
-    type Captured = { request?: { stream_options?: { include_usage?: boolean } } | undefined }
-    const captured: Captured = {}
-    ;(
-      provider as unknown as {
-        client: {
-          chat: {
-            completions: {
-              create: (request: NonNullable<Captured['request']>) => AsyncIterable<{
-                choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
-              }>
-            }
-          }
-        }
-      }
-    ).client.chat.completions.create = (
-      request,
-    ): AsyncIterable<{
-      choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
-    }> => {
-      captured.request = request
-      return (async function* (): AsyncGenerator<{
-        choices: Array<{ delta?: { content?: string }; finish_reason?: string }>
-      }> {
-        yield { choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }
-      })()
-    }
-
-    const chunks: ProviderStreamChunk[] = []
-    for await (const chunk of provider.stream([{ role: 'user', content: 'hi' }], [])) {
-      chunks.push(chunk)
-    }
-
-    assert.equal(captured.request?.stream_options?.include_usage, true)
+    const provider = expectOpenAIProvider(
+      createLocalOpenAIProvider('http://localhost:1234/v1', 'qwen/qwen3.6-35b-a3b'),
+    )
+    const request = await captureRequest(provider)
+    assert.equal(request.stream_options?.include_usage, true)
   })
 })
 

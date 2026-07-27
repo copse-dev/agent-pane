@@ -6,14 +6,17 @@ import {
   attachHookCards,
   explodeThread,
   foldThread,
+  refsOfLine,
   type FileToWrite,
   type RefResolver,
 } from './fold.ts'
 import {
   SPINE_SCHEMA_VERSION,
+  parseSpine,
   serializeSpineLine,
   parseSpineEntries,
   type SpineHookRunLine,
+  type SpineMessageLine,
   type ThreadMeta,
 } from './spine-schema.ts'
 
@@ -422,4 +425,120 @@ test('attachHookCards is a no-op when there are no hook runs', () => {
   const raw = spine.map((l) => serializeSpineLine(l)).join('\n')
   const same = attachHookCards(messages, parseSpineEntries(raw))
   strictEqual(same[0], messages[0])
+})
+
+/**
+ * Records every ref the fold asks for, so a test can compare the fold's real
+ * appetite against what {@link refsOfLine} advertises.
+ */
+function recordingResolverFor(files: FileToWrite[]): {
+  resolve: RefResolver
+  requested: Set<string>
+} {
+  const base = resolverFor(files)
+  const requested = new Set<string>()
+  return {
+    resolve: (ref): string => {
+      requested.add(ref)
+      return base(ref)
+    },
+    requested,
+  }
+}
+
+/** Collect refs the way the thread store's prefetch does — via `refsOfLine` only. */
+function prefetchRefs(spine: SpineMessageLine[], files: FileToWrite[]): Set<string> {
+  const map = new Map(files.map((f) => [f.ref, f.contents]))
+  const out = new Set<string>()
+  let frontier = [{ prefix: '', lines: spine }]
+  while (frontier.length > 0) {
+    const next: typeof frontier = []
+    for (const { prefix, lines } of frontier) {
+      for (const line of lines) {
+        const { files: fileRefs, subagentDirs } = refsOfLine(line)
+        for (const ref of fileRefs) out.add(prefix + ref)
+        for (const dir of subagentDirs) {
+          const eventsRef = `${prefix}${dir}events.jsonl`
+          out.add(eventsRef)
+          const raw = map.get(eventsRef)
+          if (raw !== undefined) next.push({ prefix: prefix + dir, lines: parseSpine(raw) })
+        }
+      }
+    }
+    frontier = next
+  }
+  return out
+}
+
+// The thread store prefetches a thread's files asynchronously and then folds from
+// memory. That only works while `refsOfLine` and the fold agree on which refs
+// exist: a ref the fold wants but `refsOfLine` omits is never prefetched, and the
+// fold throws `Missing thread file` — silently skipping the whole thread.
+test('refsOfLine enumerates exactly the refs the fold resolves', () => {
+  const messages: Message[] = [
+    {
+      id: 'u1',
+      role: 'user',
+      content: 'look at this',
+      images: ['data:image/png;base64,aaaa'],
+      toolCalls: [],
+      createdAt: 1,
+    },
+    {
+      id: 'a1',
+      role: 'assistant',
+      content: 'exploring',
+      reasoning: 'thinking about it',
+      toolCalls: [
+        { id: 'tc0', name: 'read_file', args: { path: 'a' }, status: 'done', result: 'contents' },
+        { id: 'tc1', name: 'noop', args: {}, status: 'done', result: null },
+        {
+          id: 'tc2',
+          name: 'explore',
+          args: { prompt: 'find it' },
+          status: 'done',
+          result: 'summary',
+          subagent: {
+            id: 'sub1',
+            kind: 'explore',
+            status: 'done',
+            prompt: 'find it',
+            summary: 'found',
+            messages: [
+              {
+                id: 'sm1',
+                role: 'assistant',
+                content: 'nested',
+                toolCalls: [
+                  {
+                    id: 'stc1',
+                    name: 'grep',
+                    args: {},
+                    status: 'done',
+                    result: 'hit',
+                    // A subagent of a subagent: the prefetch has to keep recursing.
+                    subagent: {
+                      id: 'sub2',
+                      kind: 'explore',
+                      status: 'done',
+                      prompt: 'deeper',
+                      summary: 'deeper still',
+                      messages: [{ id: 'dm1', role: 'assistant', content: 'deep', toolCalls: [] }],
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      createdAt: 2,
+    },
+  ]
+
+  const { spine, files } = explodeThread(messages, hash)
+  const { resolve, requested } = recordingResolverFor(files)
+  foldThread(meta(), spine, resolve, { hash })
+
+  deepStrictEqual([...prefetchRefs(spine, files)].sort(), [...requested].sort())
 })

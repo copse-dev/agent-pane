@@ -6,6 +6,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Regression for #459 ("Changeset viewer doesn't render the diff currently").
 //
@@ -26,32 +27,39 @@ const emptyStatus: GitStatusResult = { staged: [], unstaged: [] }
 
 function makeApi(calls: { isAvailable: number; status: number }): ApiClient {
   const noopUnsub = (): (() => void) => () => {}
-  return {
-    git: {
-      isAvailable: async () => {
-        calls.isAvailable++
-        return true
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      git: {
+        ...base['git'],
+        isAvailable: async (): Promise<boolean> => {
+          calls.isAvailable++
+          return true
+        },
+        status: async (): Promise<GitStatusResult | null> => {
+          calls.status++
+          return emptyStatus
+        },
+        fileDiff: async () => null,
+        sessionBackup: async () => null,
       },
-      status: async () => {
-        calls.status++
-        return emptyStatus
+      diff: {
+        ...base['diff'],
+        approve: async (): Promise<void> => {},
+        reject: async (): Promise<void> => {},
+        approveAll: async (): Promise<void> => {},
+        rejectAll: async (): Promise<void> => {},
+        onShowDiff: noopUnsub,
+        onQueued: noopUnsub,
+        onConflict: noopUnsub,
       },
-      fileDiff: async () => null,
-      sessionBackup: async () => null,
-    },
-    diff: {
-      approve: async () => {},
-      reject: async () => {},
-      approveAll: async () => {},
-      rejectAll: async () => {},
-      onShowDiff: noopUnsub(),
-      onQueued: noopUnsub(),
-      onConflict: noopUnsub(),
-    },
-    fs: {
-      onChanged: noopUnsub(),
-    },
-  } as unknown as ApiClient
+      fs: {
+        ...base['fs'],
+        onChanged: noopUnsub,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 const monacoStub = {} as unknown as typeof Monaco

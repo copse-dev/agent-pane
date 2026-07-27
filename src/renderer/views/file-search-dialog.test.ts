@@ -20,6 +20,7 @@ import {
   closeFileSearchDialog,
   isFileSearchDialogOpen,
 } from './file-search-dialog.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 function shimModal(dialog: HTMLDialogElement): void {
   let open = false
@@ -76,7 +77,7 @@ function stubApi(
       },
     },
     fs: {
-      readFile: (path: string): Promise<string> => {
+      readFile: (_projectId: string, _threadId: string, path: string): Promise<string> => {
         calls.reads.push(path)
         return Promise.resolve(`contents of ${path}`)
       },
@@ -129,12 +130,12 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   }): void {
     document.body.innerHTML = ''
     calls = { queries: [], reads: [], roadmapLists: 0 }
-    store = createStore()
+    store = createStore({ activeProjectId: 'project-1', activeThreadId: 'thread-1' })
     mountFileSearchDialog(
       store,
       stubApi(calls, () => result, options),
     )
-    dialog = document.getElementById('file-search-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#file-search-dialog')
     shimModal(dialog)
   }
 
@@ -164,7 +165,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   it('queries the index as the user types (debounced)', async () => {
     openFileSearchDialog()
     await tick(0)
-    const input = dialog.querySelector('.file-search-input') as HTMLInputElement
+    const input = qsRequired<HTMLInputElement>(dialog, '.file-search-input')
     result = ['src/renderer/views/file-tree.ts']
     input.value = 'tree'
     input.dispatchEvent(new Event('input'))
@@ -180,14 +181,14 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
     openFileSearchDialog()
     await tick(0)
     assert.equal(dialog.querySelectorAll('.file-search-item').length, 0)
-    const empty = dialog.querySelector('.file-search-empty') as HTMLElement
+    const empty = qsRequired(dialog, '.file-search-empty')
     assert.equal(empty.hidden, false)
   })
 
   it('opening a match reads the file, reveals the explorer, and closes', async () => {
     openFileSearchDialog()
     await tick(0)
-    const second = dialog.querySelectorAll('.file-search-item')[1] as HTMLElement
+    const second = dialog.querySelectorAll<HTMLElement>('.file-search-item').item(1)
     second.dispatchEvent(new Event('mousedown'))
     await tick(0)
     // openWorkspaceFile read the chosen path and pushed it into the explorer.
@@ -210,7 +211,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
     ]
 
     async function typeQuery(query: string): Promise<void> {
-      const input = dialog.querySelector('.file-search-input') as HTMLInputElement
+      const input = qsRequired<HTMLInputElement>(dialog, '.file-search-input')
       input.value = query
       input.dispatchEvent(new Event('input'))
       await tick(150) // past the 100ms debounce
@@ -248,7 +249,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
       openFileSearchDialog()
       await tick(0)
       await typeQuery('e2e suite')
-      const row = dialog.querySelector('.file-search-roadmap-item') as HTMLElement
+      const row = qsRequired(dialog, '.file-search-roadmap-item')
       assert.ok(row, 'expected a roadmap result row')
       row.dispatchEvent(new Event('mousedown'))
       await tick(0)
@@ -309,7 +310,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
       await typeQuery('onboarding')
       assert.equal(calls.roadmapLists, 0, 'must not fetch the roadmap when disabled')
       assert.equal(dialog.querySelectorAll('.file-search-roadmap-item').length, 0)
-      const empty = dialog.querySelector('.file-search-empty') as HTMLElement
+      const empty = qsRequired(dialog, '.file-search-empty')
       assert.equal(empty.hidden, false)
     })
   })

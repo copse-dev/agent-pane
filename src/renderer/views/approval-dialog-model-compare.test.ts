@@ -6,6 +6,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 import { resetAttention } from '../controller/attention.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 type ApprovalHandler = (req: {
   id: string
@@ -120,7 +121,7 @@ describe('approval dialog model comparison pickers', () => {
         return () => {}
       },
     })
-    const dialog = document.getElementById('approval-dialog') as HTMLDialogElement
+    const dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
     shimModal(dialog)
 
     emit({ id: 'cmp-1' })

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getAgentBrowserSession } from '../../windows/browser-web-contents.ts'
 import { DOM_SNAPSHOT_SCRIPT, renderSnapshot, type PageSnapshot } from './snapshot-format.ts'
+import { expectBoolean } from '@shared/unknown-value.ts'
 
 const MAX_TABS = 8
 const DEFAULT_WIDTH = 1280
@@ -127,24 +128,27 @@ export class BrowserSessionManager {
 
   async click(ref: string, viewId?: string): Promise<string> {
     const tab = this.resolveTab(viewId)
-    const ok = (await tab.window.webContents.executeJavaScript(
-      `(() => {
+    const ok = expectBoolean(
+      await tab.window.webContents.executeJavaScript(
+        `(() => {
         const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
         if (!el) return false;
         el.scrollIntoView({ block: 'center' });
         el.click();
         return true;
       })()`,
-      true,
-    )) as boolean
+        true,
+      ),
+    )
     if (!ok) throw new Error(`no element with ref ${ref} (run browser_snapshot first)`)
     return `Clicked [ref=${ref}]`
   }
 
   async type(ref: string, text: string, viewId?: string): Promise<string> {
     const tab = this.resolveTab(viewId)
-    const ok = (await tab.window.webContents.executeJavaScript(
-      `(() => {
+    const ok = expectBoolean(
+      await tab.window.webContents.executeJavaScript(
+        `(() => {
         const el = document.querySelector('[data-copse-ref=${JSON.stringify(ref)}]');
         if (!el) return false;
         el.focus();
@@ -155,8 +159,9 @@ export class BrowserSessionManager {
         el.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
       })()`,
-      true,
-    )) as boolean
+        true,
+      ),
+    )
     if (!ok) throw new Error(`no element with ref ${ref} (run browser_snapshot first)`)
     return `Typed into [ref=${ref}]`
   }

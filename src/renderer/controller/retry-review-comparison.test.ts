@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function thread(id: string): Thread {
   return {
@@ -34,18 +35,23 @@ function setup(activeProjectId: string | null): {
     threads: [thread('t1')],
   })
   const calls: RetryCalls = { review: [], comparison: [] }
-  const api = {
-    agent: {
-      retryReview: (...args: unknown[]) => {
-        calls.review.push(args)
-        return Promise.resolve()
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        retryReview: (...args: unknown[]): Promise<void> => {
+          calls.review.push(args)
+          return Promise.resolve()
+        },
+        retryComparison: (...args: unknown[]): Promise<void> => {
+          calls.comparison.push(args)
+          return Promise.resolve()
+        },
       },
-      retryComparison: (...args: unknown[]) => {
-        calls.comparison.push(args)
-        return Promise.resolve()
-      },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
   return { store, api, calls }
 }
 

@@ -4,6 +4,7 @@ import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
+import { expectString } from '@shared/unknown-value.ts'
 
 // Cache reads in memory so electron-store does not re-read and re-parse the
 // whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
@@ -49,7 +50,7 @@ const FIXED_PROVIDER_ENV_VARS: Record<string, string> = {
 const PROVIDER_ENV_VARS: Record<string, string> = {
   ...FIXED_PROVIDER_ENV_VARS,
   ...Object.fromEntries(
-    BUILTIN_EXTRA_PROVIDERS.filter((p) => p.envVar).map((p) => [p.id, p.envVar as string]),
+    BUILTIN_EXTRA_PROVIDERS.filter((p) => p.envVar).map((p) => [p.id, expectString(p.envVar)]),
   ),
 }
 

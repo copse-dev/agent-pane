@@ -19,6 +19,7 @@ describe('sanitizeMcpInputSchema', () => {
     assert.deepEqual(sanitizeMcpInputSchema(undefined), { type: 'object', properties: {} })
     assert.deepEqual(sanitizeMcpInputSchema(null), { type: 'object', properties: {} })
     assert.deepEqual(sanitizeMcpInputSchema('nope'), { type: 'object', properties: {} })
+    assert.deepEqual(sanitizeMcpInputSchema([]), { type: 'object', properties: {} })
   })
 
   it('forces type:object and ensures properties exists', () => {

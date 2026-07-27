@@ -4,12 +4,13 @@ import { access, chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/pro
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { expectRecord, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 
 const GORTEX_VERSION = 'v0.60.0'
 const REPO = 'zzet/gortex'
-const OUT_DIR = resolve(process.env['GORTEX_OUT_DIR'] || 'vendor/gortex')
+const OUT_DIR = resolve(nonEmptyStringOr(process.env['GORTEX_OUT_DIR'], 'vendor/gortex'))
 const BIN_NAME = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
-const TARGET_ARCH = process.env['GORTEX_TARGET_ARCH'] || process.arch
+const TARGET_ARCH = nonEmptyStringOr(process.env['GORTEX_TARGET_ARCH'], process.arch)
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const CHECKSUMS_PATH = join(SCRIPT_DIR, 'gortex-checksums.json')
@@ -24,7 +25,17 @@ async function sha256File(path: string): Promise<string> {
 
 async function loadChecksums(): Promise<ChecksumManifest> {
   try {
-    return JSON.parse(await readFile(CHECKSUMS_PATH, 'utf8')) as ChecksumManifest
+    const parsed = expectRecord(JSON.parse(await readFile(CHECKSUMS_PATH, 'utf8')) as unknown)
+    const manifest: ChecksumManifest = {}
+    for (const [version, assetsValue] of Object.entries(parsed)) {
+      const assets = expectRecord(assetsValue)
+      const hashes: Record<string, string> = {}
+      for (const [asset, hash] of Object.entries(assets)) {
+        if (typeof hash === 'string') hashes[asset] = hash
+      }
+      manifest[version] = hashes
+    }
+    return manifest
   } catch {
     return {}
   }

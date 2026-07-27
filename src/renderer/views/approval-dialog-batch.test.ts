@@ -11,6 +11,7 @@ import { mountApprovalDialog } from './approval-dialog.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { resetAttention } from '../controller/attention.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 interface EmitReq {
   id: string
@@ -137,7 +138,7 @@ describe('approval dialog coalescing', () => {
         }
       },
     })
-    dialog = document.getElementById('approval-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
     spy = shimModal(dialog)
   })
 
@@ -260,7 +261,7 @@ describe('approval dialog coalescing', () => {
   })
 
   it('shows the remember checkbox only when the batch shares one grant', () => {
-    const remember = dialog.querySelector('.approval-remember') as HTMLElement
+    const remember = qsRequired(dialog, '.approval-remember')
     // Same agent+kind grant across the batch → checkbox offered, applied to all.
     emit({ id: 'a', allowRemember: true, rememberLabel: 'Always allow Codex terminal commands' })
     emit({ id: 'b', allowRemember: true, rememberLabel: 'Always allow Codex terminal commands' })
@@ -274,7 +275,7 @@ describe('approval dialog coalescing', () => {
   })
 
   it('hides the remember checkbox for a mixed-grant batch', () => {
-    const remember = dialog.querySelector('.approval-remember') as HTMLElement
+    const remember = qsRequired(dialog, '.approval-remember')
     emit({ id: 'a', allowRemember: true, rememberLabel: 'Always allow Codex terminal commands' })
     emit({ id: 'b', allowRemember: true, rememberLabel: 'Always allow Codex web fetches' })
     fireWindow()

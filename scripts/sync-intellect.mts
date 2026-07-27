@@ -39,12 +39,14 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { z } from 'zod'
 import {
   MIN_RECOMMENDED_ANCHORS,
   fitLinearEquating,
   type AnchorPair,
   type EquatingMap,
 } from '../packages/llm/src/intellect-equating.ts'
+import { optionalRecord } from '../src/shared/unknown-value.mts'
 
 const DATA_PATH = resolve('scripts/data/intellect-scores.json')
 const GENERATED_PATH = resolve('packages/llm/src/model-intellect.generated.ts')
@@ -60,7 +62,7 @@ export interface Measurement {
    * (OpenRouter ids, ACP picker labels). Lookup keys only — they never create
    * a second measurement.
    */
-  aliases?: string[]
+  aliases?: string[] | undefined
 }
 
 /**
@@ -71,7 +73,7 @@ export interface Measurement {
  */
 export interface WantedModel {
   modelId: string
-  aliases?: string[]
+  aliases?: string[] | undefined
 }
 
 export interface DataFile {
@@ -79,12 +81,55 @@ export interface DataFile {
   attribution: string
   scores: Measurement[]
   /** Catalog models to populate from the API when it carries them. */
-  wanted?: WantedModel[]
+  wanted?: WantedModel[] | undefined
   /** Version hops we intend to fit, e.g. { "from": "v4.2", "to": "v4.1" }. */
   equatingPairs: Array<{ from: string; to: string }>
   /** Crystallised fits — written back by this script, reused on later runs. */
   equating: EquatingMap[]
 }
+
+const measurementSchema: z.ZodType<Measurement> = z.object({
+  modelId: z.string(),
+  value: z.number(),
+  indexVersion: z.string(),
+  source: z.string(),
+  asOf: z.string(),
+  aliases: z.array(z.string()).optional(),
+})
+const wantedModelSchema: z.ZodType<WantedModel> = z.object({
+  modelId: z.string(),
+  aliases: z.array(z.string()).optional(),
+})
+const equatingMapSchema: z.ZodType<EquatingMap> = z.object({
+  from: z.string(),
+  to: z.string(),
+  a: z.number(),
+  b: z.number(),
+  anchorCount: z.number(),
+  anchorMin: z.number(),
+  anchorMax: z.number(),
+  fittedAsOf: z.string(),
+})
+const dataFileSchema: z.ZodType<DataFile> = z.object({
+  canonicalVersion: z.string(),
+  attribution: z.string(),
+  scores: z.array(measurementSchema),
+  wanted: z.array(wantedModelSchema).optional(),
+  equatingPairs: z.array(z.object({ from: z.string(), to: z.string() })),
+  equating: z.array(equatingMapSchema),
+})
+const aaApiModelSchema: z.ZodType<AaApiModel> = z.object({
+  id: z.string().optional(),
+  slug: z.string().optional(),
+  name: z.string().optional(),
+  evaluations: z
+    .object({
+      artificial_analysis_intelligence_index: z.number().optional(),
+      artificial_analysis_intelligence_index_version: z.union([z.string(), z.number()]).optional(),
+    })
+    .optional(),
+})
+const aaPayloadSchema = z.object({ data: z.array(aaApiModelSchema).optional() }).loose()
 
 function isIsoDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -273,13 +318,15 @@ ${mapRows}
 }
 
 export interface AaApiModel {
-  id?: string
-  slug?: string
-  name?: string
-  evaluations?: {
-    artificial_analysis_intelligence_index?: number
-    artificial_analysis_intelligence_index_version?: string | number
-  }
+  id?: string | undefined
+  slug?: string | undefined
+  name?: string | undefined
+  evaluations?:
+    | {
+        artificial_analysis_intelligence_index?: number | undefined
+        artificial_analysis_intelligence_index_version?: string | number | undefined
+      }
+    | undefined
 }
 
 /** Normalise the API's version form ("4.1", 4.1) to our labels ("v4.1"). */
@@ -299,7 +346,7 @@ export function detectPayloadVersion(
   payload: Record<string, unknown>,
   apiModels: readonly AaApiModel[],
 ): string | undefined {
-  const meta = payload['metadata'] as Record<string, unknown> | undefined
+  const meta = optionalRecord(payload['metadata'])
   const candidates: Array<unknown> = [
     payload['artificial_analysis_intelligence_index_version'],
     payload['intelligence_index_version'],
@@ -339,7 +386,7 @@ async function refreshFromApi(
     headers: { 'x-api-key': apiKey },
   })
   if (!res.ok) fail(`Artificial Analysis API → ${String(res.status)} ${res.statusText}`)
-  const payload = (await res.json()) as Record<string, unknown> & { data?: AaApiModel[] }
+  const payload = aaPayloadSchema.parse((await res.json()) as unknown)
   const apiModels = payload.data ?? []
   const declared = detectPayloadVersion(payload, apiModels)
   const pinned = normalizeVersion(pinnedVersion)
@@ -437,7 +484,7 @@ async function main(): Promise<void> {
   const versionArg = process.argv.find((a) => a.startsWith('--index-version='))
   const today = new Date().toISOString().slice(0, 10)
   const raw = await readFile(DATA_PATH, 'utf8')
-  let data = JSON.parse(raw) as DataFile
+  let data = dataFileSchema.parse(JSON.parse(raw) as unknown)
   validate(data)
 
   if (fromApi) {

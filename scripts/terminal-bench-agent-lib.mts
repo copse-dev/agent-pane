@@ -11,6 +11,7 @@ import type { ReasoningCheckpointPolicy } from '../packages/agent/src/reasoning-
 import type { AgentStreamChunk } from '@copse/agent/wire-types.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import { OpenAIProvider } from '@copse/llm/openai-provider.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import type { LLMProvider, LLMTool } from '@copse/llm/wire-types.ts'
 import { formatTerminalResult, type TerminalToolResult } from './lib/terminal-bench-protocol.mts'
 import { recordTerminalBenchProviderRequests } from './lib/terminal-bench-provider-recorder.mts'
@@ -25,7 +26,7 @@ import {
   loadTerminalBenchSteering,
   terminalBenchSteeringPrompt,
 } from './lib/terminal-bench-steering.mts'
-import { TerminalBenchTranscript } from './lib/terminal-bench-transcript.mts'
+import { BenchTranscript } from './lib/bench-transcript.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
 export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS
@@ -328,9 +329,12 @@ export async function runTerminalBenchAgent(): Promise<void> {
     throw new Error('Terminal agent bridge expected a start message.')
   }
 
-  const apiKey = process.env['LM_STUDIO_API_KEY']?.trim() || process.env['LM_API_TOKEN']?.trim()
+  const apiKey = firstNonEmptyString(
+    process.env['LM_STUDIO_API_KEY']?.trim(),
+    process.env['LM_API_TOKEN']?.trim(),
+  )
   if (!apiKey) throw new Error('Set LM_STUDIO_API_KEY (or LM_API_TOKEN) before running the bench.')
-  const baseUrl = process.env['LM_STUDIO_URL']?.trim() || 'http://localhost:1234/v1'
+  const baseUrl = nonEmptyStringOr(process.env['LM_STUDIO_URL']?.trim(), 'http://localhost:1234/v1')
   const maxSteps = envPositiveInt('COPSE_TERMINAL_MAX_STEPS', 80)
   const maxLlmCalls = envPositiveInt('COPSE_TERMINAL_MAX_LLM_CALLS', maxSteps + 3)
   const maxContextTokens = envPositiveInt('COPSE_TERMINAL_CONTEXT_TOKENS', 32_768)
@@ -411,7 +415,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
   if (steeringPath) {
     copyFileSync(steeringPath, join(agentDirectory, 'steering.json'))
   }
-  const transcript = new TerminalBenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
+  const transcript = new BenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
   transcript.write()
   let traceEvents: AgentStreamChunk[] = []
   const standardTools = terminalBenchProfileToolNames(profile).map((name) =>

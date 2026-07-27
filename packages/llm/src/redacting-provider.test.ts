@@ -46,7 +46,8 @@ describe('withSecretRedaction', () => {
 
   it('exposes the inner provider lastUsage', () => {
     const { provider } = fakeProvider()
-    const wrapped = withSecretRedaction(provider) as LLMProvider & { lastUsage: unknown }
+    const wrapped = withSecretRedaction(provider)
+    assert.ok('lastUsage' in wrapped)
     assert.deepEqual(wrapped.lastUsage, { inputTokens: 7, outputTokens: 3 })
   })
 })

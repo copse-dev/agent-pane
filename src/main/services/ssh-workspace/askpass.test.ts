@@ -11,6 +11,7 @@ import {
   leaseSshAskpassEnv,
   resetSshAskpassForTests,
   setSshAskpassUserDataDirForTests,
+  type SshAskpassLease,
 } from './askpass.ts'
 import { setSshPromptHandler } from './ssh-prompt.ts'
 
@@ -46,6 +47,26 @@ describe('buildGitSshCommand', () => {
     assert.equal(buildGitSshCommand({}, 'strict'), 'ssh -oStrictHostKeyChecking=yes')
   })
 })
+
+/** One askpass round-trip over the bridge socket, as the helper script does it. */
+function askOverSocket(lease: SshAskpassLease, prompt: string): Promise<string> {
+  const socketPath = lease.env['COPSE_SSH_ASKPASS_SOCKET']
+  const nonce = lease.env['COPSE_SSH_ASKPASS_NONCE']
+  assert.ok(typeof socketPath === 'string' && socketPath.length > 0)
+  assert.ok(typeof nonce === 'string' && nonce.length > 0)
+  return new Promise<string>((resolve, reject) => {
+    const client = connect(socketPath)
+    let buffer = ''
+    client.on('error', reject)
+    client.write(`${JSON.stringify({ nonce, prompt })}\n`)
+    client.on('data', (chunk) => {
+      buffer += chunk.toString()
+    })
+    client.on('end', () => {
+      resolve(buffer)
+    })
+  })
+}
 
 describe('ssh askpass bridge', () => {
   let testDir = ''
@@ -110,6 +131,43 @@ describe('ssh askpass bridge', () => {
     })
     assert.deepEqual(JSON.parse(response), { response: 's3cret' })
     lease.release()
+  })
+
+  it('reuses a remembered secret for a later spawn without re-prompting', async () => {
+    let prompts = 0
+    setSshPromptHandler(async (req) => {
+      prompts += 1
+      assert.equal(req.kind, 'secret')
+      return { value: 's3cret', remember: true }
+    })
+
+    const first = leaseSshAskpassEnv({})
+    const firstResponse = await askOverSocket(first, '(me@dev.example) Password:')
+    first.release()
+
+    const second = leaseSshAskpassEnv({})
+    const secondResponse = await askOverSocket(second, '(me@dev.example) Password:')
+    second.release()
+
+    assert.deepEqual(JSON.parse(firstResponse), { response: 's3cret' })
+    assert.deepEqual(JSON.parse(secondResponse), { response: 's3cret' })
+    assert.equal(prompts, 1)
+  })
+
+  it('prompts every spawn when the user declines to remember', async () => {
+    let prompts = 0
+    setSshPromptHandler(async () => {
+      prompts += 1
+      return { value: 's3cret', remember: false }
+    })
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const lease = leaseSshAskpassEnv({})
+      const response = await askOverSocket(lease, '(me@dev.example) Password:')
+      lease.release()
+      assert.deepEqual(JSON.parse(response), { response: 's3cret' })
+    }
+    assert.equal(prompts, 2)
   })
 
   it('maps confirm prompts to yes', async () => {

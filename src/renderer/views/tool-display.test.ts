@@ -11,6 +11,8 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 // Component-level port of tests/e2e/tool-display-rollup.e2e.ts. The grouping /
 // tense / turn-rollup LOGIC is covered in src/shared/tools/tool-display.test.ts;
@@ -19,9 +21,17 @@ import { mountConversation } from './conversation.ts'
 // group. Seeded thread mirrors seedToolDisplayFixture().
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 // Mount the real conversation view over a thread holding one assistant message
@@ -95,7 +105,7 @@ describe('tool call display (component)', () => {
   it('keeps the successful reads grouped inside the rollup and surfaces the error outside that group', () => {
     mountWithTools()
 
-    const rollup = document.querySelector('.tool-card-rollup') as HTMLDetailsElement
+    const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
     assert.ok(rollup)
     rollup.open = true
 
@@ -119,9 +129,9 @@ describe('tool call display (component)', () => {
   it('keeps a user-expanded group item open across a tool update rebuild', () => {
     const { store, messageId } = mountWithTools()
 
-    const rollup = document.querySelector('.tool-card-rollup') as HTMLDetailsElement
-    const group = rollup.querySelector('.tool-card-group') as HTMLDetailsElement
-    const item = group.querySelector('[data-tool-id="tc-read-1"]') as HTMLDetailsElement
+    const rollup = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
+    const group = qsRequired<HTMLDetailsElement>(rollup, '.tool-card-group')
+    const item = qsRequired<HTMLDetailsElement>(group, '[data-tool-id="tc-read-1"]')
     rollup.open = true
     group.open = true
     item.open = true

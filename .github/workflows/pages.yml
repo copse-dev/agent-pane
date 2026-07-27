@@ -1,8 +1,19 @@
 name: Deploy site
 
-# Publishes the copse.dev marketing site (site/) to GitHub Pages.
-# Pages source must be set to "GitHub Actions" in repo Settings → Pages
-# (classic Pages can only serve from the repo root or /docs, not /site).
+# Publishes the marketing site (site/) to GitHub Pages, plus browser demos
+# staged on the machine-managed `demo-previews` branch. All demos are served
+# below /demo/: persistent /demo/main/ and /demo/develop/ builds plus ephemeral
+# /demo/pr-<n>/ previews. Pages source must be set to "GitHub Actions" in repo
+# Settings → Pages (classic Pages can only serve from the repo root or /docs,
+# not /site).
+#
+# GitHub Pages allows one deployment per repo and each deploy REPLACES the whole
+# published tree, so previews cannot be deployed independently of the site. This
+# job is the single assembler: it lays down site/ at the root, then mounts every
+# directory from demo-previews below /demo/. It runs on a site push (below) and
+# is also invoked via workflow_call by demo-preview.yml and
+# demo-preview-cleanup.yml after they mutate the previews branch, so a preview
+# publish and a site update both deploy through this one path.
 
 on:
   push:
@@ -11,13 +22,19 @@ on:
       - 'site/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      page_url:
+        description: The deployed GitHub Pages base URL.
+        value: ${{ jobs.deploy.outputs.page_url }}
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow one concurrent deployment; let an in-progress run finish.
+# Allow one concurrent deployment; let an in-progress run finish. Preview
+# publishes and site pushes share this group and therefore serialize.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -31,11 +48,44 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      # Always publish the marketing site from `main`, even when this deploy was
+      # invoked (workflow_call) by a preview push on another branch. A preview
+      # can therefore only ever add or change its own /demo/ subtree — never the
+      # site — so pre-merge preview deploys can't ship unreviewed site changes.
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      # Assemble the published tree: the marketing site at the root and every
+      # machine-managed preview directory below /demo/. The previews branch may
+      # not exist yet (no demo ever published) — that is expected; we then ship
+      # site/ alone.
+      - name: Assemble site and demo previews
+        run: |
+          set -euo pipefail
+          rm -rf _site _previews
+          mkdir -p _site
+          cp -R site/. _site/
+          if git ls-remote --exit-code --heads origin demo-previews >/dev/null 2>&1; then
+            git fetch --depth=1 origin demo-previews
+            mkdir -p _previews
+            git archive FETCH_HEAD | tar -x -C _previews
+            shopt -s nullglob
+            for dir in _previews/main/ _previews/develop/ _previews/pr-*/; do
+              [ -d "$dir" ] || continue
+              name="$(basename "$dir")"
+              echo "Adding demo: demo/$name"
+              mkdir -p "_site/demo/$name"
+              cp -R "$dir". "_site/demo/$name/"
+            done
+          else
+            echo "No demo-previews branch yet — publishing site only."
+          fi
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: site
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v5

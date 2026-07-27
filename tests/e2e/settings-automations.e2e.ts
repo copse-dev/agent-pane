@@ -55,7 +55,7 @@ describe('settings automations pack', function () {
     resetUserData()
   })
 
-  it('renders project scope, cron, model, and the draft-only safety boundary', async () => {
+  it('renders project scope, cron, model, and the permission boundary', async () => {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     const dialog = $('#settings-dialog')
@@ -74,7 +74,7 @@ describe('settings automations pack', function () {
     assert.match(await detail.getText(), /Weekday project review/)
     assert.match(await detail.getText(), /0 9 \* \* 1-5/)
     assert.match(await detail.getText(), /Claude Sonnet 4\.6/)
-    assert.match(await detail.getText(), /does not run tools automatically/i)
+    assert.match(await detail.getText(), /Normal tool permission prompts still apply/i)
     await expect(detail.$('.automation-run-btn')).toBeEnabled()
 
     // Open the editor as well: the screenshot now covers the persisted row and

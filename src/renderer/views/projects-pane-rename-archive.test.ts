@@ -9,6 +9,7 @@ import { mountProjectsPane } from './projects-pane.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
 import { dismissContextMenu } from '../dom/context-menu.ts'
 import { isThreadArchived } from '@shared/store/thread-helpers.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function thread(id: string, title: string): Thread {
   return {
@@ -37,25 +38,32 @@ describe('projects pane thread rename + archive (component)', () => {
   }
 
   function makeApi(): ApiClient {
-    return {
-      workspace: {
-        set: async (path: string): Promise<string> => path,
-        open: async (): Promise<string | null> => null,
-      },
-      storage: {
-        get: async (): Promise<unknown> => null,
-        set: async (): Promise<void> => undefined,
-      },
-      threads: {
-        loadProject: async (): Promise<Thread[]> => [],
-        create: async (): Promise<void> => undefined,
-        appendMessage: async (): Promise<void> => undefined,
-        updateMeta: async (): Promise<void> => undefined,
-        delete: async (): Promise<void> => undefined,
-        catalog: async (): Promise<never[]> => [],
-        listOrphans: async (): Promise<OrphanProjectStore[]> => [],
-      },
-    } as unknown as ApiClient
+    return ((): ApiClient => {
+      const base = createFakeApi()
+      return {
+        ...base,
+        workspace: {
+          ...base['workspace'],
+          set: async (path: string): Promise<string> => path,
+          open: async (): Promise<string | null> => null,
+        },
+        storage: {
+          ...base['storage'],
+          get: async (): Promise<unknown> => null,
+          set: async (): Promise<void> => undefined,
+        },
+        threads: {
+          ...base['threads'],
+          loadProject: async (): Promise<Thread[]> => [],
+          create: async (): Promise<void> => undefined,
+          appendMessage: async (): Promise<void> => undefined,
+          updateMeta: async (): Promise<void> => undefined,
+          delete: async (): Promise<void> => undefined,
+          catalog: async (): Promise<never[]> => [],
+          listOrphans: async (): Promise<OrphanProjectStore[]> => [],
+        },
+      } satisfies ApiClient
+    })()
   }
 
   function rowFor(title: string): HTMLElement {

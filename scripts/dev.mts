@@ -3,9 +3,10 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { cpSync, copyFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
+import { expectString } from '../src/shared/unknown-value.mts'
 
 const require = createRequire(import.meta.url)
-const electronPath = require('electron') as string
+const electronPath = expectString(require('electron'))
 
 // Copy static renderer assets once at start
 copyMonacoWorkers('dist/renderer')
@@ -118,6 +119,26 @@ const preloadCtx = await esbuild.context({
   plugins: [onEndPlugin(startElectron)],
 })
 buildContexts.push(preloadCtx)
+const videoPreloadCtx = await esbuild.context({
+  ...nodeOpts,
+  entryPoints: ['src/preload/video-decoder.ts'],
+  outfile: 'dist/preload/video-decoder.js',
+  alias: sharedAlias,
+  plugins: [onEndPlugin(startElectron)],
+})
+buildContexts.push(videoPreloadCtx)
+// The hidden video-frame decoder window loads its own bundle, not app.js.
+const videoDecoderCtx = await esbuild.context({
+  entryPoints: ['src/renderer/video/decoder.ts'],
+  outfile: 'dist/renderer/video/decoder.js',
+  bundle: true,
+  platform: 'browser',
+  sourcemap: true,
+  loader: { '.ts': 'ts' },
+  alias: sharedAlias,
+  define,
+})
+buildContexts.push(videoDecoderCtx)
 const rendererCtx = await esbuild.context({
   entryPoints: ['src/renderer/main.ts'],
   outfile: 'dist/renderer/app.js',
@@ -130,14 +151,23 @@ const rendererCtx = await esbuild.context({
 })
 buildContexts.push(rendererCtx)
 
-await Promise.all([mainCtx.rebuild(), preloadCtx.rebuild(), rendererCtx.rebuild()])
+await Promise.all([
+  mainCtx.rebuild(),
+  preloadCtx.rebuild(),
+  videoPreloadCtx.rebuild(),
+  rendererCtx.rebuild(),
+  videoDecoderCtx.rebuild(),
+])
+copyFileSync('src/renderer/video/decoder.html', 'dist/renderer/video/decoder.html')
 startElectron()
 restartOnBuild = true
 
 // Watch for changes
 await mainCtx.watch()
 await preloadCtx.watch()
+await videoPreloadCtx.watch()
 await rendererCtx.watch()
+await videoDecoderCtx.watch()
 
 process.on('SIGINT', () => void shutdown('SIGINT'))
 process.on('SIGTERM', () => void shutdown('SIGTERM'))

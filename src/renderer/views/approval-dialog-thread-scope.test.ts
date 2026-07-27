@@ -11,6 +11,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
 import { isThreadAwaitingAttention, resetAttention } from '../controller/attention.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 type ApprovalHandler = (req: {
   id: string
@@ -120,7 +121,7 @@ describe('approval dialog thread scoping', () => {
         return () => {}
       },
     })
-    dialog = document.getElementById('approval-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
     spy = shimModal(dialog)
   })
 
