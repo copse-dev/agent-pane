@@ -9,10 +9,10 @@ back to.
 ## Why
 
 Copse is positioned around _control_: the user decides what the agent runs, what it
-reads, and what it is allowed to touch. The engine behind that promise is genuinely
-strong and largely already on `main` — the project sandbox, the permission gate, the
-trusted-command allow-list, the approval queue, in-process custom tools, credential
-scrubbing, and a provider catalog well past fifty entries.
+reads, and what it is allowed to touch. Several of the parts that promise needs are
+already on `main`: the project sandbox, the permission gate, the trusted-command
+allow-list, the approval queue, in-process custom tools, credential scrubbing, and
+around sixteen model providers including local runtimes.
 
 The problem is legibility. Competing agentic desktop clients make their advantages
 immediately visible — named profiles, task states, plan approval, pausing, branching,
@@ -56,28 +56,30 @@ plan, rewind to a prompt boundary — is **Proposed** in
 `main`. It is the single largest session-control gap and it already has an owner, so
 this plan does not restate its design; it just places it first in the order.
 
-## Where we are already ahead
+## Built but not visible
 
-Recorded here because Phase 0 and Phase 3 below are partly about _surfacing_ these, not
-building them.
+Listed because Phase 0 and Phase 3 below are partly about _surfacing_ these rather than
+building them. These are statements about what exists, not rankings against anyone else —
+we have not benchmarked against competing products, so treat comparative wording as
+absent on purpose.
 
 - **Privacy.** No Copse account, no hosted backend, no product telemetry
-  (`docs/privacy-data-flow.md`). Account-gated onboarding and default-on usage
-  reporting are common in this category; we should treat not having them as a feature
-  and say so in the product, not only in a doc.
-- **Execution safety.** A real macOS sandbox, workspace boundaries, external-command
-  escalation, credential scrubbing, and supply-chain checks. This is frequently a
-  _roadmap_ item elsewhere.
-- **Workflow depth.** Browser automation, Monaco, terminal, git changes, PR/CI
-  workflows, SSH workspaces, semantic graph search, post-turn review, and two-model
-  comparison. The review-and-delivery story in particular has no close equivalent.
-- **Open, durable task data.** A filesystem-native, greppable thread store beats an
-  opaque application database on both trust and extensibility (`README.md`,
-  `docs/thread-store-format.md`).
+  (`docs/privacy-data-flow.md`). Account-gated onboarding and default-on usage reporting
+  are common in this category, so not having them is worth stating in the product rather
+  than only in a doc.
+- **Execution safety.** A macOS sandbox, workspace boundaries, external-command
+  escalation, credential scrubbing, and supply-chain checks.
+- **Workflow surface.** Browser automation, Monaco, terminal, git changes, PR/CI
+  workflows, SSH workspaces, semantic search, post-turn review, and two-model
+  comparison. Several of these are scaffolds or partial (advisor, model classifier, and
+  per-thread worktrees are all `Active` rather than done), so the breadth is real and the
+  depth varies.
+- **Open task data.** The thread store is filesystem-native and greppable
+  (`README.md`, `docs/thread-store-format.md`), which makes it inspectable and scriptable
+  without going through the app.
 - **Local-first model routing.** Onboarding can be skipped entirely and auto-discovers
   LM Studio, Ollama, llama.cpp, Jan, and vLLM
-  (`src/renderer/views/onboarding-dialog.ts`). Our cost and privacy routing is more
-  opinionated than a longer provider list would be.
+  (`src/renderer/views/onboarding-dialog.ts`).
 
 ## Audit
 
