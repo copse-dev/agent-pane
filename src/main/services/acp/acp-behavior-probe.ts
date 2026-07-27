@@ -9,9 +9,8 @@ import {
   type ToolKind,
   type WriteTextFileRequest,
 } from '@agentclientprotocol/sdk'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { Writable } from 'node:stream'
-import { nodeReadableStream } from './node-readable-stream.ts'
 
 /**
  * Tier-2 ACP **behavioural probe** (issue #832): spawn an external ACP agent,
@@ -228,6 +227,163 @@ function sessionUpdateMetaKeys(update: SessionUpdate): string[] {
 const UNSUPPORTED = (method: string) => (): Promise<never> =>
   Promise.reject(new Error(`Client capability not enabled during behavior probe: ${method}`))
 
+const ACP_PROBE_STDERR_TAIL_LIMIT = 8_000
+
+function appendProbeStderrTail(current: string, chunk: Buffer): string {
+  const next = current + chunk.toString()
+  return next.length <= ACP_PROBE_STDERR_TAIL_LIMIT
+    ? next
+    : next.slice(-ACP_PROBE_STDERR_TAIL_LIMIT)
+}
+
+function acpProbeProcessExitError(
+  command: string,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  stderr: string,
+): Error {
+  const reason = signal ? `signal ${signal}` : `code ${code === null ? 'unknown' : String(code)}`
+  const detail = stderr.trim()
+  return new Error(
+    `ACP agent "${command}" exited with ${reason}${detail ? `. stderr: ${detail}` : ''}`,
+  )
+}
+
+function acpProbeProcessSpawnError(command: string, err: Error, stderr: string): Error {
+  const detail = stderr.trim()
+  return new Error(
+    `ACP agent "${command}" failed to start: ${err.message}${detail ? `. stderr: ${detail}` : ''}`,
+  )
+}
+
+const ACP_PROBE_ERROR_DETAIL_LIMIT = 2_000
+
+function truncateProbeErrorDetail(value: string): string {
+  return value.length <= ACP_PROBE_ERROR_DETAIL_LIMIT
+    ? value
+    : `${value.slice(0, ACP_PROBE_ERROR_DETAIL_LIMIT)}...`
+}
+
+function acpProbeErrorDataDetail(err: unknown): string | null {
+  if (typeof err === 'object' && err !== null && 'data' in err) {
+    const data = Reflect.get(err, 'data')
+    if (typeof data === 'string') return truncateProbeErrorDetail(data)
+    if (typeof data === 'object' && data !== null && 'details' in data) {
+      const details = Reflect.get(data, 'details')
+      if (typeof details === 'string') return truncateProbeErrorDetail(details)
+    }
+    try {
+      const encoded = JSON.stringify(data)
+      return typeof encoded === 'string' ? truncateProbeErrorDetail(encoded) : null
+    } catch {
+      return null
+    }
+  }
+  if (err instanceof Error && err.cause) return acpProbeErrorDataDetail(err.cause)
+  return null
+}
+
+function acpProbeErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  const detail = acpProbeErrorDataDetail(err)
+  if (!detail || message.includes(detail)) return message
+  return `${message}: ${detail}`
+}
+
+const PROMPT_SUCCESS_IGNORED = new Promise<never>(() => {
+  // The behavior probe drains successful turn completion from session.nextUpdate().
+})
+
+function promptRejectionOnly<T>(promise: Promise<T>): Promise<never> {
+  return promise.then(
+    () => PROMPT_SUCCESS_IGNORED,
+    (err: unknown) => Promise.reject(err instanceof Error ? err : new Error(String(err))),
+  )
+}
+
+function captureProbeChildStderr(child: ChildProcess, command: string): () => string {
+  let tail = ''
+  child.stderr?.on('data', (chunk: Buffer) => {
+    tail = appendProbeStderrTail(tail, chunk)
+    const text = chunk.toString().trimEnd()
+    if (text) console.warn(`[acp-behavior:${command}] ${text}`)
+  })
+  return () => tail
+}
+
+function probeChildStdoutStream(
+  child: ChildProcess,
+  command: string,
+  stderrTail: () => string,
+): { readable: ReadableStream<Uint8Array>; dispose: () => void } {
+  const stdout = child.stdout
+  if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
+  let cancelRead = (): void => {
+    child.kill()
+  }
+  const readable = new ReadableStream<Uint8Array>({
+    start(controller): void {
+      let settled = false
+      const cleanup = (): void => {
+        stdout.off('data', onData)
+        stdout.off('error', onStdoutError)
+        child.off('error', onChildError)
+        child.off('close', onChildClose)
+      }
+      const settle = (fn: () => void): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        fn()
+      }
+      const onData = (chunk: Buffer): void => {
+        controller.enqueue(new Uint8Array(chunk))
+      }
+      const onStdoutError = (err: Error): void => {
+        settle(() => {
+          controller.error(err)
+        })
+      }
+      const onChildError = (err: Error): void => {
+        settle(() => {
+          controller.error(acpProbeProcessSpawnError(command, err, stderrTail()))
+        })
+      }
+      const onChildClose = (code: number | null, signal: NodeJS.Signals | null): void => {
+        if (code === 0 && signal === null) {
+          settle(() => {
+            controller.close()
+          })
+        } else {
+          settle(() => {
+            controller.error(acpProbeProcessExitError(command, code, signal, stderrTail()))
+          })
+        }
+      }
+      cancelRead = (): void => {
+        if (!settled) {
+          settled = true
+          cleanup()
+        }
+        child.kill()
+      }
+      stdout.on('data', onData)
+      stdout.on('error', onStdoutError)
+      child.once('error', onChildError)
+      child.once('close', onChildClose)
+    },
+    cancel(): void {
+      cancelRead()
+    },
+  })
+  return {
+    readable,
+    dispose: (): void => {
+      cancelRead()
+    },
+  }
+}
+
 /** Default transport: spawn the agent process and frame stdio as ndjson. */
 function spawnProbeTransport(
   config: AcpBehaviorProbeConfig,
@@ -235,14 +391,15 @@ function spawnProbeTransport(
   const child = spawn(config.command, config.args ?? [], {
     cwd: config.cwd,
     env: { ...process.env, ...(config.env ?? {}) },
-    stdio: ['pipe', 'pipe', 'inherit'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   })
+  const stderrTail = captureProbeChildStderr(child, config.command)
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-  const readable = nodeReadableStream(child.stdout)
+  const { readable, dispose } = probeChildStdoutStream(child, config.command, stderrTail)
   return Promise.resolve({
     stream: ndJsonStream(writable, readable),
     dispose: (): void => {
-      child.kill()
+      dispose()
     },
   })
 }
@@ -311,9 +468,9 @@ export async function probeAgentBehavior(
       })
       return ctx.buildSession(config.cwd).withSession(async (session) => {
         // Fire the prompt; drain updates until the turn's stop message arrives.
-        void session.prompt(prompt)
+        const promptFailure = promptRejectionOnly(session.prompt(prompt))
         for (;;) {
-          const message = await session.nextUpdate()
+          const message = await Promise.race([session.nextUpdate(), promptFailure])
           if (message.kind === 'stop') {
             void ctx.notify('session/cancel', { sessionId: session.sessionId })
             return extractBehaviorSnapshot({
@@ -344,9 +501,7 @@ export async function probeAgentBehavior(
   } catch (err) {
     const reason = state.timedOut
       ? `timed out after ${String(timeoutMs)}ms`
-      : err instanceof Error
-        ? err.message
-        : String(err)
+      : acpProbeErrorMessage(err)
     return { ...base, ok: false, error: reason }
   } finally {
     clearTimeout(timer)

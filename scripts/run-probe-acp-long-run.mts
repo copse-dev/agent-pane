@@ -5,13 +5,9 @@ import { resolve } from 'node:path'
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
 
-// Bundle the Tier-2 ACP behavioural-probe runner (which imports app modules that
-// use the `@shared` alias and `.ts` extensions) into a single CJS file, then
-// run it. Mirrors run-probe-acp-agents.mts. Provider keys stay in the env —
-// real agents need auth to complete a prompted turn.
-const out = resolve('dist-test/probe-acp-behavior-lib.cjs')
+const out = resolve('dist-test/probe-acp-long-run-lib.cjs')
 await esbuild.build({
-  entryPoints: [resolve('scripts/probe-acp-behavior-lib.mts')],
+  entryPoints: [resolve('scripts/probe-acp-long-run-lib.mts')],
   outfile: out,
   bundle: true,
   platform: 'node',
