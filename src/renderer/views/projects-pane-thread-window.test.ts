@@ -7,10 +7,10 @@ import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
-import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import { resetProjectSwitchStateForTest } from '../controller/projects.ts'
 import { SIDEBAR_THREADS_PAGE_SIZE } from '../controller/projects.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function thread(id: string, title: string): Thread {
   return {

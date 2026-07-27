@@ -7,6 +7,14 @@ import {
   stripTextToolCallBlocks,
   coerceStringlyTypedToolArgs,
 } from './parse-text-tool-calls.ts'
+import { isRecord } from './internal-utils.ts'
+
+type RecoveredToolCalls = ReturnType<typeof recoverTextToolCalls>['toolCalls']
+
+function toolArg(calls: RecoveredToolCalls, index: number, name: string): unknown {
+  const args = at(calls, index).args
+  return isRecord(args) ? args[name] : undefined
+}
 
 const SAMPLE = `I'll run eslint for you.
 
@@ -26,11 +34,8 @@ describe('parse-text-tool-calls', () => {
     const { cleanedText, toolCalls } = recoverTextToolCalls(SAMPLE)
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'run_shell')
-    assert.equal(
-      (at(toolCalls, 0).args as { command: string } | undefined)?.command,
-      'npx eslint . --format compact 2>&1 | head -50',
-    )
-    assert.equal((at(toolCalls, 0).args as { timeout_ms: number } | undefined)?.timeout_ms, 60000)
+    assert.equal(toolArg(toolCalls, 0, 'command'), 'npx eslint . --format compact 2>&1 | head -50')
+    assert.equal(toolArg(toolCalls, 0, 'timeout_ms'), 60000)
     assert.ok(cleanedText.includes("I'll run eslint"))
     assert.ok(!cleanedText.includes('<tool_call>'))
   })
@@ -78,14 +83,8 @@ src/renderer/views/projects-pane.ts
     const { toolCalls, keptRawBlocks } = recoverTextToolCalls(text)
     assert.equal(toolCalls.length, 2)
     assert.equal(keptRawBlocks, false)
-    assert.equal(
-      (at(toolCalls, 0).args as { path: string } | undefined)?.path,
-      'src/renderer/views/titlebar.ts',
-    )
-    assert.equal(
-      (toolCalls[1]?.args as { path: string } | undefined)?.path,
-      'src/renderer/views/projects-pane.ts',
-    )
+    assert.equal(toolArg(toolCalls, 0, 'path'), 'src/renderer/views/titlebar.ts')
+    assert.equal(toolArg(toolCalls, 1, 'path'), 'src/renderer/views/projects-pane.ts')
   })
 
   it('coerces line numbers via schema callback', () => {
@@ -107,8 +106,8 @@ src/renderer/views/projects-pane.ts
       return parsed.success ? parsed.data : null
     })
     assert.equal(toolCalls.length, 1)
-    assert.equal((at(toolCalls, 0).args as { start_line: number } | undefined)?.start_line, 10)
-    assert.equal((at(toolCalls, 0).args as { end_line: number } | undefined)?.end_line, 20)
+    assert.equal(toolArg(toolCalls, 0, 'start_line'), 10)
+    assert.equal(toolArg(toolCalls, 0, 'end_line'), 20)
   })
 
   it('keeps raw XML when blocks fail to parse', () => {
@@ -134,11 +133,8 @@ src/renderer/views/projects-pane.ts
     assert.equal(keptRawBlocks, false)
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'run_shell')
-    assert.equal(
-      (at(toolCalls, 0).args as { command: string } | undefined)?.command,
-      'git fetch origin main 2>&1 | tail -5',
-    )
-    assert.equal((at(toolCalls, 0).args as { timeout_ms: number } | undefined)?.timeout_ms, 30000)
+    assert.equal(toolArg(toolCalls, 0, 'command'), 'git fetch origin main 2>&1 | tail -5')
+    assert.equal(toolArg(toolCalls, 0, 'timeout_ms'), 30000)
     assert.ok(cleanedText.includes('Let me check the branch'))
     assert.ok(!cleanedText.includes('minimax'))
     assert.ok(!cleanedText.includes('<invoke'))
@@ -149,7 +145,7 @@ src/renderer/views/projects-pane.ts
     const { toolCalls } = recoverTextToolCalls(text)
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'read_file')
-    assert.equal((at(toolCalls, 0).args as { path: string } | undefined)?.path, 'src/a.ts')
+    assert.equal(toolArg(toolCalls, 0, 'path'), 'src/a.ts')
   })
 
   it('parses Anthropic-style `<parameter name="x">` inside an invoke block', () => {
@@ -157,7 +153,7 @@ src/renderer/views/projects-pane.ts
     const { toolCalls } = recoverTextToolCalls(text)
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'run_shell')
-    assert.equal((at(toolCalls, 0).args as { command: string } | undefined)?.command, 'echo hi')
+    assert.equal(toolArg(toolCalls, 0, 'command'), 'echo hi')
   })
 
   it('stripTextToolCallBlocks removes MiniMax delimiters and invoke blocks', () => {
@@ -289,7 +285,7 @@ src/renderer/views/projects-pane.ts
     const { toolCalls } = recoverTextToolCalls(text)
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'write_file')
-    assert.equal((at(toolCalls, 0).args as { content?: string }).content, content)
+    assert.equal(toolArg(toolCalls, 0, 'content'), content)
   })
 
   it('preserves backtick code spans inside a bare <invoke> parameter (#519 arg corruption)', () => {
@@ -298,6 +294,6 @@ src/renderer/views/projects-pane.ts
     const { toolCalls } = recoverTextToolCalls(text)
     assert.equal(toolCalls.length, 1)
     assert.equal(at(toolCalls, 0).name, 'run_shell')
-    assert.equal((at(toolCalls, 0).args as { command?: string }).command, command)
+    assert.equal(toolArg(toolCalls, 0, 'command'), command)
   })
 })

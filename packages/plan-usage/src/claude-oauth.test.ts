@@ -4,6 +4,7 @@ import { fetchClaudePlanUsageFromCredentials, type ClaudeCredentialInput } from 
 import { refreshClaudeOAuthToken } from './claude-oauth.ts'
 import { parseClaudeOAuthCredential } from './credentials.ts'
 import type { FetchLike } from './types.ts'
+import { isRecord } from './internal-utils.ts'
 
 const FIXED_NOW = 1_700_000_000_000
 const now = (): number => FIXED_NOW
@@ -86,7 +87,8 @@ describe('refreshClaudeOAuthToken', () => {
       refreshToken: 'rotated-ort',
       expiresAt: FIXED_NOW + 3600 * 1000,
     })
-    const posted = JSON.parse(calls[0]?.body ?? '{}') as Record<string, unknown>
+    const posted: unknown = JSON.parse(calls[0]?.body ?? '{}')
+    assert.ok(isRecord(posted))
     assert.equal(posted['grant_type'], 'refresh_token')
     assert.equal(posted['refresh_token'], 'old-ort')
     assert.equal(calls[0]?.method, 'POST')

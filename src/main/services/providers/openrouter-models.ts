@@ -1,6 +1,7 @@
 import { OPENROUTER_BASE_URL } from '@copse/llm/openrouter.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { getSetting } from '../storage/settings.ts'
+import { isRecord, optionalRecord } from '@shared/unknown-value.ts'
 
 export interface OpenRouterModelSummary {
   id: string
@@ -51,16 +52,16 @@ function pricePerMTok(value: unknown): number | null {
 }
 
 function isFreePricing(pricing: unknown): boolean {
-  if (!pricing || typeof pricing !== 'object') return false
-  const p = pricing as Record<string, unknown>
+  if (!isRecord(pricing)) return false
+  const p = pricing
   return priceValue(p['prompt']) === 0 && priceValue(p['completion']) === 0
 }
 
 // Keep text-output chat models; drop image/audio/video generators that also show
 // up in /models (their pricing can read 0 on the prompt/completion fields).
 function outputsText(architecture: unknown): boolean {
-  if (!architecture || typeof architecture !== 'object') return true
-  const arch = architecture as Record<string, unknown>
+  if (!isRecord(architecture)) return true
+  const arch = architecture
   if (Array.isArray(arch['output_modalities'])) return arch['output_modalities'].includes('text')
   const modality = typeof arch['modality'] === 'string' ? arch['modality'] : ''
   if (!modality) return true
@@ -73,8 +74,8 @@ function supportsTools(supportedParameters: unknown): boolean {
 }
 
 function parseModelRow(row: unknown): OpenRouterModelSummary | null {
-  if (!row || typeof row !== 'object') return null
-  const rec = row as Record<string, unknown>
+  if (!isRecord(row)) return null
+  const rec = row
   const id = typeof rec['id'] === 'string' ? rec['id'] : null
   if (!id) return null
   if (!outputsText(rec['architecture'])) return null
@@ -84,12 +85,8 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
     contextLength: parsePositiveInt(rec['context_length']),
     free: isFreePricing(rec['pricing']),
     supportsTools: supportsTools(rec['supported_parameters']),
-    inputPricePerMTok: pricePerMTok(
-      (rec['pricing'] as Record<string, unknown> | undefined)?.['prompt'],
-    ),
-    outputPricePerMTok: pricePerMTok(
-      (rec['pricing'] as Record<string, unknown> | undefined)?.['completion'],
-    ),
+    inputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['prompt']),
+    outputPricePerMTok: pricePerMTok(optionalRecord(rec['pricing'])?.['completion']),
   }
 }
 
@@ -173,8 +170,8 @@ function collectZdrIdentifiers(json: unknown): Set<string> {
   const data = (json as { data?: unknown } | null)?.data
   if (!Array.isArray(data)) return out
   for (const row of data) {
-    if (!row || typeof row !== 'object') continue
-    const rec = row as Record<string, unknown>
+    if (!isRecord(row)) continue
+    const rec = row
     for (const key of ['model_name', 'name', 'model', 'model_slug', 'permaslug', 'slug']) {
       const value = rec[key]
       if (typeof value === 'string' && value.trim()) out.add(value.trim().toLowerCase())

@@ -25,6 +25,7 @@ import { checkIcon, refreshIcon } from '../dom/icons.ts'
 import { attachImageExpand } from '../attachments/image-expand.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // A roadmap item is one `Roadmap`-typed knowledge note. Derive the shapes from
 // the IPC surface so this view never imports main-process types directly.
@@ -46,6 +47,10 @@ const STATUS_OPTIONS: readonly RoadmapStatus[] = [
 /** Statuses that earn a list chip. `ready` is the default (silent); `done` is
  * title strikethrough only — see docs/ui-taste.md "Roadmap list rows". */
 const LIST_STATUS_BADGES = new Set<RoadmapStatus>(['blocked', 'conflicts', 'archived'])
+
+function isRoadmapStatus(value: unknown): value is RoadmapStatus {
+  return STATUS_OPTIONS.some((status) => status === value)
+}
 
 function roadmapModeActive(store: AppStore): boolean {
   const { filesPaneOpen, rightPanelMode } = store.getState()
@@ -102,7 +107,7 @@ function dataUrlToText(dataUrl: string): string | null {
 function attachmentName(file: File): string {
   if (file.name) return file.name
   const ext = file.type.split('/')[1]
-  return `pasted.${ext || 'bin'}`
+  return `pasted.${nonEmptyStringOr(ext, 'bin')}`
 }
 
 /** Id of the thread last started from this item ("Start thread"), if tracked. */
@@ -118,9 +123,7 @@ function ipcErrorMessage(err: unknown, fallback: string): string {
 }
 
 function itemStatus(item: RoadmapItem): RoadmapStatus {
-  return (STATUS_OPTIONS as readonly string[]).includes(item.status ?? '')
-    ? (item.status as RoadmapStatus)
-    : 'ready'
+  return isRoadmapStatus(item.status) ? item.status : 'ready'
 }
 
 /**
@@ -531,7 +534,7 @@ export function mountRoadmapPane(
   }
 
   function currentItem(): RoadmapItem | null {
-    return (selectedId && items.find((m) => m.id === selectedId)) || null
+    return selectedId === null ? null : (items.find((item) => item.id === selectedId) ?? null)
   }
 
   function resetAttachmentEdits(): void {
@@ -1017,8 +1020,8 @@ export function mountRoadmapPane(
       if (creating || !selectedId) {
         const created = await api.roadmap.create(
           prompt,
-          notes || undefined,
-          issue || undefined,
+          firstNonEmptyString(notes),
+          firstNonEmptyString(issue),
           addAttachments.length > 0 ? addAttachments : undefined,
         )
         selectedId = created.id
@@ -1027,9 +1030,9 @@ export function mountRoadmapPane(
         const updated = await api.roadmap.update(
           selectedId,
           prompt,
-          notes || undefined,
-          statusSelect.value as RoadmapStatus,
-          issue || undefined,
+          firstNonEmptyString(notes),
+          isRoadmapStatus(statusSelect.value) ? statusSelect.value : 'ready',
+          firstNonEmptyString(issue),
           addAttachments.length > 0 ? addAttachments : undefined,
           removeIds.length > 0 ? removeIds : undefined,
         )
@@ -1052,7 +1055,7 @@ export function mountRoadmapPane(
     const item = items.find((m) => m.id === selectedId)
     if (
       !(await showConfirmDialog({
-        message: `Delete roadmap item "${item?.title || 'untitled'}"?`,
+        message: `Delete roadmap item "${nonEmptyStringOr(item?.title, 'untitled')}"?`,
         confirmLabel: 'Delete',
         danger: true,
       }))
@@ -1389,7 +1392,7 @@ export function mountRoadmapPane(
     let pendingResolved = 0
     for (const result of reviewResults) {
       const item = items.find((i) => i.id === result.id)
-      const title = item?.title || '(untitled)'
+      const title = nonEmptyStringOr(item?.title, '(untitled)')
       const applied = reviewApplied.get(result.id)
       const row = el('div', {
         class: `roadmap-review-row${applied ? ' is-applied' : ''}`,
@@ -1650,7 +1653,8 @@ export function mountRoadmapPane(
     form.classList.add('is-drop-target')
   })
   form.addEventListener('dragleave', (e) => {
-    if (!form.contains(e.relatedTarget as Node)) form.classList.remove('is-drop-target')
+    if (!form.contains(e.relatedTarget instanceof Node ? e.relatedTarget : null))
+      form.classList.remove('is-drop-target')
   })
   form.addEventListener('drop', (e) => {
     form.classList.remove('is-drop-target')

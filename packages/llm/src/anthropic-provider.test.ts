@@ -3,6 +3,17 @@ import assert from 'node:assert/strict'
 import { AnthropicProvider, markTrailingCacheBreakpoint } from './anthropic-provider.ts'
 import type { ProviderStreamChunk } from './wire-types.ts'
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function recordAt(value: unknown, index: number): Record<string, unknown> {
+  assert.ok(Array.isArray(value))
+  const entry: unknown = value[index]
+  assert.ok(isRecord(entry))
+  return entry
+}
+
 /**
  * Build a fake SDK stream event sequence and inject it into the provider's
  * private client so we can exercise the message_start / message_delta usage
@@ -26,7 +37,7 @@ function withFakeStream(
       },
     },
   }
-  ;(provider as unknown as { client: unknown }).client = fakeClient
+  Object.defineProperty(provider, 'client', { value: fakeClient, configurable: true })
   return capture
 }
 
@@ -142,16 +153,17 @@ describe('AnthropicProvider prompt caching (#582)', () => {
     }
 
     assert.ok(capture.params)
-    const sentTools = capture.params['tools'] as Array<Record<string, unknown>>
-    assert.equal(sentTools[0]?.['cache_control'], undefined)
-    assert.deepEqual(sentTools[1]?.['cache_control'], { type: 'ephemeral' })
-    const sentMessages = capture.params['messages'] as Array<{
-      content: string | Array<Record<string, unknown>>
-    }>
+    const sentTools = capture.params['tools']
+    assert.equal(recordAt(sentTools, 0)['cache_control'], undefined)
+    assert.deepEqual(recordAt(sentTools, 1)['cache_control'], { type: 'ephemeral' })
+    const sentMessages = capture.params['messages']
     // Earlier messages keep their plain string content …
-    assert.equal(sentMessages[0]?.content, 'question')
+    assert.equal(recordAt(sentMessages, 0)['content'], 'question')
     // … while the final message's final block carries the breakpoint.
-    const lastContent = sentMessages.at(-1)?.content
+    assert.ok(Array.isArray(sentMessages))
+    const lastMessage: unknown = sentMessages.at(-1)
+    assert.ok(isRecord(lastMessage))
+    const lastContent = lastMessage['content']
     assert.ok(Array.isArray(lastContent))
     assert.deepEqual(lastContent.at(-1), {
       type: 'text',
@@ -168,10 +180,9 @@ describe('AnthropicProvider prompt caching (#582)', () => {
       },
     ]
     markTrailingCacheBreakpoint(toolResult)
-    assert.deepEqual(
-      (toolResult[0]?.content[0] as unknown as Record<string, unknown>)['cache_control'],
-      { type: 'ephemeral' },
-    )
+    const content: unknown = toolResult[0]?.content[0]
+    assert.ok(isRecord(content))
+    assert.deepEqual(content['cache_control'], { type: 'ephemeral' })
 
     // Empty conversation and empty-string content are left untouched.
     markTrailingCacheBreakpoint([])

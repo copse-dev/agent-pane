@@ -7,8 +7,8 @@ import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from './message-queue.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
-import { createFakeApi } from '../fake-api.test-support.ts'
 import { lastResendableMessage, resendLastMessage } from './resend-message.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function createProjectStore(): ReturnType<typeof createStore> {
   const store = createStore()

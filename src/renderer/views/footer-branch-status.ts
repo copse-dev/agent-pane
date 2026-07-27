@@ -301,7 +301,7 @@ export function mountFooterBranchStatus(
     }),
     on(document, 'click', (e) => {
       if (!open) return
-      if (!wrap.contains(e.target as Node)) setOpen(false)
+      if (!wrap.contains(e.target instanceof Node ? e.target : null)) setOpen(false)
     }),
     on(document, 'keydown', (e) => {
       if (e.key === 'Escape' && open) setOpen(false)

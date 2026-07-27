@@ -4,6 +4,7 @@ import type { ApiClient, ExtraProvider } from '../../preload/api.d.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
 import { resolveExtraProviders } from '@copse/llm/extra-providers.ts'
 import { fetchModelOptions } from './model-options.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface MockOpts {
   available?: Record<string, boolean>
@@ -33,22 +34,41 @@ const ALL_UNCONFIGURED = {
 
 // Minimal ApiClient stub exposing only what fetchModelOptions touches.
 function mockApi(opts: MockOpts = {}): ApiClient {
-  return {
-    settings: {
-      availableProviders: async () => ({ ...ALL_UNCONFIGURED, ...(opts.available ?? {}) }),
-      extraProviders: async () => opts.extraProviders ?? resolveExtraProviders([]),
-      get: async (key: string) => {
-        if (key === 'openRouterModel') return opts.openRouterModelSetting ?? ''
-        if (key === 'openRouterZdrOnly') return opts.openRouterZdrOnlySetting ?? null
-        if (key === 'openRouterAllowTraining') return opts.openRouterAllowTrainingSetting ?? null
-        if (key === 'registeredAcpAgents') return opts.acpAgents ?? null
-        return null
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      settings: {
+        ...base['settings'],
+        availableProviders: async () => ({ ...ALL_UNCONFIGURED, ...(opts.available ?? {}) }),
+        extraProviders: async () => opts.extraProviders ?? resolveExtraProviders([]),
+        get: async (key: string): Promise<unknown> => {
+          if (key === 'openRouterModel') return opts.openRouterModelSetting ?? ''
+          if (key === 'openRouterZdrOnly') return opts.openRouterZdrOnlySetting ?? null
+          if (key === 'openRouterAllowTraining') return opts.openRouterAllowTrainingSetting ?? null
+          if (key === 'registeredAcpAgents') return opts.acpAgents ?? null
+          return null
+        },
       },
-    },
-    openRouter: { models: async () => opts.openRouterModels ?? [] },
-    remoteAgent: { models: async () => opts.cursorCloudModels ?? [] },
-    lmStudio: { models: async () => opts.lmStudioModels ?? [] },
-  } as unknown as ApiClient
+      openRouter: {
+        ...base['openRouter'],
+        models: async () =>
+          (opts.openRouterModels ?? []).map((model) => ({
+            ...model,
+            inputPricePerMTok: null,
+            outputPricePerMTok: null,
+          })),
+      },
+      remoteAgent: {
+        ...base['remoteAgent'],
+        models: async () => opts.cursorCloudModels ?? [],
+      },
+      lmStudio: {
+        ...base['lmStudio'],
+        models: async () => opts.lmStudioModels ?? [],
+      },
+    } satisfies ApiClient
+  })()
 }
 
 describe('fetchModelOptions visibility', () => {

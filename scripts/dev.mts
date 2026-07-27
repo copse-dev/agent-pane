@@ -3,9 +3,10 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { cpSync, copyFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
+import { expectString } from '../src/shared/unknown-value.mts'
 
 const require = createRequire(import.meta.url)
-const electronPath = require('electron') as string
+const electronPath = expectString(require('electron'))
 
 // Copy static renderer assets once at start
 copyMonacoWorkers('dist/renderer')

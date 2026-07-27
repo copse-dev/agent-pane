@@ -3,6 +3,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient, DetectedEnvKey } from '../../../preload/api.d.ts'
 import { createEnvKeyDetectSection } from './env-key-detect-section.ts'
+import { qsRequired } from '../../dom/helpers.ts'
 
 interface StubState {
   settings: Record<string, unknown>
@@ -142,7 +143,7 @@ describe('env-key-detect-section', () => {
     const section = createEnvKeyDetectSection(stubApi(state))
     document.body.append(section.root)
 
-    const scanBtn = section.root.querySelector('button') as HTMLButtonElement
+    const scanBtn = qsRequired<HTMLButtonElement>(section.root, 'button')
     scanBtn.dispatchEvent(new Event('click'))
     await flush()
     assert.equal(section.root.querySelectorAll('.env-key-row').length, 1)

@@ -176,7 +176,7 @@ export function mountOpenInEditor(
     // Fallback for clicks the backdrop doesn't cover (e.g. inside a webview
     // pane); the backdrop handles the titlebar's drag region, which this can't.
     on(document, 'click', (e) => {
-      if (open && !wrap.contains(e.target as Node)) setOpen(false)
+      if (open && !wrap.contains(e.target instanceof Node ? e.target : null)) setOpen(false)
     }),
     on(document, 'keydown', (e) => {
       if (e.key === 'Escape' && open) setOpen(false)

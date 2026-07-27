@@ -5,8 +5,8 @@ import type { ForkedHistoryResult, Thread } from '@shared/types'
 import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from './message-queue.ts'
-import { createFakeApi } from '../fake-api.test-support.ts'
 import { forkThread } from './fork-thread.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 type ForkCall = [projectId: string, source: string, target: string, through: string | undefined]
 

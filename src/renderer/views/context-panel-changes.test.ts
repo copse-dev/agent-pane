@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitFileDiff } from '@shared/types/git.ts'
 import type { OpenFile } from '@shared/types'
 import { mountContextPanel } from './context-panel.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // The file viewer's "Changes" view (uncommitted HEAD → working-tree diff for
 // the open file). These tests cover the toolbar/visibility logic in happy-dom;
@@ -71,22 +72,28 @@ function makeApi(
   diffByPath: Record<string, GitFileDiff | null>,
   capture?: { fsChanged?: FsChangedHandler },
 ): ApiClient {
-  return {
-    git: {
-      workingFileDiff: async (_projectId: string, _threadId: string, path: string) =>
-        diffByPath[path] ?? null,
-    },
-    fs: {
-      onChanged: (handler: FsChangedHandler) => {
-        if (capture) capture.fsChanged = handler
-        return () => {}
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      git: {
+        ...base['git'],
+        workingFileDiff: async (_projectId: string, _threadId: string, path: string) =>
+          diffByPath[path] ?? null,
       },
-      watch: async () => {},
-      unwatch: async () => {},
-      readFile: async () => '',
-      writeFile: async () => {},
-    },
-  } as unknown as ApiClient
+      fs: {
+        ...base['fs'],
+        onChanged: (handler: FsChangedHandler) => {
+          if (capture) capture.fsChanged = handler
+          return () => {}
+        },
+        watch: async (): Promise<void> => {},
+        unwatch: async (): Promise<void> => {},
+        readFile: async () => '',
+        writeFile: async (): Promise<void> => {},
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function openFileState(path: string, content: string, language: string): OpenFile {

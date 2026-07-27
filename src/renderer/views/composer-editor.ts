@@ -68,7 +68,8 @@ function visibleText(node: Node): string {
   if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE)
     return ''
   if (node.nodeType === Node.ELEMENT_NODE) {
-    const elNode = node as HTMLElement
+    if (!(node instanceof HTMLElement)) return ''
+    const elNode = node
     if (elNode.classList.contains('inline-paste-chip')) return CHIP_CHAR
     if (elNode.tagName === 'BR') return '\n'
   }
@@ -148,11 +149,7 @@ export function mountComposerEditor(): ComposerEditor {
         // Atomic (chip/br) or nested element: land before/after it, or recurse.
         const idx = Array.from(parent.childNodes).indexOf(child)
         if (remaining === 0) return { node: parent, offset: idx }
-        if (
-          child.nodeType === Node.ELEMENT_NODE &&
-          !isAtomic(child as HTMLElement) &&
-          child.childNodes.length > 0
-        ) {
+        if (child instanceof HTMLElement && !isAtomic(child) && child.childNodes.length > 0) {
           const inner = walk(child)
           if (inner) return inner
           continue

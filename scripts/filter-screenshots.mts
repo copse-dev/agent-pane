@@ -100,6 +100,7 @@ import { fileURLToPath } from 'node:url'
 import { resolve } from 'node:path'
 import pixelmatch from 'pixelmatch'
 import { PNG } from 'pngjs'
+import { nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 import {
   computeScreenshotScope,
   ownsScreenshot,
@@ -248,7 +249,7 @@ function priorCommittedRenders(
 }
 
 const BOT_AUTHOR = 'github-actions[bot]'
-const MAIN_REF = process.env['SCREENSHOT_MAIN_REF'] || 'origin/main'
+const MAIN_REF = nonEmptyStringOr(process.env['SCREENSHOT_MAIN_REF'], 'origin/main')
 
 let mergeBaseCache: string | null | undefined
 /** merge-base of HEAD and MAIN_REF, or null when the ref is absent (local runs). */

@@ -12,6 +12,7 @@ import { mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import electronBinary from 'electron'
+import { z } from 'zod'
 
 // Bundle inside the project tree so the spawned Electron resolves `electron`.
 const outDir = resolve('node_modules/.cache/copse-browser-validate')
@@ -94,7 +95,9 @@ await esbuild.build({
 
 const childEnv = { ...process.env }
 delete childEnv['ELECTRON_RUN_AS_NODE'] // ensure full Electron runtime (app, BrowserWindow)
-const proc = spawnSync(electronBinary as unknown as string, [entryFile], {
+if (typeof electronBinary !== 'string')
+  throw new TypeError('electron package did not export a binary path')
+const proc = spawnSync(electronBinary, [entryFile], {
   stdio: 'inherit',
   env: childEnv,
 })
@@ -105,17 +108,29 @@ if (!existsSync(resultFile)) {
 }
 
 interface BrowserValidationResult {
-  ok?: boolean
-  navigate?: string
-  snapshot?: string
-  type?: string
-  click?: string
-  afterSnapshot?: string
-  screenshot?: string
-  error?: string
+  ok?: boolean | undefined
+  navigate?: string | undefined
+  snapshot?: string | undefined
+  type?: string | undefined
+  click?: string | undefined
+  afterSnapshot?: string | undefined
+  screenshot?: string | undefined
+  error?: string | undefined
 }
 
-const result = JSON.parse(readFileSync(resultFile, 'utf8')) as BrowserValidationResult
+const browserValidationResultSchema: z.ZodType<BrowserValidationResult> = z.object({
+  ok: z.boolean().optional(),
+  navigate: z.string().optional(),
+  snapshot: z.string().optional(),
+  type: z.string().optional(),
+  click: z.string().optional(),
+  afterSnapshot: z.string().optional(),
+  screenshot: z.string().optional(),
+  error: z.string().optional(),
+})
+const result = browserValidationResultSchema.parse(
+  JSON.parse(readFileSync(resultFile, 'utf8')) as unknown,
+)
 console.log('\n=== browser_navigate ===')
 console.log(result.navigate)
 console.log('\n=== browser_snapshot ===')

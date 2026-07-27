@@ -2,6 +2,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { isVideoFile } from '@shared/video/video-media.ts'
 import type { PromptAttachmentHandlers } from './prompt-attachments.ts'
 import type { ActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { expectString } from '@shared/unknown-value.ts'
 
 export const WORKSPACE_PATH_MIME = 'application/x-copse-panel-path'
 
@@ -26,7 +27,7 @@ function readAsDataUrl(blob: Blob): Promise<string> {
   return new Promise((res, rej) => {
     const r = new FileReader()
     r.onload = (): void => {
-      res(r.result as string)
+      res(expectString(r.result))
     }
     r.onerror = rej
     r.readAsDataURL(blob)
@@ -152,7 +153,7 @@ export function bindFileDropTarget(
   }
 
   const onDragLeave = (e: DragEvent): void => {
-    if (!el.contains(e.relatedTarget as Node)) {
+    if (!el.contains(e.relatedTarget instanceof Node ? e.relatedTarget : null)) {
       el.classList.remove('is-drop-target')
     }
   }
