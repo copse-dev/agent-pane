@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 import { qsRequired } from '../dom/helpers.ts'
 
 interface FakeWebview extends HTMLElement {
@@ -69,15 +70,13 @@ describe('browser pane requested URLs', () => {
       activeThreadId,
     })
     const callbacks: { openTab?: (url: string) => void } = {}
-    const api = {
-      browser: {
-        onOpenTab: (handler: (url: string) => void): (() => void) => {
-          callbacks.openTab = handler
-          return (): void => {}
-        },
+    const api = createPendingApi({
+      'browser.onOpenTab': (handler: (url: string) => void): (() => void) => {
+        callbacks.openTab = handler
+        return (): void => {}
       },
-      panes: { popout: async (): Promise<void> => {} },
-    } as unknown as Parameters<typeof mountBrowserPane>[3]
+      'panes.popout': async (): Promise<void> => {},
+    })
     const unmount = mountBrowserPane(list, viewer, store, api)
 
     try {
@@ -270,11 +269,11 @@ describe('browser pane requested URLs', () => {
     let devToolsOpens = 0
     // Minimal ApiClient surface the browser pane touches (popout, tab forwarding,
     // and the new shell.openExternal for "open in default browser").
-    const api = {
-      browser: { onOpenTab: (): (() => void) => (): void => {} },
-      panes: { popout: async (): Promise<void> => {} },
-      shell: { openExternal: async (url: string): Promise<void> => void opened.push(url) },
-    } as unknown as Parameters<typeof mountBrowserPane>[3]
+    const api = createPendingApi({
+      'browser.onOpenTab': (): (() => void) => (): void => {},
+      'panes.popout': async (): Promise<void> => {},
+      'shell.openExternal': async (url: string): Promise<void> => void opened.push(url),
+    })
     const unmount = mountBrowserPane(list, viewer, store, api)
 
     try {

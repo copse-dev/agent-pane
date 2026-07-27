@@ -13,6 +13,7 @@ import type {
 } from '@shared/types/hooks.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog } from './settings-dialog.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 /** Records the last `hooks:test` request the stub received (for click-through assertions). */
 let lastTestRequest: unknown
@@ -23,31 +24,17 @@ let lastTestRequest: unknown
  * `hooks.test` (G2 dry-run) resolves to `testResult` and records its request.
  */
 function stubApi(hooksResult: HooksListResult, testResult?: HookTestResult): ApiClient {
-  const fallback: unknown = new Proxy(() => new Promise(() => {}), {
-    get: () => fallback,
-    apply: () => new Promise(() => {}),
+  return createPendingApi({
+    'instructions.list': () => Promise.resolve([]),
+    'cursorRules.list': () => Promise.resolve([]),
+    'skills.list': () => Promise.resolve([]),
+    'plugins.list': () => Promise.resolve([]),
+    'hooks.list': () => Promise.resolve(hooksResult),
+    'hooks.test': (req: unknown) => {
+      lastTestRequest = req
+      return Promise.resolve(testResult ?? { ran: false, error: 'no result' })
+    },
   })
-  const overrides: Record<string, unknown> = {
-    instructions: { list: () => Promise.resolve([]) },
-    cursorRules: { list: () => Promise.resolve([]) },
-    skills: { list: () => Promise.resolve([]) },
-    plugins: { list: () => Promise.resolve([]) },
-    hooks: {
-      list: () => Promise.resolve(hooksResult),
-      test: (req: unknown) => {
-        lastTestRequest = req
-        return Promise.resolve(testResult ?? { ran: false, error: 'no result' })
-      },
-    },
-  }
-  const proxy: unknown = new Proxy(
-    {},
-    {
-      get: (_target, prop) =>
-        typeof prop === 'string' && prop in overrides ? overrides[prop] : fallback,
-    },
-  )
-  return proxy as ApiClient
 }
 
 const VALID_HOOK: HookSummary = {

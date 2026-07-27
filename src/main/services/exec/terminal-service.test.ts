@@ -12,13 +12,14 @@ import {
   listTerminalSessions,
   resizeTerminalSession,
   writeTerminalSession,
+  type TerminalWindow,
 } from './terminal-service.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 
 const OWNER = 1
 const OTHER_OWNER = 2
 
-function mockWindow(): import('electron').BrowserWindow & {
+function mockWindow(): TerminalWindow & {
   sent: Array<[string, ...unknown[]]>
   markDestroyed: () => void
 } {
@@ -37,10 +38,7 @@ function mockWindow(): import('electron').BrowserWindow & {
     },
     sent,
   }
-  return win as unknown as import('electron').BrowserWindow & {
-    sent: typeof sent
-    markDestroyed: () => void
-  }
+  return win
 }
 
 async function ptySpawnAvailable(): Promise<boolean> {

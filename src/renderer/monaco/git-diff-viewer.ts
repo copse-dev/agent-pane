@@ -6,6 +6,54 @@ import {
   revealFirstDiffChange,
   waitForViewModelDiff,
 } from './diff-scroll.ts'
+import type { MonacoShortcutApi, MonacoShortcutSource } from './selection-to-chat.ts'
+
+export interface GitDiffModel {
+  dispose(): void
+  getValue(): string
+}
+
+export interface GitDiffCodeEditor extends MonacoShortcutSource {
+  revealLineInCenterIfOutsideViewport(line: number): void
+}
+
+export interface GitDiffViewModel {
+  readonly model?: { original: GitDiffModel; modified: GitDiffModel }
+  dispose(): void
+  waitForDiff(): Promise<unknown>
+}
+
+export interface GitDiffEditor {
+  createViewModel(model: { original: GitDiffModel; modified: GitDiffModel }): GitDiffViewModel
+  dispose(): void
+  getLineChanges(): Array<{
+    originalStartLineNumber: number
+    originalEndLineNumber: number
+    modifiedStartLineNumber: number
+    modifiedEndLineNumber: number
+  }> | null
+  getModel(): { original: GitDiffModel; modified: GitDiffModel } | null
+  getModifiedEditor(): GitDiffCodeEditor
+  getOriginalEditor(): GitDiffCodeEditor
+  layout(): void
+  onDidUpdateDiff(listener: () => void): { dispose(): void }
+  setModel(
+    model: { original: GitDiffModel; modified: GitDiffModel } | GitDiffViewModel | null,
+  ): void
+  updateOptions(options: Monaco.editor.IDiffEditorOptions): void
+}
+
+export interface GitDiffMonaco extends MonacoShortcutApi {
+  editor: {
+    createDiffEditor(
+      container: HTMLElement,
+      options: Monaco.editor.IStandaloneDiffEditorConstructionOptions,
+    ): GitDiffEditor
+    createModel(value: string, language?: string, uri?: { toString(): string }): GitDiffModel
+    setTheme(theme: string): void
+  }
+  Uri: { parse(value: string): { toString(): string } }
+}
 
 let diffModelVersion = 0
 
@@ -30,10 +78,10 @@ export async function whenDiffHostVisible(host: HTMLElement): Promise<void> {
 
 export function createGitChangesDiffEditor(
   container: HTMLElement,
-  monaco: typeof Monaco,
+  monaco: GitDiffMonaco,
   fontSize: number,
   theme: 'vs' | 'vs-dark',
-): Monaco.editor.IStandaloneDiffEditor {
+): GitDiffEditor {
   return monaco.editor.createDiffEditor(container, {
     ...GIT_CHANGES_DIFF_EDITOR_OPTIONS,
     fontSize,
@@ -41,7 +89,7 @@ export function createGitChangesDiffEditor(
   })
 }
 
-export function disposeDiffModels(diffEditor: Monaco.editor.IStandaloneDiffEditor): void {
+export function disposeDiffModels(diffEditor: GitDiffEditor): void {
   const oldModels = diffEditor.getModel()
   if (!oldModels) return
   diffEditor.setModel(null)
@@ -58,8 +106,8 @@ export function disposeDiffModels(diffEditor: Monaco.editor.IStandaloneDiffEdito
  * leaves the reveal as a no-op (change off-screen / collapse unset).
  */
 export async function setGitFileDiffModel(
-  diffEditor: Monaco.editor.IStandaloneDiffEditor,
-  monaco: typeof Monaco,
+  diffEditor: GitDiffEditor,
+  monaco: GitDiffMonaco,
   diff: GitFileDiff,
   host: HTMLElement,
   isCurrent: () => boolean = () => true,
@@ -98,7 +146,7 @@ export async function setGitFileDiffModel(
 
 export function observeDiffHostLayout(
   host: HTMLElement,
-  getDiffEditor: () => Monaco.editor.IStandaloneDiffEditor | null,
+  getDiffEditor: () => GitDiffEditor | null,
 ): () => void {
   const observer = new ResizeObserver(() => {
     if (!viewerVisible(host)) return

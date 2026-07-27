@@ -12,6 +12,7 @@ import { mountSettingsDialog } from './settings-dialog.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { resetAttention } from '../controller/attention.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { createPendingApi } from '../fake-api.test-support.ts'
 
 interface EmitReq {
   id: string
@@ -34,28 +35,18 @@ function makeApi(): {
 } {
   let handler: (req: Record<string, unknown>) => void = () => {}
   const responses: Responded[] = []
-  const overrides: Record<string, unknown> = {
-    'agent.onApprovalRequest': (h: (req: Record<string, unknown>) => void) => {
+  const overrides = {
+    'agent.onApprovalRequest': (h: (req: Record<string, unknown>) => void): (() => void) => {
       handler = h
       return () => {}
     },
-    'approval.respond': (id: string, approved: boolean, remember: boolean) => {
+    'approval.respond': (id: string, approved: boolean, remember: boolean): Promise<void> => {
       responses.push({ id, approved, remember })
       return Promise.resolve()
     },
   }
-  const make = (path: string): unknown =>
-    new Proxy(() => new Promise(() => {}), {
-      get: (_t, prop) => make(path ? `${path}.${String(prop)}` : String(prop)),
-      apply: (_t, _this, args): unknown => {
-        const override = overrides[path]
-        if (typeof override === 'function')
-          return (override as (...a: unknown[]) => unknown)(...(args as unknown[]))
-        return new Promise(() => {})
-      },
-    })
   return {
-    api: make('') as ApiClient,
+    api: createPendingApi(overrides),
     emit: (req): void => {
       handler({
         id: req.id,

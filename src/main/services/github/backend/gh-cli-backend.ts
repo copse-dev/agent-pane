@@ -3,7 +3,8 @@ import { getGithubRepoSlug } from '../git-service.ts'
 import { isGhAvailable, whenToolAvailabilityProbed } from '../../tool-availability.ts'
 import { detectLanguage } from '../../language.ts'
 import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
-import { safeJsonParse } from '@shared/safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
+import { z } from 'zod'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type {
   GhCliStatus,
@@ -18,60 +19,150 @@ import type {
 import type { GitHubBackend, PrRef } from './backend.ts'
 import { chooseAutoMergeStrategy, type RepoMergeConfig } from './merge-strategy.ts'
 
-interface GhApiContent {
-  content?: string
-  encoding?: string
-}
-
 interface GhPrViewJson {
-  state?: string
-  number?: number
-  title?: string
-  url?: string
-  body?: string
-  headRefName?: string
-  baseRefName?: string
-  baseRefOid?: string
-  headRefOid?: string
-  author?: { login?: string }
-  mergeable?: string
-  mergeStateStatus?: string
-  additions?: number
-  deletions?: number
-  changedFiles?: number
-  createdAt?: string
-  updatedAt?: string
-  isDraft?: boolean
-  reviewDecision?: string
-  autoMergeRequest?: { enabledAt?: string } | null
-  statusCheckRollup?: Array<{
-    __typename?: string
-    name?: string
-    context?: string
-    status?: string
-    conclusion?: string
-    state?: string
-    detailsUrl?: string
-  }>
-  files?: Array<{
-    path?: string
-    additions?: number
-    deletions?: number
-    changeType?: string
-  }>
+  state?: string | undefined
+  number?: number | undefined
+  title?: string | undefined
+  url?: string | undefined
+  body?: string | undefined
+  headRefName?: string | undefined
+  baseRefName?: string | undefined
+  baseRefOid?: string | undefined
+  headRefOid?: string | undefined
+  author?: { login?: string | undefined } | undefined
+  mergeable?: string | undefined
+  mergeStateStatus?: string | undefined
+  additions?: number | undefined
+  deletions?: number | undefined
+  changedFiles?: number | undefined
+  createdAt?: string | undefined
+  updatedAt?: string | undefined
+  isDraft?: boolean | undefined
+  reviewDecision?: string | undefined
+  autoMergeRequest?: { enabledAt?: string | undefined } | null | undefined
+  statusCheckRollup?:
+    | Array<{
+        __typename?: string | undefined
+        name?: string | undefined
+        context?: string | undefined
+        status?: string | undefined
+        conclusion?: string | undefined
+        state?: string | undefined
+        detailsUrl?: string | undefined
+      }>
+    | undefined
+  files?:
+    | Array<{
+        path?: string | undefined
+        additions?: number | undefined
+        deletions?: number | undefined
+        changeType?: string | undefined
+      }>
+    | undefined
 }
 
-interface GhApiPullFile {
-  filename?: string
-  status?: string
-  additions?: number
-  deletions?: number
-}
-
-interface GhRunJson {
-  databaseId?: number
-  conclusion?: string
-}
+const optionalString = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.string().optional(),
+)
+const optionalNumber = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.number().optional(),
+)
+const ghPrViewSchema = z.object({
+  state: optionalString,
+  number: optionalNumber,
+  title: optionalString,
+  url: optionalString,
+  body: optionalString,
+  headRefName: optionalString,
+  baseRefName: optionalString,
+  baseRefOid: optionalString,
+  headRefOid: optionalString,
+  author: z.preprocess(
+    (value) => (value === null ? undefined : value),
+    z.object({ login: optionalString }).optional(),
+  ),
+  mergeable: optionalString,
+  mergeStateStatus: optionalString,
+  additions: optionalNumber,
+  deletions: optionalNumber,
+  changedFiles: optionalNumber,
+  createdAt: optionalString,
+  updatedAt: optionalString,
+  isDraft: z.boolean().optional(),
+  reviewDecision: optionalString,
+  autoMergeRequest: z.object({ enabledAt: optionalString }).nullable().optional(),
+  statusCheckRollup: z
+    .array(
+      z.object({
+        __typename: optionalString,
+        name: optionalString,
+        context: optionalString,
+        status: optionalString,
+        conclusion: optionalString,
+        state: optionalString,
+        detailsUrl: optionalString,
+      }),
+    )
+    .optional(),
+  files: z
+    .array(
+      z.object({
+        path: optionalString,
+        additions: optionalNumber,
+        deletions: optionalNumber,
+        changeType: optionalString,
+      }),
+    )
+    .optional(),
+})
+const ghPrListSchema = z.array(ghPrViewSchema)
+const ghSearchPrListSchema = z.array(
+  ghPrViewSchema.extend({
+    repository: z
+      .object({
+        name: optionalString,
+        nameWithOwner: optionalString,
+        owner: z.object({ login: optionalString }).optional(),
+      })
+      .optional(),
+  }),
+)
+const ghApiPullFilesSchema = z.array(
+  z.object({
+    filename: optionalString,
+    status: optionalString,
+    additions: optionalNumber,
+    deletions: optionalNumber,
+  }),
+)
+const ghApiContentSchema = z.object({ content: optionalString, encoding: optionalString })
+const repoMergeConfigSchema = z.object({
+  squash: z.boolean().optional(),
+  merge: z.boolean().optional(),
+  rebase: z.boolean().optional(),
+})
+const flatIssueSchema = z.object({
+  number: optionalNumber,
+  title: optionalString,
+  url: optionalString,
+  body: optionalString,
+  labels: z.array(z.string()).optional(),
+  updatedAt: optionalString,
+})
+const issueSchema = z.object({
+  number: optionalNumber,
+  title: optionalString,
+  url: optionalString,
+  body: optionalString,
+  labels: z.array(z.object({ name: optionalString })).optional(),
+  updatedAt: optionalString,
+  state: optionalString,
+})
+const ghRunListSchema = z.array(
+  z.object({ databaseId: optionalNumber, conclusion: optionalString }),
+)
 
 const PR_VIEW_FIELDS = [
   'state',
@@ -195,7 +286,7 @@ async function listPrFiles(ref: PrRef, prView?: GhPrViewJson): Promise<GhPrChang
     '--paginate',
   ])
   if (code !== 0) return []
-  const apiFiles = safeJsonParse<GhApiPullFile[]>(stdout.trim())
+  const apiFiles = safeJsonParse(stdout.trim(), decodeWithSchema(ghApiPullFilesSchema))
   if (!Array.isArray(apiFiles)) return []
   return apiFiles
     .map((file) => {
@@ -220,7 +311,7 @@ async function fetchRepoFileAtRef(ref: PrRef, path: string, gitRef: string): Pro
     `repos/${ref.owner}/${ref.repo}/contents/${encodedPath}?ref=${encodeURIComponent(gitRef)}`,
   ])
   if (code !== 0) return ''
-  const payload = safeJsonParse<GhApiContent>(stdout.trim())
+  const payload = safeJsonParse(stdout.trim(), decodeWithSchema(ghApiContentSchema))
   if (!payload?.content || payload.encoding !== 'base64') return ''
   return decodeBase64Content(payload.content)
 }
@@ -234,7 +325,7 @@ async function repoMergeConfig(ref: PrRef): Promise<RepoMergeConfig> {
     '{squash: .allow_squash_merge, merge: .allow_merge_commit, rebase: .allow_rebase_merge}',
   ])
   if (code !== 0) return {}
-  return safeJsonParse<RepoMergeConfig>(stdout.trim()) ?? {}
+  return safeJsonParse(stdout.trim(), decodeWithSchema(repoMergeConfigSchema)) ?? {}
 }
 
 /**
@@ -294,13 +385,7 @@ export const ghCliBackend: GitHubBackend = {
       'number,title,url,state,repository,author,createdAt,updatedAt',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const list = safeJsonParse<
-      Array<
-        GhPrViewJson & {
-          repository?: { name?: string; nameWithOwner?: string; owner?: { login?: string } }
-        }
-      >
-    >(stdout.trim())
+    const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghSearchPrListSchema))
     if (!Array.isArray(list)) return []
     return list
       .map((entry) => {
@@ -331,7 +416,7 @@ export const ghCliBackend: GitHubBackend = {
       'number,title,url,state,headRefName,author,createdAt,updatedAt,statusCheckRollup',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const list = safeJsonParse<GhPrViewJson[]>(stdout.trim())
+    const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrListSchema))
     if (!Array.isArray(list)) return []
     return list
       .map((entry) => {
@@ -365,16 +450,7 @@ export const ghCliBackend: GitHubBackend = {
       '[.[] | {number, title, url, updatedAt, body: ((.body // "")[0:2000]), labels: [.labels[].name]}]',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const list = safeJsonParse<
-      Array<{
-        number?: number
-        title?: string
-        url?: string
-        body?: string
-        labels?: string[]
-        updatedAt?: string
-      }>
-    >(stdout.trim())
+    const list = safeJsonParse(stdout.trim(), decodeWithSchema(z.array(flatIssueSchema)))
     if (!Array.isArray(list)) {
       // Never report unparseable output as "no issues" — surface it.
       throw new Error(
@@ -416,15 +492,7 @@ export const ghCliBackend: GitHubBackend = {
       if (/could not find|no issues? found|not found/i.test(stderr)) return null
       throw new Error(formatGhError(stderr, code))
     }
-    const entry = safeJsonParse<{
-      number?: number
-      title?: string
-      url?: string
-      body?: string
-      labels?: Array<{ name?: string }>
-      updatedAt?: string
-      state?: string
-    }>(stdout.trim())
+    const entry = safeJsonParse(stdout.trim(), decodeWithSchema(issueSchema))
     if (!entry || typeof entry.number !== 'number' || !entry.title || !entry.url) return null
     const summary: GhIssueSummary = {
       owner: ref.owner,
@@ -462,17 +530,7 @@ export const ghCliBackend: GitHubBackend = {
       'number,title,url,body,labels,updatedAt,state',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const list = safeJsonParse<
-      Array<{
-        number?: number
-        title?: string
-        url?: string
-        body?: string
-        labels?: Array<{ name?: string }>
-        updatedAt?: string
-        state?: string
-      }>
-    >(stdout.trim())
+    const list = safeJsonParse(stdout.trim(), decodeWithSchema(z.array(issueSchema)))
     if (!Array.isArray(list)) return []
     return list
       .map((entry) => {
@@ -506,7 +564,7 @@ export const ghCliBackend: GitHubBackend = {
       PR_VIEW_FIELDS.join(','),
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const pr = safeJsonParse<GhPrViewJson>(stdout.trim())
+    const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewSchema))
     if (!pr || typeof pr.number !== 'number' || !pr.url) return null
     const files = await listPrFiles(ref, pr)
     return toGhPrDetails(ref, { ...pr, number: pr.number, url: pr.url }, files)
@@ -522,7 +580,7 @@ export const ghCliBackend: GitHubBackend = {
       'baseRefOid,headRefOid,files',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const pr = safeJsonParse<GhPrViewJson>(stdout.trim())
+    const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewSchema))
     if (!pr?.baseRefOid || !pr.headRefOid) return null
     const fileMeta = (pr.files ?? []).find((file) => file.path === path)
     const status = mapFileStatus(fileMeta?.changeType)
@@ -543,7 +601,7 @@ export const ghCliBackend: GitHubBackend = {
       'statusCheckRollup',
     ])
     if (code !== 0) return 'no_checks'
-    const pr = safeJsonParse<GhPrViewJson>(stdout.trim())
+    const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewSchema))
     return deriveOverallState(rollupToCiChecks(pr?.statusCheckRollup))
   },
 
@@ -580,7 +638,7 @@ export const ghCliBackend: GitHubBackend = {
       'databaseId,conclusion',
     ])
     if (code !== 0) return { ok: false, backend: 'cli', message: formatGhError(stderr, code) }
-    const runs = safeJsonParse<GhRunJson[]>(stdout.trim()) ?? []
+    const runs = safeJsonParse(stdout.trim(), decodeWithSchema(ghRunListSchema)) ?? []
     const failed = runs.filter((run) => isFailingConclusion(run.conclusion))
     if (failed.length === 0) {
       return {

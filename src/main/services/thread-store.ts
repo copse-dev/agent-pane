@@ -31,6 +31,7 @@ import {
   type RefResolver,
 } from '@shared/threads/fold.ts'
 import { parseOkfMessage } from '@shared/threads/okf-message.ts'
+import { parseThreadMetaValue } from '@shared/threads/thread-boundary.ts'
 import {
   parseSpine,
   parseSpineEntries,
@@ -240,14 +241,7 @@ function parseMeta(raw: string | null): ThreadMeta | null {
   if (raw === null) return null
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      typeof (parsed as Thread).id !== 'string'
-    ) {
-      return null
-    }
-    return parsed as ThreadMeta
+    return parseThreadMetaValue(parsed)
   } catch {
     return null
   }

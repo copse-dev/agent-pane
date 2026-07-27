@@ -126,8 +126,8 @@ describe('resolveFileReferencesInBatches', () => {
   })
 
   it('guards a null result from the IPC boundary', async () => {
-    const resolved = await resolveFileReferencesInBatches(['a.ts'], () =>
-      Promise.resolve(null as unknown as { candidate: string }[]),
+    const resolved = await resolveFileReferencesInBatches<{ candidate: string }>(['a.ts'], () =>
+      Promise.resolve(null),
     )
     assert.deepEqual(resolved, [])
   })

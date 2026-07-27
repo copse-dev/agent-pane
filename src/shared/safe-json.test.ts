@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { safeJsonParse } from './safe-json.ts'
+import { decodeWithSchema, safeJsonParse } from './safe-json.ts'
 
 describe('safeJsonParse', () => {
   it('parses valid JSON', () => {
@@ -16,5 +16,24 @@ describe('safeJsonParse', () => {
 
   it('parses the JSON literal null as null', () => {
     assert.equal(safeJsonParse('null'), null)
+  })
+
+  it('uses a decoder before returning a typed result', () => {
+    const decodeName = decodeWithSchema({
+      safeParse(value: unknown) {
+        if (
+          typeof value === 'object' &&
+          value !== null &&
+          'name' in value &&
+          typeof value.name === 'string'
+        ) {
+          return { success: true as const, data: { name: value.name } }
+        }
+        return { success: false as const }
+      },
+    })
+
+    assert.deepEqual(safeJsonParse('{"name":"Copse"}', decodeName), { name: 'Copse' })
+    assert.equal(safeJsonParse('{"name":42}', decodeName), null)
   })
 })

@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import type { BrowserWindow } from 'electron'
 import type { IDisposable, IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -43,6 +42,14 @@ export interface TerminalSession {
 
 const sessions = new Map<string, TerminalSession>()
 
+export interface TerminalWindow {
+  isDestroyed(): boolean
+  webContents: {
+    isDestroyed(): boolean
+    send(channel: string, ...args: unknown[]): void
+  }
+}
+
 /** Per-owner focused session — the default target for `read_terminal` without an id. */
 const activeByOwner = new Map<number, string>()
 
@@ -73,7 +80,7 @@ function sessionCwd(executionRoot?: string): string {
 }
 
 function sendTerminalEvent(
-  win: BrowserWindow,
+  win: TerminalWindow,
   channel: 'terminal:output' | 'terminal:exit',
   sessionId: string,
   payload: string | number,
@@ -104,7 +111,7 @@ function disposeSession(session: TerminalSession, sessionId: string): void {
 }
 
 function attachPtyHandlers(
-  win: BrowserWindow,
+  win: TerminalWindow,
   sessionId: string,
   ptyProcess: IPty,
   session: TerminalSession,
@@ -125,7 +132,7 @@ function attachPtyHandlers(
 }
 
 async function spawnShell(
-  win: BrowserWindow,
+  win: TerminalWindow,
   ownerId: number,
   cols: number,
   rows: number,
@@ -157,7 +164,7 @@ async function spawnShell(
 }
 
 export async function createTerminalSession(
-  win: BrowserWindow,
+  win: TerminalWindow,
   ownerId: number,
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,

@@ -13,7 +13,6 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type ResumeSessionResponse,
-  type SessionConfigOption,
   type SessionModeState,
   type SessionUpdate,
   type StopReason,
@@ -35,6 +34,7 @@ import type {
   AcpModelChoice,
   AcpModelSelector,
 } from '@shared/types/acp.ts'
+import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
@@ -129,23 +129,30 @@ const UNSUPPORTED = (method: string) => (): Promise<never> =>
  * Returns `null` when the agent exposes no such option (model is then fixed to
  * the agent's own default).
  */
-export function modelSelectorFrom(
-  response: NewSessionResponse | ResumeSessionResponse,
-): AcpModelSelector | null {
+export function modelSelectorFrom(response: {
+  configOptions?: readonly unknown[] | null
+}): AcpModelSelector | null {
   const option = (response.configOptions ?? []).find(
-    (candidate): candidate is SessionConfigOption =>
-      candidate.category === 'model' && candidate.type === 'select',
+    (candidate) =>
+      isRecord(candidate) && candidate['category'] === 'model' && candidate['type'] === 'select',
   )
-  if (!option || option.type !== 'select') return null
+  if (!isRecord(option)) return null
+  const configId = option['id']
+  const currentValue = option['currentValue']
+  if (typeof configId !== 'string' || typeof currentValue !== 'string') return null
   const choices: AcpModelChoice[] = []
-  for (const entry of option.options) {
-    if ('group' in entry) {
-      for (const sub of entry.options) choices.push({ value: sub.value, label: sub.name })
-    } else {
-      choices.push({ value: entry.value, label: entry.name })
+  for (const entry of recordArrayOrEmpty(option['options'])) {
+    if (typeof entry['group'] === 'string') {
+      for (const sub of recordArrayOrEmpty(entry['options'])) {
+        if (typeof sub['value'] === 'string' && typeof sub['name'] === 'string') {
+          choices.push({ value: sub['value'], label: sub['name'] })
+        }
+      }
+    } else if (typeof entry['value'] === 'string' && typeof entry['name'] === 'string') {
+      choices.push({ value: entry['value'], label: entry['name'] })
     }
   }
-  return { configId: option.id, currentValue: option.currentValue, choices }
+  return { configId, currentValue, choices }
 }
 
 /**

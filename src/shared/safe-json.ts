@@ -1,14 +1,26 @@
 /**
  * JSON.parse that returns null instead of throwing on invalid input.
  *
- * The `T` type parameter is a caller-supplied cast for the parsed value and is
- * relied on by call sites; migration to boundary validation is tracked by the
- * suppression-removal work.
+ * Callers that need a typed result must provide a decoder. Without one the
+ * parsed value stays `unknown`, keeping the trust boundary explicit.
  */
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
-export function safeJsonParse<T = unknown>(text: string): T | null {
+export type JsonDecoder<T> = (value: unknown) => T | null
+
+export function decodeWithSchema<T>(schema: {
+  safeParse(value: unknown): { success: true; data: T } | { success: false }
+}): JsonDecoder<T> {
+  return (value) => {
+    const result = schema.safeParse(value)
+    return result.success ? result.data : null
+  }
+}
+
+export function safeJsonParse(text: string): unknown
+export function safeJsonParse<T>(text: string, decoder: JsonDecoder<T>): T | null
+export function safeJsonParse<T>(text: string, decoder?: JsonDecoder<T>): unknown {
   try {
-    return JSON.parse(text) as T
+    const value: unknown = JSON.parse(text)
+    return decoder ? decoder(value) : value
   } catch {
     return null
   }
