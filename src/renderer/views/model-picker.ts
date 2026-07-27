@@ -310,9 +310,9 @@ export function mountModelSelectPicker(
   }
   const wrappingLabel =
     select.parentElement instanceof HTMLLabelElement ? select.parentElement : null
-  const associatedLabels = [
-    ...document.querySelectorAll<HTMLLabelElement>('label'),
-  ].filter((label) => label.htmlFor === select.id)
+  const associatedLabels = [...document.querySelectorAll<HTMLLabelElement>('label')].filter(
+    (label) => label.htmlFor === select.id,
+  )
   if (wrappingLabel && !associatedLabels.includes(wrappingLabel)) {
     associatedLabels.push(wrappingLabel)
   }
