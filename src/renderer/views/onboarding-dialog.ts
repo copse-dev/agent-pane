@@ -162,7 +162,7 @@ export function mountOnboardingDialog(store: AppStore, api: ApiClient): void {
         })
         status.append(
           inlineStatus(
-            r.reachable ? 'ok' : 'pending',
+            r.reachable ? 'ok' : 'idle',
             r.reachable ? `running — ${String(r.models.length)} model(s)` : 'not found',
           ),
         )
