@@ -15,7 +15,26 @@ interface ArgsCase {
 }
 
 const corpusPath = join(process.cwd(), 'tests/fixtures/tool-args-json-corpus.json')
-const corpus = JSON.parse(readFileSync(corpusPath, 'utf8')) as { cases: ArgsCase[] }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function parseCorpus(value: unknown): { cases: ArgsCase[] } {
+  assert.ok(isRecord(value) && Array.isArray(value['cases']))
+  const cases: ArgsCase[] = value['cases'].map((entry: unknown) => {
+    assert.ok(isRecord(entry))
+    const { id, rawJson, expect } = entry
+    assert.ok(
+      typeof id === 'string' &&
+        (typeof rawJson === 'string' || rawJson === null) &&
+        isRecord(expect),
+    )
+    return { id, rawJson, expect }
+  })
+  return { cases }
+}
+
+const corpus = parseCorpus(JSON.parse(readFileSync(corpusPath, 'utf8')) as unknown)
 
 describe('tool-args JSON corpus: parseToolArgs', () => {
   for (const c of corpus.cases) {

@@ -1,4 +1,4 @@
-/**
+import { expectNumber } from '@shared/unknown-value.ts' /**
  * Advice for chat models with a small context window.
  *
  * LM Studio (and some other local servers) default new models to a tiny context
@@ -100,7 +100,7 @@ export function lowContextAdvice(
   if (!isContextWindowLow(contextWindow, minimum)) return null
   const subject = opts.modelId ? `“${opts.modelId}”` : 'This model'
   return (
-    `${subject} loads with only ${formatTokens(contextWindow as number)} tokens of context ` +
+    `${subject} loads with only ${formatTokens(expectNumber(contextWindow))} tokens of context ` +
     `(below the recommended ${formatTokens(minimum)} for a main chat model). ` +
     `Agent runs will trim history quickly. In LM Studio, raise the model’s ` +
     `“Context Length” when loading it (Developer tab → model settings), then reload.`

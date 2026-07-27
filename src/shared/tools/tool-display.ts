@@ -1,4 +1,5 @@
 import type { ToolCall } from '@shared/types'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** Progressive while a tool is in flight; past once it settles (done/error). */
 export type ToolLabelTense = 'running' | 'done'
@@ -171,8 +172,8 @@ export function getToolDisplayName(name: string, tense: ToolLabelTense = 'done')
 }
 
 function stringArg(args: unknown, key: string): string | null {
-  if (!args || typeof args !== 'object') return null
-  const value = (args as Record<string, unknown>)[key]
+  if (!isRecord(args)) return null
+  const value = args[key]
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
@@ -216,8 +217,8 @@ export function shellCommandLabel(command: string): string {
 }
 
 function shellCommandArg(args: unknown): string | null {
-  if (!args || typeof args !== 'object') return null
-  const command = (args as Record<string, unknown>)['command']
+  if (!isRecord(args)) return null
+  const command = args['command']
   return typeof command === 'string' && command.trim() ? command : null
 }
 

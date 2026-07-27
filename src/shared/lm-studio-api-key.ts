@@ -5,7 +5,8 @@ export function resolveLmStudioApiKey(
 ): string {
   const stored = storedKey?.trim()
   if (stored) return stored
-  const fromEnv = env.LM_STUDIO_API_KEY?.trim() || env.LM_API_TOKEN?.trim()
+  const fromEnv = firstNonEmptyString(env.LM_STUDIO_API_KEY?.trim(), env.LM_API_TOKEN?.trim())
   if (fromEnv) return fromEnv
   return 'lm-studio'
 }
+import { firstNonEmptyString } from './unknown-value.ts'

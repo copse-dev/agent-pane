@@ -1,10 +1,11 @@
 import '../../../tests/setup-dom.ts'
 import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
-import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { createStore } from '@shared/store/store.ts'
 import type { SshConnectionState } from '@shared/types/ssh-workspace.ts'
 import { capabilityWarnings, mountSshStatusBanner } from './ssh-status-banner.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 describe('capabilityWarnings', () => {
   it('emits one line per missing tool, then the probe warnings', () => {
@@ -50,16 +51,23 @@ describe('mountSshStatusBanner', () => {
       lastError: 'connection refused',
     }
 
-    const api = {
-      settings: {
-        get: async (key: string): Promise<unknown> => (key === 'sshWorkspaceEnabled' ? true : null),
-      },
-      sshWorkspace: {
-        getStates: async (): Promise<SshConnectionState[]> => [state],
-        onConnectionChanged: (): (() => void) => () => undefined,
-        reconnect: async (): Promise<void> => undefined,
-      },
-    } as unknown as ApiClient
+    const api = ((): ApiClient => {
+      const base = createFakeApi()
+      return {
+        ...base,
+        settings: {
+          ...base['settings'],
+          get: async (key: string): Promise<unknown> =>
+            key === 'sshWorkspaceEnabled' ? true : null,
+        },
+        sshWorkspace: {
+          ...base['sshWorkspace'],
+          getStates: async (): Promise<SshConnectionState[]> => [state],
+          onConnectionChanged: (): (() => void) => () => undefined,
+          reconnect: async (): Promise<SshConnectionState[]> => [state],
+        },
+      } satisfies ApiClient
+    })()
 
     const banner = mountSshStatusBanner(store, api)
     await Promise.resolve()
@@ -98,16 +106,23 @@ describe('mountSshStatusBanner', () => {
       },
     }
 
-    const api = {
-      settings: {
-        get: async (key: string): Promise<unknown> => (key === 'sshWorkspaceEnabled' ? true : null),
-      },
-      sshWorkspace: {
-        getStates: async (): Promise<SshConnectionState[]> => [state],
-        onConnectionChanged: (): (() => void) => () => undefined,
-        reconnect: async (): Promise<void> => undefined,
-      },
-    } as unknown as ApiClient
+    const api = ((): ApiClient => {
+      const base = createFakeApi()
+      return {
+        ...base,
+        settings: {
+          ...base['settings'],
+          get: async (key: string): Promise<unknown> =>
+            key === 'sshWorkspaceEnabled' ? true : null,
+        },
+        sshWorkspace: {
+          ...base['sshWorkspace'],
+          getStates: async (): Promise<SshConnectionState[]> => [state],
+          onConnectionChanged: (): (() => void) => () => undefined,
+          reconnect: async (): Promise<SshConnectionState[]> => [state],
+        },
+      } satisfies ApiClient
+    })()
 
     const banner = mountSshStatusBanner(store, api)
     await Promise.resolve()

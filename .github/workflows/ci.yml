@@ -414,6 +414,10 @@ jobs:
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       - run: npm run coverage:ci
+        env:
+          # c8 retains V8 coverage until the suite exits; the default ~2 GB heap
+          # can OOM while finalizing a fully green run on the 6 GB check fleet.
+          NODE_OPTIONS: --max-old-space-size=3072
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).

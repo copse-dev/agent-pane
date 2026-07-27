@@ -25,6 +25,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { expectRecord, expectString } from '../src/shared/unknown-value.mts'
 
 const GENERATED_PATH = resolve('packages/llm/src/local-model-benchmarks.generated.ts')
 
@@ -110,9 +111,9 @@ function parseAiderRecords(yaml: string): Array<Record<string, string>> {
     if (startMatch) {
       current = {}
       records.push(current)
-      current[startMatch[1] as string] = unquote(startMatch[2] as string)
+      current[expectString(startMatch[1])] = unquote(expectString(startMatch[2]))
     } else if (fieldMatch && current) {
-      current[fieldMatch[1] as string] = unquote(fieldMatch[2] as string)
+      current[expectString(fieldMatch[1])] = unquote(expectString(fieldMatch[2]))
     }
   }
   return records
@@ -168,10 +169,14 @@ function collectFromBoard(
 
 /** HumanEval+ pass@1 per aliased model from the EvalPlus results JSON. */
 function collectEvalPlus(json: unknown): Map<string, Score> {
-  const data = (json ?? {}) as Record<string, { 'pass@1'?: Record<string, number> }>
+  const data = json === null || json === undefined ? {} : expectRecord(json, 'EvalPlus results')
   const out = new Map<string, Score>()
   for (const alias of EVALPLUS_ALIASES) {
-    const value = data[alias.evalplusModel]?.['pass@1']?.['humaneval+']
+    const model = data[alias.evalplusModel]
+    const passAtOne =
+      model === undefined ? undefined : expectRecord(model, alias.evalplusModel)['pass@1']
+    const value =
+      passAtOne === undefined ? undefined : expectRecord(passAtOne, 'pass@1')['humaneval+']
     if (typeof value !== 'number' || !Number.isFinite(value)) continue
     out.set(alias.catalogId, {
       value,

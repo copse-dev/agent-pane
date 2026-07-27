@@ -1,6 +1,7 @@
 import { RequestError } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -39,10 +40,10 @@ function parseProviderError(err: unknown): ProviderError {
   const brace = raw.indexOf('{')
   if (brace !== -1) {
     try {
-      const body = JSON.parse(raw.slice(brace)) as Record<string, unknown>
-      const detail = (
-        body['error'] && typeof body['error'] === 'object' ? body['error'] : body
-      ) as Record<string, unknown>
+      const body = expectRecord(JSON.parse(raw.slice(brace)) as unknown)
+      const detail = expectRecord(
+        body['error'] && typeof body['error'] === 'object' ? body['error'] : body,
+      )
       if (typeof detail['type'] === 'string') parsed.type = detail['type']
       if (typeof detail['code'] === 'string') parsed.code = detail['code']
       if (typeof detail['message'] === 'string') parsed.message = detail['message'].trim()
@@ -104,8 +105,8 @@ function formatErrorData(data: unknown): string | null {
     const trimmed = data.trim()
     return trimmed || null
   }
-  if (typeof data === 'object') {
-    const record = data as Record<string, unknown>
+  if (isRecord(data)) {
+    const record = data
     for (const key of ['message', 'detail', 'details', 'reason'] as const) {
       const value = record[key]
       if (typeof value === 'string' && value.trim()) return value.trim()

@@ -8,6 +8,7 @@ import {
   parseTerminalBenchProfileIds,
   terminalBenchProfile,
 } from './lib/terminal-bench-profiles.mts'
+import { firstNonEmptyString } from '../src/shared/unknown-value.mts'
 
 function required(name: string): string {
   const value = process.env[name]?.trim()
@@ -30,10 +31,13 @@ const workersPerInstance = process.env['COPSE_TERMINAL_WORKERS_PER_INSTANCE']
   ? positiveInteger('COPSE_TERMINAL_WORKERS_PER_INSTANCE')
   : 1
 const taskNames = terminalBenchRequestedTaskNames(process.env['COPSE_TERMINAL_TASK_NAMES']) ?? []
-const selectedTaskCount = Math.min(maxTasks, taskNames.length || maxTasks)
+const selectedTaskCount = Math.min(maxTasks, taskNames.length === 0 ? maxTasks : taskNames.length)
 const shardCount = Math.min(instances * workersPerInstance, selectedTaskCount)
 const profiles = parseTerminalBenchProfileIds(
-  process.env['COPSE_TERMINAL_PROFILES']?.trim() || process.env['COPSE_TERMINAL_PROFILE'],
+  firstNonEmptyString(
+    process.env['COPSE_TERMINAL_PROFILES']?.trim(),
+    process.env['COPSE_TERMINAL_PROFILE'],
+  ),
 ).map((id) => terminalBenchProfile(id))
 const profileProvenance = profiles.map((profile) => ({
   id: profile.id,

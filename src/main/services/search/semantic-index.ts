@@ -15,6 +15,7 @@ import {
   indexBuildFinished,
   setSemanticIndexUnavailable,
 } from './index-status.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Hard ceiling on semantic-index worker threads. Without a cap the native
@@ -865,9 +866,9 @@ function parseJsonPayload(stdout: string): unknown {
 
 function extractResultItems(parsed: unknown): unknown[] {
   if (Array.isArray(parsed)) return parsed
-  if (typeof parsed !== 'object' || parsed === null) return []
+  if (!isRecord(parsed)) return []
 
-  const record = parsed as Record<string, unknown>
+  const record = parsed
   if (Array.isArray(record['results'])) return record['results']
   if (Array.isArray(record['matches'])) return record['matches']
   if (Array.isArray(record['hits'])) return record['hits']
@@ -882,8 +883,8 @@ function extractResultItems(parsed: unknown): unknown[] {
  * symbols (no end_line/snippet); `doc` is the symbol's docstring when indexed.
  */
 async function normalizeGortexHit(item: unknown): Promise<SemanticSearchHit | null> {
-  if (typeof item !== 'object' || item === null) return null
-  const record = item as Record<string, unknown>
+  if (!isRecord(item)) return null
+  const record = item
   const path = readString(record, ['absolute_file_path', 'file_path', 'path', 'file'])
   if (!path) return null
 
@@ -906,8 +907,8 @@ async function normalizeGortexHit(item: unknown): Promise<SemanticSearchHit | nu
 }
 
 async function normalizeVeraHit(item: unknown): Promise<SemanticSearchHit | null> {
-  if (typeof item !== 'object' || item === null) return null
-  const record = item as Record<string, unknown>
+  if (!isRecord(item)) return null
+  const record = item
   const path = readString(record, ['path', 'file', 'filename'])
   if (!path) return null
 

@@ -177,13 +177,13 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'text_replace': {
-        if (!st.msgId) st.msgId = addAssistantMessage(store, threadId)
+        st.msgId ??= addAssistantMessage(store, threadId)
         setMessageContent(store, st.msgId, chunk.text)
         st.currentText = chunk.text
         break
       }
       case 'tool_call': {
-        if (!st.msgId) st.msgId = addAssistantMessage(store, threadId)
+        st.msgId ??= addAssistantMessage(store, threadId)
         addToolCall(store, st.msgId, {
           id: chunk.toolCall.id,
           name: chunk.toolCall.name,
@@ -273,7 +273,7 @@ export function startAgentController(store: AppStore, api: ApiClient): () => voi
         break
       }
       case 'subagent_start': {
-        if (!st.msgId) st.msgId = addAssistantMessage(store, threadId)
+        st.msgId ??= addAssistantMessage(store, threadId)
         initSubagent(store, st.msgId, chunk.parentToolCallId, chunk.session)
         st.writing = false
         activity(threadId)

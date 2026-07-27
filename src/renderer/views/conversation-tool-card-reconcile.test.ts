@@ -11,6 +11,7 @@ import {
 import type { SubagentSession, ToolCall } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Regression cover for #728: `tool_call_updated` fires continuously while a
 // subagent runs. The old renderer removed every `.tool-card` and rebuilt the
@@ -20,10 +21,21 @@ import { mountConversation } from './conversation.ts'
 // running subagent's streaming message element (hence its renderer) survives.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-    index: { resolveFileReferences: () => Promise.resolve([]) },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+      index: {
+        ...base['index'],
+        resolveFileReferences: () => Promise.resolve([]),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 // A sibling in a different group ('writing') so it stays its own individual

@@ -19,6 +19,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BenchTask } from './bench-agent-lib.mts'
+import { expectStringArray } from '../src/shared/unknown-value.mts'
+import { z } from 'zod'
 
 const DATASET_API =
   'https://datasets-server.huggingface.co/rows?dataset=princeton-nlp%2FSWE-bench_Verified&config=default&split=test'
@@ -40,6 +42,21 @@ interface RowsResponse {
   num_rows_total: number
 }
 
+const sweBenchRowSchema: z.ZodType<SweBenchRow> = z.object({
+  instance_id: z.string(),
+  repo: z.string(),
+  base_commit: z.string(),
+  problem_statement: z.string(),
+  FAIL_TO_PASS: z.string(),
+  test_patch: z.string(),
+})
+
+const rowsResponseSchema: z.ZodType<RowsResponse> = z.object({
+  rows: z.array(z.object({ row: sweBenchRowSchema })),
+  num_rows_total: z.number(),
+})
+const pinnedInstancesSchema = z.object({ instances: z.array(z.string()) })
+
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag)
   return i !== -1 ? process.argv[i + 1] : undefined
@@ -50,11 +67,11 @@ async function fetchPage(offset: number): Promise<RowsResponse> {
   if (!res.ok) {
     throw new Error(`datasets-server ${String(res.status)} at offset ${String(offset)}`)
   }
-  return (await res.json()) as RowsResponse
+  return rowsResponseSchema.parse(await res.json())
 }
 
 function toTask(row: SweBenchRow): BenchTask {
-  const failToPass = JSON.parse(row.FAIL_TO_PASS) as string[]
+  const failToPass = expectStringArray(JSON.parse(row.FAIL_TO_PASS) as unknown)
   const testArgs = failToPass.map((t) => `'${t.replace(/'/g, "'\\''")}'`).join(' ')
   return {
     id: row.instance_id,
@@ -77,7 +94,7 @@ function toTask(row: SweBenchRow): BenchTask {
 
 async function main(): Promise<void> {
   const outDir = argValue('--out') ?? 'benchmarks/tasks/swe-bench'
-  const pinned = JSON.parse(readFileSync(IDS_PATH, 'utf8')) as { instances: string[] }
+  const pinned = pinnedInstancesSchema.parse(JSON.parse(readFileSync(IDS_PATH, 'utf8')) as unknown)
   const wanted = new Set(pinned.instances)
   mkdirSync(outDir, { recursive: true })
 

@@ -1,3 +1,5 @@
+import { isRecord } from '@shared/unknown-value.ts'
+
 /**
  * Pure helpers for turning an MCP tool's `inputSchema` into the JSON Schema
  * object copse-panel hands to LLM providers, plus result flattening.
@@ -29,11 +31,11 @@ function sanitizeNode(value: unknown, depth: number): unknown {
   if (Array.isArray(value)) {
     return value.slice(0, MAX_ARRAY_ENTRIES).map((v) => sanitizeNode(v, depth + 1))
   }
-  if (!value || typeof value !== 'object') return value
+  if (!isRecord(value)) return value
 
   const out: Record<string, unknown> = {}
   let propCount = 0
-  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, v] of Object.entries(value)) {
     if (STRIPPED_KEYS.has(key)) continue
     if (propCount >= MAX_PROPERTIES) break
     propCount++
@@ -54,10 +56,11 @@ function sanitizeNode(value: unknown, depth: number): unknown {
  * providers never reject the tool.
  */
 export function sanitizeMcpInputSchema(inputSchema: unknown): Record<string, unknown> {
-  if (!inputSchema || typeof inputSchema !== 'object') {
+  if (!isRecord(inputSchema)) {
     return { ...EMPTY_OBJECT_SCHEMA }
   }
-  const out = sanitizeNode(inputSchema, 0) as Record<string, unknown>
+  const sanitized = sanitizeNode(inputSchema, 0)
+  const out = isRecord(sanitized) ? sanitized : { ...EMPTY_OBJECT_SCHEMA }
 
   if (out['type'] !== 'object') out['type'] = 'object'
   if (!out['properties'] || typeof out['properties'] !== 'object') out['properties'] = {}

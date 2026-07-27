@@ -14,6 +14,8 @@ import {
 } from './provider-selection.ts'
 import { setSetting, setApiKey } from '../storage/settings.test-shim.ts'
 import { MockLLMProvider } from '@copse/llm/mock-provider.ts'
+import { expectStringRecord } from '@shared/unknown-value.ts'
+import { jsonResponse } from './test-response.ts'
 
 const SOURCE_PATH = resolve(process.cwd(), 'src/main/services/providers/lm-studio-models.ts')
 
@@ -28,7 +30,7 @@ function stubFetch(impl: typeof fetch): () => void {
 function authHeader(init?: RequestInit): string | undefined {
   const headers = init?.headers
   if (!headers || typeof headers !== 'object' || Array.isArray(headers)) return undefined
-  return (headers as Record<string, string>)['Authorization']
+  return expectStringRecord(headers)['Authorization']
 }
 
 describe('lm-studio-models source integrity', () => {
@@ -89,16 +91,8 @@ describe('subagent local model routing', () => {
 
   it('routes cloud chat models to the configured subagent local model', async () => {
     setSetting('subagentModel', 'explore-model')
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({
-            data: [{ id: 'explore-model', context_length: 32_768 }],
-          }),
-        }) as Response,
+    restoreFetch = stubFetch(async () =>
+      jsonResponse({ data: [{ id: 'explore-model', context_length: 32_768 }] }),
     )
 
     const route = await buildSubagentRoute('claude-sonnet-4-6')
@@ -117,15 +111,7 @@ describe('subagent local model routing', () => {
 
   it('falls back to the default local model when subagent model is auto', async () => {
     setSetting('localDefaultModel', 'default-local')
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({ data: [{ id: 'default-local' }] }),
-        }) as Response,
-    )
+    restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
 
     const route = await buildSubagentRoute('gpt-4o')
     assert.ok(route)
@@ -133,15 +119,7 @@ describe('subagent local model routing', () => {
   })
 
   it('defaults review to an on-device model', async () => {
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({ data: [{ id: 'default-local' }] }),
-        }) as Response,
-    )
+    restoreFetch = stubFetch(async () => jsonResponse({ data: [{ id: 'default-local' }] }))
     setSetting('localDefaultModel', 'default-local')
     const route = await buildReviewRoute()
     assert.ok(route)
@@ -280,14 +258,7 @@ describe('testLmStudio', () => {
   })
 
   it('surfaces HTTP errors without throwing', async () => {
-    restoreFetch = stubFetch(
-      async () =>
-        ({
-          ok: false,
-          status: 503,
-          statusText: 'Service Unavailable',
-        }) as Response,
-    )
+    restoreFetch = stubFetch(async () => jsonResponse({}, 503, 'Service Unavailable'))
 
     const result = await testLmStudio('http://127.0.0.1:1234/v1')
     assert.equal(result.ok, false)

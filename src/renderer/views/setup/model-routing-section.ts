@@ -4,6 +4,7 @@ import { at } from '@shared/array-utils.ts'
 import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
 import { populateLocalModelSelect, populateRoleModelSelect } from '../model-options.ts'
 import { el } from '../../dom/helpers.ts'
+import { optionalString } from '@shared/unknown-value.ts'
 
 export interface ModelRoutingSection {
   root: HTMLElement
@@ -88,10 +89,10 @@ export function createModelRoutingSection(
       : fields
 
   async function refresh(): Promise<void> {
-    const localModel = (await api.settings.get('localDefaultModel')) as string | undefined
-    const subagent = (await api.settings.get('subagentModel')) as string | undefined
-    const safety = (await api.settings.get('safetyModel')) as string | undefined
-    const review = (await api.settings.get('reviewModel')) as string | undefined
+    const localModel = optionalString(await api.settings.get('localDefaultModel'))
+    const subagent = optionalString(await api.settings.get('subagentModel'))
+    const safety = optionalString(await api.settings.get('safetyModel'))
+    const review = optionalString(await api.settings.get('reviewModel'))
     const roleModels =
       ((await api.settings.get('roleModels')) as Record<string, string> | undefined) ?? {}
 

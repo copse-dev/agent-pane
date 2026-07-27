@@ -7,6 +7,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
 import type { ActiveDiff } from '@shared/types/state.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Regression: a proposed diff must render even when this pane never received the
 // `agent:show_diff` push carrying its content. The pane mounts a turn after the
@@ -158,33 +159,44 @@ function makeApi(
   listeners?: DiffListeners,
 ): ApiClient {
   const noopUnsub = (): (() => void) => () => {}
-  return {
-    git: {
-      isAvailable: async () => true,
-      status: async () => emptyStatus,
-      fileDiff: async () => null,
-      sessionBackup: async () => null,
-    },
-    diff: {
-      approve: async () => {},
-      reject: async () => {},
-      approveAll: async () => {},
-      rejectAll: async () => {},
-      content: async (_projectId: string, _threadId: string, path: string) => {
-        contentCalls.push(path)
-        return stagedContent[path] ?? null
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      git: {
+        ...base['git'],
+        isAvailable: async () => true,
+        status: async () => emptyStatus,
+        fileDiff: async () => null,
+        sessionBackup: async () => null,
       },
-      onShowDiff: (handler: NonNullable<DiffListeners['showDiff']>) => {
-        if (listeners) listeners.showDiff = handler
-        return noopUnsub()
+      diff: {
+        ...base['diff'],
+        approve: async (): Promise<void> => {},
+        reject: async (): Promise<void> => {},
+        approveAll: async (): Promise<void> => {},
+        rejectAll: async (): Promise<void> => {},
+        content: async (
+          _projectId: string,
+          _threadId: string,
+          path: string,
+        ): Promise<ActiveDiff | null> => {
+          contentCalls.push(path)
+          return stagedContent[path] ?? null
+        },
+        onShowDiff: (handler: NonNullable<DiffListeners['showDiff']>): (() => void) => {
+          if (listeners) listeners.showDiff = handler
+          return noopUnsub()
+        },
+        onQueued: noopUnsub,
+        onConflict: noopUnsub,
       },
-      onQueued: noopUnsub(),
-      onConflict: noopUnsub(),
-    },
-    fs: {
-      onChanged: noopUnsub(),
-    },
-  } as unknown as ApiClient
+      fs: {
+        ...base['fs'],
+        onChanged: noopUnsub,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 before(() => {

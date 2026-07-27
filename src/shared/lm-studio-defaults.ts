@@ -1,3 +1,5 @@
+import { firstNonEmptyString } from './unknown-value.ts'
+
 /** Default LM Studio server URL (OpenAI-compatible /v1 endpoint). */
 export const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
 
@@ -39,7 +41,10 @@ export function resolveLocalServerUrl(
   storedUrl: string | undefined | null,
   env: { COPSE_EVAL_LM_STUDIO_URL?: string; LM_STUDIO_BASE_URL?: string } = {},
 ): string {
-  const fromEnv = env.COPSE_EVAL_LM_STUDIO_URL?.trim() || env.LM_STUDIO_BASE_URL?.trim()
+  const fromEnv = firstNonEmptyString(
+    env.COPSE_EVAL_LM_STUDIO_URL?.trim(),
+    env.LM_STUDIO_BASE_URL?.trim(),
+  )
   if (fromEnv) return fromEnv
   const stored = storedUrl?.trim()
   if (stored) return stored

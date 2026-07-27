@@ -11,12 +11,13 @@ import type { Message, Thread } from '../../src/shared/types/thread.ts'
 import { threadToJsonl } from '../../src/shared/threads/export-jsonl.ts'
 import { explodeThread } from '../../src/shared/threads/fold.ts'
 import { serializeSpine } from '../../src/shared/threads/spine-schema.ts'
+import { nonEmptyStringOr } from '../../src/shared/unknown-value.mts'
 
 const sha256 = (input: string): string => createHash('sha256').update(input, 'utf8').digest('hex')
 const CHARS_PER_TOKEN = 4
 
 function titleFromInstruction(instruction: string): string {
-  const firstLine = instruction.trim().split('\n', 1)[0]?.trim() || 'Benchmark task'
+  const firstLine = nonEmptyStringOr(instruction.trim().split('\n', 1)[0]?.trim(), 'Benchmark task')
   return firstLine.slice(0, 80)
 }
 
