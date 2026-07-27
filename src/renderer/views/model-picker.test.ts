@@ -113,4 +113,110 @@ describe('shared model picker', () => {
       '(auto — prefer on-device)',
     )
   })
+
+  it('rewires wrapping labels to the searchable trigger', async () => {
+    const form = document.createElement('form')
+    const select = document.createElement('select')
+    select.name = 'model'
+    const initial = document.createElement('option')
+    initial.value = 'claude-sonnet-4-6'
+    initial.textContent = 'Claude Sonnet 4.6'
+    select.append(initial)
+    select.value = 'claude-sonnet-4-6'
+    const label = document.createElement('label')
+    label.append('Chat model', select)
+    form.append(label)
+    document.body.append(form)
+
+    const picker = mountModelSelectPicker(select, {
+      loadOptions: async () => OPTIONS,
+      loadOnMount: false,
+    })
+    await picker.refresh()
+
+    const trigger = form.querySelector<HTMLButtonElement>('.model-picker-trigger')
+    assert.ok(trigger?.id)
+    assert.equal(label.htmlFor, trigger.id)
+    // happy-dom's label.click() does not always activate htmlFor; assert the
+    // association the browser (and Chromium e2e) will honor.
+    assert.equal(document.getElementById(label.htmlFor), trigger)
+    picker.destroy()
+  })
+
+  it('ignores stale refresh results when syncing the native select', async () => {
+    const select = document.createElement('select')
+    select.name = 'model'
+    document.body.append(select)
+
+    let releaseStale: ((options: ModelOption[]) => void) | undefined
+    let releaseFresh: ((options: ModelOption[]) => void) | undefined
+    let loadCount = 0
+    const picker = mountModelSelectPicker(select, {
+      loadOptions: async () => {
+        loadCount += 1
+        if (loadCount === 1) {
+          return await new Promise<ModelOption[]>((resolve) => {
+            releaseStale = resolve
+          })
+        }
+        return await new Promise<ModelOption[]>((resolve) => {
+          releaseFresh = resolve
+        })
+      },
+      loadOnMount: false,
+    })
+
+    const staleRefresh = picker.refresh('claude-sonnet-4-6')
+    const freshRefresh = picker.refresh('claude-opus-4-8')
+    assert.ok(releaseStale)
+    assert.ok(releaseFresh)
+    releaseFresh?.(OPTIONS.filter((opt) => opt.value === 'claude-opus-4-8'))
+    await freshRefresh
+    releaseStale?.(OPTIONS.filter((opt) => opt.value === 'claude-sonnet-4-6'))
+    await staleRefresh
+
+    assert.equal(select.value, 'claude-opus-4-8')
+    assert.deepEqual(
+      [...select.options].map((option) => option.value),
+      ['claude-opus-4-8'],
+    )
+    picker.destroy()
+  })
+
+  it('drops document listeners when the host is cleared without destroy()', async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const picker = mountModelPicker(
+      host,
+      () => OPTIONS[0]?.value ?? '',
+      () => {},
+      async () => OPTIONS,
+      { enableShortcut: true, loadOnMount: false },
+    )
+    await picker.refresh()
+
+    const shortcutEvent = (): KeyboardEvent =>
+      new window.KeyboardEvent('keydown', {
+        key: 'm',
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+
+    const whileMounted = shortcutEvent()
+    document.dispatchEvent(whileMounted)
+    assert.equal(whileMounted.defaultPrevented, true)
+    assert.equal(host.querySelector('.model-picker-menu')?.hasAttribute('hidden'), false)
+
+    host.innerHTML = ''
+    // MutationObserver cleanup is queued as a microtask in happy-dom.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const afterClear = shortcutEvent()
+    document.dispatchEvent(afterClear)
+    assert.equal(afterClear.defaultPrevented, false)
+    picker.destroy()
+  })
 })

@@ -15,6 +15,11 @@ export interface ModelPickerOptions {
   ariaLabel?: string
   /** Settings mounts before it has loaded saved values, so it refreshes explicitly. */
   loadOnMount?: boolean
+  /**
+   * Runs only after a refresh wins its generation race. Use this for side effects
+   * that must not apply from a stale in-flight load (e.g. syncing a native select).
+   */
+  onOptionsLoaded?: (options: readonly ModelOption[]) => void
 }
 
 export interface ModelPicker {
@@ -181,6 +186,7 @@ export function mountModelPicker(
     const options = await loadOptions(getCurrent())
     if (generation !== refreshGeneration) return
     cachedOptions = options
+    pickerOpts.onOptionsLoaded?.(cachedOptions)
     renderMenu(cachedOptions)
     updateTrigger(cachedOptions)
   }
@@ -236,6 +242,30 @@ export function mountModelPicker(
     }),
   )
 
+  // Surfaces often remount by clearing a host (`innerHTML = ''` / `clear()`),
+  // which drops the DOM without an explicit destroy. Tear down document
+  // listeners when the widget leaves the tree so remounts do not leak.
+  const removalObserver = new MutationObserver(() => {
+    if (document.contains(wrap)) return
+    removalObserver.disconnect()
+    destroy()
+  })
+  removalObserver.observe(document.documentElement, { childList: true, subtree: true })
+  cleanups.push(() => {
+    removalObserver.disconnect()
+  })
+
+  let destroyed = false
+  function destroy(): void {
+    if (destroyed) return
+    destroyed = true
+    refreshGeneration++
+    cleanups.forEach((cleanup) => {
+      cleanup()
+    })
+    wrap.remove()
+  }
+
   updateTrigger(cachedOptions)
   if (pickerOpts.loadOnMount !== false) void refresh()
 
@@ -243,13 +273,7 @@ export function mountModelPicker(
     root: wrap,
     refresh,
     sync,
-    destroy: (): void => {
-      refreshGeneration++
-      cleanups.forEach((cleanup) => {
-        cleanup()
-      })
-      wrap.remove()
-    },
+    destroy,
   }
 }
 
@@ -281,11 +305,17 @@ export function mountModelSelectPicker(
   pickerOpts: ModelSelectPickerOptions,
 ): ModelSelectPicker {
   let current = select.value
-  const explicitLabels = select.id
-    ? [...document.querySelectorAll<HTMLLabelElement>('label')].filter(
-        (label) => label.htmlFor === select.id,
-      )
-    : []
+  if (!select.id) {
+    select.id = `model-picker-select-${String(++fieldPickerId)}`
+  }
+  const wrappingLabel =
+    select.parentElement instanceof HTMLLabelElement ? select.parentElement : null
+  const associatedLabels = [
+    ...document.querySelectorAll<HTMLLabelElement>('label'),
+  ].filter((label) => label.htmlFor === select.id)
+  if (wrappingLabel && !associatedLabels.includes(wrappingLabel)) {
+    associatedLabels.push(wrappingLabel)
+  }
   const host = el('div', {
     class: 'model-picker-field-host',
     'data-model-picker-for': select.name || select.id,
@@ -318,6 +348,7 @@ export function mountModelSelectPicker(
     select.value = current
   }
 
+  const { onOptionsLoaded: _ignoredOnOptionsLoaded, ...forwardedOpts } = pickerOpts
   const picker = mountModelPicker(
     host,
     () => current,
@@ -326,21 +357,20 @@ export function mountModelSelectPicker(
       select.value = value
       select.dispatchEvent(new Event('change', { bubbles: true }))
     },
-    async (value) => {
-      const options = await pickerOpts.loadOptions(value)
-      syncNativeOptions(options)
-      return options
-    },
+    (value) => pickerOpts.loadOptions(value),
     {
-      ...pickerOpts,
+      ...forwardedOpts,
       variant: 'field',
       ariaLabel: pickerOpts.ariaLabel ?? (select.name || select.id),
+      // Sync the hidden select only after the winning refresh generation so a
+      // stale in-flight load cannot clobber a newer option list / value.
+      onOptionsLoaded: syncNativeOptions,
     },
   )
   const trigger = picker.root.querySelector<HTMLButtonElement>('.model-picker-trigger')
-  if (trigger && explicitLabels.length > 0) {
+  if (trigger && associatedLabels.length > 0) {
     trigger.id = `${select.id}-model-picker-${String(++fieldPickerId)}`
-    explicitLabels.forEach((label) => {
+    associatedLabels.forEach((label) => {
       label.htmlFor = trigger.id
     })
   }
@@ -365,7 +395,7 @@ export function mountModelSelectPicker(
       select.classList.remove('model-picker-native')
       select.removeAttribute('aria-hidden')
       select.removeAttribute('tabindex')
-      explicitLabels.forEach((label) => {
+      associatedLabels.forEach((label) => {
         label.htmlFor = select.id
       })
     },
