@@ -389,7 +389,7 @@ describe('fetchModelOptions visibility', () => {
     assert.ok(cloud.length > 0)
     assert.ok(cloud.some((o) => o.value.startsWith('claude')))
     // Every visible option now belongs to a heading (no headingless block).
-    assert.ok(options.every((o) => o.group || !o.value))
+    assert.ok(options.every((o) => Boolean(o.group) || !o.value))
   })
 
   it('classifies a catalog-known local model with a role hint, leaving unknowns bare', async () => {

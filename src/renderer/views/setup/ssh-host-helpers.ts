@@ -1,6 +1,24 @@
 import type { SshWorkspaceHost } from '@shared/types/ssh-workspace.ts'
+import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
 export const SSH_HOST_ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
+
+export function parseSshWorkspaceHosts(value: unknown): SshWorkspaceHost[] {
+  return recordArrayOrEmpty(value).flatMap((entry) => {
+    const id = entry['id']
+    const label = entry['label']
+    const hostName = entry['host']
+    if (typeof id !== 'string' || typeof label !== 'string' || typeof hostName !== 'string') {
+      return []
+    }
+    const host: SshWorkspaceHost = { id, label, host: hostName }
+    if (typeof entry['port'] === 'number') host.port = entry['port']
+    if (typeof entry['user'] === 'string') host.user = entry['user']
+    if (typeof entry['identityFile'] === 'string') host.identityFile = entry['identityFile']
+    if (typeof entry['forwardAgent'] === 'boolean') host.forwardAgent = entry['forwardAgent']
+    return [host]
+  })
+}
 
 /** Fields collected by the SSH host editor (settings + open-remote dialog). */
 export interface SshHostDraft {

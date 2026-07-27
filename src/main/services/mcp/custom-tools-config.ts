@@ -52,6 +52,10 @@ export interface RawCustomTool {
 
 type RawExecute = (args: unknown, signal: AbortSignal) => unknown
 
+function isRawExecute(value: unknown): value is RawExecute {
+  return typeof value === 'function'
+}
+
 interface CustomEnvelope {
   content?: unknown
   isError?: unknown
@@ -109,11 +113,11 @@ export function normalizeCustomTool(
       error: `Custom tool "${name}" has an invalid name${where}; use only letters, digits, and underscores.`,
     }
   }
-  if (typeof raw.execute !== 'function') {
+  if (!isRawExecute(raw.execute)) {
     return { error: `Custom tool "${name}" is missing an "execute" function${where}.` }
   }
 
-  const userExecute = raw.execute as RawExecute
+  const userExecute = raw.execute
   const description = typeof raw.description === 'string' ? raw.description : ''
   // Sanitize like an MCP schema: guarantees the `{ type: 'object', properties }`
   // shape providers expect and bounds depth/size even for hand-written schemas.

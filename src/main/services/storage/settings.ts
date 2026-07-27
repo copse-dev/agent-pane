@@ -4,7 +4,7 @@ import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
-import { expectString } from '@shared/unknown-value.ts'
+import { expectString, firstNonEmptyString } from '@shared/unknown-value.ts'
 
 // Cache reads in memory so electron-store does not re-read and re-parse the
 // whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
@@ -152,7 +152,8 @@ export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
 // present in the environment.
 export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   const envVar = envVarFor(provider)
-  return !!((envVar && process.env[envVar]) || hasApiKey(provider))
+  const environmentKey = envVar ? firstNonEmptyString(process.env[envVar]) : undefined
+  return environmentKey !== undefined || hasApiKey(provider)
 }
 
 /** Stored key, falling back to the provider's env var when it ships one. */
@@ -160,7 +161,7 @@ export function resolveApiKey(provider: KeyProvider): string | null {
   const stored = getApiKey(provider)
   if (stored) return stored
   const envVar = envVarFor(provider)
-  return (envVar && process.env[envVar]) || null
+  return envVar ? (firstNonEmptyString(process.env[envVar]) ?? null) : null
 }
 
 export function getLmStudioApiKey(): string {

@@ -17,6 +17,7 @@ import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import { fsWorkerSandboxOverlay } from './config.ts'
 import { afterSandboxedCommand, spawnInProjectSandbox } from './spawn.ts'
 import { sandboxFsWorkerPath, SANDBOX_FS_WORKER_STDOUT_MAX_BYTES } from './sandbox-fs-client.ts'
+import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 export const SANDBOX_FS_SERVER_ENV = 'COPSE_SANDBOX_FS_SERVER'
 
@@ -78,19 +79,26 @@ function failWorker(w: Worker, err: Error): void {
 function handleLine(w: Worker, line: string): void {
   const trimmed = line.trim()
   if (!trimmed) return
-  let parsed: { id?: unknown } & Record<string, unknown>
+  let parsed: Record<string, unknown>
   try {
-    parsed = JSON.parse(trimmed) as { id?: unknown } & Record<string, unknown>
+    const value = parseJsonUnknown(trimmed)
+    if (!isRecord(value)) return
+    parsed = value
   } catch {
     return // unframed/garbled — nothing to correlate
   }
-  if (typeof parsed.id !== 'number') return
-  const pending = w.pending.get(parsed.id)
+  if (typeof parsed['id'] !== 'number') return
+  const pending = w.pending.get(parsed['id'])
   if (!pending) return
-  w.pending.delete(parsed.id)
+  w.pending.delete(parsed['id'])
   clearTimeout(pending.timer)
   const { id: _id, ...body } = parsed
-  pending.resolve(body as SandboxFsResponse)
+  if (typeof body['ok'] !== 'boolean') {
+    pending.reject(new SandboxFsServerUnavailable('worker returned an invalid response'))
+    return
+  }
+  const error = body['error']
+  pending.resolve({ ...body, ok: body['ok'], ...(typeof error === 'string' ? { error } : {}) })
 }
 
 function onData(w: Worker, chunk: string): void {

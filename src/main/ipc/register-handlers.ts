@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
 import micromatch from 'micromatch'
+import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
@@ -267,6 +268,15 @@ const SKILLS_RELOAD_KEYS = new Set([
   'skillPluginPaths',
 ])
 
+function storedWorkspaceProjects(): WorkspaceProjectRef[] {
+  return recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+    const path = project['path']
+    const sshHost = project['sshHost']
+    if (typeof path !== 'string') return []
+    return [typeof sshHost === 'string' ? { path, sshHost } : { path }]
+  })
+}
+
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
@@ -279,7 +289,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
   })
   win.once('closed', stopGuardedYoloEvents)
-  const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+  const storedProjects = storedWorkspaceProjects()
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
     const persistedRoot = getWorkspaceRoot()
@@ -312,7 +322,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
-    const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+    const projects = storedWorkspaceProjects()
     await seedAllowedWorkspaceRoots(projects)
     const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
@@ -377,7 +387,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       [projectIdArg, threadIdArg, pathArg],
     )
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath || '.', root)
+    const abs = await resolvePathWithinRoot(nonEmptyStringOr(relPath, '.'), root)
     const dirents = await gatewayListDir(abs, root)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -948,7 +958,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
-    return saveExtraProvider(parsed as Parameters<typeof saveExtraProvider>[0])
+    const provider: Parameters<typeof saveExtraProvider>[0] = {}
+    if (parsed.slug !== undefined) provider.slug = parsed.slug
+    if (parsed.label !== undefined) provider.label = parsed.label
+    if (parsed.baseUrl !== undefined) provider.baseUrl = parsed.baseUrl
+    if (parsed.keyPrefix !== undefined) provider.keyPrefix = parsed.keyPrefix
+    if (parsed.models !== undefined) {
+      provider.models = parsed.models.map((model) => {
+        const result: NonNullable<Parameters<typeof saveExtraProvider>[0]['models']>[number] = {
+          id: model.id,
+        }
+        if (model.contextWindow !== undefined) result.contextWindow = model.contextWindow
+        if (model.inputPricePerMTok !== undefined) {
+          result.inputPricePerMTok = model.inputPricePerMTok
+        }
+        if (model.outputPricePerMTok !== undefined) {
+          result.outputPricePerMTok = model.outputPricePerMTok
+        }
+        return result
+      })
+    }
+    if (parsed.fallbackContextWindow !== undefined) {
+      provider.fallbackContextWindow = parsed.fallbackContextWindow
+    }
+    if (parsed.includeUsage !== undefined) provider.includeUsage = parsed.includeUsage
+    if (parsed.extraBody !== undefined) provider.extraBody = parsed.extraBody
+    return saveExtraProvider(provider)
   })
   ipcMain.handle('settings:deleteExtraProvider', async (event, slug: unknown) => {
     assertMainFrameSender(event, win)
@@ -1151,11 +1186,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('threads:listOrphans', (event) => {
     assertMainFrameSender(event, win)
-    const projects =
-      (storageGet('projects') as Array<{ id?: unknown }> | null)?.filter(
-        (p): p is { id: string } => typeof p.id === 'string' && p.id.length > 0,
-      ) ?? []
-    return listOrphanProjectStores(projects.map((p) => p.id))
+    const projectIds = recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+      const id = project['id']
+      return typeof id === 'string' && id.length > 0 ? [id] : []
+    })
+    return listOrphanProjectStores(projectIds)
   })
 
   ipcMain.handle('skills:list', () => listSkills())
@@ -1636,7 +1671,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:setMockScript', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
       const steps = parseIpcArgs(z.array(mockScriptStepSchema).max(32), [raw])
-      setMockScript(steps as MockScriptStep[])
+      const script: MockScriptStep[] = steps.map((step) => ({
+        when: step.when,
+        ...(step.tool ? { tool: step.tool } : {}),
+        ...(step.text === undefined ? {} : { text: step.text }),
+      }))
+      setMockScript(script)
       return { steps: steps.length, cursor: mockScriptCursorForTests() }
     })
     ipcMain.handle('test:clearMockScript', (event) => {
