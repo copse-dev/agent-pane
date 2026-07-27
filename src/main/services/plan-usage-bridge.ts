@@ -410,6 +410,11 @@ function mockSnapshot(): PlanUsageSnapshot {
         usage: {
           provider: 'cursor',
           plan: "You've used 2% of your included total usage · Hard limit $50",
+          creditGrant: {
+            remainingCents: 6703,
+            totalCents: 10000,
+            usedCents: 3297,
+          },
           windows: [
             {
               id: 'total',
