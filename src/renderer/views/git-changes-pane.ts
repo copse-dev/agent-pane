@@ -1,4 +1,3 @@
-import type * as Monaco from 'monaco-editor'
 import { el, clear } from '../dom/helpers.ts'
 import { refreshIcon } from '../dom/icons.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
@@ -26,6 +25,8 @@ import {
   disposeDiffModels,
   observeDiffHostLayout,
   setGitFileDiffModel,
+  type GitDiffEditor,
+  type GitDiffMonaco,
 } from '../monaco/git-diff-viewer.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
@@ -122,7 +123,7 @@ export function mountGitChangesPane(
   viewerRoot: HTMLElement,
   store: AppStore,
   api: ApiClient,
-  monaco: typeof Monaco,
+  monaco: GitDiffMonaco | null,
 ): () => void {
   const listHeader = el('div', { class: 'git-changes-header' })
   const headerTitle = el('span', { class: 'git-changes-title' }, 'Changes')
@@ -176,7 +177,7 @@ export function mountGitChangesPane(
   const emptyState = el('div', { class: 'panel-empty' }, 'Select a changed file')
   viewerRoot.append(conflictBanner, diffWrap, imageWrap, emptyState)
 
-  let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
+  let diffEditor: GitDiffEditor | null = null
   let pendingSelect: ChangeSelection | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
@@ -229,16 +230,17 @@ export function mountGitChangesPane(
     if (changesModeActive(store)) void syncFromStore()
   })
 
-  function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
+  function ensureDiffEditor(): GitDiffEditor {
+    const monacoApi = requireMonaco()
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
       diffEditor = createGitChangesDiffEditor(
         diffWrap,
-        monaco,
+        monacoApi,
         scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
         theme,
       )
-      registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () => {
+      registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monacoApi, () => {
         if (selection?.kind === 'proposed') {
           return { path: selection.path, detail: 'before' }
         }
@@ -247,7 +249,7 @@ export function mountGitChangesPane(
         }
         return null
       })
-      registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monaco, () => {
+      registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monacoApi, () => {
         if (selection?.kind === 'proposed') {
           return { path: selection.path, detail: 'after' }
         }
@@ -258,6 +260,11 @@ export function mountGitChangesPane(
       })
     }
     return diffEditor
+  }
+
+  function requireMonaco(): GitDiffMonaco {
+    if (monaco === null) throw new Error('Monaco is unavailable while rendering a diff')
+    return monaco
   }
 
   function syncBulkActions(queueLength: number): void {
@@ -438,7 +445,13 @@ export function mountGitChangesPane(
           pendingSelect?.kind === 'proposed' &&
           pendingSelect.path === view.path
         if (!isCurrent()) return
-        await setGitFileDiffModel(ensureDiffEditor(), monaco, proposed, viewerRoot, isCurrent)
+        await setGitFileDiffModel(
+          ensureDiffEditor(),
+          requireMonaco(),
+          proposed,
+          viewerRoot,
+          isCurrent,
+        )
       })
     await diffLoadQueue
   }
@@ -523,7 +536,7 @@ export function mountGitChangesPane(
         }
         imageWrap.hidden = true
         diffWrap.hidden = false
-        await setGitFileDiffModel(ensureDiffEditor(), monaco, diff, viewerRoot)
+        await setGitFileDiffModel(ensureDiffEditor(), requireMonaco(), diff, viewerRoot)
       })
     await diffLoadQueue
   }
@@ -712,7 +725,7 @@ export function mountGitChangesPane(
       else renderList()
     }),
     store.on('theme_changed', (theme) => {
-      monaco.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
+      monaco?.editor.setTheme(theme === 'dark' ? 'vs-dark' : 'vs')
     }),
     store.on('staged_diffs_changed', () => {
       const queue = store.getState().stagedDiffs

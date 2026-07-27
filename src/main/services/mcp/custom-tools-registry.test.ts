@@ -1,5 +1,6 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import { expectRecord } from '@shared/unknown-value.ts'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -61,7 +62,7 @@ describe('loadCustomToolsFromDir', () => {
     // Registered tools surface their JSON Schema verbatim to providers.
     const echo = registry.toLLMTools().find((t) => t.name === 'custom__echo')
     assert.ok(echo)
-    assert.equal((echo.parameters as { type: string }).type, 'object')
+    assert.equal(expectRecord(echo.parameters)['type'], 'object')
   })
 
   it('isolates a malformed file: reports an error without registering it', async () => {

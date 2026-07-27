@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { expectRecord } from '@shared/unknown-value.ts'
 import {
   serializedSet,
   attachAutosave,
@@ -210,7 +211,7 @@ test('a metadata change on a known thread emits updateMeta, not create', async (
 
   assert.equal(calls.creates.length, 1) // unchanged
   assert.deepEqual(
-    calls.metas.map((m) => [m.threadId, (m.patch as { draftPrompt?: string }).draftPrompt]),
+    calls.metas.map((m) => [m.threadId, expectRecord(m.patch)['draftPrompt']]),
     [['t1', 'typing']],
   )
   autosave.detach()

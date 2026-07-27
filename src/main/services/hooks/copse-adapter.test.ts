@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, writeFile, rm, chmod, readFile, stat } from 'node:fs/pr
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { clampLoopLimit } from '@copse/agent/hooks/continuation-budget.ts'
 import {
   listCopseHooksForSources,
@@ -434,24 +435,26 @@ describe('copse-adapter (F1)', () => {
     it('is valid JSON and enumerates exactly the wired canonical events', async () => {
       const schemaPath = join(process.cwd(), 'schemas', 'copse-hooks.schema.json')
       await stat(schemaPath) // exists
-      const schema = JSON.parse(await readFile(schemaPath, 'utf-8')) as {
-        $schema?: string
-        $id?: string
-        title?: string
-        properties?: { hooks?: { properties?: Record<string, unknown> } }
-        $defs?: { hook?: { properties?: { onFailure?: { enum?: string[] } } } }
-      }
-      assert.ok(typeof schema.$schema === 'string' && schema.$schema.includes('json-schema.org'))
-      assert.ok(typeof schema.$id === 'string' && schema.$id.length > 0)
-      assert.ok(typeof schema.title === 'string')
+      const schema = expectRecord(parseJsonUnknown(await readFile(schemaPath, 'utf-8')))
+      assert.ok(
+        typeof schema['$schema'] === 'string' && schema['$schema'].includes('json-schema.org'),
+      )
+      assert.ok(typeof schema['$id'] === 'string' && schema['$id'].length > 0)
+      assert.ok(typeof schema['title'] === 'string')
 
       // Drift guard: the schema's hook event keys must match the adapter's
       // supported set exactly, so a new wired event forces a schema edit.
-      const eventKeys = Object.keys(schema.properties?.hooks?.properties ?? {}).sort()
+      const schemaProperties = expectRecord(schema['properties'])
+      const hooks = expectRecord(schemaProperties['hooks'])
+      const eventKeys = Object.keys(expectRecord(hooks['properties'])).sort()
       assert.deepEqual(eventKeys, [...COPSE_SUPPORTED_EVENTS].sort())
 
       // onFailure enum matches the decision-9 vocabulary.
-      assert.deepEqual(schema.$defs?.hook?.properties?.onFailure?.enum, ['open', 'closed'])
+      const definitions = expectRecord(schema['$defs'])
+      const hook = expectRecord(definitions['hook'])
+      const hookProperties = expectRecord(hook['properties'])
+      const onFailure = expectRecord(hookProperties['onFailure'])
+      assert.deepEqual(onFailure['enum'], ['open', 'closed'])
     })
   })
 })

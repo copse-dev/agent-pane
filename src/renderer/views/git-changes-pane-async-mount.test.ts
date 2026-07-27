@@ -1,7 +1,6 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type * as Monaco from 'monaco-editor'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitStatusResult } from '@shared/types/git.ts'
@@ -62,8 +61,6 @@ function makeApi(calls: { isAvailable: number; status: number }): ApiClient {
   })()
 }
 
-const monacoStub = {} as unknown as typeof Monaco
-
 // observeDiffHostLayout / whenDiffHostVisible construct ResizeObserver at mount,
 // which happy-dom doesn't expose as a global; a noop is enough for these
 // store-driven assertions. Mirrors browser-pane.test.ts.
@@ -100,7 +97,7 @@ describe('git changes pane catches up on async mount (#459)', () => {
     // Mounting alone — without emitting any store event — must kick off the
     // initial refresh, because the deferred (async) mount missed the original
     // right_panel_mode_changed event.
-    mountGitChangesPane(listRoot, viewerRoot, store, api, monacoStub)
+    mountGitChangesPane(listRoot, viewerRoot, store, api, null)
 
     // refresh() awaits isAvailable() then status(); let those microtasks settle.
     await Promise.resolve()
@@ -124,7 +121,7 @@ describe('git changes pane catches up on async mount (#459)', () => {
     const viewerRoot = document.createElement('div')
     document.body.append(listRoot, viewerRoot)
 
-    mountGitChangesPane(listRoot, viewerRoot, store, api, monacoStub)
+    mountGitChangesPane(listRoot, viewerRoot, store, api, null)
 
     await Promise.resolve()
     await Promise.resolve()

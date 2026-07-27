@@ -7,20 +7,23 @@ import {
   saveExtraProvider,
 } from '../../../main/services/providers/extra-providers-store.ts'
 import { setSetting } from '../../../main/services/storage/settings.ts'
+import { createFakeApi } from '../../fake-api.test-support.ts'
 
 // A minimal ApiClient stand-in whose extra-provider methods delegate to the real
 // main-process store. This exercises the actual read-modify-write of the single
 // `extraProviders` setting that importDetectedPreset relies on — the surface the
 // concurrency bug lived on.
 function fakeApi(): Parameters<typeof importDetectedPreset>[0] {
+  const base = createFakeApi()
   return {
+    ...base,
     settings: {
+      ...base.settings,
       extraProviders: async () => getResolvedExtraProviders(),
       saveExtraProvider: async (record: Parameters<typeof saveExtraProvider>[0]) =>
         saveExtraProvider(record),
     },
-    // importDetectedPreset only touches api.settings; cast covers the rest.
-  } as unknown as Parameters<typeof importDetectedPreset>[0]
+  }
 }
 
 const reachable = (id: string, models: string[]): LocalServerResult => ({

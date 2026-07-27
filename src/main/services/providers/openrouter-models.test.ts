@@ -57,16 +57,15 @@ const ZDR_SAMPLE = {
 // so tests control each payload (both live under the same API base).
 function stubFetch(modelsJson: unknown, zdrJson: unknown = { data: [] }): () => void {
   const original = globalThis.fetch
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     const json = url.includes('/endpoints/zdr') ? zdrJson : modelsJson
-    return {
-      ok: true,
+    return new Response(JSON.stringify(json), {
       status: 200,
       statusText: 'OK',
-      json: async (): Promise<unknown> => json,
-    }
-  }) as unknown as typeof fetch
+      headers: { 'content-type': 'application/json' },
+    })
+  }
   return () => {
     globalThis.fetch = original
   }

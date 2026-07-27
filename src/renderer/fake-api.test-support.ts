@@ -34,7 +34,7 @@ export function createFakeApi(): ApiClient {
 
 /** Complete API proxy whose unoverridden methods stay pending for synchronous mount tests. */
 export function createPendingApi(
-  overrides: Readonly<Record<string, (...args: unknown[]) => unknown>> = {},
+  overrides: Readonly<Record<string, (...args: never[]) => unknown>> = {},
 ): ApiClient {
   const wrap = <T extends object>(target: T, path: string): T =>
     new Proxy(target, {

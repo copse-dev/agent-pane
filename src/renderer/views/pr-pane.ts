@@ -28,6 +28,7 @@ import {
   disposeDiffModels,
   observeDiffHostLayout,
   setGitFileDiffModel,
+  type GitDiffEditor,
 } from '../monaco/git-diff-viewer.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 
@@ -132,7 +133,7 @@ export function mountPrPane(
   // Changed-files list starts collapsed so the PR description gets the full
   // column until the user actually wants to browse files.
   let filesExpanded = false
-  let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
+  let diffEditor: GitDiffEditor | null = null
   let selectRequestId = 0
   let diffLoadQueue: Promise<void> = Promise.resolve()
   let pendingOpen: PrRef | null = null
@@ -194,7 +195,7 @@ export function mountPrPane(
       })
   }
 
-  function ensureDiffEditor(): Monaco.editor.IStandaloneDiffEditor {
+  function ensureDiffEditor(): GitDiffEditor {
     if (!diffEditor) {
       const theme = store.getState().theme === 'dark' ? 'vs-dark' : 'vs'
       diffEditor = createGitChangesDiffEditor(

@@ -6,14 +6,21 @@ import { qs, qsRequired } from '../dom/helpers.ts'
 
 // happy-dom doesn't implement <dialog> modality; stub showModal/close like mermaid-expand.
 function patchEnv(): void {
-  const proto = window.HTMLElement.prototype as unknown as Record<string, unknown>
-  proto['showModal'] ??= function (this: HTMLElement): void {
-    ;(this as unknown as { open: boolean }).open = true
-  }
-  proto['close'] ??= function (this: HTMLElement): void {
-    ;(this as unknown as { open: boolean }).open = false
-    this.dispatchEvent(new window.Event('close'))
-  }
+  Object.defineProperties(window.HTMLDialogElement.prototype, {
+    showModal: {
+      configurable: true,
+      value(this: HTMLDialogElement): void {
+        this.open = true
+      },
+    },
+    close: {
+      configurable: true,
+      value(this: HTMLDialogElement): void {
+        this.open = false
+        this.dispatchEvent(new window.Event('close'))
+      },
+    },
+  })
 }
 
 const PNG =
