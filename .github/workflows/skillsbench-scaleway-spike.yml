@@ -116,20 +116,23 @@ jobs:
           # does, right up until you go looking for the trajectory and it is
           # not there. Report presence per trial rather than inferring it from
           # a file count.
+          # Anchor on manifest.json rather than a fixed glob depth: capsules
+          # land under <run-attempt>/shard-N/<trial>/, so `capsules/*/` matches
+          # the attempt directory and finds nothing.
           trials=0
           spines=0
-          for dir in capsules/*/; do
-            [ -d "$dir" ] || continue
+          while IFS= read -r manifest; do
+            dir="$(dirname "$manifest")"
             trials=$((trials + 1))
-            spine="${dir}thread/events.jsonl"
+            spine="$dir/thread/events.jsonl"
             if [ -s "$spine" ]; then
               spines=$((spines + 1))
-              echo "spine $(basename "$dir") events=$(wc -l < "$spine") " \
-                "thread=$(wc -l < "${dir}thread/thread.jsonl" 2>/dev/null || echo 0)"
+              echo "spine $(basename "$dir") events=$(wc -l < "$spine")" \
+                "thread=$(wc -l < "$dir/thread/thread.jsonl" 2>/dev/null || echo 0)"
             else
               echo "NO SPINE $(basename "$dir")"
             fi
-          done
+          done < <(find capsules -name manifest.json | sort)
           echo "spines: ${spines}/${trials} trials"
           echo "- spines: ${spines}/${trials} trials" >> "$GITHUB_STEP_SUMMARY"
 
