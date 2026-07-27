@@ -152,6 +152,7 @@ class _CopseClient:
     bundle: Path
     profile: str
     skills: list[dict[str, str]]
+    thread_dir: str | None = None
     process: asyncio.subprocess.Process | None = None
 
     def on_ask_user(self, _handler: Any) -> None:
@@ -373,6 +374,8 @@ async def _run_prompt(client: _CopseClient, prompt: str) -> dict[str, Any]:
         "profile": client.profile,
         "skills": client.skills,
     }
+    if client.thread_dir:
+        start["threadDir"] = client.thread_dir
     process.stdin.write((json.dumps(start) + "\n").encode())
     await process.stdin.drain()
     stderr: list[str] = []
@@ -468,11 +471,17 @@ class _PrebakeVerifierDepsMixin:
 
 
 class CopseRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
-    def __init__(self, *, bundle: Path, profile: str) -> None:
+    def __init__(
+        self, *, bundle: Path, profile: str, thread_dir: Path | None = None
+    ) -> None:
         super().__init__()
         self.bundle = bundle
         self.profile = profile
         self.base_profile = profile.split("@", 1)[0]
+        #: Where the bridge writes the trial's thread spine. It sits inside the
+        #: rollout directory the capsule is copied from, so the trajectory
+        #: travels with the reward instead of dying with the fleet.
+        self.thread_dir = thread_dir
         self.last_result: dict[str, Any] | None = None
 
     def agent_launch(self, agent: str, *, disallow_web_tools: bool) -> str:
@@ -552,6 +561,7 @@ class CopseRolloutPlanes(_PrebakeVerifierDepsMixin, DefaultRolloutPlanes):
             bundle=self.bundle,
             profile=self.profile,
             skills=skills,
+            thread_dir=str(self.thread_dir) if self.thread_dir else None,
         )
         return client, session, _SessionAdapter(), "copse-skillsbench"
 

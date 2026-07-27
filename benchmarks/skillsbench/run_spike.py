@@ -349,7 +349,11 @@ async def _run_trial(
     trial_id = f"{task_name}__{profile.replace('@', '-')}__attempt-{attempt}"
     job_name = os.environ.get("COPSE_BENCH_RUN_ID", "skillsbench-spike")
     rollout_name = trial_id
-    planes = CopseRolloutPlanes(bundle=args.bundle.resolve(), profile=profile)
+    planes = CopseRolloutPlanes(
+        bundle=args.bundle.resolve(),
+        profile=profile,
+        thread_dir=args.jobs_dir / job_name / rollout_name / "thread",
+    )
     agent_env = {
         "LM_STUDIO_URL": os.environ.get("LM_STUDIO_URL", "http://localhost:1234/v1"),
         "LM_STUDIO_MODEL": model,
