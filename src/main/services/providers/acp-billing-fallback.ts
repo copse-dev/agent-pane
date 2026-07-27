@@ -41,10 +41,10 @@ const ACCEPT = /^\s*(?:y|yes|ok|okay|sure|switch\b.*|use\b.*acp.*|acp)\s*$/i
  * say whether that login exists. A configured `ANTHROPIC_API_KEY` in the agent's
  * own env counts too: that is the documented alternative to `claude setup-token`.
  */
-function hasClaudeAcpAuth(agentEnv: Record<string, string> | undefined): boolean {
+async function hasClaudeAcpAuth(agentEnv: Record<string, string> | undefined): Promise<boolean> {
   if (agentEnv?.['ANTHROPIC_API_KEY']?.trim()) return true
   try {
-    return (discoverPlanUsageCredentials().claudeCredentials?.length ?? 0) > 0
+    return ((await discoverPlanUsageCredentials()).claudeCredentials?.length ?? 0) > 0
   } catch {
     // Credential discovery shells out to the macOS Keychain; a failure there
     // tells us nothing about whether the agent can authenticate, so don't let
@@ -76,7 +76,7 @@ export async function offerAcpClaudeFallback(input: {
   const agent = enabledClaudeAcpAgent(listEnabledAcpAgents())
   if (!agent) return null
 
-  const authHint = hasClaudeAcpAuth(agent.env)
+  const authHint = (await hasClaudeAcpAuth(agent.env))
     ? ''
     : ` No local \`claude\` login was found, so ${agent.title} may ask you to sign in with \`claude setup-token\` first.`
 

@@ -1,7 +1,20 @@
 import { firstNonEmptyString } from './unknown-value.ts'
 
-/** Default LM Studio server URL (OpenAI-compatible /v1 endpoint). */
-export const DEFAULT_LM_STUDIO_URL = 'http://localhost:1234/v1'
+/**
+ * Default LM Studio server URL (OpenAI-compatible /v1 endpoint).
+ * Use `127.0.0.1` rather than `localhost` so probes skip macOS IPv6 (`::1`)
+ * resolution — LM Studio binds IPv4, and a `localhost`→`::1` miss can stall
+ * until the model-list timeout (looks like a spinner on Settings → Local models).
+ */
+export const DEFAULT_LM_STUDIO_URL = 'http://127.0.0.1:1234/v1'
+
+/**
+ * Rewrite bare `localhost` to `127.0.0.1` for outbound loopback HTTP.
+ * Leaves `*.localhost`, IPv6 literals, and non-loopback hosts untouched.
+ */
+export function preferIpv4LoopbackUrl(url: string): string {
+  return url.replace(/^(https?:\/\/)localhost(?=[:/?#]|$)/i, '$1127.0.0.1')
+}
 
 /** Default LM Studio model ids (OpenAI-compatible /v1/models ids). */
 export const LM_STUDIO_MODEL_IDS = {
