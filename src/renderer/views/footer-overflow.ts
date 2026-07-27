@@ -24,7 +24,11 @@ export function mountFooterOverflow(
     moreHorizontalIcon('ui-icon ui-icon-sm'),
   )
   const menu = el('div', { class: 'footer-overflow-menu', role: 'menu', hidden: '' })
-  wrap.append(trigger, menu)
+  const boundary = el('span', {
+    class: 'footer-overflow-boundary',
+    'aria-hidden': 'true',
+  })
+  wrap.append(boundary, trigger, menu)
   root.append(wrap)
 
   let open = false
