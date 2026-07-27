@@ -146,9 +146,12 @@ const POPOUT_MODES = new Set<RightPanelMode>([
   'memories',
   'roadmap',
 ])
+function isPopoutMode(value: string | null): value is RightPanelMode {
+  return value !== null && [...POPOUT_MODES].some((mode) => mode === value)
+}
 function getPopoutMode(): RightPanelMode | null {
   const raw = new URLSearchParams(window.location.search).get('popout')
-  return raw && POPOUT_MODES.has(raw as RightPanelMode) ? (raw as RightPanelMode) : null
+  return isPopoutMode(raw) ? raw : null
 }
 const popoutMode = getPopoutMode()
 if (popoutMode) {
@@ -203,7 +206,8 @@ async function boot(): Promise<void> {
   mountSshStatusBanner(store, api)
 
   // Load persisted user preferences before the main layout mounts.
-  const savedModel = (await api.settings.get('model')) as string | null
+  const rawSavedModel = await api.settings.get('model')
+  const savedModel = typeof rawSavedModel === 'string' ? rawSavedModel : null
   const savedLayout = await api.settings.get('layout')
   const savedAutoPortraitRightPanel = await api.settings.get('autoPortraitRightPanel')
   const savedRightPanelPosition = await api.settings.get('rightPanelPosition')

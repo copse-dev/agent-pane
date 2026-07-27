@@ -15,6 +15,7 @@ import { getAgentRunReadFileLimits } from '../services/agent-run-read-limits.ts'
 import { readTextLineRangeFromUtf8Content } from '../services/read-text-file.ts'
 import { buildReadFilePageMeta, formatReadFilePageFooter } from '@copse/agent/read-file-page.ts'
 import { getStagedDiffEntry } from '../services/diff-queue.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export const LIST_DIR_MAX_ENTRIES = 1000
 
@@ -28,7 +29,7 @@ async function isPathUnderRoot(absPath: string, root: string): Promise<boolean> 
  * and absolute filesystem paths never leak to the model (#123).
  */
 function friendlyFsError(err: unknown, relPath: string, op: 'read' | 'list'): string {
-  const code = (err as NodeJS.ErrnoException | undefined)?.code
+  const code = isRecord(err) && typeof err['code'] === 'string' ? err['code'] : undefined
   switch (code) {
     case 'ENOENT':
       return op === 'list' ? `Directory not found: ${relPath}` : `File not found: ${relPath}`

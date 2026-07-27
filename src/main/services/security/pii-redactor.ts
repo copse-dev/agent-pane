@@ -1,6 +1,7 @@
 import type { UserContent } from '@shared/types/llm.ts'
 import { getDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { PII_REDACTION_PACK_ID } from '@copse/agent/packs/pii-redaction-pack.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Experimental, opt-in client-side PII redaction (off by default).
@@ -64,12 +65,17 @@ const defaultLoader: RampartLoader = async () => {
     // The computed specifier keeps esbuild/tsc from resolving the optional dep,
     // so the import is typed `any`; shape it as the slice we call. Every call site
     // is still guarded (try/catch + null fallback).
-    const mod = (await import(specifier)) as RampartModule
-    return mod
+    const mod: unknown = await import(specifier)
+    if (!isRecord(mod) || !isCreateGuard(mod['createGuard'])) return null
+    return { createGuard: mod['createGuard'] }
   } catch (err) {
     console.warn('[pii] Rampart is unavailable; PII redaction disabled for this run.', err)
     return null
   }
+}
+
+function isCreateGuard(value: unknown): value is RampartModule['createGuard'] {
+  return typeof value === 'function'
 }
 
 let loader: RampartLoader = defaultLoader

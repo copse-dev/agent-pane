@@ -17,6 +17,7 @@ import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import type { HookDecision } from '@copse/agent/hooks/hook-outcome.ts'
 import type { ShellPermissionDecision } from './permission-policy.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
 import { classifyShellScope } from './safety-classifier.ts'
@@ -377,8 +378,11 @@ function firePermissionDecision(
   const workspaceRoot = roots.projectRoot ?? getAgentProjectRoot()
   const executionRoot = roots.executionRoot ?? getAgentExecutionRoot()
   const agentSession = currentAgentSessionInfo()
-  const threadId = agentSession.conversationId || getActiveRunThread() || 'permission'
-  const turnTreeId = asTurnTreeId(agentSession.generationId || threadId)
+  const threadId = nonEmptyStringOr(
+    agentSession.conversationId,
+    nonEmptyStringOr(getActiveRunThread(), 'permission'),
+  )
+  const turnTreeId = asTurnTreeId(nonEmptyStringOr(agentSession.generationId, threadId))
   // Snapshot the recording context now, synchronously (decision 3/6): the
   // dispatch is detached and may settle after this turn's window closes.
   const recordingSnapshot = snapshotHookRunContext()

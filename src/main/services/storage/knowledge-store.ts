@@ -230,7 +230,7 @@ function parseNoteFile(raw: string, file: string): KnowledgeNote | null {
     title: frontmatterField(frontmatter, 'title') ?? '',
     body: body.trim(),
     tags: parseTags(frontmatter),
-    status: status === undefined ? null : status,
+    status: status ?? null,
     fields: parseExtraFields(frontmatter),
     createdAt: frontmatterField(frontmatter, 'createdAt') ?? '',
     updatedAt: frontmatterField(frontmatter, 'updatedAt') ?? '',
@@ -422,13 +422,15 @@ export function updateKnowledgeNote(
   if (!record) return null
   const current = readSingleNote(join(knowledgeDir(), record.file))
   if (!current) return null
+  let status = patch.status
+  if (status === undefined) status = current.status
   const updated: KnowledgeNote = {
     ...current,
     title: patch.title !== undefined ? patch.title.trim() : current.title,
     body: patch.body !== undefined ? patch.body.trim() : current.body,
     tags: patch.tags !== undefined ? patch.tags.map((t) => t.trim()).filter(Boolean) : current.tags,
-    status: patch.status !== undefined ? patch.status : current.status,
-    fields: patch.fields !== undefined ? patch.fields : current.fields,
+    status,
+    fields: patch.fields ?? current.fields,
     updatedAt: now.toISOString(),
   }
   writeFileSync(updated.file, serializeNote(updated), 'utf8')

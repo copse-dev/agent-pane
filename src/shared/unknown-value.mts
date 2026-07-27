@@ -14,6 +14,10 @@ export function expectArray(value: unknown, label = 'value'): unknown[] {
   return value
 }
 
+export function recordArrayOrEmpty(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
 export function expectString(value: unknown, label = 'value'): string {
   if (typeof value !== 'string') throw new TypeError(`${label} must be a string`)
   return value
@@ -61,6 +65,16 @@ export function optionalString(value: unknown, label = 'value'): string | undefi
 export function optionalBoolean(value: unknown, label = 'value'): boolean | undefined {
   if (value === undefined || value === null) return undefined
   return expectBoolean(value, label)
+}
+
+export function optionalNumber(value: unknown, label = 'value'): number | undefined {
+  if (value === undefined || value === null) return undefined
+  return expectNumber(value, label)
+}
+
+export function optionalStringArray(value: unknown, label = 'value'): string[] | undefined {
+  if (value === undefined || value === null) return undefined
+  return expectStringArray(value, label)
 }
 
 export function optionalRecord(
