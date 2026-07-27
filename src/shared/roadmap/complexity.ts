@@ -11,7 +11,7 @@ export const ROADMAP_COMPLEXITIES = ['low', 'medium', 'high'] as const
 export type RoadmapComplexity = (typeof ROADMAP_COMPLEXITIES)[number]
 
 export function isRoadmapComplexity(value: unknown): value is RoadmapComplexity {
-  return typeof value === 'string' && (ROADMAP_COMPLEXITIES as readonly string[]).includes(value)
+  return typeof value === 'string' && ROADMAP_COMPLEXITIES.some((entry) => entry === value)
 }
 
 /**
@@ -22,5 +22,6 @@ export function isRoadmapComplexity(value: unknown): value is RoadmapComplexity 
 export function parseComplexityWord(text: string): RoadmapComplexity | null {
   const firstLine = (text.trim().split('\n')[0] ?? '').toLowerCase()
   const match = /\b(low|medium|high)\b/.exec(firstLine)
-  return match ? (match[1] as RoadmapComplexity) : null
+  const word = match?.[1]
+  return isRoadmapComplexity(word) ? word : null
 }

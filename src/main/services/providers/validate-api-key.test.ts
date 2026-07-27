@@ -6,6 +6,7 @@ import {
   validateOpenAiApiKey,
   validateOpenRouterApiKey,
 } from './validate-api-key.ts'
+import { jsonResponse } from './test-response.ts'
 import { BUILTIN_EXTRA_PROVIDERS, type ExtraProvider } from '@copse/llm/extra-providers.ts'
 
 const PRESET = (slug: string): ExtraProvider => {
@@ -77,8 +78,7 @@ describe('validateExtraProviderApiKey', () => {
 
   it('accepts Mistral keys regardless of shape (no fixed prefix) and reaches the network', async () => {
     const original = globalThis.fetch
-    globalThis.fetch = async (): Promise<Response> =>
-      ({ ok: true, status: 200, statusText: 'OK' }) as Response
+    globalThis.fetch = async (): Promise<Response> => jsonResponse({}, 200, 'OK')
     try {
       const result = await validateExtraProviderApiKey(PRESET('mistral'), 'any-shaped-key')
       assert.equal(result.ok, true)
@@ -93,7 +93,7 @@ describe('validateExtraProviderApiKey', () => {
     const original = globalThis.fetch
     globalThis.fetch = async (): Promise<Response> => {
       fetched = true
-      return { ok: true, status: 200, statusText: 'OK' } as Response
+      return jsonResponse({}, 200, 'OK')
     }
     try {
       const result = await validateExtraProviderApiKey(

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { expectString, isRecord } from '../../src/shared/unknown-value.mts'
 
 export interface TerminalBenchSteering {
   schema_version: 1
@@ -22,10 +23,10 @@ function nonEmptyString(value: unknown): value is string {
 }
 
 export function parseTerminalBenchSteering(value: unknown): TerminalBenchSteering {
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     throw new Error('steering must be a JSON object')
   }
-  const record = value as Record<string, unknown>
+  const record = value
   if (record['schema_version'] !== 1) throw new Error('steering.schema_version must be 1')
   if (!nonEmptyString(record['parent_trial_id'])) {
     throw new Error('steering.parent_trial_id must be a non-empty string')
@@ -92,8 +93,8 @@ export function parseTerminalBenchSteering(value: unknown): TerminalBenchSteerin
     diagnosis: record['diagnosis'],
     prompt_patch: record['prompt_patch'],
     nudges: record['nudges'].map((nudge) => ({
-      trigger: Reflect.get(nudge, 'trigger') as string,
-      message: Reflect.get(nudge, 'message') as string,
+      trigger: expectString(Reflect.get(nudge, 'trigger')),
+      message: expectString(Reflect.get(nudge, 'message')),
     })),
     ...(recommendedStepBudget !== undefined
       ? { recommended_step_budget: Number(recommendedStepBudget) }

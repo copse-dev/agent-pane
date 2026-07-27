@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   BUNDLED_CURSOR_PLUGINS_COMMIT,
+  bundledCursorSkillsSourceSchema,
   syncBundledCursorSkills,
   type BundledCursorSkillsSource,
 } from './bundled-cursor-skills-sync.mts'
@@ -13,10 +14,8 @@ async function readSourceManifest(cacheDir: string): Promise<BundledCursorSkills
   try {
     const { readFile } = await import('node:fs/promises')
     const raw = await readFile(resolve(cacheDir, 'SOURCE.json'), 'utf8')
-    const parsed = JSON.parse(raw) as BundledCursorSkillsSource
-    // parsed comes from untyped JSON on disk; `slim` may be missing/false at runtime
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    if (parsed.commit !== BUNDLED_CURSOR_PLUGINS_COMMIT || !parsed.slim) return null
+    const parsed = bundledCursorSkillsSourceSchema.parse(JSON.parse(raw) as unknown)
+    if (parsed.commit !== BUNDLED_CURSOR_PLUGINS_COMMIT) return null
     if (parsed.skillCount <= 0) return null
     return parsed
   } catch {

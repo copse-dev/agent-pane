@@ -6,6 +6,7 @@ import { recordTerminalBenchTaskImage } from './lib/terminal-bench-task-image.mt
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
 import { terminalBenchCanonicalTaskName } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchAnalysisPlanPath, terminalBenchResultsRoot } from './lib/terminal-bench.mts'
+import { isRecord } from '../src/shared/unknown-value.mts'
 
 const PLAN_PATH = terminalBenchAnalysisPlanPath()
 const rawArgs = process.argv.slice(2)
@@ -16,8 +17,8 @@ if (profileArgs.length > 1 || rawArgs.some((arg) => !arg.startsWith('--profile='
 const profile = terminalBenchProfile(profileArgs[0]?.slice('--profile='.length))
 
 function stringField(value: unknown, key: string): string | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const field = (value as Record<string, unknown>)[key]
+  if (!isRecord(value)) return undefined
+  const field = value[key]
   return typeof field === 'string' && field.trim() ? field : undefined
 }
 
@@ -36,10 +37,7 @@ async function resultTaskName(path: string): Promise<string | undefined> {
 }
 
 const parsed: unknown = JSON.parse(await readFile(PLAN_PATH, 'utf8'))
-const entries =
-  typeof parsed === 'object' && parsed !== null
-    ? (parsed as Record<string, unknown>)['entries']
-    : undefined
+const entries = isRecord(parsed) ? parsed['entries'] : undefined
 if (!Array.isArray(entries)) throw new Error(`${PLAN_PATH} does not contain an entries array.`)
 
 for (const entry of entries) {

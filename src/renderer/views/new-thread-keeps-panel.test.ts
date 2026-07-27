@@ -1,11 +1,12 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import type { ApiClient } from '../../preload/api.d.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { Thread } from '@shared/types'
-import type { ApiClient } from '../../preload/api.d.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import { syncFilesPaneDom, toggleRightPanel } from '../controller/panels.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Component-level port of tests/e2e/new-thread-keeps-panel.e2e.ts. That spec is
 // CI-quarantined for a new-thread `$$` race, yet everything it asserts — the
@@ -32,11 +33,16 @@ function seededThread(): Thread {
 }
 
 // new-thread click never hits the api; listOrphans is called on pane mount (#997).
-const apiStub = {
-  threads: {
-    listOrphans: async (): Promise<never[]> => [],
-  },
-} as unknown as ApiClient
+const apiStub = ((): ApiClient => {
+  const base = createFakeApi()
+  return {
+    ...base,
+    threads: {
+      ...base['threads'],
+      listOrphans: async (): Promise<never[]> => [],
+    },
+  } satisfies ApiClient
+})()
 
 afterEach(() => {
   document.body.replaceChildren()

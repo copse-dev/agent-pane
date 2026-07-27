@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import type { StreamChunk } from '@shared/types'
 import { clearManagedAgentSession, runManagedAgentFromSettings } from './managed-agents-client.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 interface RecordedRequest {
   method: string
@@ -32,7 +33,7 @@ function mockManagedAgentsApi(requests: RecordedRequest[]): typeof fetch {
     const href = typeof input === 'string' || input instanceof URL ? String(input) : input.url
     const path = new URL(href).pathname
     const body =
-      typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null
+      typeof init?.body === 'string' ? expectRecord(JSON.parse(init.body) as unknown) : null
     requests.push({ method, path, body })
 
     if (method === 'POST' && path === '/v1/agents') return jsonResponse({ id: 'agent_1' })

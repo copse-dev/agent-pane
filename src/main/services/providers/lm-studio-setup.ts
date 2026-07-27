@@ -6,6 +6,7 @@ import { fetchLmStudioModelsCached, lmStudioApiKey, lmStudioOrigin } from './lm-
 import { getSetting } from '../storage/settings.ts'
 import { DEFAULT_LM_STUDIO_URL, preferIpv4LoopbackUrl } from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 export interface LmStudioDetection {
   serverRunning: boolean
@@ -80,7 +81,7 @@ export async function detectLmStudio(url?: string, apiKey?: string): Promise<LmS
 }
 
 function parseDownloadResponse(json: unknown): LmStudioDownloadJob {
-  const row = json as Record<string, unknown>
+  const row = expectRecord(json)
   const status = typeof row['status'] === 'string' ? row['status'] : undefined
   const jobId = typeof row['job_id'] === 'string' ? row['job_id'] : undefined
   const totalSizeBytes =
@@ -150,7 +151,7 @@ export async function getLmStudioDownloadStatus(
     if (!res.ok) {
       return { ok: false, jobId, error: `HTTP ${String(res.status)}` }
     }
-    const row = (await res.json()) as Record<string, unknown>
+    const row = expectRecord(await res.json())
     return {
       ok: true,
       jobId,

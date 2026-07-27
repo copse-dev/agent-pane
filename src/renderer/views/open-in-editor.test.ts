@@ -6,19 +6,25 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import type { ExternalEditorList } from '@shared/types/editors.ts'
 import { mountOpenInEditor } from './open-in-editor.ts'
 import { qs, qsRequired } from '../dom/helpers.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function createApi(
   list: ExternalEditorList,
   onOpen: (id: string) => Promise<void> = async () => {},
 ): ApiClient {
-  return {
-    editors: {
-      list: async () => list,
-      open: async (_projectId: string, _threadId: string, editorId: string) => {
-        await onOpen(editorId)
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      editors: {
+        ...base['editors'],
+        list: async () => list,
+        open: async (_projectId: string, _threadId: string, editorId: string): Promise<void> => {
+          await onOpen(editorId)
+        },
       },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
 }
 
 function createActiveStore(workspaceRoot: string | null = '/repo'): ReturnType<typeof createStore> {

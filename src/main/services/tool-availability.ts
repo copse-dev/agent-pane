@@ -208,9 +208,16 @@ async function probe(cmd: string, args: string[]): Promise<boolean> {
  * accessible. This keeps the gh_pr_* / read-only CI tools hidden from the model
  * unless GitHub is genuinely accessible — see issue #523.
  */
-async function probeGhAccessible(): Promise<boolean> {
+export async function probeGhAccessible(run: typeof runCommand = runCommand): Promise<boolean> {
   try {
-    const { code } = await runCommand('gh', ['auth', 'status'], {
+    const { code } = await run('gh', ['auth', 'status'], {
+      // This host-owned startup probe must be able to read gh's user config and
+      // reach GitHub to validate the credential. Since #1213 moved it after
+      // project-sandbox initialization, omitting this flag confines it to the
+      // workspace seatbelt: network is denied, the probe records a false
+      // negative, and the PR panel stays disabled for the whole app session.
+      // Normal GitHub calls already use this same unsandboxed boundary in runGh.
+      unsandboxed: true,
       env: { PATH: `${probePathPrefix()}${process.env['PATH'] ?? ''}` },
     })
     return code === 0

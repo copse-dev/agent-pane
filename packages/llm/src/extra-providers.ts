@@ -494,13 +494,14 @@ export function extraProviderPricingMap(
 function normalizeModels(models: unknown): ExtraProviderModel[] {
   if (!Array.isArray(models)) return []
   const out: ExtraProviderModel[] = []
-  for (const raw of models) {
-    if (!raw || typeof raw !== 'object') continue
-    const id = (raw as ExtraProviderModel).id
+  const values: unknown[] = models
+  for (const raw of values) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const id = 'id' in raw ? raw.id : undefined
     if (typeof id !== 'string' || !id.trim()) continue
-    const contextWindow = (raw as ExtraProviderModel).contextWindow
-    const inputPrice = (raw as ExtraProviderModel).inputPricePerMTok
-    const outputPrice = (raw as ExtraProviderModel).outputPricePerMTok
+    const contextWindow = 'contextWindow' in raw ? raw.contextWindow : undefined
+    const inputPrice = 'inputPricePerMTok' in raw ? raw.inputPricePerMTok : undefined
+    const outputPrice = 'outputPricePerMTok' in raw ? raw.outputPricePerMTok : undefined
     const entry: ExtraProviderModel = {
       id: id.trim(),
       ...(typeof contextWindow === 'number' && contextWindow > 0 ? { contextWindow } : {}),

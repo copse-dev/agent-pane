@@ -50,7 +50,10 @@ function withFakeCreate(
   provider: OpenAIProvider,
   create: OpenAIProviderForTest['client']['chat']['completions']['create'],
 ): void {
-  ;(provider as unknown as OpenAIProviderForTest).client.chat.completions.create = create
+  Object.defineProperty(provider, 'client', {
+    value: { chat: { completions: { create } } },
+    configurable: true,
+  })
 }
 
 /**

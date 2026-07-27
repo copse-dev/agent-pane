@@ -96,6 +96,23 @@ describe('parseOpenRouterModelsPayload', () => {
     assert.equal(claude.inputPricePerMTok, 3)
     assert.equal(claude.outputPricePerMTok, 15)
   })
+
+  it('tolerates null pricing and array-shaped junk rows', () => {
+    assert.deepEqual(
+      parseOpenRouterModelsPayload({ data: [[], { id: 'example/model', pricing: null }] }),
+      [
+        {
+          id: 'example/model',
+          name: 'example/model',
+          contextLength: null,
+          free: false,
+          supportsTools: false,
+          inputPricePerMTok: null,
+          outputPricePerMTok: null,
+        },
+      ],
+    )
+  })
 })
 
 describe('listFreeOpenRouterModels', () => {

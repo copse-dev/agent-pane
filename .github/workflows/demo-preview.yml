@@ -1,24 +1,24 @@
 name: Demo preview
 
-# Publishes a per-PR browser demo, live at copse.dev/pr-<n>/, with a sticky PR
-# comment linking each scenario.
+# Publishes browser demos under the Pages /demo/ namespace:
+#   /demo/main/ and /demo/develop/ are persistent branch builds.
+#   /demo/pr-<n>/ is an ephemeral build with a sticky PR comment.
 #
 # Triggered on push (not workflow_run) so the workflow runs from the pushed
 # branch's own definition — which makes the whole flow testable on the PR that
 # introduces it, before merge. This is safe because only same-repo branches can
 # push here: forks push to their own fork and never trigger this repo's push
 # workflows, so untrusted code never reaches the write token or the deploy. Each
-# push rebuilds the demo, releases it into the machine-managed demo-previews
-# branch under pr-<n>/, and redeploys Pages. Branches without an open PR build
-# nothing.
+# qualifying push rebuilds the demo, releases it into the machine-managed
+# demo-previews branch, and redeploys Pages. Feature branches without an open PR
+# build nothing.
 #
 # The deploy always republishes site/ from `main` (see pages.yml), so a preview
-# push can only ever change its own pr-<n>/ subtree — never the marketing site.
+# push can only change content below /demo/ — never the marketing site.
 
 on:
   push:
     branches-ignore:
-      - main
       - demo-previews
   workflow_dispatch:
 
@@ -40,19 +40,26 @@ jobs:
     if: github.repository == 'copse-dev/agent-pane'
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     outputs:
-      found: ${{ steps.pr.outputs.found }}
-      pr: ${{ steps.pr.outputs.number }}
+      found: ${{ steps.target.outputs.found }}
+      pr: ${{ steps.target.outputs.pr }}
       published: ${{ steps.commit.outputs.published }}
       scenarios: ${{ steps.scenarios.outputs.json }}
     steps:
       - uses: actions/checkout@v7.0.0
-      # A preview belongs to a PR: resolve the open PR for this branch. No PR →
-      # nothing to preview or comment on, so the rest of the job is skipped.
-      - id: pr
+      # main/develop always publish to their persistent slots. Other branches
+      # belong to an open PR; no PR means nothing to preview or comment on.
+      - id: target
         uses: actions/github-script@v9
         with:
           script: |
             const branch = context.ref.replace('refs/heads/', '');
+            if (branch === 'main' || branch === 'develop') {
+              core.setOutput('found', 'true');
+              core.setOutput('path', branch);
+              core.setOutput('label', branch);
+              core.setOutput('pr', '');
+              return;
+            }
             const { data } = await github.rest.pulls.list({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -64,14 +71,17 @@ jobs:
               core.setOutput('found', 'false');
               return;
             }
+            const pr = String(data[0].number);
             core.setOutput('found', 'true');
-            core.setOutput('number', String(data[0].number));
-      - if: steps.pr.outputs.found == 'true'
+            core.setOutput('path', `pr-${pr}`);
+            core.setOutput('label', `PR #${pr}`);
+            core.setOutput('pr', pr);
+      - if: steps.target.outputs.found == 'true'
         uses: ./.github/actions/setup
-      - if: steps.pr.outputs.found == 'true'
+      - if: steps.target.outputs.found == 'true'
         run: npm run build:demo
       - id: scenarios
-        if: steps.pr.outputs.found == 'true'
+        if: steps.target.outputs.found == 'true'
         run: |
           {
             echo 'json<<SCENARIOS_EOF'
@@ -80,14 +90,19 @@ jobs:
             echo 'SCENARIOS_EOF'
           } >> "$GITHUB_OUTPUT"
       - id: commit
-        if: steps.pr.outputs.found == 'true'
+        if: steps.target.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PR: ${{ steps.pr.outputs.number }}
+          TARGET: ${{ steps.target.outputs.path }}
+          LABEL: ${{ steps.target.outputs.label }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          if [[ "$TARGET" != "main" && "$TARGET" != "develop" && ! "$TARGET" =~ ^pr-[0-9]+$ ]]; then
+            echo "Invalid demo target: $TARGET" >&2
+            exit 1
+          fi
           remote="https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
           # Work on an isolated clone of the previews branch so the demo build in
           # dist/ is never disturbed. Create the orphan branch on first publish.
@@ -100,19 +115,19 @@ jobs:
           fi
           git -C previews-branch config user.name "github-actions[bot]"
           git -C previews-branch config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -rf "previews-branch/pr-${PR}"
-          mkdir -p "previews-branch/pr-${PR}"
-          cp -R dist/demo/. "previews-branch/pr-${PR}/"
+          rm -rf "previews-branch/${TARGET}"
+          mkdir -p "previews-branch/${TARGET}"
+          cp -R dist/demo/. "previews-branch/${TARGET}/"
           # Never commit source maps: gitleaks scans every ref (fetch-depth: 0),
           # and high-entropy map contents fail Secret scan on unrelated tips.
-          find "previews-branch/pr-${PR}" -type f -name '*.map' -delete
-          printf '%s\n' "$SHA" > "previews-branch/pr-${PR}/.head-sha"
-          git -C previews-branch add "pr-${PR}"
+          find "previews-branch/${TARGET}" -type f -name '*.map' -delete
+          printf '%s\n' "$SHA" > "previews-branch/${TARGET}/.head-sha"
+          git -C previews-branch add "$TARGET"
           if git -C previews-branch diff --cached --quiet; then
-            echo "No preview change for PR #${PR}"
+            echo "No preview change for ${LABEL}"
             echo "published=false" >> "$GITHUB_OUTPUT"
           else
-            git -C previews-branch commit -m "demo preview: PR #${PR} (${SHA})"
+            git -C previews-branch commit -m "demo preview: ${LABEL} (${SHA})"
             git -C previews-branch push origin demo-previews
             echo "published=true" >> "$GITHUB_OUTPUT"
           fi
@@ -125,7 +140,7 @@ jobs:
 
   comment:
     needs: [publish, deploy]
-    if: needs.publish.outputs.published == 'true'
+    if: needs.publish.outputs.published == 'true' && needs.publish.outputs.pr != ''
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     permissions:
       pull-requests: write
@@ -139,12 +154,13 @@ jobs:
           script: |
             const marker = '<!-- copse-demo-preview -->';
             const pr = Number(process.env.PR);
-            // page_url is the Pages root (e.g. https://copse.dev/); normalise to
-            // exactly one trailing slash, then hang the pr-<n>/ path off it. The
-            // trailing slash matters: the demo's assets are document-relative, so
-            // they must resolve against .../pr-<n>/ and not .../pr-<n>.
-            const base = (process.env.BASE_URL || 'https://copse.dev/').replace(/\/*$/, '/');
-            const previewUrl = `${base}pr-${pr}/`;
+            // page_url is the Pages root; normalise to exactly one trailing
+            // slash, then use the shared /demo/ namespace. The final trailing
+            // slash matters because the demo's assets are document-relative.
+            const base = (
+              process.env.BASE_URL || 'https://copse-dev.github.io/agent-pane/'
+            ).replace(/\/*$/, '/');
+            const previewUrl = `${base}demo/pr-${pr}/`;
             let scenarios = [];
             try {
               scenarios = JSON.parse(process.env.SCENARIOS || '[]');

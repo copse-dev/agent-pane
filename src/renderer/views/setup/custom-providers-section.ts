@@ -11,6 +11,7 @@ import { blendedRate } from '@copse/llm/pareto-frontier.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { closeIcon } from '../../dom/icons.ts'
 import { setInlineStatus } from '../../dom/inline-status.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 // Unified "Providers" panel: a chip row selects one provider and shows its form.
 // Fixed cloud providers (OpenAI / Anthropic / OpenRouter) expose just a key
@@ -237,12 +238,17 @@ function createModelsEditor(initial: readonly ExtraProviderModel[]): ModelsEdito
   const read = (): ExtraProviderModel[] => {
     const out: ExtraProviderModel[] = []
     for (const row of rows.querySelectorAll('.provider-model-row')) {
-      const [idEl, ctxEl, inEl, outEl] = row.querySelectorAll('input')
-      const id = (idEl as HTMLInputElement).value.trim()
+      const inputs = row.querySelectorAll<HTMLInputElement>('input')
+      const idEl = inputs[0]
+      const ctxEl = inputs[1]
+      const inEl = inputs[2]
+      const outEl = inputs[3]
+      if (!idEl || !ctxEl || !inEl || !outEl) continue
+      const id = idEl.value.trim()
       if (!id) continue
-      const ctx = Number((ctxEl as HTMLInputElement).value)
-      const inPrice = (inEl as HTMLInputElement).value.trim()
-      const outPrice = (outEl as HTMLInputElement).value.trim()
+      const ctx = Number(ctxEl.value)
+      const inPrice = inEl.value.trim()
+      const outPrice = outEl.value.trim()
       const inNum = Number(inPrice)
       const outNum = Number(outPrice)
       const entry: ExtraProviderModel = {
@@ -687,7 +693,7 @@ export function createCustomProvidersSection(
         const raw = extraBodyArea.value.trim()
         if (raw) {
           try {
-            extraBody = JSON.parse(raw) as Record<string, unknown>
+            extraBody = expectRecord(JSON.parse(raw) as unknown)
           } catch {
             setInlineStatus(saveStatus, 'error', 'Extra body is not valid JSON')
             saveStatus.className = 'key-status err'

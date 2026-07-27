@@ -9,6 +9,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
 import type {
@@ -25,6 +26,7 @@ import {
   explodeMessage,
   explodeThread,
   foldThread,
+  refsOfLine,
   type FileToWrite,
   type RefResolver,
 } from '@shared/threads/fold.ts'
@@ -228,7 +230,11 @@ function pruneStaleFiles(dir: string, files: FileToWrite[], preservedRefs: strin
 
 /** Parse a thread's `meta.json`, or null if missing/malformed. */
 function readMeta(dir: string): ThreadMeta | null {
-  const raw = safeRead(join(dir, META_FILE))
+  return parseMeta(safeRead(join(dir, META_FILE)))
+}
+
+/** Validate `meta.json` contents, however they were read. Null if malformed. */
+function parseMeta(raw: string | null): ThreadMeta | null {
   if (raw === null) return null
   try {
     const parsed: unknown = JSON.parse(raw)
@@ -245,18 +251,106 @@ function readMeta(dir: string): ThreadMeta | null {
   }
 }
 
-function readThread(projectId: string, threadId: string): Thread | null {
+/**
+ * How many file reads are in flight at once while prefetching a thread (and how
+ * many threads load concurrently in {@link readProjectThreads}). Enough to keep
+ * the disk busy and overlap latency; low enough that a project with thousands of
+ * message files cannot exhaust file descriptors.
+ */
+const READ_CONCURRENCY = 32
+
+/** Run `worker` over `items` with at most {@link READ_CONCURRENCY} in flight. */
+async function mapConcurrent<T, R>(items: T[], worker: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(READ_CONCURRENCY, items.length) }, async () => {
+    for (let i = cursor++; i < items.length; i = cursor++) {
+      // `i` is always in range, but `noUncheckedIndexedAccess` widens the element
+      // type — read it out and narrow rather than asserting the index is safe.
+      const item = items[i]
+      if (item === undefined) continue
+      results[i] = await worker(item)
+    }
+  })
+  await Promise.all(runners)
+  return results
+}
+
+async function readOrNull(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Read every file the fold will ask for into memory, so the fold itself can stay
+ * synchronous and fs-free while the I/O happens off the main thread.
+ *
+ * Refs are discovered by walking the spine with {@link refsOfLine}, then
+ * recursing into each nested subagent directory (whose own `events.jsonl` has to
+ * be read before its refs are knowable). Only referenced files are read —
+ * notably NOT `agent-history.json` or `attachments/`, which can be large and
+ * which the fold never touches.
+ *
+ * A ref that fails to read is simply absent from the map; the resolver below
+ * then throws exactly the `Missing thread file` error the synchronous resolver
+ * used to throw, so a corrupt thread is still skipped rather than half-loaded.
+ */
+async function prefetchThreadFiles(dir: string, spineRaw: string): Promise<Map<string, string>> {
+  const contents = new Map<string, string>()
+  // Directory prefixes still to walk, paired with the spine already read for them.
+  let frontier: Array<{ prefix: string; raw: string }> = [{ prefix: '', raw: spineRaw }]
+
+  while (frontier.length > 0) {
+    const fileRefs: string[] = []
+    const nested: string[] = []
+    for (const { prefix, raw } of frontier) {
+      for (const line of parseSpine(raw)) {
+        const { files, subagentDirs } = refsOfLine(line)
+        for (const ref of files) fileRefs.push(prefix + ref)
+        for (const sub of subagentDirs) nested.push(prefix + sub)
+      }
+    }
+
+    // A subagent's spine must be read before the next round can walk its refs.
+    const nestedSpines = await mapConcurrent(nested, async (prefix) => {
+      const raw = await readOrNull(join(dir, prefix + EVENTS_FILE))
+      return { prefix, raw }
+    })
+    await mapConcurrent(fileRefs, async (ref) => {
+      const body = await readOrNull(join(dir, ref))
+      if (body !== null) contents.set(ref, body)
+    })
+
+    frontier = []
+    for (const { prefix, raw } of nestedSpines) {
+      if (raw === null) continue
+      contents.set(prefix + EVENTS_FILE, raw)
+      frontier.push({ prefix, raw })
+    }
+  }
+  return contents
+}
+
+async function readThread(projectId: string, threadId: string): Promise<Thread | null> {
   const dir = threadDir(projectId, threadId)
-  const meta = readMeta(dir)
+  const [metaRaw, eventsRaw] = await Promise.all([
+    readOrNull(join(dir, META_FILE)),
+    readOrNull(join(dir, EVENTS_FILE)),
+  ])
+  const meta = parseMeta(metaRaw)
   if (meta === null) return null
 
-  const raw = safeRead(join(dir, EVENTS_FILE)) ?? ''
+  const raw = eventsRaw ?? ''
   const entries = parseSpineEntries(raw)
   const spine = parseSpine(raw)
+  const contents = await prefetchThreadFiles(dir, raw)
   const resolve: RefResolver = (ref) => {
-    const contents = safeRead(join(dir, ref))
-    if (contents === null) throw new Error(`Missing thread file: ${ref}`)
-    return contents
+    const body = contents.get(ref)
+    if (body === undefined) throw new Error(`Missing thread file: ${ref}`)
+    return body
   }
   try {
     const thread = foldThread(meta, spine, resolve, { hash: sha256 })
@@ -286,13 +380,11 @@ function listThreadIds(projectId: string): string[] {
     .map((entry) => entry.name)
 }
 
-function readProjectThreads(projectId: string): Thread[] {
-  const threads: Thread[] = []
-  for (const threadId of listThreadIds(projectId)) {
-    const thread = readThread(projectId, threadId)
-    if (thread) threads.push(thread)
-  }
-  return sortThreadsNewestFirst(threads)
+async function readProjectThreads(projectId: string): Promise<Thread[]> {
+  const loaded = await mapConcurrent(listThreadIds(projectId), (threadId) =>
+    readThread(projectId, threadId),
+  )
+  return sortThreadsNewestFirst(loaded.filter((t): t is Thread => t !== null))
 }
 
 /** Store dir ids directly under the workspace root (each is a project's thread store). */
@@ -419,9 +511,9 @@ function refreshCatalogLine(projectId: string, threadId: string): void {
   writeCatalog(projectId, entries)
 }
 
-function rebuildCatalog(projectId: string): Map<string, CatalogEntry> {
+async function rebuildCatalog(projectId: string): Promise<Map<string, CatalogEntry>> {
   const entries = new Map<string, CatalogEntry>()
-  for (const thread of readProjectThreads(projectId)) {
+  for (const thread of await readProjectThreads(projectId)) {
     const entry = catalogEntryOf(thread)
     if (entry) entries.set(thread.id, entry)
   }
@@ -897,10 +989,10 @@ export function findThreadOwners(threadId: string): Promise<string[]> {
  * so the `@`-thread picker can hand the agent an absolute reference.
  */
 export function loadProjectCatalog(projectId: string, query?: string): Promise<ThreadCatalogHit[]> {
-  return runSerialized(queueKey(projectId), () => {
+  return runSerialized(queueKey(projectId), async () => {
     const map = existsSync(catalogPath(projectId))
       ? readCatalog(projectId)
-      : rebuildCatalog(projectId)
+      : await rebuildCatalog(projectId)
     const entries = [...map.values()].sort((a, b) => b.updatedAt - a.updatedAt)
     const terms = (query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean)
     const matched =
@@ -938,15 +1030,22 @@ export function listOrphanProjectStores(
   })
 }
 
-/** Load every thread across all projects (usage summaries, etc.). */
-export function loadAllProjectThreads(): Thread[] {
+/**
+ * Load every thread across all projects (usage summaries, etc.).
+ *
+ * Must go through {@link loadProjectThreads} (the per-project write queue), not
+ * {@link readProjectThreads} directly: once reads are async and yield to the
+ * event loop, an unqueued load can interleave with `saveProjectThread` and
+ * observe a torn thread directory.
+ */
+export async function loadAllProjectThreads(): Promise<Thread[]> {
   const projects =
     (storageGet('projects') as Array<{ id: string }> | null)?.filter(
       (p) => typeof p.id === 'string' && p.id.length > 0,
     ) ?? []
   const threads: Thread[] = []
   for (const project of projects) {
-    threads.push(...readProjectThreads(project.id))
+    threads.push(...(await loadProjectThreads(project.id)))
   }
   return threads
 }

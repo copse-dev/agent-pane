@@ -5,6 +5,7 @@ import { join, relative, resolve } from 'node:path'
 import { runAgentLoop } from '../packages/agent/src/run-agent-loop.ts'
 import { createLMStudioProvider } from '@copse/llm/create-provider.ts'
 import type { LLMTool, StreamChunk } from '../src/shared/types'
+import { expectRecord, nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 
 const INCOMPLETE = 'stopped before producing a final answer'
 const PROMPT =
@@ -39,7 +40,7 @@ function fail(msg: string): never {
 
 function loadSettings(): Record<string, unknown> {
   const settingsPath = join(homedir(), 'Library/Application Support/copse-panel/settings.json')
-  return JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>
+  return expectRecord(JSON.parse(readFileSync(settingsPath, 'utf8')) as unknown)
 }
 
 function loadLmStudioKey(): string {
@@ -73,9 +74,10 @@ function resolvePath(workspace: string, path: string): string {
 }
 
 async function executeTool(workspace: string, name: string, args: unknown): Promise<string> {
-  const a = args as { path?: string }
+  const a = expectRecord(args)
+  const path = typeof a['path'] === 'string' ? a['path'] : undefined
   if (name === 'list_dir') {
-    const dir = resolvePath(workspace, a.path ?? '.')
+    const dir = resolvePath(workspace, path ?? '.')
     const names = readdirSync(dir)
     return names
       .slice(0, 200)
@@ -86,7 +88,7 @@ async function executeTool(workspace: string, name: string, args: unknown): Prom
       .join('\n')
   }
   if (name === 'read_file') {
-    const file = resolvePath(workspace, a.path ?? '')
+    const file = resolvePath(workspace, path ?? '')
     const text = await readFile(file, 'utf8')
     return text.slice(0, 12_000)
   }
@@ -99,9 +101,10 @@ export async function validateLocalAgentFinalAnswer(): Promise<void> {
   process.env['COPSE_PANEL_MOCK_LLM'] = ''
 
   const settings = loadSettings()
-  const url =
-    process.env['LM_STUDIO_URL']?.trim() ||
-    settingString(settings, 'localServerUrl', 'http://localhost:1234/v1')
+  const url = nonEmptyStringOr(
+    process.env['LM_STUDIO_URL']?.trim(),
+    settingString(settings, 'localServerUrl', 'http://localhost:1234/v1'),
+  )
   const model = loadModel(settings)
   const apiKey = loadLmStudioKey()
   const workspace = process.cwd()

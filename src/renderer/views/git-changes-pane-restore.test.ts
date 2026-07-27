@@ -11,6 +11,7 @@ import {
   mountConfirmDialog,
 } from './confirm-dialog.ts'
 import { mountGitChangesPane } from './git-changes-pane.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Coverage for the "Restore pre-session changes" affordance (#699): when Copse
 // auto-applied edits over the user's uncommitted work this session, the changes
@@ -25,30 +26,37 @@ function makeApi(opts: {
   restoreCalls?: { count: number }
 }): ApiClient {
   const noopUnsub = (): (() => void) => () => {}
-  return {
-    git: {
-      isAvailable: async () => true,
-      status: async () => emptyStatus,
-      fileDiff: async () => null,
-      sessionBackup: async () => opts.sessionBackup,
-      restoreBackup: async () => {
-        if (opts.restoreCalls) opts.restoreCalls.count++
-        return opts.restore ? opts.restore() : true
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      git: {
+        ...base['git'],
+        isAvailable: async () => true,
+        status: async () => emptyStatus,
+        fileDiff: async () => null,
+        sessionBackup: async () => opts.sessionBackup,
+        restoreBackup: async (): Promise<boolean> => {
+          if (opts.restoreCalls) opts.restoreCalls.count++
+          return opts.restore ? opts.restore() : true
+        },
       },
-    },
-    diff: {
-      approve: async () => {},
-      reject: async () => {},
-      approveAll: async () => {},
-      rejectAll: async () => {},
-      onShowDiff: noopUnsub(),
-      onQueued: noopUnsub(),
-      onConflict: noopUnsub(),
-    },
-    fs: {
-      onChanged: noopUnsub(),
-    },
-  } as unknown as ApiClient
+      diff: {
+        ...base['diff'],
+        approve: async (): Promise<void> => {},
+        reject: async (): Promise<void> => {},
+        approveAll: async (): Promise<void> => {},
+        rejectAll: async (): Promise<void> => {},
+        onShowDiff: noopUnsub,
+        onQueued: noopUnsub,
+        onConflict: noopUnsub,
+      },
+      fs: {
+        ...base['fs'],
+        onChanged: noopUnsub,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 beforeEach(() => {

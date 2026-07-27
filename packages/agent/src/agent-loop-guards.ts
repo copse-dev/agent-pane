@@ -1,4 +1,5 @@
 import type { TodoItem } from './wire-types.ts'
+import { isRecord } from './internal-utils.ts'
 
 /** Tools that only gather context — repeating them often indicates a stuck loop. */
 export const EXPLORE_TOOL_NAMES = new Set([
@@ -16,16 +17,15 @@ export function toolCallFingerprint(name: string, args: unknown): string {
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
-  const obj = value as Record<string, unknown>
-  const keys = Object.keys(obj).sort()
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableJson(obj[k])}`).join(',')}}`
+  if (!isRecord(value)) return JSON.stringify(value)
+  const keys = Object.keys(value).sort()
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`).join(',')}}`
 }
 
 export function normalizeExploreArgs(name: string, args: unknown): unknown {
-  if (name !== 'list_dir' || !args || typeof args !== 'object') return args
-  const a = args as Record<string, unknown>
-  const path = typeof a['path'] === 'string' ? a['path'].trim() || '.' : '.'
-  return { ...a, path }
+  if (name !== 'list_dir' || !isRecord(args)) return args
+  const path = typeof args['path'] === 'string' ? args['path'].trim() || '.' : '.'
+  return { ...args, path }
 }
 
 export function isDuplicateExploreCall(

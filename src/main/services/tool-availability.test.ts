@@ -5,6 +5,7 @@ import {
   isGhAvailable,
   isGitAvailable,
   isRgAvailable,
+  probeGhAccessible,
   setGhAvailableForTest,
   setGitAvailableForTest,
   setRgAvailableForTest,
@@ -89,5 +90,28 @@ describe('checkToolAvailability', () => {
     assert.equal(isRgAvailable(), true)
     assert.equal(isGitAvailable(), true)
     assert.equal(isGhAvailable(), false)
+  })
+
+  it('runs the authenticated GitHub probe outside the project sandbox', async () => {
+    let invocation:
+      { command: string; args: string[]; unsandboxed: boolean | undefined } | undefined
+    const available = await probeGhAccessible((command, args, options) => {
+      invocation = { command, args, unsandboxed: options?.unsandboxed }
+      return Promise.resolve({ stdout: '', stderr: '', code: 0 })
+    })
+
+    assert.equal(available, true)
+    assert.deepEqual(invocation, {
+      command: 'gh',
+      args: ['auth', 'status'],
+      unsandboxed: true,
+    })
+  })
+
+  it('treats a failed authenticated GitHub probe as unavailable', async () => {
+    const available = await probeGhAccessible(() =>
+      Promise.resolve({ stdout: '', stderr: 'not authenticated', code: 1 }),
+    )
+    assert.equal(available, false)
   })
 })

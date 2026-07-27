@@ -10,6 +10,7 @@ import {
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export interface CursorCloudModelOption {
   id: string
@@ -42,14 +43,14 @@ function resolveCursorApiKey(): string | null {
 }
 
 export function parseCursorCloudModelsPayload(json: unknown): CursorCloudModelOption[] {
-  if (!json || typeof json !== 'object') return []
-  const items = (json as { items?: unknown }).items
+  if (!isRecord(json)) return []
+  const items = json['items']
   if (!Array.isArray(items)) return []
   const out: CursorCloudModelOption[] = []
   const seen = new Set<string>()
   for (const row of items) {
-    if (!row || typeof row !== 'object') continue
-    const rec = row as Record<string, unknown>
+    if (!isRecord(row)) continue
+    const rec = row
     const id = typeof rec['id'] === 'string' ? rec['id'].trim() : ''
     if (!id || seen.has(id)) continue
     seen.add(id)

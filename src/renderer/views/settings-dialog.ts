@@ -14,7 +14,6 @@ import {
   APP_ICON_VARIANT_LABELS,
   DEFAULT_APP_ICON_VARIANT,
   isAppIconVariant,
-  type AppIconVariant,
 } from '@shared/app-icon-variants.ts'
 import { DEFAULT_APP_CHAT_MODEL } from '@shared/lm-studio-defaults.ts'
 import { CURSOR_AGENTS_WEB_URL } from '@shared/remote-agent.ts'
@@ -53,6 +52,7 @@ import {
   parseTrustedCommands,
   sanitizeTrustedCommands,
 } from '@shared/command-routing.ts'
+import { stringRecordOrEmpty } from '@shared/unknown-value.ts'
 
 export type SettingsSection =
   | 'general'
@@ -65,6 +65,21 @@ export type SettingsSection =
   | 'ssh'
   | 'acp'
   | 'experimental'
+
+function isSettingsSection(value: unknown): value is SettingsSection {
+  return (
+    value === 'general' ||
+    value === 'usage' ||
+    value === 'local-models' ||
+    value === 'mcp' ||
+    value === 'sources' ||
+    value === 'packs' ||
+    value === 'appearance' ||
+    value === 'ssh' ||
+    value === 'acp' ||
+    value === 'experimental'
+  )
+}
 
 /**
  * Whole-app tint (Appearance ▸ Interface tint). The hue is mixed into every
@@ -130,13 +145,18 @@ export function applyUiTint(color: string, strength: UiTintStrength): void {
  * symmetrically; security-bundle fields set `save: false` (loaded here, saved by
  * the `setSecurity` call) so their defaults are still declared in one place.
  */
-interface SettingField {
+interface SettingFieldBase {
   name: string
-  kind: 'checkbox' | 'text' | 'number'
-  default: boolean | string | number
   /** Whether the save handler writes this field via api.settings.set. */
   save: boolean
 }
+
+type SettingField = SettingFieldBase &
+  (
+    | { kind: 'checkbox'; default: boolean }
+    | { kind: 'text'; default: string }
+    | { kind: 'number'; default: number }
+  )
 
 const SIMPLE_FIELDS: readonly SettingField[] = [
   { name: 'customInstructions', kind: 'text', default: '', save: true },
@@ -192,11 +212,16 @@ const SIMPLE_FIELDS: readonly SettingField[] = [
 
 async function loadSimpleFields(form: HTMLFormElement, api: ApiClient): Promise<void> {
   for (const field of SIMPLE_FIELDS) {
-    const input = form.elements.namedItem(field.name) as HTMLInputElement | HTMLTextAreaElement
+    const input = form.elements.namedItem(field.name)
+    if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) {
+      throw new Error(`Settings dialog template is missing ${JSON.stringify(field.name)}`)
+    }
     const saved = await api.settings.get(field.name)
     if (field.kind === 'checkbox') {
-      ;(input as HTMLInputElement).checked =
-        (saved as boolean | undefined) ?? (field.default as boolean)
+      if (!(input instanceof HTMLInputElement)) {
+        throw new Error(`Settings field ${JSON.stringify(field.name)} must be an input`)
+      }
+      input.checked = typeof saved === 'boolean' ? saved : field.default
     } else {
       input.value =
         typeof saved === 'string' || typeof saved === 'number'
@@ -217,7 +242,10 @@ function parseNonNegativeInt(value: string, fallback: number): number {
  * the generic field load.
  */
 function wireSafetySliders(form: HTMLFormElement): void {
-  const externalDeny = form.elements.namedItem('safetyExternalDenyThreshold') as HTMLInputElement
+  const externalDeny = form.elements.namedItem('safetyExternalDenyThreshold')
+  if (!(externalDeny instanceof HTMLInputElement)) {
+    throw new Error('Settings dialog template is missing "safetyExternalDenyThreshold"')
+  }
 
   const bind = (input: HTMLInputElement): void => {
     const output = form.querySelector<HTMLOutputElement>(`output[for="${input.name}"]`)
@@ -237,10 +265,10 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
     if (field.kind === 'checkbox') {
       await api.settings.set(field.name, data.get(field.name) === 'on')
     } else if (field.kind === 'number') {
-      const value = (data.get(field.name) as string | null) ?? ''
-      await api.settings.set(field.name, parseNonNegativeInt(value, field.default as number))
+      const value = formDataString(data, field.name)
+      await api.settings.set(field.name, parseNonNegativeInt(value, field.default))
     } else {
-      const value = (data.get(field.name) as string | null) ?? ''
+      const value = formDataString(data, field.name)
       const trimmed = field.name === 'customInstructions'
       await api.settings.set(field.name, trimmed ? value.trim() : value)
     }
@@ -251,6 +279,40 @@ async function saveSimpleFields(data: FormData, api: ApiClient): Promise<void> {
 function formDataString(data: FormData, key: string): string {
   const value = data.get(key)
   return typeof value === 'string' ? value : ''
+}
+
+function storedString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function storedStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+    ? value
+    : undefined
+}
+
+function inputControl(form: HTMLFormElement, name: string): HTMLInputElement {
+  const control = form.elements.namedItem(name)
+  if (!(control instanceof HTMLInputElement)) {
+    throw new Error(`Settings dialog template is missing input ${JSON.stringify(name)}`)
+  }
+  return control
+}
+
+function selectControl(form: HTMLFormElement, name: string): HTMLSelectElement {
+  const control = form.elements.namedItem(name)
+  if (!(control instanceof HTMLSelectElement)) {
+    throw new Error(`Settings dialog template is missing select ${JSON.stringify(name)}`)
+  }
+  return control
+}
+
+function textareaControl(form: HTMLFormElement, name: string): HTMLTextAreaElement {
+  const control = form.elements.namedItem(name)
+  if (!(control instanceof HTMLTextAreaElement)) {
+    throw new Error(`Settings dialog template is missing textarea ${JSON.stringify(name)}`)
+  }
+  return control
 }
 
 function parseWebAllowedOrigins(value: FormDataEntryValue | null): string[] {
@@ -1144,14 +1206,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // Provider tabs for the Remote agents section: a chip selects one provider and
   // shows just its auth panel (mirrors the Providers chip row). The common run
   // options below the panels apply to whichever remote agent is run.
-  const remoteTabsRow = overlay.querySelector('#settings-remote-agent-tabs') as HTMLElement
+  const remoteTabsRow = qsRequired(overlay, '#settings-remote-agent-tabs')
   const remoteTabs: ReadonlyArray<{ id: string; label: string }> = [
     { id: 'cursor', label: 'Cursor Cloud Agent' },
     { id: 'anthropic', label: 'Claude Agent' },
   ]
   const remotePanels: Record<string, HTMLElement> = {
-    cursor: overlay.querySelector('#settings-cursor-panel') as HTMLElement,
-    anthropic: overlay.querySelector('#settings-claude-panel') as HTMLElement,
+    cursor: qsRequired(overlay, '#settings-cursor-panel'),
+    anthropic: qsRequired(overlay, '#settings-claude-panel'),
   }
   function showRemoteTab(id: string): void {
     for (const [provider, panel] of Object.entries(remotePanels)) panel.hidden = provider !== id
@@ -1297,8 +1359,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
   navBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset['section'] as SettingsSection | undefined
-      if (id) {
+      const id = btn.dataset['section']
+      if (isSettingsSection(id)) {
         // Selecting a section is an explicit exit from search results.
         if (searchInput.value) {
           searchInput.value = ''
@@ -1953,12 +2015,15 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // Persist on change so the manifest schema is the source of truth — no
     // Save-button plumbing needed, mirroring the MCP per-server toggle.
     input.addEventListener('change', () => {
-      const value: unknown =
-        field.kind === 'boolean'
-          ? (input as HTMLInputElement).checked
-          : field.kind === 'number'
-            ? Number((input as HTMLInputElement).value)
-            : input.value
+      let value: unknown = input.value
+      if (field.kind === 'boolean') {
+        if (!(input instanceof HTMLInputElement)) {
+          throw new Error('Boolean pack setting must render as an input')
+        }
+        value = input.checked
+      } else if (field.kind === 'number') {
+        value = Number(input.value)
+      }
       void api.packs.setSetting(packId, field.id, value).catch(() => {
         // Best-effort: on failure the on-screen value stays; next reload
         // resyncs to storage.
@@ -2280,7 +2345,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     const advisorSelect = advisorModelSelectEl
     if (!hint || !advisorSelect) return
     const form = qsRequired<HTMLFormElement>(overlay, 'form')
-    const executor = (form.elements.namedItem('model') as HTMLSelectElement).value
+    const executor = selectControl(form, 'model').value
     const advisor = advisorSelect.value
     if (!executor || !advisor) {
       hint.hidden = true
@@ -2318,9 +2383,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await localProvidersSection.refresh()
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')
-      const model = (await api.settings.get('model')) as string | undefined
+      const model = storedString(await api.settings.get('model'))
       await populateModelSelect(
-        form.elements.namedItem('model') as HTMLSelectElement,
+        selectControl(form, 'model'),
         api,
         model ?? DEFAULT_APP_CHAT_MODEL,
         { includeBestValue: true },
@@ -2331,70 +2396,62 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       // with the `updateAdvisorPairHint()` call in `refreshPacks()` so whichever
       // of the two async renders finishes last shows the hint.
       updateAdvisorPairHint()
-      const smallTasksModel = (await api.settings.get('smallTasksModel')) as string | undefined
-      const roleModels =
-        ((await api.settings.get('roleModels')) as Record<string, string> | undefined) ?? {}
+      const smallTasksModel = storedString(await api.settings.get('smallTasksModel'))
+      const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
       await populateSmallTasksModelSelect(
-        form.elements.namedItem('smallTasksModel') as HTMLSelectElement,
+        selectControl(form, 'smallTasksModel'),
         api,
         roleModels['small-tasks'] ?? smallTasksModel ?? '',
       )
       // The advisor model and the three comparison models are no longer form
       // fields: they are pack-scoped `model` settings rendered in Settings →
       // Packs (advisor pair hint included), populated by `refreshPacks()`.
-      const orchestrationWorkerModel = (await api.settings.get('orchestrationWorkerModel')) as
-        string | undefined
+      const orchestrationWorkerModel = storedString(
+        await api.settings.get('orchestrationWorkerModel'),
+      )
       await populateModelSelect(
-        form.elements.namedItem('orchestrationWorkerModel') as HTMLSelectElement,
+        selectControl(form, 'orchestrationWorkerModel'),
         api,
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
       await loadSimpleFields(form, api)
       wireSafetySliders(form)
-      const savedWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-        string[] | undefined | null
-      ;(form.elements.namedItem('webAllowedOrigins') as HTMLTextAreaElement).value = (
+      const savedWebOrigins = storedStringArray(await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING))
+      textareaControl(form, 'webAllowedOrigins').value = (
         savedWebOrigins?.length ? savedWebOrigins : DEFAULT_WEB_ALLOWED_ORIGINS
       ).join('\n')
-      const savedProviderHosts = (await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING)) as
-        string[] | undefined | null
-      ;(form.elements.namedItem('approvedProviderHosts') as HTMLTextAreaElement).value = (
+      const savedProviderHosts = storedStringArray(
+        await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING),
+      )
+      textareaControl(form, 'approvedProviderHosts').value = (
         Array.isArray(savedProviderHosts) ? savedProviderHosts : []
       ).join('\n')
-      ;(form.elements.namedItem('trustedShellCommands') as HTMLTextAreaElement).value =
-        formatTrustedCommands(
-          sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
-        )
-      ;(form.elements.namedItem('theme') as HTMLSelectElement).value =
-        store.getState().themePreference
-      ;(form.elements.namedItem('fontSize') as HTMLInputElement).value = String(
-        store.getState().fontSize,
+      textareaControl(form, 'trustedShellCommands').value = formatTrustedCommands(
+        sanitizeTrustedCommands(await api.settings.get(TRUSTED_COMMANDS_SETTING)),
       )
+      selectControl(form, 'theme').value = store.getState().themePreference
+      inputControl(form, 'fontSize').value = String(store.getState().fontSize)
       const uiScaleInput = form.elements.namedItem('uiScale')
       if (!(uiScaleInput instanceof HTMLInputElement)) {
         throw new Error('Settings dialog template is missing "uiScale"')
       }
       uiScaleInput.value = String(store.getState().uiScale)
-      ;(form.elements.namedItem('autoPortraitRightPanel') as HTMLInputElement).checked =
-        store.getState().autoPortraitRightPanel
-      ;(form.elements.namedItem('rightPanelPosition') as HTMLSelectElement).value =
-        store.getState().rightPanelPosition
+      inputControl(form, 'autoPortraitRightPanel').checked = store.getState().autoPortraitRightPanel
+      selectControl(form, 'rightPanelPosition').value = store.getState().rightPanelPosition
 
       const savedAccentColor = await api.settings.get('uiAccentColor')
-      ;(form.elements.namedItem('uiAccentColor') as HTMLInputElement).value =
+      inputControl(form, 'uiAccentColor').value =
         typeof savedAccentColor === 'string' && HEX_COLOR.test(savedAccentColor)
           ? savedAccentColor
           : DEFAULT_ACCENT_COLOR
 
       const savedTintColor = await api.settings.get('uiTintColor')
-      ;(form.elements.namedItem('uiTintColor') as HTMLInputElement).value =
+      inputControl(form, 'uiTintColor').value =
         typeof savedTintColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(savedTintColor)
           ? savedTintColor
           : DEFAULT_TINT_COLOR
       const savedTintStrength = await api.settings.get('uiTintStrength')
-      ;(form.elements.namedItem('uiTintStrength') as HTMLSelectElement).value = isUiTintStrength(
-        savedTintStrength,
-      )
+      selectControl(form, 'uiTintStrength').value = isUiTintStrength(savedTintStrength)
         ? savedTintStrength
         : DEFAULT_TINT_STRENGTH
 
@@ -2437,14 +2494,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       await lmStudioSection.saveConnection()
       const routingValues = modelRoutingSection.readValues()
 
-      const model = data.get('model') as string
+      const model = formDataString(data, 'model')
       const themePrefRaw = data.get('theme')
       const themePreference = isThemePreference(themePrefRaw)
         ? themePrefRaw
         : DEFAULT_THEME_PREFERENCE
       // `theme` is the concrete value panes render; `system` resolves against the OS.
       const theme = resolveTheme(themePreference)
-      const fontSize = parseInt(data.get('fontSize') as string, 10)
+      const fontSize = parseInt(formDataString(data, 'fontSize'), 10)
       const uiScaleField = data.get('uiScale')
       const uiScaleRaw = typeof uiScaleField === 'string' ? parseFloat(uiScaleField) : Number.NaN
       const uiScale = Number.isFinite(uiScaleRaw)
@@ -2455,8 +2512,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const rightPanelPosition = isRightPanelPosition(rightPanelPositionRaw)
         ? rightPanelPositionRaw
         : 'auto'
-      const appIconVariant = data.get('appIconVariant') as AppIconVariant
-      const externalDeny = parseFloat(data.get('safetyExternalDenyThreshold') as string)
+      const appIconVariant = data.get('appIconVariant')
+      const externalDeny = parseFloat(formDataString(data, 'safetyExternalDenyThreshold'))
 
       const accentColorRaw = data.get('uiAccentColor')
       const uiAccentColor =
@@ -2474,16 +2531,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         : DEFAULT_TINT_STRENGTH
 
       await api.settings.set('model', model)
-      await api.settings.set(
-        'smallTasksModel',
-        ((data.get('smallTasksModel') as string | null) ?? '').trim(),
-      )
+      await api.settings.set('smallTasksModel', formDataString(data, 'smallTasksModel').trim())
       // `advisorModel` and the three `comparisonModel*` values are no longer
       // saved here — they are pack-scoped `model` settings persisted on change
       // via `packs:setSetting` from Settings → Packs.
       await api.settings.set(
         'orchestrationWorkerModel',
-        ((data.get('orchestrationWorkerModel') as string | null) ?? '').trim(),
+        formDataString(data, 'orchestrationWorkerModel').trim(),
       )
       await saveSimpleFields(data, api)
       await api.settings.set('theme', themePreference)
@@ -2500,13 +2554,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       }
       await api.settings.set('localDefaultModel', routingValues.localDefaultModel)
       await api.settings.set('subagentModel', routingValues.subagentModel)
-      const savedRoleModels =
-        ((await api.settings.get('roleModels')) as Record<string, string> | undefined) ?? {}
+      const savedRoleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
       await api.settings.set('roleModels', {
         ...savedRoleModels,
         coder: routingValues.localDefaultModel,
         research: routingValues.subagentModel,
-        'small-tasks': ((data.get('smallTasksModel') as string | null) ?? '').trim(),
+        'small-tasks': formDataString(data, 'smallTasksModel').trim(),
       })
       await api.settings.setSecurity({
         localServerUrl: lmStudioSection.getUrl(),

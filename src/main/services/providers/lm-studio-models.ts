@@ -1,6 +1,7 @@
 import { getLmStudioApiKey } from '../storage/settings.ts'
 import { DEFAULT_LM_STUDIO_URL, preferIpv4LoopbackUrl } from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export interface LmStudioModelInfo {
   id: string
@@ -51,8 +52,8 @@ export function parseContextFromModelRecord(record: Record<string, unknown>): nu
 
   for (const nestedKey of ['load_config', 'loadConfig', 'config', 'runtime', 'state'] as const) {
     const nested = record[nestedKey]
-    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      const fromNested = parseContextFromModelRecord(nested as Record<string, unknown>)
+    if (isRecord(nested)) {
+      const fromNested = parseContextFromModelRecord(nested)
       if (fromNested) return fromNested
     }
   }
@@ -67,8 +68,8 @@ function parseOpenAiModelsPayload(json: unknown): LmStudioModelInfo[] {
   if (!Array.isArray(data)) return []
   const out: LmStudioModelInfo[] = []
   for (const row of data) {
-    if (!row || typeof row !== 'object') continue
-    const rec = row as Record<string, unknown>
+    if (!isRecord(row)) continue
+    const rec = row
     const id =
       typeof rec['id'] === 'string'
         ? rec['id']
@@ -88,10 +89,10 @@ export function effectiveContextFromNativeModelRecord(
   const loaded = record['loaded_instances']
   if (Array.isArray(loaded)) {
     for (const inst of loaded) {
-      if (!inst || typeof inst !== 'object') continue
-      const config = (inst as Record<string, unknown>)['config']
-      if (config && typeof config === 'object' && !Array.isArray(config)) {
-        const n = parsePositiveInt((config as Record<string, unknown>)['context_length'])
+      if (!isRecord(inst)) continue
+      const config = inst['config']
+      if (isRecord(config)) {
+        const n = parsePositiveInt(config['context_length'])
         if (n) return n
       }
     }
@@ -100,13 +101,14 @@ export function effectiveContextFromNativeModelRecord(
 }
 
 function parseNativeV1ModelsPayload(json: unknown): LmStudioModelInfo[] {
-  const root = json as Record<string, unknown>
+  if (!isRecord(json)) return []
+  const root = json
   const list = root['models'] ?? root['data']
   if (!Array.isArray(list)) return []
   const out: LmStudioModelInfo[] = []
   for (const row of list) {
-    if (!row || typeof row !== 'object') continue
-    const rec = row as Record<string, unknown>
+    if (!isRecord(row)) continue
+    const rec = row
     const id =
       (typeof rec['key'] === 'string' && rec['key']) ||
       (typeof rec['id'] === 'string' && rec['id']) ||

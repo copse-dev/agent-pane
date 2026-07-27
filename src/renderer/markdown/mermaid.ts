@@ -23,9 +23,7 @@ export function setMermaidLoaderForTests(loader: (() => Promise<MermaidModule>) 
 }
 
 async function loadMermaid(): Promise<MermaidModule> {
-  if (!mermaidPromise) {
-    mermaidPromise = mermaidLoader()
-  }
+  mermaidPromise ??= mermaidLoader()
   return mermaidPromise
 }
 
@@ -59,13 +57,13 @@ async function runMermaidNodes(mermaid: MermaidModule, nodes: HTMLElement[]): Pr
 
 /** Render pending `.mermaid` blocks inside `root`. No-op when none are present. */
 export async function renderMermaidIn(root: ParentNode): Promise<void> {
-  const nodes = root.querySelectorAll('pre.mermaid:not([data-processed])')
+  const nodes = root.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed])')
   if (nodes.length === 0) return
 
   const mermaid = await loadMermaid()
   initMermaid(mermaid)
 
-  const elements = Array.from(nodes) as HTMLElement[]
+  const elements = Array.from(nodes)
   const sourceByNode = new Map<HTMLElement, string>()
 
   for (const node of elements) {
