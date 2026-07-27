@@ -170,9 +170,9 @@ describe('shared model picker', () => {
     const freshRefresh = picker.refresh('claude-opus-4-8')
     assert.ok(releaseStale)
     assert.ok(releaseFresh)
-    releaseFresh?.(OPTIONS.filter((opt) => opt.value === 'claude-opus-4-8'))
+    releaseFresh(OPTIONS.filter((opt) => opt.value === 'claude-opus-4-8'))
     await freshRefresh
-    releaseStale?.(OPTIONS.filter((opt) => opt.value === 'claude-sonnet-4-6'))
+    releaseStale(OPTIONS.filter((opt) => opt.value === 'claude-sonnet-4-6'))
     await staleRefresh
 
     assert.equal(select.value, 'claude-opus-4-8')
