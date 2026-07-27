@@ -318,12 +318,14 @@ describe('settings → packs list', () => {
     assert.equal(stringInput.value, 'hi')
   })
 
-  it('renders a model setting field as the grouped model picker (a select, not a plain text/enum input)', async () => {
+  it('renders a model setting field with the shared searchable picker', async () => {
     const list = await openPacks({ packs: [modelFieldPack] }, spy)
     const modelSelect = list.querySelector<HTMLSelectElement>('.pack-setting-model')
-    assert.ok(modelSelect, 'a model field must render as a <select> (grouped model picker)')
+    assert.ok(modelSelect, 'a model field must retain its form-owned select')
     assert.equal(modelSelect.tagName, 'SELECT')
     assert.equal(modelSelect.dataset['settingKey'], 'advisorModel')
+    assert.ok(list.querySelector('.model-picker-field'))
+    assert.ok(list.querySelector('.model-picker-filter'))
     // It is not misrendered as the plain string/enum inputs.
     assert.equal(list.querySelector('.pack-setting-string'), null)
     assert.equal(list.querySelector('.pack-setting-enum'), null)
