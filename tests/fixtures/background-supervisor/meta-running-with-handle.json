@@ -1,0 +1,22 @@
+{
+  "taskId": "task-running-shell",
+  "projectId": "proj-demo",
+  "threadId": "thread-aaa",
+  "handler": "shell_process",
+  "provenance": "agent",
+  "state": "running",
+  "createdAt": 1700000000000,
+  "updatedAt": 1700000001000,
+  "startedAt": 1700000001000,
+  "trigger": { "kind": "immediate" },
+  "permissionSnapshot": {
+    "capturedAt": 1700000000000,
+    "autoRunSandboxCommands": true,
+    "projectSandboxEnabled": true
+  },
+  "reapproveOnWake": true,
+  "concurrencyClass": "shell",
+  "attempt": 1,
+  "maxAttempts": 1,
+  "processHandleId": "bg-proc-42"
+}

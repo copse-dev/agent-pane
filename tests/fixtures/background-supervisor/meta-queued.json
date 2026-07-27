@@ -1,0 +1,22 @@
+{
+  "taskId": "task-queued-1",
+  "projectId": "proj-demo",
+  "threadId": "thread-aaa",
+  "handler": "long_horizon_continue",
+  "provenance": "agent",
+  "state": "queued",
+  "createdAt": 1700000000000,
+  "updatedAt": 1700000000000,
+  "trigger": { "kind": "immediate" },
+  "permissionSnapshot": {
+    "capturedAt": 1700000000000,
+    "autoRunSandboxCommands": true,
+    "projectSandboxEnabled": true,
+    "workspaceTargetKind": "local",
+    "capabilityProfileId": "default"
+  },
+  "reapproveOnWake": false,
+  "concurrencyClass": "agent",
+  "attempt": 0,
+  "maxAttempts": 3
+}

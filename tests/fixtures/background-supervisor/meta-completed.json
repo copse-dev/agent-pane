@@ -1,0 +1,28 @@
+{
+  "taskId": "task-completed-1",
+  "projectId": "proj-demo",
+  "threadId": "thread-aaa",
+  "handler": "long_horizon_continue",
+  "provenance": "agent",
+  "state": "completed",
+  "createdAt": 1700000000000,
+  "updatedAt": 1700000009000,
+  "startedAt": 1700000001000,
+  "finishedAt": 1700000009000,
+  "trigger": { "kind": "immediate" },
+  "permissionSnapshot": {
+    "capturedAt": 1700000000000,
+    "autoRunSandboxCommands": true,
+    "projectSandboxEnabled": true
+  },
+  "reapproveOnWake": false,
+  "concurrencyClass": "agent",
+  "attempt": 1,
+  "maxAttempts": 3,
+  "resultRef": {
+    "kind": "spine",
+    "ref": "events.jsonl#msg-42",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "contentHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+}
