@@ -581,8 +581,15 @@ export function createUsageSection(
 
   tabBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const period = btn.dataset['period'] as UsagePeriodKey | undefined
-      if (period) showPeriod(period)
+      const period = btn.dataset['period']
+      if (
+        period === 'day' ||
+        period === 'month' ||
+        period === 'period90d' ||
+        period === 'allTime'
+      ) {
+        showPeriod(period)
+      }
     })
   })
 

@@ -49,6 +49,7 @@ import {
   acpGroupLabel,
   acpModelValue,
   enabledClaudeAcpAgent,
+  parseAcpAgentConfigs,
   parseAcpModel,
 } from '@shared/acp.ts'
 import type { AcpAgentConfig } from '@shared/types/acp.ts'
@@ -152,7 +153,8 @@ async function openRouterOptions(
 
   let customId = ''
   try {
-    customId = (((await api.settings.get('openRouterModel')) as string | null) ?? '').trim()
+    const value = await api.settings.get('openRouterModel')
+    customId = typeof value === 'string' ? value.trim() : ''
   } catch {
     /* no custom model configured */
   }
@@ -397,7 +399,7 @@ export async function fetchModelOptions(
   let acpAgents: AcpAgentConfig[] = []
   if (includeAgentModels && !sshWorkspace) {
     try {
-      acpAgents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
+      acpAgents = parseAcpAgentConfigs(await api.settings.get('registeredAcpAgents'))
     } catch {
       /* none configured */
     }

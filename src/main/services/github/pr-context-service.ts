@@ -6,6 +6,7 @@ import { isInsideGitWorkTree, getCurrentBranchName } from './git-service.ts'
 import type { PrWorkspaceContext } from '@shared/follow-ups/types.ts'
 import type { GitBranchStatus, GitOpenPr } from '@shared/types/git.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { ghPrHasCiFailures } from './github-ci-service.ts'
 
 interface GhPrView {
@@ -68,7 +69,7 @@ export function parseGhOpenPrList(raw: string): GitOpenPr | null {
   if (!pr || typeof pr.number !== 'number' || !pr.url) return null
   return {
     number: pr.number,
-    title: pr.title?.trim() || `PR #${String(pr.number)}`,
+    title: nonEmptyStringOr(pr.title?.trim(), `PR #${String(pr.number)}`),
     url: pr.url,
   }
 }
@@ -100,7 +101,7 @@ export function parseGhOpenPr(raw: string): GitOpenPr | null {
   if (typeof pr.number !== 'number' || !pr.url) return null
   return {
     number: pr.number,
-    title: pr.title?.trim() || `PR #${String(pr.number)}`,
+    title: nonEmptyStringOr(pr.title?.trim(), `PR #${String(pr.number)}`),
     url: pr.url,
   }
 }

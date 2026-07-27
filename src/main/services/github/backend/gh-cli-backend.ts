@@ -4,6 +4,7 @@ import { isGhAvailable, whenToolAvailabilityProbed } from '../../tool-availabili
 import { detectLanguage } from '../../language.ts'
 import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type {
   GhCliStatus,
   GhIssueSummary,
@@ -125,7 +126,7 @@ function toGhPrSummary(ref: PrRef, entry: GhPrViewJson & { url: string }): GhPrS
     owner: ref.owner,
     repo: ref.repo,
     number: ref.number,
-    title: entry.title?.trim() || `PR #${String(ref.number)}`,
+    title: nonEmptyStringOr(entry.title?.trim(), `PR #${String(ref.number)}`),
     url: entry.url,
     state: entry.state ?? 'OPEN',
   }
@@ -152,7 +153,7 @@ function toGhPrDetails(
     owner: ref.owner,
     repo: ref.repo,
     number: pr.number,
-    title: pr.title?.trim() || `PR #${String(pr.number)}`,
+    title: nonEmptyStringOr(pr.title?.trim(), `PR #${String(pr.number)}`),
     url: pr.url,
     state: pr.state ?? 'UNKNOWN',
     body: pr.body?.trim() ?? '',

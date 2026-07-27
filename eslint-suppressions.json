@@ -11,10 +11,7 @@
   },
   "src/main/ipc/register-handlers.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 7
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
+      "count": 2
     }
   },
   "src/main/project-sandbox/sandbox-fs-client.test.ts": {
@@ -22,42 +19,7 @@
       "count": 1
     }
   },
-  "src/main/project-sandbox/sandbox-fs-client.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
   "src/main/project-sandbox/sandbox-fs-server.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/project-sandbox/sandbox-fs-server.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
-  "src/main/project-sandbox/sandbox-fs-worker.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
-  "src/main/release-smoke.test.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/main/release-smoke.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/main/services/acp/acp-agent-server.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/acp/acp-behavior-probe.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
@@ -65,16 +27,6 @@
   "src/main/services/acp/acp-capability-probe.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
-    }
-  },
-  "src/main/services/acp/acp-capability-probe.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/acp/acp-client.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
     }
   },
   "src/main/services/acp/acp-mode-select.test.ts": {
@@ -87,19 +39,9 @@
       "count": 3
     }
   },
-  "src/main/services/acp/acp-native-bridge.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 7
-    }
-  },
   "src/main/services/acp/acp-native-bridge.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
-  "src/main/services/acp/session-update-adapter.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 4
+      "count": 1
     }
   },
   "src/main/services/agent-chunk-sink.test.ts": {
@@ -107,26 +49,8 @@
       "count": 2
     }
   },
-  "src/main/services/agent-errors.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 3
-    }
-  },
   "src/main/services/agent-service.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/browser/browser-origin-policy.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/browser/session-manager.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     }
   },
@@ -140,48 +64,9 @@
       "count": 1
     }
   },
-  "src/main/services/exec/terminal-service.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 3
-    }
-  },
-  "src/main/services/github/backend/gh-cli-backend.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    }
-  },
   "src/main/services/github/backend/github-api-backend.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
-    }
-  },
-  "src/main/services/github/backend/github-api-backend.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 21
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    }
-  },
-  "src/main/services/github/ci-investigator-service.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/github/github-ci-service.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/main/services/github/pr-context-service.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
     }
   },
   "src/main/services/hooks/after-file-edit.test.ts": {
@@ -189,19 +74,9 @@
       "count": 1
     }
   },
-  "src/main/services/hooks/after-file-edit.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    }
-  },
   "src/main/services/hooks/after-tool-use.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 3
-    }
-  },
-  "src/main/services/hooks/claude-adapter.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 6
     }
   },
   "src/main/services/hooks/copse-adapter.test.ts": {
@@ -209,19 +84,9 @@
       "count": 1
     }
   },
-  "src/main/services/hooks/copse-adapter.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 8
-    }
-  },
   "src/main/services/hooks/cursor-adapter.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 2
-    }
-  },
-  "src/main/services/hooks/cursor-adapter.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 8
     }
   },
   "src/main/services/hooks/diff-apply.test.ts": {
@@ -269,29 +134,14 @@
       "count": 2
     }
   },
-  "src/main/services/mcp/custom-tools-config.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
   "src/main/services/mcp/custom-tools-registry.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/mcp/custom-tools-registry.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 3
-    }
-  },
-  "src/main/services/mcp/mcp-config.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
   },
   "src/main/services/mcp/mcp-registry.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
+      "count": 1
     }
   },
   "src/main/services/mcp/mcp-schema.test.ts": {
@@ -299,45 +149,12 @@
       "count": 1
     }
   },
-  "src/main/services/mcp/mcp-schema.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    }
-  },
-  "src/main/services/model-comparison.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 3
-    }
-  },
   "src/main/services/plan-usage-bridge.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 2
     }
   },
-  "src/main/services/plan-usage-bridge.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 4
-    }
-  },
   "src/main/services/providers/aa-live-intellect.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/providers/extra-providers-store.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    }
-  },
-  "src/main/services/providers/lm-studio-models.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/providers/lm-studio-setup.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
@@ -347,19 +164,9 @@
       "count": 1
     }
   },
-  "src/main/services/providers/openrouter-models.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
   "src/main/services/providers/provider-models.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 3
-    }
-  },
-  "src/main/services/providers/provider-models.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
     }
   },
   "src/main/services/providers/provider-selection.test.ts": {
@@ -369,9 +176,6 @@
   },
   "src/main/services/remote/managed-agents-client.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     }
   },
@@ -382,38 +186,10 @@
   },
   "src/main/services/remote/remote-agent-client.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 3
-    }
-  },
-  "src/main/services/remote/remote-agent-link-store.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     }
   },
   "src/main/services/search/index-ignore.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/search/indexed-grep.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/search/semantic-index.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/security/permission-gate.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/main/services/security/pii-redactor.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
@@ -423,88 +199,24 @@
       "count": 1
     }
   },
-  "src/main/services/skills/cursor-plugins.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/main/services/ssh-workspace/execution-target.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
-  "src/main/services/ssh-workspace/remote-fs-exec.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
   "src/main/services/storage/cached-store.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
   },
-  "src/main/services/storage/knowledge-store.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    }
-  },
   "src/main/services/storage/settings.test-shim.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
     }
   },
   "src/main/services/storage/settings.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 5
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 2
-    }
-  },
-  "src/main/services/subagent-service.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/thread-checkout-transaction.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
     }
   },
   "src/main/services/thread-store.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 5
-    }
-  },
-  "src/main/services/tool-registry.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/services/workspace.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 4
-    }
-  },
-  "src/main/services/worktree-manager.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/main/tools/browser-tools.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/main/tools/file-tools.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
+      "count": 2
     }
   },
   "src/main/tools/memory-tools.test.ts": {
@@ -537,49 +249,19 @@
       "count": 1
     }
   },
-  "src/renderer/controller/persistence.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
   "src/renderer/controller/projects.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
   },
-  "src/renderer/export-thread.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 6
-    }
-  },
   "src/renderer/keyboard-shortcuts.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
-  "src/renderer/keyboard-shortcuts.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
-    }
-  },
-  "src/renderer/main.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 3
-    }
-  },
-  "src/renderer/markdown/mermaid-expand.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 4
     }
   },
   "src/renderer/markdown/mermaid.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
-    }
-  },
-  "src/renderer/monaco/diff-scroll.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 6
     }
   },
   "src/renderer/monaco/selection-to-chat.test.ts": {
@@ -632,11 +314,6 @@
       "count": 1
     }
   },
-  "src/renderer/views/conversation-search.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
   "src/renderer/views/conversation-tool-card-reconcile.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 2
@@ -667,26 +344,6 @@
       "count": 1
     }
   },
-  "src/renderer/views/model-options.test.ts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "src/renderer/views/model-options.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
-  "src/renderer/views/onboarding-dialog.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
-  "src/renderer/views/remote-folder-dialog.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
-    }
-  },
   "src/renderer/views/review-panel.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
@@ -707,37 +364,7 @@
       "count": 1
     }
   },
-  "src/renderer/views/setup/acp-agents-section.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/renderer/views/setup/env-key-detect-section.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 4
-    }
-  },
-  "src/renderer/views/setup/lm-studio-section.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 3
-    }
-  },
   "src/renderer/views/setup/local-detection.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/renderer/views/setup/model-routing-section.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 1
-    }
-  },
-  "src/renderer/views/setup/ssh-workspace-section.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 3
-    }
-  },
-  "src/renderer/views/setup/usage-section.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
     }
@@ -745,11 +372,6 @@
   "src/renderer/views/subagent-display.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 2
-    }
-  },
-  "src/renderer/views/terminal-file-links.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 4
     }
   },
   "src/renderer/views/tool-display.test.ts": {

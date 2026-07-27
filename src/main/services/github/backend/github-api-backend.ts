@@ -20,7 +20,12 @@ import {
   type AutoMergeStrategy,
   type RepoMergeConfig,
 } from './merge-strategy.ts'
-import { expectRecord } from '@shared/unknown-value.ts'
+import {
+  expectRecord,
+  isRecord,
+  nonEmptyStringOr,
+  recordArrayOrEmpty,
+} from '@shared/unknown-value.ts'
 
 /** REST + GraphQL base URLs, honoring GH_HOST for GitHub Enterprise. */
 function apiRoots(host = process.env['GH_HOST']?.trim()): { rest: string; graphql: string } {
@@ -52,8 +57,8 @@ async function authHeaders(): Promise<Record<string, string> | null> {
 }
 
 function extractErrorMessage(status: number, json: unknown): string {
-  if (json && typeof json === 'object' && 'message' in json) {
-    const message = (json as { message?: unknown }).message
+  if (isRecord(json)) {
+    const message = json['message']
     if (typeof message === 'string' && message) return message
   }
   return `GitHub API request failed (HTTP ${String(status)}).`
@@ -95,46 +100,104 @@ async function graphql(query: string, variables: Record<string, unknown>): Promi
     body: JSON.stringify({ query, variables }),
   })
   const json = safeJsonParse(await response.text())
-  const errors =
-    json && typeof json === 'object' && 'errors' in json
-      ? (json as { errors?: Array<{ message?: string }> }).errors
-      : undefined
-  if (errors && errors.length > 0) {
+  const errors = isRecord(json) ? recordArrayOrEmpty(json['errors']) : []
+  if (errors.length > 0) {
     return {
       data: null,
-      errorMessage: errors.map((e) => e.message ?? '').join('; ') || 'GraphQL error',
+      errorMessage:
+        errors
+          .map((error) => (typeof error['message'] === 'string' ? error['message'] : ''))
+          .join('; ') || 'GraphQL error',
     }
   }
   if (!response.ok)
     return { data: null, errorMessage: `GraphQL request failed (HTTP ${String(response.status)}).` }
   return {
-    data: json && typeof json === 'object' ? ((json as { data?: unknown }).data ?? null) : null,
+    data: isRecord(json) ? (json['data'] ?? null) : null,
     errorMessage: null,
   }
 }
 
 // --- REST payload shapes (only the fields we read). ---
 interface RestPull {
-  number?: number
-  title?: string
-  html_url?: string
-  state?: string
-  body?: string | null
-  draft?: boolean
+  number?: number | undefined
+  title?: string | undefined
+  html_url?: string | undefined
+  state?: string | undefined
+  body?: string | null | undefined
+  draft?: boolean | undefined
   /** True once the PR has been merged (REST reports these as state=closed). */
-  merged?: boolean
-  node_id?: string
-  additions?: number
-  deletions?: number
-  changed_files?: number
-  mergeable?: boolean | null
-  mergeable_state?: string
-  created_at?: string
-  updated_at?: string
+  merged?: boolean | undefined
+  node_id?: string | undefined
+  additions?: number | undefined
+  deletions?: number | undefined
+  changed_files?: number | undefined
+  mergeable?: boolean | null | undefined
+  mergeable_state?: string | undefined
+  created_at?: string | undefined
+  updated_at?: string | undefined
   auto_merge?: unknown
-  user?: { login?: string }
-  head?: { ref?: string; sha?: string }
-  base?: { ref?: string; sha?: string }
+  user?: { login?: string | undefined } | undefined
+  head?: { ref?: string | undefined; sha?: string | undefined } | undefined
+  base?: { ref?: string | undefined; sha?: string | undefined } | undefined
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
+}
+
+function optionalNullableBoolean(value: unknown): boolean | null | undefined {
+  return value === null ? null : optionalBoolean(value)
+}
+
+function nestedRef(
+  value: unknown,
+): { ref?: string | undefined; sha?: string | undefined } | undefined {
+  if (!isRecord(value)) return undefined
+  return { ref: optionalString(value['ref']), sha: optionalString(value['sha']) }
+}
+
+function parseRestPull(value: unknown): RestPull {
+  if (!isRecord(value)) return {}
+  const user = isRecord(value['user'])
+    ? { login: optionalString(value['user']['login']) }
+    : undefined
+  const body = value['body']
+  return {
+    number: optionalNumber(value['number']),
+    title: optionalString(value['title']),
+    html_url: optionalString(value['html_url']),
+    state: optionalString(value['state']),
+    body: typeof body === 'string' || body === null ? body : undefined,
+    draft: optionalBoolean(value['draft']),
+    merged: optionalBoolean(value['merged']),
+    node_id: optionalString(value['node_id']),
+    additions: optionalNumber(value['additions']),
+    deletions: optionalNumber(value['deletions']),
+    changed_files: optionalNumber(value['changed_files']),
+    mergeable: optionalNullableBoolean(value['mergeable']),
+    mergeable_state: optionalString(value['mergeable_state']),
+    created_at: optionalString(value['created_at']),
+    updated_at: optionalString(value['updated_at']),
+    auto_merge: value['auto_merge'],
+    user,
+    head: nestedRef(value['head']),
+    base: nestedRef(value['base']),
+  }
+}
+
+function issueLabels(value: unknown): string[] {
+  return recordArrayOrEmpty(value)
+    .map((label) => optionalString(label['name']))
+    .filter((name): name is string => name !== undefined)
 }
 
 /** REST uses open/closed; promote closed+merged to MERGED so callers match gh CLI. */
@@ -168,7 +231,7 @@ function pullToSummary(ref: PrRef, pull: RestPull): GhPrSummary | null {
     owner: ref.owner,
     repo: ref.repo,
     number: ref.number,
-    title: pull.title?.trim() || `PR #${String(ref.number)}`,
+    title: nonEmptyStringOr(pull.title?.trim(), `PR #${String(ref.number)}`),
     url: pull.html_url,
     state: restPullState(pull),
   }
@@ -189,9 +252,10 @@ async function fetchReviewDecision(ref: PrRef): Promise<string | null> {
     'query($owner: String!, $repo: String!, $number: Int!) { repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewDecision } } }',
     { owner: ref.owner, repo: ref.repo, number: ref.number },
   )
-  if (result.errorMessage || !result.data || typeof result.data !== 'object') return null
-  const decision = (result.data as { repository?: { pullRequest?: { reviewDecision?: unknown } } })
-    .repository?.pullRequest?.reviewDecision
+  if (result.errorMessage || !isRecord(result.data)) return null
+  const repository = result.data['repository']
+  const pullRequest = isRecord(repository) ? repository['pullRequest'] : undefined
+  const decision = isRecord(pullRequest) ? pullRequest['reviewDecision'] : undefined
   return typeof decision === 'string' ? decision : null
 }
 
@@ -200,21 +264,14 @@ async function listPullFiles(ref: PrRef): Promise<GhPrChangedFile[]> {
     `/repos/${ref.owner}/${ref.repo}/pulls/${String(ref.number)}/files?per_page=100`,
   )
   if (!result.ok || !Array.isArray(result.json)) return []
-  return (
-    result.json as Array<{
-      filename?: string
-      status?: string
-      additions?: number
-      deletions?: number
-    }>
-  )
+  return recordArrayOrEmpty(result.json)
     .map((file) =>
-      file.filename
+      typeof file['filename'] === 'string'
         ? {
-            path: file.filename,
-            status: mapFileStatus(file.status),
-            additions: file.additions ?? 0,
-            deletions: file.deletions ?? 0,
+            path: file['filename'],
+            status: mapFileStatus(optionalString(file['status'])),
+            additions: optionalNumber(file['additions']) ?? 0,
+            deletions: optionalNumber(file['deletions']) ?? 0,
           }
         : null,
     )
@@ -230,9 +287,10 @@ async function fileAtRef(ref: PrRef, path: string, gitRef: string): Promise<stri
     `/repos/${ref.owner}/${ref.repo}/contents/${encoded}?ref=${encodeURIComponent(gitRef)}`,
   )
   if (!result.ok) return ''
-  const payload = result.json as { content?: string; encoding?: string }
-  if (!payload.content || payload.encoding !== 'base64') return ''
-  return Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString('utf8')
+  if (!isRecord(result.json)) return ''
+  const content = result.json['content']
+  if (typeof content !== 'string' || !content || result.json['encoding'] !== 'base64') return ''
+  return Buffer.from(content.replace(/\n/g, ''), 'base64').toString('utf8')
 }
 
 function restError(response: RestResponse): PrActionResult {
@@ -270,7 +328,8 @@ export const githubApiBackend: GitHubBackend = {
     if (!me.ok) {
       return { installed: true, authenticated: false, username: null, message: me.errorMessage }
     }
-    const login = (me.json as { login?: string }).login ?? null
+    const login =
+      isRecord(me.json) && typeof me.json['login'] === 'string' ? me.json['login'] : null
     return { installed: true, authenticated: true, username: login, message: null }
   },
 
@@ -280,7 +339,7 @@ export const githubApiBackend: GitHubBackend = {
     const query = encodeURIComponent(`is:open is:pr author:${status.username}`)
     const result = await rest(`/search/issues?q=${query}&per_page=${String(limit)}`)
     if (!result.ok) throw new Error(result.errorMessage ?? 'Search failed.')
-    const items = (result.json as { items?: Array<Record<string, unknown>> }).items ?? []
+    const items = isRecord(result.json) ? recordArrayOrEmpty(result.json['items']) : []
     return items
       .map((item) => {
         const url = typeof item['html_url'] === 'string' ? item['html_url'] : null
@@ -290,13 +349,7 @@ export const githubApiBackend: GitHubBackend = {
         if (!url || number == null || !repositoryUrl) return null
         const [repo, owner] = repositoryUrl.split('/').reverse()
         if (!owner || !repo) return null
-        const pull: RestPull = { html_url: url }
-        if (typeof item['title'] === 'string') pull.title = item['title']
-        if (typeof item['state'] === 'string') pull.state = item['state']
-        const login = (item['user'] as { login?: unknown } | undefined)?.login
-        if (typeof login === 'string') pull.user = { login }
-        if (typeof item['created_at'] === 'string') pull.created_at = item['created_at']
-        if (typeof item['updated_at'] === 'string') pull.updated_at = item['updated_at']
+        const pull = parseRestPull({ ...item, html_url: url })
         return pullToSummary({ owner, repo, number }, pull)
       })
       .filter((entry): entry is GhPrSummary => entry != null)
@@ -309,7 +362,7 @@ export const githubApiBackend: GitHubBackend = {
     if (!owner || !repo) return []
     const result = await rest(`/repos/${owner}/${repo}/pulls?state=open&per_page=${String(limit)}`)
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not list pull requests.')
-    const pulls = Array.isArray(result.json) ? (result.json as RestPull[]) : []
+    const pulls = recordArrayOrEmpty(result.json).map(parseRestPull)
     return pulls
       .map((pull) =>
         typeof pull.number === 'number'
@@ -326,7 +379,7 @@ export const githubApiBackend: GitHubBackend = {
     if (!owner || !repo) return []
     const result = await rest(`/repos/${owner}/${repo}/issues?state=open&per_page=${String(limit)}`)
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not list issues.')
-    const items = Array.isArray(result.json) ? (result.json as Array<Record<string, unknown>>) : []
+    const items = recordArrayOrEmpty(result.json)
     return (
       items
         // The REST /issues listing includes pull requests; keep real issues only.
@@ -337,11 +390,7 @@ export const githubApiBackend: GitHubBackend = {
           const url = typeof item['html_url'] === 'string' ? item['html_url'] : null
           if (number == null || !title || !url) return null
           const body = typeof item['body'] === 'string' ? item['body'].slice(0, 4000) : ''
-          const labels = Array.isArray(item['labels'])
-            ? (item['labels'] as Array<Record<string, unknown>>)
-                .map((l) => (typeof l['name'] === 'string' ? l['name'] : null))
-                .filter((name): name is string => name != null)
-            : []
+          const labels = issueLabels(item['labels'])
           const summary: GhIssueSummary = {
             owner,
             repo,
@@ -376,11 +425,7 @@ export const githubApiBackend: GitHubBackend = {
       title,
       url,
       body: typeof item['body'] === 'string' ? item['body'].slice(0, 8000) : '',
-      labels: Array.isArray(item['labels'])
-        ? (item['labels'] as Array<Record<string, unknown>>)
-            .map((l) => (typeof l['name'] === 'string' ? l['name'] : null))
-            .filter((name): name is string => name != null)
-        : [],
+      labels: issueLabels(item['labels']),
     }
     if (item['state'] === 'open' || item['state'] === 'closed') summary.state = item['state']
     if (typeof item['updated_at'] === 'string') summary.updatedAt = item['updated_at']
@@ -397,7 +442,7 @@ export const githubApiBackend: GitHubBackend = {
     const q = encodeURIComponent(`repo:${slug} ${trimmed}`)
     const result = await rest(`/search/issues?q=${q}&per_page=${String(limit)}`)
     if (!result.ok) throw new Error(result.errorMessage ?? 'Issue search failed.')
-    const items = (result.json as { items?: Array<Record<string, unknown>> }).items ?? []
+    const items = isRecord(result.json) ? recordArrayOrEmpty(result.json['items']) : []
     return items
       .filter((item) => !('pull_request' in item))
       .map((item) => {
@@ -406,11 +451,7 @@ export const githubApiBackend: GitHubBackend = {
         const url = typeof item['html_url'] === 'string' ? item['html_url'] : null
         if (number == null || !title || !url) return null
         const body = typeof item['body'] === 'string' ? item['body'].slice(0, 4000) : ''
-        const labels = Array.isArray(item['labels'])
-          ? (item['labels'] as Array<Record<string, unknown>>)
-              .map((l) => (typeof l['name'] === 'string' ? l['name'] : null))
-              .filter((name): name is string => name != null)
-          : []
+        const labels = issueLabels(item['labels'])
         const summary: GhIssueSummary = { owner, repo, number, title, url, body, labels }
         if (item['state'] === 'open' || item['state'] === 'closed') {
           summary.state = item['state']
@@ -433,13 +474,13 @@ export const githubApiBackend: GitHubBackend = {
     ])
     if (result.status === 404) return null
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not load pull request.')
-    const pull = result.json as RestPull
+    const pull = parseRestPull(result.json)
     if (!pull.html_url) return null
     const details: GhPrDetails = {
       owner: ref.owner,
       repo: ref.repo,
       number: ref.number,
-      title: pull.title?.trim() || `PR #${String(ref.number)}`,
+      title: nonEmptyStringOr(pull.title?.trim(), `PR #${String(ref.number)}`),
       url: pull.html_url,
       state: restPullState(pull),
       body: pull.body?.trim() ?? '',
@@ -465,7 +506,7 @@ export const githubApiBackend: GitHubBackend = {
   async getPrFileDiff(ref: PrRef, path: string): Promise<GhPrFileDiff | null> {
     const pull = await getPull(ref)
     if (!pull.ok) return null
-    const data = pull.json as RestPull
+    const data = parseRestPull(pull.json)
     const baseSha = data.base?.sha
     const headSha = data.head?.sha
     if (!baseSha || !headSha) return null
@@ -482,24 +523,19 @@ export const githubApiBackend: GitHubBackend = {
     try {
       const pull = await getPull(ref)
       if (!pull.ok) return 'no_checks'
-      const headSha = (pull.json as RestPull).head?.sha
+      const headSha = parseRestPull(pull.json).head?.sha
       if (!headSha) return 'no_checks'
       const runs = await rest(
         `/repos/${ref.owner}/${ref.repo}/commits/${headSha}/check-runs?per_page=100`,
       )
       if (!runs.ok) return 'no_checks'
-      const checkRuns =
-        (
-          runs.json as {
-            check_runs?: Array<{ name?: string; status?: string; conclusion?: string }>
-          }
-        ).check_runs ?? []
+      const checkRuns = isRecord(runs.json) ? recordArrayOrEmpty(runs.json['check_runs']) : []
       const rollup = checkRuns.map((run) => {
         const item: { name?: string; status?: string; conclusion?: string } = {
-          status: (run.status ?? '').toUpperCase(),
-          conclusion: (run.conclusion ?? '').toUpperCase(),
+          status: (optionalString(run['status']) ?? '').toUpperCase(),
+          conclusion: (optionalString(run['conclusion']) ?? '').toUpperCase(),
         }
-        if (run.name) item.name = run.name
+        if (typeof run['name'] === 'string') item.name = run['name']
         return item
       })
       return deriveOverallState(rollupToCiChecks(rollup))
@@ -511,7 +547,7 @@ export const githubApiBackend: GitHubBackend = {
   async rerunFailedRuns(ref: PrRef): Promise<PrActionResult> {
     const pull = await getPull(ref)
     if (!pull.ok) return restError(pull)
-    const branch = (pull.json as RestPull).head?.ref
+    const branch = parseRestPull(pull.json).head?.ref
     if (!branch)
       return {
         ok: false,
@@ -522,10 +558,8 @@ export const githubApiBackend: GitHubBackend = {
       `/repos/${ref.owner}/${ref.repo}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=25`,
     )
     if (!list.ok) return restError(list)
-    const runs =
-      (list.json as { workflow_runs?: Array<{ id?: number; conclusion?: string }> })
-        .workflow_runs ?? []
-    const failed = runs.filter((run) => isFailingConclusion(run.conclusion))
+    const runs = isRecord(list.json) ? recordArrayOrEmpty(list.json['workflow_runs']) : []
+    const failed = runs.filter((run) => isFailingConclusion(optionalString(run['conclusion'])))
     if (failed.length === 0) {
       return {
         ok: true,
@@ -537,9 +571,10 @@ export const githubApiBackend: GitHubBackend = {
     }
     let reran = 0
     for (const run of failed) {
-      if (typeof run.id !== 'number') continue
+      const runId = run['id']
+      if (typeof runId !== 'number') continue
       const rerun = await rest(
-        `/repos/${ref.owner}/${ref.repo}/actions/runs/${String(run.id)}/rerun-failed-jobs`,
+        `/repos/${ref.owner}/${ref.repo}/actions/runs/${String(runId)}/rerun-failed-jobs`,
         {
           method: 'POST',
         },
@@ -572,7 +607,7 @@ export const githubApiBackend: GitHubBackend = {
   async markPrReady(ref: PrRef): Promise<PrActionResult> {
     const pull = await getPull(ref)
     if (!pull.ok) return restError(pull)
-    const data = pull.json as RestPull
+    const data = parseRestPull(pull.json)
     if (!data.draft) {
       return {
         ok: true,
@@ -598,18 +633,14 @@ export const githubApiBackend: GitHubBackend = {
   async enableAutoMerge(ref: PrRef): Promise<PrActionResult> {
     const repo = await rest(`/repos/${ref.owner}/${ref.repo}`)
     if (!repo.ok) return restError(repo)
-    const repoData = repo.json as {
-      allow_squash_merge?: boolean
-      allow_merge_commit?: boolean
-      allow_rebase_merge?: boolean
-    }
+    const repoData = isRecord(repo.json) ? repo.json : {}
     const mergeConfig: RepoMergeConfig = {}
-    if (typeof repoData.allow_squash_merge === 'boolean')
-      mergeConfig.squash = repoData.allow_squash_merge
-    if (typeof repoData.allow_merge_commit === 'boolean')
-      mergeConfig.merge = repoData.allow_merge_commit
-    if (typeof repoData.allow_rebase_merge === 'boolean')
-      mergeConfig.rebase = repoData.allow_rebase_merge
+    if (typeof repoData['allow_squash_merge'] === 'boolean')
+      mergeConfig.squash = repoData['allow_squash_merge']
+    if (typeof repoData['allow_merge_commit'] === 'boolean')
+      mergeConfig.merge = repoData['allow_merge_commit']
+    if (typeof repoData['allow_rebase_merge'] === 'boolean')
+      mergeConfig.rebase = repoData['allow_rebase_merge']
     const strategy = chooseAutoMergeStrategy(mergeConfig)
     if (!strategy)
       return {
@@ -619,7 +650,7 @@ export const githubApiBackend: GitHubBackend = {
       }
     const pull = await getPull(ref)
     if (!pull.ok) return restError(pull)
-    const nodeId = (pull.json as RestPull).node_id
+    const nodeId = parseRestPull(pull.json).node_id
     if (!nodeId) return { ok: false, backend: 'api', message: 'Could not resolve the PR node id.' }
     const mutation = await graphql(
       'mutation($id: ID!, $method: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) { pullRequest { number } } }',
