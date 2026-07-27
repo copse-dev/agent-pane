@@ -216,7 +216,8 @@ export interface Thread {
  * highest-fidelity result. `rebuilt` was reconstructed from the copied
  * transcript slice, which cannot carry content that only existed in the run
  * payload (the fenced blocks inlined for `@`-file / `@`-thread / shell chips).
- * `empty` means the source had no recorded history to inherit.
+ * `empty` means the source had neither recorded provider history nor a visible
+ * transcript that could be rebuilt.
  */
 export interface ForkedHistoryResult {
   source: 'copied' | 'rebuilt' | 'empty'
