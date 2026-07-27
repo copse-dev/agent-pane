@@ -95,6 +95,35 @@ describe('renderPlanProvider sign-in button', () => {
   })
 })
 
+describe('renderPlanProvider credit grant', () => {
+  it('shows the exact remaining balance and an accessible used-credit bar', () => {
+    const host = document.createElement('div')
+    renderPlanProvider(host, {
+      status: 'ok',
+      provider: 'cursor',
+      usage: {
+        provider: 'cursor',
+        plan: 'Ultra',
+        creditGrant: {
+          remainingCents: 6703,
+          totalCents: 10000,
+          usedCents: 3297,
+        },
+        windows: [],
+        checkedAt: '2026-07-27T12:00:00.000Z',
+      },
+    })
+
+    const credit = host.querySelector('.usage-credit-grant')
+    assert.ok(credit)
+    assert.match(credit.textContent, /\$67\.03 remaining of \$100\.00/)
+    const progress = credit.querySelector('[role="progressbar"]')
+    assert.ok(progress)
+    assert.equal(progress.getAttribute('aria-valuenow'), '33')
+    assert.equal(progress.getAttribute('aria-label'), 'Cursor credits $32.97 used of $100.00')
+  })
+})
+
 describe('createClaudeSignInHandler', () => {
   it('closes settings and requests `claude /login` in a terminal', () => {
     const store = createStore({ filesPaneOpen: false, rightPanelMode: 'explorer' })
