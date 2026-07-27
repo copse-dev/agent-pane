@@ -2,7 +2,6 @@ import { errorMessage } from '@shared/errors.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import { getAgentExecutionRoot } from '../services/execution-root.ts'
-import { getMainWindow } from '../windows/create-main-window.ts'
 import {
   afterSandboxedCommand,
   isProjectSandboxEnabled,
@@ -39,7 +38,7 @@ import {
 } from '../services/exec/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../services/exec/subprocess-kill.ts'
 import { adoptWorktreeChangesSince, captureWorktreeBaseline } from '../services/diff-queue.ts'
-import { getCurrentShellTaskId } from '../services/exec/shell-output-context.ts'
+import { emitShellOutput } from '../services/exec/shell-output-context.ts'
 import { getActiveRunThread } from '../services/thread-models.ts'
 import { currentRunUsesGuardedYolo } from '../services/security/guarded-yolo.ts'
 
@@ -78,8 +77,6 @@ async function runShellOnce(
   unsandboxed: boolean,
   env: NodeJS.ProcessEnv,
 ): Promise<ShellRunResult> {
-  const win = getMainWindow()
-
   return new Promise<ShellRunResult>((resolve, reject) => {
     void (async (): Promise<void> => {
       let proc
@@ -109,7 +106,7 @@ async function runShellOnce(
       let cancelKill: (() => void) | undefined
       const stream = (data: Buffer): void => {
         const toStream = outputAcc.append(data.toString())
-        if (toStream) win?.webContents.send('agent:shell_output', toStream, getCurrentShellTaskId())
+        if (toStream) emitShellOutput(toStream)
       }
       proc.stdout?.on('data', stream)
       proc.stderr?.on('data', stream)
@@ -255,7 +252,7 @@ async function prepareCommand(command: string, signal: AbortSignal): Promise<Pre
     ...(detection.jsManager ? ['install scripts disabled (npm_config_ignore_scripts)'] : []),
   ]
   const banner = `[safe-install] ${notes.join('; ')}\n$ ${wrapped}\n`
-  getMainWindow()?.webContents.send('agent:shell_output', banner, getCurrentShellTaskId())
+  emitShellOutput(banner)
   return { command: wrapped, env, banner }
 }
 
@@ -357,11 +354,7 @@ export const runShellTool = defineTool({
       ? `[Guarded YOLO · ${outsideSandbox || !sandboxEnabled ? 'unsandboxed' : 'project sandbox'}]\n`
       : ''
     if (containmentBanner) {
-      getMainWindow()?.webContents.send(
-        'agent:shell_output',
-        containmentBanner,
-        getCurrentShellTaskId(),
-      )
+      emitShellOutput(containmentBanner)
     }
 
     // Strip LLM API keys (and other secrets) from the child env so a compromised

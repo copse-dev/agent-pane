@@ -16,3 +16,24 @@ export function setCurrentShellTaskId(id: string | null): void {
 export function getCurrentShellTaskId(): string | null {
   return currentShellTaskId
 }
+
+/**
+ * Where a chunk of shell output goes. The shell tool used to reach for
+ * `getMainWindow()` directly, which put the whole window module — and through it
+ * Electron — on the import path of `createRegistry()`. A benchmark or any other
+ * headless caller has no window and needs none: it wants the tool, not the pane
+ * the output is painted into. Electron installs the real sink at boot; without
+ * one the output is simply not mirrored anywhere (#1313).
+ */
+export type ShellOutputSink = (chunk: string, taskId: string | null) => void
+
+let shellOutputSink: ShellOutputSink | null = null
+
+export function setShellOutputSink(sink: ShellOutputSink | null): void {
+  shellOutputSink = sink
+}
+
+/** Mirror a chunk of shell output to the UI, if anything is listening. */
+export function emitShellOutput(chunk: string): void {
+  shellOutputSink?.(chunk, currentShellTaskId)
+}
