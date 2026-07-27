@@ -64,6 +64,10 @@ export const CLAUDE_WIRED_HOOK_EVENTS: readonly DiscoveredClaudeEvent[] = [
   'SessionStart',
 ]
 
+function isDiscoveredClaudeEvent(value: string): value is DiscoveredClaudeEvent {
+  return CLAUDE_WIRED_HOOK_EVENTS.some((event) => event === value)
+}
+
 /** A parsed Claude command hook ready to spawn. */
 interface DiscoveredClaudeHook {
   event: DiscoveredClaudeEvent
@@ -188,7 +192,7 @@ async function parseClaudeSettings(path: string, scope: HookScope): Promise<Pars
   const cwd = dirname(path)
   const out: DiscoveredClaudeHook[] = []
   for (const [event, groups] of Object.entries(hooksRoot)) {
-    if (!(CLAUDE_WIRED_HOOK_EVENTS as readonly string[]).includes(event)) {
+    if (!isDiscoveredClaudeEvent(event)) {
       // Only warn for keys that actually declare hook groups; ignore empties.
       if (Array.isArray(groups) && groups.length > 0) {
         if (isPublishedClaudeEvent(event)) {
@@ -204,22 +208,22 @@ async function parseClaudeSettings(path: string, scope: HookScope): Promise<Pars
     }
     if (!Array.isArray(groups)) continue
     for (const group of groups) {
-      if (typeof group !== 'object' || group === null) continue
-      const matcherRaw = (group as { matcher?: unknown }).matcher
+      if (!isRecord(group)) continue
+      const matcherRaw = group['matcher']
       const matcher =
         typeof matcherRaw === 'string' && matcherRaw.trim() ? matcherRaw.trim() : undefined
-      const handlers = (group as { hooks?: unknown }).hooks
+      const handlers = group['hooks']
       if (!Array.isArray(handlers)) continue
       for (const handler of handlers) {
-        if (typeof handler !== 'object' || handler === null) continue
-        const type = (handler as { type?: unknown }).type
+        if (!isRecord(handler)) continue
+        const type = handler['type']
         // Default type in Claude docs is command; accept omitted type as command.
         if (type !== undefined && type !== 'command') continue
-        const command = (handler as { command?: unknown }).command
+        const command = handler['command']
         if (typeof command !== 'string' || !command.trim()) continue
-        const timeoutMs = normalizeClaudeTimeout((handler as { timeout?: unknown }).timeout)
+        const timeoutMs = normalizeClaudeTimeout(handler['timeout'])
         const entry: DiscoveredClaudeHook = {
-          event: event as DiscoveredClaudeEvent,
+          event,
           command: command.trim(),
           cwd,
           source: path,

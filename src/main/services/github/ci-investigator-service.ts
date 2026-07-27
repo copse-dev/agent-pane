@@ -56,7 +56,7 @@ async function executeCiTool(
   args: unknown,
   signal: AbortSignal,
 ): Promise<ToolExecuteResult> {
-  if (!CI_INVESTIGATOR_TOOL_NAMES.includes(name as (typeof CI_INVESTIGATOR_TOOL_NAMES)[number])) {
+  if (!CI_INVESTIGATOR_TOOL_NAMES.some((allowedName) => allowedName === name)) {
     throw new Error(`Tool not allowed in CI investigator subagent: ${name}`)
   }
   return registry.execute(name, args, signal)

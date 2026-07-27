@@ -25,6 +25,7 @@ import {
   remoteAgentModelValue,
   resolveManagedAgentModelId,
 } from '@shared/remote-agent.ts'
+import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
 import { getSetting, resolveApiKey } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
 import { getCurrentBranchName } from '../github/git-service.ts'
@@ -87,17 +88,31 @@ function sessionKey(threadId: string): string {
 
 function readSession(threadId: string): ManagedAgentSession | null {
   const raw = storageGet(sessionKey(threadId))
-  if (!raw || typeof raw !== 'object') return null
-  const value = raw as Partial<ManagedAgentSession>
   if (
-    value.v !== 1 ||
-    typeof value.sessionId !== 'string' ||
-    typeof value.baseUrl !== 'string' ||
-    value.provider !== REMOTE_AGENT_PROVIDER_ANTHROPIC
+    !isRecord(raw) ||
+    raw['v'] !== 1 ||
+    typeof raw['sessionId'] !== 'string' ||
+    typeof raw['baseUrl'] !== 'string' ||
+    raw['provider'] !== REMOTE_AGENT_PROVIDER_ANTHROPIC ||
+    typeof raw['agentId'] !== 'string' ||
+    typeof raw['environmentId'] !== 'string' ||
+    typeof raw['usageInput'] !== 'number' ||
+    typeof raw['usageOutput'] !== 'number'
   ) {
     return null
   }
-  return value as ManagedAgentSession
+  return {
+    v: 1,
+    provider: REMOTE_AGENT_PROVIDER_ANTHROPIC,
+    baseUrl: raw['baseUrl'],
+    sessionId: raw['sessionId'],
+    agentId: raw['agentId'],
+    environmentId: raw['environmentId'],
+    usageInput: raw['usageInput'],
+    usageOutput: raw['usageOutput'],
+    ...(typeof raw['model'] === 'string' ? { model: raw['model'] } : {}),
+    ...(typeof raw['hasRepo'] === 'boolean' ? { hasRepo: raw['hasRepo'] } : {}),
+  }
 }
 
 function writeSession(threadId: string, session: ManagedAgentSession): void {
@@ -453,7 +468,7 @@ export async function runManagedAgentFromSettings(
           branchPrefix: DEFAULT_MANAGED_AGENT_BRANCH_PREFIX,
           // Branch from the project's current local branch (falls back to the repo
           // default when it isn't pushed to the remote).
-          startingRef: (await getCurrentBranchName())?.trim() || '',
+          startingRef: firstNonEmptyString((await getCurrentBranchName())?.trim()) ?? '',
           autoCreatePR: getSetting<boolean>('remoteAgentAutoCreatePR', true),
           workOnCurrentBranch: getSetting<boolean>('remoteAgentWorkOnCurrentBranch', false),
         })

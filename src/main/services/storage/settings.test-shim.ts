@@ -1,4 +1,5 @@
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
+import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 const settings = new Map<string, unknown>()
 const apiKeys = new Map<string, string>()
@@ -38,7 +39,8 @@ export function deleteApiKey(provider: KeyProvider): void {
 
 export function isProviderAvailable(provider: CloudKeyProvider): boolean {
   const envVar = ENV_VARS[provider]
-  return !!((envVar && process.env[envVar]) || hasApiKey(provider))
+  const environmentKey = envVar ? firstNonEmptyString(process.env[envVar]) : undefined
+  return environmentKey !== undefined || hasApiKey(provider)
 }
 
 export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
@@ -49,7 +51,7 @@ export function resolveApiKey(provider: KeyProvider): string | null {
   const stored = getApiKey(provider)
   if (stored) return stored
   const envVar = ENV_VARS[provider]
-  return (envVar && process.env[envVar]) || null
+  return envVar ? (firstNonEmptyString(process.env[envVar]) ?? null) : null
 }
 
 export function getLmStudioApiKey(): string {

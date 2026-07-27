@@ -13,6 +13,7 @@ import {
   normalizeCustomTool,
   type RawCustomTool,
 } from './custom-tools-config.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export { CUSTOM_TOOL_PREFIX, customToolLabel } from './custom-tools-config.ts'
 
@@ -77,18 +78,39 @@ export function getCustomToolsDir(): string {
 // runtime `import()` (the Node ESM loader) instead of rewriting it to a bundled
 // `require` — user tool files live outside the bundle and may be ESM.
 // eslint-disable-next-line @typescript-eslint/no-implied-eval
-const dynamicImport = new Function('p', 'return import(p)') as (p: string) => Promise<unknown>
+const dynamicImportValue: unknown = new Function('p', 'return import(p)')
+if (!isDynamicImport(dynamicImportValue)) throw new TypeError('Could not create dynamic import')
+const dynamicImport = dynamicImportValue
+
+function isDynamicImport(value: unknown): value is (path: string) => Promise<unknown> {
+  return typeof value === 'function'
+}
+
+function rawCustomTool(value: Record<string, unknown>): RawCustomTool {
+  return {
+    name: value['name'],
+    description: value['description'],
+    inputSchema: value['inputSchema'],
+    parameters: value['parameters'],
+    requiresApproval: value['requiresApproval'],
+    execute: value['execute'],
+  }
+}
 
 function asRawArray(value: unknown): RawCustomTool[] {
-  if (Array.isArray(value)) return value as RawCustomTool[]
-  if (value && typeof value === 'object') return [value]
+  if (Array.isArray(value)) return value.filter(isRecord).map(rawCustomTool)
+  if (isRecord(value)) return [rawCustomTool(value)]
   return []
+}
+
+function isToolFactory(value: unknown): value is () => unknown {
+  return typeof value === 'function'
 }
 
 /** Resolve a loaded module's default export (object | array | factory) to raw tools. */
 async function extractRawTools(mod: unknown): Promise<RawCustomTool[]> {
-  let value: unknown = mod && typeof mod === 'object' && 'default' in mod ? mod.default : mod
-  if (typeof value === 'function') value = await (value as () => unknown)()
+  let value: unknown = isRecord(mod) && 'default' in mod ? mod['default'] : mod
+  if (isToolFactory(value)) value = await value()
   return asRawArray(value)
 }
 

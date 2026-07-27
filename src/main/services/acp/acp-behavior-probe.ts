@@ -10,7 +10,8 @@ import {
   type WriteTextFileRequest,
 } from '@agentclientprotocol/sdk'
 import { spawn } from 'node:child_process'
-import { Readable, Writable } from 'node:stream'
+import { Writable } from 'node:stream'
+import { nodeReadableStream } from './node-readable-stream.ts'
 
 /**
  * Tier-2 ACP **behavioural probe** (issue #832): spawn an external ACP agent,
@@ -237,7 +238,7 @@ function spawnProbeTransport(
     stdio: ['pipe', 'pipe', 'inherit'],
   })
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-  const readable = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>
+  const readable = nodeReadableStream(child.stdout)
   return Promise.resolve({
     stream: ndJsonStream(writable, readable),
     dispose: (): void => {
