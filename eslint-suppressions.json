@@ -230,6 +230,16 @@
       "count": 1
     }
   },
+  "scripts/lib/bench-transcript.mts": {
+    "@typescript-eslint/prefer-nullish-coalescing": {
+      "count": 1
+    }
+  },
+  "scripts/lib/bench-transcript.test.ts": {
+    "@typescript-eslint/no-unsafe-type-assertion": {
+      "count": 2
+    }
+  },
   "scripts/lib/cloud-hosts.mts": {
     "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
@@ -243,16 +253,6 @@
   "scripts/lib/terminal-bench-steering.test.ts": {
     "@typescript-eslint/no-unsafe-type-assertion": {
       "count": 1
-    }
-  },
-  "scripts/lib/terminal-bench-transcript.mts": {
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 1
-    }
-  },
-  "scripts/lib/terminal-bench-transcript.test.ts": {
-    "@typescript-eslint/no-unsafe-type-assertion": {
-      "count": 2
     }
   },
   "scripts/patch-dev-name.mts": {

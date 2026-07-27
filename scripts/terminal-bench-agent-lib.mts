@@ -25,7 +25,7 @@ import {
   loadTerminalBenchSteering,
   terminalBenchSteeringPrompt,
 } from './lib/terminal-bench-steering.mts'
-import { TerminalBenchTranscript } from './lib/terminal-bench-transcript.mts'
+import { BenchTranscript } from './lib/bench-transcript.mts'
 
 const TRACE_EVENT_BATCH_SIZE = 128
 export const DEFAULT_TERMINAL_STREAM_OUTPUT_TOKENS = PRODUCT_REASONING_CHECKPOINT_INTERVAL_TOKENS
@@ -411,7 +411,7 @@ export async function runTerminalBenchAgent(): Promise<void> {
   if (steeringPath) {
     copyFileSync(steeringPath, join(agentDirectory, 'steering.json'))
   }
-  const transcript = new TerminalBenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
+  const transcript = new BenchTranscript(parsed.threadDir, parsed.instruction, usageModel)
   transcript.write()
   let traceEvents: AgentStreamChunk[] = []
   const standardTools = terminalBenchProfileToolNames(profile).map((name) =>
