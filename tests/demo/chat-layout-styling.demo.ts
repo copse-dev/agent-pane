@@ -13,9 +13,15 @@ const DIVIDER_PROBES: DividerProbe[] = [
   { resizerId: 'resizer-tree', leftPaneId: 'right-sidebar', rightPaneId: 'file-viewer' },
 ]
 
+/**
+ * Open the files pane if it is not already visible. A toggle click while open
+ * would close it, so callers that share a session must stay idempotent.
+ */
 async function openRightPanel(): Promise<void> {
+  const filesPane = $('#pane-files')
+  if (await filesPane.isDisplayed()) return
   await $('.titlebar-btn[aria-label="Toggle right panel"]').click()
-  await $('#pane-files').waitForDisplayed()
+  await filesPane.waitForDisplayed()
 }
 
 async function measureDivider(probe: DividerProbe) {
@@ -36,9 +42,13 @@ async function measureDivider(probe: DividerProbe) {
 }
 
 describe('browser-hosted chat layout styling', () => {
-  beforeEach(async () => {
+  // One load for the whole file. Remounting via beforeEach on the same URL
+  // hung under CI load (4 parallel Chromes + concurrent check) and blew the
+  // 30s mocha budget on tip 3f7a2961 — see develop run 30310911148.
+  before(async () => {
+    await browser.url('about:blank')
     await browser.url('/?scenario=chat-layout-styling')
-    await $('.messages-list .msg-assistant').waitForExist()
+    await $('.messages-list .msg-assistant').waitForExist({ timeout: 30_000 })
   })
 
   it('keeps pane dividers flush on both sides with no layout breaks', async () => {
@@ -97,8 +107,12 @@ describe('browser-hosted chat layout styling', () => {
   })
 
   it('keeps a single hairline on the centered new-thread composer', async () => {
-    await $('.project-new-thread-btn').click()
-    await $('.pane-chat.composer-centered').waitForExist()
+    // Prior test already opened a blank thread; ensure we stay on that surface
+    // without a full remount (another navigation was the flake surface).
+    if (!(await $('.pane-chat.composer-centered').isExisting())) {
+      await $('.project-new-thread-btn').click()
+      await $('.pane-chat.composer-centered').waitForExist()
+    }
     const border = await browser.execute(() => {
       const input = document.getElementById('input-bar')
       if (!input) return null
