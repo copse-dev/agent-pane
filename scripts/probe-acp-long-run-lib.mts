@@ -5,8 +5,10 @@ import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { KNOWN_ACP_AGENTS } from '../src/shared/acp-known-agents.ts'
 import {
+  defaultBlockingReadPrompt,
   defaultLongRunPrompt,
   probeAgentLongRun,
+  type AcpLongRunProbeMode,
   type AcpLongRunReport,
 } from '../src/main/services/acp/acp-long-run-probe.ts'
 
@@ -21,6 +23,7 @@ import {
  *   --duration <ms>    Requested per-agent run duration (default 360000 = 6 min).
  *   --interval <ms>    Requested progress interval (default 30000).
  *   --timeout <ms>     Per-agent hard timeout (default duration + 90000).
+ *   --mode <mode>      stream | blocking-fs-read (default: stream).
  *   --out <path>       Basename for outputs; writes <path>.md and <path>.json.
  *                      Default: docs/acp-long-run-matrix
  *   --no-write         Print only; don't write files.
@@ -35,9 +38,15 @@ interface Args {
   durationMs: number
   intervalMs: number
   timeoutMs: number | null
+  mode: AcpLongRunProbeMode
   out: string
   write: boolean
   prompt: string | null
+}
+
+function parseMode(value: string): AcpLongRunProbeMode {
+  if (value === 'stream' || value === 'blocking-fs-read') return value
+  throw new Error(`Unsupported long-run probe mode: ${value}`)
 }
 
 function parseArgs(argv: string[]): Args {
@@ -47,6 +56,7 @@ function parseArgs(argv: string[]): Args {
     durationMs: 360_000,
     intervalMs: 30_000,
     timeoutMs: null,
+    mode: 'stream',
     out: 'docs/acp-long-run-matrix',
     write: true,
     prompt: null,
@@ -58,6 +68,7 @@ function parseArgs(argv: string[]): Args {
     else if (flag === '--duration') args.durationMs = Number(argv[++i] ?? args.durationMs)
     else if (flag === '--interval') args.intervalMs = Number(argv[++i] ?? args.intervalMs)
     else if (flag === '--timeout') args.timeoutMs = Number(argv[++i] ?? '')
+    else if (flag === '--mode') args.mode = parseMode(argv[++i] ?? args.mode)
     else if (flag === '--out') args.out = argv[++i] ?? args.out
     else if (flag === '--no-write') args.write = false
     else if (flag === '--prompt') args.prompt = argv[++i] ?? args.prompt
@@ -110,6 +121,7 @@ function renderMarkdown(
   lines.push('')
   lines.push(`- Probed at: ${meta.probedAt}`)
   lines.push(`- Host: ${meta.host}`)
+  lines.push(`- Mode: ${reports[0]?.mode ?? 'stream'}`)
   lines.push('')
   if (reports.length === 0) {
     lines.push('_No agents were probed._')
@@ -144,6 +156,7 @@ function renderMarkdown(
     lines.push(`### ${report.title} (\`${report.agentId}\`)`)
     lines.push('')
     lines.push(`- Command: \`${[report.command, ...report.args].join(' ')}\``)
+    lines.push(`- Mode: \`${report.mode}\``)
     lines.push(`- Expected duration: ${fmtMs(report.expectedDurationMs)}`)
     lines.push(`- Elapsed: ${fmtMs(report.elapsedMs)}`)
     if (!report.ok) lines.push(`- **Probe failed:** ${report.error ?? 'unknown error'}`)
@@ -195,12 +208,16 @@ async function main(): Promise<void> {
   }
 
   const timeoutMs = args.timeoutMs ?? args.durationMs + 90_000
-  const prompt = args.prompt ?? defaultLongRunPrompt(args.durationMs, args.intervalMs)
+  const prompt =
+    args.prompt ??
+    (args.mode === 'blocking-fs-read'
+      ? defaultBlockingReadPrompt(args.durationMs)
+      : defaultLongRunPrompt(args.durationMs, args.intervalMs))
   console.log(
     `Long-run probing ${String(toProbe.length)} agent(s): ${toProbe.map((t) => t.agent.id).join(', ')}`,
   )
   console.log(
-    `Duration: ${String(args.durationMs)}ms; timeout: ${String(timeoutMs)}ms; prompt: ${prompt.slice(0, 120)}${prompt.length > 120 ? '...' : ''}\n`,
+    `Duration: ${String(args.durationMs)}ms; timeout: ${String(timeoutMs)}ms; mode: ${args.mode}; prompt: ${prompt.slice(0, 120)}${prompt.length > 120 ? '...' : ''}\n`,
   )
 
   const reports: AcpLongRunReport[] = []
@@ -213,6 +230,7 @@ async function main(): Promise<void> {
         command: agent.command,
         args: agent.args,
         prompt,
+        mode: args.mode,
         ok: false,
         error: 'not installed (not on PATH)',
         elapsedMs: 0,
@@ -240,7 +258,13 @@ async function main(): Promise<void> {
         ...(env ? { env } : {}),
         cwd,
       },
-      { durationMs: args.durationMs, progressIntervalMs: args.intervalMs, timeoutMs, prompt },
+      {
+        durationMs: args.durationMs,
+        progressIntervalMs: args.intervalMs,
+        timeoutMs,
+        mode: args.mode,
+        prompt,
+      },
     )
     reports.push(report)
     if (report.ok) {
