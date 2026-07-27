@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RequestError } from '@agentclientprotocol/sdk'
-import { classifyAgentError } from './agent-errors.ts'
+import { classifyAgentError, classifyProviderAccessFailure } from './agent-errors.ts'
 import { AcpTurnFailure } from './acp/acp-agent-service.ts'
 
 describe('classifyAgentError', () => {
@@ -110,5 +110,65 @@ describe('classifyAgentError', () => {
       classifyAgentError(new Error('something else')),
       'An error occurred: something else',
     )
+  })
+})
+
+describe('classifyProviderAccessFailure', () => {
+  const anthropic = (status: number, body: unknown): Error =>
+    new Error(`${String(status)} ${JSON.stringify(body)}`)
+
+  it('classifies a rejected key as auth', () => {
+    assert.equal(
+      classifyProviderAccessFailure(
+        anthropic(401, { type: 'error', error: { type: 'authentication_error', message: 'x' } }),
+      ),
+      'auth',
+    )
+  })
+
+  it('classifies a 403 permission error as auth', () => {
+    assert.equal(
+      classifyProviderAccessFailure(
+        anthropic(403, { type: 'error', error: { type: 'permission_error', message: 'x' } }),
+      ),
+      'auth',
+    )
+  })
+
+  it('classifies an exhausted balance as credit, however it is reported', () => {
+    assert.equal(classifyProviderAccessFailure(anthropic(402, {})), 'credit')
+    assert.equal(
+      classifyProviderAccessFailure(
+        anthropic(403, { type: 'error', error: { type: 'billing_error', message: 'x' } }),
+      ),
+      'credit',
+    )
+    assert.equal(
+      classifyProviderAccessFailure(
+        anthropic(400, {
+          type: 'error',
+          error: { type: 'invalid_request_error', message: 'Your credit balance is too low' },
+        }),
+      ),
+      'credit',
+    )
+  })
+
+  // Retryable failures must not trigger a billing-path switch — waiting fixes
+  // these, changing how the turn is billed does not.
+  it('returns null for transient failures', () => {
+    assert.equal(
+      classifyProviderAccessFailure(
+        anthropic(429, { type: 'error', error: { type: 'rate_limit_error', message: 'x' } }),
+      ),
+      null,
+    )
+    assert.equal(
+      classifyProviderAccessFailure(
+        anthropic(529, { type: 'error', error: { type: 'overloaded_error', message: 'x' } }),
+      ),
+      null,
+    )
+    assert.equal(classifyProviderAccessFailure(new Error('socket hang up')), null)
   })
 })

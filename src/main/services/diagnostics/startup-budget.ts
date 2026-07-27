@@ -45,8 +45,10 @@ export interface BudgetOverrun extends PhaseBudget {
  */
 export const STARTUP_PHASE_BUDGETS: readonly PhaseBudget[] = [
   { phase: 'reap-gortex', budgetMs: 1_000 },
-  // Up to nine process probes, one of them a network round trip. Off the
-  // critical path, but a phase this spawn-heavy is exactly where cost creeps.
+  // Up to nine process probes, one of them a network round trip. The probe now
+  // starts before handler registration and this phase measures only the residual
+  // wait afterwards, so the number here is what the probe still costs boot — a
+  // phase this spawn-heavy is exactly where cost creeps.
   { phase: 'tool-availability', budgetMs: 4_000 },
   { phase: 'sandbox-init', budgetMs: 2_000 },
   // Scales with the number of threads in the profile — invisible to CI today.

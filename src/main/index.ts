@@ -14,7 +14,12 @@ import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
-import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
+import {
+  createRegistry,
+  registerSkillTools,
+  syncCiInvestigatorTools,
+  syncGhTools,
+} from './services/registry-bootstrap.ts'
 import { getPackService } from './services/packs/pack-service.ts'
 import {
   loadMcpServers,
@@ -190,11 +195,18 @@ app
     // before the window they cost the user seconds of blank screen. The window
     // is already loading its renderer while they run.
     //
-    // This must still finish before `createRegistry()` below, which reads
-    // `isGhAvailable()` synchronously to decide whether the read-only GitHub
-    // tools are exposed at all (#523).
-    recordStartupPhase('tool-availability')
-    await checkToolAvailability()
+    // Started here but NOT awaited until every IPC handler is registered below.
+    // `createMainWindow()` has already fired `loadFile`, so the renderer boots
+    // concurrently and invokes `settings:get` / `ssh-workspace:getStates` on
+    // first paint — awaiting a multi-second probe before registration left those
+    // invokes hitting "No handler registered", which rejects the unguarded
+    // `await api.settings.get('model')` in the renderer's boot() and aborts the
+    // layout mount.
+    //
+    // #523's invariant (read-only GitHub tools exposed only when `gh` probed
+    // usable) is preserved by re-syncing them once the probe resolves, rather
+    // than by ordering the probe ahead of `createRegistry()`.
+    const toolAvailability = checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     // P5: boot the pack service before `createRegistry()` so persisted
@@ -541,6 +553,20 @@ app
       }
       return suggestFollowUps(parsed.data)
     })
+
+    // Every channel the renderer can invoke is registered by here, so it is now
+    // safe to block on the probe. Both syncs read `isGhAvailable()`, which only
+    // answers truthfully once this resolves — `createRegistry()` ran while the
+    // probe was still out and saw a null (false) result, so this is the call
+    // that actually exposes the `gh`-backed tools.
+    //
+    // The phase marker sits here rather than at the call above so it measures
+    // what the probe still *costs* boot — the residual wait after handler
+    // registration overlapped it — not its total duration.
+    recordStartupPhase('tool-availability')
+    await toolAvailability
+    syncGhTools(registry)
+    syncCiInvestigatorTools(registry)
 
     recordStartupPhase('skills-mcp')
     await initSkillsRegistry()

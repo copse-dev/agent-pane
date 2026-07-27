@@ -90,28 +90,7 @@ export function createRegistry(): ToolRegistry {
   registry.register(gitLogTool)
   registry.register(gitShowTool)
   registry.register(gitCommitTool)
-  // GitHub-backed tools shell out to `gh`. Only expose them to the model when
-  // we've deterministically probed `gh` as available (checkToolAvailability runs
-  // before createRegistry); otherwise every call would just return "gh is not
-  // available", so advertising them is misleading. checkToolAvailability also
-  // treats a `gh` that can't authenticate as unavailable, keeping read-only GH
-  // tools hidden when access is unauthorized.
-  const ghAvailable = isGhAvailable()
-  if (ghAvailable) {
-    registry.register(ghPrListTool)
-    registry.register(ghPrViewTool)
-    registry.register(ghPrFilesTool)
-    registry.register(getCiStatusTool)
-    registry.register(waitForCiChecksTool)
-    registry.register(getCiFailureLogsTool)
-  }
-  // PR lifecycle write tools work through the swappable GitHub backend, so they
-  // are available whenever *either* `gh` is usable or an API token is present —
-  // not gated on `gh` alone like the read tools above. They mutate GitHub state,
-  // so they stay out of the read-only allow-list and go through the approval gate.
-  if (ghAvailable || hasGitHubApiToken()) {
-    for (const tool of ghPrActionTools) registry.register(tool)
-  }
+  syncGhTools(registry)
   registry.register(runShellTool)
   registry.register(exploreTool)
   // Experimental CI investigator subagent (off by default). Gated by the
@@ -292,6 +271,51 @@ export function syncAdvisorStrategyTools(registry: ToolRegistry): void {
     if (!registry.has('advisor')) registry.register(advisorTool)
   } else {
     registry.unregister('advisor')
+  }
+}
+
+/**
+ * Register or unregister the `gh`-backed GitHub tools to match the current
+ * probe result.
+ *
+ * GitHub-backed tools shell out to `gh`. Only expose them to the model when
+ * we've deterministically probed `gh` as available; otherwise every call would
+ * just return "gh is not available", so advertising them is misleading.
+ * `checkToolAvailability` also treats a `gh` that can't authenticate as
+ * unavailable, keeping read-only GH tools hidden when access is unauthorized.
+ *
+ * Called twice on the startup path: once from {@link createRegistry}, which now
+ * runs *before* the probe so IPC handlers can register without waiting on it
+ * (#523's invariant is preserved by the second call, not by the ordering), and
+ * again from `index.ts` once `checkToolAvailability()` resolves. The first call
+ * lands on a null probe result — `isGhAvailable()` reads false — so the tools
+ * simply appear a beat later, once the probe has actually answered.
+ */
+export function syncGhTools(registry: ToolRegistry): void {
+  const ghAvailable = isGhAvailable()
+  if (ghAvailable) {
+    if (!registry.has('gh_pr_list')) registry.register(ghPrListTool)
+    if (!registry.has('gh_pr_view')) registry.register(ghPrViewTool)
+    if (!registry.has('gh_pr_files')) registry.register(ghPrFilesTool)
+    if (!registry.has('get_ci_status')) registry.register(getCiStatusTool)
+    if (!registry.has('wait_for_ci_checks')) registry.register(waitForCiChecksTool)
+    if (!registry.has('get_ci_failure_logs')) registry.register(getCiFailureLogsTool)
+  } else {
+    registry.unregister('gh_pr_list')
+    registry.unregister('gh_pr_view')
+    registry.unregister('gh_pr_files')
+    registry.unregister('get_ci_status')
+    registry.unregister('wait_for_ci_checks')
+    registry.unregister('get_ci_failure_logs')
+  }
+  // PR lifecycle write tools work through the swappable GitHub backend, so they
+  // are available whenever *either* `gh` is usable or an API token is present —
+  // not gated on `gh` alone like the read tools above. They mutate GitHub state,
+  // so they stay out of the read-only allow-list and go through the approval gate.
+  if (ghAvailable || hasGitHubApiToken()) {
+    for (const tool of ghPrActionTools) if (!registry.has(tool.name)) registry.register(tool)
+  } else {
+    for (const tool of ghPrActionTools) registry.unregister(tool.name)
   }
 }
 

@@ -1,7 +1,17 @@
 import * as esbuild from 'esbuild'
 import { execSync, spawnSync } from 'node:child_process'
-import { accessSync, cpSync, copyFileSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import {
+  accessSync,
+  cpSync,
+  copyFileSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { copyMonacoWorkers } from './copy-monaco-workers.mts'
 
 const bundledGortexName = process.platform === 'win32' ? 'gortex.exe' : 'gortex'
@@ -12,6 +22,46 @@ const sharedAlias = {
   '@copse/agent': resolve('./packages/agent/src'),
   '@copse/llm': resolve('./packages/llm/src'),
   '@copse/plan-usage': resolve('./packages/plan-usage/src'),
+}
+
+// Emit a scenario manifest (id + label) alongside the demo build so the per-PR
+// demo-preview PR comment can link each selectable `?scenario=` state without
+// hard-coding the list. `demo-scenarios.ts` has only a type-only import, so
+// esbuild bundles it standalone; we import the emitted module and read the
+// exported list back. Best-effort: any failure writes `[]` rather than breaking
+// the demo build, since the comment degrades gracefully without it.
+async function writeDemoScenarioManifest(outPath: string): Promise<void> {
+  const tempModule = resolve('dist', '.demo-scenarios.mjs')
+  try {
+    await esbuild.build({
+      entryPoints: ['src/shared/demo-scenarios.ts'],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: tempModule,
+      alias: sharedAlias,
+    })
+    const imported: unknown = await import(pathToFileURL(tempModule).href)
+    const list =
+      imported !== null && typeof imported === 'object' && 'DEMO_SCENARIOS' in imported
+        ? imported.DEMO_SCENARIOS
+        : undefined
+    const manifest: { id: string; label: string }[] = []
+    if (Array.isArray(list)) {
+      for (const item of list as unknown[]) {
+        if (item !== null && typeof item === 'object' && 'id' in item && 'label' in item) {
+          const record = item as Record<string, unknown>
+          manifest.push({ id: String(record['id']), label: String(record['label']) })
+        }
+      }
+    }
+    writeFileSync(outPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  } catch (error) {
+    console.warn(`[build] demo scenario manifest generation failed: ${String(error)}`)
+    writeFileSync(outPath, '[]\n')
+  } finally {
+    rmSync(tempModule, { force: true })
+  }
 }
 
 function fetchBundledCursorSkillsForBuild(): void {
@@ -106,7 +156,11 @@ if (!isDemo) {
 const browserOpts = {
   bundle: true,
   platform: 'browser' as const,
-  sourcemap: true,
+  // Demo previews are committed to the machine-managed `demo-previews` branch and
+  // fetched by every Secret scan (`gitleaks` with `fetch-depth: 0`). Source maps
+  // there trip high-entropy secret heuristics and fail unrelated PR tips — so the
+  // demo build must not emit them.
+  sourcemap: !isDemo,
   loader: { '.ts': 'ts', '.css': 'css', '.ttf': 'file' } as const,
   alias: sharedAlias,
   define,
@@ -150,6 +204,21 @@ cpSync('node_modules/vscode-material-icons/generated/icons', `${rendererOutDir}/
 })
 
 if (isDemo) {
+  await writeDemoScenarioManifest(`${rendererOutDir}/scenarios.json`)
+  // Fail closed: demo trees are committed to `demo-previews` and scanned by
+  // gitleaks across every PR tip. A source map here is a repo-wide CI outage.
+  const maps: string[] = []
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name)
+      if (statSync(path).isDirectory()) walk(path)
+      else if (name.endsWith('.map')) maps.push(path)
+    }
+  }
+  walk(rendererOutDir)
+  if (maps.length > 0) {
+    throw new Error(`demo build must not emit source maps (gitleaks): ${maps.join(', ')}`)
+  }
   console.log(`Demo build written to ${rendererOutDir}`)
   process.exit(0)
 }

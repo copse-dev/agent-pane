@@ -2,6 +2,7 @@ import * as esbuild from 'esbuild'
 import { glob, rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { selectTestFiles, describeNoMatch, testOutputPath } from './lib/test-filter.mts'
 
 const settingsShim = resolve('src/main/services/storage/settings.test-shim.ts')
 const storageShim = resolve('src/main/services/storage/storage.test-shim.ts')
@@ -13,21 +14,52 @@ if (bundleOnly && testOnly) {
   process.exit(2)
 }
 
+/**
+ * Positional args are filters (`npm test -- thread-store hooks/`): only the
+ * matching test files are bundled and run. No filters = the whole suite, which
+ * is what CI and `npm run check` do. See `lib/test-filter.mts` for the matching
+ * rules and `docs/testing-strategy.md` for when a subset is the wrong call.
+ */
+const filters = process.argv.slice(2).filter((a) => !a.startsWith('-'))
+
 function isEsbuildServiceDead(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err)
   return msg.includes('The service was stopped') || msg.includes('The service is no longer running')
 }
 
-async function bundleTests(): Promise<void> {
+/** Every test file the suite covers, repo-relative and sorted. */
+async function allTestFiles(): Promise<string[]> {
   const testFiles: string[] = []
   for await (const f of glob('src/**/*.test.ts')) testFiles.push(f)
   for await (const f of glob('packages/*/src/**/*.test.ts')) testFiles.push(f)
   for await (const f of glob('scripts/**/*.test.ts')) testFiles.push(f)
-  await rm('dist-test', { recursive: true, force: true })
+  return testFiles.map((f) => f.replace(/\\/g, '/')).sort()
+}
+
+/** The files this invocation covers — the whole suite, or the filtered subset. */
+async function selectedTestFiles(): Promise<string[]> {
+  const all = await allTestFiles()
+  const problem = describeNoMatch(all, filters)
+  if (problem !== null) {
+    console.error(problem)
+    process.exit(2)
+  }
+  return selectTestFiles(all, filters)
+}
+
+async function bundleTests(testFiles: string[]): Promise<void> {
+  // A full run starts clean; a filtered run leaves the rest of dist-test alone
+  // (it only ever runs the paths it bundled, and wiping would make every
+  // subset pay for the next full run).
+  if (filters.length === 0) await rm('dist-test', { recursive: true, force: true })
 
   const buildOptions: esbuild.BuildOptions = {
     entryPoints: testFiles,
     outdir: 'dist-test',
+    // Pin the output layout to the repo root. esbuild otherwise derives outbase
+    // from the entry points' common ancestor, so a subset under one directory
+    // would flatten to different `dist-test/` paths than the full run produces.
+    outbase: '.',
     bundle: true,
     platform: 'node',
     format: 'cjs',
@@ -89,22 +121,37 @@ async function bundleTests(): Promise<void> {
   // error 17)" / "Electron failed to install correctly". A single serial require
   // here does the one-time extraction so the parallel workers all find `dist/`
   // present. Harmless (returns immediately) when Electron is already installed.
-  const electronWarmup = spawnSync('node', ['-e', 'require("electron")'], { stdio: 'inherit' })
-  if (electronWarmup.status !== 0) {
-    console.warn(
-      `[run-tests] electron warmup exited ${String(electronWarmup.status)}; continuing to tests`,
-    )
+  // A filtered run that selected no main-process test has nothing to race, and
+  // the warmup is a meaningful slice of a small subset's wall clock — skip it.
+  if (testFiles.some((f) => f.startsWith('src/main/'))) {
+    const electronWarmup = spawnSync('node', ['-e', 'require("electron")'], { stdio: 'inherit' })
+    if (electronWarmup.status !== 0) {
+      console.warn(
+        `[run-tests] electron warmup exited ${String(electronWarmup.status)}; continuing to tests`,
+      )
+    }
   }
 }
 
-function runTests(): void {
-  const result = spawnSync('node', ['--test', 'dist-test/**/*.test.js'], { stdio: 'inherit' })
+function runTests(testFiles: string[]): void {
+  // Unfiltered: hand node the glob so it picks up whatever is in dist-test.
+  // Filtered: hand it the exact bundles, so leftovers from an earlier run
+  // (dist-test is not wiped for a subset) can never sneak into the results.
+  const specs =
+    filters.length === 0 ? ['dist-test/**/*.test.js'] : testFiles.map((f) => testOutputPath(f))
+  const result = spawnSync('node', ['--test', ...specs], { stdio: 'inherit' })
   process.exit(result.status ?? 1)
 }
 
+const testFiles = await selectedTestFiles()
+if (filters.length > 0) {
+  console.log(`[run-tests] ${String(testFiles.length)} test file(s) selected:`)
+  for (const f of testFiles) console.log(`  ${f}`)
+}
+
 if (testOnly) {
-  runTests()
+  runTests(testFiles)
 } else {
-  await bundleTests()
-  if (!bundleOnly) runTests()
+  await bundleTests(testFiles)
+  if (!bundleOnly) runTests(testFiles)
 }
