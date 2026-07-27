@@ -111,8 +111,26 @@ describe('probeAgentLongRun (in-memory agent)', () => {
     assert.match(report.error ?? '', /completed before expected duration/)
     assert.equal(report.updateCount, 1)
     assert.equal(report.textChunkCount, 1)
+    assert.equal(report.fsReadRequestCount, 0)
     assert.equal(report.prompt, defaultLongRunPrompt(60_000, 1_000))
     assert.equal(report.mode, 'stream')
+  })
+
+  it('reports when blocking mode was not exercised by the agent', async () => {
+    const report = await probeAgentLongRun(CONFIG, {
+      createTransport: fakeEarlyStopTransport(),
+      mode: 'blocking-fs-read',
+      durationMs: 60_000,
+      progressIntervalMs: 1_000,
+      timeoutMs: 5_000,
+    })
+
+    assert.equal(report.ok, false)
+    assert.equal(report.completedEarly, true)
+    assert.equal(report.fsReadRequestCount, 0)
+    assert.match(report.error ?? '', /without exercising the blocking fs\/read_text_file request/)
+    assert.equal(report.prompt, defaultBlockingReadPrompt(60_000))
+    assert.equal(report.mode, 'blocking-fs-read')
   })
 
   it('can hold the turn open with a delayed ACP fs/read_text_file request', async () => {
@@ -129,6 +147,7 @@ describe('probeAgentLongRun (in-memory agent)', () => {
     assert.equal(report.stopReason, 'end_turn')
     assert.equal(report.updateCount, 1)
     assert.equal(report.textChunkCount, 1)
+    assert.equal(report.fsReadRequestCount, 1)
     assert.equal(report.prompt, defaultBlockingReadPrompt(10))
     assert.equal(report.mode, 'blocking-fs-read')
   })

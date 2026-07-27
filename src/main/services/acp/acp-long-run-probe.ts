@@ -60,6 +60,7 @@ export interface AcpLongRunReport {
   updateKinds: string[]
   textChunkCount: number
   toolCallCount: number
+  fsReadRequestCount: number
   permissionRequests: AcpLongRunPermissionRecord[]
 }
 
@@ -321,6 +322,7 @@ export async function probeAgentLongRun(
   const permissionRequests: AcpLongRunPermissionRecord[] = []
   let textChunkCount = 0
   let toolCallCount = 0
+  let fsReadRequestCount = 0
   let transport: { stream: Stream; dispose: () => void } | null = null
   const state = { timedOut: false }
   const timer = setTimeout(() => {
@@ -348,8 +350,16 @@ export async function probeAgentLongRun(
       updateKinds: [...new Set(updateKinds)],
       textChunkCount,
       toolCallCount,
+      fsReadRequestCount,
       permissionRequests,
       ...partial,
+    }
+    if (report.ok && mode === 'blocking-fs-read' && fsReadRequestCount === 0) {
+      return {
+        ...report,
+        ok: false,
+        error: 'completed without exercising the blocking fs/read_text_file request',
+      }
     }
     if (report.ok && completedEarly) {
       return {
@@ -365,6 +375,7 @@ export async function probeAgentLongRun(
     transport = await createTransport(config)
     const app = client({ name: 'copse-long-run-probe' })
       .onRequest(methods.client.fs.readTextFile, async () => {
+        fsReadRequestCount += 1
         if (mode !== 'blocking-fs-read') throw new Error('fs/read disabled')
         await sleepMs(expectedDurationMs)
         return { content: 'LONG_RUN_BLOCK_OK' }
