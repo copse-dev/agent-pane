@@ -45,7 +45,7 @@ jobs:
       published: ${{ steps.commit.outputs.published }}
       scenarios: ${{ steps.scenarios.outputs.json }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       # main/develop always publish to their persistent slots. Other branches
       # belong to an open PR; no PR means nothing to preview or comment on.
       - id: target

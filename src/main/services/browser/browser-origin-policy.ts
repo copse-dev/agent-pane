@@ -122,7 +122,10 @@ function parseIpv4(host: string): [number, number, number, number] | null {
   if (parts.length !== 4) return null
   const nums = parts.map((p) => (/^\d{1,3}$/.test(p) ? Number(p) : NaN))
   if (nums.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return null
-  return nums as [number, number, number, number]
+  const [a, b, c, d] = nums
+  return a === undefined || b === undefined || c === undefined || d === undefined
+    ? null
+    : [a, b, c, d]
 }
 
 export type BrowserNavDecision =

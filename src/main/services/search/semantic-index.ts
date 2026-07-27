@@ -645,7 +645,7 @@ function pidIsAlive(pid: number): boolean {
     return true
   } catch (err) {
     // ESRCH → gone; EPERM → exists but not signal-able by us (still "alive").
-    return (err as NodeJS.ErrnoException).code === 'EPERM'
+    return isRecord(err) && err['code'] === 'EPERM'
   }
 }
 

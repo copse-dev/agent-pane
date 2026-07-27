@@ -6,7 +6,7 @@ import { fetchLmStudioModelsCached, lmStudioApiKey, lmStudioOrigin } from './lm-
 import { getSetting } from '../storage/settings.ts'
 import { DEFAULT_LM_STUDIO_URL, preferIpv4LoopbackUrl } from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
-import { expectRecord } from '@shared/unknown-value.ts'
+import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 
 export interface LmStudioDetection {
   serverRunning: boolean
@@ -117,8 +117,9 @@ export async function downloadLmStudioModel(
     if (!res.ok) {
       let detail = `HTTP ${String(res.status)}`
       try {
-        const errJson = (await res.json()) as { error?: { message?: string } }
-        if (errJson.error?.message) detail = errJson.error.message
+        const errJson: unknown = await res.json()
+        const error = isRecord(errJson) ? errJson['error'] : undefined
+        if (isRecord(error) && typeof error['message'] === 'string') detail = error['message']
       } catch {
         /* ignore */
       }

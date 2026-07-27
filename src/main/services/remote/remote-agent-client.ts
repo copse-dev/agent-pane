@@ -26,6 +26,7 @@ import {
   remoteAgentModelValue,
   type RemoteAgentProvider,
 } from '@shared/remote-agent.ts'
+import { firstNonEmptyString, isRecord } from '@shared/unknown-value.ts'
 import { sleepMs } from '@copse/llm/stream-retry.ts'
 import { getApiKey, getSetting } from '../storage/settings.ts'
 import { validateRemoteAgentBaseUrl } from '../security/web-origin-policy.ts'
@@ -174,19 +175,24 @@ function sessionKey(threadId: string): string {
 
 function readSession(threadId: string): RemoteAgentSession | null {
   const raw = storageGet(sessionKey(threadId))
-  if (!raw || typeof raw !== 'object') return null
-  const value = raw as Partial<RemoteAgentSession>
   if (
-    value.v !== 1 ||
-    !value.agentId ||
-    !value.provider ||
-    !value.baseUrl ||
-    typeof value.agentId !== 'string' ||
-    typeof value.baseUrl !== 'string'
+    !isRecord(raw) ||
+    raw['v'] !== 1 ||
+    typeof raw['agentId'] !== 'string' ||
+    (raw['provider'] !== REMOTE_AGENT_PROVIDER_CURSOR &&
+      raw['provider'] !== REMOTE_AGENT_PROVIDER_ANTHROPIC) ||
+    typeof raw['baseUrl'] !== 'string'
   ) {
     return null
   }
-  return value as RemoteAgentSession
+  return {
+    v: 1,
+    agentId: raw['agentId'],
+    provider: raw['provider'],
+    baseUrl: raw['baseUrl'],
+    ...(typeof raw['model'] === 'string' ? { model: raw['model'] } : {}),
+    ...(typeof raw['url'] === 'string' ? { url: raw['url'] } : {}),
+  }
 }
 
 function writeSession(threadId: string, session: RemoteAgentSession): void {
@@ -309,7 +315,7 @@ async function createRemoteAgent(input: {
   // Branch the remote run from whatever branch this project is on locally. The
   // remote clones from GitHub, so a branch that hasn't been pushed falls back to
   // the repo's default ref (startingRef omitted).
-  const startingRef = (await getCurrentBranchName())?.trim() || ''
+  const startingRef = firstNonEmptyString((await getCurrentBranchName())?.trim()) ?? ''
   const modelId = input.model?.trim()
   const body = {
     prompt: input.prompt,
@@ -550,8 +556,10 @@ export async function fetchRemoteArtifactImageDataUrl(input: {
   if (contentLength > MAX_REMOTE_ARTIFACT_IMAGE_BYTES) {
     throw new Error(`Remote agent artifact image is too large (${String(contentLength)} bytes).`)
   }
-  const mimeType =
-    response.headers.get('content-type')?.split(';')[0]?.trim() || imageMimeTypeForPath(path)
+  const mimeType = firstNonEmptyString(
+    response.headers.get('content-type')?.split(';')[0]?.trim(),
+    imageMimeTypeForPath(path),
+  )
   if (!mimeType?.startsWith('image/')) {
     throw new Error('Remote agent artifact is not an image.')
   }
@@ -862,7 +870,7 @@ export async function runRemoteAgentFromSettings(
   // project switch, and the link/PR must land on the project it started in.
   const launchProjectId = getActiveProjectId()
 
-  const selectedModel = options.model?.trim() || undefined
+  const selectedModel = firstNonEmptyString(options.model?.trim())
   const priorSession = readSession(options.threadId)
   // Cursor binds the model at agent create; a different selection (or switching
   // back to account default) must start a fresh agent rather than follow-up.

@@ -276,7 +276,23 @@ async function registerClientTools(
     toolNames.push(tool.name)
     const meta: McpToolMeta = { server: serverName }
     if (bundled) meta.bundled = true
-    if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
+    if (tool.annotations) {
+      const annotations: McpToolAnnotations = {}
+      if (typeof tool.annotations.title === 'string') annotations.title = tool.annotations.title
+      if (typeof tool.annotations.readOnlyHint === 'boolean') {
+        annotations.readOnlyHint = tool.annotations.readOnlyHint
+      }
+      if (typeof tool.annotations.destructiveHint === 'boolean') {
+        annotations.destructiveHint = tool.annotations.destructiveHint
+      }
+      if (typeof tool.annotations.idempotentHint === 'boolean') {
+        annotations.idempotentHint = tool.annotations.idempotentHint
+      }
+      if (typeof tool.annotations.openWorldHint === 'boolean') {
+        annotations.openWorldHint = tool.annotations.openWorldHint
+      }
+      meta.annotations = annotations
+    }
     toolMeta.set(fullName, meta)
     registry.register({
       name: fullName,

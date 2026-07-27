@@ -35,6 +35,7 @@ import {
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
+import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import {
   beginHookRunRecording,
   clearHookRunLiveSink,
@@ -964,18 +965,21 @@ export async function runAgent(
         recordHookRun: recordFunctionHookRun,
       },
     )
-    // Fold both the `turnStart` steering (M0.2) and any `beforeSubmitPrompt`
-    // injected context (H2, already a system-reminder block) into messages[0].
+    // Both the `turnStart` steering (M0.2) and any `beforeSubmitPrompt` injected
+    // context (H2, already a system-reminder block) ride a *trailing* system
+    // message rather than being folded into messages[0].
+    //
+    // Appending to the system prompt put per-turn text at the very front of the
+    // prompt, which invalidated the whole cached prefix — tools and system
+    // prompt included — on every turn steering fired. As the last entry it sits
+    // after the last cache breakpoint instead, so the prefix stays byte-stable
+    // across turns (#1286). Placement satisfies the API rule for
+    // mid-conversation system messages: it follows the user turn and is last.
+    // It never persists into the thread's history — the `role !== 'system'`
+    // filter on the returned messages strips it — so steering stays turn-local
+    // exactly as before.
     const turnStartInjected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
-    const injectedBlocks = [turnStartInjected, submitInjectContext].filter(
-      (block): block is string => block !== undefined && block.length > 0,
-    )
-    if (injectedBlocks.length > 0 && messages[0]?.role === 'system') {
-      messages[0] = {
-        role: 'system',
-        content: messages[0].content + `\n\n${injectedBlocks.join('\n\n')}`,
-      }
-    }
+    appendOperatorInstruction(messages, [turnStartInjected, submitInjectContext])
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed

@@ -4,7 +4,7 @@ import { at } from '@shared/array-utils.ts'
 import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
 import { populateLocalModelSelect, populateRoleModelSelect } from '../model-options.ts'
 import { el } from '../../dom/helpers.ts'
-import { optionalString } from '@shared/unknown-value.ts'
+import { optionalString, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 
 export interface ModelRoutingSection {
   root: HTMLElement
@@ -93,8 +93,7 @@ export function createModelRoutingSection(
     const subagent = optionalString(await api.settings.get('subagentModel'))
     const safety = optionalString(await api.settings.get('safetyModel'))
     const review = optionalString(await api.settings.get('reviewModel'))
-    const roleModels =
-      ((await api.settings.get('roleModels')) as Record<string, string> | undefined) ?? {}
+    const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
 
     if (modelScope === 'all') {
       const coder = roleModels['coder'] ?? localModel
