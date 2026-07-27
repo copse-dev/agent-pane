@@ -1,4 +1,4 @@
-import { safeStorage } from 'electron'
+import { getSecretCipher, isSecretEncryptionAvailable } from './secret-cipher.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
@@ -88,7 +88,9 @@ export function getApiKey(provider: KeyProvider): string | null {
   if (!isStoredKey(raw) || !raw.enc) return null
   try {
     const buf = Buffer.from(raw.enc, 'base64')
-    return raw.plain ? buf.toString('utf8') : safeStorage.decryptString(buf)
+    if (raw.plain) return buf.toString('utf8')
+    // No cipher installed: an encrypted key cannot be read here.
+    return getSecretCipher()?.decryptString(buf) ?? null
   } catch {
     return null
   }
@@ -119,7 +121,7 @@ export function setApiKey(
     return { ok: true }
   }
 
-  const available = safeStorage.isEncryptionAvailable()
+  const available = isSecretEncryptionAvailable()
   // Encryption unavailable and no explicit per-key consent to store plaintext:
   // refuse to persist rather than silently writing the key to disk in the clear.
   // The caller (IPC → renderer) surfaces a confirmation and retries with
@@ -140,7 +142,9 @@ export function setApiKey(
       `[copse-panel] OS secure storage is unavailable; the ${provider} API key will be stored as base64 plaintext in settings.json (with explicit consent). Install and unlock a system keyring to encrypt it at rest.`,
     )
   }
-  const bytes = available ? safeStorage.encryptString(trimmed) : Buffer.from(trimmed, 'utf8')
+  const bytes = available
+    ? (getSecretCipher()?.encryptString(trimmed) ?? Buffer.from(trimmed, 'utf8'))
+    : Buffer.from(trimmed, 'utf8')
   const record: StoredKey = { v: 1, enc: bytes.toString('base64'), plain: !available }
   cached.set(`apiKey.${provider}`, record)
   return { ok: true }
