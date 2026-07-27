@@ -35,6 +35,7 @@ import {
 import { createAgentChunkSink } from './agent-chunk-sink.ts'
 import { redactUserContent } from './security/pii-redactor.ts'
 import { createHookRegistry, mergeBlockingOutcomes } from '@copse/agent/hooks/hook-registry.ts'
+import { appendOperatorInstruction } from '@copse/agent/hooks/inject-context.ts'
 import {
   beginHookRunRecording,
   clearHookRunLiveSink,
@@ -976,12 +977,7 @@ export async function runAgent(
     // filter on the returned messages strips it — so steering stays turn-local
     // exactly as before.
     const turnStartInjected = mergeBlockingOutcomes(turnStart.outcomes).injectContext
-    const injectedBlocks = [turnStartInjected, submitInjectContext].filter(
-      (block): block is string => block !== undefined && block.length > 0,
-    )
-    if (injectedBlocks.length > 0) {
-      messages.push({ role: 'system', content: injectedBlocks.join('\n\n') })
-    }
+    appendOperatorInstruction(messages, [turnStartInjected, submitInjectContext])
 
     const prepared = prepareAgentHistory(messages, contextWindow, toolSchemaReserve)
     trimmed = prepared.trimmed
