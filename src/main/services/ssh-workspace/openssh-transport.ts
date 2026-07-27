@@ -13,7 +13,27 @@ import {
 } from '../exec/subprocess-output-cap.ts'
 import { terminateProcessTree } from '../exec/subprocess-kill.ts'
 
-const CONTROL_PERSIST_SECONDS = 600
+// The multiplexed master is what stops every command re-authenticating. At 10
+// minutes any pause between agent turns (a review, a coffee) expired it and the
+// next command paid a full handshake — a password dialog on password-auth
+// hosts. Four hours covers a working session while still bounding an orphaned
+// master if the app dies before it can `-O exit`.
+const CONTROL_PERSIST_SECONDS = 14_400
+// Detect a master whose peer is gone (laptop sleep, VPN drop) instead of
+// hanging on the socket: 3 × 30s of silence tears it down so the next command
+// reconnects cleanly.
+const SERVER_ALIVE_INTERVAL_SECONDS = 30
+const SERVER_ALIVE_COUNT_MAX = 3
+
+/** Keepalives for whichever invocation ends up owning the connection. */
+function keepaliveArgs(): string[] {
+  return [
+    '-o',
+    `ServerAliveInterval=${String(SERVER_ALIVE_INTERVAL_SECONDS)}`,
+    '-o',
+    `ServerAliveCountMax=${String(SERVER_ALIVE_COUNT_MAX)}`,
+  ]
+}
 
 function resolveTarget(host: SshWorkspaceHost): string {
   const hostname = host.host.trim()
@@ -44,7 +64,7 @@ export function sshPtyArgs(host: SshWorkspaceHost, remoteCommand: string): strin
 }
 
 function baseSshArgs(host: SshWorkspaceHost, controlPath: string): string[] {
-  const args = ['-o', `StrictHostKeyChecking=${strictHostKeyOption()}`]
+  const args = ['-o', `StrictHostKeyChecking=${strictHostKeyOption()}`, ...keepaliveArgs()]
   if (supportsControlMaster()) {
     // Use `-S` (separate argv) for the socket path — never `-o ControlPath=…`.
     // OpenSSH re-parses `-o` values as config lines and splits on whitespace, so
@@ -193,6 +213,7 @@ export class OpenSshTransport implements SshTransport {
           `ControlPersist=${String(CONTROL_PERSIST_SECONDS)}`,
           '-o',
           `StrictHostKeyChecking=${strictHostKeyOption()}`,
+          ...keepaliveArgs(),
         ]
         if (this.host.port) masterArgs.push('-p', String(this.host.port))
         if (this.host.identityFile) masterArgs.push('-i', this.host.identityFile)
