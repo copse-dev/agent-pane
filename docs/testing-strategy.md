@@ -27,6 +27,95 @@ A component test that mounts the real view is nearly always preferable to an e2e
 spec that asserts the same DOM — it's faster, deterministic, and gets exact
 import-graph selection from the oracle.
 
+## Run the smallest set of tests
+
+Steering for _how much to run, and when_. A full `npm test` is ~3 minutes over
+530 files; the tests that can actually fail on a given change are usually a
+handful. Running the whole suite after every edit is the slow way to be wrong
+about the same three assertions.
+
+The loop, cheapest first:
+
+| When                              | Run                                          | Cost           |
+| --------------------------------- | -------------------------------------------- | -------------- |
+| After each edit                   | _nothing_ — the hook formatted and linted it | ~2s, automatic |
+| While iterating on one module     | `npm test -- <filter>`                       | seconds        |
+| Before you believe a change works | `npm run oracle -- --run unit`               | seconds–1 min  |
+| Before commit / PR                | `npm run check`                              | minutes        |
+
+### After an edit: the hook already ran
+
+`.copse/hooks.json`, `.cursor/hooks.json` and `.claude/settings.json` wire
+`scripts/hook-file-check.mts` to the post-edit hook, so **every file you edit is
+already reformatted and lint-checked** before you read the tool result. Don't
+spend a turn running Prettier on a file you just touched — and if the hook said
+nothing at all, it is clean.
+
+**Prettier is auto-applied; ESLint is not.** Formatting is deterministic and
+semantically neutral, so fixing it costs an agent turn and buys nothing —
+`afterFileEdit` is the formatter event, and `after-file-edit.ts` awaits blocking
+hooks precisely so a formatter lands before the agent proceeds. `eslint --fix`
+is a different animal: it makes real code changes (`prefer-const`, import
+rewrites), so those are reported with the command to run rather than applied
+behind you.
+
+A rewrite is **always** reported, even when there is nothing else to say, because
+it makes your copy of the file stale — a later edit matching against remembered
+text would fail against content you never saw. Re-read the file when you see it.
+
+Coverage is a fast subset by construction: Prettier plus the **type-unaware**
+ESLint rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
+TypeScript program — ~10s for a single file — which is too slow to run per edit,
+so they stay in `npm run check`. The hook says so in its own output; treat a
+silent hook as "no cheap problems", never as "verified".
+
+### While iterating: `npm test -- <filter>`
+
+Positional args filter the suite. A filter matches a path substring, a base name
+(with or without `.test.ts`), or a glob:
+
+```bash
+npm test -- thread-store             # any path containing "thread-store"
+npm test -- tool-display copse-adapter   # several filters union
+npm test -- 'src/main/services/hooks/**'  # glob
+```
+
+A filter that matches nothing is an **error**, not an empty pass — otherwise a
+typo reads as "0 tests, all green". The runner prints what it selected and
+suggests near misses.
+
+### Before believing it works: the oracle
+
+The [test oracle](../scripts/test-oracle.mts) maps your diff to the tests that
+can reach it — unit tests through the import graph (exact), e2e specs through
+their selector vocabulary (heuristic):
+
+```bash
+npm run oracle                  # what would you run, and how confident is it?
+npm run oracle -- --explain     # …and why each test was picked
+npm run oracle -- --run unit    # run the recommended unit subset
+npm run oracle -- --run e2e     # run the recommended e2e subset
+```
+
+Read the **confidence line** before trusting the subset:
+
+- **HIGH** — every changed file mapped to a test. The subset is the answer.
+- **LOW** — some changed source has no importing test and no selector match.
+  The subset can't cover it; the listed unmapped files are your blind spot.
+- **broad** — a cross-cutting file changed (build scripts, store, preload,
+  `index.html`). The oracle recommends everything, and means it.
+
+The oracle deliberately refuses to shrink below what it can back up: an empty
+selection runs the **full** suite rather than reporting a green on zero tests.
+
+### When a subset is not enough
+
+A subset is a fast filter, never the gate. Run the full `npm run check` before
+committing, and don't substitute a green subset for it — the oracle only knows
+imports and selectors, so a change reached through dynamic dispatch, a string
+key, or an IPC channel name is invisible to it. On a **LOW** or **broad**
+verdict, run the full tier the oracle names rather than the subset it offers.
+
 ## What stays e2e
 
 E2E is for **broad validation** and for assertions that need a real runtime.

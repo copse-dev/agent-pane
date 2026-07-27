@@ -26,11 +26,12 @@
  *             store, preload api, build scripts…). Everything is recommended.
  *
  * Usage:
- *   node scripts/test-oracle.mts                 # changes vs origin/main + working tree
+ *   node scripts/test-oracle.mts                 # changes vs the default branch + working tree
  *   node scripts/test-oracle.mts --base HEAD~3   # against a different base
  *   node scripts/test-oracle.mts --files a.ts b  # explicit file list
  *   node scripts/test-oracle.mts --explain       # show why each spec was picked
  *   node scripts/test-oracle.mts --json          # machine-readable
+ *   node scripts/test-oracle.mts --run unit      # run the recommended unit subset
  *   node scripts/test-oracle.mts --run e2e       # run the recommended e2e subset
  *   node scripts/test-oracle.mts --plan          # CI plan (see .github/workflows/ci.yml)
  *
@@ -91,7 +92,7 @@ const HELP = `test oracle — recommend which tests to run for your changes
 Usage: node scripts/test-oracle.mts [options]   (or: npm run oracle -- [options])
 
 Options:
-  --base <ref>     compare against this ref (default: origin/main)
+  --base <ref>     compare against this ref (default: the remote's default branch)
   --files <a b…>   use an explicit file list instead of git
   --explain        show why each test was selected
   --json           machine-readable output
@@ -104,6 +105,8 @@ e2e subset may miss (run all to be safe); broad = a cross-cutting file changed.`
 
 type Args = {
   base: string
+  /** Whether `--base` was given, so a guessed base is only warned about when it was guessed. */
+  baseExplicit: boolean
   files: string[] | null
   explain: boolean
   json: boolean
@@ -113,7 +116,8 @@ type Args = {
 
 function parseArgs(argv: string[]): Args {
   const a: Args = {
-    base: 'origin/main',
+    base: defaultBase(),
+    baseExplicit: false,
     files: null,
     explain: false,
     json: false,
@@ -125,8 +129,10 @@ function parseArgs(argv: string[]): Args {
     if (arg === '--help' || arg === '-h') {
       console.log(HELP)
       process.exit(0)
-    } else if (arg === '--base') a.base = argv[++i] ?? a.base
-    else if (arg === '--explain') a.explain = true
+    } else if (arg === '--base') {
+      a.base = argv[++i] ?? a.base
+      a.baseExplicit = true
+    } else if (arg === '--explain') a.explain = true
     else if (arg === '--json') a.json = true
     else if (arg === '--plan') a.plan = true
     else if (arg === '--run') {
@@ -148,10 +154,38 @@ function parseArgs(argv: string[]): Args {
 
 function git(args: string[]): string {
   try {
-    return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
+    // stderr ignored: every call here is best-effort (a missing ref is a normal
+    // outcome, not something to print a git fatal about mid-report).
+    return execFileSync('git', args, {
+      cwd: ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
   } catch {
     return ''
   }
+}
+
+/** `origin/HEAD` resolved, or null when the clone never set it. */
+export function resolvedRemoteHead(): string | null {
+  return git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).trim() || null
+}
+
+/**
+ * The base a local run diffs against: the remote's default branch, resolved
+ * from `origin/HEAD`. Hard-coding one branch name mis-scopes every branch cut
+ * from a different default — the diff picks up every commit that default is
+ * ahead by, which reads as a broad change and recommends the full suite, so
+ * the subset silently stops being a subset.
+ *
+ * A shallow or `--no-tags` clone may have no `origin/HEAD` at all. There is no
+ * way to learn the real default offline, so we keep the historical
+ * `origin/main` rather than guess, and {@link report} says so — an unnoticed
+ * wrong base is exactly the failure this function exists to prevent. CI never
+ * relies on any of it; it passes `--base <sha>` explicitly.
+ */
+export function defaultBase(): string {
+  return resolvedRemoteHead() ?? 'origin/main'
 }
 
 /** Changed files: committed-vs-base ∪ staged ∪ unstaged ∪ untracked. */
@@ -323,13 +357,36 @@ export function fileContainsToken(body: string, tok: Token): boolean {
 // ── Import graph ─────────────────────────────────────────────────────────────
 const CODE_EXTS = ['.ts', '.mts', '.tsx', '.js', '.mjs']
 
+/**
+ * Workspace package aliases, mirroring `tsconfig.json` `paths` (and the esbuild
+ * `alias` in `scripts/run-tests.mts`). Without these, every `@copse/agent/…`
+ * import is a dead end in the graph, so a change under `packages/` maps to no
+ * test and the unit subset silently misses it.
+ */
+const PACKAGE_ALIASES: [prefix: string, dir: string][] = [
+  ['@shared/', 'src/shared/'],
+  ['@copse/agent/', 'packages/agent/src/'],
+  ['@copse/llm/', 'packages/llm/src/'],
+  ['@copse/plan-usage/', 'packages/plan-usage/src/'],
+]
+
+/** Bare package specifiers (no subpath) — resolve to the package entry point. */
+const PACKAGE_ENTRIES: Record<string, string> = {
+  '@copse/agent': 'packages/agent/src/index',
+  '@copse/llm': 'packages/llm/src/index',
+  '@copse/plan-usage': 'packages/plan-usage/src/index',
+}
+
 function resolveImport(fromRel: string, spec: string): string | null {
   let baseRel: string
-  if (spec.startsWith('@shared/')) baseRel = `src/shared/${spec.slice('@shared/'.length)}`
+  const entry = PACKAGE_ENTRIES[spec]
+  const alias = PACKAGE_ALIASES.find(([prefix]) => spec.startsWith(prefix))
+  if (entry !== undefined) baseRel = entry
+  else if (alias) baseRel = alias[1] + spec.slice(alias[0].length)
   else if (spec.startsWith('.')) {
     const abs = resolve(join(ROOT, fromRel), '..', spec)
     baseRel = relative(ROOT, abs)
-  } else return null // bare package import
+  } else return null // bare third-party import
   baseRel = baseRel.replace(/\\/g, '/').replace(/\.(ts|mts|tsx|js|mjs)$/, '')
   for (const ext of CODE_EXTS) if (existsSync(join(ROOT, baseRel + ext))) return baseRel + ext
   for (const ext of CODE_EXTS)
@@ -390,10 +447,16 @@ export function listSpecs(): string[] {
     .sort()
 }
 
-/** Unit test files (selected via the import graph). */
+/**
+ * Unit test files (selected via the import graph). Must stay the same universe
+ * `scripts/run-tests.mts` bundles — `src`, the workspace packages, and the
+ * build scripts — or the "N / total" the oracle reports is measured against a
+ * suite smaller than the one `npm test` actually runs.
+ */
 export function listUnitTests(): string[] {
-  return walk('src')
+  return [...walk('src'), ...walk('packages'), ...walk('scripts')]
     .filter((f) => f.endsWith('.test.ts'))
+    .filter((f) => !f.startsWith('packages/') || /^packages\/[^/]+\/src\//.test(f))
     .sort()
 }
 
@@ -622,6 +685,16 @@ function report(args: Args, c: Selection): void {
   const dim = (s: string): string => `\x1b[2m${s}\x1b[0m`
   const bold = (s: string): string => `\x1b[1m${s}\x1b[0m`
   console.log(bold(`\nTest oracle — ${String(c.changed.length)} changed file(s)`))
+  console.log(dim(`  base: ${args.base}`))
+  if (args.files === null && !args.baseExplicit && resolvedRemoteHead() === null) {
+    console.log(
+      dim(
+        `  ⚠️  origin/HEAD is unset, so the base is a guess. If your branch was cut\n` +
+          `     from another branch the diff is too wide and this recommends too much.\n` +
+          `     Fix once with \`git remote set-head origin --auto\`, or pass --base <ref>.`,
+      ),
+    )
+  }
   if (!c.changed.length) {
     console.log(dim('  (no changes detected vs base / working tree)'))
     return
@@ -644,25 +717,51 @@ function report(args: Args, c: Selection): void {
     for (const f of c.unmapped) console.log(dim(`    ${f}`))
   }
 
+  // `--explain` is a request for the reasoning behind every pick, so it opts
+  // out of the preview cap; the default listing stays short enough to read.
+  // Uncapped, a change to a widely-imported module lists a few hundred paths
+  // twice over, which buries the recommendation it is supposed to support.
+  const preview = <T,>(items: T[]): T[] =>
+    args.explain ? items : items.slice(0, LIST_PREVIEW_LIMIT)
+  const printHidden = (total: number): void => {
+    const hidden = args.explain ? 0 : total - LIST_PREVIEW_LIMIT
+    if (hidden > 0) console.log(dim(`  … +${String(hidden)} more (--json for the full list)`))
+  }
+
   console.log(`\ne2e: ${bold(String(c.selectedE2e.length))} / ${String(c.specs.length)} spec(s)`)
-  for (const s of c.selectedE2e) {
+  for (const s of preview(c.selectedE2e)) {
     console.log(`  ${s.replace(`${E2E_DIR}/`, '')}`)
     if (args.explain)
       for (const why of dedupe(c.e2eReasons.get(s) ?? [])) console.log(dim(`      ${why}`))
   }
+  printHidden(c.selectedE2e.length)
 
   console.log(
     `\nunit: ${bold(String(c.selectedUnit.length))} / ${String(c.unitTests.length)} test(s)`,
   )
-  for (const t of c.selectedUnit) {
+  for (const t of preview(c.selectedUnit)) {
     console.log(`  ${t}`)
     if (args.explain)
       for (const why of dedupe(c.unitReasons.get(t) ?? [])) console.log(dim(`      ${why}`))
   }
+  printHidden(c.selectedUnit.length)
 
   console.log(bold('\nRun:'))
+  const unitArgs = unitCommandArgs(c.broad, c.selectedUnit, c.unitTests.length)
+  if (unitArgs.length - 2 > UNIT_COMMAND_INLINE_LIMIT) {
+    // Hundreds of paths on one line is not a command anyone reads or pastes.
+    console.log(`  node scripts/test-oracle.mts --run unit`)
+    console.log(dim(`    (runs the ${String(c.selectedUnit.length)} selected unit test files)`))
+  } else {
+    console.log(`  npm ${unitArgs.join(' ')}`)
+  }
+  if (unitArgs.length === 1 && c.selectedUnit.length === 0 && !c.broad)
+    console.log(dim('    (no unit test maps to these changes — running the full suite)'))
   if (c.broad || c.selectedE2e.length === c.specs.length) {
     console.log('  npm run test:e2e')
+  } else if (c.selectedE2e.length > UNIT_COMMAND_INLINE_LIMIT) {
+    console.log(`  node scripts/test-oracle.mts --run e2e`)
+    console.log(dim(`    (runs the ${String(c.selectedE2e.length)} selected spec(s))`))
   } else if (c.selectedE2e.length) {
     console.log(`  npx wdio run wdio.conf.ts ${c.selectedE2e.map((s) => `--spec ${s}`).join(' ')}`)
   } else {
@@ -677,19 +776,45 @@ function dedupe(xs: string[]): string[] {
   return [...new Set(xs)]
 }
 
+/**
+ * Above this many selected files, `--run unit` / `--run e2e` is offered instead
+ * of a literal command line: a few hundred paths on one line is not a command
+ * anyone reads, and pasting it costs more attention than it saves.
+ */
+const UNIT_COMMAND_INLINE_LIMIT = 20
+
+/** How many files each tier enumerates before the listing is summarised. */
+const LIST_PREVIEW_LIMIT = 20
+
+/**
+ * The `npm` args that run the recommended unit subset. Three cases collapse to
+ * a plain full `npm test`:
+ *   • a broad change — the map isn't trustworthy, so don't pretend it is;
+ *   • a selection covering more than half the suite — mirrors `computePlan`'s
+ *     e2e rule; below that ratio the bundling saved doesn't pay for the risk of
+ *     a partial map;
+ *   • an *empty* selection — no mapped test means the oracle has no opinion,
+ *     and "0 tests, all green" is the one answer it must never give.
+ */
+export function unitCommandArgs(broad: boolean, unit: string[], totalUnit: number): string[] {
+  if (broad || unit.length === 0) return ['test']
+  if (unit.length > Math.ceil(totalUnit / 2)) return ['test']
+  return ['test', '--', ...unit]
+}
+
 function runSelected(
   which: 'e2e' | 'unit' | 'all',
   broad: boolean,
   e2e: string[],
-  _unit: string[],
+  unit: string[],
   totalE2e: number,
-  _totalUnit: number,
+  totalUnit: number,
 ): void {
   const run = (cmd: string, cmdArgs: string[]): void => {
     console.log(`\n$ ${cmd} ${cmdArgs.join(' ')}`)
     execFileSync(cmd, cmdArgs, { cwd: ROOT, stdio: 'inherit' })
   }
-  if (which === 'unit' || which === 'all') run('npm', ['test'])
+  if (which === 'unit' || which === 'all') run('npm', unitCommandArgs(broad, unit, totalUnit))
   if (which === 'e2e' || which === 'all') {
     if (broad || e2e.length === totalE2e || e2e.length === 0) run('npm', ['run', 'test:e2e'])
     else run('npx', ['wdio', 'run', 'wdio.conf.ts', ...e2e.flatMap((s) => ['--spec', s])])
