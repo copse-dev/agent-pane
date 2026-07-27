@@ -74,6 +74,7 @@ jobs:
             git archive FETCH_HEAD | tar -x -C _previews
             shopt -s nullglob
             for dir in _previews/main/ _previews/develop/ _previews/pr-*/; do
+              [ -d "$dir" ] || continue
               name="$(basename "$dir")"
               echo "Adding demo: demo/$name"
               mkdir -p "_site/demo/$name"
