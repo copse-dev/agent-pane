@@ -77,6 +77,10 @@ function formatReset(resetsAt: string | null): string {
   return `resets in ${String(days)}d`
 }
 
+function formatCreditCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
 /** Exported for unit tests. */
 export function renderPlanProvider(
   host: HTMLElement,
@@ -130,6 +134,23 @@ export function renderPlanProvider(
     plan.className = 'usage-plan-name field-hint'
     plan.textContent = result.usage.plan
     card.append(plan)
+  }
+
+  if (result.usage.creditGrant) {
+    const credit = result.usage.creditGrant
+    const usedPercent = Math.min(100, Math.max(0, (credit.usedCents / credit.totalCents) * 100))
+    const row = document.createElement('div')
+    row.className = 'usage-credit-grant'
+    row.innerHTML = `
+      <div class="usage-plan-window-meta">
+        <span class="usage-plan-window-label">Credits</span>
+        <span class="usage-plan-window-stats">${escapeHtml(formatCreditCents(credit.remainingCents))} remaining of ${escapeHtml(formatCreditCents(credit.totalCents))}</span>
+      </div>
+      <div class="usage-plan-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${String(Math.round(usedPercent))}" aria-label="Cursor credits ${escapeHtml(formatCreditCents(credit.usedCents))} used of ${escapeHtml(formatCreditCents(credit.totalCents))}">
+        <div class="usage-plan-bar-fill" style="width: ${String(usedPercent)}%"></div>
+      </div>
+    `
+    card.append(row)
   }
 
   for (const window of result.usage.windows) {

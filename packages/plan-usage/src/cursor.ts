@@ -8,6 +8,7 @@ import {
 } from './internal-utils.ts'
 import type {
   FetchLike,
+  PlanCreditGrant,
   PlanUsageFetchOptions,
   PlanWindow,
   ProviderPlanResult,
@@ -16,6 +17,7 @@ import type {
 
 const CURSOR_PERIOD_USAGE_URL = 'https://cursor.com/api/dashboard/get-current-period-usage'
 const CURSOR_HARD_LIMIT_URL = 'https://cursor.com/api/dashboard/get-hard-limit'
+const CURSOR_CREDIT_GRANTS_URL = 'https://cursor.com/api/dashboard/get-credit-grants-balance'
 
 /** Format Cursor spend values that are denominated in USD cents. */
 export function formatCursorCents(cents: number): string {
@@ -67,6 +69,25 @@ function numberField(raw: Record<string, unknown>, ...keys: string[]): number | 
   return null
 }
 
+/** Parse Cursor's credit-grant balance response into normalized USD cents. */
+export function parseCursorCreditGrant(raw: unknown): PlanCreditGrant | null {
+  if (!isRecord(raw) || raw['hasCreditGrants'] !== true) return null
+
+  const total = numberField(raw, 'totalCents', 'total_cents')
+  const remaining = numberField(raw, 'creditBalanceCents', 'credit_balance_cents')
+  const used = numberField(raw, 'usedCents', 'used_cents')
+  if (total === null || total <= 0 || (remaining === null && used === null)) return null
+
+  const totalCents = Math.round(total)
+  const remainingCents = Math.round(
+    Math.min(totalCents, Math.max(0, remaining ?? totalCents - (used ?? 0))),
+  )
+  const usedCents = Math.round(
+    Math.min(totalCents, Math.max(0, used ?? totalCents - remainingCents)),
+  )
+  return { remainingCents, totalCents, usedCents }
+}
+
 /**
  * Parse Cursor `POST /api/dashboard/get-current-period-usage` (+ optional
  * hard-limit) into plan windows.
@@ -81,6 +102,7 @@ export function parseCursorUsage(
   periodRaw: unknown,
   nowMs: number = Date.now(),
   hardLimitRaw: unknown = null,
+  creditGrantRaw: unknown = null,
 ): ProviderPlanUsage {
   const root = isRecord(periodRaw) ? periodRaw : {}
   const planUsage = isRecord(root['planUsage']) ? root['planUsage'] : null
@@ -172,10 +194,12 @@ export function parseCursorUsage(
     plan = plan ? `${plan} · ${hardLabel}` : hardLabel
   }
 
+  const creditGrant = parseCursorCreditGrant(creditGrantRaw)
   return {
     provider: 'cursor',
     plan,
     windows,
+    ...(creditGrant ? { creditGrant } : {}),
     checkedAt: new Date(nowMs).toISOString(),
   }
 }
@@ -185,13 +209,14 @@ async function postCursorJson(
   url: string,
   cookie: string,
   signal: AbortSignal | undefined,
+  referer = 'https://cursor.com/dashboard/usage',
 ): Promise<unknown> {
   const response = await fetchImpl(url, {
     method: 'POST',
     headers: {
       Cookie: `WorkosCursorSessionToken=${cookie}`,
       Origin: 'https://cursor.com',
-      Referer: 'https://cursor.com/dashboard/usage',
+      Referer: referer,
       'Content-Type': 'application/json',
       Accept: 'application/json',
     },
@@ -229,16 +254,23 @@ export async function fetchCursorPlanUsage(
   const nowMs = now()
 
   try {
-    const [periodBody, hardBody] = await Promise.all([
+    const [periodBody, hardBody, creditGrantBody] = await Promise.all([
       postCursorJson(fetchImpl, CURSOR_PERIOD_USAGE_URL, cookie, options.signal),
       postCursorJson(fetchImpl, CURSOR_HARD_LIMIT_URL, cookie, options.signal).catch(() => null),
+      postCursorJson(
+        fetchImpl,
+        CURSOR_CREDIT_GRANTS_URL,
+        cookie,
+        options.signal,
+        'https://cursor.com/dashboard/spending',
+      ).catch(() => null),
     ])
-    const usage = parseCursorUsage(periodBody, nowMs, hardBody)
-    if (usage.windows.length === 0) {
+    const usage = parseCursorUsage(periodBody, nowMs, hardBody, creditGrantBody)
+    if (usage.windows.length === 0 && !usage.creditGrant) {
       return {
         status: 'unavailable',
         provider: 'cursor',
-        reason: 'Cursor period-usage response had no plan or spend-limit windows',
+        reason: 'Cursor usage response had no plan, spend-limit, or credit-grant data',
       }
     }
     return { status: 'ok', provider: 'cursor', usage }
