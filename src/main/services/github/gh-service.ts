@@ -3,19 +3,8 @@ import { getWorkspaceRoot } from '../workspace.ts'
 import { isGhAvailable } from '../tool-availability.ts'
 import { decodeWithSchema, safeJsonParse, type JsonDecoder } from '@shared/safe-json.ts'
 import { z } from 'zod'
+import { optionalAuthorSchema, optionalNumber, optionalString } from './gh-json-schemas.ts'
 
-const optionalString = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.string().optional(),
-)
-const optionalNumber = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.number().optional(),
-)
-const optionalAuthorSchema = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.object({ login: optionalString }).optional(),
-)
 const ghPrListEntrySchema = z.object({
   number: z.number(),
   title: z.string(),
