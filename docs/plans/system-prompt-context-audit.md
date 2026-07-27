@@ -102,7 +102,7 @@ that looks only at the prompt is looking at half the problem. See F11.
 **Shift: repeat yourself → simple tool descriptions.** `SHARED_TOOL_TAIL` plus the per-variant
 `tools` slot (`src/main/services/agent-prompt.ts:25-41`, `90-94`, `107-115`) hand-write a prose
 roster. Tool `description:` fields already go over the wire in the `tools` array
-(`packages/llm/src/anthropic-provider.ts:52`, `openai-provider.ts:77`), so this is a second copy of
+(`packages/llm/src/anthropic-provider.ts:62`, `openai-provider.ts:77`), so this is a second copy of
 what the model already receives — the exact pattern the post describes deleting.
 
 | Measure                                                | Count |
@@ -314,11 +314,19 @@ promoted to a unit test, or the same class of bug returns in whatever replaces t
 
 Recorded now, not acted on.
 
-- **Delivery differs by provider.** Anthropic receives the system prompt as a top-level `system`
-  array with `cache_control` breakpoints (`packages/llm/src/anthropic-provider.ts:25-45`,
-  `150-170`); OpenAI-family providers inline it as `messages[0]` (`openai-provider.ts:197`,
-  `responses-provider.ts:152-154`). Shortening the prompt shifts where cache breakpoints fall, so
-  cache-hit behaviour should be re-checked alongside any cut, not after.
+- **Delivery differs by provider.** Anthropic gets the system prompt split out
+  (`packages/llm/src/anthropic-provider.ts:25`, helper at `169-181`) and sent as a top-level
+  `system` array carrying its own `cache_control` breakpoint (`46-52`); OpenAI-family providers
+  inline it as `messages[0]` (`openai-provider.ts:197`, `responses-provider.ts:152-154`).
+  Shortening the prompt shifts where cache breakpoints fall, so cache-hit behaviour should be
+  re-checked alongside any cut, not after.
+- **The tool array is cached too, and that couples to F11.** A `cache_control` breakpoint is set on
+  the last tool definition (`anthropic-provider.ts:64`), so the tool block is part of the cached
+  prefix. Deferred loading would make that prefix vary by turn, which is exactly the failure
+  [#1286 / #1288](https://github.com/copse-dev/agent-pane/pull/1288) just fixed for steering text —
+  that work moved the conversation breakpoint _before_ volatile operator messages
+  (`anthropic-provider.ts:28-37`) to keep each request a byte-identical prefix of the next. Any F11
+  design must preserve the same property for tools, or it trades token savings for cache misses.
 - **The floor is not Claude 5.** Copse routes to LM Studio, Ollama, llama.cpp, Jan and vLLM, plus
   small hosted models. The scaffolding being cut here is plausibly still load-bearing for those; a
   global cut justified by Claude 5 evidence would regress the low end silently.
