@@ -13,6 +13,7 @@ import { isRemoteAgentModel } from '@shared/remote-agent.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 import { getProjectThread, updateMetaOrThrow } from './thread-store.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 import {
   allocateThreadWorktree,
   expectedThreadWorktreePath,
@@ -96,9 +97,9 @@ function projectById(projectId: string): Project | null {
   const projects = storageGet('projects')
   if (!Array.isArray(projects)) return null
   const project = projects.find((candidate): candidate is Project => {
-    if (!candidate || typeof candidate !== 'object') return false
-    const value = candidate as { id?: unknown; path?: unknown }
-    return value.id === projectId && typeof value.path === 'string'
+    return (
+      isRecord(candidate) && candidate['id'] === projectId && typeof candidate['path'] === 'string'
+    )
   })
   return project ?? null
 }

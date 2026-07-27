@@ -19,7 +19,12 @@ import {
 } from '@shared/context-window-advice.ts'
 import { el } from '../../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
-import { optionalBoolean, optionalString } from '@shared/unknown-value.ts'
+import {
+  optionalBoolean,
+  optionalNumber,
+  optionalString,
+  optionalStringArray,
+} from '@shared/unknown-value.ts'
 
 export interface LmStudioSection {
   root: HTMLElement
@@ -349,19 +354,22 @@ export function createLmStudioSection(
     if (lmKey) await api.settings.setKey('lmstudio', lmKey)
     const lmUrl = urlInput.value.trim()
     const currentSafety = optionalString(await api.settings.get('safetyModel'))
-    const currentExternalDeny = (await api.settings.get('safetyExternalDenyThreshold')) as
-      number | undefined
+    const currentExternalDeny = optionalNumber(
+      await api.settings.get('safetyExternalDenyThreshold'),
+    )
     const currentSafetyEnabled = optionalBoolean(await api.settings.get('safetyClassifierEnabled'))
     const currentAutoRun = optionalBoolean(await api.settings.get('autoRunSandboxCommands'))
     const currentMcpAuto = optionalBoolean(await api.settings.get('mcpAutoAllowReadOnly'))
     const currentReadonly = optionalBoolean(await api.settings.get('defaultReadonlyMode'))
-    const currentWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
-      string[] | undefined | null
+    const currentWebOrigins = optionalStringArray(
+      await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING),
+    )
     const currentWebApproval = optionalBoolean(
       await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING),
     )
-    const currentProviderHosts = (await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING)) as
-      string[] | undefined | null
+    const currentProviderHosts = optionalStringArray(
+      await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING),
+    )
     const currentProviderApproval = optionalBoolean(
       await api.settings.get(PROVIDER_ALLOW_USER_APPROVAL_SETTING),
     )

@@ -14,6 +14,7 @@ import {
 } from '@copse/plan-usage'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import { resolveApiKey } from './storage/settings.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
@@ -237,9 +238,9 @@ function discoverHuggingFaceToken(
 ): string | undefined {
   const fromStored = resolveStored()?.trim()
   if (fromStored) return fromStored
-  const fromEnv = env['HF_TOKEN']?.trim() || env['HUGGINGFACE_API_KEY']?.trim() || undefined
+  const fromEnv = firstNonEmptyString(env['HF_TOKEN']?.trim(), env['HUGGINGFACE_API_KEY']?.trim())
   if (fromEnv) return fromEnv
-  const hfHome = env['HF_HOME']?.trim() || join(home, '.cache', 'huggingface')
+  const hfHome = nonEmptyStringOr(env['HF_HOME']?.trim(), join(home, '.cache', 'huggingface'))
   return parseHuggingFaceToken(readTextFile(join(hfHome, 'token'))) ?? undefined
 }
 
@@ -249,9 +250,10 @@ function discoverCursorSessionToken(
   readKeychain: () => string | null,
   readStateDb: (dbPath: string) => string | null,
 ): string | undefined {
-  const fromEnv =
-    parseCursorSessionToken(env['CURSOR_SESSION_TOKEN'] ?? null) ||
-    parseCursorSessionToken(env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null)
+  const fromEnv = firstNonEmptyString(
+    parseCursorSessionToken(env['CURSOR_SESSION_TOKEN'] ?? null),
+    parseCursorSessionToken(env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null),
+  )
   if (fromEnv) return fromEnv
   const fromKeychain = readKeychain()
   if (fromKeychain) return fromKeychain

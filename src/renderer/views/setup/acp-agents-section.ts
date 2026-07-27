@@ -1,5 +1,6 @@
 import type { ApiClient } from '../../../preload/api.d.ts'
 import type { AcpAgentConfig, AcpModeChoice, AcpModelChoice } from '@shared/types/acp.ts'
+import { parseAcpAgentConfigs } from '@shared/acp.ts'
 import {
   KNOWN_ACP_AGENTS,
   type DetectedAcpAgent,
@@ -585,7 +586,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
 
   async function reloadAgents(): Promise<void> {
     try {
-      agents = ((await api.settings.get('registeredAcpAgents')) as AcpAgentConfig[] | null) ?? []
+      agents = parseAcpAgentConfigs(await api.settings.get('registeredAcpAgents'))
     } catch {
       agents = []
     }

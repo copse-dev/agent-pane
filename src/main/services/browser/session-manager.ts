@@ -3,7 +3,7 @@ import { BrowserWindow, app } from 'electron'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getAgentBrowserSession } from '../../windows/browser-web-contents.ts'
-import { DOM_SNAPSHOT_SCRIPT, renderSnapshot, type PageSnapshot } from './snapshot-format.ts'
+import { DOM_SNAPSHOT_SCRIPT, parsePageSnapshot, renderSnapshot } from './snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
 
 const MAX_TABS = 8
@@ -109,11 +109,8 @@ export class BrowserSessionManager {
 
   async snapshot(viewId?: string): Promise<string> {
     const tab = this.resolveTab(viewId)
-    const raw = (await tab.window.webContents.executeJavaScript(
-      DOM_SNAPSHOT_SCRIPT,
-      true,
-    )) as PageSnapshot
-    return renderSnapshot(raw)
+    const raw: unknown = await tab.window.webContents.executeJavaScript(DOM_SNAPSHOT_SCRIPT, true)
+    return renderSnapshot(parsePageSnapshot(raw))
   }
 
   async screenshot(viewId?: string): Promise<{ path: string; viewId: string }> {
@@ -194,7 +191,7 @@ export class BrowserSessionManager {
 let singleton: BrowserSessionManager | null = null
 
 export function getBrowserSession(): BrowserSessionManager {
-  if (!singleton) singleton = new BrowserSessionManager()
+  singleton ??= new BrowserSessionManager()
   return singleton
 }
 

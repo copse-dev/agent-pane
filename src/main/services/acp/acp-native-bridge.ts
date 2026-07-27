@@ -1,6 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import type { AddressInfo } from 'node:net'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -276,7 +275,15 @@ export async function startAcpNativeBridge(
     httpServer.once('error', reject)
     httpServer.listen(0, '127.0.0.1', resolve)
   })
-  const address = httpServer.address() as AddressInfo
+  const address = httpServer.address()
+  if (address === null || typeof address === 'string') {
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        resolve()
+      })
+    })
+    throw new Error('ACP native bridge did not bind a TCP port')
+  }
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,

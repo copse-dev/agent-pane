@@ -10,6 +10,7 @@ import {
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
 import { READ_TERMINAL_DEFAULT_LINES, takeLastLines } from '@shared/terminal/read-terminal.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 interface PtyListeners {
   onData: IDisposable
@@ -30,7 +31,7 @@ export interface TerminalSessionInfo {
 
 export interface TerminalSession {
   id: string
-  pty: IPty
+  pty: Pick<IPty, 'write' | 'resize' | 'kill' | 'onData' | 'onExit'>
   /** Identifies the renderer that created the session, for ownership checks. */
   ownerId: number
   listeners?: PtyListeners
@@ -63,8 +64,8 @@ const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
 
 function defaultShell(): string {
-  if (process.platform === 'win32') return process.env['COMSPEC'] || 'cmd.exe'
-  return process.env['SHELL'] || '/bin/bash'
+  if (process.platform === 'win32') return nonEmptyStringOr(process.env['COMSPEC'], 'cmd.exe')
+  return nonEmptyStringOr(process.env['SHELL'], '/bin/bash')
 }
 
 function sessionCwd(executionRoot?: string): string {
@@ -147,7 +148,7 @@ async function spawnShell(
     pty: ptyProcess,
     ownerId,
     output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES),
-    label: meta?.label?.trim() || 'Terminal',
+    label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
   }
   sessions.set(session.id, session)
@@ -283,7 +284,7 @@ export function __testInjectTerminalSession(opts: {
       onExit(): { dispose(): void } {
         return { dispose(): void {} }
       },
-    } as unknown as IPty,
+    },
     ownerId: opts.ownerId,
     output,
     label: opts.label,

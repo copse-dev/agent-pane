@@ -34,7 +34,7 @@ import { readSkillTool } from '../tools/read-skill-tool.ts'
 import { updateTodosTool } from '../tools/todo-tool.ts'
 import { askUserTool } from '../tools/ask-user-tool.ts'
 import { webSearchTool, fetchUrlTool } from '../tools/web-tools.ts'
-import { browserTools } from '../tools/browser-tools.ts'
+import { registerBrowserTools } from '../tools/browser-tools.ts'
 import { rememberTool, recallTool } from '../tools/memory-tools.ts'
 import { revealPiiTool } from '../tools/reveal-pii-tool.ts'
 import { listSkills } from './skills/skills-registry.ts'
@@ -177,7 +177,7 @@ export function createRegistry(): ToolRegistry {
   // returns a report; the agent proposes any fixes for the user to approve.
   registry.register(runCheckupTool)
   if (getSetting<boolean>(BROWSER_TOOLS_ENABLED_SETTING, BROWSER_TOOLS_DEFAULT_ENABLED)) {
-    for (const tool of browserTools) registry.register(tool)
+    registerBrowserTools(registry)
   }
   return registry
 }

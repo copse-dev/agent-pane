@@ -4,6 +4,7 @@ import {
   truncateCommandOutput,
 } from '../exec/subprocess-output-cap.ts'
 import { parseGhJson, runGh } from './gh-service.ts'
+import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 export type CiOverallState = 'pending' | 'success' | 'failure' | 'no_checks'
 
@@ -63,12 +64,18 @@ interface GhWorkflowRun {
   displayTitle?: string
 }
 
-const CHECK_BUCKET_VALUES = new Set(['pass', 'fail', 'pending', 'skipping', 'cancel'])
-
 export function normalizeCheckBucket(raw: string | undefined): CiCheck['bucket'] {
   const bucket = (raw ?? '').toLowerCase()
-  if (CHECK_BUCKET_VALUES.has(bucket)) return bucket as CiCheck['bucket']
-  return 'unknown'
+  switch (bucket) {
+    case 'pass':
+    case 'fail':
+    case 'pending':
+    case 'skipping':
+    case 'cancel':
+      return bucket
+    default:
+      return 'unknown'
+  }
 }
 
 export function rollupToCiChecks(rollup: GhPrView['statusCheckRollup']): CiCheck[] {
@@ -243,7 +250,7 @@ function buildCiStatus(
   const mergedChecks = prChecks.checks.length > 0 ? prChecks.checks : rollupChecks
   return {
     prNumber: typeof pr?.number === 'number' ? pr.number : null,
-    prTitle: pr?.title?.trim() || null,
+    prTitle: firstNonEmptyString(pr?.title?.trim()) ?? null,
     prUrl: pr?.url ?? null,
     branch: pr?.headRefName ?? null,
     headSha: pr?.headRefOid ?? null,

@@ -195,22 +195,23 @@ async function parseHooksConfig(path: string, scope: CursorHookScope): Promise<P
       continue
     }
     entries.forEach((entry, index) => {
-      // entry is an element of a parsed JSON array and can be null; the cast type
-      // hides that, so the optional chain guards the genuine runtime case.
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const command = (entry as { command?: unknown })?.command
+      if (!isRecord(entry)) {
+        warn(`"${event}" entry ${String(index + 1)} has a missing or empty "command" — skipped`)
+        return
+      }
+      const command = entry['command']
       if (typeof command !== 'string' || !command.trim()) {
         warn(`"${event}" entry ${String(index + 1)} has a missing or empty "command" — skipped`)
         return
       }
-      const failClosed = (entry as { failClosed?: unknown }).failClosed === true
-      const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
-      const matcherRaw = (entry as { matcher?: unknown }).matcher
+      const failClosed = entry['failClosed'] === true
+      const glob = normalizeGlobField(entry['glob'])
+      const matcherRaw = entry['matcher']
       const matcher =
         typeof matcherRaw === 'string' && matcherRaw.trim().length > 0
           ? matcherRaw.trim()
           : undefined
-      const timeoutMs = normalizeTimeoutField((entry as { timeout?: unknown }).timeout)
+      const timeoutMs = normalizeTimeoutField(entry['timeout'])
       out.push({
         event,
         command: command.trim(),
@@ -801,7 +802,9 @@ export async function cursorAfterToolUseHooks(
   return hooks
     .filter(
       (h): h is DiscoveredCursorHook & { event: CursorAfterToolHookEvent } =>
-        events.has(h.event as CursorAfterToolHookEvent) && cursorMatcherMatches(h, matcherCtx),
+        isCursorAfterToolHookEvent(h.event) &&
+        events.has(h.event) &&
+        cursorMatcherMatches(h, matcherCtx),
     )
     .map((h) => {
       auditProjectHook(h)
@@ -876,16 +879,6 @@ interface CursorHookResponse {
    */
   additionalContext?: unknown
   additional_context?: unknown
-}
-
-/**
- * Cursor `subagentStop` stdout: an optional `followup_message` that auto-
- * continues the parent (consumed only on `status: completed`). Snake and camel
- * spellings accepted, mirroring the other Cursor response parsers.
- */
-interface CursorSubagentStopResponse {
-  followup_message?: string
-  followupMessage?: string
 }
 
 /** Cursor `postToolUse` stdout fields that remain meaningful on detached dispatch. */
@@ -1326,10 +1319,9 @@ export const cursorAdapter: DialectAdapter = {
       // (nothing to block post-hoc); record parseOk:false for the spine only.
       return { ...base, failed: false, parseOk: false }
     }
-    const followup = firstString(
-      (parsed as CursorSubagentStopResponse).followup_message,
-      (parsed as CursorSubagentStopResponse).followupMessage,
-    )
+    const followup = isRecord(parsed)
+      ? firstString(parsed['followup_message'], parsed['followupMessage'])
+      : undefined
     // The vendor consumes `followup_message` only on a completed subagent.
     if (followup !== undefined && payload.status === 'completed') {
       const spineDecision: SpineHookRunDecision = { queuedMessageChars: followup.length }

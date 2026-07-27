@@ -10,6 +10,7 @@ import {
   recordThreadAgentLink,
 } from '../thread-store.ts'
 import { parseGithubOwnerRepo, resolveRemoteAgentRepository } from './remote-agent-shared.ts'
+import { firstNonEmptyString } from '@shared/unknown-value.ts'
 
 /**
  * Records the `agent-run ↔ PR ↔ thread` link on the launching thread (issue
@@ -33,7 +34,7 @@ async function resolveRepoSlug(): Promise<string | undefined> {
 
 async function resolveBranch(): Promise<string | undefined> {
   try {
-    return (await getCurrentBranchName())?.trim() || undefined
+    return firstNonEmptyString((await getCurrentBranchName())?.trim())
   } catch {
     return undefined
   }
