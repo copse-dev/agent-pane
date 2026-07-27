@@ -1,5 +1,5 @@
 import './app-init.ts' // MUST be first — sets app name/userData before electron-store builds
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, safeStorage } from 'electron'
 import { attachWebContentsLockdown } from './windows/web-contents-lockdown.ts'
 import {
   attachBrowserGuestWindowOpen,
@@ -10,6 +10,8 @@ import { attachBrowserGuestContextMenu } from './windows/browser-context-menu.ts
 import { applyAppIcon } from './app-icon.ts'
 import type { LLMMessage, StreamChunk } from '@shared/types'
 import { createMainWindow } from './windows/create-main-window.ts'
+import { setShellOutputSink } from './services/exec/shell-output-context.ts'
+import { setSecretCipher } from './services/storage/secret-cipher.ts'
 import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
@@ -107,6 +109,17 @@ import {
 } from './services/thread-checkout-transaction.ts'
 import { getAutomationService } from './services/automations/automation-service.ts'
 
+// Settings encrypts API keys through whichever cipher is installed rather than
+// importing `safeStorage` itself, which is what keeps `createRegistry()` and
+// everything under it loadable without Electron (#1313). Installed at module
+// scope, before anything can read a key: this only stores the reference, and
+// `safeStorage` is not called until a key is actually read or written.
+setSecretCipher({
+  isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+  encryptString: (plainText) => safeStorage.encryptString(plainText),
+  decryptString: (encrypted) => safeStorage.decryptString(encrypted),
+})
+
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
 app.on('web-contents-created', (_event, contents) => {
@@ -187,6 +200,13 @@ app
 
     recordStartupPhase('window-create')
     const win = createMainWindow()
+    // The shell tool streams child output through a sink rather than reaching
+    // for the window itself, so `createRegistry()` stays importable without
+    // Electron (#1313). Read the window per chunk rather than capturing `win`,
+    // so output still lands if the window is ever recreated.
+    setShellOutputSink((chunk, taskId) => {
+      getMainWindow()?.webContents.send('agent:shell_output', chunk, taskId)
+    })
     applyAppIcon([win])
     buildAppMenu(win)
     initUpdatePrompt(win)
