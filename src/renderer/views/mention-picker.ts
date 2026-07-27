@@ -257,7 +257,7 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
   })
 
   document.addEventListener('mousedown', (e) => {
-    if (!picker.contains(e.target as Node)) hidePicker()
+    if (!picker.contains(e.target instanceof Node ? e.target : null)) hidePicker()
   })
 
   return hidePicker

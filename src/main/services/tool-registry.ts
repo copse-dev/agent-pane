@@ -5,6 +5,7 @@ import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
 
@@ -92,7 +93,7 @@ export class ToolRegistry {
     if (!tool) return null
     const parsed = tool.parameters.safeParse(rawArgs)
     if (!parsed.success) return null
-    return parsed.data as Record<string, unknown>
+    return expectRecord(parsed.data)
   }
 
   async execute(name: string, rawArgs: unknown, signal: AbortSignal): Promise<ToolExecuteResult> {

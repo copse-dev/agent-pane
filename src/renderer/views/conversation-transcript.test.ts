@@ -6,6 +6,7 @@ import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Renders a sent user message carrying transcript attachments (input-bar.ts
 // builds these on send) and asserts the composer's paste chip appears inline at
@@ -13,9 +14,17 @@ import { CHIP_CHAR } from './composer-editor.ts'
 // an SVG-icon chip, no emoji.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function mountWithUserMessage(

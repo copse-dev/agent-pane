@@ -172,7 +172,7 @@ function appendIfPresent(node: Node | null): Node[] {
   return node ? [node] : []
 }
 
-function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
+function createIndividualToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLDetailsElement {
   if (tc.subagent) return createSubagentToolCard(tc, label, api)
 
   const card = el('details', {
@@ -319,7 +319,8 @@ function syncSubagentTimeline(
   api: ApiClient,
 ): void {
   const existing = new Map<string, HTMLElement>()
-  for (const node of Array.from(timeline.children) as HTMLElement[]) {
+  for (const node of Array.from(timeline.children)) {
+    if (!(node instanceof HTMLElement)) continue
     const key = node.dataset['timelineKey']
     if (key) existing.set(key, node)
   }
@@ -435,8 +436,9 @@ function populateSubagentCard(
   card.dataset['status'] = status
 
   const timeline =
-    (Array.from(card.children) as HTMLElement[]).find((node) =>
-      node.classList.contains('subagent-timeline'),
+    Array.from(card.children).find(
+      (node): node is HTMLElement =>
+        node instanceof HTMLElement && node.classList.contains('subagent-timeline'),
     ) ?? el('div', { class: 'subagent-timeline' })
   syncSubagentTimeline(timeline, session, status, api)
 
@@ -483,7 +485,7 @@ function populateSubagentCard(
   subagentCardChromeSig.set(card, chromeSig)
 }
 
-function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLElement {
+function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HTMLDetailsElement {
   const card = el('details', {
     class: 'tool-card tool-card-subagent',
     'data-tool-id': tc.id,
@@ -492,7 +494,9 @@ function createSubagentToolCard(tc: ToolCall, label: string, api: ApiClient): HT
   return card
 }
 
-function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' }>): HTMLElement {
+function createGroupToolCard(
+  item: Extract<ToolCallDisplayItem, { type: 'group' }>,
+): HTMLDetailsElement {
   const status = aggregateToolStatus(item.toolCalls)
   const card = el('details', {
     class: 'tool-card tool-card-group',
@@ -535,7 +539,7 @@ function createGroupToolCard(item: Extract<ToolCallDisplayItem, { type: 'group' 
 function createRollupToolCard(
   item: Extract<ToolCallDisplayItem, { type: 'rollup' }>,
   api: ApiClient,
-): HTMLElement {
+): HTMLDetailsElement {
   const status = aggregateToolStatus(item.toolCalls)
   const card = el('details', {
     class: 'tool-card tool-card-rollup',
@@ -555,7 +559,7 @@ function createRollupToolCard(
   return card
 }
 
-function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLElement {
+function createToolCard(item: ToolCallDisplayItem, api: ApiClient): HTMLDetailsElement {
   if (item.type === 'rollup') return createRollupToolCard(item, api)
   if (item.type === 'group') return createGroupToolCard(item)
   return createIndividualToolCard(item.toolCall, item.label, api)
@@ -987,8 +991,8 @@ export function mountConversation(
   // Clicking the activity row jumps to and opens the latest reasoning trail so the
   // "Reasoning…" indicator is itself the way in to watching the model reason.
   activityBar.addEventListener('click', () => {
-    const trails = list.querySelectorAll('.msg-assistant .message-reasoning')
-    const details = trails[trails.length - 1] as HTMLDetailsElement | undefined
+    const trails = list.querySelectorAll<HTMLDetailsElement>('.msg-assistant .message-reasoning')
+    const details = trails[trails.length - 1]
     if (!details) return
     details.dataset['userToggled'] = '1'
     details.open = true
@@ -1009,9 +1013,8 @@ export function mountConversation(
   // Delegated here so the handler can reach the store; preventDefault stops the
   // surrounding <summary> from toggling its <details>.
   list.addEventListener('click', (e) => {
-    const statsBtn = (e.target as HTMLElement | null)?.closest(
-      '.tool-edit-stats',
-    ) as HTMLElement | null
+    const statsBtn =
+      e.target instanceof Element ? e.target.closest<HTMLElement>('.tool-edit-stats') : null
     const path = statsBtn?.dataset['editPath']
     if (!path) return
     e.preventDefault()
@@ -1409,7 +1412,7 @@ export function mountConversation(
   }
 
   function applyToolCardOpenState(
-    card: HTMLElement,
+    card: HTMLDetailsElement,
     item: ToolCallDisplayItem,
     userExpandedRollups: Set<string>,
     userExpandedGroups: Set<string>,
@@ -1417,8 +1420,8 @@ export function mountConversation(
   ): void {
     if (item.type === 'rollup') {
       const status = aggregateToolStatus(item.toolCalls)
-      ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedRollups.has(item.key)
-      const nestedCards = card.querySelectorAll<HTMLElement>(
+      card.open = status === 'running' || userExpandedRollups.has(item.key)
+      const nestedCards = card.querySelectorAll<HTMLDetailsElement>(
         ':scope > .tool-rollup-body > .tool-card',
       )
       item.children.forEach((child, index) => {
@@ -1437,7 +1440,7 @@ export function mountConversation(
     }
     if (item.type === 'group') {
       const status = aggregateToolStatus(item.toolCalls)
-      ;(card as HTMLDetailsElement).open = status === 'running' || userExpandedGroups.has(item.key)
+      card.open = status === 'running' || userExpandedGroups.has(item.key)
       // A changed group card is rebuilt from scratch with every item collapsed;
       // reapply the per-item expansion captured above so an item the user
       // opened (or an expanded individual card absorbed into this group)
@@ -1452,7 +1455,7 @@ export function mountConversation(
     }
     const tc = item.toolCall
     const running = tc.status === 'running' || tc.subagent?.status === 'running'
-    ;(card as HTMLDetailsElement).open = running || userExpandedTools.has(tc.id)
+    card.open = running || userExpandedTools.has(tc.id)
   }
 
   function renderToolCards(
@@ -1466,28 +1469,26 @@ export function mountConversation(
     } = {},
   ): void {
     const userExpandedRollups = new Set<string>()
-    msgEl.querySelectorAll('.tool-card-rollup[open]').forEach((node) => {
-      const el = node as HTMLElement
-      const key = el.dataset['rollupKey']
+    msgEl.querySelectorAll<HTMLElement>('.tool-card-rollup[open]').forEach((node) => {
+      const key = node.dataset['rollupKey']
       // Running rollups are auto-expanded; don't treat that as a user preference.
-      if (key && el.dataset['status'] !== 'running') userExpandedRollups.add(key)
+      if (key && node.dataset['status'] !== 'running') userExpandedRollups.add(key)
     })
 
     const userExpandedGroups = new Set<string>()
-    msgEl.querySelectorAll('.tool-card-group[open]').forEach((node) => {
-      const el = node as HTMLElement
-      const key = el.dataset['groupKey']
+    msgEl.querySelectorAll<HTMLElement>('.tool-card-group[open]').forEach((node) => {
+      const key = node.dataset['groupKey']
       // Running groups are auto-expanded; don't treat that as a user preference.
-      if (key && el.dataset['status'] !== 'running') userExpandedGroups.add(key)
+      if (key && node.dataset['status'] !== 'running') userExpandedGroups.add(key)
     })
 
     const userExpandedTools = new Set<string>()
     msgEl
-      .querySelectorAll(
+      .querySelectorAll<HTMLElement>(
         '.tool-card[data-tool-id][open], .tool-group-item[open], .tool-card-subagent[open]',
       )
       .forEach((node) => {
-        const id = (node as HTMLElement).dataset['toolId']
+        const id = node.dataset['toolId']
         if (id) userExpandedTools.add(id)
       })
 
@@ -1501,14 +1502,13 @@ export function mountConversation(
     // are reused wholesale instead of torn down and rebuilt on every tick — the
     // former remove-all/rebuild-all churned every card's markdown and copy
     // buttons while a subagent streamed (#728).
-    const existing = new Map<string, HTMLElement>()
-    for (const node of Array.from(msgEl.children) as HTMLElement[]) {
-      if (!node.classList.contains('tool-card')) continue
+    const existing = new Map<string, HTMLDetailsElement>()
+    for (const node of msgEl.querySelectorAll<HTMLDetailsElement>(':scope > .tool-card')) {
       const key = toolCardKeys.get(node)
       if (key) existing.set(key, node)
     }
 
-    const desired: HTMLElement[] = []
+    const desired: HTMLDetailsElement[] = []
     for (const item of items) {
       const key = toolCardKey(item)
       const sig = toolCardSignature(item)
@@ -1562,7 +1562,7 @@ export function mountConversation(
     // already-correct child still remove+reinserts it and can flash siblings
     // whenever any other tool on the message ticks (#728).
     const firstToolIdx = Array.from(msgEl.children).findIndex((node) =>
-      (node as HTMLElement).classList.contains('tool-card'),
+      node.classList.contains('tool-card'),
     )
     const base = firstToolIdx === -1 ? msgEl.children.length : firstToolIdx
     for (let i = 0; i < desired.length; i++) {
@@ -1834,7 +1834,7 @@ export function mountConversation(
   function refreshToolCards(msgId: string): void {
     const thread = store.getState().threads.find((t) => t.messages.some((m) => m.id === msgId))
     const msg = thread?.messages.find((m) => m.id === msgId)
-    const msgEl = list.querySelector(`[data-message-id="${msgId}"]`)
+    const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${msgId}"]`)
     if (!msg || !msgEl) return
     // renderToolCards tears down and rebuilds every tool card, which destroys the
     // browser's scroll anchor and can jump a user who has scrolled up to read.
@@ -1843,7 +1843,7 @@ export function mountConversation(
     const prevScrollTop = list.scrollTop
     const wasPinned = pinnedToBottom
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- persisted/legacy messages may predate the toolCalls field
-    renderToolCards(msgEl as HTMLElement, msg.toolCalls ?? [], {
+    renderToolCards(msgEl, msg.toolCalls ?? [], {
       ...(msg.commandSummary !== undefined ? { commandSummary: msg.commandSummary } : {}),
       ...(msg.toolSummary !== undefined ? { toolSummary: msg.toolSummary } : {}),
       ...(msg.reasoning !== undefined ? { reasoning: msg.reasoning } : {}),
@@ -1869,10 +1869,10 @@ export function mountConversation(
     store.on('message_token', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
-      const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
-      const textEl = msgEl?.querySelector('.message-text')
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      const textEl = msgEl?.querySelector<HTMLElement>('.message-text')
       if (textEl && msg?.role === 'assistant') {
-        setAssistantMarkdown(textEl as HTMLElement, msg.content, true, api)
+        setAssistantMarkdown(textEl, msg.content, true, api)
         // Answer started — disclosure flips to past tense even while tokens stream.
         if (msg.content.trim()) {
           msgEl?.querySelectorAll<HTMLDetailsElement>('.message-reasoning').forEach((details) => {
@@ -1885,20 +1885,20 @@ export function mountConversation(
     store.on('message_reasoning', (mid) => {
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
-      const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
       if (msg?.role === 'assistant' && msgEl) {
-        syncReasoningEl(msgEl as HTMLElement, msg, isReasoningDisclosureLive(thread, msg))
+        syncReasoningEl(msgEl, msg, isReasoningDisclosureLive(thread, msg))
         activityBar.classList.add('agent-activity-clickable')
         scrollToBottom()
       }
     }),
     store.on('message_done', (mid) => {
-      const msgEl = list.querySelector(`[data-message-id="${mid}"]`)
-      const textEl = msgEl?.querySelector('.message-text')
+      const msgEl = list.querySelector<HTMLElement>(`[data-message-id="${mid}"]`)
+      const textEl = msgEl?.querySelector<HTMLElement>('.message-text')
       const thread = getActiveThread(store)
       const msg = thread?.messages.find((m) => m.id === mid)
       if (textEl && msg?.role === 'assistant') {
-        setAssistantMarkdown(textEl as HTMLElement, msg.content, false, api)
+        setAssistantMarkdown(textEl, msg.content, false, api)
         hydrateRemoteArtifactImages(list, api)
       }
       if (msg?.role === 'assistant' && msgEl) {
@@ -1908,14 +1908,11 @@ export function mountConversation(
         })
       }
       if (msg?.role === 'assistant' && msg.content.trim()) {
-        const body = msgEl?.querySelector('.message-body')
-        if (body && !body.querySelector('.msg-copy'))
-          attachCopyButton(body as HTMLElement, mid, store)
+        const body = msgEl?.querySelector<HTMLElement>('.message-body')
+        if (body && !body.querySelector('.msg-copy')) attachCopyButton(body, mid, store)
         // Answer is in: tuck a body-level reasoning trail away unless the user
         // opened it. Nested trails inside a tool rollup stay with that rollup.
-        const reasoning = body?.querySelector(
-          ':scope > .message-reasoning',
-        ) as HTMLDetailsElement | null
+        const reasoning = body?.querySelector<HTMLDetailsElement>(':scope > .message-reasoning')
         if (reasoning && !reasoning.dataset['userToggled']) reasoning.open = false
       }
     }),

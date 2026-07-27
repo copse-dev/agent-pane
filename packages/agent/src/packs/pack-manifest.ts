@@ -309,12 +309,13 @@ export function packManifestFromPluginJson(
 ): PackManifest {
   const tools: PackToolsDecl = { ...raw.tools }
   if (raw.mcpServers && tools.mcpServers === undefined) tools.mcpServers = raw.mcpServers
+  const requestedName = raw.name?.trim()
+  const fallbackName = opts?.sourceHint ? `unnamed-pack-${opts.sourceHint}` : 'unnamed-pack'
 
   const manifest: PackManifest = {
     // A discovered plugin.json is always a user pack (decision 15: user packs
     // share the manifest; first-party packs are defined in code, not on disk).
-    name:
-      raw.name?.trim() || (opts?.sourceHint ? `unnamed-pack-${opts.sourceHint}` : 'unnamed-pack'),
+    name: requestedName === undefined || requestedName.length === 0 ? fallbackName : requestedName,
     trust: 'user',
   }
   if (raw.version) manifest.version = raw.version

@@ -49,6 +49,7 @@ import type {
   DialectInterpretation,
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
+import { expectRecord, expectStringArray, isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Copse's per-hook timeout default (decision 13; H4). Copse-native hooks are our
@@ -227,18 +228,15 @@ async function parseCopseConfig(path: string, scope: HookScope): Promise<ParsedC
     return { hooks: [], warnings }
   }
 
-  // parsed comes from JSON.parse and can legitimately be null; the optional
-  // chain guards the real runtime case.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const hooks = (parsed as { hooks?: unknown })?.hooks
-  if (typeof hooks !== 'object' || hooks === null) {
+  const hooks = isRecord(parsed) ? parsed['hooks'] : undefined
+  if (!isRecord(hooks)) {
     warn('.copse/hooks.json has no "hooks" object — file ignored')
     return { hooks: [], warnings }
   }
 
   const cwd = dirname(path)
   const out: DiscoveredCopseHook[] = []
-  for (const [event, entries] of Object.entries(hooks as Record<string, unknown>)) {
+  for (const [event, entries] of Object.entries(hooks)) {
     if (!isCanonicalEvent(event)) {
       warn(`Unknown hook event "${event}" — entries skipped`, event)
       continue
@@ -508,8 +506,8 @@ function afterFileEditMatches(
   }
   return candidates.some(
     (c) =>
-      micromatch.isMatch(c, hook.glob as string[], { dot: true }) ||
-      micromatch.isMatch(c, hook.glob as string[], { dot: true, basename: true }),
+      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true }) ||
+      micromatch.isMatch(c, expectStringArray(hook.glob), { dot: true, basename: true }),
   )
 }
 
@@ -788,7 +786,7 @@ function firstString(...values: unknown[]): string | undefined {
 /** A tool-input rewrite is only valid as a plain object (arrays/scalars ignored). */
 function asInputRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? expectRecord(value)
     : null
 }
 
@@ -874,7 +872,7 @@ function copseSessionEnv(parsed: unknown): Record<string, string> | null {
   const raw = (parsed as CopseHookResponse).sessionEnv
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
   const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(expectRecord(raw))) {
     if (typeof value === 'string') out[key] = value
   }
   return Object.keys(out).length > 0 ? out : null

@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import { addMessage, createThread, setThreadDraftPrompt } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Component-level port of tests/e2e/composer-typing-no-rerender.e2e.ts. That spec
 // guarded the "scroll + links flicker while typing" regression: the composer's
@@ -25,12 +26,23 @@ import { mountConversation } from './conversation.ts'
 // changing identity would mean the list was rebuilt.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-    // annotateFileReferences early-returns when a message has no file-path
-    // candidates, but stub the resolver so the rendered link can't trip it.
-    index: { resolveFileReferences: () => Promise.resolve([]) },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+      // annotateFileReferences early-returns when a message has no file-path
+      // candidates, but stub the resolver so the rendered link can't trip it.
+      index: {
+        ...base['index'],
+        resolveFileReferences: () => Promise.resolve([]),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 afterEach(() => {

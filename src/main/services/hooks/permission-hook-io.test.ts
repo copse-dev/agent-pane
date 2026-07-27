@@ -17,6 +17,7 @@ import { runToolGateHooks } from './tool-gate.ts'
 import { runBeforeSubmitPromptHooks } from './before-submit-prompt.ts'
 import { runAfterFileEditHooks } from './after-file-edit.ts'
 import { runStopHooks } from './stop.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 const SESSION: AgentSessionInfo = {
   conversationId: 'conv-abc',
@@ -66,7 +67,7 @@ describe('permission-hook I/O — agent-session envelope on the wire (B4)', () =
   }
 
   async function capturedStdin(): Promise<Record<string, unknown>> {
-    return JSON.parse(await readFile(capturePath, 'utf-8')) as Record<string, unknown>
+    return expectRecord(JSON.parse(await readFile(capturePath, 'utf-8')) as unknown)
   }
 
   /** Assert the shared agent-session envelope (ids + model identity). */

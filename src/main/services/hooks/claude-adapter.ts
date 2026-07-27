@@ -33,6 +33,7 @@ import type {
   DialectInterpretation,
 } from './dialect-adapter.ts'
 import { type HookSpawnResult } from './hook-spawn.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Claude's per-hook timeout default (decision 13; H4). Claude Code documents a
@@ -181,14 +182,12 @@ async function parseClaudeSettings(path: string, scope: HookScope): Promise<Pars
     return { hooks: [], warnings }
   }
 
-  // parsed comes from JSON.parse and can legitimately be null; optional-chain.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const hooksRoot = (parsed as { hooks?: unknown })?.hooks
-  if (typeof hooksRoot !== 'object' || hooksRoot === null) return { hooks: [], warnings }
+  const hooksRoot = isRecord(parsed) ? parsed['hooks'] : undefined
+  if (!isRecord(hooksRoot)) return { hooks: [], warnings }
 
   const cwd = dirname(path)
   const out: DiscoveredClaudeHook[] = []
-  for (const [event, groups] of Object.entries(hooksRoot as Record<string, unknown>)) {
+  for (const [event, groups] of Object.entries(hooksRoot)) {
     if (!(CLAUDE_WIRED_HOOK_EVENTS as readonly string[]).includes(event)) {
       // Only warn for keys that actually declare hook groups; ignore empties.
       if (Array.isArray(groups) && groups.length > 0) {

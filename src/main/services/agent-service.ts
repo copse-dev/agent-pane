@@ -153,6 +153,7 @@ import {
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -503,10 +504,7 @@ function fireAfterToolUseHook(args: {
   // the live context, and its `hook_run` line must still attribute to the
   // emitting turn (decision 3/6).
   const recordingSnapshot = snapshotHookRunContext()
-  const input =
-    typeof args.input === 'object' && args.input !== null
-      ? (args.input as Record<string, unknown>)
-      : undefined
+  const input = isRecord(args.input) ? args.input : undefined
   void runAfterToolUseHooks(
     {
       toolName: args.toolName,

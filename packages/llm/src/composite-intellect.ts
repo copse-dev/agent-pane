@@ -20,6 +20,7 @@
 
 import {
   localBenchmarkScore,
+  BENCHMARKS,
   type Benchmark,
   type BenchmarkScore,
   type LocalModelCapability,
@@ -71,7 +72,9 @@ export interface CompositeIntellect {
 export function compositeIntellect(model: LocalModelCapability): CompositeIntellect | null {
   if (model.benchmarks['aa-intelligence']) return null
   const parts: Array<{ axis: Benchmark; score: BenchmarkScore; weight: number }> = []
-  for (const [axis, weight] of Object.entries(COMPOSITE_WEIGHTS) as Array<[Benchmark, number]>) {
+  for (const axis of BENCHMARKS) {
+    const weight = COMPOSITE_WEIGHTS[axis]
+    if (weight === undefined) continue
     const score = localBenchmarkScore(model, axis)
     if (score) parts.push({ axis, score, weight })
   }

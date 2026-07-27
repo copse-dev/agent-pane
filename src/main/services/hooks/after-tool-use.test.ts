@@ -27,6 +27,7 @@ import {
 import { runAfterToolUseHooks, capToolOutput, AFTER_TOOL_USE_OUTPUT_CAP } from './after-tool-use.ts'
 import type { HookEventPayloads } from '@copse/agent/hooks/canonical-events.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 let threadCounter = 0
 
@@ -166,7 +167,7 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.equal(result.ran, 1)
     await result.settled
 
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as Record<string, unknown>
+    const stdin = expectRecord(JSON.parse(readFileSync(stdinFile, 'utf-8')) as unknown)
     assert.equal(stdin['hook_event_name'], 'postToolUse')
     assert.equal(stdin['tool_name'], 'Read')
     assert.deepEqual(stdin['tool_input'], { path: 'README.md' })
@@ -200,7 +201,7 @@ describe('afterToolUse (tool-result fire site — D2)', () => {
     assert.equal(failed.ran, 1)
     await failed.settled
 
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as Record<string, unknown>
+    const stdin = expectRecord(JSON.parse(readFileSync(stdinFile, 'utf-8')) as unknown)
     assert.equal(stdin['hook_event_name'], 'postToolUseFailure')
     assert.equal(stdin['tool_name'], 'Shell')
     assert.deepEqual(stdin['tool_input'], { command: 'false' })

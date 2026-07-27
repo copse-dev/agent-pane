@@ -399,7 +399,7 @@ export function mountTerminalsPane(
     }
 
     tabBtn.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.terminals-tab-close')) return
+      if (e.target instanceof Element && e.target.closest('.terminals-tab-close')) return
       setActiveTab(id)
       // Reclaim the viewer from any agent-task panel that was showing. Done after
       // setActiveTab so a same-tab click (which setActiveTab skips) still returns

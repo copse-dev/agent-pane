@@ -1,4 +1,5 @@
 import type { McpServerConfig, McpTransportKind } from '@shared/types/mcp.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /**
  * Pure (no Electron / fs) parsing and normalization for MCP server configuration.
@@ -34,9 +35,9 @@ export interface McpConfigParseResult {
 }
 
 function asStringRecord(value: unknown): Record<string, string> | undefined {
-  if (value === null || typeof value !== 'object') return undefined
+  if (!isRecord(value)) return undefined
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+  for (const [k, v] of Object.entries(value)) {
     if (typeof v === 'string') out[k] = v
     else if (typeof v === 'number' || typeof v === 'boolean') out[k] = String(v)
   }

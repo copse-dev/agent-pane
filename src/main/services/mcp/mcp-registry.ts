@@ -36,6 +36,7 @@ import {
   isCursorPluginMcpSource,
   resolvePluginMcpConfigPath,
 } from '../skills/cursor-plugins.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const GRANTS_STORAGE_KEY = 'mcp-remembered-grants'
@@ -284,7 +285,7 @@ async function registerClientTools(
       rawParameters: sanitizeMcpInputSchema(tool.inputSchema),
       async execute(args, signal) {
         const result = await client.callTool(
-          { name: tool.name, arguments: (args ?? {}) as Record<string, unknown> },
+          { name: tool.name, arguments: isRecord(args) ? args : {} },
           undefined,
           { signal },
         )

@@ -49,14 +49,26 @@ export function qsRequired<E extends Element = HTMLElement>(root: ParentNode, se
   return found
 }
 
+export function on<K extends keyof DocumentEventMap>(
+  target: Document,
+  event: K,
+  handler: (e: DocumentEventMap[K]) => void,
+  opts?: AddEventListenerOptions,
+): () => void
 export function on<K extends keyof HTMLElementEventMap>(
-  target: EventTarget,
+  target: HTMLElement,
   event: K,
   handler: (e: HTMLElementEventMap[K]) => void,
   opts?: AddEventListenerOptions,
+): () => void
+export function on(
+  target: EventTarget,
+  event: string,
+  handler: EventListener,
+  opts?: AddEventListenerOptions,
 ): () => void {
-  target.addEventListener(event, handler as EventListener, opts)
+  target.addEventListener(event, handler, opts)
   return () => {
-    target.removeEventListener(event, handler as EventListener, opts)
+    target.removeEventListener(event, handler, opts)
   }
 }

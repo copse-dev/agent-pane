@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import type { ThreadReview } from '@shared/types'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { createReviewCardEl } from './review-panel.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // The post-turn review is a subagent: it reads files and its summary prints
 // file paths. Those paths must be linkified the same way main-chat assistant
@@ -14,12 +15,17 @@ import { createReviewCardEl } from './review-panel.ts'
 function fakeApi(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[] = [],
 ): ApiClient {
-  return {
-    index: {
-      resolveFileReferences: async () =>
-        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      index: {
+        ...base['index'],
+        resolveFileReferences: async () =>
+          resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 describe('review panel (subagent file links)', () => {
