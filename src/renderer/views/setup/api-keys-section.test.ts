@@ -81,7 +81,7 @@ describe('api-keys-section', () => {
     assert.equal(anthropicStatus.textContent, 'saved')
     assert.equal(anthropicStatus.querySelector('.ui-icon')?.getAttribute('data-icon'), 'dot')
     assert.equal(openaiStatus.textContent, 'not set')
-    assert.equal(openaiStatus.querySelector('.ui-icon')?.getAttribute('data-icon'), 'circle')
+    assert.equal(openaiStatus.querySelector('.ui-icon')?.getAttribute('data-icon'), 'minus')
   })
 
   it('shows an encrypted at-rest badge for an OS-encrypted stored key', async () => {

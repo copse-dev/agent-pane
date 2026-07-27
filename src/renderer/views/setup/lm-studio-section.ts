@@ -17,6 +17,7 @@ import {
   isContextWindowLow,
   lowContextAdvice,
 } from '@shared/context-window-advice.ts'
+import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
 import { el } from '../../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
 import { optionalBoolean, optionalString } from '@shared/unknown-value.ts'
@@ -51,7 +52,7 @@ export function createLmStudioSection(
   const urlInput = el('input', {
     type: 'text',
     name: 'localServerUrl',
-    placeholder: 'http://localhost:1234/v1',
+    placeholder: DEFAULT_LM_STUDIO_URL,
     autocomplete: 'off',
   })
   const keyInput = el('input', {
@@ -170,7 +171,9 @@ export function createLmStudioSection(
       const status = el('span', {
         class: present ? 'preferred-model-status ok' : 'preferred-model-status',
       })
-      status.append(inlineStatus(present ? 'ok' : 'pending', present ? 'Available' : 'Not loaded'))
+      // Settled absence uses `idle` (static minus), not `pending` (spinning circle) —
+      // otherwise Local models reads as stuck loading when nothing is in flight.
+      status.append(inlineStatus(present ? 'ok' : 'idle', present ? 'Available' : 'Not loaded'))
       const meta = el(
         'div',
         { class: 'preferred-model-meta' },
@@ -321,6 +324,8 @@ export function createLmStudioSection(
   }
 
   async function refreshDetection(): Promise<void> {
+    setInlineStatus(detectionStatus, 'pending', 'Checking local server…')
+    detectionStatus.className = 'setup-detection-status'
     const detection = await api.lmStudio.detect(urlInput.value.trim(), keyInput.value.trim())
     renderContextAdvisory(detection.modelContexts)
     if (detection.serverRunning) {
@@ -384,15 +389,15 @@ export function createLmStudioSection(
     })
     keyInput.value = ''
     const lmSet = await api.settings.getKey('lmstudio')
-    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'idle', lmSet ? 'saved' : 'not set')
     keyStatus.className = 'key-status'
   }
 
   void (async (): Promise<void> => {
     const lmUrl = optionalString(await api.settings.get('localServerUrl'))
-    urlInput.value = lmUrl ?? 'http://localhost:1234/v1'
+    urlInput.value = lmUrl ?? DEFAULT_LM_STUDIO_URL
     const lmSet = await api.settings.getKey('lmstudio')
-    setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')
+    setInlineStatus(keyStatus, lmSet ? 'filled' : 'idle', lmSet ? 'saved' : 'not set')
     await refreshDetection()
   })()
 

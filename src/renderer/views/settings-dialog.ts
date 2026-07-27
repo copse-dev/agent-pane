@@ -2132,7 +2132,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           : s.state === 'error'
             ? inlineStatus('error', 'error')
             : s.state === 'disabled'
-              ? inlineStatus('pending', 'disabled')
+              ? inlineStatus('idle', 'disabled')
               : s.state === 'untrusted'
                 ? inlineStatus('warn', 'not trusted')
                 : document.createTextNode('… connecting')
