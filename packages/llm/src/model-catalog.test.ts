@@ -8,6 +8,7 @@ import {
   getModelInfo,
   inferCloudModelProvider,
   MODEL_CATALOG,
+  supportsMidConversationSystem,
   TRACKED_MODELS,
 } from './model-catalog.ts'
 
@@ -86,5 +87,21 @@ describe('model catalog', () => {
 
   it('falls back to 8192 max output for unknown Anthropic models', () => {
     assert.equal(anthropicMaxOutputTokens('claude-unknown'), 8192)
+  })
+
+  it('allows mid-conversation system messages only on models that accept them', () => {
+    assert.equal(supportsMidConversationSystem('claude-opus-4-8'), true)
+    assert.equal(supportsMidConversationSystem('claude-fable-5'), true)
+    // Prefix match so dated snapshots and suffixed routing ids resolve too.
+    assert.equal(supportsMidConversationSystem('claude-opus-5-20260101'), true)
+
+    // Sending a system turn to any of these is a 400 — the default cloud model
+    // included, so the `<system-reminder>` fallback is the common path.
+    assert.equal(supportsMidConversationSystem('claude-sonnet-4-6'), false)
+    assert.equal(supportsMidConversationSystem('claude-sonnet-5'), false)
+    assert.equal(supportsMidConversationSystem('claude-haiku-4-5'), false)
+    // Unknown ids default to the safe path rather than guessing.
+    assert.equal(supportsMidConversationSystem('claude-unknown'), false)
+    assert.equal(supportsMidConversationSystem('gpt-5'), false)
   })
 })
