@@ -19,6 +19,7 @@ import {
 } from '@shared/context-window-advice.ts'
 import { el } from '../../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
+import { optionalBoolean, optionalString } from '@shared/unknown-value.ts'
 
 export interface LmStudioSection {
   root: HTMLElement
@@ -347,23 +348,23 @@ export function createLmStudioSection(
     const lmKey = keyInput.value.trim()
     if (lmKey) await api.settings.setKey('lmstudio', lmKey)
     const lmUrl = urlInput.value.trim()
-    const currentSafety = (await api.settings.get('safetyModel')) as string | undefined
+    const currentSafety = optionalString(await api.settings.get('safetyModel'))
     const currentExternalDeny = (await api.settings.get('safetyExternalDenyThreshold')) as
       number | undefined
-    const currentSafetyEnabled = (await api.settings.get('safetyClassifierEnabled')) as
-      boolean | undefined
-    const currentAutoRun = (await api.settings.get('autoRunSandboxCommands')) as boolean | undefined
-    const currentMcpAuto = (await api.settings.get('mcpAutoAllowReadOnly')) as boolean | undefined
-    const currentReadonly = (await api.settings.get('defaultReadonlyMode')) as boolean | undefined
+    const currentSafetyEnabled = optionalBoolean(await api.settings.get('safetyClassifierEnabled'))
+    const currentAutoRun = optionalBoolean(await api.settings.get('autoRunSandboxCommands'))
+    const currentMcpAuto = optionalBoolean(await api.settings.get('mcpAutoAllowReadOnly'))
+    const currentReadonly = optionalBoolean(await api.settings.get('defaultReadonlyMode'))
     const currentWebOrigins = (await api.settings.get(WEB_ALLOWED_ORIGINS_SETTING)) as
       string[] | undefined | null
-    const currentWebApproval = (await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING)) as
-      boolean | undefined
+    const currentWebApproval = optionalBoolean(
+      await api.settings.get(WEB_ALLOW_USER_APPROVAL_SETTING),
+    )
     const currentProviderHosts = (await api.settings.get(APPROVED_PROVIDER_HOSTS_SETTING)) as
       string[] | undefined | null
-    const currentProviderApproval = (await api.settings.get(
-      PROVIDER_ALLOW_USER_APPROVAL_SETTING,
-    )) as boolean | undefined
+    const currentProviderApproval = optionalBoolean(
+      await api.settings.get(PROVIDER_ALLOW_USER_APPROVAL_SETTING),
+    )
     await api.settings.setSecurity({
       localServerUrl: lmUrl,
       safetyClassifierEnabled: currentSafetyEnabled ?? true,
@@ -388,7 +389,7 @@ export function createLmStudioSection(
   }
 
   void (async (): Promise<void> => {
-    const lmUrl = (await api.settings.get('localServerUrl')) as string | undefined
+    const lmUrl = optionalString(await api.settings.get('localServerUrl'))
     urlInput.value = lmUrl ?? 'http://localhost:1234/v1'
     const lmSet = await api.settings.getKey('lmstudio')
     setInlineStatus(keyStatus, lmSet ? 'filled' : 'pending', lmSet ? 'saved' : 'not set')

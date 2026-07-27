@@ -9,6 +9,7 @@ import {
   terminalBenchTaskMetadata,
 } from './lib/terminal-bench-tasks.mts'
 import { terminalBenchProfile } from './lib/terminal-bench-profiles.mts'
+import { expectRecord } from '../src/shared/unknown-value.mts'
 
 const roots: string[] = []
 after(() => {
@@ -43,7 +44,7 @@ function fixture(contents = 'safe trace data'): string {
   )
   const task = terminalBenchTaskMetadata('cancel-async-tasks')
   const resultPath = join(trial, 'result.json')
-  const result = JSON.parse(readFileSync(resultPath, 'utf8')) as Record<string, unknown>
+  const result = expectRecord(JSON.parse(readFileSync(resultPath, 'utf8')) as unknown)
   result['task_name'] = task.name
   writeFileSync(resultPath, JSON.stringify(result))
   writeFileSync(
@@ -71,6 +72,13 @@ function runSeal(root: string, extraEnv: NodeJS.ProcessEnv = {}): ReturnType<typ
   })
 }
 
+function readCapsulesIndex(path: string): Record<string, unknown>[] {
+  const index = expectRecord(JSON.parse(readFileSync(path, 'utf8')) as unknown)
+  const capsules = index['capsules']
+  assert.ok(Array.isArray(capsules))
+  return capsules.map((entry: unknown) => expectRecord(entry))
+}
+
 describe('terminal benchmark capsule sealing', () => {
   it('writes a per-trial archive and a digest-bearing suite index', () => {
     const root = fixture()
@@ -88,29 +96,21 @@ describe('terminal benchmark capsule sealing', () => {
     const index: unknown = JSON.parse(readFileSync(join(capsules, 'index.json'), 'utf8'))
     assert.equal(typeof index, 'object')
     const entries =
-      typeof index === 'object' && index !== null
-        ? (index as Record<string, unknown>)['capsules']
-        : undefined
+      typeof index === 'object' && index !== null ? expectRecord(index)['capsules'] : undefined
     assert.ok(Array.isArray(entries))
     assert.equal(entries.length, 1)
     const entry = (entries as unknown[])[0]
     assert.equal(typeof entry, 'object')
     const archive =
-      typeof entry === 'object' && entry !== null
-        ? (entry as Record<string, unknown>)['archive']
-        : undefined
+      typeof entry === 'object' && entry !== null ? expectRecord(entry)['archive'] : undefined
     const digest =
-      typeof entry === 'object' && entry !== null
-        ? (entry as Record<string, unknown>)['sha256']
-        : undefined
+      typeof entry === 'object' && entry !== null ? expectRecord(entry)['sha256'] : undefined
     const outcome =
-      typeof entry === 'object' && entry !== null
-        ? (entry as Record<string, unknown>)['outcome']
-        : undefined
+      typeof entry === 'object' && entry !== null ? expectRecord(entry)['outcome'] : undefined
     assert.equal(typeof archive, 'string')
     assert.match(String(digest), /^[a-f0-9]{64}$/)
     assert.equal(outcome, 'zero')
-    assert.equal((entry as Record<string, unknown>)['profile'], 'main-legacy@1')
+    assert.equal(expectRecord(entry)['profile'], 'main-legacy@1')
     assert.ok(readFileSync(join(capsules, String(archive))).length > 0)
 
     const trialManifest: unknown = JSON.parse(
@@ -119,14 +119,11 @@ describe('terminal benchmark capsule sealing', () => {
         'utf8',
       ),
     )
-    assert.equal((trialManifest as Record<string, unknown>)['schemaVersion'], 2)
-    const dataset = (trialManifest as Record<string, unknown>)['dataset'] as Record<string, unknown>
-    const profile = (trialManifest as Record<string, unknown>)['profile'] as Record<string, unknown>
-    const metrics = (trialManifest as Record<string, unknown>)['metrics'] as Record<string, unknown>
-    const infrastructure = (trialManifest as Record<string, unknown>)['infrastructure'] as Record<
-      string,
-      unknown
-    >
+    assert.equal(expectRecord(trialManifest)['schemaVersion'], 2)
+    const dataset = expectRecord(expectRecord(trialManifest)['dataset'])
+    const profile = expectRecord(expectRecord(trialManifest)['profile'])
+    const metrics = expectRecord(expectRecord(trialManifest)['metrics'])
+    const infrastructure = expectRecord(expectRecord(trialManifest)['infrastructure'])
     assert.equal(dataset['revision'], TERMINAL_BENCH_DATASET_DESCRIPTOR.upstreamRevision)
     assert.equal(
       dataset['taskConfigSha256'],
@@ -151,20 +148,20 @@ describe('terminal benchmark capsule sealing', () => {
     const first = runSeal(root)
     assert.equal(first.status, 0, String(first.stderr))
     const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
-    const firstIndex = JSON.parse(readFileSync(join(capsules, 'index.json'), 'utf8')) as {
-      capsules: Array<{ archive: string; sha256: string }>
-    }
-    const archive = firstIndex.capsules[0]
+    const firstIndex = readCapsulesIndex(join(capsules, 'index.json'))
+    const archive = firstIndex[0]
     assert.ok(archive)
+    assert.equal(typeof archive['archive'], 'string')
 
     const second = runSeal(root)
     assert.equal(second.status, 0, String(second.stderr))
-    assert.match(String(second.stdout), new RegExp(`bench:terminal:seal reused ${archive.archive}`))
+    assert.match(
+      String(second.stdout),
+      new RegExp(`bench:terminal:seal reused ${String(archive['archive'])}`),
+    )
     assert.doesNotMatch(String(second.stdout), /bench:terminal:seal bench-results\//)
-    const secondIndex = JSON.parse(readFileSync(join(capsules, 'index.json'), 'utf8')) as {
-      capsules: Array<{ archive: string; sha256: string }>
-    }
-    assert.deepEqual(secondIndex.capsules, firstIndex.capsules)
+    const secondIndex = readCapsulesIndex(join(capsules, 'index.json'))
+    assert.deepEqual(secondIndex, firstIndex)
   })
 
   it('lists only capsules without a matching local upload receipt', () => {
@@ -174,11 +171,11 @@ describe('terminal benchmark capsule sealing', () => {
     const capsules = join(root, 'bench-results', 'terminal-bench-capsules')
     const indexPath = join(capsules, 'index.json')
     const receiptPath = join(capsules, '.uploaded-capsules.tsv')
-    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as {
-      capsules: Array<{ archive: string; sha256: string }>
-    }
-    const capsule = index.capsules[0]
+    const index = readCapsulesIndex(indexPath)
+    const capsule = index[0]
     assert.ok(capsule)
+    assert.equal(typeof capsule['sha256'], 'string')
+    assert.equal(typeof capsule['archive'], 'string')
 
     const pending = spawnSync(
       process.execPath,
@@ -186,7 +183,7 @@ describe('terminal benchmark capsule sealing', () => {
       { encoding: 'utf8' },
     )
     assert.equal(pending.status, 0, pending.stderr)
-    assert.equal(pending.stdout, `${capsule.sha256}\t${capsule.archive}\n`)
+    assert.equal(pending.stdout, `${String(capsule['sha256'])}\t${String(capsule['archive'])}\n`)
 
     writeFileSync(receiptPath, pending.stdout)
     const uploaded = spawnSync(
@@ -213,9 +210,9 @@ describe('terminal benchmark capsule sealing', () => {
     const target = join(root, 'bench-results', 'terminal-bench', 'job', 'trial-product')
     cpSync(source, target, { recursive: true })
     const resultPath = join(target, 'result.json')
-    const result = JSON.parse(readFileSync(resultPath, 'utf8')) as Record<string, unknown>
-    const agentResult = result['agent_result'] as Record<string, unknown>
-    const metadata = agentResult['metadata'] as Record<string, unknown>
+    const result = expectRecord(JSON.parse(readFileSync(resultPath, 'utf8')) as unknown)
+    const agentResult = expectRecord(result['agent_result'])
+    const metadata = expectRecord(agentResult['metadata'])
     metadata['profile'] = 'product-aligned@1'
     metadata['profile_hash'] = terminalBenchProfile('product-aligned@1').contentHash
     result['started_at'] = '2026-07-21T11:00:00Z'
@@ -224,23 +221,20 @@ describe('terminal benchmark capsule sealing', () => {
 
     const sealed = runSeal(root)
     assert.equal(sealed.status, 0, String(sealed.stderr))
-    const index = JSON.parse(
-      readFileSync(join(root, 'bench-results', 'terminal-bench-capsules', 'index.json'), 'utf8'),
-    ) as { capsules: Array<{ attemptIndex: number; profile: string }> }
-    assert.deepEqual(
-      index.capsules.map((capsule) => [capsule.profile, capsule.attemptIndex]).sort(),
-      [
-        ['main-legacy@1', 1],
-        ['product-aligned@1', 1],
-      ],
+    const index = readCapsulesIndex(
+      join(root, 'bench-results', 'terminal-bench-capsules', 'index.json'),
     )
+    assert.deepEqual(index.map((capsule) => [capsule['profile'], capsule['attemptIndex']]).sort(), [
+      ['main-legacy@1', 1],
+      ['product-aligned@1', 1],
+    ])
   })
 
   it('seals an infrastructure-invalid trial under its retained profile', () => {
     const root = fixture()
     const trial = join(root, 'bench-results', 'terminal-bench', 'job', 'trial')
     const resultPath = join(trial, 'result.json')
-    const result = JSON.parse(readFileSync(resultPath, 'utf8')) as Record<string, unknown>
+    const result = expectRecord(JSON.parse(readFileSync(resultPath, 'utf8')) as unknown)
     result['agent_result'] = null
     result['exception_info'] = { exception_type: 'RuntimeError', message: 'container failed' }
     result['verifier_result'] = null
@@ -257,11 +251,11 @@ describe('terminal benchmark capsule sealing', () => {
 
     const sealed = runSeal(root, { COPSE_TERMINAL_PROFILE: 'main-legacy' })
     assert.equal(sealed.status, 0, String(sealed.stderr))
-    const index = JSON.parse(
-      readFileSync(join(root, 'bench-results', 'terminal-bench-capsules', 'index.json'), 'utf8'),
-    ) as { capsules: Array<{ outcome: string; profile: string }> }
+    const index = readCapsulesIndex(
+      join(root, 'bench-results', 'terminal-bench-capsules', 'index.json'),
+    )
     assert.deepEqual(
-      index.capsules.map(({ outcome, profile: id }) => [id, outcome]),
+      index.map((capsule) => [capsule['profile'], capsule['outcome']]),
       [['product-aligned@3', 'invalid']],
     )
   })

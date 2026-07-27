@@ -7,7 +7,7 @@ import { showErrorToast } from '../views/toast.ts'
 const SKIP_SELECTOR = 'a, button, textarea, select, pre, svg, .mermaid-diagram'
 const TREE_WALKER_SHOW_TEXT = 4
 
-function shouldScanTextNode(node: Text, root: HTMLElement): boolean {
+function shouldScanTextNode(node: Node, root: HTMLElement): boolean {
   const parent = node.parentElement
   if (!parent || !root.contains(parent)) return false
   const skipMatch = parent.closest(SKIP_SELECTOR)
@@ -18,13 +18,14 @@ function shouldScanTextNode(node: Text, root: HTMLElement): boolean {
   return false
 }
 
-function textNodesToScan(root: HTMLElement): Text[] {
+function textNodesToScan(root: HTMLElement): Node[] {
   const walker = document.createTreeWalker(root, TREE_WALKER_SHOW_TEXT)
-  const nodes: Text[] = []
+  const nodes: Node[] = []
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const textNode = node as Text
-    if (shouldScanTextNode(textNode, root) && fileReferenceMatches(textNode.data).length > 0) {
-      nodes.push(textNode)
+    if (node.nodeType !== 3) continue
+    const data = node.nodeValue ?? ''
+    if (shouldScanTextNode(node, root) && fileReferenceMatches(data).length > 0) {
+      nodes.push(node)
     }
   }
   return nodes
@@ -33,7 +34,7 @@ function textNodesToScan(root: HTMLElement): Text[] {
 export function findFileReferenceCandidates(root: HTMLElement): string[] {
   const candidates = new Set<string>()
   for (const node of textNodesToScan(root)) {
-    for (const match of fileReferenceMatches(node.data)) {
+    for (const match of fileReferenceMatches(node.nodeValue ?? '')) {
       candidates.add(match.candidate)
     }
   }
@@ -41,14 +42,13 @@ export function findFileReferenceCandidates(root: HTMLElement): string[] {
 }
 
 function replaceTextNodeReferences(
-  node: Text,
+  node: Node,
   resolutions: ReadonlyMap<string, { path: string; kind: 'file' | 'directory' }>,
   root: HTMLElement,
 ): void {
   if (!node.parentNode || !shouldScanTextNode(node, root)) return
-  const matches = fileReferenceMatches(node.data).filter((match) =>
-    resolutions.has(match.candidate),
-  )
+  const data = node.nodeValue ?? ''
+  const matches = fileReferenceMatches(data).filter((match) => resolutions.has(match.candidate))
   if (matches.length === 0) return
 
   const fragment = document.createDocumentFragment()
@@ -57,7 +57,7 @@ function replaceTextNodeReferences(
     const target = resolutions.get(match.candidate)
     if (!target) continue
     if (match.start > cursor) {
-      fragment.append(document.createTextNode(node.data.slice(cursor, match.start)))
+      fragment.append(document.createTextNode(data.slice(cursor, match.start)))
     }
     const { path, kind } = target
     const link = document.createElement('a')
@@ -72,8 +72,8 @@ function replaceTextNodeReferences(
     fragment.append(link)
     cursor = match.end
   }
-  if (cursor < node.data.length) {
-    fragment.append(document.createTextNode(node.data.slice(cursor)))
+  if (cursor < data.length) {
+    fragment.append(document.createTextNode(data.slice(cursor)))
   }
   node.parentNode.replaceChild(fragment, node)
 }
@@ -104,8 +104,8 @@ export function bindFileReferenceClicks(
 ): () => void {
   const onClick = (event: MouseEvent): void => {
     const target = event.target
-    if (!target || typeof (target as Element).closest !== 'function') return
-    const link = (target as Element).closest<HTMLAnchorElement>('a[data-file-reference-path]')
+    if (!(target instanceof Element)) return
+    const link = target.closest<HTMLAnchorElement>('a[data-file-reference-path]')
     if (!link || !root.contains(link)) return
 
     event.preventDefault()

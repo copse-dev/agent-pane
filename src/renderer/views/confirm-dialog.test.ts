@@ -7,6 +7,7 @@ import {
   mountConfirmDialog,
   showConfirmDialog,
 } from './confirm-dialog.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 afterEach((): void => {
   document.getElementById('confirm-dialog')?.remove()
@@ -20,7 +21,7 @@ describe('confirm-dialog', () => {
       confirmLabel: 'Delete',
       danger: true,
     })
-    const dialog = document.getElementById('confirm-dialog') as HTMLDialogElement
+    const dialog = qsRequired<HTMLDialogElement>(document, '#confirm-dialog')
     assert.ok(dialog.open)
     clickActiveConfirmDialogConfirm()
     assert.equal(await pending, true)

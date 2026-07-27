@@ -47,10 +47,10 @@ export class AnthropicProvider implements LLMProvider {
             messages: apiMessages,
             // The last tool gets a cache breakpoint so the (large, stable) tool
             // schemas are cached instead of re-sent every loop iteration (#582).
-            tools: tools.map((t, i) => ({
+            tools: tools.map((t, i): Anthropic.Messages.Tool => ({
               name: t.name,
               description: t.description,
-              input_schema: t.parameters as Anthropic.Messages.Tool['input_schema'],
+              input_schema: { ...t.parameters, type: 'object' },
               ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
             })),
           },
@@ -198,7 +198,7 @@ function toAnthropicMessages(messages: LLMMessage[]): Anthropic.MessageParam[] {
             type: 'tool_use' as const,
             id: tc.id,
             name: tc.name,
-            input: tc.args as Record<string, unknown>,
+            input: tc.args,
           })),
         },
       ]
@@ -233,10 +233,21 @@ function toAnthropicContent(
     if (c.type === 'text') return { type: 'text', text: c.text ?? '' }
     if (c.type === 'image' && c.dataUrl) {
       const [header, data] = c.dataUrl.split(',')
-      const mediaType = (header?.match(/:(.*?);/)?.[1] ?? 'image/png') as
-        'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+      const parsedMediaType = header?.match(/:(.*?);/)?.[1]
+      const mediaType = isImageMediaType(parsedMediaType) ? parsedMediaType : 'image/png'
       return { type: 'image', source: { type: 'base64', media_type: mediaType, data: data ?? '' } }
     }
     return { type: 'text', text: '' }
   })
+}
+
+function isImageMediaType(
+  value: unknown,
+): value is 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp' {
+  return (
+    value === 'image/png' ||
+    value === 'image/jpeg' ||
+    value === 'image/gif' ||
+    value === 'image/webp'
+  )
 }

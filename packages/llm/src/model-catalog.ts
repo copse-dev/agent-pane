@@ -94,9 +94,8 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
 
 /** Friendly label for a tracked cloud id; unknown ids fall back to themselves. */
 export function cloudModelDisplayLabel(model: string): string {
-  return Object.hasOwn(CLOUD_MODEL_LABELS, model)
-    ? CLOUD_MODEL_LABELS[model as TrackedModel]
-    : model
+  const tracked = TRACKED_MODELS.find((candidate) => candidate === model)
+  return tracked === undefined ? model : CLOUD_MODEL_LABELS[tracked]
 }
 
 /** Model picker entries derived from {@link TRACKED_MODELS}. */

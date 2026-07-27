@@ -73,6 +73,7 @@ import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
 import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { expectString } from '@shared/unknown-value.ts'
 
 interface MountInputBarOptions {
   /**
@@ -736,7 +737,11 @@ export function mountInputBar(
     void submit()
   })
   const closeCheckoutMenu = (event: MouseEvent): void => {
-    if (checkoutMenu.hidden || checkoutHost.contains(event.target as Node)) return
+    if (
+      checkoutMenu.hidden ||
+      checkoutHost.contains(event.target instanceof Node ? event.target : null)
+    )
+      return
     checkoutMenu.hidden = true
     checkoutBtn.setAttribute('aria-expanded', 'false')
   }
@@ -1183,7 +1188,7 @@ export function mountInputBar(
     return new Promise((res, rej) => {
       const r = new FileReader()
       r.onload = (): void => {
-        res(r.result as string)
+        res(expectString(r.result))
       }
       r.onerror = rej
       r.readAsDataURL(blob)

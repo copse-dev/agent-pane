@@ -2,6 +2,7 @@ import { describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { isAcpPermissionRemembered, rememberAcpPermission } from './acp-permission-grants.ts'
 import { storageGet, storageSet } from '../storage/storage.ts'
+import { expectStringArray } from '@shared/unknown-value.ts'
 
 // Mirrors mcp-registry-persistence.test.ts: `storage.ts` is replaced by the
 // in-memory test shim, which routes writes through the same write-queue used
@@ -28,7 +29,7 @@ describe('acp-permission-grants', () => {
       rememberAcpPermission('a', 'execute'),
       rememberAcpPermission('b', 'read'),
     ])
-    const stored = storageGet(GRANTS_KEY) as string[]
+    const stored = expectStringArray(storageGet(GRANTS_KEY))
     assert.deepEqual([...stored].sort(), ['a:execute', 'a:read', 'b:read'])
   })
 

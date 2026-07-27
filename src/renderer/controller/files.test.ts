@@ -3,18 +3,24 @@ import assert from 'node:assert/strict'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { detectLanguage, openWorkspaceFile } from './files.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function apiWithFile(content: string): ApiClient {
-  return {
-    fs: {
-      readFile: async (projectId: string, threadId: string, path: string) => {
-        assert.equal(projectId, 'project-1')
-        assert.equal(threadId, 'thread-1')
-        assert.equal(path, 'README.md')
-        return content
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      fs: {
+        ...base['fs'],
+        readFile: async (projectId: string, threadId: string, path: string): Promise<string> => {
+          assert.equal(projectId, 'project-1')
+          assert.equal(threadId, 'thread-1')
+          assert.equal(path, 'README.md')
+          return content
+        },
       },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
 }
 
 describe('files controller', () => {

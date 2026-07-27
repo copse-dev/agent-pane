@@ -6,6 +6,7 @@ import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { ILink, ILinkProvider } from '@xterm/xterm'
 import { installTerminalFileLinks } from './terminal-file-links.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 interface FakeTerm {
   rows: number
@@ -43,14 +44,22 @@ function apiWith(
   resolutions: { candidate: string; path: string; kind?: 'file' | 'directory' }[],
   fileContent = 'x',
 ): ApiClient {
-  return {
-    index: {
-      query: async () => [],
-      resolveFileReferences: async () =>
-        resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
-    },
-    fs: { readFile: async () => fileContent },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      index: {
+        ...base['index'],
+        query: async () => [],
+        resolveFileReferences: async () =>
+          resolutions.map((r) => ({ ...r, kind: r.kind ?? ('file' as const) })),
+      },
+      fs: {
+        ...base['fs'],
+        readFile: async () => fileContent,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function provideLinksAt(term: FakeTerm, bufferLineNumber: number): ILink[] | undefined {

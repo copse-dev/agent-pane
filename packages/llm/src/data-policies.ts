@@ -196,7 +196,11 @@ export function openRouterDataPolicy(zdrOnly: boolean, allowTraining = false): P
   // ZDR endpoints cannot train ("Providers that do not retain your data are
   // also unable to train on your data" — OpenRouter ZDR docs), so ZDR-only
   // routing yields the zero-retention policy regardless of the training flag.
-  if (zdrOnly) return POLICIES_BY_SLUG['openrouter'] as ProviderDataPolicy
+  if (zdrOnly) {
+    const policy = POLICIES_BY_SLUG['openrouter']
+    if (!policy) throw new Error('OpenRouter data policy is missing')
+    return policy
+  }
   if (allowTraining) {
     return {
       retainsPrompts: null,

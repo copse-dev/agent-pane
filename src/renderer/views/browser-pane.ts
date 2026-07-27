@@ -14,6 +14,7 @@ import type { CanvasArtefact } from '@shared/types/canvas.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -56,7 +57,7 @@ interface BrowserTab {
  * data: artefact) — i.e. something the system browser can open. */
 function currentHttpUrl(tab: BrowserTab): string | null {
   if (tab.artefactTitle) return null
-  const url = webviewUrl(tab) || tab.pendingUrl || ''
+  const url = firstNonEmptyString(webviewUrl(tab), tab.pendingUrl) ?? ''
   return /^https?:\/\//i.test(url) ? url : null
 }
 
@@ -171,7 +172,10 @@ export function mountBrowserPane(
       tab.tabLabelEl.textContent = tab.label
       return
     }
-    const url = webviewUrl(tab) || tab.pendingUrl || 'about:blank'
+    const url = nonEmptyStringOr(
+      firstNonEmptyString(webviewUrl(tab), tab.pendingUrl),
+      'about:blank',
+    )
     const title = webviewTitle(tab)
     tab.label = browserTabLabel(url, title)
     tab.tabLabelEl.textContent = tab.label
@@ -530,7 +534,7 @@ export function mountBrowserPane(
     wireToolbar(tab)
 
     tabBtn.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.browser-tabs-tab-close')) return
+      if (e.target instanceof Element && e.target.closest('.browser-tabs-tab-close')) return
       setActiveTab(id)
     })
     closeBtn.addEventListener('click', (e) => {
@@ -583,12 +587,10 @@ export function mountBrowserPane(
           syncWebviewSize(tab)
           tab.urlInput.focus()
         })
-        if (!resizeObserver) {
-          resizeObserver = new ResizeObserver(() => {
-            const current = activeTabId ? tabs.get(activeTabId) : null
-            if (current) syncWebviewSize(current)
-          })
-        }
+        resizeObserver ??= new ResizeObserver(() => {
+          const current = activeTabId ? tabs.get(activeTabId) : null
+          if (current) syncWebviewSize(current)
+        })
         resizeObserver.observe(tab.webviewHost)
       }
     } else if (resizeObserver) {

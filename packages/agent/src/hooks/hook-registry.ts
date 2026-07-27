@@ -9,7 +9,7 @@
 //
 // This module lives in `packages/agent` and imports nothing from the host app
 // (execution-guidance rule 4).
-import { errorMessage } from '../internal-utils.ts'
+import { errorMessage, isRecord } from '../internal-utils.ts'
 import type {
   AsyncHookOutcome,
   BlockingHookOutcome,
@@ -66,11 +66,9 @@ import type { PackRegistry } from '../packs/pack-registry.ts'
  * `packages/agent` stays Electron-free (execution-guidance rule 4).
  */
 function threadUpdatedInput(payload: unknown, updatedInput: Record<string, unknown>): void {
-  if (typeof payload !== 'object' || payload === null || !('input' in payload)) return
-  const p = payload as { input?: unknown }
-  const current =
-    typeof p.input === 'object' && p.input !== null ? (p.input as Record<string, unknown>) : {}
-  p.input = { ...current, ...updatedInput }
+  if (!isRecord(payload) || !('input' in payload)) return
+  const current = isRecord(payload['input']) ? payload['input'] : {}
+  payload['input'] = { ...current, ...updatedInput }
 }
 
 /** One hook's contribution to a fired event, tagged with its author. */

@@ -128,7 +128,7 @@ export class OpenAIProvider implements LLMProvider {
           // names: `reasoning_content` (DeepSeek, vLLM, LM Studio) or `reasoning`
           // (OpenRouter). Surfaced as a separate chunk so it never leaks into the
           // answer text or the history sent back upstream.
-          const reasoning = readReasoningDelta(delta as unknown as Record<string, unknown>)
+          const reasoning = readReasoningDelta(delta)
           if (reasoning) yield { type: 'reasoning', text: reasoning }
 
           if (delta.content) yield { type: 'text', text: delta.content }
@@ -186,8 +186,9 @@ export class OpenAIProvider implements LLMProvider {
  * own schema has no reasoning field, so compatible servers bolt one on under
  * different names — accept the two common ones and ignore non-string values.
  */
-function readReasoningDelta(delta: Record<string, unknown>): string {
-  const raw = delta['reasoning_content'] ?? delta['reasoning']
+function readReasoningDelta(delta: object): string {
+  const reasoningContent = 'reasoning_content' in delta ? delta.reasoning_content : undefined
+  const raw = reasoningContent ?? ('reasoning' in delta ? delta.reasoning : undefined)
   return typeof raw === 'string' ? raw : ''
 }
 

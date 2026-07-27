@@ -1,3 +1,5 @@
+import { z } from 'zod'
+
 // Turn-tree identity — the epoch every async hook dispatch carries (decision 16).
 //
 // A *turn tree* is everything descending from one human-originated submission
@@ -16,14 +18,13 @@
 // Lives in `packages/agent` (Electron-free); the host builds the id from the
 // active run's turn identity and hands it to the executor (rule 4).
 
-declare const turnTreeIdBrand: unique symbol
-
 /**
  * The id of a turn tree — the epoch an async hook dispatch belongs to. A branded
  * `string`: assignable *to* `string`, but a plain `string` is not assignable to
  * it without {@link asTurnTreeId}.
  */
-export type TurnTreeId = string & { readonly [turnTreeIdBrand]: 'TurnTreeId' }
+const turnTreeIdSchema = z.string().brand<'TurnTreeId'>()
+export type TurnTreeId = z.infer<typeof turnTreeIdSchema>
 
 /**
  * Brand a raw string as a {@link TurnTreeId}. The single place the brand cast
@@ -31,5 +32,5 @@ export type TurnTreeId = string & { readonly [turnTreeIdBrand]: 'TurnTreeId' }
  * identity, so every dispatch downstream carries a properly-typed epoch.
  */
 export function asTurnTreeId(raw: string): TurnTreeId {
-  return raw as TurnTreeId
+  return turnTreeIdSchema.parse(raw)
 }
