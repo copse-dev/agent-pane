@@ -8,6 +8,7 @@ import {
   type PromptRequest,
 } from '@agentclientprotocol/sdk'
 import {
+  defaultBlockingReadPrompt,
   defaultLongRunPrompt,
   probeAgentLongRun,
   type AcpLongRunProbeConfig,
@@ -48,6 +49,41 @@ function fakeEarlyStopTransport(): TransportFactory {
   }
 }
 
+function fakeBlockingReadTransport(): TransportFactory {
+  return (_config: AcpLongRunProbeConfig) => {
+    const c2a = new TransformStream<Uint8Array, Uint8Array>()
+    const a2c = new TransformStream<Uint8Array, Uint8Array>()
+    const agentStream = ndJsonStream(a2c.writable, c2a.readable)
+    const clientStream = ndJsonStream(c2a.writable, a2c.readable)
+
+    agent({ name: 'fake-blocking-read-agent' })
+      .onRequest('initialize', () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {},
+      }))
+      .onRequest('session/new', () => ({ sessionId: 'sess-long-2' }))
+      .onRequest('session/prompt', async (ctx) => {
+        const sessionId = ctx.params.sessionId
+        await ctx.client.request(methods.client.fs.readTextFile, {
+          sessionId,
+          path: '.copse-acp-long-run-block.txt',
+        })
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'LONG_RUN_DONE' },
+          },
+        })
+        return { stopReason: 'end_turn' }
+      })
+      .onNotification('session/cancel', () => {})
+      .connect(agentStream)
+
+    return Promise.resolve({ stream: clientStream, dispose: () => {} })
+  }
+}
+
 function promptToText(prompt: PromptRequest['prompt']): string {
   return prompt.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
@@ -76,5 +112,24 @@ describe('probeAgentLongRun (in-memory agent)', () => {
     assert.equal(report.updateCount, 1)
     assert.equal(report.textChunkCount, 1)
     assert.equal(report.prompt, defaultLongRunPrompt(60_000, 1_000))
+    assert.equal(report.mode, 'stream')
+  })
+
+  it('can hold the turn open with a delayed ACP fs/read_text_file request', async () => {
+    const report = await probeAgentLongRun(CONFIG, {
+      createTransport: fakeBlockingReadTransport(),
+      mode: 'blocking-fs-read',
+      durationMs: 10,
+      progressIntervalMs: 1_000,
+      timeoutMs: 2_000,
+    })
+
+    assert.equal(report.ok, true)
+    assert.equal(report.completedEarly, false)
+    assert.equal(report.stopReason, 'end_turn')
+    assert.equal(report.updateCount, 1)
+    assert.equal(report.textChunkCount, 1)
+    assert.equal(report.prompt, defaultBlockingReadPrompt(10))
+    assert.equal(report.mode, 'blocking-fs-read')
   })
 })

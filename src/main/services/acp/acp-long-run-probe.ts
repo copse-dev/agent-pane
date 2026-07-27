@@ -19,11 +19,14 @@ export interface AcpLongRunProbeConfig {
   cwd: string
 }
 
+export type AcpLongRunProbeMode = 'stream' | 'blocking-fs-read'
+
 export interface AcpLongRunProbeOptions {
   durationMs?: number
   progressIntervalMs?: number
   timeoutMs?: number
   prompt?: string
+  mode?: AcpLongRunProbeMode
   createTransport?: (
     config: AcpLongRunProbeConfig,
   ) => Promise<{ stream: Stream; dispose: () => void }>
@@ -43,6 +46,7 @@ export interface AcpLongRunReport {
   command: string
   args: string[]
   prompt: string
+  mode: AcpLongRunProbeMode
   ok: boolean
   error?: string
   stopReason?: string | null
@@ -73,6 +77,16 @@ export function defaultLongRunPrompt(durationMs: number, progressIntervalMs: num
     'Do not edit files, do not run shell commands, and do not call tools unless absolutely required.',
     `Every ${String(intervalSeconds)} seconds, send a short visible progress message exactly like LONG_RUN_TICK <number>.`,
     `After at least ${String(durationSeconds)} seconds have elapsed, send LONG_RUN_DONE and stop.`,
+  ].join(' ')
+}
+
+export function defaultBlockingReadPrompt(durationMs: number): string {
+  const durationSeconds = Math.ceil(durationMs / 1000)
+  return [
+    `Read the file named .copse-acp-long-run-block.txt in the workspace root and wait for its contents.`,
+    `The client will intentionally take at least ${String(durationSeconds)} seconds to return that file.`,
+    'Do not edit files and do not run shell commands.',
+    'After the file content is returned, reply with LONG_RUN_DONE and stop.',
   ].join(' ')
 }
 
@@ -270,6 +284,12 @@ function isToolCall(update: SessionUpdate): boolean {
   return update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update'
 }
 
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
 export async function probeAgentLongRun(
   config: AcpLongRunProbeConfig,
   options: AcpLongRunProbeOptions = {},
@@ -277,7 +297,12 @@ export async function probeAgentLongRun(
   const expectedDurationMs = options.durationMs ?? DEFAULT_DURATION_MS
   const progressIntervalMs = options.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS
   const timeoutMs = options.timeoutMs ?? expectedDurationMs + DEFAULT_TIMEOUT_GRACE_MS
-  const prompt = options.prompt ?? defaultLongRunPrompt(expectedDurationMs, progressIntervalMs)
+  const mode = options.mode ?? 'stream'
+  const prompt =
+    options.prompt ??
+    (mode === 'blocking-fs-read'
+      ? defaultBlockingReadPrompt(expectedDurationMs)
+      : defaultLongRunPrompt(expectedDurationMs, progressIntervalMs))
   const createTransport = options.createTransport ?? spawnLongRunTransport
 
   const base = {
@@ -286,6 +311,7 @@ export async function probeAgentLongRun(
     command: config.command,
     args: config.args ?? [],
     prompt,
+    mode,
     expectedDurationMs,
   }
 
@@ -338,9 +364,11 @@ export async function probeAgentLongRun(
   try {
     transport = await createTransport(config)
     const app = client({ name: 'copse-long-run-probe' })
-      .onRequest(methods.client.fs.readTextFile, () =>
-        Promise.reject(new Error('fs/read disabled')),
-      )
+      .onRequest(methods.client.fs.readTextFile, async () => {
+        if (mode !== 'blocking-fs-read') throw new Error('fs/read disabled')
+        await sleepMs(expectedDurationMs)
+        return { content: 'LONG_RUN_BLOCK_OK' }
+      })
       .onRequest(methods.client.fs.writeTextFile, () =>
         Promise.reject(new Error('fs/write disabled')),
       )
@@ -355,7 +383,9 @@ export async function probeAgentLongRun(
     const stopReason = await app.connectWith(transport.stream, async (ctx) => {
       await ctx.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+        clientCapabilities: {
+          fs: { readTextFile: mode === 'blocking-fs-read', writeTextFile: false },
+        },
       })
       return ctx.buildSession(config.cwd).withSession(async (session) => {
         const promptFailure = promptRejectionOnly(session.prompt(prompt))
