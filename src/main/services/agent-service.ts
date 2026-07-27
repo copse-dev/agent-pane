@@ -630,6 +630,8 @@ export async function runAgent(
     // agent has streamed so far.
     let acpAssistantText = ''
     const acpChunkSink = (chunk: StreamChunk): void => {
+      runAbort.deadline.recordActivity()
+      runAbort.schedule()
       if (chunk.type === 'text') acpAssistantText += chunk.text
       sendChunk(chunk)
     }
