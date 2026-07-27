@@ -2,7 +2,8 @@ import type { ApiClient } from '../../../preload/api.d.ts'
 import { PREFERRED_MODELS } from '@shared/preferred-models.ts'
 import { at } from '@shared/array-utils.ts'
 import { lmStudioChatModelValue } from '@shared/lm-studio-defaults.ts'
-import { populateLocalModelSelect, populateRoleModelSelect } from '../model-options.ts'
+import { fetchRoleModelOptions, localModelOptions, type ModelOption } from '../model-options.ts'
+import { mountModelSelectPicker } from '../model-picker.ts'
 import { el } from '../../dom/helpers.ts'
 import { optionalString, stringRecordOrEmpty } from '@shared/unknown-value.ts'
 
@@ -88,6 +89,53 @@ export function createModelRoutingSection(
         )
       : fields
 
+  let availableLocalModels: string[] = []
+  type OptionLoader = (current: string) => Promise<ModelOption[]>
+  const pickerOptions: Record<'coder' | 'research' | 'safety' | 'review', OptionLoader> =
+    modelScope === 'all'
+      ? {
+          coder: (current: string): Promise<ModelOption[]> => fetchRoleModelOptions(api, current),
+          research: (current: string): Promise<ModelOption[]> =>
+            fetchRoleModelOptions(api, current),
+          safety: (current: string): Promise<ModelOption[]> => fetchRoleModelOptions(api, current),
+          review: (current: string): Promise<ModelOption[]> =>
+            fetchRoleModelOptions(api, current, '(auto — prefer on-device)'),
+        }
+      : {
+          coder: (): Promise<ModelOption[]> =>
+            Promise.resolve(localModelOptions(availableLocalModels)),
+          research: (): Promise<ModelOption[]> =>
+            Promise.resolve(
+              localModelOptions(availableLocalModels, '(auto — use default local model)'),
+            ),
+          safety: (): Promise<ModelOption[]> =>
+            Promise.resolve(localModelOptions(availableLocalModels)),
+          review: (): Promise<ModelOption[]> =>
+            Promise.resolve(localModelOptions(availableLocalModels, '(auto — prefer on-device)')),
+        }
+  const modelPickers = {
+    coder: mountModelSelectPicker(localDefaultModel, {
+      loadOptions: pickerOptions.coder,
+      ariaLabel: 'Coder model',
+      loadOnMount: false,
+    }),
+    research: mountModelSelectPicker(subagentModel, {
+      loadOptions: pickerOptions.research,
+      ariaLabel: 'Research model',
+      loadOnMount: false,
+    }),
+    safety: mountModelSelectPicker(safetyModel, {
+      loadOptions: pickerOptions.safety,
+      ariaLabel: 'Instruct and safety model',
+      loadOnMount: false,
+    }),
+    review: mountModelSelectPicker(reviewModel, {
+      loadOptions: pickerOptions.review,
+      ariaLabel: 'Post-turn review model',
+      loadOnMount: false,
+    }),
+  }
+
   async function refresh(): Promise<void> {
     const localModel = optionalString(await api.settings.get('localDefaultModel'))
     const subagent = optionalString(await api.settings.get('subagentModel'))
@@ -99,22 +147,18 @@ export function createModelRoutingSection(
       const coder = roleModels['coder'] ?? localModel
       const research = roleModels['research'] ?? subagent
       await Promise.all([
-        populateRoleModelSelect(
-          localDefaultModel,
-          api,
+        modelPickers.coder.refresh(
           coder
             ? canonicalRoleSelection(coder)
             : lmStudioChatModelValue(at(PREFERRED_MODELS, 0).id),
         ),
-        populateRoleModelSelect(subagentModel, api, canonicalRoleSelection(research ?? '')),
-        populateRoleModelSelect(
-          safetyModel,
-          api,
+        modelPickers.research.refresh(canonicalRoleSelection(research ?? '')),
+        modelPickers.safety.refresh(
           safety
             ? canonicalRoleSelection(safety)
             : lmStudioChatModelValue(at(PREFERRED_MODELS, 2).id),
         ),
-        populateRoleModelSelect(reviewModel, api, canonicalRoleSelection(review ?? '')),
+        modelPickers.review.refresh(canonicalRoleSelection(review ?? '')),
       ])
       return
     }
@@ -125,28 +169,15 @@ export function createModelRoutingSection(
     } catch {
       models = []
     }
-    populateLocalModelSelect(
-      localDefaultModel,
-      models,
-      localModel?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 0).id,
-    )
-    populateLocalModelSelect(
-      subagentModel,
-      models,
-      subagent?.replace(/^lmstudio:/, '') ?? '',
-      '(auto — use default local model)',
-    )
-    populateLocalModelSelect(
-      safetyModel,
-      models,
-      safety?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 2).id,
-    )
-    populateLocalModelSelect(
-      reviewModel,
-      models,
-      review?.replace(/^lmstudio:/, '') ?? '',
-      '(auto — prefer on-device)',
-    )
+    availableLocalModels = models
+    await Promise.all([
+      modelPickers.coder.refresh(
+        localModel?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 0).id,
+      ),
+      modelPickers.research.refresh(subagent?.replace(/^lmstudio:/, '') ?? ''),
+      modelPickers.safety.refresh(safety?.replace(/^lmstudio:/, '') ?? at(PREFERRED_MODELS, 2).id),
+      modelPickers.review.refresh(review?.replace(/^lmstudio:/, '') ?? ''),
+    ])
   }
 
   function readValues(): {

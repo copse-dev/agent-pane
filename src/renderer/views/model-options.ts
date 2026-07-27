@@ -58,7 +58,6 @@ import {
   BEST_VALUE_CHAT_MODEL_LABEL,
   isBestValueChatModel,
 } from '@shared/lm-studio-defaults.ts'
-import { clear } from '../dom/helpers.ts'
 
 const ACP_GROUP = 'ACP agents'
 
@@ -477,133 +476,40 @@ export async function fetchModelOptions(
   return options
 }
 
-function opt(value: string, label: string, disabled = false): HTMLOptionElement {
-  const o = document.createElement('option')
-  o.value = value
-  o.textContent = label
-  o.disabled = disabled
-  return o
+function autoModelOption(label: string): ModelOption {
+  return { value: '', label }
 }
 
-export interface PopulateModelSelectOpts {
-  /** Include Settings-only best-value chat default (chat model select only). */
-  includeBestValue?: boolean
-}
-
-// Fill a <select> with the cloud models plus a local optgroup of the models the
-// configured local server exposes (value `lmstudio:<id>`). Keeps the
-// `current` value selectable even if the server is offline.
-export async function populateModelSelect(
-  select: HTMLSelectElement,
+/** Options for lightweight/background prompts, including their automatic route. */
+export async function fetchSmallTasksModelOptions(
   api: ModelOptionsApi,
   current: string,
-  opts: PopulateModelSelectOpts = {},
-): Promise<void> {
-  clear(select)
-  const options = await fetchModelOptions(api, current, {
-    ...(opts.includeBestValue === true ? { includeBestValue: true } : {}),
-  })
-  let lastGroup: string | undefined
-  let groupEl: HTMLOptGroupElement | null = null
-  for (const item of options) {
-    if (item.group !== lastGroup) {
-      lastGroup = item.group
-      if (item.group) {
-        groupEl = document.createElement('optgroup')
-        groupEl.label = item.group
-        select.append(groupEl)
-      } else {
-        groupEl = null
-      }
-    }
-    const node = opt(item.value, item.label, item.disabled)
-    if (groupEl) groupEl.append(node)
-    else select.append(node)
-  }
-  select.value = current
-}
-
-/** Fill a <select> with local model ids for routing settings (blank = auto). */
-export function populateLocalModelSelect(
-  select: HTMLSelectElement,
-  models: string[],
-  current: string,
-  autoLabel = '(auto — first loaded model)',
-): void {
-  clear(select)
-  const auto = document.createElement('option')
-  auto.value = ''
-  auto.textContent = autoLabel
-  select.append(auto)
-  for (const id of models) {
-    const o = document.createElement('option')
-    o.value = id
-    o.textContent = id
-    select.append(o)
-  }
-  select.value = current
-}
-
-/** Model picker for small tasks — cloud, local, or auto (empty value). */
-export async function populateSmallTasksModelSelect(
-  select: HTMLSelectElement,
-  api: ModelOptionsApi,
-  current: string,
-): Promise<void> {
-  clear(select)
-  select.append(opt('', '(auto — prefer local, fall back to chat model)'))
-  const options = await fetchModelOptions(api, current)
-  let lastGroup: string | undefined
-  let groupEl: HTMLOptGroupElement | null = null
-  for (const item of options) {
-    if (item.group !== lastGroup) {
-      lastGroup = item.group
-      if (item.group) {
-        groupEl = document.createElement('optgroup')
-        groupEl.label = item.group
-        select.append(groupEl)
-      } else {
-        groupEl = null
-      }
-    }
-    const node = opt(item.value, item.label, item.disabled)
-    if (groupEl) groupEl.append(node)
-    else select.append(node)
-  }
-  select.value = current
+): Promise<ModelOption[]> {
+  return [
+    autoModelOption('(auto — prefer local, fall back to chat model)'),
+    ...(await fetchModelOptions(api, current)),
+  ]
 }
 
 /**
- * Model picker for a task role. Unlike the chat picker, this deliberately omits
- * remote / ACP agents: those own an entire chat session and cannot act as an
- * in-process research, review, or safety model. The blank choice keeps the
- * role's on-device default.
+ * Options for an in-process task role. Remote/ACP agents own full sessions and
+ * therefore cannot be selected for research, review, or safety roles.
  */
-export async function populateRoleModelSelect(
-  select: HTMLSelectElement,
+export async function fetchRoleModelOptions(
   api: ModelOptionsApi,
   current: string,
   autoLabel = '(auto — prefer on-device)',
-): Promise<void> {
-  clear(select)
-  select.append(opt('', autoLabel))
-  const options = await fetchModelOptions(api, current, { includeAgentModels: false })
-  let lastGroup: string | undefined
-  let groupEl: HTMLOptGroupElement | null = null
-  for (const item of options) {
-    if (item.group !== lastGroup) {
-      lastGroup = item.group
-      if (item.group) {
-        groupEl = document.createElement('optgroup')
-        groupEl.label = item.group
-        select.append(groupEl)
-      } else {
-        groupEl = null
-      }
-    }
-    const node = opt(item.value, item.label, item.disabled)
-    if (groupEl) groupEl.append(node)
-    else select.append(node)
-  }
-  select.value = current
+): Promise<ModelOption[]> {
+  return [
+    autoModelOption(autoLabel),
+    ...(await fetchModelOptions(api, current, { includeAgentModels: false })),
+  ]
+}
+
+/** Local-only routing options used by onboarding before cloud setup is complete. */
+export function localModelOptions(
+  models: readonly string[],
+  autoLabel = '(auto — first loaded model)',
+): ModelOption[] {
+  return [autoModelOption(autoLabel), ...models.map((id) => ({ value: id, label: id }))]
 }

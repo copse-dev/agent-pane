@@ -129,6 +129,7 @@ describe('approval dialog model comparison pickers', () => {
     const pickers = dialog.querySelector('.approval-comparison-models')
     assert.ok(pickers, 'expected comparison model pickers')
     assert.equal(dialog.querySelectorAll('.approval-model-select').length, 3)
+    assert.equal(dialog.querySelectorAll('.approval-model-picker').length, 3)
 
     const selects = [...dialog.querySelectorAll<HTMLSelectElement>('.approval-model-select')]
     assert.equal(selects.length, 3)

@@ -52,6 +52,7 @@ describe('advisor pair assessment hint', () => {
     const hint = $('#advisorPairHint')
     assert.equal(await hint.getAttribute('data-level'), 'good')
     assert.match(await hint.getText(), /Recommended pairing/i)
+    await expect($(ADVISOR_PACK_ROW).$('.model-picker-field')).toBeDisplayed()
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
     await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-good.png')
