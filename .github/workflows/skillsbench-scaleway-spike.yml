@@ -54,6 +54,13 @@ on:
         required: true
         default: '4096'
         type: string
+      fetch_capsules:
+        description: >-
+          Run ID of an earlier spike. Set this to download that run's capsules
+          and publish them as an artifact instead of running a new spike.
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: skillsbench-scaleway-spike
@@ -63,8 +70,84 @@ permissions:
   contents: read
 
 jobs:
+  # The fleet writes every trial's capsule to Object Storage and nothing else.
+  # The job log carries only the one-line trial summary, so the reward
+  # breakdown, token counts and error categories a result needs to be
+  # interpreted are unreachable once the fleet is torn down. This republishes a
+  # finished run's capsules as an artifact without re-running any trials.
+  capsules:
+    name: Fetch capsules from an earlier run
+    if: inputs.fetch_capsules != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download capsules
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_OBJECT_STORAGE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_OBJECT_STORAGE_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.SCW_OBJECT_STORAGE_REGION || 'fr-par' }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          BUCKET: ${{ vars.SCW_OBJECT_STORAGE_BUCKET }}
+          ENDPOINT: https://s3.${{ vars.SCW_OBJECT_STORAGE_REGION || 'fr-par' }}.scw.cloud
+          SOURCE_RUN_ID: ${{ inputs.fetch_capsules }}
+        run: |
+          # The value lands in an s3:// path, so keep it to the digits a run ID is.
+          if ! [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::fetch_capsules must be a numeric workflow run ID"
+            exit 2
+          fi
+          prefix="skillsbench-spike/${GITHUB_REPOSITORY}/${SOURCE_RUN_ID}/"
+          aws s3 sync "s3://${BUCKET}/${prefix}" capsules \
+            --only-show-errors --endpoint-url "$ENDPOINT"
+          if [ -z "$(ls -A capsules 2>/dev/null)" ]; then
+            echo "::error::no capsules under s3://${BUCKET}/${prefix}"
+            exit 1
+          fi
+          {
+            echo "## Capsules for run ${SOURCE_RUN_ID}"
+            echo
+            echo "- source: \`s3://${BUCKET}/${prefix}\`"
+            echo "- files: $(find capsules -type f | wc -l)"
+            echo "- size: $(du -sh capsules | cut -f1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarise manifests
+        run: |
+          # One JSONL row per trial, so the run can be read without unpacking
+          # the whole artifact.
+          find capsules -name manifest.json -print0 \
+            | xargs -0 --no-run-if-empty jq --compact-output '{
+                trial: .result.rollout_name,
+                task: .task.name,
+                profile: .profile.id,
+                profileHash: .profile.contentHash,
+                attempt: .attempt,
+                reward: .officialReward,
+                rewards: .result.rewards,
+                tools: .result.n_tool_calls,
+                skillReads: .result.n_skill_invocations,
+                prompts: .result.n_prompts,
+                inputTokens: .result.n_input_tokens,
+                outputTokens: .result.n_output_tokens,
+                error: .result.error,
+                errorCategory: .result.error_category,
+                verifierError: .result.verifier_error,
+                verifierErrorCategory: .result.verifier_error_category,
+                elapsed: .elapsedSeconds,
+              }' > trial-summary.jsonl
+          echo "summarised $(wc -l < trial-summary.jsonl) trials"
+          cat trial-summary.jsonl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skillsbench-capsules-${{ inputs.fetch_capsules }}
+          path: |
+            capsules
+            trial-summary.jsonl
+          retention-days: 7
+
   prepare:
     name: Validate and bake worker
+    if: inputs.fetch_capsules == ''
     runs-on: ubuntu-24.04
     outputs:
       worker_image: ${{ steps.image.outputs.worker_image }}
