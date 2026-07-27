@@ -359,6 +359,7 @@
   border-color: var(--accent);
 }
 .input-footer {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -687,13 +688,14 @@
 }
 .footer-overflow {
   display: block;
-  position: relative;
+  position: static;
   flex-shrink: 0;
 }
 .input-footer.is-compact .footer-usage {
   display: none;
 }
 .footer-overflow-trigger {
+  anchor-name: --footer-overflow-trigger;
   display: inline-flex;
   align-items: center;
   line-height: 1;
@@ -703,13 +705,22 @@
 .footer-overflow-trigger:hover {
   color: var(--text-secondary);
 }
+.footer-overflow-boundary {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  anchor-name: --footer-overflow-boundary;
+}
 .footer-overflow-menu {
   position: absolute;
+  position-anchor: --footer-overflow-trigger;
   z-index: 20;
-  bottom: calc(100% + 4px);
-  right: 0;
+  bottom: calc(anchor(top) + var(--spacing-xs));
+  right: anchor(--footer-overflow-boundary right);
+  box-sizing: border-box;
   width: max-content;
-  min-width: 120px;
+  min-width: min(120px, anchor-size(--footer-overflow-boundary width));
+  max-width: anchor-size(--footer-overflow-boundary width);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -719,6 +730,7 @@
 .footer-overflow-item {
   display: block;
   width: 100%;
+  max-width: 100%;
   text-align: left;
   font-size: 11px;
   color: var(--text-primary);
@@ -726,6 +738,7 @@
   border: none;
   padding: 6px var(--spacing-md);
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 .footer-overflow-item:hover {
   background: rgba(255, 255, 255, 0.06);
