@@ -17,11 +17,18 @@ from typing import Any
 
 from benchflow.rollout import Rollout, RolloutConfig
 
-from copse_planes import CopseRolloutPlanes
+from copse_planes import (
+    NETWORK_POLICY,
+    VERIFIER_DEPS_PATH,
+    CopseRolloutPlanes,
+    OracleRolloutPlanes,
+)
 
 
 PROFILES = ("skills-none", "skills-product", "skills-explicit")
 PROFILE_VERSIONS = ("1", "2")
+# BenchFlow's own acceptance checker requires an oracle reward of at least this.
+ORACLE_REQUIRED_REWARD = 0.99
 
 
 def _base_profile(profile: str) -> str:
@@ -60,12 +67,19 @@ def _arguments() -> argparse.Namespace:
         type=Path,
         default=Path("/opt/copse/scripts/print-skillsbench-profile.mts"),
     )
-    profiles = parser.add_mutually_exclusive_group(required=True)
+    profiles = parser.add_mutually_exclusive_group()
     profiles.add_argument("--profile", help="Base or versioned profile, e.g. skills-product@2")
     profiles.add_argument(
         "--profiles",
         help="Comma-separated arms run against every selected task, e.g. "
         "skills-product@1,skills-product@2",
+    )
+    parser.add_argument(
+        "--oracle",
+        action="store_true",
+        help="Run the upstream oracle (the task's own solve.sh, no LLM and no Copse "
+        "agent plane) under the same network condition as the trials, to establish "
+        "task eligibility.",
     )
     parser.add_argument("--task-names", default="offer-letter-generator")
     parser.add_argument("--attempts", type=int, default=1)
@@ -76,10 +90,17 @@ def _arguments() -> argparse.Namespace:
         "--capsules-dir", type=Path, default=Path("bench-results/skillsbench-capsules")
     )
     values = parser.parse_args()
-    try:
-        values.profiles = _parse_profiles(values.profiles or values.profile)
-    except ValueError as error:
-        parser.error(str(error))
+    if values.oracle:
+        if values.profile or values.profiles:
+            parser.error("--oracle runs the task solution, not a profile")
+        values.profiles = []
+    elif not (values.profile or values.profiles):
+        parser.error("one of --profile, --profiles, or --oracle is required")
+    else:
+        try:
+            values.profiles = _parse_profiles(values.profiles or values.profile)
+        except ValueError as error:
+            parser.error(str(error))
     if values.attempts < 1 or values.attempts > 5:
         parser.error("--attempts must be between 1 and 5")
     if values.shard_count < 1:
@@ -131,6 +152,27 @@ def _profile_metadata(script: Path, profile: str) -> dict[str, str]:
     ):
         raise ValueError("profile metadata script returned invalid provenance")
     return value
+
+
+def _verifier_deps_provenance(task_name: str) -> dict[str, Any]:
+    """Record that the task image carries pre-baked verifier dependencies.
+
+    Rewards graded on a pre-baked image are not comparable with rewards graded
+    on a stock one, so the capsule states which it was and pins the inventory
+    by digest.
+    """
+    try:
+        raw = VERIFIER_DEPS_PATH.read_bytes()
+    except OSError:
+        return {"prebaked": False, "reason": "inventory missing"}
+    doc = json.loads(raw)
+    entry = doc.get("tasks", {}).get(task_name)
+    return {
+        "prebaked": bool(entry),
+        "inventoryDigest": f"sha256:{hashlib.sha256(raw).hexdigest()}",
+        "datasetRevision": doc.get("datasetRevision"),
+        "staged": entry or {},
+    }
 
 
 def _result_mapping(result: Any) -> dict[str, Any]:
@@ -192,6 +234,106 @@ def _reasoning_summary(policy: str, checkpoints: list[dict[str, Any]]) -> dict[s
     }
 
 
+async def _run_oracle(
+    *,
+    args: argparse.Namespace,
+    descriptor: dict[str, Any],
+    task: dict[str, Any],
+) -> bool:
+    """Run the task's own solution through the stock BenchFlow lifecycle.
+
+    BenchFlow treats ``agent="oracle"`` specially: it executes the task's
+    ``solve.sh`` and never calls an LLM, so this passes no model, agent env, or
+    profile and keeps BenchFlow's own agent plane.
+
+    It does NOT use stock planes wholesale: ``OracleRolloutPlanes`` re-applies
+    the spike's no-network condition, which otherwise lives only in
+    ``CopseRolloutPlanes``. Without that the oracle could run with egress the
+    agent trials were denied, and a pass would calibrate nothing about them.
+
+    A task is only eligible for the study once this returns the
+    upstream-required reward. Note this still exercises only the upstream half —
+    task image, skill mount, verifier — and not the Copse bridge or tools.
+    """
+    task_name = task["name"]
+    trial_id = f"{task_name}__oracle"
+    job_name = os.environ.get("COPSE_BENCH_RUN_ID", "skillsbench-spike")
+    task_path = args.tasks_root / task_name
+    started = time.time()
+    rollout = Rollout(
+        RolloutConfig(
+            task_path=task_path,
+            environment="docker",
+            sandbox_user=None,
+            agent="oracle",
+            skill_mode="with-skill",
+            self_gen_no_internet=True,
+            jobs_dir=args.jobs_dir,
+            job_name=job_name,
+            rollout_name=trial_id,
+            dataset={"name": "skillsbench", "version": descriptor["dataset"]["version"]},
+            task_digest=task["digest"],
+            source_provenance={
+                "repository": task["git_url"],
+                "revision": descriptor["dataset"]["revision"],
+                "task_revision": task["git_commit_id"],
+            },
+            planes=OracleRolloutPlanes(),
+        )
+    )
+    result = await rollout.run()
+    elapsed = time.time() - started
+    source_dir = args.jobs_dir / job_name / trial_id
+    capsule = args.capsules_dir / trial_id
+    if capsule.exists():
+        shutil.rmtree(capsule)
+    if source_dir.is_dir():
+        shutil.copytree(source_dir, capsule)
+    else:
+        capsule.mkdir(parents=True)
+    reward = _reward(result)
+    eligible = reward is not None and reward >= ORACLE_REQUIRED_REWARD
+    manifest = {
+        "schemaVersion": 1,
+        "benchmark": {
+            "id": "skillsbench",
+            "version": descriptor["dataset"]["version"],
+            "tag": descriptor["dataset"]["tag"],
+            "revision": descriptor["dataset"]["revision"],
+            "benchflow": descriptor["dataset"]["benchflow"],
+        },
+        "task": {
+            "name": task_name,
+            "revision": task["git_commit_id"],
+            "digest": task["digest"],
+        },
+        "mode": "oracle",
+        "sourceCommit": _git_commit(),
+        "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
+        "networkPolicy": NETWORK_POLICY,
+        "verifierDeps": _verifier_deps_provenance(task_name),
+        "elapsedSeconds": round(elapsed, 3),
+        "officialReward": reward,
+        "requiredReward": ORACLE_REQUIRED_REWARD,
+        "eligible": eligible,
+        "result": _result_mapping(result),
+    }
+    (capsule / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+    print(
+        f"skillsbench oracle task={task_name} reward={reward} "
+        f"required={ORACLE_REQUIRED_REWARD} eligible={eligible} elapsed={elapsed:.1f}s",
+        flush=True,
+    )
+    if not eligible:
+        print(
+            f"skillsbench oracle: {task_name} is NOT eligible; agent rewards on it are "
+            "not interpretable until the oracle passes in this environment",
+            file=sys.stderr,
+            flush=True,
+        )
+    return eligible and result.error is None and result.verifier_error is None
+
+
 async def _run_trial(
     *,
     args: argparse.Namespace,
@@ -207,7 +349,11 @@ async def _run_trial(
     trial_id = f"{task_name}__{profile.replace('@', '-')}__attempt-{attempt}"
     job_name = os.environ.get("COPSE_BENCH_RUN_ID", "skillsbench-spike")
     rollout_name = trial_id
-    planes = CopseRolloutPlanes(bundle=args.bundle.resolve(), profile=profile)
+    planes = CopseRolloutPlanes(
+        bundle=args.bundle.resolve(),
+        profile=profile,
+        thread_dir=args.jobs_dir / job_name / rollout_name / "thread",
+    )
     agent_env = {
         "LM_STUDIO_URL": os.environ.get("LM_STUDIO_URL", "http://localhost:1234/v1"),
         "LM_STUDIO_MODEL": model,
@@ -293,7 +439,8 @@ async def _run_trial(
         "sourceCommit": _git_commit(),
         "runnerImage": os.environ.get("COPSE_SKILLSBENCH_WORKER_IMAGE", "local"),
         "model": model,
-        "networkPolicy": "no-network",
+        "networkPolicy": NETWORK_POLICY,
+        "verifierDeps": _verifier_deps_provenance(task_name),
         "budgets": {
             "agentTimeoutSeconds": getattr(rollout, "_timeout", None),
             "defaultCommandTimeoutSeconds": 120,
@@ -328,17 +475,23 @@ async def _run_trial(
 
 async def _main() -> int:
     args = _arguments()
-    if not args.bundle.is_file():
-        raise FileNotFoundError(f"Copse agent bundle is missing: {args.bundle}")
-    if not args.profile_script.is_file():
-        raise FileNotFoundError(f"profile metadata script is missing: {args.profile_script}")
-    model = os.environ.get("LM_STUDIO_MODEL", "").strip()
-    if not model or not os.environ.get("LM_STUDIO_API_KEY"):
-        raise RuntimeError("LM_STUDIO_MODEL and LM_STUDIO_API_KEY are required")
+    model = ""
+    profile_metadata: dict[str, dict[str, str]] = {}
+    # The oracle never launches the Copse bridge, so it needs neither the agent
+    # bundle nor model credentials.
+    if not args.oracle:
+        if not args.bundle.is_file():
+            raise FileNotFoundError(f"Copse agent bundle is missing: {args.bundle}")
+        if not args.profile_script.is_file():
+            raise FileNotFoundError(f"profile metadata script is missing: {args.profile_script}")
+        model = os.environ.get("LM_STUDIO_MODEL", "").strip()
+        if not model or not os.environ.get("LM_STUDIO_API_KEY"):
+            raise RuntimeError("LM_STUDIO_MODEL and LM_STUDIO_API_KEY are required")
     descriptor = json.loads(args.descriptor.read_text())
-    profile_metadata = {
-        profile: _profile_metadata(args.profile_script, profile) for profile in args.profiles
-    }
+    if not args.oracle:
+        profile_metadata = {
+            profile: _profile_metadata(args.profile_script, profile) for profile in args.profiles
+        }
     active = {task["name"]: task for task in descriptor["active"]}
     requested = [name.strip() for name in args.task_names.split(",") if name.strip()]
     unknown = [name for name in requested if name not in active]
@@ -351,6 +504,17 @@ async def _main() -> int:
     args.jobs_dir.mkdir(parents=True, exist_ok=True)
     args.capsules_dir.mkdir(parents=True, exist_ok=True)
     successful = True
+    if args.oracle:
+        for task_name in selected:
+            successful = (
+                await _run_oracle(
+                    args=args,
+                    descriptor=descriptor,
+                    task=active[task_name],
+                )
+                and successful
+            )
+        return 0 if successful else 1
     # Task-major so paired arms see the same task back to back on one worker.
     for task_name in selected:
         for attempt in range(1, args.attempts + 1):

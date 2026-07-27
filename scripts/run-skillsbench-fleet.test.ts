@@ -18,6 +18,21 @@ describe('SkillsBench Scaleway spike', () => {
     assert.deepEqual(config.profiles, ['skills-product'])
   })
 
+  it('runs the oracle without a profile and refuses to mix the two', () => {
+    assert.throws(
+      () =>
+        skillsBenchFleetConfig({
+          'worker-image': workerImage,
+          oracle: true,
+          profile: 'skills-product@1',
+        }),
+      /not a profile/,
+    )
+    const config = skillsBenchFleetConfig({ 'worker-image': workerImage, oracle: true })
+    assert.equal(config.oracle, true)
+    assert.deepEqual(config.profiles, [])
+  })
+
   it('runs paired reasoning arms on one fleet', () => {
     assert.throws(
       () =>
@@ -70,6 +85,7 @@ describe('SkillsBench Scaleway spike', () => {
     assert.match(workflow, /benchmarks\/skillsbench\/Dockerfile\.worker/)
     assert.match(workflow, /if: always\(\)/)
     assert.match(workflow, /bench:skills:fleet/)
+    assert.match(workflow, /args\+=\(--oracle\)/)
     assert.match(workflow, /--profiles "\$PROFILES"/)
     assert.match(workflow, /skills-product@2/)
   })
