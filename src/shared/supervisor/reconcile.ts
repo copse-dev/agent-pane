@@ -93,12 +93,7 @@ function patchTask(
       ? { finishedAt: now }
       : {}),
   }
-  const next: SupervisedTaskMeta = clearProcessHandle
-    ? (() => {
-        const { processHandleId: _drop, ...withoutHandle } = base
-        return withoutHandle
-      })()
-    : base
+  const next: SupervisedTaskMeta = clearProcessHandle ? omitProcessHandle(base) : base
   return {
     taskId: task.taskId,
     next,
@@ -112,9 +107,14 @@ function patchTask(
   }
 }
 
+function omitProcessHandle(task: SupervisedTaskMeta): SupervisedTaskMeta {
+  const { processHandleId: _drop, ...withoutHandle } = task
+  return withoutHandle
+}
+
 function isWakeEligible(task: SupervisedTaskMeta, now: number): boolean {
   if (task.state !== 'waiting' && task.state !== 'queued') return false
-  if (task.trigger.kind === 'immediate') return task.state === 'queued' || task.state === 'waiting'
+  if (task.trigger.kind === 'immediate') return true
   if (task.trigger.kind === 'wake_at') return task.trigger.wakeAt <= now
   return false
 }
@@ -153,7 +153,12 @@ export function reconcileSupervisedTasks(input: ReconcileInput): ReconcileResult
         // Agent-turn / deterministic jobs: demote to waiting/queued for P2 resume.
         const toState: TaskState =
           task.trigger.kind === 'wake_at' && task.trigger.wakeAt > now ? 'waiting' : 'queued'
-        const demoted = patchTask(task, toState, now, 'running task had no live process handle after restart')
+        const demoted = patchTask(
+          task,
+          toState,
+          now,
+          'running task had no live process handle after restart',
+        )
         patches.push(demoted)
         byId.set(task.taskId, demoted.next)
         continue

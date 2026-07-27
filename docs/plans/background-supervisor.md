@@ -155,13 +155,13 @@ dark-factory poller implementation, and changes to `run_background`.
 ### P1 — Schema + persistence sketch
 
 - [x] Zod source of truth in `src/shared/supervisor/task-schema.ts` + published
-  `schemas/copse-supervisor-task.schema.json`.
+      `schemas/copse-supervisor-task.schema.json`.
 - [x] On-disk layout under `~/.copse/workspace/<projectId>/tasks/<taskId>/`
-  (`meta.json` + append-only `audit.jsonl`) — Open Q1 resolved: beside threads under
-  the project dir; reuses `COPSE_WORKSPACE_DIR` (no sibling tree / new override).
+      (`meta.json` + append-only `audit.jsonl`) — Open Q1 resolved: beside threads under
+      the project dir; reuses `COPSE_WORKSPACE_DIR` (no sibling tree / new override).
 - [x] Pure `reconcileSupervisedTasks` helper (fake-clock / restart-shaped; no fs).
 - [x] Exit gate: fixtures under `tests/fixtures/background-supervisor/` validate;
-  unit tests cover schema + reconcile without Electron.
+      unit tests cover schema + reconcile without Electron.
 
 ### P2 — Main-process supervisor service (no consumers)
 
@@ -208,12 +208,12 @@ dark-factory poller implementation, and changes to `run_background`.
    `COPSE_WORKSPACE_DIR` only). The literal `tasks` dir is reserved and must not collide
    with UUID thread dirs; `readThread` already skips dirs without thread `meta.json`.
 2. Should `run_background` processes automatically register as supervised tasks in P2,
-   or remain session-scoped until a consumer opts in? *(still open — P2)*
+   or remain session-scoped until a consumer opts in? _(still open — P2)_
 3. For agent-turn handlers, is the wake payload a synthetic user message, a steering
-   event, or a dedicated #1079 turn kind? *(still open — P2/P3)*
+   event, or a dedicated #1079 turn kind? _(still open — P2/P3)_
 4. How do SSH / remote execution targets (#942) appear in the permission snapshot when
-   the wake fires after the workspace target changed? *(still open — P2; P1 stores
-   `workspaceTargetKind` / `executionRoot` placeholders only)*
+   the wake fires after the workspace target changed? _(still open — P2; P1 stores
+   `workspaceTargetKind` / `executionRoot` placeholders only)_
 
 ## References
 

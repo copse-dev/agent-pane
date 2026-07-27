@@ -66,8 +66,10 @@ describe('reconcileSupervisedTasks', () => {
     }
     const result = reconcileSupervisedTasks({ tasks: [agentRunning], now: 1700000010000 })
     assert.equal(result.patches.length, 1)
-    assert.equal(result.patches[0]?.next.state, 'queued')
-    assert.equal(result.patches[0]?.audit.action, 'reconcile')
+    const patch = result.patches[0]
+    assert.ok(patch)
+    assert.equal(patch.next.state, 'queued')
+    assert.equal(patch.audit.action, 'reconcile')
     assert.deepEqual(result.eligibleWakeTaskIds, ['task-agent-running'])
     assert.equal(result.hasActiveWork, true)
   })

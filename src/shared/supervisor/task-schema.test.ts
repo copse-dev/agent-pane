@@ -38,43 +38,21 @@ describe('task-schema fixtures validate', () => {
   })
 
   it('rejects unknown state and missing taskId', () => {
-    assert.equal(
-      parseSupervisedTaskMeta({
-        ...readJson('meta-queued.json'),
-        state: 'teleporting',
-      }),
-      null,
-    )
-    assert.equal(
-      parseSupervisedTaskMeta({
-        ...readJson('meta-queued.json'),
-        taskId: '',
-      }),
-      null,
-    )
+    const base = readJson('meta-queued.json')
+    assert.ok(base && typeof base === 'object')
+    assert.equal(parseSupervisedTaskMeta({ ...base, state: 'teleporting' }), null)
+    assert.equal(parseSupervisedTaskMeta({ ...base, taskId: '' }), null)
   })
 
   it('rejects malformed triggers', () => {
-    assert.equal(
-      parseSupervisedTaskMeta({
-        ...readJson('meta-queued.json'),
-        trigger: { kind: 'wake_at' },
-      }),
-      null,
-    )
-    assert.equal(
-      parseSupervisedTaskMeta({
-        ...readJson('meta-queued.json'),
-        trigger: { kind: 'cron' },
-      }),
-      null,
-    )
+    const base = readJson('meta-queued.json')
+    assert.ok(base && typeof base === 'object')
+    assert.equal(parseSupervisedTaskMeta({ ...base, trigger: { kind: 'wake_at' } }), null)
+    assert.equal(parseSupervisedTaskMeta({ ...base, trigger: { kind: 'cron' } }), null)
   })
 
   it('parses happy-path and reconcile audit JSONL fixtures', () => {
-    const happy = parseSupervisedTaskAuditLog(
-      readFileSync(join(fix, 'audit-happy.jsonl'), 'utf8'),
-    )
+    const happy = parseSupervisedTaskAuditLog(readFileSync(join(fix, 'audit-happy.jsonl'), 'utf8'))
     assert.equal(happy.length, 3)
     assert.equal(happy[0]?.action, 'enqueue')
     assert.equal(happy[2]?.toState, 'completed')
@@ -83,8 +61,10 @@ describe('task-schema fixtures validate', () => {
       readFileSync(join(fix, 'audit-reconcile.jsonl'), 'utf8'),
     )
     assert.equal(recon.length, 3)
-    assert.equal(recon[2]?.action, 'fail')
-    assert.equal(recon[2]?.reason, 'process handle lost on restart')
+    const failEvent = recon[2]
+    assert.ok(failEvent)
+    assert.equal(failEvent.action, 'fail')
+    assert.equal(failEvent.reason, 'process handle lost on restart')
   })
 
   it('skips malformed audit lines and rejects events without toState', () => {
