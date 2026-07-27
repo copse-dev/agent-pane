@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hook-file-check.mts\" --dialect claude",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/hook-file-check.mts\" --dialect claude --fix",
             "timeout": 60
           }
         ]

@@ -106,30 +106,67 @@ describe('siblingTestCandidates', () => {
 })
 
 describe('renderReport', () => {
-  const findings: Finding[] = [
-    { tool: 'eslint', detail: '  1:7  no-unused-vars', fix: 'npx eslint src/a.ts' },
-    { tool: 'prettier', detail: '  file is not formatted', fix: 'npx prettier --write src/a.ts' },
-  ]
+  const lintFinding: Finding = {
+    tool: 'eslint',
+    detail: '  1:7  no-unused-vars',
+    fix: 'npx eslint src/a.ts',
+  }
+  const formatFinding: Finding = {
+    tool: 'prettier',
+    detail: '  file is not formatted',
+    fix: 'npx prettier --write src/a.ts',
+  }
+  const findings: Finding[] = [lintFinding, formatFinding]
+
+  /** renderReport returns null only when clean; every other case has text. */
+  function report(
+    file: string,
+    f: Finding[],
+    repaired: string[],
+    hint: string | null = null,
+  ): string {
+    const out = renderReport(file, f, repaired, hint)
+    assert.ok(out !== null, 'expected a report')
+    return out
+  }
 
   it('names the file, the count, and each tool with its fix', () => {
-    const report = renderReport('src/a.ts', findings, null)
-    assert.match(report, /^src\/a\.ts: 2 issue\(s\)/)
-    assert.match(report, /\[eslint\]/)
-    assert.match(report, /fix: npx prettier --write src\/a\.ts/)
+    const out = report('src/a.ts', findings, [])
+    assert.match(out, /src\/a\.ts: 2 issue\(s\)/)
+    assert.match(out, /\[eslint\]/)
+    assert.match(out, /fix: npx prettier --write src\/a\.ts/)
   })
 
   it('states that the check is a subset, so it is never read as a full green', () => {
-    const report = renderReport('src/a.ts', findings, null)
-    assert.match(report, /fast subset/)
-    assert.match(report, /npm run check/)
+    const out = report('src/a.ts', findings, [])
+    assert.match(out, /fast subset/)
+    assert.match(out, /npm run check/)
   })
 
   it('names the covering test only when there is one', () => {
     assert.match(
-      renderReport('src/a.ts', findings, 'src/a.test.ts'),
+      report('src/a.ts', findings, [], 'src/a.test.ts'),
       /Covering unit test: npm test -- src\/a\.test\.ts/,
     )
-    assert.doesNotMatch(renderReport('src/a.ts', findings, null), /Covering unit test/)
+    assert.doesNotMatch(report('src/a.ts', findings, []), /Covering unit test/)
+  })
+
+  it('is silent only when nothing was found and nothing was repaired', () => {
+    assert.equal(renderReport('src/a.ts', [], [], null), null)
+    assert.equal(renderReport('src/a.ts', [], [], 'src/a.test.ts'), null)
+  })
+
+  it('reports an auto-fix even with no findings, so the agent knows its copy is stale', () => {
+    // A silent rewrite is worse than none: the agent would later match an edit
+    // against text the file no longer holds.
+    const out = report('src/a.ts', [], ['prettier'])
+    assert.match(out, /rewritten on disk by prettier/)
+    assert.match(out, /Re-read it before your next edit/)
+  })
+
+  it('leads with the rewrite when a repair and a finding coincide', () => {
+    const out = report('src/a.ts', [lintFinding], ['prettier'])
+    assert.ok(out.indexOf('rewritten on disk') < out.indexOf('[eslint]'))
   })
 })
 

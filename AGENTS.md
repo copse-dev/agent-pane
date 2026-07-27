@@ -237,19 +237,25 @@ Three rules that keep the subset honest:
   reached dynamically — a string key, an IPC channel name, a registry lookup — is invisible to it.
   `npm run check` before committing, always.
 
-### The post-edit hook runs the lint for you
+### The post-edit hook formats and lints for you
 
-Every file you edit in this repo is lint- and format-checked automatically, in about 2s, via the
-`afterFileEdit` / `PostToolUse` hook wired in `.copse/hooks.json`, `.cursor/hooks.json` and
+Every file you edit in this repo is **reformatted and lint-checked automatically**, in about 2s,
+via the `afterFileEdit` / `PostToolUse` hook wired in `.copse/hooks.json`, `.cursor/hooks.json` and
 `.claude/settings.json` (all three run `scripts/hook-file-check.mts`, so it works whichever agent
-you are). **Don't spend a turn re-running Prettier or ESLint on a file you just edited** — if the
-hook said nothing, it is clean.
+you are). **Don't spend a turn running Prettier on a file you just edited** — the hook already
+did, and if it said nothing at all, the file is clean.
+
+**When the hook says it rewrote a file, re-read it before your next edit.** Prettier is auto-applied
+(deterministic, semantically neutral), so your copy of the file is stale the moment that message
+appears — an edit matching against remembered text will fail. ESLint findings are _not_ auto-fixed:
+`eslint --fix` makes real code changes, and those are yours to make deliberately, so the hook
+reports them with the command to run.
 
 What the hook covers is deliberately narrow: Prettier, plus the **type-unaware** ESLint rules
 (`eslint.hook.config.mjs`). The type-aware rules and `tsc` need the whole TypeScript program —
 ~10s per file — which is too slow to run on every edit, so they stay in `npm run check`. A silent
 hook means "no cheap problems", not "verified". Run it by hand with
-`node scripts/hook-file-check.mts <file>`.
+`node scripts/hook-file-check.mts <file> [--fix]`.
 
 ### Visual validation (tool UI / screenshots)
 

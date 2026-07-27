@@ -117,9 +117,32 @@ export function siblingTestCandidates(path: string): string[] {
   return [...new Set([`${stem}.test.${ext}`, `${stem}.test.ts`])]
 }
 
-/** The findings rendered as the message an agent reads. */
-export function renderReport(file: string, findings: Finding[], testHint: string | null): string {
-  const lines = [`${file}: ${String(findings.length)} issue(s) from the post-edit check.`, '']
+/**
+ * The report an agent reads, or null when there is nothing to say.
+ *
+ * `repaired` names what the hook changed on disk. Reporting a repair is not
+ * optional politeness: the agent's picture of the file is now stale, and a
+ * later edit matching against remembered text would fail against content it
+ * never saw. So a silent auto-fix is worse than none — the report always leads
+ * with the rewrite and tells the agent to re-read.
+ */
+export function renderReport(
+  file: string,
+  findings: Finding[],
+  repaired: string[],
+  testHint: string | null,
+): string | null {
+  if (findings.length === 0 && repaired.length === 0) return null
+  const lines: string[] = []
+  if (repaired.length > 0) {
+    lines.push(`${file}: rewritten on disk by ${repaired.join(', ')}.`)
+    lines.push('Re-read it before your next edit — your copy is stale.')
+    lines.push('')
+  }
+  if (findings.length > 0) {
+    lines.push(`${file}: ${String(findings.length)} issue(s) the hook cannot fix for you.`)
+    lines.push('')
+  }
   for (const finding of findings) {
     lines.push(`[${finding.tool}]`)
     lines.push(finding.detail.trimEnd())

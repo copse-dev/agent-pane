@@ -36,23 +36,35 @@ about the same three assertions.
 
 The loop, cheapest first:
 
-| When                              | Run                              | Cost           |
-| --------------------------------- | -------------------------------- | -------------- |
-| After each edit                   | _nothing_ — the hook already ran | ~2s, automatic |
-| While iterating on one module     | `npm test -- <filter>`           | seconds        |
-| Before you believe a change works | `npm run oracle -- --run unit`   | seconds–1 min  |
-| Before commit / PR                | `npm run check`                  | minutes        |
+| When                              | Run                                          | Cost           |
+| --------------------------------- | -------------------------------------------- | -------------- |
+| After each edit                   | _nothing_ — the hook formatted and linted it | ~2s, automatic |
+| While iterating on one module     | `npm test -- <filter>`                       | seconds        |
+| Before you believe a change works | `npm run oracle -- --run unit`               | seconds–1 min  |
+| Before commit / PR                | `npm run check`                              | minutes        |
 
 ### After an edit: the hook already ran
 
 `.copse/hooks.json`, `.cursor/hooks.json` and `.claude/settings.json` wire
 `scripts/hook-file-check.mts` to the post-edit hook, so **every file you edit is
-already lint- and format-checked** before you read the tool result. Don't spend
-a turn re-running Prettier or ESLint on a file you just touched — if the hook
-said nothing, they are clean.
+already reformatted and lint-checked** before you read the tool result. Don't
+spend a turn running Prettier on a file you just touched — and if the hook said
+nothing at all, it is clean.
 
-It is a fast subset by construction: Prettier plus the **type-unaware** ESLint
-rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
+**Prettier is auto-applied; ESLint is not.** Formatting is deterministic and
+semantically neutral, so fixing it costs an agent turn and buys nothing —
+`afterFileEdit` is the formatter event, and `after-file-edit.ts` awaits blocking
+hooks precisely so a formatter lands before the agent proceeds. `eslint --fix`
+is a different animal: it makes real code changes (`prefer-const`, import
+rewrites), so those are reported with the command to run rather than applied
+behind you.
+
+A rewrite is **always** reported, even when there is nothing else to say, because
+it makes your copy of the file stale — a later edit matching against remembered
+text would fail against content you never saw. Re-read the file when you see it.
+
+Coverage is a fast subset by construction: Prettier plus the **type-unaware**
+ESLint rules (`eslint.hook.config.mjs`). Type-aware rules and `tsc` need the whole
 TypeScript program — ~10s for a single file — which is too slow to run per edit,
 so they stay in `npm run check`. The hook says so in its own output; treat a
 silent hook as "no cheap problems", never as "verified".

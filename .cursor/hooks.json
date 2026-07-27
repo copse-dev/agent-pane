@@ -3,7 +3,7 @@
   "hooks": {
     "afterFileEdit": [
       {
-        "command": "node ../scripts/hook-file-check.mts --dialect cursor",
+        "command": "node ../scripts/hook-file-check.mts --dialect cursor --fix",
         "glob": [
           "src/**/*.{ts,mts,tsx,css,html}",
           "packages/*/src/**/*.ts",
