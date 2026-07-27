@@ -1,6 +1,6 @@
 import { isFailingConclusion, runGh } from '../gh-service.ts'
 import { getGithubRepoSlug } from '../git-service.ts'
-import { isGhAvailable } from '../../tool-availability.ts'
+import { isGhAvailable, whenToolAvailabilityProbed } from '../../tool-availability.ts'
 import { detectLanguage } from '../../language.ts'
 import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
@@ -245,6 +245,10 @@ export const ghCliBackend: GitHubBackend = {
   kind: 'cli',
 
   async getStatus(): Promise<GhCliStatus> {
+    // Startup registers IPC handlers while the tool probe is still in flight.
+    // Wait here so a first-paint PR/settings request cannot turn the temporary
+    // `null` availability state into a durable "gh is not installed" result.
+    await whenToolAvailabilityProbed()
     if (!isGhAvailable()) {
       return {
         installed: false,
