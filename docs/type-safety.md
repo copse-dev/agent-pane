@@ -72,6 +72,56 @@ Keep the inventory small and justified.
 the code (parse/validate untyped input — storage reads, `JSON.parse`, network responses) rather than
 letting `any` propagate inward.
 
+### Exported type predicates must be tested
+
+A type predicate is the one assertion TypeScript never checks. Nothing verifies that `x is T` follows
+from the body, so this compiles and every caller is silently lied to:
+
+```ts
+function isUser(x: unknown): x is User {
+  return true // no error
+}
+```
+
+`no-unsafe-type-assertion` does **not** flag predicates, so with the baseline empty they are the
+widest unverified claims left in the codebase. **An exported predicate without a test is an
+unaudited `as`.** Add one in the same PR.
+
+Two acceptable shapes — pick by whether the domain is finite:
+
+**Exhaustive**, when the predicate is backed by a `const` tuple. Derive the cases _from the tuple_
+rather than listing them, so adding a member extends the test automatically and a predicate that
+stops agreeing with its own source list fails:
+
+```ts
+for (const member of THEME_PREFERENCES) {
+  assert.equal(isThemePreference(member), true)
+}
+```
+
+That drift — the tuple and the predicate disagreeing — is the failure that actually happens, and
+exhaustive coverage of a small finite domain is strictly stronger than sampling it. No
+property-testing dependency needed.
+
+**Property / fuzz**, when the domain is open (structural predicates like `isRecord`): assert over a
+generated corpus rather than a handful of literals. Reach for `fast-check` only here — for a tuple
+of three strings it buys nothing exhaustive coverage doesn't already give.
+
+Either way the **rejection** corpus is where the bugs hide. Include:
+
+- prototype keys — `__proto__`, `constructor`, `toString`, `valueOf`, `hasOwnProperty` (a predicate
+  backed by an object lookup rather than a list wrongly accepts these)
+- wrong types — `null`, `undefined`, `NaN`, `[]`, functions, and an object with a matching
+  `toString`
+- near-misses derived from each member — case, leading/trailing whitespace, truncation, trailing
+  newline
+
+Worked example: `src/shared/type-predicates.test.ts`.
+
+Finally, **check the test can fail**. Mutate the predicate body to `return true` and confirm the
+suite goes red before you trust it — a predicate test that passes against a broken predicate is
+worse than none, because it reads like coverage.
+
 ## The suppression baseline is empty — keep it that way
 
 `eslint-suppressions.json` is `{}`. It used to hold a shrink-only baseline for

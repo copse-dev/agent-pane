@@ -93,8 +93,10 @@ Minimise `as` casts, never cast object literals, and never reach for `eslint-dis
 `@ts-expect-error` to silence a real error. `no-unsafe-type-assertion` and `prefer-nullish-coalescing`
 are now enforced outright — `eslint-suppressions.json` is empty (#1307) and must stay that way, so a
 new unsafe assertion fails `npm run lint` with no baseline to absorb it. Parse untrusted JSON with a
-decoder (`safeJsonParse(text, decodeWithSchema(schema))`), never a type argument. Conventions and the
-rules behind them: [`docs/type-safety.md`](docs/type-safety.md).
+decoder (`safeJsonParse(text, decodeWithSchema(schema))`), never a type argument. An **exported type
+predicate needs a test in the same PR** — nothing verifies that `x is T` follows from the body, and
+no lint rule flags it. Conventions and the rules behind them:
+[`docs/type-safety.md`](docs/type-safety.md).
 
 ### Visual changes require evals
 
