@@ -18,6 +18,12 @@ export interface SshPromptRequest {
 export interface SshPromptResponse {
   /** Empty when the user cancelled or the prompt timed out. */
   value: string
+  /**
+   * Whether to keep this secret in memory for the rest of the app session
+   * (see ssh-credential-cache.ts). Absent for confirm prompts, cancellations,
+   * and timeouts.
+   */
+  remember?: boolean
 }
 
 const SSH_PROMPT_TIMEOUT_MS = 60_000
@@ -53,8 +59,8 @@ export function initSshPrompt(win: BrowserWindow): void {
   ipcMain.handle('ssh-prompt:respond', (event, ...rawArgs) => {
     try {
       assertMainFrameSender(event, win)
-      const [id, value] = parseIpcArgs(sshPromptRespondSchema, rawArgs)
-      settle(id, { value })
+      const [id, value, remember] = parseIpcArgs(sshPromptRespondSchema, rawArgs)
+      settle(id, { value, remember })
     } catch (err) {
       if (err instanceof IpcValidationError) return
       throw err
