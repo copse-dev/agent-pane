@@ -305,14 +305,19 @@ export function acpAgentSandboxOverlay(
   const fs = base.filesystem
   if (!fs) throw new Error('workspaceSandboxOverlay must define a filesystem config')
   const home = homedir()
-  const homePaths = (sandbox.homeDirs ?? []).flatMap((rel) => {
+  const configuredHomePaths = (sandbox.homeDirs ?? []).flatMap((rel) => {
     const abs = join(home, rel)
     return [abs, `${abs}/**`]
   })
+  // macOS Keychain lookup from a sandboxed process needs metadata access to
+  // the home directory node before it can resolve credentials stored by tools
+  // such as Claude Code. Re-allow only the literal parent — never `home/**` —
+  // whenever an agent declares home-scoped state. Without this, the narrower
+  // `.claude` allowance is insufficient and `claude auth status` fails EPERM.
+  const homeReadPaths = configuredHomePaths.length > 0 ? [home, ...configuredHomePaths] : []
   const scratchPaths = (sandbox.scratchPaths ?? [])
     .flatMap(expandScratchPath)
     .flatMap((abs) => [abs, `${abs}/**`])
-  homePaths.push(...scratchPaths)
   const localDomains = opts?.allowLocalhost ? ['localhost', '127.0.0.1', '::1'] : []
   return {
     ...base,
@@ -323,8 +328,8 @@ export function acpAgentSandboxOverlay(
     },
     filesystem: {
       ...fs,
-      allowRead: [...new Set([...(fs.allowRead ?? []), ...homePaths])],
-      allowWrite: [...new Set([...fs.allowWrite, ...homePaths])],
+      allowRead: [...new Set([...(fs.allowRead ?? []), ...homeReadPaths, ...scratchPaths])],
+      allowWrite: [...new Set([...fs.allowWrite, ...configuredHomePaths, ...scratchPaths])],
     },
   }
 }
