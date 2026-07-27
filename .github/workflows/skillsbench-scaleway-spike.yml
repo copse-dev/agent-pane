@@ -39,6 +39,11 @@ on:
         required: false
         default: ''
         type: string
+      oracle:
+        description: Run the task solution instead of an agent, to check task eligibility
+        required: false
+        default: false
+        type: boolean
       scw_type:
         description: Scaleway x86 Instance type
         required: true
@@ -49,6 +54,13 @@ on:
         required: true
         default: '4096'
         type: string
+      fetch_capsules:
+        description: >-
+          Run ID of an earlier spike. Set this to download that run's capsules
+          and publish them as an artifact instead of running a new spike.
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: skillsbench-scaleway-spike
@@ -58,8 +70,110 @@ permissions:
   contents: read
 
 jobs:
+  # The fleet writes every trial's capsule to Object Storage and nothing else.
+  # The job log carries only the one-line trial summary, so the reward
+  # breakdown, token counts and error categories a result needs to be
+  # interpreted are unreachable once the fleet is torn down. This republishes a
+  # finished run's capsules as an artifact without re-running any trials.
+  capsules:
+    name: Fetch capsules from an earlier run
+    if: inputs.fetch_capsules != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download capsules
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCW_OBJECT_STORAGE_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCW_OBJECT_STORAGE_SECRET_KEY }}
+          AWS_DEFAULT_REGION: ${{ vars.SCW_OBJECT_STORAGE_REGION || 'fr-par' }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          BUCKET: ${{ vars.SCW_OBJECT_STORAGE_BUCKET }}
+          ENDPOINT: https://s3.${{ vars.SCW_OBJECT_STORAGE_REGION || 'fr-par' }}.scw.cloud
+          SOURCE_RUN_ID: ${{ inputs.fetch_capsules }}
+        run: |
+          # The value lands in an s3:// path, so keep it to the digits a run ID is.
+          if ! [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::fetch_capsules must be a numeric workflow run ID"
+            exit 2
+          fi
+          prefix="skillsbench-spike/${GITHUB_REPOSITORY}/${SOURCE_RUN_ID}/"
+          aws s3 sync "s3://${BUCKET}/${prefix}" capsules \
+            --only-show-errors --endpoint-url "$ENDPOINT"
+          if [ -z "$(ls -A capsules 2>/dev/null)" ]; then
+            echo "::error::no capsules under s3://${BUCKET}/${prefix}"
+            exit 1
+          fi
+          {
+            echo "## Capsules for run ${SOURCE_RUN_ID}"
+            echo
+            echo "- source: \`s3://${BUCKET}/${prefix}\`"
+            echo "- files: $(find capsules -type f | wc -l)"
+            echo "- size: $(du -sh capsules | cut -f1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report captured spines
+        run: |
+          # A trial that records no spine is indistinguishable from one that
+          # does, right up until you go looking for the trajectory and it is
+          # not there. Report presence per trial rather than inferring it from
+          # a file count.
+          # Anchor on manifest.json rather than a fixed glob depth: capsules
+          # land under <run-attempt>/shard-N/<trial>/, so `capsules/*/` matches
+          # the attempt directory and finds nothing.
+          trials=0
+          spines=0
+          while IFS= read -r manifest; do
+            dir="$(dirname "$manifest")"
+            trials=$((trials + 1))
+            spine="$dir/thread/events.jsonl"
+            if [ -s "$spine" ]; then
+              spines=$((spines + 1))
+              echo "spine $(basename "$dir") events=$(wc -l < "$spine")" \
+                "thread=$(wc -l < "$dir/thread/thread.jsonl" 2>/dev/null || echo 0)"
+            else
+              echo "NO SPINE $(basename "$dir")"
+            fi
+          done < <(find capsules -name manifest.json | sort)
+          echo "spines: ${spines}/${trials} trials"
+          echo "- spines: ${spines}/${trials} trials" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarise manifests
+        run: |
+          # One JSONL row per trial, so the run can be read without unpacking
+          # the whole artifact.
+          find capsules -name manifest.json -print0 \
+            | xargs -0 --no-run-if-empty jq --compact-output '{
+                trial: .result.rollout_name,
+                task: .task.name,
+                profile: .profile.id,
+                profileHash: .profile.contentHash,
+                attempt: .attempt,
+                reward: .officialReward,
+                rewards: .result.rewards,
+                tools: .result.n_tool_calls,
+                skillReads: .result.n_skill_invocations,
+                prompts: .result.n_prompts,
+                inputTokens: .result.n_input_tokens,
+                outputTokens: .result.n_output_tokens,
+                error: .result.error,
+                errorCategory: .result.error_category,
+                verifierError: .result.verifier_error,
+                verifierErrorCategory: .result.verifier_error_category,
+                elapsed: .elapsedSeconds,
+              }' > trial-summary.jsonl
+          echo "summarised $(wc -l < trial-summary.jsonl) trials"
+          cat trial-summary.jsonl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: skillsbench-capsules-${{ inputs.fetch_capsules }}
+          path: |
+            capsules
+            trial-summary.jsonl
+          retention-days: 7
+
   prepare:
     name: Validate and bake worker
+    if: inputs.fetch_capsules == ''
     runs-on: ubuntu-24.04
     outputs:
       worker_image: ${{ steps.image.outputs.worker_image }}
@@ -70,6 +184,7 @@ jobs:
           ATTEMPTS: ${{ inputs.attempts }}
           PROFILE: ${{ inputs.profile }}
           PROFILES: ${{ inputs.profiles }}
+          ORACLE: ${{ inputs.oracle }}
           TASK_NAMES: ${{ inputs.task_names }}
           MAX_STREAM_OUTPUT_TOKENS: ${{ inputs.max_stream_output_tokens }}
           SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
@@ -91,21 +206,28 @@ jobs:
             echo "::error::attempts must be an integer from 1 through 5"
             exit 2
           fi
-          profile_csv="${PROFILES:-$PROFILE}"
-          IFS=',' read -r -a profile_ids <<< "$profile_csv"
-          declare -A seen_profiles=()
-          for profile_id in "${profile_ids[@]}"; do
-            case "$profile_id" in
-              skills-none|skills-product|skills-explicit) profile_id="$profile_id@1" ;;
-              skills-none@[12]|skills-product@[12]|skills-explicit@[12]) ;;
-              *) echo "::error::unsupported SkillsBench profile: $profile_id"; exit 2 ;;
-            esac
-            if [ -n "${seen_profiles[$profile_id]:-}" ]; then
-              echo "::error::SkillsBench profiles must not contain duplicates: $profile_id"
-              exit 2
-            fi
-            seen_profiles[$profile_id]=1
-          done
+          if [ "$ORACLE" = true ]; then
+            echo "oracle mode: skipping profile validation"
+            profile_csv=""
+          else
+            profile_csv="${PROFILES:-$PROFILE}"
+          fi
+          if [ -n "$profile_csv" ]; then
+            IFS=',' read -r -a profile_ids <<< "$profile_csv"
+            declare -A seen_profiles=()
+            for profile_id in "${profile_ids[@]}"; do
+              case "$profile_id" in
+                skills-none|skills-product|skills-explicit) profile_id="$profile_id@1" ;;
+                skills-none@[12]|skills-product@[12]|skills-explicit@[12]) ;;
+                *) echo "::error::unsupported SkillsBench profile: $profile_id"; exit 2 ;;
+              esac
+              if [ -n "${seen_profiles[$profile_id]:-}" ]; then
+                echo "::error::SkillsBench profiles must not contain duplicates: $profile_id"
+                exit 2
+              fi
+              seen_profiles[$profile_id]=1
+            done
+          fi
           if [ -z "$TASK_NAMES" ] || ! [[ "$TASK_NAMES" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]]; then
             echo "::error::task_names must be a comma-separated list of exact v1.1 task names"
             exit 2
@@ -250,6 +372,7 @@ jobs:
           ATTEMPTS: ${{ inputs.attempts }}
           PROFILE: ${{ inputs.profile }}
           PROFILES: ${{ inputs.profiles }}
+          ORACLE: ${{ inputs.oracle }}
           SCW_TYPE: ${{ inputs.scw_type }}
           WORKER_IMAGE: ${{ needs.prepare.outputs.worker_image }}
           FLEET_NAME: skillsbench-spike-${{ github.run_id }}-${{ github.run_attempt }}
@@ -266,7 +389,9 @@ jobs:
             --worker-image "$WORKER_IMAGE" --name "$FLEET_NAME"
             --object-prefix "$OBJECT_PREFIX" --key-path "$SSH_KEY_PATH"
           )
-          if [ -n "$PROFILES" ]; then
+          if [ "$ORACLE" = true ]; then
+            args+=(--oracle)
+          elif [ -n "$PROFILES" ]; then
             args+=(--profiles "$PROFILES")
           else
             args+=(--profile "$PROFILE")
