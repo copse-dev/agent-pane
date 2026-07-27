@@ -7,7 +7,9 @@ import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectId,
   getActiveProjectSshHost,
+  getProjectById,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolvePathWithinRoot,
@@ -171,6 +173,8 @@ import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
+import { buildRoadmapExport } from '../services/roadmap-export.ts'
+import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
 import {
   abortRoadmapReview,
   completeRoadmapReview,
@@ -477,6 +481,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
+  const zRoadmapExportFormat = z.enum(ROADMAP_EXPORT_FORMATS)
   // Attachments arrive as base64 data URLs (what the pane's paste/drop/picker
   // produce); ~14 MB of base64 ≈ 10 MB decoded per attachment.
   const zRoadmapAttachmentAdds = z
@@ -810,6 +815,27 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     const deleted = deleteKnowledgeNote(id)
     if (deleted) deleteAllKnowledgeAttachments(id)
     return deleted
+  })
+
+  // Deterministic export of the active project's roadmap (RoadmapExporter,
+  // shared/roadmap/export.ts) as a downloadable md/html/mhtml/jsonl document —
+  // zipped with its attachments under relative paths when any are present.
+  ipcMain.handle('roadmap:export', (event, rawFormat: unknown) => {
+    assertMainFrameSender(event, win)
+    const format = parseIpcArgs(zRoadmapExportFormat, [rawFormat])
+    const activeProjectId = getActiveProjectId()
+    const project = activeProjectId ? getProjectById(activeProjectId) : null
+    if (!project) {
+      throw new IpcValidationError('No active project to export a roadmap for.')
+    }
+    const result = buildRoadmapExport(project, format, new Date().toISOString())
+    return {
+      filename: result.filename,
+      mimeType: result.mimeType,
+      dataUrl: `data:${result.mimeType};base64,${Buffer.from(result.data).toString('base64')}`,
+      bundled: result.bundled,
+      files: result.files,
+    }
   })
 
   ipcMain.handle('settings:get', (event, key: unknown) => {

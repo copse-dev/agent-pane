@@ -702,6 +702,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('roadmap:attachmentData', id, attachmentId),
     setStatus: (id: string, status: string) => ipcRenderer.invoke('roadmap:setStatus', id, status),
     delete: (id: string) => ipcRenderer.invoke('roadmap:delete', id),
+    export: (format: string) => ipcRenderer.invoke('roadmap:export', format),
     issueUrl: (ref: string) => ipcRenderer.invoke('roadmap:issueUrl', ref),
     openIssues: () => ipcRenderer.invoke('roadmap:openIssues'),
     importIssues: (issues: { number: number; title: string; body: string }[]) =>
