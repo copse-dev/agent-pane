@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { LLMMessage, Message, Thread } from '@shared/types'
 import {
   loadProjectThreads,
+  loadAllProjectThreads,
   saveProjectThread,
   saveProjectThreads,
   deleteProjectThread,
@@ -26,6 +27,8 @@ import {
   agentHistoryExists,
   findThreadOwners,
 } from './thread-store.ts'
+import { storageSet } from './storage/storage.ts'
+import { runSerialized } from './storage/write-queue.ts'
 import { parseGithubPrUrl, type GithubPrRef } from '@shared/git/github-pr-url.ts'
 
 /** Build PR refs from URL strings, matching what the link store feeds attach. */
@@ -269,8 +272,154 @@ describe('thread-store', () => {
     assert.deepEqual(loaded[0], t)
   })
 
+  // Loading prefetches a thread's files before folding, discovering refs by
+  // walking the spine. A subagent's own refs only become knowable once its
+  // `events.jsonl` has been read, so each nesting level costs another round —
+  // two levels catch a prefetch that stops recursing after the first.
+  it('round-trips a doubly-nested subagent session through disk', async () => {
+    const t = thread('t1', {
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'exploring',
+          createdAt: 5,
+          toolCalls: [
+            {
+              id: 'tc1',
+              name: 'explore',
+              args: {},
+              status: 'done',
+              result: 'summary',
+              subagent: {
+                id: 'sub1',
+                kind: 'explore',
+                status: 'done',
+                prompt: 'outer',
+                summary: 'outer done',
+                messages: [
+                  {
+                    id: 'sm1',
+                    role: 'assistant',
+                    content: 'searching',
+                    toolCalls: [
+                      {
+                        id: 'stc1',
+                        name: 'explore',
+                        args: {},
+                        status: 'done',
+                        result: 'inner summary',
+                        subagent: {
+                          id: 'sub2',
+                          kind: 'explore',
+                          status: 'done',
+                          prompt: 'inner',
+                          summary: 'inner done',
+                          messages: [
+                            { id: 'dm1', role: 'assistant', content: 'deep', toolCalls: [] },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await saveProjectThread('proj-1', t)
+    assert.ok(
+      existsSync(
+        join(root, 'proj-1', 't1', 'subagents', 'sub1', 'subagents', 'sub2', 'events.jsonl'),
+      ),
+    )
+    const loaded = await loadProjectThreads('proj-1')
+    assert.deepEqual(loaded[0], t)
+  })
+
+  it('skips a thread whose subagent spine references a missing file', async () => {
+    const t = thread('broken', {
+      messages: [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'exploring',
+          createdAt: 5,
+          toolCalls: [
+            {
+              id: 'tc1',
+              name: 'explore',
+              args: {},
+              status: 'done',
+              result: 'summary',
+              subagent: {
+                id: 'sub1',
+                kind: 'explore',
+                status: 'done',
+                prompt: 'find it',
+                summary: 'done',
+                messages: [{ id: 'sm1', role: 'assistant', content: 'searching', toolCalls: [] }],
+              },
+            },
+          ],
+        },
+      ],
+    })
+    await saveProjectThreads('proj-1', [thread('good', { messages: [userMsg('u1', 'ok')] }), t])
+    rmSync(join(root, 'proj-1', 'broken', 'subagents', 'sub1', 'messages', 'sm1.md'))
+    const loaded = await loadProjectThreads('proj-1')
+    assert.deepEqual(
+      loaded.map((t2) => t2.id),
+      ['good'],
+    )
+  })
+
   it('returns an empty list for an unknown project', async () => {
     assert.deepEqual(await loadProjectThreads('nope'), [])
+  })
+
+  // Async prefetch yields to the event loop. loadAll must take the same
+  // per-project queue as saves — otherwise a concurrent save can tear the
+  // directory mid-read. Holding the queue key proves the load waits.
+  it('loadAllProjectThreads serializes behind an in-flight project op', async () => {
+    storageSet('projects', [{ id: 'p1', path: '/tmp', name: 'p1' }])
+    await saveProjectThread('p1', thread('t1', { messages: [userMsg('u1', 'hi')] }))
+    // A second store, deliberately absent from `projects` so the load under test
+    // ignores it. It exists only as a pacing yardstick below: same async fold, a
+    // different queue key, so awaiting it cannot deadlock against `hold`.
+    await saveProjectThread('p2', thread('t2', { messages: [userMsg('u2', 'hi')] }))
+
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const hold = runSerialized('thread-store:p1', async () => {
+      await gate
+    })
+
+    let settled = false
+    const loadP = loadAllProjectThreads().then((threads) => {
+      settled = true
+      return threads
+    })
+    // The window has to be long enough that an *unqueued* load would definitely
+    // have finished. Event-loop ticks are not: these reads go through the fs
+    // threadpool, so a bypassing load is still in flight after a couple of
+    // `setTimeout(0)`s — an earlier version of this test used two ticks and
+    // passed with the bug still present. Instead, run the same async fold over
+    // `p2` several times over: it is strictly more work than the load under
+    // test, on a queue `hold` does not block, so once it has finished a load
+    // that were not queued would have finished too.
+    for (let i = 0; i < 5; i++) await loadProjectThreads('p2')
+    assert.equal(settled, false, 'load must still be queued behind the in-flight op')
+
+    release()
+    await hold
+    const loaded = await loadP
+    assert.equal(loaded.length, 1)
+    assert.equal(loaded[0]?.id, 't1')
   })
 
   describe('event-level API', () => {
