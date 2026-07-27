@@ -5,7 +5,7 @@ import { getReadonlyToolBlockReason } from '@shared/tools/readonly-tools.ts'
 import type { PermissionCheck } from './security/permission-policy.ts'
 import { isAgentRunReadonly } from './agent-run-readonly.ts'
 import { getMcpToolMeta } from './mcp/mcp-registry.ts'
-import { expectRecord } from '@shared/unknown-value.ts'
+import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 
 type PermissionGateFn = (check: PermissionCheck) => Promise<boolean>
 
@@ -45,6 +45,40 @@ function appendInjectedContext(result: ToolExecuteResult, block: string): ToolEx
   return { ...result, result: `${result.result}\n\n${block}` }
 }
 
+function normalizeExclusiveBounds(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(normalizeExclusiveBounds)
+  if (!isRecord(node)) return node
+
+  const { minimum, exclusiveMinimum, maximum, exclusiveMaximum, ...rest } = node
+  const result: Record<string, unknown> = { ...rest }
+  if (exclusiveMinimum === true && typeof minimum === 'number') result['exclusiveMinimum'] = minimum
+  else if (exclusiveMinimum !== undefined && exclusiveMinimum !== false)
+    result['exclusiveMinimum'] = exclusiveMinimum
+  else if (minimum !== undefined) result['minimum'] = minimum
+
+  if (exclusiveMaximum === true && typeof maximum === 'number') result['exclusiveMaximum'] = maximum
+  else if (exclusiveMaximum !== undefined && exclusiveMaximum !== false)
+    result['exclusiveMaximum'] = exclusiveMaximum
+  else if (maximum !== undefined) result['maximum'] = maximum
+
+  for (const key of Object.keys(result)) result[key] = normalizeExclusiveBounds(result[key])
+  return result
+}
+
+/**
+ * Zod's `openapi-3.0` target represents `.positive()`/`.gt()`/`.lt()` bounds the
+ * draft-4 way — a boolean `exclusiveMinimum`/`exclusiveMaximum` alongside a
+ * numeric `minimum`/`maximum` (e.g. `{ minimum: 0, exclusiveMinimum: true }`).
+ * JSON Schema 2020-12 instead makes those keywords numbers on their own
+ * (`{ exclusiveMinimum: 0 }`). Most tool-calling backends tolerate either
+ * shape, but some (poolside) validate against the 2020-12 metaschema and
+ * reject the boolean form with a 400. Rewrite in place to the numeric form,
+ * which every consumer accepts.
+ */
+function toStrict2020_12(schema: Record<string, unknown>): Record<string, unknown> {
+  return expectRecord(normalizeExclusiveBounds(schema), 'schema')
+}
+
 export class ToolRegistry {
   private tools = new Map<string, RegisteredTool>()
 
@@ -69,7 +103,9 @@ export class ToolRegistry {
       description: t.description,
       parameters:
         t.rawParameters ??
-        (z.toJSONSchema(t.parameters, { target: 'openapi-3.0' }) as Record<string, unknown>),
+        toStrict2020_12(
+          z.toJSONSchema(t.parameters, { target: 'openapi-3.0' }) as Record<string, unknown>,
+        ),
     }))
   }
 
