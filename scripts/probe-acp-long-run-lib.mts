@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { KNOWN_ACP_AGENTS } from '../src/shared/acp-known-agents.ts'
 import {
+  defaultBlockingMcpToolPrompt,
   defaultBlockingReadPrompt,
   defaultLongRunPrompt,
   probeAgentLongRun,
@@ -23,7 +24,7 @@ import {
  *   --duration <ms>    Requested per-agent run duration (default 360000 = 6 min).
  *   --interval <ms>    Requested progress interval (default 30000).
  *   --timeout <ms>     Per-agent hard timeout (default duration + 90000).
- *   --mode <mode>      stream | blocking-fs-read (default: stream).
+ *   --mode <mode>      stream | blocking-fs-read | blocking-mcp-tool (default: stream).
  *   --out <path>       Basename for outputs; writes <path>.md and <path>.json.
  *                      Default: docs/acp-long-run-matrix
  *   --no-write         Print only; don't write files.
@@ -45,7 +46,9 @@ interface Args {
 }
 
 function parseMode(value: string): AcpLongRunProbeMode {
-  if (value === 'stream' || value === 'blocking-fs-read') return value
+  if (value === 'stream' || value === 'blocking-fs-read' || value === 'blocking-mcp-tool') {
+    return value
+  }
   throw new Error(`Unsupported long-run probe mode: ${value}`)
 }
 
@@ -143,6 +146,12 @@ function renderMarkdown(
     ['Text chunks', (r): string => cell(r, String(r.textChunkCount))],
     ['Tool calls', (r): string => cell(r, String(r.toolCallCount))],
     ['fs/read_text_file calls', (r): string => cell(r, String(r.fsReadRequestCount))],
+    ['MCP wait_for_liveness calls', (r): string => cell(r, String(r.mcpToolCallCount))],
+    ['MCP wait_for_liveness completed', (r): string => cell(r, String(r.mcpToolCompletedCount))],
+    [
+      'MCP request closed before result',
+      (r): string => cell(r, String(r.mcpToolClosedBeforeResultCount)),
+    ],
     ['Permission requests', (r): string => cell(r, String(r.permissionRequests.length))],
     ['Stop reason', (r): string => cell(r, r.stopReason ?? '·')],
   ]
@@ -174,6 +183,11 @@ function renderMarkdown(
     lines.push(`- Text chunks: ${String(report.textChunkCount)}`)
     lines.push(`- Tool calls: ${String(report.toolCallCount)}`)
     lines.push(`- fs/read_text_file calls: ${String(report.fsReadRequestCount)}`)
+    lines.push(`- MCP wait_for_liveness calls: ${String(report.mcpToolCallCount)}`)
+    lines.push(`- MCP wait_for_liveness completed: ${String(report.mcpToolCompletedCount)}`)
+    lines.push(
+      `- MCP request closed before result: ${String(report.mcpToolClosedBeforeResultCount)}`,
+    )
     if (report.permissionRequests.length > 0) {
       for (const perm of report.permissionRequests) {
         lines.push(
@@ -214,7 +228,9 @@ async function main(): Promise<void> {
     args.prompt ??
     (args.mode === 'blocking-fs-read'
       ? defaultBlockingReadPrompt(args.durationMs)
-      : defaultLongRunPrompt(args.durationMs, args.intervalMs))
+      : args.mode === 'blocking-mcp-tool'
+        ? defaultBlockingMcpToolPrompt(args.durationMs)
+        : defaultLongRunPrompt(args.durationMs, args.intervalMs))
   console.log(
     `Long-run probing ${String(toProbe.length)} agent(s): ${toProbe.map((t) => t.agent.id).join(', ')}`,
   )
@@ -246,6 +262,9 @@ async function main(): Promise<void> {
         textChunkCount: 0,
         toolCallCount: 0,
         fsReadRequestCount: 0,
+        mcpToolCallCount: 0,
+        mcpToolCompletedCount: 0,
+        mcpToolClosedBeforeResultCount: 0,
         permissionRequests: [],
       })
       console.log('not installed')

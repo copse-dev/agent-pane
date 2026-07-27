@@ -8,6 +8,7 @@ import {
   type PromptRequest,
 } from '@agentclientprotocol/sdk'
 import {
+  defaultBlockingMcpToolPrompt,
   defaultBlockingReadPrompt,
   defaultLongRunPrompt,
   probeAgentLongRun,
@@ -112,6 +113,9 @@ describe('probeAgentLongRun (in-memory agent)', () => {
     assert.equal(report.updateCount, 1)
     assert.equal(report.textChunkCount, 1)
     assert.equal(report.fsReadRequestCount, 0)
+    assert.equal(report.mcpToolCallCount, 0)
+    assert.equal(report.mcpToolCompletedCount, 0)
+    assert.equal(report.mcpToolClosedBeforeResultCount, 0)
     assert.equal(report.prompt, defaultLongRunPrompt(60_000, 1_000))
     assert.equal(report.mode, 'stream')
   })
@@ -133,6 +137,25 @@ describe('probeAgentLongRun (in-memory agent)', () => {
     assert.equal(report.mode, 'blocking-fs-read')
   })
 
+  it('reports when blocking MCP mode was not exercised by the agent', async () => {
+    const report = await probeAgentLongRun(CONFIG, {
+      createTransport: fakeEarlyStopTransport(),
+      mode: 'blocking-mcp-tool',
+      durationMs: 60_000,
+      progressIntervalMs: 1_000,
+      timeoutMs: 5_000,
+    })
+
+    assert.equal(report.ok, false)
+    assert.equal(report.completedEarly, true)
+    assert.equal(report.mcpToolCallCount, 0)
+    assert.equal(report.mcpToolCompletedCount, 0)
+    assert.equal(report.mcpToolClosedBeforeResultCount, 0)
+    assert.match(report.error ?? '', /without exercising the blocking MCP wait_for_liveness tool/)
+    assert.equal(report.prompt, defaultBlockingMcpToolPrompt(60_000))
+    assert.equal(report.mode, 'blocking-mcp-tool')
+  })
+
   it('can hold the turn open with a delayed ACP fs/read_text_file request', async () => {
     const report = await probeAgentLongRun(CONFIG, {
       createTransport: fakeBlockingReadTransport(),
@@ -148,6 +171,9 @@ describe('probeAgentLongRun (in-memory agent)', () => {
     assert.equal(report.updateCount, 1)
     assert.equal(report.textChunkCount, 1)
     assert.equal(report.fsReadRequestCount, 1)
+    assert.equal(report.mcpToolCallCount, 0)
+    assert.equal(report.mcpToolCompletedCount, 0)
+    assert.equal(report.mcpToolClosedBeforeResultCount, 0)
     assert.equal(report.prompt, defaultBlockingReadPrompt(10))
     assert.equal(report.mode, 'blocking-fs-read')
   })

@@ -3,12 +3,21 @@ import {
   methods,
   ndJsonStream,
   PROTOCOL_VERSION,
+  type McpServer,
   type RequestPermissionRequest,
   type SessionUpdate,
   type Stream,
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { Writable } from 'node:stream'
+import { McpServer as McpSdkServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
+import type {
+  Transport as McpTransport,
+  TransportSendOptions,
+} from '@modelcontextprotocol/sdk/shared/transport.js'
 
 export interface AcpLongRunProbeConfig {
   agentId: string
@@ -19,7 +28,7 @@ export interface AcpLongRunProbeConfig {
   cwd: string
 }
 
-export type AcpLongRunProbeMode = 'stream' | 'blocking-fs-read'
+export type AcpLongRunProbeMode = 'stream' | 'blocking-fs-read' | 'blocking-mcp-tool'
 
 export interface AcpLongRunProbeOptions {
   durationMs?: number
@@ -61,6 +70,9 @@ export interface AcpLongRunReport {
   textChunkCount: number
   toolCallCount: number
   fsReadRequestCount: number
+  mcpToolCallCount: number
+  mcpToolCompletedCount: number
+  mcpToolClosedBeforeResultCount: number
   permissionRequests: AcpLongRunPermissionRecord[]
 }
 
@@ -88,6 +100,17 @@ export function defaultBlockingReadPrompt(durationMs: number): string {
     `The client will intentionally take at least ${String(durationSeconds)} seconds to return that file.`,
     'Do not edit files and do not run shell commands.',
     'After the file content is returned, reply with LONG_RUN_DONE and stop.',
+  ].join(' ')
+}
+
+export function defaultBlockingMcpToolPrompt(durationMs: number): string {
+  const durationSeconds = Math.ceil(durationMs / 1000)
+  return [
+    'Use the MCP server named acp_long_run_probe.',
+    'Call its wait_for_liveness tool exactly once and wait for the tool result.',
+    `The tool will intentionally take at least ${String(durationSeconds)} seconds to return.`,
+    'Do not edit files and do not run shell commands.',
+    'After the tool result is returned, reply with LONG_RUN_DONE and stop.',
   ].join(' ')
 }
 
@@ -160,6 +183,11 @@ function recordPermission(req: RequestPermissionRequest): AcpLongRunPermissionRe
     optionKinds: req.options.map((option) => option.kind),
     rawInputKeys: rawInputKeysOf(req.toolCall.rawInput),
   }
+}
+
+function isBlockingMcpToolPermission(req: RequestPermissionRequest): boolean {
+  const title = req.toolCall.title ?? ''
+  return title.includes('acp_long_run_probe') && title.includes('wait_for_liveness')
 }
 
 function captureChildStderr(child: ChildProcess, command: string): () => string {
@@ -291,6 +319,146 @@ function sleepMs(ms: number): Promise<void> {
   })
 }
 
+function asMcpTransport(transport: StreamableHTTPServerTransport): McpTransport {
+  const bridge: McpTransport = {
+    start: (): Promise<void> => transport.start(),
+    send: (message: JSONRPCMessage, options?: TransportSendOptions): Promise<void> =>
+      transport.send(message, options),
+    close: (): Promise<void> => transport.close(),
+  }
+
+  if (transport.sessionId !== undefined) {
+    bridge.sessionId = transport.sessionId
+  }
+
+  transport.onclose = (): void => {
+    bridge.onclose?.()
+  }
+  transport.onerror = (error): void => {
+    bridge.onerror?.(error)
+  }
+  transport.onmessage = (message, extra): void => {
+    bridge.onmessage?.(message, extra)
+  }
+
+  return bridge
+}
+
+function readBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => chunks.push(chunk))
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf-8')
+      if (!raw) {
+        resolve(undefined)
+        return
+      }
+      try {
+        resolve(JSON.parse(raw))
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+    })
+    req.on('error', reject)
+  })
+}
+
+interface BlockingMcpToolServer {
+  server: McpServer
+  getCallCount: () => number
+  getCompletedCount: () => number
+  getClosedBeforeResultCount: () => number
+  close: () => Promise<void>
+}
+
+async function startBlockingMcpToolServer(durationMs: number): Promise<BlockingMcpToolServer> {
+  let callCount = 0
+  let completedCount = 0
+  let activeCallCount = 0
+  let closedBeforeResultCount = 0
+  const buildServer = (): McpSdkServer => {
+    const server = new McpSdkServer({ name: 'acp_long_run_probe', version: '0.0.1' })
+    server.registerTool(
+      'wait_for_liveness',
+      {
+        description:
+          'Wait for the configured long-run probe duration, then return LONG_RUN_BLOCK_OK.',
+        inputSchema: {},
+        annotations: { readOnlyHint: true, idempotentHint: true },
+      },
+      async () => {
+        callCount += 1
+        activeCallCount += 1
+        try {
+          await sleepMs(durationMs)
+          completedCount += 1
+          return { content: [{ type: 'text', text: 'LONG_RUN_BLOCK_OK' }] }
+        } finally {
+          activeCallCount -= 1
+        }
+      },
+    )
+    return server
+  }
+
+  const handle = (req: IncomingMessage, res: ServerResponse): void => {
+    void (async (): Promise<void> => {
+      const body = await readBody(req).catch(() => undefined)
+      const transport = new StreamableHTTPServerTransport({})
+      const server = buildServer()
+      let countedEarlyClose = false
+      res.on('close', () => {
+        if (!countedEarlyClose && activeCallCount > 0) {
+          countedEarlyClose = true
+          closedBeforeResultCount += activeCallCount
+        }
+        void transport.close()
+        void server.close()
+      })
+      await server.connect(asMcpTransport(transport))
+      await transport.handleRequest(req, res, body)
+    })().catch((err: unknown) => {
+      console.error('[acp-long:mcp] request failed:', errorMessage(err))
+      if (!res.headersSent) res.writeHead(500)
+      res.end()
+    })
+  }
+
+  const httpServer: Server = createServer(handle)
+  await new Promise<void>((resolve, reject) => {
+    httpServer.once('error', reject)
+    httpServer.listen(0, '127.0.0.1', resolve)
+  })
+  const address = httpServer.address()
+  if (address === null || typeof address === 'string') {
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        resolve()
+      })
+    })
+    throw new Error('Blocking MCP tool server did not bind a TCP port')
+  }
+  return {
+    server: {
+      type: 'http',
+      name: 'acp_long_run_probe',
+      url: `http://127.0.0.1:${String(address.port)}/mcp`,
+      headers: [],
+    },
+    getCallCount: () => callCount,
+    getCompletedCount: () => completedCount,
+    getClosedBeforeResultCount: () => closedBeforeResultCount,
+    close: () =>
+      new Promise<void>((resolve) => {
+        httpServer.close(() => {
+          resolve()
+        })
+        httpServer.closeAllConnections()
+      }),
+  }
+}
+
 export async function probeAgentLongRun(
   config: AcpLongRunProbeConfig,
   options: AcpLongRunProbeOptions = {},
@@ -303,7 +471,9 @@ export async function probeAgentLongRun(
     options.prompt ??
     (mode === 'blocking-fs-read'
       ? defaultBlockingReadPrompt(expectedDurationMs)
-      : defaultLongRunPrompt(expectedDurationMs, progressIntervalMs))
+      : mode === 'blocking-mcp-tool'
+        ? defaultBlockingMcpToolPrompt(expectedDurationMs)
+        : defaultLongRunPrompt(expectedDurationMs, progressIntervalMs))
   const createTransport = options.createTransport ?? spawnLongRunTransport
 
   const base = {
@@ -323,6 +493,7 @@ export async function probeAgentLongRun(
   let textChunkCount = 0
   let toolCallCount = 0
   let fsReadRequestCount = 0
+  let blockingMcpTool: BlockingMcpToolServer | null = null
   let transport: { stream: Stream; dispose: () => void } | null = null
   const state = { timedOut: false }
   const timer = setTimeout(() => {
@@ -351,6 +522,9 @@ export async function probeAgentLongRun(
       textChunkCount,
       toolCallCount,
       fsReadRequestCount,
+      mcpToolCallCount: blockingMcpTool?.getCallCount() ?? 0,
+      mcpToolCompletedCount: blockingMcpTool?.getCompletedCount() ?? 0,
+      mcpToolClosedBeforeResultCount: blockingMcpTool?.getClosedBeforeResultCount() ?? 0,
       permissionRequests,
       ...partial,
     }
@@ -359,6 +533,13 @@ export async function probeAgentLongRun(
         ...report,
         ok: false,
         error: 'completed without exercising the blocking fs/read_text_file request',
+      }
+    }
+    if (report.ok && mode === 'blocking-mcp-tool' && report.mcpToolCallCount === 0) {
+      return {
+        ...report,
+        ok: false,
+        error: 'completed without exercising the blocking MCP wait_for_liveness tool',
       }
     }
     if (report.ok && completedEarly) {
@@ -372,6 +553,9 @@ export async function probeAgentLongRun(
   }
 
   try {
+    if (mode === 'blocking-mcp-tool') {
+      blockingMcpTool = await startBlockingMcpToolServer(expectedDurationMs)
+    }
     transport = await createTransport(config)
     const app = client({ name: 'copse-long-run-probe' })
       .onRequest(methods.client.fs.readTextFile, async () => {
@@ -385,8 +569,9 @@ export async function probeAgentLongRun(
       )
       .onRequest(methods.client.session.requestPermission, (ctx) => {
         permissionRequests.push(recordPermission(ctx.params))
-        const reject = ctx.params.options.find((option) => option.kind === 'reject_once')
-        const optionId = reject?.optionId ?? ctx.params.options.at(-1)?.optionId
+        const preferredKind = isBlockingMcpToolPermission(ctx.params) ? 'allow_once' : 'reject_once'
+        const preferred = ctx.params.options.find((option) => option.kind === preferredKind)
+        const optionId = preferred?.optionId ?? ctx.params.options.at(-1)?.optionId
         if (!optionId) return { outcome: { outcome: 'cancelled' as const } }
         return { outcome: { outcome: 'selected' as const, optionId } }
       })
@@ -398,7 +583,11 @@ export async function probeAgentLongRun(
           fs: { readTextFile: mode === 'blocking-fs-read', writeTextFile: false },
         },
       })
-      return ctx.buildSession(config.cwd).withSession(async (session) => {
+      const sessionRequest = {
+        cwd: config.cwd,
+        mcpServers: blockingMcpTool ? [blockingMcpTool.server] : [],
+      }
+      return ctx.buildSession(sessionRequest).withSession(async (session) => {
         const promptFailure = promptRejectionOnly(session.prompt(prompt))
         for (;;) {
           const message = await Promise.race([session.nextUpdate(), promptFailure])
@@ -421,5 +610,6 @@ export async function probeAgentLongRun(
   } finally {
     clearTimeout(timer)
     transport?.dispose()
+    await blockingMcpTool?.close()
   }
 }
