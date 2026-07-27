@@ -19,9 +19,9 @@ import { ZipBuilder } from './zip-writer.ts'
  *    When any item carries attachments, `export()` bundles the document and
  *    every attachment file into a deterministic zip so those relative paths
  *    resolve; with no attachments it returns the raw document instead.
- *  - `mhtml` is inherently a single-file container (MIME multipart/related),
- *    so attachments are embedded inline as base64 parts rather than zipped —
- *    `export()` never bundles an mhtml result.
+ *  - `mhtml` is inherently a single-file container, so attachments are
+ *    embedded directly in the HTML as `data:` URIs rather than referenced by
+ *    path — `export()` never bundles an mhtml result.
  */
 
 export interface RoadmapExportProject {
@@ -229,45 +229,29 @@ export class RoadmapExporter {
   }
 
   private exportMhtml(): RoadmapExportResult {
-    // Real MIME boundary tokens only need to avoid colliding with the
-    // encoded body; base64 output never contains "=_" so a fixed marker is
-    // safe here without scanning rendered content for it.
-    const boundary = '----=_CopseRoadmapExport'
-    const html = this.renderHtml()
-    const attachmentFiles: string[] = []
+    // Attachments are embedded as `data:` URIs directly in the HTML (see
+    // renderHtml's embedAttachments option) rather than as separate MIME
+    // parts referenced by relative Content-Location: relative-URI resolution
+    // against a part's Content-Location is inconsistently supported across
+    // mhtml readers, while a `data:` URI always resolves on its own. That
+    // leaves a single MIME part, so no multipart/related envelope is needed.
+    const html = this.renderHtml({ embedAttachments: true })
     const parts: string[] = [
       'MIME-Version: 1.0',
-      `Content-Type: multipart/related; type="text/html"; boundary="${boundary}"`,
-      '',
-      `--${boundary}`,
       'Content-Type: text/html; charset=utf-8',
       'Content-Transfer-Encoding: base64',
       'Content-Location: roadmap.html',
       '',
       base64Mime(new TextEncoder().encode(html)),
+      '',
     ]
-    for (const item of this.items) {
-      for (const attachment of item.attachments) {
-        const path = attachmentRelativePath(item.id, attachment)
-        attachmentFiles.push(path)
-        parts.push(
-          `--${boundary}`,
-          `Content-Type: ${attachment.mimeType}`,
-          'Content-Transfer-Encoding: base64',
-          `Content-Location: ${path}`,
-          '',
-          base64Mime(attachment.data),
-        )
-      }
-    }
-    parts.push(`--${boundary}--`, '')
     return {
       format: 'mhtml',
       filename: `${this.baseFilename()}.mhtml`,
       mimeType: 'application/x-mimearchive',
       data: new TextEncoder().encode(parts.join('\r\n')),
       bundled: false,
-      files: ['roadmap.html', ...attachmentFiles],
+      files: ['roadmap.html'],
     }
   }
 
@@ -301,7 +285,7 @@ export class RoadmapExporter {
     return lines.join('\n')
   }
 
-  private renderHtml(): string {
+  private renderHtml(options: { embedAttachments: boolean } = { embedAttachments: false }): string {
     const itemsHtml = this.items
       .map((item) => {
         const meta = itemMetaLines(item)
@@ -316,8 +300,13 @@ export class RoadmapExporter {
             ? ''
             : `<ul class="attachments">${item.attachments
                 .map((attachment) => {
-                  const path = attachmentRelativePath(item.id, attachment)
-                  return `<li><a href="${escapeHtml(path)}">${escapeHtml(attachment.name)}</a> (${escapeHtml(
+                  const href = options.embedAttachments
+                    ? `data:${attachment.mimeType};base64,${bytesToBase64(attachment.data)}`
+                    : attachmentRelativePath(item.id, attachment)
+                  const preview = attachment.mimeType.startsWith('image/')
+                    ? `<img src="${escapeHtml(href)}" alt="${escapeHtml(attachment.name)}" loading="lazy">`
+                    : ''
+                  return `<li>${preview}<a href="${escapeHtml(href)}">${escapeHtml(attachment.name)}</a> (${escapeHtml(
                     attachment.mimeType,
                   )}, ${String(attachment.data.length)} bytes)</li>`
                 })
@@ -344,6 +333,7 @@ export class RoadmapExporter {
   dd { margin: 0; }
   pre { white-space: pre-wrap; word-break: break-word; background: #f6f6f6; padding: 0.75rem; border-radius: 6px; }
   ul.attachments { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+  ul.attachments img { display: block; max-width: 100%; max-height: 360px; margin: 0.35rem 0; border-radius: 6px; border: 1px solid #ddd; }
 </style>
 </head>
 <body>

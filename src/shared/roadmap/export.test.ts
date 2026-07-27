@@ -91,7 +91,7 @@ describe('RoadmapExporter — no attachments', () => {
     assert.equal(result.filename, 'copse-panel-roadmap-2026-07-27.mhtml')
     assert.deepEqual(result.files, ['roadmap.html'])
     const text = new TextDecoder().decode(result.data)
-    assert.match(text, /Content-Type: multipart\/related/)
+    assert.match(text, /Content-Type: text\/html/)
     assert.match(text, /Content-Location: roadmap\.html/)
   })
 })
@@ -131,19 +131,45 @@ describe('RoadmapExporter — with attachments', () => {
     })
   }
 
-  it('embeds attachment bytes inline for mhtml instead of zipping', () => {
+  it('embeds attachment bytes as a data: URI inline for mhtml instead of zipping', () => {
     const exporter = new RoadmapExporter(project, [attachmentItem], {
       exportedAt: '2026-07-27T12:00:00.000Z',
     })
     const result = exporter.export('mhtml')
     assert.equal(result.bundled, false)
     assert.equal(result.mimeType, 'application/x-mimearchive')
-    assert.deepEqual(result.files, ['roadmap.html', 'attachments/item-1/att-1-notes.txt'])
+    assert.deepEqual(result.files, ['roadmap.html'])
     const text = new TextDecoder().decode(result.data)
-    assert.match(text, /Content-Location: attachments\/item-1\/att-1-notes\.txt/)
-    assert.match(text, /Content-Type: text\/plain/)
-    // "hello world" base64-encoded
-    assert.match(text, /aGVsbG8gd29ybGQ=/)
+    assert.doesNotMatch(text, /multipart\/related/)
+    // The html part is itself base64-encoded, so decode it to find the
+    // embedded attachment data: URI rather than matching the outer text.
+    const bodyStart = text.indexOf('\r\n\r\n') + 4
+    const html = new TextDecoder().decode(
+      Uint8Array.from(Buffer.from(text.slice(bodyStart).replace(/\r\n/g, ''), 'base64')),
+    )
+    // "hello world" base64-encoded, embedded as data:text/plain;base64,...
+    assert.match(html, /data:text\/plain;base64,aGVsbG8gd29ybGQ=/)
+  })
+
+  it('renders image attachments as visible <img> previews in html and mhtml', () => {
+    const imageItem = item({
+      attachments: [
+        { id: 'att-2', name: 'shot.png', mimeType: 'image/png', data: new Uint8Array([1, 2, 3]) },
+      ],
+    })
+    const exporter = new RoadmapExporter(project, [imageItem], {
+      exportedAt: '2026-07-27T12:00:00.000Z',
+    })
+
+    const html = new TextDecoder().decode(exporter.export('html').data)
+    assert.match(html, /<img src="attachments\/item-1\/att-2-shot\.png" alt="shot\.png"/)
+
+    const mhtmlText = new TextDecoder().decode(exporter.export('mhtml').data)
+    const bodyStart = mhtmlText.indexOf('\r\n\r\n') + 4
+    const decodedHtml = new TextDecoder().decode(
+      Uint8Array.from(Buffer.from(mhtmlText.slice(bodyStart).replace(/\r\n/g, ''), 'base64')),
+    )
+    assert.match(decodedHtml, /<img src="data:image\/png;base64,[^"]+" alt="shot\.png"/)
   })
 })
 
