@@ -162,7 +162,7 @@ jobs:
       # recursion-guarded and wouldn't fire `synchronize`, leaving ci-passed stale
       # on the new head). Falls back to github.token: the conflict still clears,
       # just without the CI re-trigger.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         if: steps.pr.outputs.open == 'true'
         with:
           ref: ${{ matrix.pr.head }}
