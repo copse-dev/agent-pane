@@ -369,7 +369,8 @@ function isSpinePlanLine(value: unknown): value is SpinePlanLine {
     (value['revision'] === undefined || typeof value['revision'] === 'number') &&
     (value['artifact'] === undefined || isContentRef(value['artifact'])) &&
     (value['commentId'] === undefined || typeof value['commentId'] === 'string') &&
-    (value['executionProfileId'] === undefined || typeof value['executionProfileId'] === 'string') &&
+    (value['executionProfileId'] === undefined ||
+      typeof value['executionProfileId'] === 'string') &&
     (value['contentHash'] === undefined || typeof value['contentHash'] === 'string')
   )
 }
