@@ -283,6 +283,23 @@ export function getActiveProjectRoot(): string | null {
   return getProjectRoot(activeProjectId) ?? workspaceRoot
 }
 
+/** Resolve a persisted project's id/name/path (e.g. for the roadmap exporter's project metadata). */
+export function getProjectById(
+  projectId: string,
+): { id: string; name: string; path: string } | null {
+  const projects = storageGet(PROJECTS_KEY)
+  if (!Array.isArray(projects)) return null
+
+  const project = projects.find(
+    (candidate): candidate is { id: string; name: string; path: string } =>
+      isRecord(candidate) &&
+      candidate['id'] === projectId &&
+      typeof candidate['name'] === 'string' &&
+      typeof candidate['path'] === 'string',
+  )
+  return project ?? null
+}
+
 /** SSH host id (`sshWorkspaceHosts[].id`) for the active project, if any. */
 export function getActiveProjectSshHost(): string | undefined {
   const activeProjectId = storageGet(ACTIVE_PROJECT_KEY)

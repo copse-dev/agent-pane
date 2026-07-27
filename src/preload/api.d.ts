@@ -559,6 +559,13 @@ export interface ApiClient {
       status: import('../main/tools/roadmap-tools.ts').RoadmapStatus,
     ) => Promise<import('../main/services/storage/knowledge-store.ts').KnowledgeNote | null>
     delete: (id: string) => Promise<boolean>
+    export: (format: import('../shared/roadmap/export.ts').RoadmapExportFormat) => Promise<{
+      filename: string
+      mimeType: string
+      dataUrl: string
+      bundled: boolean
+      files: string[]
+    }>
     issueUrl: (ref: string) => Promise<string | null>
     openIssues: () => Promise<{
       slug: string

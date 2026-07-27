@@ -1,6 +1,12 @@
 import { el, clear, scrollIntoViewIfNeeded } from '../dom/helpers.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
+import { showContextMenu } from '../dom/context-menu.ts'
 import { panePopoutButton } from './pane-popout-button.ts'
+import {
+  ROADMAP_EXPORT_FORMATS,
+  downloadRoadmapExport,
+  roadmapExportFormatLabel,
+} from '../export-roadmap.ts'
 import { registerPopoutSeedHandlers } from '../popout/pane-popout-seed.ts'
 import { isRoadmapComplexity } from '@shared/roadmap/complexity.ts'
 import { isRoadmapFit } from '@shared/roadmap/fit.ts'
@@ -242,7 +248,30 @@ export function mountRoadmapPane(
     },
     '↻',
   )
-  actionButtons.append(newBtn, importBtn, reviewBtn, showDoneBtn, refreshBtn)
+  const exportBtn = el(
+    'button',
+    {
+      type: 'button',
+      class: 'git-changes-refresh-btn roadmap-export-btn',
+      'aria-label': 'Export roadmap',
+      title: 'Export roadmap as a file',
+    },
+    '⇧',
+  )
+  exportBtn.addEventListener('click', () => {
+    const rect = exportBtn.getBoundingClientRect()
+    showContextMenu(
+      rect.left,
+      rect.bottom,
+      ROADMAP_EXPORT_FORMATS.map((format) => ({
+        label: roadmapExportFormatLabel(format),
+        onSelect: (): void => {
+          void downloadRoadmapExport(api, format)
+        },
+      })),
+    )
+  })
+  actionButtons.append(newBtn, importBtn, reviewBtn, showDoneBtn, exportBtn, refreshBtn)
   listHeader.append(
     el('span', { class: 'git-changes-title' }, 'Roadmap'),
     panePopoutButton(api, 'roadmap', 'roadmap'),
