@@ -142,6 +142,7 @@ function renderMarkdown(
     ['Updates', (r): string => cell(r, String(r.updateCount))],
     ['Text chunks', (r): string => cell(r, String(r.textChunkCount))],
     ['Tool calls', (r): string => cell(r, String(r.toolCallCount))],
+    ['fs/read_text_file calls', (r): string => cell(r, String(r.fsReadRequestCount))],
     ['Permission requests', (r): string => cell(r, String(r.permissionRequests.length))],
     ['Stop reason', (r): string => cell(r, r.stopReason ?? '·')],
   ]
@@ -172,6 +173,7 @@ function renderMarkdown(
     )
     lines.push(`- Text chunks: ${String(report.textChunkCount)}`)
     lines.push(`- Tool calls: ${String(report.toolCallCount)}`)
+    lines.push(`- fs/read_text_file calls: ${String(report.fsReadRequestCount)}`)
     if (report.permissionRequests.length > 0) {
       for (const perm of report.permissionRequests) {
         lines.push(
@@ -243,6 +245,7 @@ async function main(): Promise<void> {
         updateKinds: [],
         textChunkCount: 0,
         toolCallCount: 0,
+        fsReadRequestCount: 0,
         permissionRequests: [],
       })
       console.log('not installed')
