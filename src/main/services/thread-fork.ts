@@ -15,9 +15,12 @@ import { getProjectThread, loadAgentHistory, saveAgentHistory } from './thread-s
  * the fork would start with an empty LLM context and the model would not
  * remember a word of the conversation the user can see. Two cases:
  *
- * - **Whole-thread fork** — the source sidecar is copied **verbatim**. That is
- *   the highest-fidelity result: it preserves the loop's own additions (nudges,
- *   trimming, the exact tool-call ids) alongside the turns.
+ * - **Whole-thread fork** — the source sidecar is copied **verbatim** when it
+ *   exists. That is the highest-fidelity result: it preserves the loop's own
+ *   additions (nudges, trimming, the exact tool-call ids) alongside the turns.
+ *   If no sidecar has been committed yet (for example, the first run is still
+ *   in progress), history is rebuilt from the visible transcript instead. A
+ *   fork must not show inherited messages that its next model turn cannot see.
  * - **Fork through an earlier message** — the sidecar cannot be cut faithfully.
  *   The agent loop pushes synthetic `user` nudges (truncation, loop, stuck-tool
  *   recovery) into history, so provider `user` messages do not correspond 1:1
@@ -121,11 +124,18 @@ export async function forkThreadHistory(
     throughMessageId === undefined || source.messages.at(-1)?.id === throughMessageId
   if (isWholeThread) {
     const history = await loadAgentHistory(projectId, sourceThreadId)
-    // Nothing recorded yet (a thread whose first run never completed): leave the
-    // fork without a sidecar so it falls back to fresh provider history.
-    if (history.length === 0) return { source: 'empty', messageCount: 0 }
-    await saveAgentHistory(projectId, targetThreadId, history)
-    return { source: 'copied', messageCount: history.length }
+    if (history.length > 0) {
+      await saveAgentHistory(projectId, targetThreadId, history)
+      return { source: 'copied', messageCount: history.length }
+    }
+
+    // The provider snapshot is committed only when a run finishes. Forking a
+    // thread during its first run therefore has a visible prompt but no sidecar
+    // yet. Rebuild from that transcript so the fork's UI and model context agree.
+    const rebuilt = rebuildAgentHistory(source.messages)
+    if (rebuilt.length === 0) return { source: 'empty', messageCount: 0 }
+    await saveAgentHistory(projectId, targetThreadId, rebuilt)
+    return { source: 'rebuilt', messageCount: rebuilt.length }
   }
 
   const slice = sliceThrough(source.messages, throughMessageId)

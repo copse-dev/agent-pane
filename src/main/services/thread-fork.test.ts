@@ -161,8 +161,17 @@ describe('forkThreadHistory', () => {
     assert.deepEqual(await loadAgentHistory('proj', 'src'), sourceHistory)
   })
 
-  it('writes no sidecar when the source has no recorded history to inherit', async () => {
+  it('rebuilds a visible first prompt when its run has not committed history yet', async () => {
     await saveProjectThread('proj', thread('fresh', [userMsg('u1', 'Hi')]))
+
+    const result = await forkThreadHistory('proj', 'fresh', 'fork')
+
+    assert.deepEqual(result, { source: 'rebuilt', messageCount: 1 })
+    assert.deepEqual(await loadAgentHistory('proj', 'fork'), [{ role: 'user', content: 'Hi' }])
+  })
+
+  it('writes no sidecar when neither provider history nor a transcript exists', async () => {
+    await saveProjectThread('proj', thread('fresh', []))
 
     const result = await forkThreadHistory('proj', 'fresh', 'fork')
 
