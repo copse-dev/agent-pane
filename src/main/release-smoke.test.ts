@@ -3,11 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { spawnPtyInProjectSandbox } from './project-sandbox/index.ts'
 import { decidePtySmokeAfterExit, runReleaseSmokeTest } from './release-smoke.ts'
 
 async function ptySpawnAvailable(): Promise<boolean> {
-  const shell = process.env['SHELL'] || '/bin/bash'
+  const shell = nonEmptyStringOr(process.env['SHELL'], '/bin/bash')
   try {
     const child = await spawnPtyInProjectSandbox(shell, {
       cols: 80,

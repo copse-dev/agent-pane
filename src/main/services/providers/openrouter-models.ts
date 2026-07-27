@@ -91,10 +91,7 @@ function parseModelRow(row: unknown): OpenRouterModelSummary | null {
 }
 
 export function parseOpenRouterModelsPayload(json: unknown): OpenRouterModelSummary[] {
-  // json is parsed from the network and can be null; the cast type hides that, so
-  // the optional chain guards the genuine runtime case.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const data = (json as { data?: unknown })?.data
+  const data = isRecord(json) ? json['data'] : undefined
   if (!Array.isArray(data)) return []
   const out: OpenRouterModelSummary[] = []
   for (const row of data) {
@@ -167,7 +164,7 @@ export async function fetchOpenRouterModelsCached(): Promise<{
 
 function collectZdrIdentifiers(json: unknown): Set<string> {
   const out = new Set<string>()
-  const data = (json as { data?: unknown } | null)?.data
+  const data = isRecord(json) ? json['data'] : undefined
   if (!Array.isArray(data)) return out
   for (const row of data) {
     if (!isRecord(row)) continue

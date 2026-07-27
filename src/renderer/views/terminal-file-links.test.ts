@@ -86,7 +86,7 @@ describe('terminal file links', () => {
   it('only links references resolved against the index', async () => {
     const term = fakeTerm(['edit src/main/index.ts and notafile.zzz here'])
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       store,
       apiWith([{ candidate: 'src/main/index.ts', path: 'src/main/index.ts' }]),
     )
@@ -110,7 +110,7 @@ describe('terminal file links', () => {
       revealed = path
     })
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       store,
       apiWith([{ candidate: 'src/renderer/views', path: 'src/renderer/views', kind: 'directory' }]),
     )
@@ -130,7 +130,7 @@ describe('terminal file links', () => {
   it('cmd-click opens the file at the parsed line/col; plain click is ignored', async () => {
     const term = fakeTerm(['  at src/foo.ts:42:7 in stack'])
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       store,
       apiWith([{ candidate: 'src/foo.ts', path: 'src/foo.ts' }], 'export {}\n'),
     )
@@ -158,7 +158,7 @@ describe('terminal file links', () => {
     const term = fakeTerm(['src/main/index.ts'])
     const noWorkspace = createStore({ workspaceRoot: null, rightPanelMode: 'terminal' })
     const links = installTerminalFileLinks(
-      term as unknown as Parameters<typeof installTerminalFileLinks>[0],
+      term,
       noWorkspace,
       apiWith([{ candidate: 'src/main/index.ts', path: 'src/main/index.ts' }]),
     )

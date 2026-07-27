@@ -5,6 +5,7 @@ import { setInlineStatus } from '../../dom/inline-status.ts'
 import {
   emptySshHostDraft,
   parseSshHostDraft,
+  parseSshWorkspaceHosts,
   removeHost,
   slugifyHostId,
   upsertHost,
@@ -110,8 +111,7 @@ export function createSshWorkspaceSection(
 
   async function renderHosts(): Promise<void> {
     clear(hostList)
-    const hosts = (await api.settings.get('sshWorkspaceHosts')) as SshWorkspaceHost[] | null
-    const list = Array.isArray(hosts) ? hosts : []
+    const list = parseSshWorkspaceHosts(await api.settings.get('sshWorkspaceHosts'))
     if (list.length === 0) {
       hostList.append(el('p', { class: 'field-hint' }, 'No SSH hosts configured yet.'))
       return
@@ -171,7 +171,7 @@ export function createSshWorkspaceSection(
         return
       }
       const raw = await api.settings.get('sshWorkspaceHosts')
-      const existing = Array.isArray(raw) ? (raw as SshWorkspaceHost[]) : []
+      const existing = parseSshWorkspaceHosts(raw)
       await persistHosts(upsertHost(existing, parsed.host))
       setInlineStatus(status, 'ok', `Saved host “${parsed.host.label}”.`)
       clearDraft()
@@ -213,7 +213,7 @@ export function createSshWorkspaceSection(
         return
       }
       const raw = await api.settings.get('sshWorkspaceHosts')
-      const existing = Array.isArray(raw) ? (raw as SshWorkspaceHost[]) : []
+      const existing = parseSshWorkspaceHosts(raw)
       let next = existing
       let imported = 0
       for (const alias of aliases) {

@@ -5,6 +5,7 @@ import type { SshRemoteDirEntry, SshWorkspaceHost } from '@shared/types/ssh-work
 import {
   emptySshHostDraft,
   parseSshHostDraft,
+  parseSshWorkspaceHosts,
   slugifyHostId,
   upsertHost,
   type SshHostDraft,
@@ -247,7 +248,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
 
     async function persistAndSelect(host: SshWorkspaceHost): Promise<void> {
       const raw = await api.settings.get('sshWorkspaceHosts')
-      const existing = Array.isArray(raw) ? (raw as SshWorkspaceHost[]) : []
+      const existing = parseSshWorkspaceHosts(raw)
       await api.settings.set('sshWorkspaceHosts', upsertHost(existing, host))
       hosts = await api.sshWorkspace.listHosts()
       fillHostSelect(host.id)
@@ -287,7 +288,7 @@ export function openRemoteFolderDialog(api: ApiClient): Promise<RemoteFolderPick
             return
           }
           const raw = await api.settings.get('sshWorkspaceHosts')
-          const existing = Array.isArray(raw) ? (raw as SshWorkspaceHost[]) : []
+          const existing = parseSshWorkspaceHosts(raw)
           let next = existing
           for (const alias of aliases) {
             if (next.some((h) => h.id === alias.id)) continue

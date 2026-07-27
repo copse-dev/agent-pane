@@ -2,6 +2,7 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { Project, Thread } from '@shared/types'
 import { sortThreadsNewestFirst } from '@shared/store/thread-helpers.ts'
+import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
 // On-disk persistence for projects and their chat threads. Projects stay in the
 // shared electron-store (config.json). Threads live in the filesystem-native
@@ -154,9 +155,27 @@ export function __resetPersistenceForTest(): void {
 export async function loadProjects(
   api: ApiClient,
 ): Promise<{ projects: Project[]; activeProjectId: string | null }> {
-  const projects = (await api.storage.get(KEY_PROJECTS)) as Project[] | null
-  const activeProjectId = (await api.storage.get(KEY_ACTIVE)) as string | null
-  return { projects: projects ?? [], activeProjectId: activeProjectId ?? null }
+  const projects = recordArrayOrEmpty(await api.storage.get(KEY_PROJECTS)).flatMap((value) => {
+    const id = value['id']
+    const path = value['path']
+    const name = value['name']
+    if (typeof id !== 'string' || typeof path !== 'string' || typeof name !== 'string') return []
+    const project: Project = { id, path, name }
+    if (typeof value['sshHost'] === 'string') project.sshHost = value['sshHost']
+    if (typeof value['missing'] === 'boolean') project.missing = value['missing']
+    const worktreeMode = value['worktreeMode']
+    if (
+      worktreeMode === 'never' ||
+      worktreeMode === 'always' ||
+      worktreeMode === 'from-default-branch'
+    ) {
+      project.worktreeMode = worktreeMode
+    }
+    return [project]
+  })
+  const rawActiveProjectId = await api.storage.get(KEY_ACTIVE)
+  const activeProjectId = typeof rawActiveProjectId === 'string' ? rawActiveProjectId : null
+  return { projects, activeProjectId }
 }
 
 export async function saveProjects(

@@ -2,6 +2,7 @@ import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import type { CursorPluginSummary } from '@shared/types/cursor-plugins.ts'
+import { isRecord, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 const SKIP_DIRS = new Set(['node_modules', '.git'])
 
@@ -32,7 +33,15 @@ async function readPluginManifest(pluginRoot: string): Promise<PluginManifest | 
   const manifestPath = join(pluginRoot, '.cursor-plugin', 'plugin.json')
   try {
     const raw = await fsp.readFile(manifestPath, 'utf-8')
-    return JSON.parse(raw) as PluginManifest
+    const parsed: unknown = JSON.parse(raw)
+    if (!isRecord(parsed)) return null
+    return {
+      ...(typeof parsed['name'] === 'string' ? { name: parsed['name'] } : {}),
+      ...(typeof parsed['skills'] === 'string' ? { skills: parsed['skills'] } : {}),
+      ...(typeof parsed['mcpServers'] === 'string' ? { mcpServers: parsed['mcpServers'] } : {}),
+      ...(typeof parsed['description'] === 'string' ? { description: parsed['description'] } : {}),
+      ...(typeof parsed['version'] === 'string' ? { version: parsed['version'] } : {}),
+    }
   } catch {
     return null
   }
@@ -111,7 +120,7 @@ export async function listCursorPlugins(): Promise<CursorPluginSummary[]> {
       resolvePluginMcpConfigPath(root),
     ])
     summaries.push({
-      name: manifest?.name?.trim() || basename(root),
+      name: nonEmptyStringOr(manifest?.name?.trim(), basename(root)),
       root,
       ...(manifest?.description ? { description: manifest.description } : {}),
       ...(manifest?.version ? { version: manifest.version } : {}),
