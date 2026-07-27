@@ -1,8 +1,8 @@
 name: Demo preview cleanup
 
 # When a PR closes (merged or not), remove its demo preview from the
-# machine-managed demo-previews branch and redeploy Pages so copse.dev/pr-<n>/
-# stops serving. Same-repo PRs only: fork PRs never had a preview, and their
+# machine-managed demo-previews branch and redeploy Pages so /demo/pr-<n>/ stops
+# serving. Same-repo PRs only: fork PRs never had a preview, and their
 # closed-event token is read-only anyway. Like pull_request generally, the
 # workflow definition is read from the base branch, so a fork head cannot alter
 # this cleanup.
