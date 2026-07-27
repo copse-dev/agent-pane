@@ -1909,7 +1909,17 @@ export function mountRoadmapPane(
   // fired before this pane existed — so catch up here.
   if (roadmapModeActive(store)) void refresh()
 
+  const unregisterPopoutSeed = registerPopoutSeedHandlers('roadmap', {
+    capture: () => ({ selectedId }),
+    apply: (seed) => {
+      if (!seed || typeof seed !== 'object') return
+      const next = seed as { selectedId?: string | null }
+      if (next.selectedId) store.emit('roadmap_reveal', next.selectedId)
+    },
+  })
+
   return () => {
+    unregisterPopoutSeed()
     unsubs.forEach((u) => {
       u()
     })
