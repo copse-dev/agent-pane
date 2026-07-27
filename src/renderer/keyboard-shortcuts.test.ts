@@ -12,8 +12,13 @@ function keyEvent(init: KeyboardEventInit): KeyboardEvent {
   return { ...init } as KeyboardEvent
 }
 
-function fakeElement(tagName: string, contentEditable = false): HTMLElement {
-  return { tagName, isContentEditable: contentEditable } as HTMLElement
+function fakeElement(tagName: string, contentEditable = false): EventTarget {
+  const target = new EventTarget()
+  Object.defineProperties(target, {
+    tagName: { value: tagName },
+    isContentEditable: { value: contentEditable },
+  })
+  return target
 }
 
 describe('keyboard-shortcuts', () => {

@@ -68,11 +68,10 @@ const ACP_ERROR_CODE_LABELS: Readonly<Record<number, string>> = {
 
 function isJsonRpcError(err: unknown): err is JsonRpcError {
   return (
-    typeof err === 'object' &&
-    err !== null &&
-    typeof (err as JsonRpcError).code === 'number' &&
-    Number.isInteger((err as JsonRpcError).code) &&
-    typeof (err as JsonRpcError).message === 'string'
+    isRecord(err) &&
+    typeof err['code'] === 'number' &&
+    Number.isInteger(err['code']) &&
+    typeof err['message'] === 'string'
   )
 }
 

@@ -1,6 +1,7 @@
 import { el } from '../dom/helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
-import { populateModelSelect } from './model-options.ts'
+import { fetchModelOptions } from './model-options.ts'
+import { mountModelSelectPicker } from './model-picker.ts'
 
 export interface ComparisonModelSelection {
   a: string
@@ -40,10 +41,29 @@ export function createComparisonModelPickers(
     modelRow('Judge', selectJudge),
   )
 
+  const pickerA = mountModelSelectPicker(selectA, {
+    loadOptions: (current) => fetchModelOptions(api, current),
+    className: 'approval-model-picker',
+    ariaLabel: 'Reviewer A model',
+    loadOnMount: false,
+  })
+  const pickerB = mountModelSelectPicker(selectB, {
+    loadOptions: (current) => fetchModelOptions(api, current),
+    className: 'approval-model-picker',
+    ariaLabel: 'Reviewer B model',
+    loadOnMount: false,
+  })
+  const pickerJudge = mountModelSelectPicker(selectJudge, {
+    loadOptions: (current) => fetchModelOptions(api, current),
+    className: 'approval-model-picker',
+    ariaLabel: 'Judge model',
+    loadOnMount: false,
+  })
+
   void Promise.all([
-    populateModelSelect(selectA, api, models.a),
-    populateModelSelect(selectB, api, models.b),
-    populateModelSelect(selectJudge, api, models.judge),
+    pickerA.refresh(models.a),
+    pickerB.refresh(models.b),
+    pickerJudge.refresh(models.judge),
   ])
 
   return {

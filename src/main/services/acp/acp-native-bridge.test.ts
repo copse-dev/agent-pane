@@ -10,6 +10,7 @@ import {
   isBridgedNativeToolTitle,
 } from './acp-native-bridge.ts'
 import type { AcpNativeBridge } from './acp-native-bridge.ts'
+import { expectRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
 /**
  * The native-tool MCP bridge (issue #602, tier 2) exposes a curated slice of
@@ -77,6 +78,15 @@ async function rpc(
   return { status: response.status, json: payload ? JSON.parse(payload) : null }
 }
 
+function rpcResult(response: Awaited<ReturnType<typeof rpc>>): Record<string, unknown> {
+  return expectRecord(expectRecord(response.json)['result'])
+}
+
+function contentText(response: Awaited<ReturnType<typeof rpc>>): string | undefined {
+  const first = recordArrayOrEmpty(rpcResult(response)['content'])[0]
+  return typeof first?.['text'] === 'string' ? first['text'] : undefined
+}
+
 const LIST_TOOLS = { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }
 
 function initialized(): unknown[] {
@@ -115,16 +125,15 @@ describe('startAcpNativeBridge', () => {
 
     for (const init of initialized()) await rpc(bridge, init)
     const list = await rpc(bridge, LIST_TOOLS)
-    const tools = (list.json as { result: { tools: { name: string; inputSchema: unknown }[] } })
-      .result.tools
+    const tools = recordArrayOrEmpty(rpcResult(list)['tools'])
     assert.deepEqual(
-      tools.map((tool) => tool.name),
+      tools.map((tool) => tool['name']),
       ['staged_diffs', 'run_shell'],
     )
     // Schemas must be draft 2020-12, not the openapi-3.0 flavor: the agent
     // forwards them to the Anthropic API, which 400s on `nullable` / boolean
     // `exclusiveMinimum` (regression: "tools.N.custom.input_schema is invalid").
-    const schemaJson = JSON.stringify(tools[0]?.inputSchema)
+    const schemaJson = JSON.stringify(tools[0]?.['inputSchema'])
     assert.doesNotMatch(schemaJson, /"nullable"/)
     assert.doesNotMatch(schemaJson, /"exclusiveMinimum":\s*true/)
 
@@ -134,8 +143,7 @@ describe('startAcpNativeBridge', () => {
       method: 'tools/call',
       params: { name: 'staged_diffs', arguments: {} },
     })
-    const result = (call.json as { result: { content: { text: string }[] } }).result
-    assert.equal(result.content[0]?.text, 'no pending diffs')
+    assert.equal(contentText(call), 'no pending diffs')
     assert.deepEqual(executed, ['staged_diffs'])
 
     const shellCall = await rpc(bridge, {
@@ -144,8 +152,7 @@ describe('startAcpNativeBridge', () => {
       method: 'tools/call',
       params: { name: 'run_shell', arguments: { command: 'npm test' } },
     })
-    const shellResult = (shellCall.json as { result: { content: { text: string }[] } }).result
-    assert.equal(shellResult.content[0]?.text, 'ran npm test')
+    assert.equal(contentText(shellCall), 'ran npm test')
     assert.deepEqual(executed, ['staged_diffs', 'run_shell:npm test'])
     assert.deepEqual(permissionChecks, ['staged_diffs', 'run_shell'])
   })
@@ -164,9 +171,7 @@ describe('startAcpNativeBridge', () => {
 
     for (const init of initialized()) await rpc(bridge, init)
     const list = await rpc(bridge, LIST_TOOLS)
-    const names = (list.json as { result: { tools: { name: string }[] } }).result.tools.map(
-      (tool) => tool.name,
-    )
+    const names = recordArrayOrEmpty(rpcResult(list)['tools']).map((tool) => tool['name'])
     assert.ok(names.includes('advisor'), 'advisor should be offered when registered')
 
     const call = await rpc(bridge, {
@@ -175,8 +180,7 @@ describe('startAcpNativeBridge', () => {
       method: 'tools/call',
       params: { name: 'advisor', arguments: {} },
     })
-    const result = (call.json as { result: { content: { text: string }[] } }).result
-    assert.equal(result.content[0]?.text, 'Advice: do the smallest slice first.')
+    assert.equal(contentText(call), 'Advice: do the smallest slice first.')
   })
 
   it('isolates advisor context between concurrent ACP thread bridges', async () => {
@@ -229,10 +233,8 @@ describe('startAcpNativeBridge', () => {
         params: { name: 'advisor', arguments: {} },
       })
       const [resultA, resultB] = await Promise.all([rpc(bridgeA, call(6)), rpc(bridgeB, call(7))])
-      const text = (result: Awaited<ReturnType<typeof rpc>>): string | undefined =>
-        (result.json as { result: { content: { text: string }[] } }).result.content[0]?.text
-      assert.equal(text(resultA), 'executor-a:user')
-      assert.equal(text(resultB), 'executor-b:assistant')
+      assert.equal(contentText(resultA), 'executor-a:user')
+      assert.equal(contentText(resultB), 'executor-b:assistant')
     } finally {
       await Promise.all([bridgeA.close(), bridgeB.close()])
     }
@@ -249,10 +251,9 @@ describe('startAcpNativeBridge', () => {
       method: 'tools/call',
       params: { name: 'ask_user', arguments: { question: 'Continue?' } },
     })
-    const result = (call.json as { result: { content: { text: string }[]; isError?: boolean } })
-      .result
-    assert.equal(result.isError, true)
-    assert.match(result.content[0]?.text ?? '', /not offered/)
+    const result = rpcResult(call)
+    assert.equal(result['isError'], true)
+    assert.match(contentText(call) ?? '', /not offered/)
   })
 
   it('rejects requests without the per-turn bearer token', async () => {

@@ -6,12 +6,15 @@ import { storageGet, storageSet } from './storage/storage.ts'
 import { getActivePathBackend } from './workspace-fs/get-path-backend.ts'
 import { localWorkspaceFs } from './workspace-fs/local-workspace-fs.ts'
 import type { PathBackend } from './workspace-fs/path-backend.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 const WORKSPACE_KEY = 'workspaceRoot'
 const PROJECTS_KEY = 'projects'
 const ACTIVE_PROJECT_KEY = 'activeProjectId'
 
-let workspaceRoot: string | null = (storageGet(WORKSPACE_KEY) as string | null | undefined) ?? null
+const storedWorkspaceRoot = storageGet(WORKSPACE_KEY)
+let workspaceRoot: string | null =
+  typeof storedWorkspaceRoot === 'string' ? storedWorkspaceRoot : null
 
 /** Roots the renderer may activate via `workspace:set` (dialog-opened or persisted projects). */
 const allowedWorkspaceRoots = new Set<string>()
@@ -266,9 +269,9 @@ export function getProjectRoot(projectId: string): string | null {
   if (!Array.isArray(projects)) return null
 
   const project = projects.find((candidate): candidate is { id: string; path: string } => {
-    if (!candidate || typeof candidate !== 'object') return false
-    const value = candidate as { id?: unknown; path?: unknown }
-    return value.id === projectId && typeof value.path === 'string'
+    return (
+      isRecord(candidate) && candidate['id'] === projectId && typeof candidate['path'] === 'string'
+    )
   })
 
   return project?.path ?? null
@@ -289,10 +292,9 @@ export function getActiveProjectSshHost(): string | undefined {
   if (!Array.isArray(projects)) return undefined
 
   for (const project of projects) {
-    if (!project || typeof project !== 'object') continue
-    const candidate = project as { id?: unknown; sshHost?: unknown }
-    if (candidate.id === activeProjectId && typeof candidate.sshHost === 'string') {
-      return candidate.sshHost
+    if (!isRecord(project)) continue
+    if (project['id'] === activeProjectId && typeof project['sshHost'] === 'string') {
+      return project['sshHost']
     }
   }
   return undefined
@@ -318,10 +320,11 @@ export function resolveSshHostForWorkspaceRoot(
   if (!Array.isArray(projects)) return undefined
   const normalized = normalizeRemoteWorkspacePath(root)
   for (const project of projects) {
-    if (!project || typeof project !== 'object') continue
-    const candidate = project as { path?: unknown; sshHost?: unknown }
-    if (typeof candidate.path !== 'string' || typeof candidate.sshHost !== 'string') continue
-    if (normalizeRemoteWorkspacePath(candidate.path) === normalized) return candidate.sshHost
+    if (!isRecord(project)) continue
+    const path = project['path']
+    const sshHost = project['sshHost']
+    if (typeof path !== 'string' || typeof sshHost !== 'string') continue
+    if (normalizeRemoteWorkspacePath(path) === normalized) return sshHost
   }
   return undefined
 }

@@ -15,6 +15,12 @@ describe('ACP permission-mode settings', () => {
           id: 'fixture-agent',
           title: 'Fixture ACP Agent',
           command: 'fixture-acp',
+          model: 'fixture-sonnet',
+          availableModels: [
+            { value: 'fixture-opus', label: 'Fixture Opus' },
+            { value: 'fixture-sonnet', label: 'Fixture Sonnet' },
+          ],
+          modelsProbedAt: Date.now(),
           permissionMode: 'acceptEdits',
           availablePermissionModes: [
             { value: 'default', label: 'Default', description: 'Ask before protected actions.' },
@@ -61,6 +67,23 @@ describe('ACP permission-mode settings', () => {
     })
 
     await expect(await card.$('.acp-agent-card-head strong')).toHaveText('Fixture ACP Agent')
+    const modelPicker = await card.$('.model-picker-field')
+    await expect(modelPicker).toBeDisplayed()
+    await expect(await modelPicker.$('.model-picker-label')).toHaveText('Fixture Sonnet')
+    await browser.execute(() => {
+      document
+        .querySelector<HTMLElement>('.acp-agent-card .model-picker-trigger')
+        ?.scrollIntoView({ block: 'center' })
+    })
+    await browser.pause(200)
+    await modelPicker.$('.model-picker-trigger').click()
+    const modelFilter = await modelPicker.$('.model-picker-filter')
+    await modelFilter.setValue('opus')
+    await expect(await modelPicker.$$('.model-picker-option')).toBeElementsArrayOfSize(1)
+    await expect(await modelPicker.$('.model-picker-option')).toHaveText('Fixture Opus')
+    await saveElementScreenshot('.acp-agent-card', 'settings-acp-model-picker-search.png')
+    await browser.keys('Escape')
+
     const modeSelect = await card.$('.acp-permission-mode-field select')
     await expect(modeSelect).toBeDisplayed()
     await expect(modeSelect).toHaveValue('acceptEdits')

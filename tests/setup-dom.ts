@@ -40,9 +40,15 @@ Object.assign(globalThis, {
   // without this, tests that need `.style` / `.hidden` either throw at runtime
   // or fail typecheck after narrowing only to Element.
   HTMLElement: win.HTMLElement,
+  // Labels wrap settings/routing selects; `instanceof HTMLLabelElement` must
+  // resolve to happy-dom's class the same way HTMLElement does.
+  HTMLLabelElement: win.HTMLLabelElement,
   // Node carries the nodeType constants (Node.TEXT_NODE, …) that DOM-walking
   // renderer code (e.g. the composer editor's serializer) compares against.
   Node: win.Node,
+  // MutationObserver is used by long-lived views to tear down when a host is
+  // cleared without an explicit destroy (model picker remounts, follow-ups).
+  MutationObserver: win.MutationObserver,
   // requestAnimationFrame is a standard part of a browser DOM environment that
   // happy-dom doesn't surface as a bare global. Real renderer views call it (e.g.
   // the conversation list's scroll-pin reset), so component tests that mount those

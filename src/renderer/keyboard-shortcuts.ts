@@ -5,13 +5,10 @@ import { openNewThread } from '@shared/store/thread-helpers.ts'
 import { openRightPanelWithWorkspace, toggleFilesPaneWithWorkspace } from './controller/panels.ts'
 
 export function isTypingTarget(target: EventTarget | null): boolean {
-  if (!target || typeof target !== 'object') return false
-  const el = target as { tagName?: string; isContentEditable?: boolean }
-  if (!('tagName' in el) || typeof el.tagName !== 'string') return false
-  const tag = el.tagName
+  if (target === null || !('tagName' in target) || typeof target.tagName !== 'string') return false
+  const tag = target.tagName
   if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'SELECT') return true
-  if (el.isContentEditable) return true
-  return false
+  return 'isContentEditable' in target && target.isContentEditable === true
 }
 
 /** Cmd/Ctrl+N starts a new thread, matching the File ▸ New Thread menu item. */

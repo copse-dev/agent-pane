@@ -48,7 +48,7 @@ async function executeExploreTool(
   args: unknown,
   signal: AbortSignal,
 ): Promise<ToolExecuteResult> {
-  if (!EXPLORE_TOOL_NAMES.includes(name as (typeof EXPLORE_TOOL_NAMES)[number])) {
+  if (!EXPLORE_TOOL_NAMES.some((allowedName) => allowedName === name)) {
     throw new Error(`Tool not allowed in explore subagent: ${name}`)
   }
   return registry.execute(name, args, signal)
