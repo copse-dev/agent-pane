@@ -14,7 +14,12 @@ import { buildAppMenu } from './windows/app-menu.ts'
 import { initAutoUpdate } from './services/auto-update.ts'
 import { initUpdatePrompt } from './services/update-prompt.ts'
 import { checkToolAvailability } from './services/tool-availability.ts'
-import { createRegistry, registerSkillTools } from './services/registry-bootstrap.ts'
+import {
+  createRegistry,
+  registerSkillTools,
+  syncCiInvestigatorTools,
+  syncGhTools,
+} from './services/registry-bootstrap.ts'
 import { getPackService } from './services/packs/pack-service.ts'
 import {
   loadMcpServers,
@@ -87,8 +92,10 @@ import {
   startEventLoopWatchdog,
   stopEventLoopWatchdog,
 } from './services/diagnostics/event-loop-watchdog.ts'
+import { reportStartupBudget } from './services/diagnostics/startup-budget.ts'
 import { destroyAllTerminalSessions } from './services/exec/terminal-service.ts'
 import { stopAllBackgroundProcesses } from './services/exec/background-process.ts'
+import { closeVideoDecoder } from './services/video/video-decoder.ts'
 import {
   prepareThreadExecutionContext,
   runWithThreadExecutionContext,
@@ -98,6 +105,7 @@ import {
   prepareThreadCheckout,
   previewThreadCheckout,
 } from './services/thread-checkout-transaction.ts'
+import { getAutomationService } from './services/automations/automation-service.ts'
 
 // Prevent multiple instances stacking invisible windows at the same position.
 // A second launch focuses the existing window instead. Eval harness uses an isolated userData dir.
@@ -174,28 +182,31 @@ app
     recordStartupPhase('reap-gortex')
     await reapOversizedGortexDaemon()
 
-    recordStartupPhase('tool-availability')
-    await checkToolAvailability()
     recordStartupPhase('sandbox-init')
     await initProjectSandbox()
-
-    // Move provider-format history out of electron-store into per-thread
-    // sidecars (issue #993). Must run before the first window so ownership is
-    // resolved against the thread store the renderer is about to read.
-    recordStartupPhase('llm-history-migration')
-    const { migrateLlmHistory } = await import('./services/llm-history-migration.ts')
-    const historyMigration = await migrateLlmHistory()
-    if (historyMigration.scanned > 0) {
-      console.log(
-        `[llm-history-migration] scanned ${String(historyMigration.scanned)}, migrated ${String(historyMigration.migrated)}, removed ${String(historyMigration.legacyKeysRemoved)} legacy key(s)`,
-      )
-    }
 
     recordStartupPhase('window-create')
     const win = createMainWindow()
     applyAppIcon([win])
     buildAppMenu(win)
     initUpdatePrompt(win)
+    // Probe for rg/git/gh and the search backends only now: these are ~9 process
+    // spawns (one of them, `gh auth status`, a network round trip), and run
+    // before the window they cost the user seconds of blank screen. The window
+    // is already loading its renderer while they run.
+    //
+    // Started here but NOT awaited until every IPC handler is registered below.
+    // `createMainWindow()` has already fired `loadFile`, so the renderer boots
+    // concurrently and invokes `settings:get` / `ssh-workspace:getStates` on
+    // first paint — awaiting a multi-second probe before registration left those
+    // invokes hitting "No handler registered", which rejects the unguarded
+    // `await api.settings.get('model')` in the renderer's boot() and aborts the
+    // layout mount.
+    //
+    // #523's invariant (read-only GitHub tools exposed only when `gh` probed
+    // usable) is preserved by re-syncing them once the probe resolves, rather
+    // than by ordering the probe ahead of `createRegistry()`.
+    const toolAvailability = checkToolAvailability()
     // Packaged macOS build only: background update check + prompts (no-op elsewhere).
     initAutoUpdate(win)
     // P5: boot the pack service before `createRegistry()` so persisted
@@ -230,6 +241,9 @@ app
     const disposeTerminalHandlers = initTerminal(win)
     recordStartupPhase('register-handlers')
     registerAllHandlers(win, registry)
+    getAutomationService().start((event) => {
+      if (!win.isDestroyed()) win.webContents.send('automations:triggered', event)
+    })
     // Register before async bootstrap so onboarding/settings can query models on first paint.
     ipcMain.handle('lmstudio:test', async (event, url: unknown, apiKey?: unknown) => {
       assertMainFrameSender(event, win)
@@ -258,7 +272,7 @@ app
           url,
           apiKey,
         ])
-        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        const baseUrl = parsedUrl ?? 'http://127.0.0.1:1234/v1'
         const result = await downloadLmStudioModel(parsedModelId, baseUrl, parsedApiKey)
         if (result.ok) invalidateLmStudioModelsCache()
         return result
@@ -274,7 +288,7 @@ app
           url,
           apiKey,
         ])
-        const baseUrl = parsedUrl ?? 'http://localhost:1234/v1'
+        const baseUrl = parsedUrl ?? 'http://127.0.0.1:1234/v1'
         return getLmStudioDownloadStatus(parsedJobId, baseUrl, parsedApiKey)
       },
     )
@@ -540,6 +554,20 @@ app
       return suggestFollowUps(parsed.data)
     })
 
+    // Every channel the renderer can invoke is registered by here, so it is now
+    // safe to block on the probe. Both syncs read `isGhAvailable()`, which only
+    // answers truthfully once this resolves — `createRegistry()` ran while the
+    // probe was still out and saw a null (false) result, so this is the call
+    // that actually exposes the `gh`-backed tools.
+    //
+    // The phase marker sits here rather than at the call above so it measures
+    // what the probe still *costs* boot — the residual wait after handler
+    // registration overlapped it — not its total duration.
+    recordStartupPhase('tool-availability')
+    await toolAvailability
+    syncGhTools(registry)
+    syncCiInvestigatorTools(registry)
+
     recordStartupPhase('skills-mcp')
     await initSkillsRegistry()
     registerSkillTools(registry)
@@ -548,6 +576,11 @@ app
     await loadCustomTools(registry)
 
     recordStartupPhase('boot-complete')
+    // Print the boot timeline and flag any phase over its ceiling (#994). Every
+    // expensive thing above scales with something CI does not have — profile
+    // size, workspace size, MCP server count — so this is the one place the
+    // number is observable on a real machine.
+    reportStartupBudget()
     disposeTerminal = disposeTerminalHandlers
   })
   .catch(console.error)
@@ -558,6 +591,7 @@ let disposeTerminal: (() => void) | undefined
 
 async function cleanupBeforeQuit(): Promise<void> {
   stopEventLoopWatchdog()
+  getAutomationService().stop()
   await disposeAllAcpSessions()
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
@@ -576,6 +610,9 @@ app.on('before-quit', (event) => {
   if (quitCleanupFinished) return
   destroyAllTerminalSessions()
   stopAllBackgroundProcesses()
+  // The hidden video-decoder window is not the main window, so nothing else
+  // closes it — left open it would keep the app alive past the last quit.
+  closeVideoDecoder()
   event.preventDefault()
   if (quitCleanupStarted) return
   quitCleanupStarted = true

@@ -12,8 +12,10 @@ import type {
   ProviderStreamChunk,
   ToolCallChunk,
   ModelUsage,
+  ToolResultImage,
   UserContent,
 } from '@copse/llm/wire-types.ts'
+export type { ToolResultImage } from '@copse/llm/wire-types.ts'
 import type { PanelData } from './packs/pack-panel.ts'
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
@@ -94,12 +96,20 @@ export type ToolExecuteResult =
        * (e.g. `advisor`) set it so headings, lists and code render.
        */
       resultFormat?: 'markdown'
+      /**
+       * Images to put in front of the model alongside `result` — currently the
+       * stills `video_frames` pulls out of a screen recording. Provider support
+       * differs (see `@copse/llm/tool-result-images.ts`) and a trimmed history
+       * drops them first, so `result` must stand on its own as text.
+       */
+      images?: ToolResultImage[]
     }
 
 export function normalizeToolExecuteResult(value: ToolExecuteResult): {
   result: string
   editStats?: ToolEditStats
   resultFormat?: 'markdown'
+  images?: ToolResultImage[]
 } {
   if (typeof value === 'string') return { result: value }
   return value

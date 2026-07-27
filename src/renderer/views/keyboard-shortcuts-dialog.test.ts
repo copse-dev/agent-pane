@@ -15,6 +15,7 @@ import {
   closeKeyboardShortcutsDialog,
   isKeyboardShortcutsDialogOpen,
 } from './keyboard-shortcuts-dialog.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 function shimModal(dialog: HTMLDialogElement): void {
   let open = false
@@ -31,7 +32,7 @@ describe('keyboard shortcuts dialog (Cmd/Ctrl+/)', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     mountKeyboardShortcutsDialog()
-    dialog = document.getElementById('keyboard-shortcuts-dialog') as HTMLDialogElement
+    dialog = qsRequired<HTMLDialogElement>(document, '#keyboard-shortcuts-dialog')
     shimModal(dialog)
   })
 

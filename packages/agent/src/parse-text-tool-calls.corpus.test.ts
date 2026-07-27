@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { recoverTextToolCalls, stripTextToolCallBlocks } from './parse-text-tool-calls.ts'
+import { z } from 'zod'
 
 interface RecoverCase {
   id: string
@@ -15,9 +16,9 @@ interface RecoverCase {
   input: string
   expect: {
     toolCalls: Array<{ name: string; args: Record<string, unknown> }>
-    cleanedTextIncludes?: string[]
-    cleanedTextExcludes?: string[]
-    keptRawBlocks?: boolean
+    cleanedTextIncludes?: string[] | undefined
+    cleanedTextExcludes?: string[] | undefined
+    keptRawBlocks?: boolean | undefined
   }
 }
 
@@ -33,8 +34,32 @@ interface DialectCorpus {
   strip: StripCase[]
 }
 
+const dialectCorpusSchema: z.ZodType<DialectCorpus> = z.object({
+  recover: z.array(
+    z.object({
+      id: z.string(),
+      description: z.string(),
+      input: z.string(),
+      expect: z.object({
+        toolCalls: z.array(z.object({ name: z.string(), args: z.record(z.string(), z.unknown()) })),
+        cleanedTextIncludes: z.array(z.string()).optional(),
+        cleanedTextExcludes: z.array(z.string()).optional(),
+        keptRawBlocks: z.boolean().optional(),
+      }),
+    }),
+  ),
+  strip: z.array(
+    z.object({
+      id: z.string(),
+      description: z.string(),
+      input: z.string(),
+      expected: z.string(),
+    }),
+  ),
+})
+
 const corpusPath = join(process.cwd(), 'tests/fixtures/tool-call-dialect-corpus.json')
-const corpus = JSON.parse(readFileSync(corpusPath, 'utf8')) as DialectCorpus
+const corpus = dialectCorpusSchema.parse(JSON.parse(readFileSync(corpusPath, 'utf8')) as unknown)
 
 describe('tool-call dialect corpus: recoverTextToolCalls', () => {
   for (const c of corpus.recover) {

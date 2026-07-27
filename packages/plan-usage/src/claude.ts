@@ -384,7 +384,11 @@ async function fetchClaudePlanUsageForCredential(
   options: ClaudePlanUsageFetchOptions,
 ): Promise<ProviderPlanResult> {
   const now = options.now ?? Date.now
-  const refreshToken = credential.refreshToken?.trim() || null
+  const trimmedRefreshToken = credential.refreshToken?.trim()
+  const refreshToken =
+    trimmedRefreshToken === undefined || trimmedRefreshToken.length === 0
+      ? null
+      : trimmedRefreshToken
   let accessToken = credential.accessToken.trim()
   let refreshed = false
 

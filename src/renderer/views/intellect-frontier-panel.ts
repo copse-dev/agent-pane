@@ -81,11 +81,11 @@ function approxLabelWidth(text: string): number {
   return 10 + text.length * 5.2
 }
 
-function svgEl(
-  tag: string,
+function svgEl<K extends keyof SVGElementTagNameMap>(
+  tag: K,
   attrs: Record<string, string>,
   ...children: (Node | string)[]
-): SVGElement {
+): SVGElementTagNameMap[K] {
   const node = document.createElementNS(SVG_NS, tag)
   for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v)
   node.append(...children)
@@ -139,7 +139,7 @@ export function renderCompositeStrip(models: readonly CompositeScoredModel[]): S
     role: 'img',
     'aria-label': 'Local models on the copse-intellect composite scale',
     style: 'width:100%;height:auto;display:block',
-  }) as SVGSVGElement
+  })
 
   svg.append(
     svgEl('line', {
@@ -585,7 +585,7 @@ export function renderFrontierSvg(
     'aria-label': ariaLabel,
     'data-cost-axis': costAxis,
     style: 'width:100%;height:auto;display:block',
-  }) as SVGSVGElement
+  })
 
   // Recessive grid: a few horizontal lines only.
   for (const t of ticks(maxIntellect, 4)) {

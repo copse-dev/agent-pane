@@ -101,6 +101,46 @@ describe('buildTextWithAttachments', () => {
   })
 })
 
+describe('video refs', () => {
+  const videoRefs = [
+    { name: 'Screen Recording.mov', size: '12.4 MB', path: '/chat/proj/t1/blobs/media/a-rec.mov' },
+    { name: 'bug.mp4', size: '900 KB', path: '/chat/proj/t1/blobs/media/b-bug.mp4' },
+  ]
+
+  it('emits one steering preamble + a line per video, inlining nothing', () => {
+    const result = buildTextWithAttachments('what goes wrong here?', [], [], { videoRefs })
+    assert.match(result, /^what goes wrong here\?/)
+    assert.equal(result.match(/video_frames/g)?.length, 1)
+    assert.match(
+      result,
+      /- "Screen Recording\.mov" \(12\.4 MB\): \/chat\/proj\/t1\/blobs\/media\/a-rec\.mov/,
+    )
+    assert.match(result, /- "bug\.mp4" \(900 KB\): \/chat\/proj\/t1\/blobs\/media\/b-bug\.mp4/)
+    assert.doesNotMatch(result, /```/)
+  })
+
+  it('says plainly that the video itself is not in context', () => {
+    // Without this the model reasonably assumes an attachment it can see, and
+    // burns a turn asking the user why it cannot watch the recording.
+    const result = buildTextWithAttachments('', [], [], { videoRefs })
+    assert.match(result, /NOT in your context/)
+    assert.match(result, /no audio track/i)
+  })
+
+  it('adds no video block when there are no videos', () => {
+    assert.equal(buildTextWithAttachments('hi', [], [], { videoRefs: [] }), 'hi')
+  })
+
+  it('keeps thread refs and video refs as separate blocks', () => {
+    const result = buildTextWithAttachments('both', [], [], {
+      threadRefs: [{ title: 'T', date: 'now', spinePath: '/chat/p/t/events.jsonl' }],
+      videoRefs,
+    })
+    assert.match(result, /Referenced threads:/)
+    assert.match(result, /Attached videos:/)
+  })
+})
+
 describe('truncateAttachmentContent', () => {
   it('returns content unchanged when it fits the cap', () => {
     const small = 'hello\nworld'

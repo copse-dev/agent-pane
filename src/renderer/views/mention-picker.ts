@@ -198,7 +198,12 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
       return
     }
     try {
-      const content = await api.fs.readFile(item.path)
+      const { activeProjectId, activeThreadId } = store.getState()
+      if (!activeProjectId || !activeThreadId) return
+      const content = await api.fs.readFile(activeProjectId, activeThreadId, item.path)
+      const current = store.getState()
+      if (current.activeProjectId !== activeProjectId || current.activeThreadId !== activeThreadId)
+        return
       onAttach({ path: item.path, content })
     } catch {
       /* ignore read errors */
@@ -252,7 +257,7 @@ export function initMentionPicker(opts: MentionPickerOptions): () => void {
   })
 
   document.addEventListener('mousedown', (e) => {
-    if (!picker.contains(e.target as Node)) hidePicker()
+    if (!picker.contains(e.target instanceof Node ? e.target : null)) hidePicker()
   })
 
   return hidePicker

@@ -8,6 +8,7 @@ import { mountInputBar } from './input-bar.ts'
 import { mountProjectsPane } from './projects-pane.ts'
 import type { PreparedThreadCheckout, ThreadCheckoutPreview } from '@shared/types/worktree.ts'
 import type { SkillSummary } from '@shared/types/skills.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 class TestResizeObserver {
   observe(): void {}
@@ -53,86 +54,106 @@ function createApi(options: {
   onPreviewCheckout?: () => Promise<ThreadCheckoutPreview>
   listSkills?: () => Promise<SkillSummary[]>
 }): ApiClient {
-  return {
-    agent: {
-      abort: options.onAbort ?? (async (): Promise<void> => {}),
-      run: options.onRun ?? (async (): Promise<void> => {}),
-      clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
-      prepareCheckout:
-        options.onPrepareCheckout ??
-        (async (): Promise<PreparedThreadCheckout> => ({
-          checkoutMode: 'shared',
-          choice: 'automatic',
-          branch: options.currentBranch,
-        })),
-      previewCheckout:
-        options.onPreviewCheckout ??
-        (async (): Promise<ThreadCheckoutPreview> => ({ checkoutMode: 'shared' })),
-      suggestFollowUps: async () => [],
-      refreshModelContext: async () => {},
-      onRefreshContextEstimate: () => () => {},
-    },
-    fs: {
-      onChanged: () => () => {},
-    },
-    security: {
-      getGuardedYolo: async (threadId: string) => ({
-        threadId,
-        phase: 'off',
-        containment: 'unsandboxed',
-        expiresAt: null,
-      }),
-      enableGuardedYolo: async (threadId: string) => ({
-        threadId,
-        phase: 'off',
-        containment: 'unsandboxed',
-        expiresAt: null,
-      }),
-      disableGuardedYolo: async (threadId: string) => ({
-        threadId,
-        phase: 'off',
-        containment: 'unsandboxed',
-        expiresAt: null,
-      }),
-      onGuardedYoloChanged: () => () => {},
-    },
-    git: {
-      branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
-      checkoutBranch: options.onCheckoutBranch ?? (async (): Promise<void> => {}),
-      listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
-      getDefaultBranch: async () => 'main',
-    },
-    lmStudio: {
-      models: async () => [],
-    },
-    settings: {
-      availableProviders: async () => ({ anthropic: true, openai: true }),
-      extraProviders: async () => [],
-      get: async () => undefined,
-      set: async () => {},
-    },
-    packs: {
-      // Memories / Roadmap are gated on first-party packs after migration off
-      // their retired settings; the panel controls read `packs:list` on mount.
-      // Default OFF (empty list) keeps those panes hidden.
-      list: async () => ({ packs: [] }),
-      setEnabled: async () => ({ packs: [] }),
-      setSetting: async () => ({ packs: [] }),
-    },
-    skills: {
-      list: options.listSkills ?? (async (): Promise<SkillSummary[]> => []),
-    },
-    index: {
-      status: async () => ({
-        fileIndex: { phase: 'idle' },
-        semantic: { phase: 'idle' },
-      }),
-      onStatusChanged: () => () => {},
-    },
-    threads: {
-      listOrphans: async () => [],
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        abort: options.onAbort ?? (async (): Promise<void> => {}),
+        run: options.onRun ?? (async (): Promise<void> => {}),
+        clearHistory: async (_projectId: string, _threadId: string): Promise<void> => {},
+        prepareCheckout:
+          options.onPrepareCheckout ??
+          (async (): Promise<PreparedThreadCheckout> => ({
+            checkoutMode: 'shared',
+            choice: 'automatic',
+            branch: options.currentBranch,
+          })),
+        previewCheckout:
+          options.onPreviewCheckout ??
+          (async (): Promise<ThreadCheckoutPreview> => ({ checkoutMode: 'shared' })),
+        suggestFollowUps: async () => [],
+        refreshModelContext: async (): Promise<void> => {},
+        onRefreshContextEstimate: () => () => {},
+      },
+      fs: {
+        ...base['fs'],
+        onChanged: () => () => {},
+      },
+      security: {
+        ...base['security'],
+        getGuardedYolo: async (threadId: string) => ({
+          threadId,
+          phase: 'off',
+          containment: 'unsandboxed',
+          expiresAt: null,
+        }),
+        enableGuardedYolo: async (threadId: string) => ({
+          threadId,
+          phase: 'off',
+          containment: 'unsandboxed',
+          expiresAt: null,
+        }),
+        disableGuardedYolo: async (threadId: string) => ({
+          threadId,
+          phase: 'off',
+          containment: 'unsandboxed',
+          expiresAt: null,
+        }),
+        onGuardedYoloChanged: () => () => {},
+      },
+      git: {
+        ...base['git'],
+        branchStatus: async () => ({ currentBranch: options.currentBranch, pr: null }),
+        checkoutBranch: async (
+          _projectId: string,
+          _threadId: string,
+          branch: string,
+        ): Promise<void> => {
+          await options.onCheckoutBranch?.(branch)
+        },
+        listBranches: async () => [{ name: options.currentBranch, lastCommitDate: '2024-01-01' }],
+        getDefaultBranch: async () => 'main',
+      },
+      lmStudio: {
+        ...base['lmStudio'],
+        models: async () => [],
+      },
+      settings: {
+        ...base['settings'],
+        availableProviders: async () => ({ anthropic: true, openai: true }),
+        extraProviders: async () => [],
+        get: async () => undefined,
+        set: async (): Promise<void> => {},
+      },
+      packs: {
+        ...base['packs'],
+        // Memories / Roadmap are gated on first-party packs after migration off
+        // their retired settings; the panel controls read `packs:list` on mount.
+        // Default OFF (empty list) keeps those panes hidden.
+        list: async () => ({ packs: [] }),
+        setEnabled: async () => ({ packs: [] }),
+        setSetting: async () => ({ packs: [] }),
+      },
+      skills: {
+        ...base['skills'],
+        list: options.listSkills ?? (async (): Promise<SkillSummary[]> => []),
+      },
+      index: {
+        ...base['index'],
+        status: async () => ({
+          fileIndex: { phase: 'idle' },
+          semantic: { phase: 'idle' },
+        }),
+        onStatusChanged: () => () => {},
+      },
+      threads: {
+        ...base['threads'],
+        listOrphans: async () => [],
+      },
+    } satisfies ApiClient
+  })()
 }
 
 async function settle(): Promise<void> {
@@ -481,6 +502,7 @@ describe('input bar branch mismatch warning', () => {
     let branchRefreshes = 0
     const store = createStore({
       workspaceRoot: '/repo',
+      activeProjectId: 'project-1',
       activeThreadId: 'thread-1',
       threads: [thread('feature/thread-branch')],
     })
@@ -728,6 +750,6 @@ describe('input bar footer overflow menu', () => {
     )
     // Export/Share are gated on the thread having exportable content, which this
     // blank fixture does not — hence two items here and four in the demo scenario.
-    assert.deepEqual(labels, ['Enable Guarded YOLO for next turn…', 'Copy thread ID'])
+    assert.deepEqual(labels, ['Enable Guarded YOLO', 'Copy thread ID'])
   })
 })

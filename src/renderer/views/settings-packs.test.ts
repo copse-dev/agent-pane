@@ -90,6 +90,8 @@ const demoPack: PackSummary = {
     commandHooks: [],
     promptBlocks: [{ id: 'demo-steer', trust: 'trusted' }],
     ui: [{ id: 'demo-panel', level: 2, slot: 'sidebar', title: 'Demo panel', panelKind: 'list' }],
+    capabilities: [],
+    permissions: [],
     storageNamespace: 'copse.demo',
   },
   settings: [
@@ -110,6 +112,32 @@ const demoPack: PackSummary = {
   ],
 }
 
+const modelFieldPack: PackSummary = {
+  id: 'copse.model-demo',
+  trust: 'first-party',
+  name: 'copse.model-demo',
+  enabled: true,
+  contributions: {
+    toolNames: [],
+    blockingHooks: [],
+    asyncHooks: [],
+    commandHooks: [],
+    promptBlocks: [],
+    ui: [],
+    capabilities: [],
+    permissions: [],
+  },
+  settings: [
+    {
+      id: 'advisorModel',
+      kind: 'model',
+      title: 'Advisor model',
+      value: 'claude-opus-4-8',
+      default: 'claude-opus-4-8',
+    },
+  ],
+}
+
 const disabledUserPack: PackSummary = {
   id: 'sample.user',
   trust: 'user',
@@ -122,6 +150,8 @@ const disabledUserPack: PackSummary = {
     commandHooks: [{ event: 'toolGate', command: './guard.sh' }],
     promptBlocks: [],
     ui: [],
+    capabilities: [],
+    permissions: [],
   },
   settings: [],
 }
@@ -208,6 +238,54 @@ describe('settings → packs list', () => {
     assert.deepEqual(chipTexts, ['Tools × 1', 'Hooks × 1', 'Prompt blocks × 1', 'UI × 1'])
   })
 
+  it('enumerates a capability-only pack as a Capabilities chip', async () => {
+    const capabilityPack: PackSummary = {
+      id: 'copse.mcp-ui-canvas',
+      trust: 'first-party',
+      name: 'copse.mcp-ui-canvas',
+      enabled: false,
+      contributions: {
+        toolNames: [],
+        blockingHooks: [],
+        asyncHooks: [],
+        commandHooks: [],
+        promptBlocks: [],
+        ui: [],
+        capabilities: [{ name: 'mcp-ui-canvas', title: 'MCP-UI canvas rendering' }],
+        permissions: [],
+      },
+      settings: [],
+    }
+    const list = await openPacks({ packs: [capabilityPack] }, spy)
+    const chipTexts = Array.from(list.querySelectorAll('.pack-chip')).map((el) => el.textContent)
+    assert.deepEqual(chipTexts, ['Capabilities × 1'])
+    // A capability-only pack contributes something — no skeleton note.
+    assert.doesNotMatch(list.textContent, /Contributes nothing yet/)
+  })
+
+  it('enumerates a declared permission / sandbox relaxation as a Permissions chip', async () => {
+    const permissionPack: PackSummary = {
+      id: 'copse.background-tasks',
+      trust: 'first-party',
+      name: 'copse.background-tasks',
+      enabled: false,
+      contributions: {
+        toolNames: ['run_background'],
+        blockingHooks: [],
+        asyncHooks: [],
+        commandHooks: [],
+        promptBlocks: [],
+        ui: [],
+        capabilities: [],
+        permissions: [{ name: 'loopback-bind', title: 'Bind a loopback port', scope: 'project' }],
+      },
+      settings: [],
+    }
+    const list = await openPacks({ packs: [permissionPack] }, spy)
+    const chipTexts = Array.from(list.querySelectorAll('.pack-chip')).map((el) => el.textContent)
+    assert.deepEqual(chipTexts, ['Tools × 1', 'Permissions × 1'])
+  })
+
   it('shows a "contributes nothing" note for skeleton packs', async () => {
     const skeleton: PackSummary = {
       ...demoPack,
@@ -219,6 +297,8 @@ describe('settings → packs list', () => {
         commandHooks: [],
         promptBlocks: [],
         ui: [],
+        capabilities: [],
+        permissions: [],
       },
       settings: [],
     }
@@ -236,6 +316,38 @@ describe('settings → packs list', () => {
     const stringInput = list.querySelector<HTMLInputElement>('.pack-setting-string')
     assert.ok(stringInput)
     assert.equal(stringInput.value, 'hi')
+  })
+
+  it('renders a model setting field as the grouped model picker (a select, not a plain text/enum input)', async () => {
+    const list = await openPacks({ packs: [modelFieldPack] }, spy)
+    const modelSelect = list.querySelector<HTMLSelectElement>('.pack-setting-model')
+    assert.ok(modelSelect, 'a model field must render as a <select> (grouped model picker)')
+    assert.equal(modelSelect.tagName, 'SELECT')
+    assert.equal(modelSelect.dataset['settingKey'], 'advisorModel')
+    // It is not misrendered as the plain string/enum inputs.
+    assert.equal(list.querySelector('.pack-setting-string'), null)
+    assert.equal(list.querySelector('.pack-setting-enum'), null)
+  })
+
+  it('editing a model field persists the chosen id via packs:setSetting', async () => {
+    const list = await openPacks({ packs: [modelFieldPack] }, spy)
+    const modelSelect = list.querySelector<HTMLSelectElement>('.pack-setting-model')
+    assert.ok(modelSelect)
+    // The live catalogue is fetched async (and never resolves under the stub api),
+    // so add the target option ourselves before selecting it — the change handler
+    // reads select.value regardless of how the option got there.
+    const option = document.createElement('option')
+    option.value = 'lmstudio:qwen3-32b'
+    option.textContent = 'qwen3-32b'
+    modelSelect.append(option)
+    modelSelect.value = 'lmstudio:qwen3-32b'
+    modelSelect.dispatchEvent(new Event('change'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.deepEqual(spy.lastSetSetting, {
+      id: 'copse.model-demo',
+      key: 'advisorModel',
+      value: 'lmstudio:qwen3-32b',
+    })
   })
 
   it('toggling calls packs:setEnabled with the flipped state', async () => {

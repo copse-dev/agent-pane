@@ -30,6 +30,18 @@ describe('resolveAgentChatModel', () => {
     assert.match(resolved.fallbackNotice ?? '', /Could not run on \*\*Cursor Cloud Agent\*\*/)
     assert.match(resolved.fallbackNotice ?? '', /no valid API key/)
     assert.match(resolved.fallbackNotice ?? '', /qwen/)
+    assert.deepEqual(resolved.blockedRemoteAgent, { provider: 'cursor' })
+  })
+
+  it('reports the blocked selection so the turn can offer an alternative', async () => {
+    setApiKey('anthropic', 'sk-ant-api03-invalid')
+    recordProviderKeyValidation('anthropic', false)
+
+    const resolved = await resolveAgentChatModel('remote-agent:anthropic#claude-opus-4-8')
+    assert.deepEqual(resolved.blockedRemoteAgent, {
+      provider: 'anthropic',
+      model: 'claude-opus-4-8',
+    })
   })
 
   it('expands the best-value sentinel to a concrete routable model', async () => {
@@ -50,29 +62,15 @@ describe('resolveAgentChatModel', () => {
     const resolved = await resolveAgentChatModel('remote-agent:cursor')
     assert.equal(resolved.model, 'remote-agent:cursor')
     assert.equal(resolved.fallbackNotice, undefined)
+    assert.equal(resolved.blockedRemoteAgent, undefined)
   })
 
-  it('redirects Claude Cloud Agent to ACP when an ACP Claude agent is enabled', async () => {
-    await setSetting('registeredAcpAgents', [
-      { id: 'claude-agent-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
-    ])
-
-    const resolved = await resolveAgentChatModel('remote-agent:anthropic')
-    assert.equal(resolved.model, 'acp:claude-agent-acp')
-    assert.match(resolved.fallbackNotice ?? '', /subscription-billed/)
-  })
-
-  it('preserves the model selection when redirecting to ACP', async () => {
-    await setSetting('registeredAcpAgents', [
-      { id: 'claude-code-acp', title: 'Claude Code', command: 'claude-code-acp', enabled: true },
-    ])
-
-    const resolved = await resolveAgentChatModel('remote-agent:anthropic#claude-opus-4-8')
-    assert.equal(resolved.model, 'acp:claude-code-acp#claude-opus-4-8')
-  })
-
-  it('does not redirect when preferAcpOverCloudAgent is false', async () => {
-    await setSetting('preferAcpOverCloudAgent', false)
+  // A working Claude Cloud Agent selection is honoured even with an ACP Claude
+  // agent registered: the managed Agents API is API-key-billed by design and has
+  // no subscription mode, and swapping a remote sandbox run for a local one
+  // changes what the turn does — so the switch is offered on failure, never
+  // applied pre-emptively.
+  it('keeps Claude Cloud Agent when its key is valid, even with an ACP Claude agent enabled', async () => {
     await setSetting('registeredAcpAgents', [
       { id: 'claude-agent-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
     ])
@@ -82,27 +80,17 @@ describe('resolveAgentChatModel', () => {
     const resolved = await resolveAgentChatModel('remote-agent:anthropic')
     assert.equal(resolved.model, 'remote-agent:anthropic')
     assert.equal(resolved.fallbackNotice, undefined)
+    assert.equal(resolved.blockedRemoteAgent, undefined)
   })
 
-  it('does not redirect when the ACP Claude agent is disabled', async () => {
+  it('preserves the pinned model on a runnable Claude Cloud Agent selection', async () => {
     await setSetting('registeredAcpAgents', [
-      { id: 'claude-agent-acp', title: 'Claude', command: 'claude-agent-acp', enabled: false },
+      { id: 'claude-code-acp', title: 'Claude Code', command: 'claude-code-acp', enabled: true },
     ])
     setApiKey('anthropic', 'sk-ant-api03-valid')
     recordProviderKeyValidation('anthropic', true)
 
-    const resolved = await resolveAgentChatModel('remote-agent:anthropic')
-    assert.equal(resolved.model, 'remote-agent:anthropic')
-  })
-
-  it('does not redirect Cursor Cloud Agent to ACP', async () => {
-    await setSetting('registeredAcpAgents', [
-      { id: 'claude-agent-acp', title: 'Claude', command: 'claude-agent-acp', enabled: true },
-    ])
-    setApiKey('cursor', 'cur_valid')
-    recordProviderKeyValidation('cursor', true)
-
-    const resolved = await resolveAgentChatModel('remote-agent:cursor')
-    assert.equal(resolved.model, 'remote-agent:cursor')
+    const resolved = await resolveAgentChatModel('remote-agent:anthropic#claude-opus-4-8')
+    assert.equal(resolved.model, 'remote-agent:anthropic#claude-opus-4-8')
   })
 })

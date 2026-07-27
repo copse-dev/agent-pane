@@ -8,6 +8,7 @@ import {
   clickActiveConfirmDialogConfirm,
   mountConfirmDialog,
 } from '../../views/confirm-dialog.ts'
+import { createFakeApi } from '../../fake-api.test-support.ts'
 
 type SetKeyResult = { ok: true } | { ok: false; reason: 'plaintext-consent-required' }
 
@@ -21,31 +22,38 @@ interface StubState {
 }
 
 function stubApi(state: StubState): ApiClient {
-  return {
-    settings: {
-      getKey: async (provider: string): Promise<string | null> => state.savedKeys[provider] ?? null,
-      getKeyEncrypted: async (provider: string): Promise<boolean | null> => {
-        if (!state.savedKeys[provider]) return null
-        const enc = state.encrypted?.[provider]
-        return enc === undefined ? true : enc
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      settings: {
+        ...base['settings'],
+        getKey: async (provider: string): Promise<boolean> => provider in state.savedKeys,
+        getKeyEncrypted: async (provider: string): Promise<boolean | null> => {
+          if (!state.savedKeys[provider]) return null
+          const enc = state.encrypted?.[provider]
+          return enc ?? true
+        },
+        setKey: async (
+          provider: string,
+          value: string,
+          opts?: { allowPlaintext?: boolean },
+        ): Promise<SetKeyResult> => {
+          state.setKeyCalls?.push({ provider, allowPlaintext: opts?.allowPlaintext === true })
+          const available = state.encryptionAvailable !== false
+          if (!available && opts?.allowPlaintext !== true) {
+            return { ok: false, reason: 'plaintext-consent-required' }
+          }
+          state.savedKeys[provider] = value
+          if (state.encrypted) state.encrypted[provider] = available
+          return { ok: true }
+        },
+        validateKey: async (): Promise<{ ok: true } | { ok: false; error: string }> => ({
+          ok: true,
+        }),
       },
-      setKey: async (
-        provider: string,
-        value: string,
-        opts?: { allowPlaintext?: boolean },
-      ): Promise<SetKeyResult> => {
-        state.setKeyCalls?.push({ provider, allowPlaintext: opts?.allowPlaintext === true })
-        const available = state.encryptionAvailable !== false
-        if (!available && opts?.allowPlaintext !== true) {
-          return { ok: false, reason: 'plaintext-consent-required' }
-        }
-        state.savedKeys[provider] = value
-        if (state.encrypted) state.encrypted[provider] = available
-        return { ok: true }
-      },
-      validateKey: async (): Promise<{ ok: true } | { ok: false; error: string }> => ({ ok: true }),
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
 }
 
 beforeEach(() => {
@@ -73,7 +81,7 @@ describe('api-keys-section', () => {
     assert.equal(anthropicStatus.textContent, 'saved')
     assert.equal(anthropicStatus.querySelector('.ui-icon')?.getAttribute('data-icon'), 'dot')
     assert.equal(openaiStatus.textContent, 'not set')
-    assert.equal(openaiStatus.querySelector('.ui-icon')?.getAttribute('data-icon'), 'circle')
+    assert.equal(openaiStatus.querySelector('.ui-icon')?.getAttribute('data-icon'), 'minus')
   })
 
   it('shows an encrypted at-rest badge for an OS-encrypted stored key', async () => {

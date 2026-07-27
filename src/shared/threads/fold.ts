@@ -207,6 +207,35 @@ export function explodeThread(
 /** Reads the logical contents of a ref (path relative to the thread directory). */
 export type RefResolver = (ref: string) => string
 
+/**
+ * Every thread-relative ref one spine line will make the fold resolve, split by
+ * kind. `files` are read directly; each entry of `subagentDirs` is a directory
+ * prefix whose own `events.jsonl` must be read and walked in turn (the fold
+ * recurses into it through a prefixing resolver — see {@link foldSubagent}).
+ *
+ * This exists so a caller can prefetch a thread's files asynchronously and then
+ * fold from memory, keeping {@link foldThread} synchronous and fs-free. It is
+ * deliberately next to {@link foldOne}: the two enumerate the same refs, and a
+ * ref added to one without the other would make the fold throw
+ * `Missing thread file` at load. The test "refsOfLine enumerates exactly the
+ * refs the fold resolves" pins that pairing by recording what the fold actually
+ * asks its resolver for.
+ */
+export function refsOfLine(line: SpineMessageLine): {
+  files: string[]
+  subagentDirs: string[]
+} {
+  const files: string[] = [line.content.ref]
+  const subagentDirs: string[] = []
+  if (line.reasoning) files.push(line.reasoning.ref)
+  if (line.images) for (const img of line.images) files.push(img.ref)
+  for (const tc of line.toolCalls) {
+    if (tc.result !== null) files.push(tc.result.ref)
+    if (tc.subagent) subagentDirs.push(tc.subagent.ref)
+  }
+  return { files, subagentDirs }
+}
+
 function verify(ref: ContentRef, body: string, hash: HashFn | undefined): void {
   if (hash && hash(body) !== ref.sha256) {
     throw new Error(`Thread content hash mismatch for ${ref.ref}`)

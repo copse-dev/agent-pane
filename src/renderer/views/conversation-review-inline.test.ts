@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import { addMessage, createThread, setMessageReview } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Guards issue #480 ("Review mode sticks to the bottom of chat") and the move to
 // per-turn inline reviews: the post-turn review no longer lives in a sibling host
@@ -14,10 +15,21 @@ import { mountConversation } from './conversation.ts'
 // keeps its own review in position.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-    index: { resolveFileReferences: () => Promise.resolve([]) },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+      index: {
+        ...base['index'],
+        resolveFileReferences: () => Promise.resolve([]),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 afterEach(() => {

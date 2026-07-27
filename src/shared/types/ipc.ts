@@ -24,12 +24,18 @@ export interface IpcInvokeMap {
   'workspace:set': { args: [root: string, sshHost?: string]; result: string }
 
   // File system
-  'fs:readFile': { args: [path: string]; result: string }
-  'fs:writeFile': { args: [path: string, content: string]; result: undefined }
-  'fs:readdir': { args: [path: string]; result: string[] }
-  'fs:listDir': { args: [path: string]; result: { name: string; isDir: boolean }[] }
-  'fs:watch': { args: [path: string]; result: undefined }
-  'fs:unwatch': { args: [path: string]; result: undefined }
+  'fs:readFile': { args: [projectId: string, threadId: string, path: string]; result: string }
+  'fs:writeFile': {
+    args: [projectId: string, threadId: string, path: string, content: string]
+    result: undefined
+  }
+  'fs:readdir': { args: [projectId: string, threadId: string, path: string]; result: string[] }
+  'fs:listDir': {
+    args: [projectId: string, threadId: string, path: string]
+    result: { name: string; isDir: boolean }[]
+  }
+  'fs:watch': { args: [projectId: string, threadId: string, path: string]; result: undefined }
+  'fs:unwatch': { args: [projectId: string, threadId: string, path: string]; result: undefined }
 
   // Agent
   'agent:run': {
@@ -244,6 +250,24 @@ export interface IpcInvokeMap {
     result: import('./state.ts').OrphanProjectStore[]
   }
 
+  // Project-scoped automations (copse.automations pack).
+  'automations:list': {
+    args: [projectId: string]
+    result: import('./automations.ts').AutomationSchedule[]
+  }
+  'automations:upsert': {
+    args: [projectId: string, input: import('./automations.ts').AutomationScheduleInput]
+    result: import('./automations.ts').AutomationSchedule
+  }
+  'automations:remove': {
+    args: [projectId: string, scheduleId: string]
+    result: undefined
+  }
+  'automations:runNow': {
+    args: [projectId: string, scheduleId: string]
+    result: import('./automations.ts').AutomationTriggerEvent
+  }
+
   // Index
   'index:query': { args: [pattern: string]; result: string[] }
   'index:status': { args: []; result: import('./index-status.ts').WorkspaceIndexStatus }
@@ -254,7 +278,11 @@ export interface IpcInvokeMap {
 
   // Terminal
   'terminal:create': {
-    args: [cols: number, rows: number, meta?: { label?: string; threadId?: string | null }]
+    args: [
+      cols: number,
+      rows: number,
+      meta: { label?: string; projectId: string; threadId: string | null },
+    ]
     result: string
   }
   'terminal:write': { args: [sessionId: string, data: string]; result: undefined }
@@ -267,11 +295,20 @@ export interface IpcInvokeMap {
   'terminal:setActive': { args: [sessionId: string]; result: undefined }
 
   // Git
-  'git:status': { args: []; result: GitStatusResult | null }
-  'git:fileDiff': { args: [path: string, staged: boolean]; result: GitFileDiff | null }
-  'git:isAvailable': { args: []; result: boolean }
-  'git:branchStatus': { args: [forBranch?: string]; result: GitBranchStatus }
-  'git:checkoutBranch': { args: [branch: string]; result: undefined }
+  'git:status': { args: [projectId: string, threadId: string]; result: GitStatusResult | null }
+  'git:fileDiff': {
+    args: [projectId: string, threadId: string, path: string, staged: boolean]
+    result: GitFileDiff | null
+  }
+  'git:isAvailable': { args: [projectId: string, threadId: string]; result: boolean }
+  'git:branchStatus': {
+    args: [projectId: string, threadId: string, forBranch?: string]
+    result: GitBranchStatus
+  }
+  'git:checkoutBranch': {
+    args: [projectId: string, threadId: string, branch: string]
+    result: undefined
+  }
 
   // GitHub CLI / pull requests
   'gh:status': { args: []; result: import('./git.ts').GhCliStatus }
@@ -303,7 +340,10 @@ export interface IpcInvokeMap {
 
   // External editors ("Open in …" titlebar dropdown)
   'editors:list': { args: []; result: import('./editors.ts').ExternalEditorList }
-  'editors:open': { args: [editorId: string]; result: undefined }
+  'editors:open': {
+    args: [projectId: string, threadId: string, editorId: string]
+    result: undefined
+  }
 
   // LM Studio
   'lmstudio:test': {
@@ -382,6 +422,8 @@ export interface IpcEventMap {
       comparisonModels?: { a: string; b: string; judge: string }
     },
   ]
+  /** Main dismisses an approval the run cancelled (Stop / ACP permission RPC abort). */
+  'agent:approval_cancelled': [{ id: string }]
   'agent:ask_user_request': [
     {
       id: string
@@ -392,6 +434,7 @@ export interface IpcEventMap {
   ]
   'agent:hook_queue_message': [payload: import('./hooks.ts').HookQueueMessagePayload]
   'security:guardedYoloChanged': [state: import('./guarded-yolo.ts').GuardedYoloState]
+  'automations:triggered': [event: import('./automations.ts').AutomationTriggerEvent]
   'ssh:prompt_request': [
     {
       id: string
@@ -419,7 +462,7 @@ export interface IpcEventMap {
     entries: { path: string; language: string }[],
   ]
   'diff:conflict': [projectId: string, threadId: string, paths: string[]]
-  'fs:changed': [path: string, content: string | null]
+  'fs:changed': [projectId: string, threadId: string, path: string, content: string | null]
   'menu:settings': []
   'menu:newThread': []
   'menu:togglePanel': []

@@ -3,11 +3,12 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { shouldSteerTodos } from './todo-logic.ts'
+import { z } from 'zod'
 
 interface PromptFixture {
   id: string
   prompt: string
-  category?: string
+  category?: string | undefined
 }
 
 interface SteeringFixtures {
@@ -16,7 +17,15 @@ interface SteeringFixtures {
 }
 
 const fixturesPath = join(process.cwd(), 'tests/fixtures/todo-steering-prompts.json')
-const fixtures = JSON.parse(readFileSync(fixturesPath, 'utf8')) as SteeringFixtures
+const fixturesSchema: z.ZodType<SteeringFixtures> = z.object({
+  mustSteerTodos: z.array(
+    z.object({ id: z.string(), prompt: z.string(), category: z.string().optional() }),
+  ),
+  mustNotSteerTodos: z.array(
+    z.object({ id: z.string(), prompt: z.string(), category: z.string().optional() }),
+  ),
+})
+const fixtures = fixturesSchema.parse(JSON.parse(readFileSync(fixturesPath, 'utf8')) as unknown)
 
 describe('todo steering prompt matrix', () => {
   for (const { id, prompt } of fixtures.mustSteerTodos) {

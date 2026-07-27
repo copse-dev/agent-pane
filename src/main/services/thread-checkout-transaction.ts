@@ -211,11 +211,21 @@ export function createThreadCheckoutTransaction(
           projectRoot: project.path,
           worktree: thread.worktree,
         })
+        const worktree: ThreadWorktree = {
+          ...thread.worktree,
+          branch: validated.branch,
+        }
+        if (worktree.branch !== thread.worktree.branch || thread.gitBranch !== worktree.branch) {
+          await dependencies.updateMeta(input.projectId, input.threadId, {
+            worktree,
+            gitBranch: worktree.branch,
+          })
+        }
         return {
           checkoutMode: 'worktree',
           choice: thread.worktreeChoice ?? 'worktree',
-          branch: validated.branch,
-          worktree: thread.worktree,
+          branch: worktree.branch,
+          worktree,
         }
       }
       if (thread.worktreeChoice) {

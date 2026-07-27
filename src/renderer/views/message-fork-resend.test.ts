@@ -6,8 +6,8 @@ import type { ForkedHistoryResult } from '@shared/types'
 import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from '../controller/message-queue.ts'
-import { createFakeApi } from '../fake-api.test-support.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Component-level cover for the per-prompt actions on a user bubble. The pure
 // transforms are unit-tested (shared/store/fork-thread.test.ts,

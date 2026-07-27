@@ -161,6 +161,16 @@ describe('shellRedirects', () => {
       }
     }
   })
+
+  it('drops attached redirects isolated by the raw fallback splitter', () => {
+    const command = String.raw`find . -exec grep yolo {} \; 2>/dev/null`
+    const argvSegments = shellSegments(command)
+    assert.ok(argvSegments.some((argv) => argv[0] === 'find'))
+    for (const argv of argvSegments) {
+      assert.notEqual(argv[0], '2>/dev/null')
+    }
+    assert.deepEqual(shellRedirects(command), [{ target: '/dev/null', truncates: true }])
+  })
 })
 
 describe('commandName', () => {

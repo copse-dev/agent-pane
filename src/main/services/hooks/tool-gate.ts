@@ -21,6 +21,7 @@ import { claudeToolGateHooks } from './claude-adapter.ts'
 import { copseToolGateHooks } from './copse-adapter.ts'
 import { createCommandHookRunner } from './command-hook-runner.ts'
 import { withRunDeadlinePaused } from './run-deadline.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 /** A permission-style verdict reduced from the tool-gate hooks. */
 export type HookGatePermission = 'allow' | 'deny' | 'ask'
@@ -65,7 +66,7 @@ export interface ToolGateCheck {
 }
 
 function asRecord(args: unknown): Record<string, unknown> {
-  return typeof args === 'object' && args !== null ? { ...(args as Record<string, unknown>) } : {}
+  return isRecord(args) ? { ...args } : {}
 }
 
 /** Cap the file content handed to a `beforeReadFile` hook (bounds a huge file). */

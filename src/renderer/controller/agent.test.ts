@@ -1,11 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import type { ApiClient } from '../../preload/api.d.ts'
 import { startAgentController } from './agent.ts'
 import { createStore } from '@shared/store/store.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import { getThreadById } from '@shared/store/thread-helpers.ts'
 import type { Message, Thread, StreamChunk } from '@shared/types'
-import type { ApiClient } from '../../preload/api.d.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function at<T>(arr: readonly T[], i: number): T {
   const value = arr[i]
@@ -83,85 +84,93 @@ function setup(
   store.on('message_done', (id) => messageDone.push(id))
   store.on('git_branch_changed', () => gitBranchChanged.push(1))
 
-  const api = {
-    agent: {
-      onChunk: (h: (threadId: string, chunk: StreamChunk) => void) => {
-        chunkHandler = h
-        return (): void => {}
-      },
-      onHookQueueMessage: () => (): void => {},
-      suggestTitle: async (text: string): Promise<string | null> => {
-        titleCalls.push(text)
-        return 'Generated Title'
-      },
-    },
-    diff: {
-      onShowDiff: (handler: NonNullable<typeof showDiffHandler>) => {
-        showDiffHandler = handler
-        return (): void => {}
-      },
-      onQueued: (handler: NonNullable<typeof queuedHandler>) => {
-        queuedHandler = handler
-        return (): void => {}
-      },
-    },
-    git: {
-      branchStatus: async () => ({
-        currentBranch: options?.currentBranch ?? null,
-        pr: null,
-      }),
-    },
-    usage: {
-      record: async () => {},
-      getSummary: async () => ({
-        day: {
-          totalCostUsd: 0,
-          cloudModels: [],
-          localModels: [],
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        onChunk: (h: (threadId: string, chunk: StreamChunk) => void) => {
+          chunkHandler = h
+          return (): void => {}
         },
-        month: {
-          totalCostUsd: 0,
-          cloudModels: [],
-          localModels: [],
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
+        onHookQueueMessage: () => (): void => {},
+        suggestTitle: async (text: string): Promise<string | null> => {
+          titleCalls.push(text)
+          return 'Generated Title'
         },
-        period90d: {
-          totalCostUsd: 0,
-          cloudModels: [],
-          localModels: [],
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
+      },
+      diff: {
+        ...base['diff'],
+        onShowDiff: (handler: NonNullable<typeof showDiffHandler>) => {
+          showDiffHandler = handler
+          return (): void => {}
         },
-        allTime: {
-          totalCostUsd: 0,
-          cloudModels: [],
-          localModels: [],
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
+        onQueued: (handler: NonNullable<typeof queuedHandler>) => {
+          queuedHandler = handler
+          return (): void => {}
         },
-        trackingStartedAt: null,
-        ledgerEventCount: 0,
-      }),
-      getPlanUsage: async () => ({
-        checkedAt: new Date(0).toISOString(),
-        providers: [
-          {
-            status: 'unavailable' as const,
-            provider: 'claude' as const,
-            reason: 'test',
+      },
+      git: {
+        ...base['git'],
+        branchStatus: async () => ({
+          currentBranch: options?.currentBranch ?? null,
+          pr: null,
+        }),
+      },
+      usage: {
+        ...base['usage'],
+        record: async (): Promise<void> => {},
+        getSummary: async () => ({
+          day: {
+            totalCostUsd: 0,
+            cloudModels: [],
+            localModels: [],
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
           },
-          {
-            status: 'unavailable' as const,
-            provider: 'codex' as const,
-            reason: 'test',
+          month: {
+            totalCostUsd: 0,
+            cloudModels: [],
+            localModels: [],
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
           },
-        ],
-      }),
-    },
-  } as unknown as ApiClient
+          period90d: {
+            totalCostUsd: 0,
+            cloudModels: [],
+            localModels: [],
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+          },
+          allTime: {
+            totalCostUsd: 0,
+            cloudModels: [],
+            localModels: [],
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+          },
+          trackingStartedAt: null,
+          ledgerEventCount: 0,
+        }),
+        getPlanUsage: async () => ({
+          checkedAt: new Date(0).toISOString(),
+          providers: [
+            {
+              status: 'unavailable' as const,
+              provider: 'claude' as const,
+              reason: 'test',
+            },
+            {
+              status: 'unavailable' as const,
+              provider: 'codex' as const,
+              reason: 'test',
+            },
+          ],
+        }),
+      },
+    } satisfies ApiClient
+  })()
 
   const unsub = startAgentController(store, api)
   const send = (chunk: StreamChunk, threadId = 't1'): void => {

@@ -32,6 +32,8 @@ import {
 } from './message-queue.ts'
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
 
@@ -62,26 +64,35 @@ function fakeApi(): ApiClient & {
   const runs: Array<[string, string]> = []
   const projectIds: string[] = []
   const aborts: string[] = []
-  return {
-    runs,
-    projectIds,
-    aborts,
-    agent: {
-      run: (projectId: string, threadId: string, payload: string) => {
-        projectIds.push(projectId)
-        runs.push([threadId, payload])
-        return Promise.resolve()
-      },
-      abort: (threadId: string) => {
-        aborts.push(threadId)
-        return Promise.resolve()
-      },
-    },
-  } as unknown as ApiClient & {
+  return ((): ApiClient & {
     runs: Array<[string, string]>
     projectIds: string[]
     aborts: string[]
-  }
+  } => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      runs,
+      projectIds,
+      aborts,
+      agent: {
+        ...base['agent'],
+        run: (projectId: string, threadId: string, payload: string): Promise<void> => {
+          projectIds.push(projectId)
+          runs.push([threadId, payload])
+          return Promise.resolve()
+        },
+        abort: (threadId: string): Promise<void> => {
+          aborts.push(threadId)
+          return Promise.resolve()
+        },
+      },
+    } satisfies ApiClient & {
+      runs: Array<[string, string]>
+      projectIds: string[]
+      aborts: string[]
+    }
+  })()
 }
 
 function getThread(store: ReturnType<typeof createStore>, threadId: string): Thread {
@@ -218,7 +229,7 @@ test('dispatchAgentRun omits model when the thread has none, so main uses the gl
 
   dispatchAgentRun(store, api, threadId, { content: 'go' })
 
-  const payload = JSON.parse(firstRun(api)[1]) as Record<string, unknown>
+  const payload = expectRecord(JSON.parse(firstRun(api)[1]) as unknown)
   assert.equal('model' in payload, false)
 })
 

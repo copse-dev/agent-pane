@@ -29,7 +29,7 @@ describe('builtinProviderHosts', () => {
     assert.ok(hosts.has('openrouter.ai'))
     assert.ok(hosts.has('api.mistral.ai'))
     assert.ok(hosts.has('router.huggingface.co'))
-    assert.ok(hosts.has('localhost'))
+    assert.ok(hosts.has('127.0.0.1'))
   })
 })
 

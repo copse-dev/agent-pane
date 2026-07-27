@@ -174,7 +174,7 @@ export function createApiKeysSection(
     for (const field of fields) {
       const saved = await api.settings.getKey(field.provider)
       if (!field.input.value.trim()) {
-        setInlineStatus(field.status, saved ? 'filled' : 'pending', saved ? 'saved' : 'not set')
+        setInlineStatus(field.status, saved ? 'filled' : 'idle', saved ? 'saved' : 'not set')
         field.status.className = 'key-status'
       }
       // At-rest badge: only meaningful once a key is stored. `null` means no key.

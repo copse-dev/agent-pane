@@ -40,6 +40,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import {
   AWS_REGION_ENV,
   capture,
@@ -118,9 +119,9 @@ type Provider = 'scaleway' | 'aws'
 interface HostRecord {
   provider: Provider | 'byo'
   name: string
-  providerId?: string
-  zone?: string
-  region?: string
+  providerId?: string | undefined
+  zone?: string | undefined
+  region?: string | undefined
   ip: string
   user: string
   keyPath: string
@@ -136,6 +137,27 @@ interface RunMeta {
   startedAt: string
   detached: boolean
 }
+
+const hostRecordSchema: z.ZodType<HostRecord> = z.object({
+  provider: z.enum(['scaleway', 'aws', 'byo']),
+  name: z.string(),
+  providerId: z.string().optional(),
+  zone: z.string().optional(),
+  region: z.string().optional(),
+  ip: z.string(),
+  user: z.string(),
+  keyPath: z.string(),
+  createdAt: z.string(),
+})
+const runMetaSchema: z.ZodType<RunMeta> = z.object({
+  runId: z.string(),
+  sha: z.string(),
+  dirty: z.boolean(),
+  shardIds: z.array(z.string()),
+  host: hostRecordSchema,
+  startedAt: z.string(),
+  detached: z.boolean(),
+})
 
 function usage(): string {
   return `Usage:
@@ -252,7 +274,7 @@ function saveHostRecord(record: HostRecord): void {
 
 function loadHostRecord(): HostRecord | undefined {
   if (!existsSync(hostRecordPath())) return undefined
-  return JSON.parse(readFileSync(hostRecordPath(), 'utf8')) as HostRecord
+  return hostRecordSchema.parse(JSON.parse(readFileSync(hostRecordPath(), 'utf8')) as unknown)
 }
 
 function requireHostRecord(options: Options): HostRecord {
@@ -1087,7 +1109,7 @@ async function waitCommand(options: Options, positional: string[]): Promise<void
   const runId = positional[0] ?? die('usage: e2e:remote wait <run-id>')
   const metaPath = join(LOCAL_STATE_DIR, 'runs', runId, 'meta.json')
   if (!existsSync(metaPath)) die(`unknown run '${runId}' (no ${metaPath})`)
-  const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as RunMeta
+  const meta = runMetaSchema.parse(JSON.parse(readFileSync(metaPath, 'utf8')) as unknown)
   const ssh = sshConfigFor(meta.host)
   const host = cloudHostFor(meta.host)
   const timeoutMinutes = positiveInt(

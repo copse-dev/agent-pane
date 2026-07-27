@@ -1,6 +1,10 @@
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
 import { redactMessages } from './redact-secrets.ts'
 
+function hasLastUsage(provider: LLMProvider): provider is LLMProvider & { lastUsage?: unknown } {
+  return 'lastUsage' in provider
+}
+
 /**
  * Wrap a remote (cloud) {@link LLMProvider} so that every message is run through
  * deterministic on-device secret redaction before it is streamed to the third
@@ -24,7 +28,7 @@ export function withSecretRedaction(
     },
   }
   Object.defineProperty(wrapped, 'lastUsage', {
-    get: () => (inner as { lastUsage?: unknown }).lastUsage,
+    get: () => (hasLastUsage(inner) ? inner.lastUsage : undefined),
     enumerable: true,
     configurable: true,
   })

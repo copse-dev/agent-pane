@@ -1,4 +1,5 @@
 import type { TodoItem, TodoStatus, TodoUpdateInput } from '@shared/types/todo.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // Turn-start steering helpers moved into `@copse/agent` (M0.2) so first-party
 // hooks stay Electron-free. Re-exported here so existing `@shared/todos` imports
@@ -40,7 +41,7 @@ export function applyTodoUpdate(
     for (const t of current) byId.set(t.id, { ...t })
   }
   for (const raw of incoming) {
-    const id = raw.id?.trim() || randomUUID()
+    const id = nonEmptyStringOr(raw.id?.trim(), randomUUID())
     const prev = byId.get(id)
     byId.set(id, {
       id,

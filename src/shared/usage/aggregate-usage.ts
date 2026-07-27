@@ -1,6 +1,7 @@
 import type { ModelUsage, Thread } from '@shared/types'
 import { isLocalModel, costForModelUsage, type ExtraPricing } from '@copse/llm/estimate-cost.ts'
 import type { UsageEvent } from './usage-event.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export const DAY_MS = 24 * 60 * 60 * 1000
 export const MONTH_MS = 30 * DAY_MS
@@ -200,32 +201,34 @@ export function parseUsageEvents(raw: unknown): UsageEvent[] {
   if (!Array.isArray(raw)) return []
   const out: UsageEvent[] = []
   for (const item of raw) {
-    if (typeof item !== 'object' || item === null) continue
-    const rec = item as Partial<UsageEvent>
-    if (typeof rec.at !== 'number' || !Number.isFinite(rec.at)) continue
-    if (typeof rec.model !== 'string' || !rec.model) continue
-    if (typeof rec.inputTokens !== 'number' || typeof rec.outputTokens !== 'number') continue
+    if (!isRecord(item)) continue
+    const rec = item
+    if (typeof rec['at'] !== 'number' || !Number.isFinite(rec['at'])) continue
+    if (typeof rec['model'] !== 'string' || !rec['model']) continue
+    if (typeof rec['inputTokens'] !== 'number' || typeof rec['outputTokens'] !== 'number') continue
     if (
-      rec.source !== 'agent' &&
-      rec.source !== 'small-tasks' &&
-      rec.source !== 'safety-classifier' &&
-      rec.source !== 'advisor'
+      rec['source'] !== 'agent' &&
+      rec['source'] !== 'small-tasks' &&
+      rec['source'] !== 'safety-classifier' &&
+      rec['source'] !== 'advisor'
     ) {
       continue
     }
     out.push({
-      at: rec.at,
-      model: rec.model,
-      inputTokens: rec.inputTokens,
-      outputTokens: rec.outputTokens,
-      source: rec.source,
-      ...(rec.cacheReadTokens !== undefined ? { cacheReadTokens: rec.cacheReadTokens } : {}),
-      ...(rec.cacheCreationTokens !== undefined
-        ? { cacheCreationTokens: rec.cacheCreationTokens }
+      at: rec['at'],
+      model: rec['model'],
+      inputTokens: rec['inputTokens'],
+      outputTokens: rec['outputTokens'],
+      source: rec['source'],
+      ...(typeof rec['cacheReadTokens'] === 'number'
+        ? { cacheReadTokens: rec['cacheReadTokens'] }
         : {}),
-      ...(typeof rec.projectId === 'string' ? { projectId: rec.projectId } : {}),
-      ...(typeof rec.threadId === 'string' ? { threadId: rec.threadId } : {}),
-      ...(rec.estimated === true ? { estimated: true } : {}),
+      ...(typeof rec['cacheCreationTokens'] === 'number'
+        ? { cacheCreationTokens: rec['cacheCreationTokens'] }
+        : {}),
+      ...(typeof rec['projectId'] === 'string' ? { projectId: rec['projectId'] } : {}),
+      ...(typeof rec['threadId'] === 'string' ? { threadId: rec['threadId'] } : {}),
+      ...(rec['estimated'] === true ? { estimated: true } : {}),
     })
   }
   return out

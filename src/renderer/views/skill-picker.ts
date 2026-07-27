@@ -23,7 +23,7 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   let allSkills: SkillSummary[] | null = null
 
   async function ensureSkills(): Promise<SkillSummary[]> {
-    if (!allSkills) allSkills = await listSkills()
+    allSkills ??= await listSkills()
     return allSkills
   }
 
@@ -163,7 +163,7 @@ export function initSkillPicker(opts: SkillPickerOptions): () => void {
   })
 
   document.addEventListener('mousedown', (e) => {
-    if (!picker.contains(e.target as Node)) hidePicker()
+    if (!picker.contains(e.target instanceof Node ? e.target : null)) hidePicker()
   })
 
   window.addEventListener('copse:skills-changed', () => {

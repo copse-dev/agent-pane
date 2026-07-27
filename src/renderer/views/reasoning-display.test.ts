@@ -12,6 +12,8 @@ import {
 } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 // Component eval for the live "Reasoning" disclosure. Reasoning tokens stream
 // in via `appendReasoning` (which emits `message_reasoning`); the view should
@@ -20,9 +22,17 @@ import { mountConversation } from './conversation.ts'
 // activity row doubles as a click target that opens the latest trail.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function mountWithReasoning(): { store: AppStore; threadId: string; messageId: string } {
@@ -47,7 +57,7 @@ describe('reasoning display (component)', () => {
     appendReasoning(store, messageId, 'Let me ')
     appendReasoning(store, messageId, 'check the file.')
 
-    const details = document.querySelector<HTMLDetailsElement>('.message-reasoning')
+    const details = qsRequired<HTMLDetailsElement>(document, '.message-reasoning')
     assert.ok(details, 'expected a reasoning disclosure')
     // Live (no answer yet): open by default; progressive title.
     assert.equal(details.open, true)
@@ -75,7 +85,7 @@ describe('reasoning display (component)', () => {
 
     appendReasoning(store, messageId, '**bold** and *italic* and `code`')
 
-    const textEl = document.querySelector('.message-reasoning-text') as HTMLElement
+    const textEl = qsRequired(document, '.message-reasoning-text')
     assert.ok(textEl)
     assert.ok(textEl.innerHTML.includes('<strong>bold</strong>'))
     assert.ok(textEl.innerHTML.includes('<em>italic</em>'))
@@ -88,7 +98,7 @@ describe('reasoning display (component)', () => {
     appendToken(store, messageId, 'Here is the answer.')
     store.emit('message_done', messageId)
 
-    const details = document.querySelector('.message-reasoning') as HTMLDetailsElement
+    const details = qsRequired<HTMLDetailsElement>(document, '.message-reasoning')
     assert.equal(details.open, false)
     assert.equal(details.querySelector('.message-reasoning-title')?.textContent, 'Reasoned')
   })
@@ -99,11 +109,11 @@ describe('reasoning display (component)', () => {
     // The agent controller emits this label while the model reasons.
     store.emit('agent_activity', threadId, 'Reasoning…')
 
-    const activity = document.querySelector('.agent-activity') as HTMLElement
+    const activity = qsRequired(document, '.agent-activity')
     assert.ok(activity.classList.contains('agent-activity-clickable'))
 
     // Collapse first to prove the click re-opens it.
-    const details = document.querySelector('.message-reasoning') as HTMLDetailsElement
+    const details = qsRequired<HTMLDetailsElement>(document, '.message-reasoning')
     details.open = false
     activity.dispatchEvent(new Event('click', { bubbles: true }))
     assert.equal(details.open, true)

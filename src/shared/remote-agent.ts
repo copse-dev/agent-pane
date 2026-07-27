@@ -9,6 +9,7 @@ import {
   inferCloudModelProvider,
 } from '@copse/llm/model-catalog.ts'
 import { DEFAULT_MANAGED_AGENT_MODEL } from './managed-agents.ts'
+import { nonEmptyStringOr } from './unknown-value.ts'
 
 export const REMOTE_AGENT_PROVIDER_CURSOR = 'cursor'
 export const REMOTE_AGENT_PROVIDER_ANTHROPIC = 'anthropic'
@@ -19,6 +20,10 @@ export const REMOTE_AGENT_PROVIDERS = [
 ] as const
 
 export type RemoteAgentProvider = (typeof REMOTE_AGENT_PROVIDERS)[number]
+
+export function isRemoteAgentProvider(value: unknown): value is RemoteAgentProvider {
+  return value === REMOTE_AGENT_PROVIDER_CURSOR || value === REMOTE_AGENT_PROVIDER_ANTHROPIC
+}
 
 export const DEFAULT_CURSOR_AGENT_BASE_URL = 'https://api.cursor.com'
 export const DEFAULT_ANTHROPIC_AGENT_BASE_URL = 'https://api.anthropic.com'
@@ -97,11 +102,9 @@ export function parseRemoteAgentModelSelection(model: string): RemoteAgentModelS
   const rest = model.slice(REMOTE_AGENT_MODEL_PREFIX.length)
   const sep = rest.indexOf(REMOTE_AGENT_MODEL_SEP)
   const provider = sep === -1 ? rest : rest.slice(0, sep)
-  if (!REMOTE_AGENT_PROVIDERS.includes(provider as RemoteAgentProvider)) return null
+  if (!isRemoteAgentProvider(provider)) return null
   const chosen = sep === -1 ? '' : rest.slice(sep + 1)
-  return chosen
-    ? { provider: provider as RemoteAgentProvider, model: chosen }
-    : { provider: provider as RemoteAgentProvider }
+  return chosen ? { provider, model: chosen } : { provider }
 }
 
 export function isRemoteAgentModel(model: string): boolean {
@@ -137,5 +140,5 @@ export function remoteAgentDisplayLabel(
 
 /** Resolve the Anthropic Managed Agents model id for a selection (or the default). */
 export function resolveManagedAgentModelId(selection: RemoteAgentModelSelection): string {
-  return selection.model?.trim() || DEFAULT_MANAGED_AGENT_MODEL
+  return nonEmptyStringOr(selection.model?.trim(), DEFAULT_MANAGED_AGENT_MODEL)
 }

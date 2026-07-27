@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { WorkspaceIndexStatus } from '@shared/types/index-status.ts'
 import { mountFooterIndexStatus } from './footer-index-status.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 type StatusHandler = (status: WorkspaceIndexStatus) => void
 
@@ -12,15 +13,20 @@ function makeApi(initial: WorkspaceIndexStatus): {
   push: StatusHandler
 } {
   let handler: StatusHandler = () => undefined
-  const api = {
-    index: {
-      status: () => Promise.resolve(initial),
-      onStatusChanged: (h: StatusHandler): (() => void) => {
-        handler = h
-        return () => undefined
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      index: {
+        ...base['index'],
+        status: () => Promise.resolve(initial),
+        onStatusChanged: (h: StatusHandler): (() => void) => {
+          handler = h
+          return () => undefined
+        },
       },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
   return {
     api,
     push: (status): void => {

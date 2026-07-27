@@ -6,6 +6,7 @@ import { addMessage, createThread } from '@shared/store/thread-helpers.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { mountConversation } from './conversation.ts'
 import { CHIP_CHAR } from './composer-editor.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Renders a sent user message carrying transcript attachments (input-bar.ts
 // builds these on send) and asserts the composer's paste chip appears inline at
@@ -13,9 +14,17 @@ import { CHIP_CHAR } from './composer-editor.ts'
 // an SVG-icon chip, no emoji.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 function mountWithUserMessage(
@@ -82,5 +91,14 @@ describe('user transcript attachment chips', () => {
     assert.ok(textEl, 'user message text is rendered')
     assert.equal(textEl.textContent, 'just a normal message')
     assert.equal(textEl.querySelector('.transcript-attachment-chip'), null)
+  })
+
+  it('renders user prompts with markdown and preserved line breaks', () => {
+    mountWithUserMessage('line one\nline two\n\n**bold**', undefined)
+    const textEl = document.querySelector('.msg-user .message-text')
+    assert.ok(textEl, 'user message text is rendered')
+    assert.ok(textEl.querySelector('strong'), 'markdown emphasis is rendered')
+    assert.ok(textEl.querySelector('br'), 'single newlines render as line breaks')
+    assert.match(textEl.textContent, /line one\s*line two/)
   })
 })

@@ -170,15 +170,15 @@ export function mountFollowUpSuggestions(
   // reject of proposed diffs). This refreshes just that chip — model picks are
   // left untouched, so no LLM call is made on filesystem churn.
   async function refreshChangesStat(): Promise<void> {
-    const activeId = store.getState().activeThreadId
-    if (!activeId) return
+    const { activeProjectId, activeThreadId: activeId } = store.getState()
+    if (!activeProjectId || !activeId) return
     const cached = suggestionsByThread.get(activeId)
     // The bubbles only appear after a turn produces a set; nothing to maintain
     // mid-run (the reviewer pane covers live changes during a run).
     if (!cached) return
     let stats: { additions: number; deletions: number } | null
     try {
-      stats = await api.git.changeStats()
+      stats = await api.git.changeStats(activeProjectId, activeId)
     } catch {
       return
     }

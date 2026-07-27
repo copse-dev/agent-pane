@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import {
   getPlanUsageSnapshot,
   orderClaudeOAuthCredentials,
@@ -33,6 +34,18 @@ export function invalidatePlanUsageCache(): void {
 const CLAUDE_KEYCHAIN_SERVICE = 'Claude Code-credentials'
 const CURSOR_KEYCHAIN_SERVICE = 'cursor-access-token'
 
+/** Async `execFile` — never use Sync variants here; Keychain/sqlite probes run when
+ * Settings → Usage opens and Sync would beachball the Electron main process on macOS. */
+const execFileAsync = promisify(execFile)
+
+async function runCommand(bin: string, args: readonly string[]): Promise<string> {
+  const { stdout } = await execFileAsync(bin, [...args], {
+    encoding: 'utf8',
+    timeout: 5_000,
+  })
+  return stdout
+}
+
 function readJsonFile(path: string): unknown {
   try {
     return JSON.parse(readFileSync(path, 'utf8')) as unknown
@@ -50,13 +63,11 @@ function readTextFile(path: string): string | null {
 }
 
 /** macOS Keychain payload written by `claude /login` (includes user:profile). */
-export function readClaudeKeychainCredentialsJson(): string | null {
+export async function readClaudeKeychainCredentialsJson(): Promise<string | null> {
   if (process.platform !== 'darwin') return null
   try {
-    const raw = execFileSync(
-      'security',
-      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'],
-      { encoding: 'utf8', timeout: 5_000 },
+    const raw = (
+      await runCommand('security', ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE, '-w'])
     ).trim()
     return raw || null
   } catch {
@@ -95,15 +106,15 @@ export function updateClaudeOAuthJson(
 }
 
 /** The account (`-a`) on the Keychain item, needed to update it in place. */
-function readClaudeKeychainAccount(): string | null {
+async function readClaudeKeychainAccount(): Promise<string | null> {
   if (process.platform !== 'darwin') return null
   try {
     // Attributes only (no `-w`/`-g`), so the password never hits our buffer.
-    const attrs = execFileSync(
-      'security',
-      ['find-generic-password', '-s', CLAUDE_KEYCHAIN_SERVICE],
-      { encoding: 'utf8', timeout: 5_000 },
-    )
+    const attrs = await runCommand('security', [
+      'find-generic-password',
+      '-s',
+      CLAUDE_KEYCHAIN_SERVICE,
+    ])
     const match = /"acct"<blob>="([^"]*)"/.exec(attrs)
     return match?.[1] ?? null
   } catch {
@@ -112,14 +123,19 @@ function readClaudeKeychainAccount(): string | null {
 }
 
 /** Update the `claude /login` Keychain item in place with a refreshed payload. */
-export function writeClaudeKeychainCredentialsJson(json: string): void {
+export async function writeClaudeKeychainCredentialsJson(json: string): Promise<void> {
   if (process.platform !== 'darwin') return
-  const account = readClaudeKeychainAccount() ?? process.env['USER'] ?? ''
-  execFileSync(
-    'security',
-    ['add-generic-password', '-U', '-s', CLAUDE_KEYCHAIN_SERVICE, '-a', account, '-w', json],
-    { timeout: 5_000 },
-  )
+  const account = (await readClaudeKeychainAccount()) ?? process.env['USER'] ?? ''
+  await runCommand('security', [
+    'add-generic-password',
+    '-U',
+    '-s',
+    CLAUDE_KEYCHAIN_SERVICE,
+    '-a',
+    account,
+    '-w',
+    json,
+  ])
 }
 
 /** Atomic, owner-only write so a concurrent reader never sees a half-written file. */
@@ -136,13 +152,13 @@ function atomicWriteFile(path: string, data: string): void {
  * failure (Keychain ACL prompt denied, read-only FS) is swallowed; the fresh
  * in-memory token still served the current fetch.
  */
-export function persistRefreshedClaudeToken(
+export async function persistRefreshedClaudeToken(
   source: string | undefined,
   refreshed: ClaudeRefreshedToken,
   home = homedir(),
-  readKeychain: () => string | null = readClaudeKeychainCredentialsJson,
-  writeKeychain: (json: string) => void = writeClaudeKeychainCredentialsJson,
-): void {
+  readKeychain: () => Promise<string | null> = readClaudeKeychainCredentialsJson,
+  writeKeychain: (json: string) => Promise<void> = writeClaudeKeychainCredentialsJson,
+): Promise<void> {
   try {
     if (source === 'credentials.json') {
       const path = join(home, '.claude', '.credentials.json')
@@ -151,8 +167,8 @@ export function persistRefreshedClaudeToken(
       return
     }
     if (source === 'keychain') {
-      const next = updateClaudeOAuthJson(readKeychain(), refreshed)
-      if (next) writeKeychain(next)
+      const next = updateClaudeOAuthJson(await readKeychain(), refreshed)
+      if (next) await writeKeychain(next)
     }
     // 'env' / unknown: nothing to persist (env is process-scoped).
   } catch (err) {
@@ -169,13 +185,11 @@ export function persistRefreshedClaudeToken(
 }
 
 /** macOS Keychain JWT written by `cursor-agent` login. */
-export function readCursorKeychainAccessToken(): string | null {
+export async function readCursorKeychainAccessToken(): Promise<string | null> {
   if (process.platform !== 'darwin') return null
   try {
-    const raw = execFileSync(
-      'security',
-      ['find-generic-password', '-s', CURSOR_KEYCHAIN_SERVICE, '-w'],
-      { encoding: 'utf8', timeout: 5_000 },
+    const raw = (
+      await runCommand('security', ['find-generic-password', '-s', CURSOR_KEYCHAIN_SERVICE, '-w'])
     ).trim()
     return parseCursorSessionToken(raw)
   } catch {
@@ -216,13 +230,14 @@ export function cursorStateDbPaths(
  * Read `cursorAuth/accessToken` from Cursor's local SQLite state DB via the
  * `sqlite3` CLI (read-only). Returns null when sqlite3/DB/key are missing.
  */
-export function readCursorAccessTokenFromStateDb(dbPath: string): string | null {
+export async function readCursorAccessTokenFromStateDb(dbPath: string): Promise<string | null> {
   if (!existsSync(dbPath)) return null
   try {
-    const raw = execFileSync(
-      'sqlite3',
-      [dbPath, "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1;"],
-      { encoding: 'utf8', timeout: 5_000 },
+    const raw = (
+      await runCommand('sqlite3', [
+        dbPath,
+        "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1;",
+      ])
     ).trim()
     return parseCursorSessionToken(raw)
   } catch {
@@ -243,36 +258,36 @@ function discoverHuggingFaceToken(
   return parseHuggingFaceToken(readTextFile(join(hfHome, 'token'))) ?? undefined
 }
 
-function discoverCursorSessionToken(
+async function discoverCursorSessionToken(
   home: string,
   env: NodeJS.ProcessEnv,
-  readKeychain: () => string | null,
-  readStateDb: (dbPath: string) => string | null,
-): string | undefined {
+  readKeychain: () => Promise<string | null>,
+  readStateDb: (dbPath: string) => Promise<string | null>,
+): Promise<string | undefined> {
   const fromEnv =
     parseCursorSessionToken(env['CURSOR_SESSION_TOKEN'] ?? null) ||
     parseCursorSessionToken(env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null)
   if (fromEnv) return fromEnv
-  const fromKeychain = readKeychain()
+  const fromKeychain = await readKeychain()
   if (fromKeychain) return fromKeychain
   for (const dbPath of cursorStateDbPaths(home, env)) {
-    const fromDb = readStateDb(dbPath)
+    const fromDb = await readStateDb(dbPath)
     if (fromDb) return fromDb
   }
   return undefined
 }
 
 /** Discover Claude / Codex / Hugging Face / Cursor tokens from Keychain, files, and env. */
-export function discoverPlanUsageCredentials(
+export async function discoverPlanUsageCredentials(
   home = homedir(),
   env: NodeJS.ProcessEnv = process.env,
-  readKeychain: () => string | null = readClaudeKeychainCredentialsJson,
+  readKeychain: () => Promise<string | null> = readClaudeKeychainCredentialsJson,
   resolveHuggingFaceStored: () => string | null = () => resolveApiKey('huggingface'),
-  readCursorKeychain: () => string | null = readCursorKeychainAccessToken,
-  readCursorStateDb: (dbPath: string) => string | null = readCursorAccessTokenFromStateDb,
-): PlanUsageCredentials {
+  readCursorKeychain: () => Promise<string | null> = readCursorKeychainAccessToken,
+  readCursorStateDb: (dbPath: string) => Promise<string | null> = readCursorAccessTokenFromStateDb,
+): Promise<PlanUsageCredentials> {
   const claudeCredentials = orderClaudeOAuthCredentials({
-    keychainJson: readKeychain(),
+    keychainJson: await readKeychain(),
     credentialsJson: readJsonFile(join(home, '.claude', '.credentials.json')),
     envToken: env['CLAUDE_CODE_OAUTH_TOKEN'] ?? null,
   })
@@ -290,9 +305,8 @@ export function discoverPlanUsageCredentials(
       expiresAt: c.expiresAt,
       source: c.source,
     })),
-    onClaudeTokenRefreshed: (credential, refreshed) => {
-      persistRefreshedClaudeToken(credential.source, refreshed, home, readKeychain)
-    },
+    onClaudeTokenRefreshed: (credential, refreshed) =>
+      persistRefreshedClaudeToken(credential.source, refreshed, home, readKeychain),
   }
   if (parsedCodex) {
     credentials.codex = {
@@ -302,7 +316,7 @@ export function discoverPlanUsageCredentials(
   }
   const hf = discoverHuggingFaceToken(home, env, resolveHuggingFaceStored)
   if (hf) credentials.huggingfaceToken = hf
-  const cursor = discoverCursorSessionToken(home, env, readCursorKeychain, readCursorStateDb)
+  const cursor = await discoverCursorSessionToken(home, env, readCursorKeychain, readCursorStateDb)
   if (cursor) credentials.cursorSessionToken = cursor
   return credentials
 }
@@ -475,7 +489,7 @@ async function fetchPlanUsageSnapshotUncached(): Promise<PlanUsageSnapshot> {
     if (process.env[MOCK_ENV] === '1') return mockSnapshot()
     if (process.env[MOCK_ENV] === 'auth-errors') return mockAuthErrorSnapshot()
 
-    const credentials = discoverPlanUsageCredentials()
+    const credentials = await discoverPlanUsageCredentials()
     return await getPlanUsageSnapshot(credentials, {
       signal: AbortSignal.timeout(FETCH_TIMEOUTS.planUsage),
     })

@@ -27,7 +27,9 @@ function parseIpv4Octets(host: string): [number, number, number, number] | null 
   if (parts.length !== 4) return null
   const octets = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number.parseInt(part, 10) : NaN))
   if (octets.some((n) => Number.isNaN(n) || n > 255)) return null
-  return octets as [number, number, number, number]
+  const [a, b, c, d] = octets
+  if (a === undefined || b === undefined || c === undefined || d === undefined) return null
+  return [a, b, c, d]
 }
 
 /**

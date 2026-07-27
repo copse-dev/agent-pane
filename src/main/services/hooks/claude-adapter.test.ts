@@ -16,6 +16,7 @@ import {
 import type { CommandHook } from '@copse/agent/hooks/command-executor.ts'
 import { runToolGateHooks } from './tool-gate.ts'
 import { resetCursorHookSessionErrorsForTest } from './cursor-adapter.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 /** Fire the canonical toolGate event for a Copse tool call (the production gate path). */
 function gate(
@@ -328,28 +329,32 @@ describe('claude-adapter', () => {
     it('marshals the optional `model` only when the session resolved one', () => {
       const marshal = claudeAdapter.marshalSessionStartRequest?.bind(claudeAdapter)
       assert.ok(marshal)
-      const withModel = marshal(
-        SESSION_HOOK,
-        { firstTurn: true },
-        {
-          conversationId: 'c1',
-          generationId: 'g1',
-          model: { model: 'claude-sonnet-4', modelId: 'claude-sonnet-4', modelParams: [] },
-        },
-      ) as Record<string, unknown>
+      const withModel = expectRecord(
+        marshal(
+          SESSION_HOOK,
+          { firstTurn: true },
+          {
+            conversationId: 'c1',
+            generationId: 'g1',
+            model: { model: 'claude-sonnet-4', modelId: 'claude-sonnet-4', modelParams: [] },
+          },
+        ),
+      )
       assert.equal(withModel['hook_event_name'], 'SessionStart')
       assert.equal(withModel['source'], 'startup')
       assert.equal(withModel['session_id'], 'c1')
       assert.equal(withModel['model'], 'claude-sonnet-4')
 
-      const withoutModel = marshal(
-        SESSION_HOOK,
-        { firstTurn: true },
-        {
-          conversationId: 'c1',
-          generationId: 'g1',
-        },
-      ) as Record<string, unknown>
+      const withoutModel = expectRecord(
+        marshal(
+          SESSION_HOOK,
+          { firstTurn: true },
+          {
+            conversationId: 'c1',
+            generationId: 'g1',
+          },
+        ),
+      )
       assert.equal('model' in withoutModel, false)
     })
   })

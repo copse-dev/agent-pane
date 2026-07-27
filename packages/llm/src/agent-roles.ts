@@ -137,10 +137,8 @@ export const AGENT_ROLES: readonly AgentRole[] = [
   },
 ]
 
-const ROLE_BY_ID: ReadonlyMap<AgentRoleId, AgentRole> = new Map(AGENT_ROLES.map((r) => [r.id, r]))
-
 export function getAgentRole(id: string): AgentRole | null {
-  return ROLE_BY_ID.get(id as AgentRoleId) ?? null
+  return AGENT_ROLES.find((role) => role.id === id) ?? null
 }
 
 export const AGENT_ROLE_IDS: readonly AgentRoleId[] = AGENT_ROLES.map((r) => r.id)

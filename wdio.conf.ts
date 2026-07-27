@@ -151,6 +151,10 @@ export const config: Options.Testrunner = {
       // throwaway profile so seeded threads don't touch the developer's real
       // ~/.copse/workspace. Seed helpers mirror this path.
       COPSE_WORKSPACE_DIR: join(e2eUserDataDir, 'workspace'),
+      // Keep linked worktrees inside the disposable e2e profile as well. Specs
+      // can then seed and validate isolated thread roots without touching the
+      // developer's real ~/.copse/worktrees directory.
+      COPSE_WORKTREES_DIR: join(e2eUserDataDir, 'worktrees'),
       // Blank every provider key the app recognises so e2e is deterministic:
       // the mock LLM is used (no real key), and the env-key-detection scan
       // (Settings → General) finds nothing from the runner's environment.
