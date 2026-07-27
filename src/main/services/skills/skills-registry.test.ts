@@ -65,6 +65,35 @@ description: Demo skill for tests
     assert.deepEqual(demo.externalLinks, [], 'link-free skill reports no external links')
   })
 
+  it('does not descend into a nested repository (git worktree or clone)', async () => {
+    // A worktree under `.claude/worktrees/<name>` is a checkout of this same
+    // repo, so its skills are the workspace's own files on another branch. It
+    // marks itself with a `.git` *file* rather than a directory, which is why
+    // the `.git` entry in SKIP_DIRS never stopped the walk.
+    const worktree = join(tempRoot, '.claude', 'worktrees', 'wt-1')
+    await mkdir(join(worktree, '.cursor', 'skills', 'nested-skill'), { recursive: true })
+    await writeFile(join(worktree, '.git'), 'gitdir: /elsewhere/.git/worktrees/wt-1\n', 'utf-8')
+    await writeFile(
+      join(worktree, '.cursor', 'skills', 'nested-skill', 'SKILL.md'),
+      `---
+name: nested-skill
+description: Skill inside a nested checkout
+---
+
+# Nested`,
+      'utf-8',
+    )
+
+    await refreshSkillsRegistry()
+    assert.equal(
+      listSkills().some((skill) => skill.name === 'nested-skill'),
+      false,
+      'skills inside a nested repository must not be discovered',
+    )
+    // The real workspace's own skills are unaffected.
+    assert.ok(listSkills().some((skill) => skill.name === 'demo-skill'))
+  })
+
   it('records external link hosts referenced by a skill', async () => {
     await mkdir(join(tempRoot, '.cursor', 'skills', 'linky'), { recursive: true })
     await writeFile(

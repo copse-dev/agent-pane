@@ -101,6 +101,14 @@ async function walkForSkillRoots(dir: string, out: Set<string>, depth = 0): Prom
     return
   }
 
+  // A nested repository — a git worktree, a submodule, a vendored clone — is a
+  // separate project that happens to live inside this one. Its skills are not
+  // this workspace's, and for a worktree they are literally the same files on
+  // another branch: scanning `.claude/worktrees/*` found every skill again and
+  // logged a duplicate warning for each. `.git` is a directory in a clone and a
+  // *file* in a worktree, so match on the name and not on its type.
+  if (depth > 0 && entries.some((entry) => entry.name === '.git')) return
+
   for (const entry of entries) {
     if (!entry.isDirectory() || SKIP_DIRS.has(entry.name)) continue
     const full = join(dir, entry.name)
