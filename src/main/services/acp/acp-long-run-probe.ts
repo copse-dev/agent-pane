@@ -304,16 +304,17 @@ export async function probeAgentLongRun(
 
   const finish = (partial: Partial<AcpLongRunReport>): AcpLongRunReport => {
     const elapsedMs = Date.now() - startedAt
+    const completedEarly = elapsedMs < expectedDurationMs
     const firstUpdateAfterMs = updateTimes[0] ?? null
     const lastUpdateAfterMs = updateTimes.at(-1) ?? null
     const gaps = updateTimes.map(
       (time, index) => time - (index === 0 ? 0 : (updateTimes[index - 1] ?? 0)),
     )
-    return {
+    const report: AcpLongRunReport = {
       ...base,
       ok: false,
       elapsedMs,
-      completedEarly: elapsedMs < expectedDurationMs,
+      completedEarly,
       firstUpdateAfterMs,
       lastUpdateAfterMs,
       maxSilentGapMs: gaps.length > 0 ? Math.max(...gaps) : null,
@@ -324,6 +325,14 @@ export async function probeAgentLongRun(
       permissionRequests,
       ...partial,
     }
+    if (report.ok && completedEarly) {
+      return {
+        ...report,
+        ok: false,
+        error: `completed before expected duration (${String(elapsedMs)}ms < ${String(expectedDurationMs)}ms)`,
+      }
+    }
+    return report
   }
 
   try {
