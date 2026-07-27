@@ -101,7 +101,7 @@ jobs:
     steps:
       # fetch-depth: 0 so the e2e oracle (plan step) can diff against the PR base
       # / previous main tip.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           # Do not leave even the read-only GITHUB_TOKEN in a fork checkout.
@@ -352,7 +352,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
@@ -409,11 +409,15 @@ jobs:
     # headroom if it recurs.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Unit suite under c8 + coverage-baseline.json ratchet (replaces the
       # separate coverage job — same tests, no duplicate npm test run).
       - run: npm run coverage:ci
+        env:
+          # c8 retains V8 coverage until the suite exits; the default ~2 GB heap
+          # can OOM while finalizing a fully green run on the 6 GB check fleet.
+          NODE_OPTIONS: --max-old-space-size=3072
       # Diagnostic HTML only — coverage:ci / coverage-gate already decided pass/fail.
       # Org artifact-storage quota must not fail the merge gate after a green suite
       # (seen on #1074: CreateArtifact quota error after 0 unit failures).
@@ -465,7 +469,7 @@ jobs:
     # when unset. No Electron/display need.
     runs-on: ${{ vars.CHECKS_RUNNER || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Guarantee the gortex binary independently of the setup action. On a
       # self-hosted runner whose baked image predates gortex, the baked-deps seed
@@ -522,7 +526,7 @@ jobs:
        contains(github.event.pull_request.labels.*.name, 'bench-agent'))
     runs-on: ${{ vars.LM_EVAL_RUNNER }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Resolve the pinned instance ids into task files (network required).
       - run: npm run bench:swe-tasks
@@ -565,7 +569,7 @@ jobs:
     # full tree (worker files, nested dirs, exec bits) verbatim, so the shards
     # get a byte-identical dist without each rebuilding it.
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       - run: npm run build
       # Plain-Chrome geometry coverage replaces Electron specs that do not need
@@ -690,7 +694,7 @@ jobs:
     env:
       SHARD_TOTAL: ${{ needs.precheck.outputs.e2e_shard_total }}
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup
       # Reclaim ~20-30 GB of runner-preloaded toolchains (dotnet/android/ghc/
       # CodeQL/swift) and cached Docker images. The e2e shards have hit "No space
@@ -929,7 +933,7 @@ jobs:
               exit 1
               ;;
           esac
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         if: steps.head.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}

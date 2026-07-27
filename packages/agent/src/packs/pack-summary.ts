@@ -50,6 +50,21 @@ export interface PackPromptBlockOut {
   trust: 'trusted' | 'untrusted'
 }
 
+/** One runtime capability flag enumerated for the Settings pack list. */
+export interface PackCapabilityOut {
+  name: string
+  title: string
+  description?: string
+}
+
+/** One permission / sandbox relaxation enumerated for the Settings pack list. */
+export interface PackPermissionOut {
+  name: string
+  title: string
+  description?: string
+  scope?: 'project' | 'workspace'
+}
+
 /** Contributions snapshot for one pack (renderer-facing plain data). */
 export interface PackContributionsOut {
   toolNames: readonly string[]
@@ -59,6 +74,10 @@ export interface PackContributionsOut {
   commandHooks: readonly { event: string; command: string }[]
   promptBlocks: readonly PackPromptBlockOut[]
   ui: readonly PackUiContributionOut[]
+  /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
+  capabilities: readonly PackCapabilityOut[]
+  /** Permission / sandbox relaxations the pack may request while enabled. */
+  permissions: readonly PackPermissionOut[]
   storageNamespace?: string
 }
 
@@ -118,6 +137,13 @@ export function normalizePackSettingValue(
     case 'string':
       if (typeof raw === 'string') return raw
       return typeof field.default === 'string' ? field.default : ''
+    case 'model':
+      // A model id is a string; normalize exactly like `string` (any stored id
+      // is honoured — the renderer keeps an offline/unknown id selectable — with
+      // the declared default model id, or blank, as the fallback). The dynamic
+      // catalogue is resolved renderer-side, so there is no `options` gate here.
+      if (typeof raw === 'string') return raw
+      return typeof field.default === 'string' ? field.default : ''
     case 'enum': {
       const options = field.options ?? []
       if (typeof raw === 'string' && options.includes(raw)) return raw
@@ -143,6 +169,17 @@ export function packToSummary(
   })
   const commandHooks = (manifest.hooks ?? []).map((h) => ({ event: h.event, command: h.command }))
   const promptBlocks = contributions.promptBlocks.map((b) => ({ id: b.id, trust: b.trust }))
+  const capabilities = contributions.capabilities.map((c) => {
+    const entry: PackCapabilityOut = { name: c.name, title: c.title }
+    if (c.description !== undefined) entry.description = c.description
+    return entry
+  })
+  const permissions = contributions.permissions.map((p) => {
+    const entry: PackPermissionOut = { name: p.name, title: p.title }
+    if (p.description !== undefined) entry.description = p.description
+    if (p.scope !== undefined) entry.scope = p.scope
+    return entry
+  })
   const contributionsOut: PackContributionsOut = {
     toolNames: contributions.toolNames.slice(),
     blockingHooks: contributions.blockingHooks.map((h) => ({ id: h.id, event: h.event })),
@@ -150,6 +187,8 @@ export function packToSummary(
     commandHooks,
     promptBlocks,
     ui,
+    capabilities,
+    permissions,
   }
   if (manifest.tools?.mcpServers !== undefined) {
     contributionsOut.mcpServersPath = manifest.tools.mcpServers

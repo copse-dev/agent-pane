@@ -5,6 +5,7 @@ import type { ModelComparison } from '@shared/types'
 import { renderMarkdown } from '@copse/streaming-markdown'
 import { annotateFileReferences } from '../markdown/file-links.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 function statusLabel(status: ModelComparison['status']): string {
   switch (status) {
@@ -95,7 +96,7 @@ export function createComparisonCardEl(
       el(
         'div',
         { class: 'comparison-panel-error message-text' },
-        comparison.error || 'Comparison failed.',
+        nonEmptyStringOr(comparison.error, 'Comparison failed.'),
       ),
     )
     return panel

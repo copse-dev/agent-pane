@@ -2,13 +2,17 @@ import type { ModelUsage } from '@shared/types'
 import { parseAcpModelSelection } from '@shared/acp.ts'
 import { buildProvider } from './providers/provider-selection.ts'
 import { completeTextWithUsage } from './providers/llm-complete-text.ts'
-import { routedModelSetting } from './providers/role-models.ts'
+import { getRoleModels } from './providers/role-models.ts'
+import { readPackSettingValue } from './packs/pack-service.ts'
+import {
+  ADVISOR_STRATEGY_PACK_ID,
+  ADVISOR_MODEL_SETTING_ID,
+} from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { runAcpAdvisorPrompt } from './acp/acp-advisor.ts'
 import { buildAdvisorRepoState, buildAdvisorWorkingDiff } from './advisor-context.ts'
 import { emitAdvisorUsage } from './advisor-usage.ts'
 import { getAdvisorContext } from './advisor-runner-context.ts'
 import {
-  ADVISOR_MODEL_SETTING,
   DEFAULT_ADVISOR_MODEL,
   attributeAdvice,
   buildAdvisorTranscript,
@@ -18,10 +22,18 @@ import {
 
 /**
  * Resolve the configured advisor model id: a model assigned to the `advisor`
- * role wins, then the legacy `advisorModel` setting, then the frontier default.
+ * role wins (the model-roles indirection), then the pack-scoped `advisorModel`
+ * setting owned by the `copse.advisor-strategy` pack, then the frontier default.
+ * The pack setting replaced the retired top-level `advisorModel` store key; a
+ * one-time migration in `pack-service.ts` lifted any existing value across, so
+ * behaviour is preserved.
  */
 export function resolveAdvisorModelId(): string {
-  return routedModelSetting(ADVISOR_MODEL_SETTING) || DEFAULT_ADVISOR_MODEL
+  const assigned = getRoleModels()['advisor']?.trim()
+  if (assigned) return assigned
+  const packValue = readPackSettingValue(ADVISOR_STRATEGY_PACK_ID, ADVISOR_MODEL_SETTING_ID)
+  const packModel = typeof packValue === 'string' ? packValue.trim() : ''
+  return packModel || DEFAULT_ADVISOR_MODEL
 }
 
 /**

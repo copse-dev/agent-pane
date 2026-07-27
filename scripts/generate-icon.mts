@@ -4,9 +4,38 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { z } from 'zod'
 import type { AppIconScheme, AppIconVariant } from '../src/shared/app-icon-variants.ts'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const iconVariantSchema = z.enum([
+  'rose',
+  'aurora',
+  'citrus',
+  'candy',
+  'steel',
+  'amber',
+  'forest',
+  'orchid',
+  'sunset',
+  'ocean',
+  'emerald',
+  'nebula',
+  'ember',
+  'paper',
+  'coral',
+  'lagoon',
+])
+const iconSchemeSchema: z.ZodType<AppIconScheme> = z.object({
+  start: z.string(),
+  end: z.string(),
+  bg: z.string(),
+})
+const iconModuleSchema = z.object({
+  APP_ICON_VARIANTS: z.array(iconVariantSchema).readonly(),
+  APP_ICON_VARIANT_SCHEMES: z.record(iconVariantSchema, iconSchemeSchema),
+  DEFAULT_APP_ICON_VARIANT: iconVariantSchema,
+})
 
 /**
  * Loads the shared icon-variant constants without statically importing the
@@ -32,11 +61,8 @@ async function loadIconVariants(): Promise<{
   if (!bundle) {
     throw new Error('esbuild produced no output for app-icon-variants.ts')
   }
-  const mod = (await import('data:text/javascript,' + encodeURIComponent(bundle.text))) as {
-    APP_ICON_VARIANTS: readonly AppIconVariant[]
-    APP_ICON_VARIANT_SCHEMES: Record<AppIconVariant, AppIconScheme>
-    DEFAULT_APP_ICON_VARIANT: AppIconVariant
-  }
+  const loaded: unknown = await import('data:text/javascript,' + encodeURIComponent(bundle.text))
+  const mod = iconModuleSchema.parse(loaded)
   return {
     variants: mod.APP_ICON_VARIANTS,
     schemes: mod.APP_ICON_VARIANT_SCHEMES,

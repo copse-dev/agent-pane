@@ -11,7 +11,8 @@ function copyButtonText(code: HTMLElement): string {
 export function attachCodeBlockCopyButtons(root: ParentNode): void {
   const blocks = root.querySelectorAll('pre:has(> code):not(.mermaid):not([data-copy-attached])')
   for (const node of blocks) {
-    const pre = node as HTMLElement
+    if (!(node instanceof HTMLElement)) continue
+    const pre = node
     if (pre.closest('.mermaid-diagram')) continue
 
     const code = pre.querySelector('code')

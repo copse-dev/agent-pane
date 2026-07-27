@@ -64,7 +64,7 @@ export function showContextMenu(
     if (dismissOpenContextMenu === dismiss) dismissOpenContextMenu = null
   }
   const onPointerDown = (e: PointerEvent): void => {
-    if (menu.contains(e.target as Node)) return
+    if (menu.contains(e.target instanceof Node ? e.target : null)) return
     dismiss()
   }
   const onKeyDown = (e: KeyboardEvent): void => {

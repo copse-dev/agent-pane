@@ -20,6 +20,7 @@ import {
   type AutoMergeStrategy,
   type RepoMergeConfig,
 } from './merge-strategy.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 
 /** REST + GraphQL base URLs, honoring GH_HOST for GitHub Enterprise. */
 function apiRoots(host = process.env['GH_HOST']?.trim()): { rest: string; graphql: string } {
@@ -362,7 +363,7 @@ export const githubApiBackend: GitHubBackend = {
     const result = await rest(`/repos/${ref.owner}/${ref.repo}/issues/${String(ref.number)}`)
     if (result.status === 404) return null
     if (!result.ok) throw new Error(result.errorMessage ?? 'Could not load issue.')
-    const item = result.json as Record<string, unknown>
+    const item = expectRecord(result.json)
     // The issues endpoint also serves PRs; a roadmap pin must be a real issue.
     if ('pull_request' in item) return null
     const title = typeof item['title'] === 'string' ? item['title'] : null

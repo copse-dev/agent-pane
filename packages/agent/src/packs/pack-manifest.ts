@@ -46,6 +46,55 @@ export interface PackUiContribution {
 }
 
 /**
+ * A named runtime *capability* a pack owns — a pure cross-cutting behaviour flag
+ * that adds no tool, hook, prompt, or panel. Some Experimental features (the
+ * MCP-UI canvas, the DevTools shortcut) gate behaviour that already lives across
+ * main + renderer; they can't be expressed as any of the other contribution
+ * kinds. A capability is that missing kind: a stable `name` any subsystem reads
+ * through {@link PackRegistry.isCapabilityActive} (the single seam that replaces
+ * scattered `getSetting` reads), plus a human `title`/`description` so the
+ * Settings pack list can enumerate what the toggle actually does.
+ */
+export interface PackCapabilityDecl {
+  /** Stable capability id — the flag name subsystems read via `isCapabilityActive`. */
+  name: string
+  /** Human title for the Settings pack-list enumeration (P3). */
+  title: string
+  /** Optional human description shown alongside the title. */
+  description?: string
+}
+
+/**
+ * A permission / sandbox relaxation a pack DECLARES it may request — the missing
+ * "what authority does this pack open" contribution kind (issue #1190). Some
+ * features are, in essence, a sandbox relaxation gated by a permission prompt:
+ * the Background tasks pack can opt a task into binding a loopback port, which
+ * relaxes the default sandbox (workspace-only, no network) to allow `localhost`
+ * binding for the process lifetime, gated by a per-project grant through the
+ * permission-gate. A declared relaxation is grantable ONLY while the owning pack
+ * is enabled — the permission-gate resolves it through
+ * {@link PackRegistry.isPermissionDeclared}, so disabling the pack revokes the
+ * authority in the same atomic flag flip that drops its tools/hooks. The
+ * declaration also feeds the Settings pack-list enumeration and the future
+ * install-time capability/permission review (#1082).
+ */
+export interface PackPermissionDecl {
+  /** Stable relaxation id the permission-gate resolves via `isPermissionDeclared`. */
+  name: string
+  /** Human title for the Settings pack-list enumeration (P3). */
+  title: string
+  /** Optional human description of the authority the relaxation opens. */
+  description?: string
+  /**
+   * The granularity of the permission grant that gates the relaxation. `project`
+   * — a per-project grant (e.g. the loopback-bind grant, keyed by execution
+   * root); `workspace` — a broader per-workspace grant. Defaults to `project`
+   * when omitted (the tighter scope).
+   */
+  scope?: 'project' | 'workspace'
+}
+
+/**
  * A prompt / steering block a pack contributes, carrying trust framing (plan).
  * A `trusted` (first-party) block is injected verbatim; an `untrusted` (user)
  * block is delimited as data, matching the skills trust model.
@@ -56,16 +105,34 @@ export interface PackPromptBlock {
   trust: 'trusted' | 'untrusted'
 }
 
-/** Field kinds a pack-scoped setting can declare (rendered generically in P3). */
-export type PackSettingKind = 'boolean' | 'string' | 'number' | 'enum'
+/**
+ * Field kinds a pack-scoped setting can declare (rendered generically in P3).
+ *
+ * A `model` field resolves the live configured-model catalogue *host-side* at
+ * read time and renders as the grouped model picker (Settings → Packs), so a
+ * model-parameterised pack owns its own model configuration instead of leaving
+ * hand-written `<select>` blocks stranded in the settings dialog. Its value is a
+ * model id string with an optional `default`; unlike `enum` it carries no static
+ * `options` array — the option list is dynamic and injected by the renderer from
+ * the same catalogue the footer/settings model pickers use.
+ *
+ * (A future `role` field kind — resolving a role registry — is a deliberate
+ * extension seam here; this phase ships only `model`.)
+ */
+export type PackSettingKind = 'boolean' | 'string' | 'number' | 'enum' | 'model'
 
 /** One pack-scoped setting, rendered generically in Settings (P3). */
 export interface PackSettingField {
   kind: PackSettingKind
   title: string
   description?: string
+  /** Default value (a model id string for `kind: 'model'`). */
   default?: boolean | string | number
-  /** Allowed values for an `enum` field. */
+  /**
+   * Allowed values for an `enum` field. NOT used by `model` (its option list is
+   * the dynamic model catalogue, resolved host-side at read time — never baked
+   * into the manifest).
+   */
   options?: readonly string[]
 }
 
@@ -124,6 +191,10 @@ export interface PackManifest {
   hooks?: readonly PackCommandHookDecl[]
   prompt?: readonly PackPromptBlock[]
   ui?: readonly PackUiContribution[]
+  /** Named runtime capability flags the pack owns (pure behaviour, no tool). */
+  capabilities?: readonly PackCapabilityDecl[]
+  /** Permission / sandbox relaxations the pack may request while enabled. */
+  permissions?: readonly PackPermissionDecl[]
   settings?: PackSettingsSchema
   storage?: PackStorageDecl
 }
@@ -146,6 +217,21 @@ export interface PackContributions {
   readonly promptBlocks: readonly PackPromptBlock[]
   /** UI contributions mounted for *new* content while enabled (decision 17). */
   readonly uiContributions: readonly PackUiContribution[]
+  /**
+   * Runtime capability flags active while enabled. A capability is "active" iff
+   * some enabled pack declares it (see {@link PackRegistry.isCapabilityActive});
+   * disabling the pack drops it in the same atomic flag flip as its other
+   * contribution kinds.
+   */
+  readonly capabilities: readonly PackCapabilityDecl[]
+  /**
+   * Permission / sandbox relaxations the pack may request while enabled. A
+   * relaxation is grantable iff some enabled pack declares it (see
+   * {@link PackRegistry.isPermissionDeclared}); disabling the owning pack drops
+   * it in the same atomic flag flip as its other contribution kinds, so the
+   * permission-gate stops honouring the authority the moment the pack is off.
+   */
+  readonly permissions: readonly PackPermissionDecl[]
 }
 
 /** Contributions a pack with nothing to offer registers (the P1 skeleton). */
@@ -155,6 +241,8 @@ export const EMPTY_PACK_CONTRIBUTIONS: PackContributions = {
   asyncHooks: [],
   promptBlocks: [],
   uiContributions: [],
+  capabilities: [],
+  permissions: [],
 }
 
 /**
@@ -205,6 +293,8 @@ export function packManifestFromPluginJson(
     hooks?: readonly PackCommandHookDecl[]
     prompt?: readonly PackPromptBlock[]
     ui?: readonly PackUiContribution[]
+    capabilities?: readonly PackCapabilityDecl[]
+    permissions?: readonly PackPermissionDecl[]
     settings?: PackSettingsSchema
     storage?: PackStorageDecl
   },
@@ -219,12 +309,13 @@ export function packManifestFromPluginJson(
 ): PackManifest {
   const tools: PackToolsDecl = { ...raw.tools }
   if (raw.mcpServers && tools.mcpServers === undefined) tools.mcpServers = raw.mcpServers
+  const requestedName = raw.name?.trim()
+  const fallbackName = opts?.sourceHint ? `unnamed-pack-${opts.sourceHint}` : 'unnamed-pack'
 
   const manifest: PackManifest = {
     // A discovered plugin.json is always a user pack (decision 15: user packs
     // share the manifest; first-party packs are defined in code, not on disk).
-    name:
-      raw.name?.trim() || (opts?.sourceHint ? `unnamed-pack-${opts.sourceHint}` : 'unnamed-pack'),
+    name: requestedName === undefined || requestedName.length === 0 ? fallbackName : requestedName,
     trust: 'user',
   }
   if (raw.version) manifest.version = raw.version
@@ -240,6 +331,8 @@ export function packManifestFromPluginJson(
   // blocks (decision 15's capability tiering applied to prompt).
   if (raw.prompt) manifest.prompt = raw.prompt.map((b) => ({ ...b, trust: 'untrusted' }))
   if (raw.ui) manifest.ui = raw.ui
+  if (raw.capabilities) manifest.capabilities = raw.capabilities
+  if (raw.permissions) manifest.permissions = raw.permissions
   if (raw.settings) manifest.settings = raw.settings
   if (raw.storage) manifest.storage = raw.storage
   return manifest

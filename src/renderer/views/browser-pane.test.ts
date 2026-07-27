@@ -5,6 +5,7 @@ import { createStore } from '@shared/store/store.ts'
 import { createThread } from '@shared/store/thread-helpers.ts'
 import { openBrowserUrl, openCanvasArtefact } from '../controller/panels.ts'
 import { mountBrowserPane } from './browser-pane.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 interface FakeWebview extends HTMLElement {
   src: string
@@ -137,7 +138,7 @@ describe('browser pane requested URLs', () => {
     const unmount = mountBrowserPane(list, viewer, store)
 
     try {
-      const webview = viewer.querySelector('.browser-webview') as FakeWebview
+      const webview = qsRequired<FakeWebview>(viewer, '.browser-webview')
       stubWebviewMethods(webview)
       webview.dispatchEvent(new Event('dom-ready'))
 
@@ -221,7 +222,8 @@ describe('browser pane requested URLs', () => {
 
       // The artefact opens in a new, active tab (a blank tab is created first).
       const activePanel = viewer.querySelector('.browser-tab-panel.is-active')
-      const webview = activePanel?.querySelector('.browser-webview') as FakeWebview | null
+      assert.ok(activePanel, 'artefact tab should be active')
+      const webview = activePanel.querySelector<FakeWebview>('.browser-webview')
       assert.ok(webview, 'artefact tab should create a webview')
       stubWebviewMethods(webview)
       webview.dispatchEvent(new Event('dom-ready'))
@@ -234,7 +236,7 @@ describe('browser pane requested URLs', () => {
       // Friendly title on the tab; the (large) data URL is hidden from the bar.
       const activeLabel = list.querySelector('.browser-tabs-tab.is-active .browser-tabs-tab-label')
       assert.equal(activeLabel?.textContent, 'Sales Dashboard')
-      const urlInput = activePanel?.querySelector('.browser-url-input') as HTMLInputElement
+      const urlInput = qsRequired<HTMLInputElement>(activePanel, '.browser-url-input')
       assert.equal(urlInput.value, '')
 
       // Opening an artefact switches the right panel to the browser canvas.
@@ -284,7 +286,7 @@ describe('browser pane requested URLs', () => {
       assert.ok(menu.hasAttribute('hidden'), 'menu starts collapsed')
 
       // Give the guest a real page so "open in default browser" is actionable.
-      const webview = panel.querySelector('.browser-webview') as FakeWebview
+      const webview = qsRequired<FakeWebview>(panel, '.browser-webview')
       webview.getURL = (): string => 'https://example.com/page'
       webview.canGoBack = (): boolean => false
       webview.canGoForward = (): boolean => false

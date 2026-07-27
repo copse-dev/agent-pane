@@ -94,9 +94,8 @@ export const CLOUD_MODEL_LABELS: { readonly [K in TrackedModel]: string } = {
 
 /** Friendly label for a tracked cloud id; unknown ids fall back to themselves. */
 export function cloudModelDisplayLabel(model: string): string {
-  return Object.hasOwn(CLOUD_MODEL_LABELS, model)
-    ? CLOUD_MODEL_LABELS[model as TrackedModel]
-    : model
+  const tracked = TRACKED_MODELS.find((candidate) => candidate === model)
+  return tracked === undefined ? model : CLOUD_MODEL_LABELS[tracked]
 }
 
 /** Model picker entries derived from {@link TRACKED_MODELS}. */
@@ -106,4 +105,28 @@ export const CLOUD_MODELS: ReadonlyArray<
 
 export function anthropicMaxOutputTokens(model: string): number {
   return getModelInfo(model)?.maxOutputTokens ?? DEFAULT_ANTHROPIC_MAX_OUTPUT
+}
+
+/**
+ * Model families that accept a `{ role: 'system' }` entry *inside* `messages` —
+ * the operator channel for instructions that arrive mid-conversation (steering,
+ * hook-injected context). Matched by prefix so dated snapshots and suffixed
+ * routing ids resolve too.
+ *
+ * Anything absent from this list must fall back to a `<system-reminder>` block
+ * in a user turn; sending a mid-conversation system message to a model that
+ * doesn't support it is a 400. Notably `claude-sonnet-4-6` — the default cloud
+ * model — does not support it, so the fallback is the common path, not an edge
+ * case.
+ */
+const MID_CONVERSATION_SYSTEM_PREFIXES = [
+  'claude-opus-5',
+  'claude-opus-4-8',
+  'claude-fable-5',
+  'claude-mythos-5',
+] as const
+
+/** Whether `model` accepts mid-conversation `{ role: 'system' }` messages. */
+export function supportsMidConversationSystem(model: string): boolean {
+  return MID_CONVERSATION_SYSTEM_PREFIXES.some((prefix) => model.startsWith(prefix))
 }

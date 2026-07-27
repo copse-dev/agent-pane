@@ -282,7 +282,28 @@ describe('worktree manager', () => {
     assert.ok(records.some((record) => record.path === second.path))
   })
 
-  it('rejects missing, mismatched, and foreign persisted worktree authority', async () => {
+  it('adopts a live branch after checkout -b inside the linked worktree', async () => {
+    const { repo } = await setup()
+    const worktree = await allocateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      prompt: 'Rename inside worktree',
+      baseBranch: 'main',
+    })
+    git(worktree.path, ['checkout', '-q', '-b', 'feat/renamed-in-worktree'])
+
+    const validated = await validateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      worktree,
+    })
+    assert.equal(validated.branch, 'feat/renamed-in-worktree')
+    assert.equal(validated.root, worktree.path)
+  })
+
+  it('rejects a detached HEAD and other foreign persisted worktree authority', async () => {
     const { temp, repo } = await setup()
     const worktree = await allocateThreadWorktree({
       projectId: 'project-1',
@@ -291,6 +312,17 @@ describe('worktree manager', () => {
       prompt: 'Validate authority',
       baseBranch: 'main',
     })
+    git(worktree.path, ['checkout', '-q', '--detach', 'HEAD'])
+    await assert.rejects(
+      validateThreadWorktree({
+        projectId: 'project-1',
+        threadId: 'thread-1',
+        projectRoot: repo,
+        worktree,
+      }),
+      /detached HEAD/,
+    )
+    git(worktree.path, ['checkout', '-q', worktree.branch])
 
     await assert.rejects(
       validateThreadWorktree({
@@ -301,15 +333,17 @@ describe('worktree manager', () => {
       }),
       /does not match/,
     )
-    await assert.rejects(
-      validateThreadWorktree({
-        projectId: 'project-1',
-        threadId: 'thread-1',
-        projectRoot: repo,
-        worktree: { ...worktree, branch: 'wrong-branch' },
-      }),
-      /branch mismatch/,
-    )
+    // Stale meta branch is adopted from Git's live worktree binding — path is
+    // the durable identity, so a rename/`checkout -b` inside the worktree must
+    // not brick reopen/continue.
+    const adopted = await validateThreadWorktree({
+      projectId: 'project-1',
+      threadId: 'thread-1',
+      projectRoot: repo,
+      worktree: { ...worktree, branch: 'wrong-branch' },
+    })
+    assert.equal(adopted.branch, worktree.branch)
+
     await assert.rejects(
       validateThreadWorktree({
         projectId: 'project-1',

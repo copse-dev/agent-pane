@@ -37,11 +37,12 @@
 import { appendFileSync } from 'node:fs'
 import { changedFiles, computeScreenshotGate } from './test-oracle.mts'
 import { ownedScreenshotPaths } from './lib/screenshot-scope.mts'
+import { nonEmptyStringOr } from '../src/shared/unknown-value.mts'
 
 function parseBase(argv: string[]): string {
   const i = argv.indexOf('--base')
   const next = i >= 0 ? argv[i + 1] : undefined
-  return next ? next : 'origin/main'
+  return nonEmptyStringOr(next, 'origin/main')
 }
 
 /** Set a GitHub Actions step output when running in CI; a no-op locally. */

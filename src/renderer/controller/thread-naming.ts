@@ -1,6 +1,7 @@
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { getThreadById, setThreadTitle } from '@shared/store/thread-helpers.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 // Threads we've already attempted to auto-name, to avoid repeat calls.
 const namedThreads = new Set<string>()
@@ -33,6 +34,6 @@ export function maybeNameThread(store: AppStore, api: ApiClient, threadId: strin
     // Skip if the user renamed the thread while the suggestion was in flight.
     const current = getThreadById(store, threadId)
     if (!current || current.title !== 'New Thread') return
-    setThreadTitle(store, threadId, title?.trim() || firstWords(firstUser.content))
+    setThreadTitle(store, threadId, nonEmptyStringOr(title?.trim(), firstWords(firstUser.content)))
   })()
 }

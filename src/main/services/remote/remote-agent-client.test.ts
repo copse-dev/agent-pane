@@ -314,6 +314,19 @@ describe('remoteStreamEventToChunks', () => {
     assert.equal(current.terminalStatus, 'FINISHED')
   })
 
+  it('treats null result fields as absent', () => {
+    const current = state()
+    assert.deepEqual(
+      remoteStreamEventToChunks(
+        { event: 'result', data: JSON.stringify({ status: null, text: null }) },
+        current,
+      ),
+      [],
+    )
+    assert.equal(current.terminalStatus, null)
+    assert.equal(current.resultText, '')
+  })
+
   it('appends a pushed-branch summary after already-streamed assistant text', () => {
     const current = state()
     current.assistantText = 'Done.'

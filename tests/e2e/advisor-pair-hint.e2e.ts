@@ -10,7 +10,14 @@ import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
  * from the model capability annotations — the open-ended cloud intellect scale
  * (`model-intellect.ts`) and the local capability catalog — and re-grades when
  * either picker changes.
+ *
+ * The advisor model picker (and this hint) now live with the
+ * `copse.advisor-strategy` pack in Settings → Packs — the model field the pack
+ * owns — so the section navigation targets Packs and the pack row rather than the
+ * retired Experimental `#advisor-strategy-fieldset`.
  */
+const ADVISOR_PACK_ROW = '.pack-row[data-pack-id="copse.advisor-strategy"]'
+
 describe('advisor pair assessment hint', () => {
   before(() => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
@@ -20,12 +27,16 @@ describe('advisor pair assessment hint', () => {
     resetUserData()
   })
 
-  async function openExperimentalSection(): Promise<void> {
+  async function openPacksSection(): Promise<void> {
     await $('.prompt-input').waitForExist({ timeout: 30_000 })
     await $('[aria-label="Settings"]').click()
     await expect($('#settings-dialog')).toBeDisplayed()
-    await $('.settings-nav-btn[data-section="experimental"]').click()
-    await expect($('.settings-section[data-section="experimental"]')).toBeDisplayed()
+    await $('.settings-nav-btn[data-section="packs"]').click()
+    await expect($('.settings-section[data-section="packs"]')).toBeDisplayed()
+    // The advisor pack's `model` field renders as `#advisorModel`, with the
+    // pairing hint appended below it (settings stay editable even while the pack
+    // is off). Wait for both to render from the live pack list.
+    await $('#advisorModel').waitForExist({ timeout: 15_000 })
     await $('#advisorPairHint').waitForDisplayed({ timeout: 15_000 })
   }
 
@@ -36,14 +47,14 @@ describe('advisor pair assessment hint', () => {
       advisorModel: 'claude-fable-5',
     })
     await browser.reloadSession()
-    await openExperimentalSection()
+    await openPacksSection()
 
     const hint = $('#advisorPairHint')
     assert.equal(await hint.getAttribute('data-level'), 'good')
     assert.match(await hint.getText(), /Recommended pairing/i)
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('#advisor-strategy-fieldset', 'advisor-pair-hint-good.png')
+    await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-good.png')
   })
 
   it('warns when the advisor is annotated weaker than the executor', async () => {
@@ -53,14 +64,14 @@ describe('advisor pair assessment hint', () => {
       advisorModel: 'claude-haiku-4-5',
     })
     await browser.reloadSession()
-    await openExperimentalSection()
+    await openPacksSection()
 
     const hint = $('#advisorPairHint')
     assert.equal(await hint.getAttribute('data-level'), 'warn')
     assert.match(await hint.getText(), /annotated weaker/i)
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('#advisor-strategy-fieldset', 'advisor-pair-hint-warn.png')
+    await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-warn.png')
   })
 
   it('re-grades live when the advisor picker changes', async () => {
@@ -95,14 +106,14 @@ describe('advisor pair assessment hint', () => {
       advisorModel: 'openrouter:zai-org/glm-5.2',
     })
     await browser.reloadSession()
-    await openExperimentalSection()
+    await openPacksSection()
 
     const hint = $('#advisorPairHint')
     assert.equal(await hint.getAttribute('data-level'), 'info')
     assert.match(await hint.getText(), /any configured executor\/advisor combination works/i)
 
     await $('#advisorModel').scrollIntoView({ block: 'center' })
-    await saveElementScreenshot('#advisor-strategy-fieldset', 'advisor-pair-hint-any.png')
+    await saveElementScreenshot(ADVISOR_PACK_ROW, 'advisor-pair-hint-any.png')
   })
 
   it('explains an ACP-agent advisor without an annotation comparison', async () => {

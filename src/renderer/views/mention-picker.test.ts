@@ -11,6 +11,7 @@ import {
 } from './mention-picker.ts'
 import type { ComposerTextInput } from './composer-editor.ts'
 import { registerShellCatalog } from '../terminal/shell-catalog.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 function asTextInput(textarea: HTMLTextAreaElement): ComposerTextInput {
   return {
@@ -50,15 +51,29 @@ function fakeApi(
   files: string[],
   readTerminalEnabled = true,
 ): ApiClient {
-  return {
-    threads: { catalog: async (): Promise<ThreadCatalogHit[]> => threads },
-    index: { query: async (): Promise<string[]> => files },
-    fs: { readFile: async (): Promise<string> => 'file body' },
-    settings: {
-      get: async (key: string): Promise<unknown> =>
-        key === 'readTerminalEnabled' ? readTerminalEnabled : null,
-    },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      threads: {
+        ...base['threads'],
+        catalog: async (): Promise<ThreadCatalogHit[]> => threads,
+      },
+      index: {
+        ...base['index'],
+        query: async (): Promise<string[]> => files,
+      },
+      fs: {
+        ...base['fs'],
+        readFile: async (): Promise<string> => 'file body',
+      },
+      settings: {
+        ...base['settings'],
+        get: async (key: string): Promise<unknown> =>
+          key === 'readTerminalEnabled' ? readTerminalEnabled : null,
+      },
+    } satisfies ApiClient
+  })()
 }
 
 async function flush(): Promise<void> {

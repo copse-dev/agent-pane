@@ -113,7 +113,11 @@ export class MockLLMProvider implements LLMProvider {
           let args: Record<string, unknown> = {}
           if (directive[2]) {
             try {
-              args = JSON.parse(directive[2].trim()) as Record<string, unknown>
+              const parsed: unknown = JSON.parse(directive[2].trim())
+              args =
+                typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+                  ? { ...parsed }
+                  : {}
             } catch {
               args = {}
             }

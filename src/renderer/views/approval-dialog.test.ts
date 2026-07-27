@@ -15,6 +15,7 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { mountSettingsDialog, openSettingsDialog, closeSettingsDialog } from './settings-dialog.ts'
 import { mountApprovalDialog } from './approval-dialog.ts'
 import { resetAttention } from '../controller/attention.ts'
+import { qsRequired } from '../dom/helpers.ts'
 
 type ApprovalHandler = (req: {
   id: string
@@ -98,7 +99,7 @@ describe('approval dialog vs settings (issue #501)', () => {
     const store = createStore()
     // Settings must mount first: the approval dialog subscribes to its close event.
     mountSettingsDialog(store, made.api)
-    const settings = document.getElementById('settings-dialog') as HTMLDialogElement
+    const settings = qsRequired<HTMLDialogElement>(document, '#settings-dialog')
     shimModal(settings)
     // openSettingsDialog also dispatches `settings-open`, kicking off async loads
     // against the never-settling stub api: those awaits never resolve, so nothing
@@ -113,7 +114,7 @@ describe('approval dialog vs settings (issue #501)', () => {
         return () => {}
       },
     })
-    approvalDialog = document.getElementById('approval-dialog') as HTMLDialogElement
+    approvalDialog = qsRequired<HTMLDialogElement>(document, '#approval-dialog')
     approvalSpy = shimModal(approvalDialog)
   })
 

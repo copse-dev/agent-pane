@@ -1,6 +1,7 @@
 import { RequestError } from '@agentclientprotocol/sdk'
 import { KNOWN_ACP_AGENTS } from '@shared/acp-known-agents.ts'
 import { errorMessage } from '@shared/errors.ts'
+import { expectRecord, isRecord } from '@shared/unknown-value.ts'
 
 /** Optional context so ACP failures can name the agent and its auth steps. */
 export interface ClassifyAgentErrorContext {
@@ -39,10 +40,10 @@ function parseProviderError(err: unknown): ProviderError {
   const brace = raw.indexOf('{')
   if (brace !== -1) {
     try {
-      const body = JSON.parse(raw.slice(brace)) as Record<string, unknown>
-      const detail = (
-        body['error'] && typeof body['error'] === 'object' ? body['error'] : body
-      ) as Record<string, unknown>
+      const body = expectRecord(JSON.parse(raw.slice(brace)) as unknown)
+      const detail = expectRecord(
+        body['error'] && typeof body['error'] === 'object' ? body['error'] : body,
+      )
       if (typeof detail['type'] === 'string') parsed.type = detail['type']
       if (typeof detail['code'] === 'string') parsed.code = detail['code']
       if (typeof detail['message'] === 'string') parsed.message = detail['message'].trim()
@@ -104,8 +105,8 @@ function formatErrorData(data: unknown): string | null {
     const trimmed = data.trim()
     return trimmed || null
   }
-  if (typeof data === 'object') {
-    const record = data as Record<string, unknown>
+  if (isRecord(data)) {
+    const record = data
     for (const key of ['message', 'detail', 'details', 'reason'] as const) {
       const value = record[key]
       if (typeof value === 'string' && value.trim()) return value.trim()
@@ -158,6 +159,46 @@ function isAcpAuthFailure(
   if (rpc?.code === -32000) return true
   if (!ctx?.acpAgentId) return false
   return /^Authentication required\b/i.test(detail)
+}
+
+/** Why a provider refused a request, when the cause is credentials or billing. */
+export type ProviderAccessFailure = 'auth' | 'credit'
+
+/**
+ * Classify a provider failure as a credentials or billing problem — the two
+ * cases where re-running the turn on a subscription-billed agent would actually
+ * help. Everything else (rate limits, overload, network, bad request) is either
+ * transient or unrelated to billing and returns `null`, so a retryable blip
+ * never triggers a billing-path switch.
+ *
+ * Anthropic reports an exhausted balance three different ways depending on the
+ * account: `402`, a `403` typed `billing_error`, and a `400 invalid_request_error`
+ * whose message names the credit balance — all three are `credit`.
+ */
+export function classifyProviderAccessFailure(err: unknown): ProviderAccessFailure | null {
+  const { status, type, code, message } = parseProviderError(err)
+  const detail = message ?? errorMessage(err)
+
+  if (
+    status === 402 ||
+    code === 'insufficient_quota' ||
+    type === 'insufficient_quota' ||
+    type === 'billing_error' ||
+    /credit balance is too low|billing|out of credit/i.test(detail)
+  )
+    return 'credit'
+
+  if (
+    status === 401 ||
+    type === 'authentication_error' ||
+    detail.includes('Unauthorized') ||
+    // 403 `permission_error` covers a key that is valid but not entitled to the
+    // Managed Agents beta — same user fix as a rejected key: sort out the key.
+    ((status === 403 || type === 'permission_error') && !/forbidden host/i.test(detail))
+  )
+    return 'auth'
+
+  return null
 }
 
 /** Map provider / local-model failures to user-facing chat text. */

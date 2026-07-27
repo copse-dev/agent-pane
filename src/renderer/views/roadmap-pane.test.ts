@@ -7,27 +7,24 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
 import { mountRoadmapPane } from './roadmap-pane.ts'
 import { clickActiveConfirmDialogConfirm, mountConfirmDialog } from './confirm-dialog.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
+import type { RoadmapStatus } from '../../main/tools/roadmap-tools.ts'
+import type { RoadmapFitResult } from '../../main/services/roadmap-fit-check.ts'
+import type {
+  RoadmapReviewItemResult,
+  RoadmapReviewPrepareResult,
+} from '../../main/services/roadmap-review.ts'
 
 // Minimal KnowledgeNote (Roadmap) factory; only the fields the pane reads matter.
 function makeItem(
   id: string,
   prompt: string,
-  status = 'ready',
+  status: RoadmapStatus = 'ready',
   notes?: string,
   issue?: string,
   complexity?: string,
-): {
-  id: string
-  type: string
-  title: string
-  body: string
-  tags: string[]
-  status: string
-  fields: Record<string, string>
-  createdAt: string
-  updatedAt: string
-  file: string
-} {
+): KnowledgeNote {
   return {
     id,
     type: 'Roadmap',
@@ -156,204 +153,229 @@ function makeApi(
     abortReview: [],
     setThread: [],
   }
-  const api = {
-    panes: { popout: async (): Promise<void> => {} },
-    shell: {
-      openExternal: async (url: string): Promise<void> => {
-        calls.openExternal.push(url)
+  const api = ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      panes: {
+        ...base['panes'],
+        popout: async (): Promise<void> => {},
       },
-    },
-    roadmap: {
-      list: async () => {
-        calls.list++
-        return items.map((i) => ({ ...i }))
+      shell: {
+        ...base['shell'],
+        openExternal: async (url: string): Promise<void> => {
+          calls.openExternal.push(url)
+        },
       },
-      create: async (
-        prompt: string,
-        notes?: string,
-        issue?: string,
-        attachments?: MockAttachmentAdd[],
-      ) => {
-        calls.create.push({ prompt, notes, issue, ...(attachments ? { attachments } : {}) })
-        const item = makeItem(`new-${String(items.length)}`, prompt, 'ready', notes, issue)
-        if (attachments) {
-          item.fields['attachments'] = JSON.stringify(
-            attachments.map((a, i) => ({
-              id: `att-new-${String(i)}`,
-              name: a.name,
-              mimeType: a.mimeType,
-              size: 1,
-            })),
+      roadmap: {
+        ...base['roadmap'],
+        list: async (): Promise<KnowledgeNote[]> => {
+          calls.list++
+          return items.map((i) => ({ ...i }))
+        },
+        create: async (
+          prompt: string,
+          notes?: string,
+          issue?: string,
+          attachments?: MockAttachmentAdd[],
+        ): Promise<KnowledgeNote> => {
+          calls.create.push({ prompt, notes, issue, ...(attachments ? { attachments } : {}) })
+          const item = makeItem(`new-${String(items.length)}`, prompt, 'ready', notes, issue)
+          if (attachments) {
+            item.fields['attachments'] = JSON.stringify(
+              attachments.map((a, i) => ({
+                id: `att-new-${String(i)}`,
+                name: a.name,
+                mimeType: a.mimeType,
+                size: 1,
+              })),
+            )
+          }
+          items.push(item)
+          return item
+        },
+        update: async (
+          id: string,
+          prompt: string,
+          notes: string | undefined,
+          status: RoadmapStatus,
+          issue?: string,
+          addAttachments?: MockAttachmentAdd[],
+          removeAttachmentIds?: string[],
+        ): Promise<KnowledgeNote | null> => {
+          calls.update.push({
+            id,
+            prompt,
+            notes,
+            status,
+            issue,
+            ...(addAttachments ? { addAttachments } : {}),
+            ...(removeAttachmentIds ? { removeAttachmentIds } : {}),
+          })
+          const item = items.find((i) => i.id === id)
+          if (!item) return null
+          item.title = prompt.slice(0, 80)
+          item.body = prompt
+          item.status = status
+          item.fields = { ...(notes ? { notes } : {}), ...(issue ? { issue } : {}) }
+          return { ...item }
+        },
+        attachmentData: async (id: string, attachmentId: string): Promise<string | null> => {
+          calls.attachmentData.push(`${id}/${attachmentId}`)
+          return 'data:image/png;base64,QUJD'
+        },
+        setStatus: async (id: string, status: RoadmapStatus): Promise<KnowledgeNote | null> => {
+          calls.setStatus.push({ id, status })
+          const item = items.find((i) => i.id === id)
+          if (!item) return null
+          item.status = status
+          return { ...item }
+        },
+        delete: async (id: string): Promise<boolean> => {
+          calls.delete.push(id)
+          const i = items.findIndex((n) => n.id === id)
+          if (i >= 0) items.splice(i, 1)
+          return i >= 0
+        },
+        issueUrl: async (ref: string): Promise<string | null> => {
+          calls.issueUrl.push(ref)
+          return `https://github.com/octo/demo/issues/${ref.replace('#', '')}`
+        },
+        openIssues: async (): Promise<{
+          slug: string
+          issues: import('@shared/types').GhIssueSummary[]
+        }> => {
+          calls.openIssues++
+          return { slug: 'octo/demo', issues: issues.map((i) => ({ ...i })) }
+        },
+        checkFit: async (id: string): Promise<RoadmapFitResult> => {
+          calls.checkFit.push(id)
+          const item = items.find((i) => i.id === id)
+          if (item) {
+            item.fields = {
+              ...item.fields,
+              fit: 'partial',
+              fitDetail: 'prompt does not mention the startup flash',
+            }
+          }
+          return {
+            verdict: 'partial' as const,
+            detail: '- prompt does not mention the startup flash',
+          }
+        },
+        prepareReview: async (): Promise<RoadmapReviewPrepareResult> => {
+          calls.prepareReview++
+          // Mirror production: active items first, done items trailing.
+          const scoped = items.filter((i) => i.status !== 'archived')
+          const ordered = [
+            ...scoped.filter((i) => i.status !== 'done'),
+            ...scoped.filter((i) => i.status === 'done'),
+          ]
+          return {
+            runId: 'bulk-run-1',
+            since: null,
+            commits: 'abc123 Fix startup flash',
+            items: ordered.map((i) => ({ id: i.id, title: i.title })),
+          }
+        },
+        reviewItem: async (
+          id: string,
+          commits: string,
+          runId?: string,
+        ): Promise<RoadmapReviewItemResult> => {
+          calls.reviewItem.push({ id, commits, ...(runId ? { runId } : {}) })
+          const item = items.find((i) => i.id === id)
+          if (item) {
+            item.fields = {
+              ...item.fields,
+              reviewVerdict: 'likely',
+              reviewDetail: 'Commit matches · Issue still open',
+              reviewBulkRun: runId ?? 'bulk-run-1',
+            }
+          }
+          return {
+            id,
+            verdict: 'likely' as const,
+            detail: 'Commit matches · Issue still open',
+            depth: 'bulk' as const,
+            pinnedIssue: null,
+            linkedIssues: [],
+          }
+        },
+        reviewItemDeep: async (id: string): Promise<RoadmapReviewItemResult> => {
+          calls.reviewItemDeep.push(id)
+          const item = items.find((i) => i.id === id)
+          if (item) {
+            item.fields = {
+              ...item.fields,
+              reviewVerdict: 'resolved',
+              reviewDetail: 'Deep check · Issue closed',
+              reviewDepth: 'deep',
+              reviewBulkRun: 'bulk-run-1',
+            }
+          }
+          return {
+            id,
+            verdict: 'resolved' as const,
+            detail: 'Deep check · Issue closed',
+            depth: 'deep' as const,
+            pinnedIssue: null,
+            linkedIssues: [],
+          }
+        },
+        lastReviewAt: async (): Promise<{
+          lastReviewAt: string | null
+          lastAcknowledgedBulkRun: string | null
+          pendingBulkRun: string | null
+        }> => {
+          calls.lastReviewAt++
+          return {
+            lastReviewAt: '2026-07-15T00:00:00.000Z',
+            lastAcknowledgedBulkRun: 'bulk-run-1',
+            pendingBulkRun: null,
+          }
+        },
+        completeReview: async (runId: string): Promise<boolean> => {
+          calls.completeReview.push(runId)
+          return true
+        },
+        abortReview: async (runId: string): Promise<boolean> => {
+          calls.abortReview.push(runId)
+          return true
+        },
+        setThread: async (id: string, threadId: string): Promise<KnowledgeNote | null> => {
+          calls.setThread.push({ id, threadId })
+          const item = items.find((i) => i.id === id)
+          if (!item) return null
+          const { thread: _thread, ...rest } = item.fields
+          item.fields = { ...rest, ...(threadId ? { thread: threadId } : {}) }
+          return { ...item }
+        },
+        importIssues: async (
+          selected: { number: number; title: string; body: string }[],
+        ): Promise<KnowledgeNote[]> => {
+          calls.importIssues.push(selected)
+          const created = selected.map((s) =>
+            makeItem(
+              `imported-${String(s.number)}`,
+              `Resolve GitHub issue #${String(s.number)}: ${s.title}`,
+              'ready',
+              `Imported from issue #${String(s.number)}: ${s.title}`,
+              `#${String(s.number)}`,
+            ),
           )
-        }
-        items.push(item)
-        return item
-      },
-      update: async (
-        id: string,
-        prompt: string,
-        notes: string | undefined,
-        status: string,
-        issue?: string,
-        addAttachments?: MockAttachmentAdd[],
-        removeAttachmentIds?: string[],
-      ) => {
-        calls.update.push({
-          id,
-          prompt,
-          notes,
-          status,
-          issue,
-          ...(addAttachments ? { addAttachments } : {}),
-          ...(removeAttachmentIds ? { removeAttachmentIds } : {}),
-        })
-        const item = items.find((i) => i.id === id)
-        if (!item) return null
-        item.title = prompt.slice(0, 80)
-        item.body = prompt
-        item.status = status
-        item.fields = { ...(notes ? { notes } : {}), ...(issue ? { issue } : {}) }
-        return { ...item }
-      },
-      attachmentData: async (id: string, attachmentId: string) => {
-        calls.attachmentData.push(`${id}/${attachmentId}`)
-        return 'data:image/png;base64,QUJD'
-      },
-      setStatus: async (id: string, status: string) => {
-        calls.setStatus.push({ id, status })
-        const item = items.find((i) => i.id === id)
-        if (!item) return null
-        item.status = status
-        return { ...item }
-      },
-      delete: async (id: string) => {
-        calls.delete.push(id)
-        const i = items.findIndex((n) => n.id === id)
-        if (i >= 0) items.splice(i, 1)
-        return i >= 0
-      },
-      issueUrl: async (ref: string) => {
-        calls.issueUrl.push(ref)
-        return `https://github.com/octo/demo/issues/${ref.replace('#', '')}`
-      },
-      openIssues: async () => {
-        calls.openIssues++
-        return { slug: 'octo/demo', issues: issues.map((i) => ({ ...i })) }
-      },
-      checkFit: async (id: string) => {
-        calls.checkFit.push(id)
-        const item = items.find((i) => i.id === id)
-        if (item) {
-          item.fields = {
-            ...item.fields,
-            fit: 'partial',
-            fitDetail: 'prompt does not mention the startup flash',
+          items.push(...created)
+          return created
+        },
+        onChanged: (handler: () => void) => {
+          changedHandler = handler
+          return (): void => {
+            changedHandler = null
           }
-        }
-        return { verdict: 'partial', detail: '- prompt does not mention the startup flash' }
+        },
       },
-      prepareReview: async () => {
-        calls.prepareReview++
-        // Mirror production: active items first, done items trailing.
-        const scoped = items.filter((i) => i.status !== 'archived')
-        const ordered = [
-          ...scoped.filter((i) => i.status !== 'done'),
-          ...scoped.filter((i) => i.status === 'done'),
-        ]
-        return {
-          runId: 'bulk-run-1',
-          since: null,
-          commits: 'abc123 Fix startup flash',
-          items: ordered.map((i) => ({ id: i.id, title: i.title })),
-        }
-      },
-      reviewItem: async (id: string, commits: string, runId?: string) => {
-        calls.reviewItem.push({ id, commits, ...(runId ? { runId } : {}) })
-        const item = items.find((i) => i.id === id)
-        if (item) {
-          item.fields = {
-            ...item.fields,
-            reviewVerdict: 'likely',
-            reviewDetail: 'Commit matches · Issue still open',
-            reviewBulkRun: runId ?? 'bulk-run-1',
-          }
-        }
-        return {
-          id,
-          verdict: 'likely' as const,
-          detail: 'Commit matches · Issue still open',
-          depth: 'bulk' as const,
-          pinnedIssue: null,
-          linkedIssues: [],
-        }
-      },
-      reviewItemDeep: async (id: string) => {
-        calls.reviewItemDeep.push(id)
-        const item = items.find((i) => i.id === id)
-        if (item) {
-          item.fields = {
-            ...item.fields,
-            reviewVerdict: 'resolved',
-            reviewDetail: 'Deep check · Issue closed',
-            reviewDepth: 'deep',
-            reviewBulkRun: 'bulk-run-1',
-          }
-        }
-        return {
-          id,
-          verdict: 'resolved' as const,
-          detail: 'Deep check · Issue closed',
-          depth: 'deep' as const,
-          pinnedIssue: null,
-          linkedIssues: [],
-        }
-      },
-      lastReviewAt: async () => {
-        calls.lastReviewAt++
-        return {
-          lastReviewAt: '2026-07-15T00:00:00.000Z',
-          lastAcknowledgedBulkRun: 'bulk-run-1',
-          pendingBulkRun: null,
-        }
-      },
-      completeReview: async (runId: string) => {
-        calls.completeReview.push(runId)
-        return true
-      },
-      abortReview: async (runId: string) => {
-        calls.abortReview.push(runId)
-        return true
-      },
-      setThread: async (id: string, threadId: string) => {
-        calls.setThread.push({ id, threadId })
-        const item = items.find((i) => i.id === id)
-        if (!item) return null
-        const { thread: _thread, ...rest } = item.fields
-        item.fields = { ...rest, ...(threadId ? { thread: threadId } : {}) }
-        return { ...item }
-      },
-      importIssues: async (selected: { number: number; title: string; body: string }[]) => {
-        calls.importIssues.push(selected)
-        const created = selected.map((s) =>
-          makeItem(
-            `imported-${String(s.number)}`,
-            `Resolve GitHub issue #${String(s.number)}: ${s.title}`,
-            'ready',
-            `Imported from issue #${String(s.number)}: ${s.title}`,
-            `#${String(s.number)}`,
-          ),
-        )
-        items.push(...created)
-        return created
-      },
-      onChanged: (handler: () => void) => {
-        changedHandler = handler
-        return (): void => {
-          changedHandler = null
-        }
-      },
-    },
-  } as unknown as ApiClient
+    } satisfies ApiClient
+  })()
   return {
     api,
     calls,
@@ -1281,6 +1303,7 @@ describe('roadmap pane', () => {
       attachFile: (f) => attachedFiles.push(f),
       attachTextBlock: () => {},
       attachImage: (dataUrl, mimeType) => attachedImages.push({ dataUrl, mimeType }),
+      attachVideo: () => Promise.resolve(),
     })
     const unmount = mountRoadmapPane(list, viewer, store, api)
     try {

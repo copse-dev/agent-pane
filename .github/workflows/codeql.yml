@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ vars.CHECKS_RUNNER }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: github/codeql-action/init@v4.37.0
@@ -38,7 +38,7 @@ jobs:
         with:
           upload: false
           output: codeql-results
-      - uses: actions/upload-artifact@v7.0.0
+      - uses: actions/upload-artifact@v7
         with:
           name: codeql-results
           path: codeql-results

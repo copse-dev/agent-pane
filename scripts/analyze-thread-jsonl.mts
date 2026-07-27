@@ -5,51 +5,120 @@
 import { readFileSync } from 'node:fs'
 import { shouldSteerGithubLinks } from '@shared/git/github-link-steering.ts'
 import { shouldSteerTodos } from '@shared/todos/todo-logic.ts'
+import { expectString } from '../src/shared/unknown-value.mts'
+import { z } from 'zod'
 
 interface ScenarioExpect {
-  shouldSteerGithubLinks?: boolean
-  requireGithubLinksInReply?: boolean
-  shouldSteerTodos?: boolean
-  maxExplore?: number
-  minExplore?: number
-  requireTools?: string[]
-  forbidTools?: string[]
-  maxInputTokens?: number
-  requireUpdateTodos?: boolean
-  forbidParallelExploreTurn1?: boolean
+  shouldSteerGithubLinks?: boolean | undefined
+  requireGithubLinksInReply?: boolean | undefined
+  shouldSteerTodos?: boolean | undefined
+  maxExplore?: number | undefined
+  minExplore?: number | undefined
+  requireTools?: string[] | undefined
+  forbidTools?: string[] | undefined
+  maxInputTokens?: number | undefined
+  requireUpdateTodos?: boolean | undefined
+  forbidParallelExploreTurn1?: boolean | undefined
 }
 
 interface Scenario {
-  id?: string
-  description?: string
-  prompts?: string[]
-  expect?: ScenarioExpect
+  id?: string | undefined
+  description?: string | undefined
+  prompts?: string[] | undefined
+  expect?: ScenarioExpect | undefined
 }
 
 type Usage = {
-  inputTokens?: number
-  outputTokens?: number
-  cacheReadTokens?: number
-  cacheCreationTokens?: number
+  inputTokens?: number | undefined
+  outputTokens?: number | undefined
+  cacheReadTokens?: number | undefined
+  cacheCreationTokens?: number | undefined
 }
 
 type JsonlRecord = {
   type: string
-  role?: string
-  content?: string
-  toolCalls?: Array<{
-    name: string
-    status?: string
-    args?: Record<string, unknown>
-    subagent?: {
-      prompt?: string
-      usage?: Usage
-      messages?: Array<{ toolCalls?: Array<{ name: string; args?: Record<string, unknown> }> }>
-    }
-  }>
-  usage?: Usage
-  title?: string
+  role?: string | undefined
+  content?: string | undefined
+  toolCalls?:
+    | Array<{
+        id?: string | undefined
+        name: string
+        status?: string | undefined
+        args?: Record<string, unknown> | undefined
+        subagent?:
+          | {
+              prompt?: string | undefined
+              usage?: Usage | undefined
+              messages?:
+                | Array<{
+                    toolCalls?:
+                      | Array<{ name: string; args?: Record<string, unknown> | undefined }>
+                      | undefined
+                  }>
+                | undefined
+            }
+          | undefined
+      }>
+    | undefined
+  usage?: Usage | undefined
+  title?: string | undefined
 }
+
+const usageSchema: z.ZodType<Usage> = z.object({
+  inputTokens: z.number().optional(),
+  outputTokens: z.number().optional(),
+  cacheReadTokens: z.number().optional(),
+  cacheCreationTokens: z.number().optional(),
+})
+const nestedToolCallSchema = z.object({
+  name: z.string(),
+  args: z.record(z.string(), z.unknown()).optional(),
+})
+const jsonlRecordSchema: z.ZodType<JsonlRecord> = z.object({
+  type: z.string(),
+  role: z.string().optional(),
+  content: z.string().optional(),
+  toolCalls: z
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string(),
+        status: z.string().optional(),
+        args: z.record(z.string(), z.unknown()).optional(),
+        subagent: z
+          .object({
+            prompt: z.string().optional(),
+            usage: usageSchema.optional(),
+            messages: z
+              .array(z.object({ toolCalls: z.array(nestedToolCallSchema).optional() }))
+              .optional(),
+          })
+          .optional(),
+      }),
+    )
+    .optional(),
+  usage: usageSchema.optional(),
+  title: z.string().optional(),
+})
+const scenarioSchema: z.ZodType<Scenario> = z.object({
+  id: z.string().optional(),
+  description: z.string().optional(),
+  prompts: z.array(z.string()).optional(),
+  expect: z
+    .object({
+      shouldSteerGithubLinks: z.boolean().optional(),
+      requireGithubLinksInReply: z.boolean().optional(),
+      shouldSteerTodos: z.boolean().optional(),
+      maxExplore: z.number().optional(),
+      minExplore: z.number().optional(),
+      requireTools: z.array(z.string()).optional(),
+      forbidTools: z.array(z.string()).optional(),
+      maxInputTokens: z.number().optional(),
+      requireUpdateTodos: z.boolean().optional(),
+      forbidParallelExploreTurn1: z.boolean().optional(),
+    })
+    .optional(),
+})
 
 /** Cache-vs-fresh breakdown of a usage record (cache tokens are a subset of inputTokens). */
 function cacheBreakdown(usage: Usage): {
@@ -100,7 +169,7 @@ function loadJsonl(path: string): JsonlRecord[] {
     .trim()
     .split('\n')
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as JsonlRecord)
+    .map((line) => jsonlRecordSchema.parse(JSON.parse(line) as unknown))
 }
 
 function subagentReads(records: JsonlRecord[]): { path: string; exploreId: string }[] {
@@ -109,7 +178,7 @@ function subagentReads(records: JsonlRecord[]): { path: string; exploreId: strin
     if (r.role !== 'assistant') continue
     for (const tc of r.toolCalls ?? []) {
       if (tc.name !== 'explore') continue
-      const eid = (tc as { id?: string }).id?.slice(0, 8) ?? '?'
+      const eid = tc.id?.slice(0, 8) ?? '?'
       for (const m of tc.subagent?.messages ?? []) {
         for (const st of m.toolCalls ?? []) {
           if (st.name === 'read_file' && typeof st.args?.['path'] === 'string') {
@@ -164,7 +233,7 @@ function analyze(path: string, scenario?: Scenario): void {
   const usage = thread?.usage ?? {}
   const assistants = records.filter((r) => r.role === 'assistant')
   const finalText =
-    typeof assistants.at(-1)?.content === 'string' ? (assistants.at(-1)?.content as string) : ''
+    typeof assistants.at(-1)?.content === 'string' ? expectString(assistants.at(-1)?.content) : ''
 
   const violations: string[] = []
   const exp = scenario?.expect
@@ -245,6 +314,6 @@ if (!jsonlPath) {
 }
 const scenarioPath = process.argv[3]
 const scenario = scenarioPath
-  ? (JSON.parse(readFileSync(scenarioPath, 'utf8')) as Scenario)
+  ? scenarioSchema.parse(JSON.parse(readFileSync(scenarioPath, 'utf8')) as unknown)
   : undefined
 analyze(jsonlPath, scenario)

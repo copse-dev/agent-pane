@@ -10,6 +10,7 @@ import {
   parseTerminalBenchSteering,
   terminalBenchSteeringPrompt,
 } from './terminal-bench-steering.mts'
+import { expectRecord } from '../../src/shared/unknown-value.mts'
 
 const root = mkdtempSync(join(tmpdir(), 'copse-terminal-steering-'))
 after(() => {
@@ -18,7 +19,7 @@ after(() => {
 
 function field(value: unknown, key: string): unknown {
   if (typeof value !== 'object' || value === null) return undefined
-  return (value as Record<string, unknown>)[key]
+  return expectRecord(value)[key]
 }
 
 const validSteering = {

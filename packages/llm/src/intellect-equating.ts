@@ -112,7 +112,9 @@ export function equateAcrossVersions(
   ]
   const visited = new Set<string>([fromVersion])
   while (queue.length > 0) {
-    const { version, path } = queue.shift() as { version: string; path: EquatingMap[] }
+    const current = queue.shift()
+    if (!current) break
+    const { version, path } = current
     for (const map of maps) {
       if (map.from !== version || visited.has(map.to)) continue
       const next = [...path, map]

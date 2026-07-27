@@ -6,6 +6,7 @@ import { addMessage, createThread, setThreadStatus } from '@shared/store/thread-
 import type { ApiClient } from '../../preload/api.d.ts'
 import { enqueueUserMessage } from '../controller/message-queue.ts'
 import { mountConversation } from './conversation.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
 
 // Component port of tests/e2e/queued-message-edit.e2e.ts. The queued-message
 // controller (updateQueuedMessageText/sendQueuedMessageNow) is unit-tested in
@@ -16,9 +17,17 @@ import { mountConversation } from './conversation.ts'
 // textContent is "Queued"/"Editing", which is what we assert here.
 
 function fakeApi(): ApiClient {
-  return {
-    agent: { run: () => Promise.resolve(), abort: () => Promise.resolve() },
-  } as unknown as ApiClient
+  return ((): ApiClient => {
+    const base = createFakeApi()
+    return {
+      ...base,
+      agent: {
+        ...base['agent'],
+        run: () => Promise.resolve(),
+        abort: () => Promise.resolve(),
+      },
+    } satisfies ApiClient
+  })()
 }
 
 const ORIGINAL = 'Then add unit tests for the parser.'

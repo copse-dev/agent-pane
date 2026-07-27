@@ -1,5 +1,6 @@
 import type { LLMMessage, StreamChunk, UserContent } from './types/index.ts'
 import { at } from '@shared/array-utils.ts'
+import { isRecord, optionalString } from '@shared/unknown-value.ts'
 
 export interface PromptPayload {
   text: string
@@ -50,19 +51,27 @@ export function isRemoteAgentStreamError(err: unknown): err is RemoteAgentStream
 }
 
 interface CursorToolCallEvent {
-  callId?: string
-  name?: string
-  status?: string
+  callId?: string | undefined
+  name?: string | undefined
+  status?: string | undefined
   args?: unknown
   result?: unknown
-  truncated?: {
-    args?: true
-    result?: true
-  }
+  truncated?:
+    | {
+        args?: true | undefined
+        result?: true | undefined
+      }
+    | undefined
 }
 
 interface RemoteGitInfo {
-  branches?: Array<{ repoUrl?: string; branch?: string; prUrl?: string }>
+  branches?:
+    | Array<{
+        repoUrl?: string | undefined
+        branch?: string | undefined
+        prUrl?: string | undefined
+      }>
+    | undefined
 }
 
 /**
@@ -225,6 +234,35 @@ function parseJsonEventData(event: SseEvent): unknown {
   }
 }
 
+function parseCursorToolCallEvent(value: unknown): CursorToolCallEvent {
+  if (!isRecord(value)) return {}
+  const record = value
+  const truncated = isRecord(record['truncated'])
+    ? {
+        ...(record['truncated']['args'] === true ? { args: true as const } : {}),
+        ...(record['truncated']['result'] === true ? { result: true as const } : {}),
+      }
+    : undefined
+  return {
+    callId: optionalString(record['callId']),
+    name: optionalString(record['name']),
+    status: optionalString(record['status']),
+    args: record['args'],
+    result: record['result'],
+    ...(truncated !== undefined ? { truncated } : {}),
+  }
+}
+
+function parseRemoteGitInfo(value: unknown): RemoteGitInfo | undefined {
+  if (!isRecord(value) || !Array.isArray(value['branches'])) return undefined
+  const branches = value['branches'].filter(isRecord).map((branch) => ({
+    repoUrl: optionalString(branch['repoUrl']),
+    branch: optionalString(branch['branch']),
+    prUrl: optionalString(branch['prUrl']),
+  }))
+  return { branches }
+}
+
 export function parseSseBlock(block: string): SseEvent | null {
   let event = 'message'
   let id: string | undefined
@@ -278,14 +316,17 @@ export function remoteStreamEventToChunks(
   state: RemoteStreamState,
 ): StreamChunk[] {
   if (event.event === 'assistant') {
-    const payload = parseJsonEventData(event) as { text?: string }
-    if (!payload.text) return []
-    state.assistantText += payload.text
-    return [{ type: 'text', text: payload.text }]
+    const parsed = parseJsonEventData(event)
+    if (!isRecord(parsed)) return []
+    const payload = parsed
+    const text = optionalString(payload['text'])
+    if (!text) return []
+    state.assistantText += text
+    return [{ type: 'text', text }]
   }
 
   if (event.event === 'tool_call') {
-    const payload = parseJsonEventData(event) as CursorToolCallEvent
+    const payload = parseCursorToolCallEvent(parseJsonEventData(event))
     if (!payload.callId || !payload.name) return []
 
     const chunks: StreamChunk[] = []
@@ -315,26 +356,30 @@ export function remoteStreamEventToChunks(
   }
 
   if (event.event === 'result') {
-    const payload = parseJsonEventData(event) as {
-      status?: string
-      text?: string
-      git?: RemoteGitInfo
-    }
-    state.terminalStatus = payload.status ?? null
-    state.resultText = payload.text ?? ''
+    const parsed = parseJsonEventData(event)
+    if (!isRecord(parsed)) return []
+    const payload = parsed
+    const status = optionalString(payload['status'])
+    const text = optionalString(payload['text'])
+    state.terminalStatus = status ?? null
+    state.resultText = text ?? ''
     const chunks: StreamChunk[] = []
-    if (!state.assistantText && payload.text) {
-      state.assistantText = payload.text
-      chunks.push({ type: 'text', text: payload.text })
+    if (!state.assistantText && text) {
+      state.assistantText = text
+      chunks.push({ type: 'text', text })
     }
-    const gitSummary = formatRemoteGitSummary(payload.git)
+    const gitSummary = formatRemoteGitSummary(parseRemoteGitInfo(payload['git']))
     if (gitSummary) chunks.push({ type: 'text', text: gitSummary })
     return chunks
   }
 
   if (event.event === 'error') {
-    const payload = parseJsonEventData(event) as { code?: string; message?: string }
-    throw new RemoteAgentStreamError(payload.code ?? 'UNKNOWN', payload.message ?? 'unknown error')
+    const parsed = parseJsonEventData(event)
+    const payload = isRecord(parsed) ? parsed : {}
+    throw new RemoteAgentStreamError(
+      optionalString(payload['code']) ?? 'UNKNOWN',
+      optionalString(payload['message']) ?? 'unknown error',
+    )
   }
 
   return []

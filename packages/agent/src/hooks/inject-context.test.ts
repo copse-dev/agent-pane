@@ -3,10 +3,12 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   INJECT_CONTEXT_CHAR_CAP,
+  appendOperatorInstruction,
   buildInjectedContextBlock,
   capInjectContext,
   formatSystemReminder,
 } from './inject-context.ts'
+import type { LLMMessage } from '@copse/llm/wire-types.ts'
 
 describe('capInjectContext (10k cap + spillover)', () => {
   it('passes text at or under the cap through untouched', () => {
@@ -70,5 +72,64 @@ describe('buildInjectedContextBlock', () => {
     // The runaway overflow never reaches the model-facing block beyond the cap
     // (block length is cap + tags + note, far under the raw length).
     assert.ok(block.length < raw.length)
+  })
+})
+
+describe('appendOperatorInstruction (trailing placement — #1286)', () => {
+  const turn = (): LLMMessage[] => [
+    { role: 'system', content: 'stable system prompt' },
+    { role: 'user', content: 'earlier question' },
+    { role: 'assistant', content: 'earlier answer' },
+    { role: 'user', content: 'this turn' },
+  ]
+
+  it('appends one trailing system message after the user turn', () => {
+    const messages = turn()
+    assert.equal(appendOperatorInstruction(messages, ['steer me']), true)
+
+    // Last entry, following the user turn — the placement rule for
+    // mid-conversation system messages.
+    assert.deepEqual(messages.at(-1), { role: 'system', content: 'steer me' })
+    assert.equal(messages.at(-2)?.role, 'user')
+  })
+
+  it('leaves the leading system prompt byte-identical', () => {
+    // The regression this guards: folding the block into messages[0] moved the
+    // front of the rendered prompt and invalidated the whole cached prefix.
+    const messages = turn()
+    const before = messages[0]
+    appendOperatorInstruction(messages, ['steer me', 'and this'])
+
+    assert.deepEqual(messages[0], { role: 'system', content: 'stable system prompt' })
+    assert.equal(messages[0], before, 'messages[0] must not be replaced')
+  })
+
+  it('joins multiple blocks into a single message, preserving order', () => {
+    const messages = turn()
+    appendOperatorInstruction(messages, ['turnStart steering', 'beforeSubmitPrompt context'])
+
+    assert.deepEqual(messages.at(-1), {
+      role: 'system',
+      content: 'turnStart steering\n\nbeforeSubmitPrompt context',
+    })
+    // One message, not one per block — so a turn adds a single prefix entry.
+    assert.equal(messages.filter((m) => m.role === 'system').length, 2)
+  })
+
+  it('appends nothing when no hook injected anything', () => {
+    const messages = turn()
+    const original = [...messages]
+    assert.equal(appendOperatorInstruction(messages, [undefined, undefined]), false)
+    assert.deepEqual(messages, original)
+  })
+
+  it('drops empty and whitespace-only blocks so a no-op hook cannot dirty the prefix', () => {
+    const messages = turn()
+    assert.equal(appendOperatorInstruction(messages, ['', '   \n  ', undefined]), false)
+    assert.equal(messages.length, 4)
+
+    // A real block alongside empty ones still lands, without their separators.
+    assert.equal(appendOperatorInstruction(messages, ['', 'real', '  ']), true)
+    assert.deepEqual(messages.at(-1), { role: 'system', content: 'real' })
   })
 })

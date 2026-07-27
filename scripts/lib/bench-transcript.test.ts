@@ -9,7 +9,7 @@ import { foldThread } from '../../src/shared/threads/fold.ts'
 import { parseSpine, type ThreadMeta } from '../../src/shared/threads/spine-schema.ts'
 import type { StreamCutRecord } from '../../packages/agent/src/stream-cut-record.ts'
 import type { ReasoningCheckpointRecord } from '../../packages/agent/src/reasoning-circle-detector.ts'
-import { TerminalBenchTranscript } from './terminal-bench-transcript.mts'
+import { BenchTranscript } from './bench-transcript.mts'
 
 function readJson(path: string): unknown {
   return JSON.parse(readFileSync(path, 'utf8').trim()) as unknown
@@ -33,7 +33,7 @@ describe('terminal benchmark transcript', () => {
   it('writes the normal thread-store layout and portable export', () => {
     let nextId = 0
     const directory = join(root, 'thread')
-    const transcript = new TerminalBenchTranscript(directory, 'Solve the task', 'local/model', {
+    const transcript = new BenchTranscript(directory, 'Solve the task', 'local/model', {
       now: 100,
       idFactory: (): string => `id-${String(++nextId)}`,
     })

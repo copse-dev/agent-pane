@@ -1,11 +1,13 @@
 import { el, clear } from '../dom/helpers.ts'
 import { outlineIcon } from '../dom/outline-icon.ts'
+import { attachmentIcon } from '../dom/attachment-icons.ts'
 import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import {
   addMessage,
   setThreadWorkingBrief,
   bindThreadGitBranchIfUnset,
+  recordThreadVideos,
   applyPreparedThreadCheckout,
   getThreadById,
   getActiveThread,
@@ -21,9 +23,13 @@ import {
   buildTextWithAttachments,
   isTextBlockAttachment,
   type ThreadRefAttachment,
+  type VideoRefAttachment,
 } from '@copse/agent/build-text-with-attachments.ts'
 import { mountComposerEditor } from './composer-editor.ts'
-import { registerPromptAttachments } from '../attachments/prompt-attachments.ts'
+import {
+  registerPromptAttachments,
+  type PromptVideoAttachment,
+} from '../attachments/prompt-attachments.ts'
 import { bindFileDropTarget, attachFiles } from '../attachments/handle-file-drop.ts'
 import {
   initMentionPicker,
@@ -61,10 +67,13 @@ import {
 } from '@shared/git/thread-branch.ts'
 import { syncThreadGitBranchIfChanged } from '@shared/git/sync-thread-branch.ts'
 import { showErrorToast, showToast } from './toast.ts'
+import { formatByteSize, type VideoAttachmentRef } from '@shared/video/video-media.ts'
 import { createComposerDraftAutosave } from './composer-draft-autosave.ts'
 import { mountPanelModeControls } from './panel-mode-controls.ts'
 import type { ThreadWorktreeChoice } from '@shared/types/worktree.ts'
 import { mountGuardedYoloControl } from './guarded-yolo-control.ts'
+import { getActiveThreadOwner } from '../controller/active-thread-owner.ts'
+import { expectString } from '@shared/unknown-value.ts'
 
 interface MountInputBarOptions {
   /**
@@ -328,6 +337,10 @@ export function mountInputBar(
 
   let attachedFiles: { path: string; content: string }[] = []
   let attachedImages: { dataUrl: string; mimeType: string }[] = []
+  // Attached videos (screen recordings). Stored on disk and referenced by path —
+  // the media never enters the prompt, so unlike images these cost no context.
+  // The agent reads them through the `video_frames` tool.
+  let attachedVideos: VideoAttachmentRef[] = []
   // `@`-referenced past threads (#644): the agent gets a path reference + steering
   // preamble, nothing inlined. Composer-only state, like file/image chips.
   let attachedThreads: AttachedThreadRef[] = []
@@ -420,6 +433,13 @@ export function mountInputBar(
     attachedShells.map((s) => ({
       label: `Shell: ${s.label}`,
       content: s.content,
+    }))
+
+  const currentVideoRefs = (): VideoRefAttachment[] =>
+    attachedVideos.map((v) => ({
+      path: v.path,
+      name: v.name,
+      size: formatByteSize(v.sizeBytes),
     }))
   let mismatchBranch: string | null = null
   let checkoutInProgress = false
@@ -593,6 +613,7 @@ export function mountInputBar(
       composer.value.trim().length > 0 ||
       attachedFiles.length > 0 ||
       attachedImages.length > 0 ||
+      attachedVideos.length > 0 ||
       attachedThreads.length > 0 ||
       attachedShells.length > 0
     // Show the pre-send breakdown while composing (or on fresh threads with no live
@@ -651,6 +672,7 @@ export function mountInputBar(
         : []
     const draftText = buildTextWithAttachments(rawText, attachedFiles, currentShellBlocks(), {
       threadRefs: currentThreadRefs(),
+      videoRefs: currentVideoRefs(),
     })
     const model = getActiveThread(store)?.model
     return JSON.stringify({
@@ -715,7 +737,11 @@ export function mountInputBar(
     void submit()
   })
   const closeCheckoutMenu = (event: MouseEvent): void => {
-    if (checkoutMenu.hidden || checkoutHost.contains(event.target as Node)) return
+    if (
+      checkoutMenu.hidden ||
+      checkoutHost.contains(event.target instanceof Node ? event.target : null)
+    )
+      return
     checkoutMenu.hidden = true
     checkoutBtn.setAttribute('aria-expanded', 'false')
   }
@@ -728,12 +754,14 @@ export function mountInputBar(
 
   checkoutBranchBtn.addEventListener('click', () => {
     if (!mismatchBranch || checkoutInProgress) return
+    const { activeProjectId, activeThreadId } = store.getState()
+    if (!activeProjectId || !activeThreadId) return
     const branch = mismatchBranch
     checkoutInProgress = true
     showBranchMismatch(branch)
 
     void api.git
-      .checkoutBranch(branch)
+      .checkoutBranch(activeProjectId, activeThreadId, branch)
       .then(() => {
         hideBranchMismatch()
         showToast(`Checked out ${branch}`)
@@ -753,8 +781,10 @@ export function mountInputBar(
     if (!mismatchBranch || checkoutInProgress) return
     const id = getActiveThreadId()
     if (!id) return
+    const projectId = store.getState().activeProjectId
+    if (!projectId) return
     void api.git
-      .branchStatus()
+      .branchStatus(projectId, id)
       .then(({ currentBranch }) => {
         if (syncThreadGitBranchIfChanged(store, id, currentBranch)) {
           store.emit('git_branch_changed')
@@ -823,6 +853,7 @@ export function mountInputBar(
       !rawText &&
       attachedFiles.length === 0 &&
       attachedImages.length === 0 &&
+      attachedVideos.length === 0 &&
       attachedThreads.length === 0 &&
       attachedShells.length === 0
     )
@@ -830,7 +861,9 @@ export function mountInputBar(
     const id = getActiveThreadId()
     if (!id) return
 
-    const branchStatus = await api.git.branchStatus()
+    const projectId = store.getState().activeProjectId
+    if (!projectId) return
+    const branchStatus = await api.git.branchStatus(projectId, id)
     const currentBranch = branchStatus.currentBranch
     const thread = getThreadById(store, id)
     const threadBranch = thread?.gitBranch
@@ -883,7 +916,7 @@ export function mountInputBar(
       ? buildSkillUserText(
           invocation.skillName,
           invocation.remainder,
-          attachedFiles.length > 0 || attachedImages.length > 0,
+          attachedFiles.length > 0 || attachedImages.length > 0 || attachedVideos.length > 0,
         )
       : rawText
 
@@ -895,12 +928,14 @@ export function mountInputBar(
           type: 'text' as const,
           text: buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
             threadRefs: currentThreadRefs(),
+            videoRefs: currentVideoRefs(),
           }),
         },
       ]
     } else {
       fullContent = buildTextWithAttachments(text, attachedFiles, currentShellBlocks(), {
         threadRefs: currentThreadRefs(),
+        videoRefs: currentVideoRefs(),
       })
     }
 
@@ -971,6 +1006,13 @@ export function mountInputBar(
         kind: 'shell' as const,
         label: s.label,
       })),
+      ...attachedVideos.map((v) => ({
+        kind: 'video' as const,
+        label: v.name,
+        // Carried so the sent chip can still play the recording after a reload,
+        // when the composer's own state is long gone.
+        path: v.path,
+      })),
     ]
     const imageUrls = attachedImages.map((img) => img.dataUrl)
     const messageId = addMessage(
@@ -982,6 +1024,10 @@ export function mountInputBar(
       attachments.length ? attachments : undefined,
     )
     if (currentBranch) bindThreadGitBranchIfUnset(store, id, currentBranch)
+    // Durable record of the attachment: the reference block in this message can
+    // be trimmed out of a long conversation, but the tool is gated and described
+    // from the thread, so the agent keeps the path for as long as the thread does.
+    recordThreadVideos(store, id, attachedVideos)
 
     if (isRunning()) {
       enqueueUserMessage(store, id, {
@@ -1000,6 +1046,7 @@ export function mountInputBar(
     setThreadDraftPrompt(store, id, '')
     attachedFiles = []
     attachedImages = []
+    attachedVideos = []
     attachedThreads = []
     attachedShells = []
     clear(chips)
@@ -1068,6 +1115,55 @@ export function mountInputBar(
     scheduleContextEstimate()
   }
 
+  /**
+   * Store an attached video and show its chip. The store round-trip is what
+   * makes this async: the file is written next to the thread first, so the chip
+   * only ever represents a video the agent can actually open. A failure (wrong
+   * format, too large) surfaces as a toast and attaches nothing.
+   */
+  async function addVideoChip(video: PromptVideoAttachment): Promise<void> {
+    const projectId = store.getState().activeProjectId
+    const threadId = getActiveThreadId()
+    if (!projectId || !threadId) return
+    let ref: VideoAttachmentRef
+    try {
+      ref = await api.video.attach(projectId, threadId, {
+        name: video.name,
+        mimeType: video.mimeType,
+        ...(video.bytes ? { bytes: new Uint8Array(video.bytes) } : {}),
+        ...(video.path ? { path: video.path } : {}),
+      })
+    } catch (err) {
+      showErrorToast('Could not attach video', err)
+      return
+    }
+    if (attachedVideos.some((v) => v.path === ref.path)) return
+    attachedVideos.push(ref)
+
+    const chip = document.createElement('span')
+    chip.className = 'attachment-chip video-chip'
+    const label = document.createElement('span')
+    label.className = 'attachment-chip-label'
+    label.textContent = ref.name
+    // The size is the honest cost signal here: the video costs no context, but
+    // it does tell the user (and the agent) how much recording there is to read.
+    const meta = document.createElement('span')
+    meta.className = 'attachment-chip-meta'
+    meta.textContent = formatByteSize(ref.sizeBytes)
+    chip.title = `${ref.name} — read as stills by the agent, not sent as video`
+    chip.append(attachmentIcon('video', 'video-chip-icon'), label, meta)
+    const remove = document.createElement('button')
+    remove.textContent = '✕'
+    remove.addEventListener('click', () => {
+      attachedVideos = attachedVideos.filter((v) => v.path !== ref.path)
+      chip.remove()
+      scheduleContextEstimate()
+    })
+    chip.append(remove)
+    chips.append(chip)
+    scheduleContextEstimate()
+  }
+
   function addImageChip(dataUrl: string, mimeType: string): void {
     attachedImages.push({ dataUrl, mimeType })
     const chip = document.createElement('span')
@@ -1092,7 +1188,7 @@ export function mountInputBar(
     return new Promise((res, rej) => {
       const r = new FileReader()
       r.onload = (): void => {
-        res(r.result as string)
+        res(expectString(r.result))
       }
       r.onerror = rej
       r.readAsDataURL(blob)
@@ -1107,6 +1203,7 @@ export function mountInputBar(
       composer.insertPasteChip(content, label)
     },
     attachImage: addImageChip,
+    attachVideo: addVideoChip,
     focusComposer: (): void => {
       requestAnimationFrame(() => {
         composer.focus()
@@ -1121,7 +1218,13 @@ export function mountInputBar(
   const onFileInputChange = (): void => {
     const files = Array.from(fileInput.files ?? [])
     if (files.length === 0) return
-    void attachFiles(files, attachmentHandlers, api, store.getState().workspaceRoot)
+    void attachFiles(
+      files,
+      attachmentHandlers,
+      api,
+      store.getState().workspaceRoot,
+      getActiveThreadOwner(store),
+    )
     // Reset so re-selecting the same file fires `change` again.
     fileInput.value = ''
   }
@@ -1152,7 +1255,10 @@ export function mountInputBar(
     root,
     () => attachmentHandlers,
     api,
-    () => store.getState().workspaceRoot,
+    () => ({
+      workspaceRoot: store.getState().workspaceRoot,
+      owner: getActiveThreadOwner(store),
+    }),
   )
 
   initMentionPicker({

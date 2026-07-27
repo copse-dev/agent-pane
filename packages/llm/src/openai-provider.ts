@@ -1,7 +1,8 @@
 import OpenAI from 'openai'
 import type { LLMProvider, LLMMessage, LLMTool, ProviderStreamChunk } from './wire-types.ts'
-import { yieldStreamWithRetry } from './stream-retry.ts'
+import { isImageUnsupportedError, yieldStreamWithRetry } from './stream-retry.ts'
 import { parseToolArgs } from './parse-tool-args.ts'
+import { dropImageContent, toolResultImageFollowUp } from './tool-result-images.ts'
 
 type ToolCallBuilder = { id: string; name: string; argsJson: string }
 
@@ -78,18 +79,34 @@ export class OpenAIProvider implements LLMProvider {
               },
             }))
           : undefined
-        const stream = await client.chat.completions.create(
-          {
-            model,
-            stream: true,
-            messages: toOpenAIMessages(messages),
-            ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
-            ...(mappedTools ? { tools: mappedTools } : {}),
-            ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
-            ...(self.extraBody ?? {}),
-          },
-          { signal },
-        )
+        // A server that cannot take images (a text-only local model, or one
+        // that only accepts certain encodings) rejects the whole request. Retry
+        // once without them rather than failing the turn — the tool result's
+        // text still describes what the images showed. Deliberately not part of
+        // `isRetryableStreamError`: this retry changes the request, so it
+        // cannot be a blind replay.
+        let outbound = messages
+        let stream
+        for (let attempt = 0; ; attempt++) {
+          try {
+            stream = await client.chat.completions.create(
+              {
+                model,
+                stream: true,
+                messages: toOpenAIMessages(outbound),
+                ...(self.includeUsage ? { stream_options: { include_usage: true } } : {}),
+                ...(mappedTools ? { tools: mappedTools } : {}),
+                ...(self.promptCacheKey ? { prompt_cache_key: self.promptCacheKey } : {}),
+                ...(self.extraBody ?? {}),
+              },
+              { signal },
+            )
+            break
+          } catch (err) {
+            if (attempt > 0 || !isImageUnsupportedError(err)) throw err
+            outbound = dropImageContent(messages)
+          }
+        }
 
         const toolCallBuilders = new Map<number, { id: string; name: string; argsJson: string }>()
         let finishReason: string | undefined
@@ -111,7 +128,7 @@ export class OpenAIProvider implements LLMProvider {
           // names: `reasoning_content` (DeepSeek, vLLM, LM Studio) or `reasoning`
           // (OpenRouter). Surfaced as a separate chunk so it never leaks into the
           // answer text or the history sent back upstream.
-          const reasoning = readReasoningDelta(delta as unknown as Record<string, unknown>)
+          const reasoning = readReasoningDelta(delta)
           if (reasoning) yield { type: 'reasoning', text: reasoning }
 
           if (delta.content) yield { type: 'text', text: delta.content }
@@ -169,8 +186,9 @@ export class OpenAIProvider implements LLMProvider {
  * own schema has no reasoning field, so compatible servers bolt one on under
  * different names — accept the two common ones and ignore non-string values.
  */
-function readReasoningDelta(delta: Record<string, unknown>): string {
-  const raw = delta['reasoning_content'] ?? delta['reasoning']
+function readReasoningDelta(delta: object): string {
+  const reasoningContent = 'reasoning_content' in delta ? delta.reasoning_content : undefined
+  const raw = reasoningContent ?? ('reasoning' in delta ? delta.reasoning : undefined)
   return typeof raw === 'string' ? raw : ''
 }
 
@@ -203,11 +221,16 @@ function toOpenAIMessages(messages: LLMMessage[]): OpenAI.ChatCompletionMessageP
       ]
     }
     if (m.role === 'tool') {
-      return m.toolResults.map((tr) => ({
+      const toolMessages = m.toolResults.map((tr) => ({
         role: 'tool' as const,
         tool_call_id: tr.toolCallId,
         content: tr.result,
       }))
+      // Chat completions only accepts a string as a tool output, so images a
+      // tool produced follow as their own user message rather than being lost.
+      const images = toolResultImageFollowUp(m.toolResults)
+      if (!images || typeof images === 'string') return toolMessages
+      return [...toolMessages, { role: 'user' as const, content: toOpenAIContent(images) }]
     }
     return []
   })
