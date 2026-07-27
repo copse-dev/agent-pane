@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { type ToolDefinition, defineTool } from '@shared/types'
+import { defineTool } from '@shared/types'
 import { getBrowserSession } from '../services/browser/session-manager.ts'
+import type { ToolRegistry } from '../services/tool-registry.ts'
 
 export const browserNavigateTool = defineTool({
   name: 'browser_navigate',
@@ -92,11 +93,20 @@ export const browserTabsTool = defineTool({
 // Single source of truth for registration. ToolDefinition<TArgs> is invariant
 // in TArgs, so a heterogeneous list can't be typed as ToolDefinition[] without
 // erasing here; the registry validates each tool's args at runtime.
-export const browserTools: ToolDefinition[] = [
+export const browserTools = [
   browserNavigateTool,
   browserSnapshotTool,
   browserScreenshotTool,
   browserClickTool,
   browserTypeTool,
   browserTabsTool,
-] as ToolDefinition[]
+]
+
+export function registerBrowserTools(registry: ToolRegistry): void {
+  registry.register(browserNavigateTool)
+  registry.register(browserSnapshotTool)
+  registry.register(browserScreenshotTool)
+  registry.register(browserClickTool)
+  registry.register(browserTypeTool)
+  registry.register(browserTabsTool)
+}

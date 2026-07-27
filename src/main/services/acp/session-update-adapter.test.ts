@@ -54,8 +54,8 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
       toolCall: { id: 't3', name: 'run_background', args: { action: 'list' } },
     })
     assert.equal(update?.sessionUpdate, 'tool_call')
-    assert.equal((update as { title: string }).title, 'run_background')
-    assert.equal((update as { kind: string }).kind, 'execute')
+    assert.equal(update.title, 'run_background')
+    assert.equal(update.kind, 'execute')
   })
 
   it('keeps unmapped tools as kind other', () => {
@@ -63,7 +63,8 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
       type: 'tool_call',
       toolCall: { id: 't4', name: 'ask_user', args: {} },
     })
-    assert.equal((update as { kind: string }).kind, 'other')
+    if (update?.sessionUpdate !== 'tool_call') assert.fail('expected tool_call')
+    assert.equal(update.kind, 'other')
   })
 
   it('maps a successful tool_result to a completed tool_call_update', () => {
@@ -74,7 +75,7 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
       isError: false,
     })
     assert.equal(update?.sessionUpdate, 'tool_call_update')
-    assert.equal((update as { status: string }).status, 'completed')
+    assert.equal(update.status, 'completed')
   })
 
   it('marks an error tool_result as failed', () => {
@@ -84,7 +85,8 @@ describe('streamChunkToSessionUpdate (agent role)', () => {
       result: 'boom',
       isError: true,
     })
-    assert.equal((update as { status: string }).status, 'failed')
+    if (update?.sessionUpdate !== 'tool_call_update') assert.fail('expected tool_call_update')
+    assert.equal(update.status, 'failed')
   })
 
   it('maps reasoning to an agent_thought_chunk', () => {

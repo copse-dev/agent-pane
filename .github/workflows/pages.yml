@@ -55,7 +55,7 @@ jobs:
       # invoked (workflow_call) by a preview push on another branch. A preview
       # can therefore only ever add or change its own /demo/ subtree — never the
       # site — so pre-merge preview deploys can't ship unreviewed site changes.
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           ref: main
       # Assemble the published tree: the marketing site at the root and every
