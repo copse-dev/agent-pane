@@ -134,6 +134,19 @@ describe('plan spine lifecycle lines', () => {
     assert.equal(parseSpineLine(bad), null)
   })
 
+  it('rejects plan lines missing required fields', () => {
+    assert.equal(
+      parseSpineLine('{"v":1,"type":"plan","action":"create","id":"x","createdAt":1}'),
+      null,
+    )
+    assert.equal(
+      parseSpineLine(
+        '{"v":1,"type":"plan","action":"create","id":"x","planId":"p","createdAt":1,"artifact":{"ref":"plans/p/revision-1.md"}}',
+      ),
+      null,
+    )
+  })
+
   it('preserves plan artifact refs across full-save rebuild', () => {
     const m1 = messageLine('m1')
     const planLine: SpinePlanLine = {

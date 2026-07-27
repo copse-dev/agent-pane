@@ -347,6 +347,33 @@ function isSpinePermissionDecisionLine(value: unknown): value is SpinePermission
   )
 }
 
+function isPlanSpineAction(value: unknown): value is PlanSpineAction {
+  return (
+    value === 'create' ||
+    value === 'revise' ||
+    value === 'comment' ||
+    value === 'approve' ||
+    value === 'abandon'
+  )
+}
+
+function isSpinePlanLine(value: unknown): value is SpinePlanLine {
+  if (!isRecord(value)) return false
+  return (
+    value['type'] === 'plan' &&
+    typeof value['v'] === 'number' &&
+    typeof value['id'] === 'string' &&
+    typeof value['planId'] === 'string' &&
+    typeof value['createdAt'] === 'number' &&
+    isPlanSpineAction(value['action']) &&
+    (value['revision'] === undefined || typeof value['revision'] === 'number') &&
+    (value['artifact'] === undefined || isContentRef(value['artifact'])) &&
+    (value['commentId'] === undefined || typeof value['commentId'] === 'string') &&
+    (value['executionProfileId'] === undefined || typeof value['executionProfileId'] === 'string') &&
+    (value['contentHash'] === undefined || typeof value['contentHash'] === 'string')
+  )
+}
+
 /** Parse one spine line into the {@link SpineLine} union. Null on malformed/unknown. */
 export function parseSpineLine(raw: string): SpineLine | null {
   let parsed: unknown
@@ -362,13 +389,7 @@ export function parseSpineLine(raw: string): SpineLine | null {
     if (!Array.isArray(parsed.toolCalls)) parsed.toolCalls = []
     return parsed
   }
-  if (type === 'plan') {
-    const action = (parsed as { action?: unknown }).action
-    if (typeof action !== 'string' || !(PLAN_SPINE_ACTIONS as readonly string[]).includes(action)) {
-      return null
-    }
-    return parsed as unknown as SpinePlanLine
-  }
+  if (type === 'plan' && isSpinePlanLine(parsed)) return parsed
 
   if (type === 'hook_run' && isSpineHookRunLine(parsed)) return parsed
   if (type === 'permission_decision' && isSpinePermissionDecisionLine(parsed)) return parsed
