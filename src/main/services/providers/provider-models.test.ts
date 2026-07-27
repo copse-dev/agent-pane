@@ -8,8 +8,18 @@ import { setSetting } from '../storage/settings.ts'
 import { setApprovalHandler } from '../approval.ts'
 
 const realFetch = globalThis.fetch
-function stubFetch(impl: (url: string) => Partial<Response>): void {
-  globalThis.fetch = (async (url: string) => impl(url)) as typeof fetch
+function stubFetch(
+  impl: (url: string) => { status?: number; statusText?: string; body?: unknown },
+): void {
+  globalThis.fetch = async (input: string | URL | Request): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const response = impl(url)
+    return new Response(response.body === undefined ? null : JSON.stringify(response.body), {
+      status: response.status ?? 200,
+      statusText: response.statusText ?? '',
+      headers: { 'content-type': 'application/json' },
+    })
+  }
 }
 
 describe('fetchOpenAiCompatibleModels', () => {
@@ -29,7 +39,7 @@ describe('fetchOpenAiCompatibleModels', () => {
     let called = false
     stubFetch(() => {
       called = true
-      return { ok: true, status: 200 }
+      return { status: 200 }
     })
     const res = await fetchOpenAiCompatibleModels('   ')
     assert.equal(res.ok, false)
@@ -41,7 +51,7 @@ describe('fetchOpenAiCompatibleModels', () => {
     let called = false
     stubFetch(() => {
       called = true
-      return { ok: true, status: 200 }
+      return { status: 200 }
     })
     const res = await fetchOpenAiCompatibleModels('https://evil.example/v1', 'secret-key')
     assert.equal(res.ok, false)
@@ -60,7 +70,7 @@ describe('fetchOpenAiCompatibleModels', () => {
       let called = false
       stubFetch(() => {
         called = true
-        return { ok: true, status: 200 }
+        return { status: 200 }
       })
       const res = await fetchOpenAiCompatibleModels(unsafe, 'secret-key')
       assert.equal(res.ok, false, `expected ${unsafe} to be rejected`)
@@ -73,7 +83,7 @@ describe('fetchOpenAiCompatibleModels', () => {
     let requested = ''
     stubFetch((url) => {
       requested = url
-      return { ok: true, status: 200, json: async (): Promise<unknown> => ({ data: [] }) }
+      return { status: 200, body: { data: [] } }
     })
     const res = await fetchOpenAiCompatibleModels('http://127.0.0.1:1234/v1', 'k')
     assert.equal(res.ok, true)
@@ -82,10 +92,16 @@ describe('fetchOpenAiCompatibleModels', () => {
 
   it('does not follow redirects (Authorization is not forwarded)', async () => {
     let redirectMode: RequestRedirect | undefined
-    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    globalThis.fetch = async (
+      _input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
       redirectMode = init?.redirect
-      return { ok: true, status: 200, json: async (): Promise<unknown> => ({ data: [] }) }
-    }) as typeof fetch
+      return new Response(JSON.stringify({ data: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1', 'k')
     assert.equal(res.ok, true)
     assert.equal(redirectMode, 'manual')
@@ -96,16 +112,15 @@ describe('fetchOpenAiCompatibleModels', () => {
     stubFetch((url) => {
       requested = url
       return {
-        ok: true,
         status: 200,
-        json: async (): Promise<unknown> => ({
+        body: {
           data: [
             { id: 'a-model' },
             { id: 'b-model', context_length: 32768 },
             { model: 'c-model' }, // some servers use `model` instead of `id`
             { notAnId: true }, // skipped
           ],
-        }),
+        },
       }
     })
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1/')
@@ -121,15 +136,17 @@ describe('fetchOpenAiCompatibleModels', () => {
   it('discovers Perplexity Agent API models from the public endpoint without a key', async () => {
     let requested = ''
     let authorization: string | null = 'unexpected'
-    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
-      requested = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    globalThis.fetch = async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      requested = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       authorization = new Headers(init?.headers).get('authorization')
-      return {
-        ok: true,
+      return new Response(JSON.stringify({ data: [{ id: 'openai/live-model' }] }), {
         status: 200,
-        json: async (): Promise<unknown> => ({ data: [{ id: 'openai/live-model' }] }),
-      }
-    }) as typeof fetch
+        headers: { 'content-type': 'application/json' },
+      })
+    }
 
     const res = await fetchOpenAiCompatibleModels('https://api.perplexity.ai/v1')
 
@@ -140,14 +157,14 @@ describe('fetchOpenAiCompatibleModels', () => {
   })
 
   it('surfaces an HTTP error', async () => {
-    stubFetch(() => ({ ok: false, status: 401, statusText: 'Unauthorized' }))
+    stubFetch(() => ({ status: 401, statusText: 'Unauthorized' }))
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1', 'bad-key')
     assert.equal(res.ok, false)
     assert.match(res.error ?? '', /401/)
   })
 
   it('returns an empty list when the payload has no data array', async () => {
-    stubFetch(() => ({ ok: true, status: 200, json: async (): Promise<unknown> => ({}) }))
+    stubFetch(() => ({ status: 200, body: {} }))
     const res = await fetchOpenAiCompatibleModels('https://api.example.com/v1')
     assert.equal(res.ok, true)
     assert.deepEqual(res.models, [])
@@ -182,9 +199,8 @@ describe('fetchOpenAiCompatibleModelsForSettings', () => {
       return { approved: true, remember: true }
     })
     stubFetch(() => ({
-      ok: true,
       status: 200,
-      json: async (): Promise<unknown> => ({ data: [{ id: 'm1' }] }),
+      body: { data: [{ id: 'm1' }] },
     }))
     const res = await fetchOpenAiCompatibleModelsForSettings('https://api.acme.example/v1')
     assert.equal(prompted, true)
@@ -197,7 +213,7 @@ describe('fetchOpenAiCompatibleModelsForSettings', () => {
     let called = false
     stubFetch(() => {
       called = true
-      return { ok: true, status: 200 }
+      return { status: 200 }
     })
     const res = await fetchOpenAiCompatibleModelsForSettings('https://evil.example/v1')
     assert.equal(called, false)

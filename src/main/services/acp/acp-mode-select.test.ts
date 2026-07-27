@@ -5,7 +5,6 @@ import {
   ndJsonStream,
   PROTOCOL_VERSION,
   type AgentApp,
-  type NewSessionResponse,
   type SessionModeState,
 } from '@agentclientprotocol/sdk'
 import type { AcpTransportFactory } from './acp-client.ts'
@@ -30,7 +29,7 @@ describe('modeSelectorFrom', () => {
           { id: 'acceptEdits', name: 'Accept edits' },
         ],
       },
-    } as unknown as NewSessionResponse
+    }
 
     assert.deepEqual(modeSelectorFrom(response), {
       currentValue: 'default',

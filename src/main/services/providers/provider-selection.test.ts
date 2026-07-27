@@ -238,15 +238,10 @@ describe('testLmStudio', () => {
   })
 
   it('returns model ids from a successful /models response', async () => {
-    const fetchMock = mock.fn(async (_url: string, _init?: RequestInit) => ({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async (): Promise<{ data: { id: string }[] }> => ({
-        data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }],
-      }),
-    }))
-    restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
+    const fetchMock = mock.fn<typeof fetch>(async () =>
+      jsonResponse({ data: [{ id: 'qwen2.5-3b' }, { id: 'llama-3' }] }),
+    )
+    restoreFetch = stubFetch(fetchMock)
 
     const result = await testLmStudio('http://127.0.0.1:1234/v1/', 'test-key')
     assert.deepEqual(result, { ok: true, models: ['qwen2.5-3b', 'llama-3'] })
@@ -254,7 +249,7 @@ describe('testLmStudio', () => {
     const call = fetchMock.mock.calls[0]
     assert.ok(call)
     assert.equal(call.arguments[0], 'http://127.0.0.1:1234/v1/models')
-    assert.equal(authHeader(call.arguments[1] as RequestInit), 'Bearer test-key')
+    assert.equal(authHeader(call.arguments[1]), 'Bearer test-key')
   })
 
   it('surfaces HTTP errors without throwing', async () => {
@@ -267,20 +262,15 @@ describe('testLmStudio', () => {
 })
 
 describe('listLmStudioModels cache', () => {
-  let fetchMock: ReturnType<typeof mock.fn>
+  let fetchMock: ReturnType<typeof mock.fn<typeof fetch>>
   let restoreFetch: (() => void) | undefined
 
   beforeEach(() => {
     invalidateLmStudioModelsCache()
     setSetting('localServerUrl', 'http://127.0.0.1:1234/v1')
     setApiKey('lmstudio', 'cache-test-key')
-    fetchMock = mock.fn(async () => ({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async (): Promise<{ data: { id: string }[] }> => ({ data: [{ id: 'local-model' }] }),
-    }))
-    restoreFetch = stubFetch(fetchMock as unknown as typeof fetch)
+    fetchMock = mock.fn<typeof fetch>(async () => jsonResponse({ data: [{ id: 'local-model' }] }))
+    restoreFetch = stubFetch(fetchMock)
   })
 
   afterEach(() => {

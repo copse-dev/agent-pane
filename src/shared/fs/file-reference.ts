@@ -87,14 +87,11 @@ export const FILE_REFERENCE_RESOLVE_BATCH_SIZE = 200
  */
 export async function resolveFileReferencesInBatches<T>(
   candidates: string[],
-  resolve: (batch: string[]) => Promise<T[]>,
+  resolve: (batch: string[]) => Promise<T[] | null | undefined>,
 ): Promise<T[]> {
   const out: T[] = []
   for (let i = 0; i < candidates.length; i += FILE_REFERENCE_RESOLVE_BATCH_SIZE) {
     const batch = candidates.slice(i, i + FILE_REFERENCE_RESOLVE_BATCH_SIZE)
-    // IPC boundary: declared non-null, but the value crosses the preload bridge
-    // and could be malformed at runtime, so guard defensively.
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     out.push(...((await resolve(batch)) ?? []))
   }
   return out

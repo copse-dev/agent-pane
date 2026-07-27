@@ -234,7 +234,38 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
       new URL(cfg.url),
       cfg.headers ? { requestInit: { headers: cfg.headers } } : undefined,
     )
-    return { transport: transport as unknown as Transport, stderrOutput: () => '' }
+    const compatible: Transport = {
+      start: () => transport.start(),
+      send: (message, options) => transport.send(message, options),
+      close: async () => {
+        await transport.close()
+      },
+      setProtocolVersion: (version) => {
+        transport.setProtocolVersion(version)
+      },
+    }
+    Object.defineProperties(compatible, {
+      onclose: {
+        get: () => transport.onclose,
+        set: (callback: () => void) => {
+          transport.onclose = callback
+        },
+      },
+      onerror: {
+        get: () => transport.onerror,
+        set: (callback: (error: Error) => void) => {
+          transport.onerror = callback
+        },
+      },
+      onmessage: {
+        get: () => transport.onmessage,
+        set: (callback: NonNullable<Transport['onmessage']>) => {
+          transport.onmessage = callback
+        },
+      },
+      sessionId: { get: () => transport.sessionId },
+    })
+    return { transport: compatible, stderrOutput: () => '' }
   }
   if (cfg.command === undefined) {
     throw new Error(`MCP server "${cfg.name}" uses stdio transport but has no command`)

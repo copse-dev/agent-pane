@@ -6,11 +6,17 @@ import { afterEach, beforeEach, describe, it } from 'node:test'
 import { setKnowledgeRootForTest } from '../services/storage/knowledge-store.ts'
 import { setWorkspaceRootForTest } from '../services/workspace.ts'
 import { recallTool, rememberTool } from './memory-tools.ts'
+import type { ToolExecuteResult } from '@shared/types'
 
 const noSignal = new AbortController().signal
 
-async function run(tool: typeof rememberTool | typeof recallTool, args: unknown): Promise<string> {
-  const result = await tool.execute(tool.parameters.parse(args) as never, noSignal)
+interface TestTool<T> {
+  parameters: { parse(args: unknown): T }
+  execute(args: T, signal: AbortSignal): ToolExecuteResult | Promise<ToolExecuteResult>
+}
+
+async function run<T>(tool: TestTool<T>, args: unknown): Promise<string> {
+  const result = await tool.execute(tool.parameters.parse(args), noSignal)
   return typeof result === 'string' ? result : result.result
 }
 

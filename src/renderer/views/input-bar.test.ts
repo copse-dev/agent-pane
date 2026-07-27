@@ -16,20 +16,23 @@ class TestResizeObserver {
   disconnect(): void {}
 }
 
-;(globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver = TestResizeObserver
-;(globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame = (
-  callback,
-): number =>
-  setTimeout(() => {
-    callback(Date.now())
-  }, 0) as unknown as number
-;(globalThis as { cancelAnimationFrame?: typeof cancelAnimationFrame }).cancelAnimationFrame = (
-  id,
-): void => {
-  clearTimeout(id)
-}
-;(globalThis as { MutationObserver?: typeof MutationObserver }).MutationObserver =
-  window.MutationObserver
+Object.defineProperties(globalThis, {
+  ResizeObserver: { configurable: true, value: TestResizeObserver },
+  requestAnimationFrame: {
+    configurable: true,
+    value: (callback: FrameRequestCallback): number =>
+      window.setTimeout(() => {
+        callback(Date.now())
+      }, 0),
+  },
+  cancelAnimationFrame: {
+    configurable: true,
+    value: (id: number): void => {
+      window.clearTimeout(id)
+    },
+  },
+  MutationObserver: { configurable: true, value: window.MutationObserver },
+})
 
 function thread(branch?: string): Thread {
   const value: Thread = {

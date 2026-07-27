@@ -143,12 +143,11 @@ describe('tool call display (component)', () => {
 
     const rollups = document.querySelectorAll('.tool-card-rollup')
     assert.equal(rollups.length, 1, 'rebuild must replace the rollup, not duplicate it')
-    const rollupAfter = rollups[0] as HTMLDetailsElement
+    const rollupAfter = qsRequired<HTMLDetailsElement>(document, '.tool-card-rollup')
     assert.equal(rollupAfter.hasAttribute('open'), true, 'rollup should stay open')
     const groups = rollupAfter.querySelectorAll('.tool-card-group')
     assert.equal(groups.length, 1, 'rebuild must replace the group card, not duplicate it')
-    const groupAfter = groups[0] as HTMLDetailsElement
-    assert.ok(groupAfter, 'expected the group card to still render')
+    const groupAfter = qsRequired<HTMLDetailsElement>(rollupAfter, '.tool-card-group')
     assert.equal(groupAfter.hasAttribute('open'), true, 'group should stay open')
     const itemAfter = groupAfter.querySelector('[data-tool-id="tc-read-1"]')
     assert.ok(itemAfter, 'expected the reading item to still render')

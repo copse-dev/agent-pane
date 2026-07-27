@@ -7,6 +7,7 @@ import { getThreadModels } from './thread-models.ts'
 import { getUsageEventCount } from './storage/usage-ledger.ts'
 import { storageSet, storageGet } from './storage/storage.ts'
 import { USAGE_EVENTS_STORAGE_KEY } from '@shared/usage/usage-event.ts'
+import { recordArrayOrEmpty } from '@shared/unknown-value.ts'
 
 describe('createAgentChunkSink', () => {
   it('records usage ledger events and thread models for usage chunks', () => {
@@ -53,8 +54,10 @@ describe('createAgentChunkSink', () => {
 
     assert.equal(getUsageEventCount(), 1)
     const events = storageGet(USAGE_EVENTS_STORAGE_KEY)
-    assert.ok(Array.isArray(events))
-    assert.equal((events as { source: string }[])[0]?.source, 'advisor')
-    assert.equal((events as { model: string }[])[0]?.model, 'claude-opus-4-8')
+    const records = recordArrayOrEmpty(events)
+    const event = records[0]
+    assert.ok(event)
+    assert.equal(event['source'], 'advisor')
+    assert.equal(event['model'], 'claude-opus-4-8')
   })
 })

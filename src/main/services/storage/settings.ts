@@ -1,10 +1,15 @@
-import { safeStorage } from 'electron'
+import { getSecretCipher, isSecretEncryptionAvailable } from './secret-cipher.ts'
 import { resolveLmStudioApiKey } from '@shared/lm-studio-api-key.ts'
 import { BUILTIN_EXTRA_PROVIDERS } from '@copse/llm/extra-providers.ts'
 import { openPersistentStore } from './persistent-store.ts'
 import { runSerialized } from './write-queue.ts'
 import { getSettingSchema } from './settings-schema.ts'
-import { expectString, firstNonEmptyString } from '@shared/unknown-value.ts'
+import {
+  expectString,
+  firstNonEmptyString,
+  isRecord,
+  matchesFallbackType,
+} from '@shared/unknown-value.ts'
 
 // Cache reads in memory so electron-store does not re-read and re-parse the
 // whole settings.json file on every getSetting/hasApiKey/getApiKey call. All
@@ -25,6 +30,23 @@ interface StoredKey {
   v: 1
   enc: string // base64 of the encrypted (or, if unavailable, plain) bytes
   plain?: boolean
+}
+
+function isStoredKey(value: unknown): value is StoredKey {
+  return (
+    isRecord(value) &&
+    value['v'] === 1 &&
+    typeof value['enc'] === 'string' &&
+    (value['plain'] === undefined || typeof value['plain'] === 'boolean')
+  )
+}
+
+function schemaAccepts<T>(
+  schema: NonNullable<ReturnType<typeof getSettingSchema>>,
+  value: unknown,
+  _fallback: T,
+): value is T {
+  return schema.safeParse(value).success
 }
 
 // A key is stored per provider slug at `apiKey.<slug>`. The fixed cloud providers
@@ -55,18 +77,20 @@ const PROVIDER_ENV_VARS: Record<string, string> = {
 }
 
 export function hasApiKey(provider: KeyProvider): boolean {
-  const raw = cached.get(`apiKey.${provider}`) as StoredKey | undefined
-  return !!raw && typeof raw === 'object' && typeof raw.enc === 'string' && raw.enc.length > 0
+  const raw = cached.get(`apiKey.${provider}`)
+  return isStoredKey(raw) && raw.enc.length > 0
 }
 
 export function getApiKey(provider: KeyProvider): string | null {
   // electron-store JSON-serializes values, so a raw Buffer cannot round-trip.
   // We persist a base64 string instead. (Old Buffer-shaped records are ignored.)
-  const raw = cached.get(`apiKey.${provider}`) as StoredKey | undefined
-  if (!raw || typeof raw !== 'object' || !raw.enc) return null
+  const raw = cached.get(`apiKey.${provider}`)
+  if (!isStoredKey(raw) || !raw.enc) return null
   try {
     const buf = Buffer.from(raw.enc, 'base64')
-    return raw.plain ? buf.toString('utf8') : safeStorage.decryptString(buf)
+    if (raw.plain) return buf.toString('utf8')
+    // No cipher installed: an encrypted key cannot be read here.
+    return getSecretCipher()?.decryptString(buf) ?? null
   } catch {
     return null
   }
@@ -97,7 +121,7 @@ export function setApiKey(
     return { ok: true }
   }
 
-  const available = safeStorage.isEncryptionAvailable()
+  const available = isSecretEncryptionAvailable()
   // Encryption unavailable and no explicit per-key consent to store plaintext:
   // refuse to persist rather than silently writing the key to disk in the clear.
   // The caller (IPC → renderer) surfaces a confirmation and retries with
@@ -118,7 +142,9 @@ export function setApiKey(
       `[copse-panel] OS secure storage is unavailable; the ${provider} API key will be stored as base64 plaintext in settings.json (with explicit consent). Install and unlock a system keyring to encrypt it at rest.`,
     )
   }
-  const bytes = available ? safeStorage.encryptString(trimmed) : Buffer.from(trimmed, 'utf8')
+  const bytes = available
+    ? (getSecretCipher()?.encryptString(trimmed) ?? Buffer.from(trimmed, 'utf8'))
+    : Buffer.from(trimmed, 'utf8')
   const record: StoredKey = { v: 1, enc: bytes.toString('base64'), plain: !available }
   cached.set(`apiKey.${provider}`, record)
   return { ok: true }
@@ -141,8 +167,8 @@ export function deleteApiKey(provider: KeyProvider): void {
  * "How API keys are stored" section.
  */
 export function isApiKeyEncrypted(provider: KeyProvider): boolean | null {
-  const raw = cached.get(`apiKey.${provider}`) as StoredKey | undefined
-  if (!raw || typeof raw !== 'object' || typeof raw.enc !== 'string' || raw.enc.length === 0) {
+  const raw = cached.get(`apiKey.${provider}`)
+  if (!isStoredKey(raw) || raw.enc.length === 0) {
     return null
   }
   return raw.plain !== true
@@ -175,10 +201,9 @@ export function getSetting<T>(key: string, fallback: T): T {
   // persisted value degrades to the fallback instead of being trusted blindly.
   const schema = getSettingSchema(key)
   if (schema) {
-    const result = schema.safeParse(raw)
-    return result.success ? (result.data as T) : fallback
+    return schemaAccepts(schema, raw, fallback) ? raw : fallback
   }
-  return raw as T
+  return matchesFallbackType(raw, fallback) ? raw : fallback
 }
 
 /** Read a string setting and trim it (empty string when unset/blank). */

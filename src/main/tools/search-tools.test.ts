@@ -11,10 +11,11 @@ import { setIndexedGrepBackendForTest } from '../services/search/indexed-grep.ts
 
 const noSignal = new AbortController().signal
 
-function runFindFiles(args: { pattern: string; max_results?: number }): Promise<string> {
+async function runFindFiles(args: { pattern: string; max_results?: number }): Promise<string> {
   // Mirror the zod default for max_results so the test exercises the tool body directly.
   const max_results = args.max_results ?? 50
-  return findFilesTool.execute({ pattern: args.pattern, max_results }, noSignal) as Promise<string>
+  const result = await findFilesTool.execute({ pattern: args.pattern, max_results }, noSignal)
+  return typeof result === 'string' ? result : result.result
 }
 
 describe('findFilesTool truncation flag', () => {
@@ -49,8 +50,8 @@ describe('searchCodeTool pattern/query aliasing', () => {
 
   // search_code's params are all optional post-aliasing; mirror the zod defaults
   // so the test drives the tool body directly.
-  function runSearchCode(args: { pattern?: string; query?: string }): Promise<string> {
-    return searchCodeTool.execute(
+  async function runSearchCode(args: { pattern?: string; query?: string }): Promise<string> {
+    const result = await searchCodeTool.execute(
       {
         ...args,
         fixed_string: false,
@@ -59,7 +60,8 @@ describe('searchCodeTool pattern/query aliasing', () => {
         context_lines: 0,
       },
       noSignal,
-    ) as Promise<string>
+    )
+    return typeof result === 'string' ? result : result.result
   }
 
   beforeEach(async () => {

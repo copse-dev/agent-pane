@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
+import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
 import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
@@ -1112,7 +1113,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       projectId,
       thread,
     ])
-    return createThread(id, payload as unknown as import('@shared/types').Thread)
+    const parsed = parseThreadValue(payload)
+    if (parsed === null) throw new IpcValidationError('Invalid thread payload')
+    return createThread(id, parsed)
   })
   ipcMain.handle(
     'threads:appendMessage',
@@ -1122,7 +1125,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
         [projectId, threadId, message],
       )
-      return appendMessage(pid, tid, payload as unknown as import('@shared/types').Message)
+      const parsed = parseMessageValue(payload)
+      if (parsed === null) throw new IpcValidationError('Invalid message payload')
+      return appendMessage(pid, tid, parsed)
     },
   )
   ipcMain.handle(

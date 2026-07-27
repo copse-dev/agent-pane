@@ -13,7 +13,6 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type ResumeSessionResponse,
-  type SessionConfigOption,
   type SessionModeState,
   type SessionUpdate,
   type StopReason,
@@ -24,7 +23,6 @@ import {
 } from '@agentclientprotocol/sdk'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Writable } from 'node:stream'
-import { nodeReadableStream } from './node-readable-stream.ts'
 import { SandboxManager } from '@anthropic-ai/sandbox-runtime'
 import type { StreamChunk } from '@shared/types'
 import type {
@@ -35,6 +33,7 @@ import type {
   AcpModelChoice,
   AcpModelSelector,
 } from '@shared/types/acp.ts'
+import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
@@ -129,23 +128,30 @@ const UNSUPPORTED = (method: string) => (): Promise<never> =>
  * Returns `null` when the agent exposes no such option (model is then fixed to
  * the agent's own default).
  */
-export function modelSelectorFrom(
-  response: NewSessionResponse | ResumeSessionResponse,
-): AcpModelSelector | null {
+export function modelSelectorFrom(response: {
+  configOptions?: readonly unknown[] | null
+}): AcpModelSelector | null {
   const option = (response.configOptions ?? []).find(
-    (candidate): candidate is SessionConfigOption =>
-      candidate.category === 'model' && candidate.type === 'select',
+    (candidate) =>
+      isRecord(candidate) && candidate['category'] === 'model' && candidate['type'] === 'select',
   )
-  if (!option || option.type !== 'select') return null
+  if (!isRecord(option)) return null
+  const configId = option['id']
+  const currentValue = option['currentValue']
+  if (typeof configId !== 'string' || typeof currentValue !== 'string') return null
   const choices: AcpModelChoice[] = []
-  for (const entry of option.options) {
-    if ('group' in entry) {
-      for (const sub of entry.options) choices.push({ value: sub.value, label: sub.name })
-    } else {
-      choices.push({ value: entry.value, label: entry.name })
+  for (const entry of recordArrayOrEmpty(option['options'])) {
+    if (typeof entry['group'] === 'string') {
+      for (const sub of recordArrayOrEmpty(entry['options'])) {
+        if (typeof sub['value'] === 'string' && typeof sub['name'] === 'string') {
+          choices.push({ value: sub['value'], label: sub['name'] })
+        }
+      }
+    } else if (typeof entry['value'] === 'string' && typeof entry['name'] === 'string') {
+      choices.push({ value: entry['value'], label: entry['name'] })
     }
   }
-  return { configId: option.id, currentValue: option.currentValue, choices }
+  return { configId, currentValue, choices }
 }
 
 /**
@@ -230,9 +236,36 @@ export function willSandboxAcpAgent(sandbox: AcpAgentSandboxConfig | undefined):
   return Boolean(sandbox) && process.platform !== 'win32' && isProjectSandboxEnabled()
 }
 
+const ACP_STDERR_TAIL_LIMIT = 8_000
+
+function appendStderrTail(current: string, chunk: Buffer): string {
+  const next = current + chunk.toString()
+  return next.length <= ACP_STDERR_TAIL_LIMIT ? next : next.slice(-ACP_STDERR_TAIL_LIMIT)
+}
+
+function acpProcessExitError(
+  command: string,
+  code: number | null,
+  signal: NodeJS.Signals | null,
+  stderr: string,
+): Error {
+  const reason = signal ? `signal ${signal}` : `code ${code === null ? 'unknown' : String(code)}`
+  const detail = stderr.trim()
+  return new Error(
+    `ACP agent "${command}" exited with ${reason}${detail ? `. stderr: ${detail}` : ''}`,
+  )
+}
+
+function acpProcessSpawnError(command: string, err: Error, stderr: string): Error {
+  const detail = stderr.trim()
+  return new Error(
+    `ACP agent "${command}" failed to start: ${err.message}${detail ? `. stderr: ${detail}` : ''}`,
+  )
+}
+
 async function spawnAcpAgentProcess(config: AcpAgentSpawnConfig): Promise<ChildProcess> {
   const env = buildAcpAgentEnv(config)
-  const stdio: ('pipe' | 'inherit')[] = ['pipe', 'pipe', 'inherit']
+  const stdio: 'pipe'[] = ['pipe', 'pipe', 'pipe']
   if (config.sandbox && willSandboxAcpAgent(config.sandbox)) {
     const overlay = acpAgentSandboxOverlay(config.cwd, config.sandbox, {
       allowLocalhost: Boolean(config.nativeBridge),
@@ -425,6 +458,83 @@ export type AcpTransportFactory = (
   config: AcpAgentSpawnConfig,
 ) => Promise<{ stream: Stream; dispose: () => void }>
 
+function acpChildStdoutStream(
+  child: ChildProcess,
+  command: string,
+  stderrTail: () => string,
+): ReadableStream<Uint8Array> {
+  const stdout = child.stdout
+  if (!stdout) throw new Error('ACP agent spawned without stdout pipe')
+  let cancelRead = (): void => {
+    child.kill()
+  }
+  return new ReadableStream<Uint8Array>({
+    start(controller): void {
+      let settled = false
+      const cleanup = (): void => {
+        stdout.off('data', onData)
+        stdout.off('error', onStdoutError)
+        child.off('error', onChildError)
+        child.off('close', onChildClose)
+      }
+      const settle = (fn: () => void): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        fn()
+      }
+      const onData = (chunk: Buffer): void => {
+        controller.enqueue(new Uint8Array(chunk))
+      }
+      const onStdoutError = (err: Error): void => {
+        settle(() => {
+          controller.error(err)
+        })
+      }
+      const onChildError = (err: Error): void => {
+        settle(() => {
+          controller.error(acpProcessSpawnError(command, err, stderrTail()))
+        })
+      }
+      const onChildClose = (code: number | null, signal: NodeJS.Signals | null): void => {
+        if (code === 0 && signal === null) {
+          settle(() => {
+            controller.close()
+          })
+        } else {
+          settle(() => {
+            controller.error(acpProcessExitError(command, code, signal, stderrTail()))
+          })
+        }
+      }
+      cancelRead = (): void => {
+        if (!settled) {
+          settled = true
+          cleanup()
+        }
+        child.kill()
+      }
+      stdout.on('data', onData)
+      stdout.on('error', onStdoutError)
+      child.once('error', onChildError)
+      child.once('close', onChildClose)
+    },
+    cancel(): void {
+      cancelRead()
+    },
+  })
+}
+
+function captureAcpChildStderr(child: ChildProcess, command: string): () => string {
+  let tail = ''
+  child.stderr?.on('data', (chunk: Buffer) => {
+    tail = appendStderrTail(tail, chunk)
+    const text = chunk.toString().trimEnd()
+    if (text) console.warn(`[acp:${command}] ${text}`)
+  })
+  return () => tail
+}
+
 async function spawnTransport(
   config: AcpAgentSpawnConfig,
 ): Promise<{ stream: Stream; dispose: () => void }> {
@@ -434,9 +544,10 @@ async function spawnTransport(
   const sshTarget = acpSshTarget(config.cwd)
   if (sshTarget) return spawnRemoteAcpTransport(config, sshTarget)
   const child = await spawnAcpAgentProcess(config)
-  if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
+  if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
+  const stderrTail = captureAcpChildStderr(child, config.command)
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-  const readable = nodeReadableStream(child.stdout)
+  const readable = acpChildStdoutStream(child, config.command, stderrTail)
   return {
     stream: ndJsonStream(writable, readable),
     dispose: (): void => {
@@ -771,9 +882,10 @@ export async function probeAcpAgent(
   timeoutMs = 15000,
 ): Promise<AcpAgentProbe> {
   const child = await spawnAcpAgentProcess(config)
-  if (!child.stdin || !child.stdout) throw new Error('ACP agent spawned without stdio pipes')
+  if (!child.stdin) throw new Error('ACP agent spawned without stdin pipe')
+  const stderrTail = captureAcpChildStderr(child, config.command)
   const writable = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>
-  const readable = nodeReadableStream(child.stdout)
+  const readable = acpChildStdoutStream(child, config.command, stderrTail)
   const stream = ndJsonStream(writable, readable)
   const app = client({ name: 'copse' })
     .onRequest(methods.client.fs.readTextFile, UNSUPPORTED('fs/read_text_file'))

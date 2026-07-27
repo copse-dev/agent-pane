@@ -23,7 +23,7 @@ function fakeMermaid(onRun: (node: HTMLElement) => void): FakeMermaid {
       return Promise.resolve()
     },
   }
-  setMermaidLoaderForTests(() => Promise.resolve(fake as never))
+  setMermaidLoaderForTests(() => Promise.resolve(fake))
   return fake
 }
 

@@ -12,7 +12,14 @@ import { bindWorkspaceLinkClicks } from '../markdown/workspace-links.ts'
 import { bindFileDropTarget } from '../attachments/handle-file-drop.ts'
 import { getPromptAttachmentHandlers } from '../attachments/prompt-attachments.ts'
 import { registerMonacoSelectionToChatShortcut } from '../monaco/selection-to-chat.ts'
-import { createGitChangesDiffEditor, setGitFileDiffModel } from '../monaco/git-diff-viewer.ts'
+import {
+  createGitChangesDiffEditor,
+  setGitFileDiffModel,
+  type GitDiffMonaco,
+  type GitDiffEditor,
+  type GitDiffModel,
+} from '../monaco/git-diff-viewer.ts'
+import type { MonacoSelectionSource, MonacoShortcutSource } from '../monaco/selection-to-chat.ts'
 import { showErrorToast } from './toast.ts'
 import { scaledEditorFontSize } from '@shared/ui-scale.ts'
 import {
@@ -21,6 +28,43 @@ import {
 } from '../controller/active-thread-owner.ts'
 
 type FileViewMode = 'preview' | 'source' | 'changes'
+
+export interface ContextPanelModel extends GitDiffModel {
+  getValue(): string
+  getValueInRange(range: NonNullable<ReturnType<MonacoSelectionSource['getSelection']>>): string
+  isDisposed(): boolean
+  setValue(value: string): void
+}
+
+export interface ContextPanelEditor extends MonacoShortcutSource {
+  addCommand(keybinding: number, handler: () => void): void
+  dispose(): void
+  getModel(): ContextPanelModel | null
+  getValue(): string
+  hasTextFocus(): boolean
+  layout(): void
+  revealLineInCenter(line: number): void
+  revealLineInCenterIfOutsideViewport(line: number): void
+  setModel(model: ContextPanelModel | null): void
+  setPosition(position: { lineNumber: number; column: number }): void
+}
+
+export interface ContextPanelMonaco extends GitDiffMonaco {
+  editor: {
+    create(
+      container: HTMLElement,
+      options: Monaco.editor.IStandaloneEditorConstructionOptions,
+    ): ContextPanelEditor
+    createDiffEditor(
+      container: HTMLElement,
+      options: Monaco.editor.IStandaloneDiffEditorConstructionOptions,
+    ): GitDiffEditor
+    createModel(value: string, language?: string, uri?: { toString(): string }): ContextPanelModel
+    setTheme(theme: string): void
+  }
+  KeyCode: { KeyL: number; KeyS: number }
+  KeyMod: { CtrlCmd: number }
+}
 
 function isMarkdownFile(openFile: OpenFile): boolean {
   if (openFile.language === 'markdown') return true
@@ -32,7 +76,7 @@ export function mountContextPanel(
   root: HTMLElement,
   store: AppStore,
   api: ApiClient,
-  monaco: typeof Monaco,
+  monaco: ContextPanelMonaco,
 ): () => void {
   const fileToolbar = document.createElement('div')
   fileToolbar.className = 'file-viewer-toolbar'
@@ -77,7 +121,7 @@ export function mountContextPanel(
   // asynchronously; null while the file is clean or outside a git repo.
   let workingDiff: GitFileDiff | null = null
   let workingDiffRequestId = 0
-  let diffEditor: Monaco.editor.IStandaloneDiffEditor | null = null
+  let diffEditor: GitDiffEditor | null = null
   // The diff attached to (or queued for) the diff editor, for render dedupe.
   let renderedDiff: GitFileDiff | null = null
   let queuedDiff: GitFileDiff | null = null
@@ -107,17 +151,18 @@ export function mountContextPanel(
           return
         }
         if (!diffEditor) {
-          diffEditor = createGitChangesDiffEditor(
+          const created = createGitChangesDiffEditor(
             diffContainer,
             monaco,
             scaledEditorFontSize(store.getState().fontSize, store.getState().uiScale),
             store.getState().theme === 'dark' ? 'vs-dark' : 'vs',
           )
-          registerMonacoSelectionToChatShortcut(diffEditor.getOriginalEditor(), monaco, () => {
+          diffEditor = created
+          registerMonacoSelectionToChatShortcut(created.getOriginalEditor(), monaco, () => {
             const { openFile } = store.getState()
             return openFile ? { path: openFile.path, detail: 'before' } : null
           })
-          registerMonacoSelectionToChatShortcut(diffEditor.getModifiedEditor(), monaco, () => {
+          registerMonacoSelectionToChatShortcut(created.getModifiedEditor(), monaco, () => {
             const { openFile } = store.getState()
             return openFile ? { path: openFile.path, detail: 'after' } : null
           })

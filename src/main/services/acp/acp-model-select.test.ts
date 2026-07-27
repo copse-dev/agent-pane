@@ -1,6 +1,5 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type { NewSessionResponse } from '@agentclientprotocol/sdk'
 import { modelSelectorFrom } from './acp-client.ts'
 
 /**
@@ -25,7 +24,7 @@ describe('modelSelectorFrom', () => {
           ],
         },
       ],
-    } as unknown as NewSessionResponse
+    }
 
     assert.deepEqual(modelSelectorFrom(response), {
       configId: 'model',
@@ -57,7 +56,7 @@ describe('modelSelectorFrom', () => {
           ],
         },
       ],
-    } as unknown as NewSessionResponse
+    }
 
     const selector = modelSelectorFrom(response)
     assert.deepEqual(selector?.choices, [
@@ -79,9 +78,9 @@ describe('modelSelectorFrom', () => {
           options: [{ value: 'code', name: 'Code' }],
         },
       ],
-    } as unknown as NewSessionResponse
+    }
 
     assert.equal(modelSelectorFrom(modeOnly), null)
-    assert.equal(modelSelectorFrom({ sessionId: 's1' }), null)
+    assert.equal(modelSelectorFrom({}), null)
   })
 })

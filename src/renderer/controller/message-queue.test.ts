@@ -33,7 +33,7 @@ import {
 import { DEFAULT_CONTINUATION_BUDGET } from '@copse/agent/hooks/continuation-budget.ts'
 import type { QueuedMessageOrigin } from '@shared/types/thread.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
-import { expectRecord } from '@shared/unknown-value.ts'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 const HOOK_ORIGIN: QueuedMessageOrigin = { kind: 'hook', hookId: 'todo-closeout', event: 'stop' }
 
@@ -206,8 +206,8 @@ test('drainMessageQueue refreshes priorTodos from the live thread state', () => 
 
   drainMessageQueue(store, api, threadId)
 
-  const payload = JSON.parse(firstRun(api)[1]) as { priorTodos: Array<{ id: string }> }
-  assert.deepEqual(payload.priorTodos, [{ id: 'live', content: 'live', status: 'pending' }])
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.deepEqual(payload['priorTodos'], [{ id: 'live', content: 'live', status: 'pending' }])
 })
 
 test('dispatchAgentRun sends the per-thread model so the run honours the picker', () => {
@@ -218,8 +218,8 @@ test('dispatchAgentRun sends the per-thread model so the run honours the picker'
 
   dispatchAgentRun(store, api, threadId, { content: 'go' })
 
-  const payload = JSON.parse(firstRun(api)[1]) as { model?: string }
-  assert.equal(payload.model, 'claude-opus-4-8')
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(payload['model'], 'claude-opus-4-8')
 })
 
 test('dispatchAgentRun omits model when the thread has none, so main uses the global default', () => {
@@ -229,7 +229,7 @@ test('dispatchAgentRun omits model when the thread has none, so main uses the gl
 
   dispatchAgentRun(store, api, threadId, { content: 'go' })
 
-  const payload = expectRecord(JSON.parse(firstRun(api)[1]) as unknown)
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
   assert.equal('model' in payload, false)
 })
 
@@ -795,12 +795,9 @@ test('budget-ledger increments (decision 5): drain seeds the run payload with th
 
   drainMessageQueue(store, api, threadId)
 
-  const payload = JSON.parse(firstRun(api)[1]) as {
-    turnTreeId?: string
-    continuationBudgetUsed?: number
-  }
-  assert.equal(payload.turnTreeId, 'tree-1', 'the turn-tree epoch is threaded to main')
-  assert.equal(payload.continuationBudgetUsed, 3, 'seed reflects this drain (2 prior + 1)')
+  const payload = expectRecord(parseJsonUnknown(firstRun(api)[1]))
+  assert.equal(payload['turnTreeId'], 'tree-1', 'the turn-tree epoch is threaded to main')
+  assert.equal(payload['continuationBudgetUsed'], 3, 'seed reflects this drain (2 prior + 1)')
 })
 
 test('held-on-exhaustion (decision 5): a machine follow-up over budget flips to held + a visible note', () => {

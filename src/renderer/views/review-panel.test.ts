@@ -43,7 +43,11 @@ describe('review panel (subagent file links)', () => {
     }
     const card = createReviewCardEl(review, fakeApi())
     assert.equal(card.tagName, 'DETAILS')
-    assert.equal((card as HTMLDetailsElement).open, false)
+    const host = document.createElement('div')
+    host.append(card)
+    const details = host.querySelector('details')
+    assert.ok(details)
+    assert.equal(details.open, false)
     assert.equal(card.getAttribute('data-issues-found'), 'false')
     assert.ok(card.querySelector('summary.review-panel-header'))
   })
