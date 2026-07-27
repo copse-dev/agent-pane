@@ -7,6 +7,7 @@ import { storageSet } from '../storage/storage.ts'
 import { setWorkspaceRootForTest } from '../workspace.ts'
 import {
   AcpTurnFailure,
+  acpErrorMessage,
   buildAcpPrompt,
   buildAcpPromptContent,
   isAcpConnectionDropped,
@@ -145,12 +146,41 @@ describe('sliceLines', () => {
   })
 })
 
+describe('acpErrorMessage', () => {
+  it('includes JSON-RPC error.data.details when present', () => {
+    const err = new Error('Internal error')
+    Object.defineProperty(err, 'data', {
+      value: {
+        details: "Claude Code process exited with code 1. stderr: error: unknown option '--tools'",
+      },
+    })
+
+    assert.equal(
+      acpErrorMessage(err),
+      "Internal error: Claude Code process exited with code 1. stderr: error: unknown option '--tools'",
+    )
+  })
+
+  it('falls back to the base message when there is no structured detail', () => {
+    assert.equal(acpErrorMessage(new Error('ACP connection closed')), 'ACP connection closed')
+  })
+})
+
 describe('isTransientProviderError', () => {
   it('matches transient provider failures surfaced as opaque agent text', () => {
     assert.ok(isTransientProviderError(new Error('Internal error: API Error: Overloaded')))
     assert.ok(isTransientProviderError(new Error('429 rate_limit_error')))
     assert.ok(isTransientProviderError(new Error('upstream returned 503')))
     assert.ok(isTransientProviderError(new Error('Internal Server Error')))
+  })
+
+  it('matches transient provider failures in JSON-RPC error.data.details', () => {
+    const err = new Error('Internal error')
+    Object.defineProperty(err, 'data', {
+      value: { details: 'Claude Code process exited after upstream returned 503' },
+    })
+
+    assert.ok(isTransientProviderError(err))
   })
 
   it('does not treat a dropped connection as a provider error', () => {
@@ -166,6 +196,18 @@ describe('isAcpConnectionDropped', () => {
     assert.ok(isAcpConnectionDropped(new Error('write EPIPE')))
     assert.ok(isAcpConnectionDropped(new Error('Premature close')))
     assert.ok(isAcpConnectionDropped(new Error('write after end')))
+    assert.ok(isAcpConnectionDropped(new Error('ProcessTransport is not ready for writing')))
+    assert.ok(isAcpConnectionDropped(new Error('Query closed before response received')))
+    assert.ok(isAcpConnectionDropped(new Error('Claude Code process exited with code 143')))
+  })
+
+  it('matches dropped connections in JSON-RPC error.data.details', () => {
+    const err = new Error('Internal error')
+    Object.defineProperty(err, 'data', {
+      value: { details: 'Claude Code process exited with code 1. stderr: auth expired' },
+    })
+
+    assert.ok(isAcpConnectionDropped(err))
   })
 
   it('does not match provider errors or ordinary failures', () => {
