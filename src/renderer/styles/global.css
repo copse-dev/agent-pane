@@ -5,6 +5,7 @@
 @import './global/layout.css';
 @import './global/titlebar.css';
 @import './global/forms.css';
+@import './global/model-picker.css';
 @import './global/conversation.css';
 @import './global/markdown.css';
 @import './global/tool-cards.css';

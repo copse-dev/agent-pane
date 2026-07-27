@@ -7,6 +7,8 @@ import {
 } from '@shared/acp-known-agents.ts'
 import { el, clear } from '../../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../../dom/inline-status.ts'
+import type { ModelOption } from '../model-options.ts'
+import { mountModelSelectPicker } from '../model-picker.ts'
 
 // Settings panel for external ACP agents Copse drives as a client (the `acp:<id>`
 // models). It scans the device (acp:detectAgents) and lists the known agents with
@@ -282,24 +284,12 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // agent (spawns it, opens a throwaway session) and fills in its choices.
     const DEFAULT_MODEL_LABEL = 'Agent default'
     const modelSelect = el('select', {})
-    const setModelOptions = (
-      choices: { value: string; label: string }[],
-      selected: string,
-    ): void => {
-      modelSelect.replaceChildren(el('option', { value: '' }, DEFAULT_MODEL_LABEL))
-      for (const choice of choices)
-        modelSelect.append(el('option', { value: choice.value }, choice.label))
-      // Preserve a saved value even if it isn't in the (not-yet-detected) list.
-      if (selected && !choices.some((c) => c.value === selected)) {
-        modelSelect.append(el('option', { value: selected }, `${selected} (saved)`))
-      }
-      modelSelect.value = selected
-    }
     const detectModels = el(
       'button',
       { type: 'button', class: 'provider-secondary' },
       'Detect models',
     )
+    const modelRow = el('div', { class: 'acp-model-row' }, modelSelect, detectModels)
     const modelStatus = el('span', { class: 'field-hint' })
 
     // Permission-mode picker (issue #607): the ACP session mode the agent starts
@@ -340,9 +330,27 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
     // Probe time behind detectedModels, carried across a plain Save and stamped
     // fresh by "Detect models" so the background staleness check can age it out.
     let detectedModelsAt: number | undefined = options.initial?.modelsProbedAt
-    setModelOptions(detectedModels, options.initial?.model ?? '')
+    const initialModel = options.initial?.model ?? ''
+    modelSelect.append(el('option', { value: initialModel }, initialModel || DEFAULT_MODEL_LABEL))
+    modelSelect.value = initialModel
     let detectedModes: AcpModeChoice[] = options.initial?.availablePermissionModes ?? []
     setModeOptions(detectedModes, options.initial?.permissionMode ?? '')
+    const modelPicker = mountModelSelectPicker(modelSelect, {
+      loadOptions: (current): Promise<ModelOption[]> => {
+        const pickerOptions: ModelOption[] = [
+          { value: '', label: DEFAULT_MODEL_LABEL },
+          ...detectedModels.map((choice) => ({ ...choice, group: 'Detected models' })),
+        ]
+        // Preserve a saved value even if it isn't in the (not-yet-detected) list.
+        if (current && !detectedModels.some((choice) => choice.value === current)) {
+          pickerOptions.push({ value: current, label: `${current} (saved)` })
+        }
+        return Promise.resolve(pickerOptions)
+      },
+      ariaLabel: 'ACP agent model',
+      loadOnMount: false,
+    })
+    void modelPicker.refresh(initialModel)
 
     // Detection resolves the agent by its saved id, so it only works once the
     // agent has been saved (a fresh, unsaved agent has nothing to spawn yet).
@@ -358,7 +366,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
           detectedModels = selectorChoicesAfterProbe(detectedModels, probe.models)
           detectedModes = selectorChoicesAfterProbe(detectedModes, probe.modes)
           if (probe.models) {
-            setModelOptions(probe.models.choices, modelSelect.value || probe.models.currentValue)
+            void modelPicker.refresh(modelSelect.value || probe.models.currentValue)
           }
           if (probe.modes) {
             setModeOptions(probe.modes.choices, modeSelect.value || probe.modes.currentValue)
@@ -442,13 +450,7 @@ export function createAcpAgentsSection(api: ApiClient): AcpAgentsSection {
       el('label', {}, 'Command', commandInput),
       el('label', {}, 'Arguments', argsArea),
       el('label', {}, 'Environment', envArea),
-      el(
-        'label',
-        {},
-        'Model',
-        el('div', { class: 'acp-model-row' }, modelSelect, detectModels),
-        modelStatus,
-      ),
+      el('label', {}, 'Model', modelRow, modelStatus),
       el(
         'label',
         { class: 'acp-permission-mode-field' },

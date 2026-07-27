@@ -25,7 +25,8 @@ import {
 } from '@copse/agent/packs/advisor-strategy-pack.ts'
 import { qsRequired } from '../dom/helpers.ts'
 import { inlineStatus, setInlineStatus } from '../dom/inline-status.ts'
-import { populateModelSelect, populateSmallTasksModelSelect } from './model-options.ts'
+import { fetchModelOptions, fetchSmallTasksModelOptions } from './model-options.ts'
+import { mountModelSelectPicker } from './model-picker.ts'
 import { createApiKeysSection } from './setup/api-keys-section.ts'
 import { createCustomProvidersSection } from './setup/custom-providers-section.ts'
 import { createAcpAgentsSection } from './setup/acp-agents-section.ts'
@@ -1261,6 +1262,30 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   const modelRoutingSection = createModelRoutingSection(api, { modelScope: 'all' })
   qsRequired(overlay, '#settings-model-routing-host').append(modelRoutingSection.root)
 
+  const settingsModelPickers = {
+    model: mountModelSelectPicker(qsRequired<HTMLSelectElement>(overlay, 'select[name="model"]'), {
+      loadOptions: (current) => fetchModelOptions(api, current, { includeBestValue: true }),
+      ariaLabel: 'Chat model',
+      loadOnMount: false,
+    }),
+    smallTasksModel: mountModelSelectPicker(
+      qsRequired<HTMLSelectElement>(overlay, 'select[name="smallTasksModel"]'),
+      {
+        loadOptions: (current) => fetchSmallTasksModelOptions(api, current),
+        ariaLabel: 'Small tasks model',
+        loadOnMount: false,
+      },
+    ),
+    orchestrationWorkerModel: mountModelSelectPicker(
+      qsRequired(overlay, '#orchestrationWorkerModel'),
+      {
+        loadOptions: (current) => fetchModelOptions(api, current),
+        ariaLabel: 'Worker model',
+        loadOnMount: false,
+      },
+    ),
+  }
+
   const usageSection = createUsageSection(api, store, closeSettingsDialog)
   qsRequired(overlay, '#settings-usage-host').append(usageSection.root)
 
@@ -1712,11 +1737,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
   // is still the global chat-model select in the General section.
   let advisorModelSelectEl: HTMLSelectElement | null = null
   let advisorPairHintEl: HTMLElement | null = null
-  // A pack `model` field fills its `<select>` asynchronously (`populateModelSelect`
-  // clears then refills from the live catalogue). Its populate promise is stashed
-  // here so the advisor pack row can re-grade the pairing hint once the advisor
-  // select actually has options + a selected value — otherwise the synchronous
-  // grade at row-render time reads an empty `value` and leaves the hint hidden.
+  // A pack `model` field loads the live catalogue asynchronously through the
+  // shared searchable picker. Its refresh promise is stashed so the advisor row
+  // can re-grade its pairing hint once the selected value has settled.
   const modelFieldPopulated = new WeakMap<HTMLSelectElement, Promise<void>>()
 
   /**
@@ -1915,13 +1938,9 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
           advisorSelect.addEventListener('change', () => {
             updateAdvisorPairHint()
           })
-          // Grade now (covers the case where options are already present), and
-          // again once this select's async population settles — the synchronous
-          // pass reads an empty `value` before `populateModelSelect` resolves, so
-          // without the deferred re-grade the hint would stay hidden until the
-          // user interacts. Pairs with the executor-side re-grade in
-          // `settings-open`; whichever of the two async populations finishes last
-          // is the one that reveals the hint.
+          // Grade now (covers an already-loaded value), and again once this
+          // picker's async catalogue refresh settles. Pairs with the executor-side
+          // re-grade in `settings-open`; whichever finishes last reveals the hint.
           updateAdvisorPairHint()
           const populated = modelFieldPopulated.get(advisorSelect)
           if (populated) {
@@ -1965,6 +1984,8 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     label.append(title)
 
     let input: HTMLInputElement | HTMLSelectElement
+    let modelFieldCurrent: string | undefined
+    let modelSelectInput: HTMLSelectElement | null = null
     if (field.kind === 'boolean') {
       const checkbox = document.createElement('input')
       checkbox.type = 'checkbox'
@@ -1989,18 +2010,12 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       number.className = 'pack-setting-input pack-setting-number'
       input = number
     } else if (field.kind === 'model') {
-      // A `model` field renders as the grouped model picker fed by the live
-      // catalogue — the same `populateModelSelect` (provider-grouped optgroups)
-      // the footer/settings pickers use, resolved renderer-side (no frozen
-      // option list ships in the manifest). Populate is async; it clears the
-      // select and fills it, keeping the current / default id selectable (even
-      // when it is offline/unknown).
+      // Model settings use the same searchable, provider-grouped picker as the
+      // composer. The manifest stores only the current id; options stay live.
       const select = document.createElement('select')
       select.className = 'pack-setting-input pack-setting-model'
-      const current = typeof field.value === 'string' ? field.value : ''
-      // Record the populate promise so dependent UI (the advisor pairing hint)
-      // can re-grade after the options + selected value land, not before.
-      modelFieldPopulated.set(select, populateModelSelect(select, api, current))
+      modelFieldCurrent = typeof field.value === 'string' ? field.value : ''
+      modelSelectInput = select
       input = select
     } else {
       const text = document.createElement('input')
@@ -2031,6 +2046,14 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     })
 
     label.append(input)
+    if (modelSelectInput) {
+      const picker = mountModelSelectPicker(modelSelectInput, {
+        loadOptions: (current) => fetchModelOptions(api, current),
+        ariaLabel: field.title,
+        loadOnMount: false,
+      })
+      modelFieldPopulated.set(modelSelectInput, picker.refresh(modelFieldCurrent ?? ''))
+    }
     if (field.description) {
       const hint = document.createElement('span')
       hint.className = 'pack-setting-desc'
@@ -2384,12 +2407,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const form = qsRequired<HTMLFormElement>(overlay, 'form')
       const model = storedString(await api.settings.get('model'))
-      await populateModelSelect(
-        selectControl(form, 'model'),
-        api,
-        model ?? DEFAULT_APP_CHAT_MODEL,
-        { includeBestValue: true },
-      )
+      await settingsModelPickers.model.refresh(model ?? DEFAULT_APP_CHAT_MODEL)
       // The executor (chat) model just settled — re-grade the advisor pairing
       // hint, which lives with the advisor pack in the Packs section. No-op until
       // that pack row has rendered (its select/hint refs are still null); pairs
@@ -2398,9 +2416,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       updateAdvisorPairHint()
       const smallTasksModel = storedString(await api.settings.get('smallTasksModel'))
       const roleModels = stringRecordOrEmpty(await api.settings.get('roleModels'))
-      await populateSmallTasksModelSelect(
-        selectControl(form, 'smallTasksModel'),
-        api,
+      await settingsModelPickers.smallTasksModel.refresh(
         roleModels['small-tasks'] ?? smallTasksModel ?? '',
       )
       // The advisor model and the three comparison models are no longer form
@@ -2409,9 +2425,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       const orchestrationWorkerModel = storedString(
         await api.settings.get('orchestrationWorkerModel'),
       )
-      await populateModelSelect(
-        selectControl(form, 'orchestrationWorkerModel'),
-        api,
+      await settingsModelPickers.orchestrationWorkerModel.refresh(
         orchestrationWorkerModel ?? DEFAULT_ORCHESTRATION_WORKER_MODEL,
       )
       await loadSimpleFields(form, api)

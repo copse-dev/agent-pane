@@ -53,9 +53,19 @@ export async function resolveBestValueForActiveBlankThread(
   store.emit('threads_changed')
 }
 
-/** Subscribe once: every new chat window re-picks the best-value model. */
+/**
+ * Subscribe once: every new chat window re-picks the best-value model. Project
+ * restore also gets a pass because a persisted blank thread can become active
+ * without emitting `new_thread_opened` during app startup.
+ */
 export function attachBestValueDefaultResolver(store: AppStore, api: BestValueApi): () => void {
-  return store.on('new_thread_opened', () => {
+  const resolve = (): void => {
     void resolveBestValueForActiveBlankThread(store, api)
-  })
+  }
+  const unsubscribeNewThread = store.on('new_thread_opened', resolve)
+  const unsubscribeWorkspace = store.on('workspace_changed', resolve)
+  return () => {
+    unsubscribeNewThread()
+    unsubscribeWorkspace()
+  }
 }

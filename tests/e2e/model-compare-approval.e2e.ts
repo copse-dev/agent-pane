@@ -6,7 +6,8 @@ import { setComposerValue } from './helpers/composer.ts'
 
 const SCREENSHOT_DIR = join(process.cwd(), 'tests/e2e/screenshots')
 
-describe('model comparison approval', () => {
+describe('model comparison approval', function () {
+  this.timeout(60_000)
   before(async () => {
     mkdirSync(SCREENSHOT_DIR, { recursive: true })
     resetUserData()
@@ -36,9 +37,21 @@ describe('model comparison approval', () => {
     await expect(dialog.$('.approval-heading')).toHaveText('Compare models on this diff?')
     await expect(dialog.$('.approval-comparison-models')).toBeDisplayed()
     expect(await dialog.$$('.approval-model-select').length).toBe(3)
+    expect(await dialog.$$('.approval-model-picker').length).toBe(3)
     await expect(dialog.$('.approval-comparison-intro')).toHaveText(
       expect.stringContaining('Each reviewer independently reads the working diff'),
     )
+
+    const reviewerA = dialog.$('.approval-model-picker')
+    await reviewerA.$('.model-picker-trigger').click()
+    await reviewerA.$('.model-picker-option').waitForExist({ timeout: 15_000 })
+    const filter = reviewerA.$('.model-picker-filter')
+    await filter.setValue('sonnet')
+    await browser.waitUntil(async () => (await reviewerA.$$('.model-picker-option')).length === 1, {
+      timeout: 2_000,
+      timeoutMsg: 'approval model picker did not filter after typing',
+    })
+    await expect(reviewerA.$('.model-picker-option')).toHaveText(expect.stringContaining('sonnet'))
 
     await browser.saveScreenshot(join(SCREENSHOT_DIR, 'model-compare-approval-dialog.png'))
 
