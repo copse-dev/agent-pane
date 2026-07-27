@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { ToolRegistry, setPermissionGateForTests } from './tool-registry.ts'
+import { expectRecord } from '@shared/unknown-value.ts'
 import { z } from 'zod'
 
 describe('ToolRegistry', () => {
@@ -98,6 +99,29 @@ describe('ToolRegistry', () => {
     assert.equal(tool.name, 'greet')
     const properties = tool.parameters['properties']
     assert.ok(properties && typeof properties === 'object' && 'name' in properties)
+    setPermissionGateForTests(null)
+  })
+
+  it('toLLMTools emits numeric exclusiveMinimum/Maximum, not the boolean draft-4 form', () => {
+    setPermissionGateForTests(async () => true)
+    const reg = new ToolRegistry()
+    reg.register({
+      name: 'bounded',
+      description: 'bounded number',
+      parameters: z.object({ number: z.number().int().positive().lt(100) }),
+      execute: async () => 'ok',
+    })
+    const [tool] = reg.toLLMTools()
+    assert.ok(tool)
+    const properties = expectRecord(tool.parameters['properties'])
+    const numberSchema = expectRecord(properties['number'])
+    // Strict JSON Schema 2020-12 (which some providers validate against, e.g.
+    // poolside) requires these to be numbers, not the OpenAPI/draft-4 boolean
+    // form paired with `minimum`/`maximum`.
+    assert.equal(numberSchema['exclusiveMinimum'], 0)
+    assert.equal(numberSchema['exclusiveMaximum'], 100)
+    assert.equal(numberSchema['minimum'], undefined)
+    assert.equal(numberSchema['maximum'], undefined)
     setPermissionGateForTests(null)
   })
 })
