@@ -5,6 +5,12 @@ import { detectLanguage } from '../../language.ts'
 import { deriveOverallState, rollupToCiChecks } from '../github-ci-service.ts'
 import { decodeWithSchema, safeJsonParse } from '@shared/safe-json.ts'
 import { z } from 'zod'
+import {
+  ghPrViewListSchema,
+  ghPrViewSchema,
+  optionalNumber,
+  optionalString,
+} from '../gh-json-schemas.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import type {
   GhCliStatus,
@@ -61,63 +67,6 @@ interface GhPrViewJson {
     | undefined
 }
 
-const optionalString = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.string().optional(),
-)
-const optionalNumber = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.number().optional(),
-)
-const ghPrViewSchema = z.object({
-  state: optionalString,
-  number: optionalNumber,
-  title: optionalString,
-  url: optionalString,
-  body: optionalString,
-  headRefName: optionalString,
-  baseRefName: optionalString,
-  baseRefOid: optionalString,
-  headRefOid: optionalString,
-  author: z.preprocess(
-    (value) => (value === null ? undefined : value),
-    z.object({ login: optionalString }).optional(),
-  ),
-  mergeable: optionalString,
-  mergeStateStatus: optionalString,
-  additions: optionalNumber,
-  deletions: optionalNumber,
-  changedFiles: optionalNumber,
-  createdAt: optionalString,
-  updatedAt: optionalString,
-  isDraft: z.boolean().optional(),
-  reviewDecision: optionalString,
-  autoMergeRequest: z.object({ enabledAt: optionalString }).nullable().optional(),
-  statusCheckRollup: z
-    .array(
-      z.object({
-        __typename: optionalString,
-        name: optionalString,
-        context: optionalString,
-        status: optionalString,
-        conclusion: optionalString,
-        state: optionalString,
-        detailsUrl: optionalString,
-      }),
-    )
-    .optional(),
-  files: z
-    .array(
-      z.object({
-        path: optionalString,
-        additions: optionalNumber,
-        deletions: optionalNumber,
-        changeType: optionalString,
-      }),
-    )
-    .optional(),
-})
-const ghPrListSchema = z.array(ghPrViewSchema)
 const ghSearchPrListSchema = z.array(
   ghPrViewSchema.extend({
     repository: z
@@ -416,7 +365,7 @@ export const ghCliBackend: GitHubBackend = {
       'number,title,url,state,headRefName,author,createdAt,updatedAt,statusCheckRollup',
     ])
     if (code !== 0) throw new Error(formatGhError(stderr, code))
-    const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrListSchema))
+    const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewListSchema))
     if (!Array.isArray(list)) return []
     return list
       .map((entry) => {

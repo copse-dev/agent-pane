@@ -6,6 +6,13 @@ import {
 import { parseGhJson, runGh } from './gh-service.ts'
 import { firstNonEmptyString } from '@shared/unknown-value.ts'
 import { decodeWithSchema } from '@shared/safe-json.ts'
+import {
+  ghPrViewSchema,
+  optionalNumber,
+  optionalString,
+  type GhPrView,
+  type GhStatusCheckRollup,
+} from './gh-json-schemas.ts'
 import { z } from 'zod'
 
 export type CiOverallState = 'pending' | 'success' | 'failure' | 'no_checks'
@@ -30,73 +37,6 @@ export interface CiStatus {
   latestRunUrl: string | null
 }
 
-interface GhPrView {
-  state?: string | undefined
-  number?: number | undefined
-  title?: string | undefined
-  url?: string | undefined
-  headRefName?: string | undefined
-  headRefOid?: string | undefined
-  statusCheckRollup?:
-    | Array<{
-        __typename?: string | undefined
-        name?: string | undefined
-        context?: string | undefined
-        status?: string | undefined
-        conclusion?: string | undefined
-        state?: string | undefined
-        detailsUrl?: string | undefined
-      }>
-    | undefined
-}
-
-interface GhPrCheckRow {
-  name?: string | undefined
-  state?: string | undefined
-  bucket?: string | undefined
-  link?: string | undefined
-  workflow?: string | undefined
-}
-
-interface GhWorkflowRun {
-  databaseId?: number | undefined
-  headSha?: string | undefined
-  conclusion?: string | undefined
-  status?: string | undefined
-  url?: string | undefined
-  name?: string | undefined
-  displayTitle?: string | undefined
-}
-
-const optionalString = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.string().optional(),
-)
-const optionalNumber = z.preprocess(
-  (value) => (value === null ? undefined : value),
-  z.number().optional(),
-)
-const ghPrViewSchema = z.object({
-  state: optionalString,
-  number: optionalNumber,
-  title: optionalString,
-  url: optionalString,
-  headRefName: optionalString,
-  headRefOid: optionalString,
-  statusCheckRollup: z
-    .array(
-      z.object({
-        __typename: optionalString,
-        name: optionalString,
-        context: optionalString,
-        status: optionalString,
-        conclusion: optionalString,
-        state: optionalString,
-        detailsUrl: optionalString,
-      }),
-    )
-    .optional(),
-})
 const ghPrChecksSchema = z.array(
   z.object({
     name: optionalString,
@@ -118,6 +58,9 @@ const ghWorkflowRunsSchema = z.array(
   }),
 )
 
+type GhPrCheckRow = z.infer<typeof ghPrChecksSchema>[number]
+type GhWorkflowRun = z.infer<typeof ghWorkflowRunsSchema>[number]
+
 export function normalizeCheckBucket(raw: string | undefined): CiCheck['bucket'] {
   const bucket = (raw ?? '').toLowerCase()
   switch (bucket) {
@@ -132,7 +75,7 @@ export function normalizeCheckBucket(raw: string | undefined): CiCheck['bucket']
   }
 }
 
-export function rollupToCiChecks(rollup: GhPrView['statusCheckRollup']): CiCheck[] {
+export function rollupToCiChecks(rollup: GhStatusCheckRollup): CiCheck[] {
   const checks: CiCheck[] = []
   for (const item of rollup ?? []) {
     const name = item.name ?? item.context
