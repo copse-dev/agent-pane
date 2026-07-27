@@ -38,9 +38,30 @@ const defaultDeps: ToolAvailabilityDeps = {
   probeSemanticBackend: probeSemanticBackends,
 }
 
-export async function checkToolAvailability(
-  deps: ToolAvailabilityDeps = defaultDeps,
-): Promise<void> {
+/**
+ * In-flight probe, so the target-aware helpers below can wait for a result
+ * rather than read `null` as "unavailable".
+ *
+ * Startup registers IPC handlers *before* awaiting the probe (the renderer is
+ * already loading and would otherwise invoke unregistered channels), which means
+ * a first-paint git or search request can land while the probe is still out. The
+ * synchronous getters collapse `null` to false, so without this those requests
+ * would get a durable false "git is not available". Stays null until the first
+ * `checkToolAvailability()` call, so unit tests that never probe are unaffected.
+ */
+let probing: Promise<void> | null = null
+
+/** Resolve once the startup probe has answered — a no-op if none was started. */
+export async function whenToolAvailabilityProbed(): Promise<void> {
+  if (probing) await probing
+}
+
+export function checkToolAvailability(deps: ToolAvailabilityDeps = defaultDeps): Promise<void> {
+  probing = runToolAvailabilityProbes(deps)
+  return probing
+}
+
+async function runToolAvailabilityProbes(deps: ToolAvailabilityDeps): Promise<void> {
   // The e2e app relaunches Electron once per spec (~47×/full run); these probes
   // run before the window opens on every launch. Under e2e, skip them: ripgrep
   // and git are provisioned in the e2e environment, so assume them present (the
@@ -100,7 +121,10 @@ export const isGhAvailable = (): boolean => ghAvail === true
 export async function isGitAvailableForTarget(
   target: ExecutionTarget = getActiveExecutionTarget(),
 ): Promise<boolean> {
-  if (!isSshExecutionTarget(target)) return isGitAvailable()
+  if (!isSshExecutionTarget(target)) {
+    await whenToolAvailabilityProbed()
+    return isGitAvailable()
+  }
   if (!isSshWorkspaceExecutionEnabled()) return false
   const mgr = getSshConnectionManager()
   const existing = mgr.getConnection(target.hostId)
@@ -121,7 +145,10 @@ export async function isGitAvailableForTarget(
 export async function isRgAvailableForTarget(
   target: ExecutionTarget = getActiveExecutionTarget(),
 ): Promise<boolean> {
-  if (!isSshExecutionTarget(target)) return isRgAvailable()
+  if (!isSshExecutionTarget(target)) {
+    await whenToolAvailabilityProbed()
+    return isRgAvailable()
+  }
   if (!isSshWorkspaceExecutionEnabled()) return false
   const mgr = getSshConnectionManager()
   const existing = mgr.getConnection(target.hostId)
@@ -132,6 +159,11 @@ export async function isRgAvailableForTarget(
   } catch {
     return false
   }
+}
+
+/** Test hook — forget any probe, restoring the never-probed state. */
+export function resetToolAvailabilityProbeForTest(): void {
+  probing = null
 }
 
 /** Test hook — force ripgrep availability without probing PATH. */

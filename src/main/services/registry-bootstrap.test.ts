@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import {
   createRegistry,
   registerSkillTools,
+  syncGhTools,
   syncOkfMemoryTools,
   syncReadTerminalTools,
   syncRoadmapPlanTools,
@@ -93,6 +94,43 @@ describe('createRegistry GitHub tool gating', () => {
       assert.equal(registry.has(name), false, `expected ${name} to be omitted`)
     }
     // Non-GitHub tools are still exposed regardless of gh availability.
+    assert.equal(registry.has('run_shell'), true)
+  })
+
+  // Startup builds the registry *before* awaiting `checkToolAvailability()`, so
+  // the IPC handlers can register without sitting behind ~9 process spawns (the
+  // renderer invokes settings/ssh channels on first paint). At that point the
+  // probe has not answered and `isGhAvailable()` reads false, so #523's
+  // invariant rests entirely on this second sync — without it the GitHub tools
+  // would stay hidden for the whole session on every launch.
+  it('exposes the read-only GitHub tools when the probe answers after createRegistry', () => {
+    setGhAvailableForTest(null) // probe still in flight
+    const registry = createRegistry()
+    for (const name of GH_READONLY_TOOLS) {
+      assert.equal(registry.has(name), false, `expected ${name} to be absent pre-probe`)
+    }
+
+    setGhAvailableForTest(true) // probe resolves
+    syncGhTools(registry)
+    for (const name of GH_READONLY_TOOLS) {
+      assert.equal(registry.has(name), true, `expected ${name} to appear post-probe`)
+    }
+  })
+
+  it('is idempotent and reversible', () => {
+    setGhAvailableForTest(true)
+    const registry = createRegistry()
+    syncGhTools(registry)
+    syncGhTools(registry)
+    for (const name of GH_READONLY_TOOLS) {
+      assert.equal(registry.has(name), true, `expected ${name} to survive a repeat sync`)
+    }
+
+    setGhAvailableForTest(false)
+    syncGhTools(registry)
+    for (const name of GH_READONLY_TOOLS) {
+      assert.equal(registry.has(name), false, `expected ${name} to be dropped`)
+    }
     assert.equal(registry.has('run_shell'), true)
   })
 })
