@@ -12,6 +12,7 @@ import {
   buildCursorSessionCookie,
   fetchCursorPlanUsage,
   formatCursorCents,
+  parseCursorCreditGrant,
   parseCursorUsage,
 } from './cursor.ts'
 import {
@@ -644,8 +645,22 @@ describe('fetchCursorPlanUsage', () => {
   }
 
   it('maps period usage cents into included + on-demand windows', async () => {
-    const fetchImpl: FetchLike = async (input) => {
-      const body = input.includes('get-hard-limit') ? { hardLimit: 50 } : periodFixture
+    const fetchImpl: FetchLike = async (input, init) => {
+      if (input.includes('get-credit-grants-balance')) {
+        assert.ok(init)
+        assert.equal(init.headers?.['Referer'], 'https://cursor.com/dashboard/spending')
+        assert.equal(init.body, '{}')
+      }
+      const body = input.includes('get-hard-limit')
+        ? { hardLimit: 50 }
+        : input.includes('get-credit-grants-balance')
+          ? {
+              hasCreditGrants: true,
+              creditBalanceCents: '6703',
+              totalCents: '10000',
+              usedCents: '3297',
+            }
+          : periodFixture
       return jsonFetch(body)(input)
     }
     const result = await fetchCursorPlanUsage('user_01ABC%3A%3Afake.jwt.token', {
@@ -672,6 +687,45 @@ describe('fetchCursorPlanUsage', () => {
     assert.equal(spend.usedPercent, 0)
     assert.match(spend.label, /\$0 \/ \$50/)
     assert.equal(total.resetsAt, '2026-08-14T23:54:27.000Z')
+    assert.deepEqual(result.usage.creditGrant, {
+      remainingCents: 6703,
+      totalCents: 10000,
+      usedCents: 3297,
+    })
+  })
+
+  it('parses string credit balances and ignores accounts without a grant', () => {
+    assert.deepEqual(
+      parseCursorCreditGrant({
+        hasCreditGrants: true,
+        creditBalanceCents: '6703',
+        totalCents: '10000',
+        usedCents: '3297',
+      }),
+      { remainingCents: 6703, totalCents: 10000, usedCents: 3297 },
+    )
+    assert.equal(
+      parseCursorCreditGrant({
+        hasCreditGrants: false,
+        creditBalanceCents: '6703',
+        totalCents: '10000',
+        usedCents: '3297',
+      }),
+      null,
+    )
+  })
+
+  it('keeps plan usage available when the optional credit endpoint fails', async () => {
+    const fetchImpl: FetchLike = async (input) => {
+      if (input.includes('get-credit-grants-balance')) throw new Error('credits unavailable')
+      return jsonFetch(input.includes('get-hard-limit') ? { hardLimit: 50 } : periodFixture)(input)
+    }
+    const result = await fetchCursorPlanUsage('user_01ABC%3A%3Afake.jwt.token', {
+      fetch: fetchImpl,
+    })
+    assert.equal(result.status, 'ok')
+    assert.equal(result.usage.creditGrant, undefined)
+    assert.ok(result.usage.windows.length > 0)
   })
 
   it('prefers *PercentUsed over dollar burn during half-rate-style divergence', () => {

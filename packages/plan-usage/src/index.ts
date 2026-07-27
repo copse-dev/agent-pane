@@ -1,5 +1,6 @@
 export type {
   FetchLike,
+  PlanCreditGrant,
   PlanProviderId,
   PlanUsageFetchOptions,
   PlanUsageSnapshot,
@@ -27,6 +28,7 @@ export {
   buildCursorSessionCookie,
   fetchCursorPlanUsage,
   formatCursorCents,
+  parseCursorCreditGrant,
   parseCursorUsage,
 } from './cursor.ts'
 export {

@@ -755,7 +755,8 @@ dialog.settings-overlay::backdrop {
 .usage-plan-signin-btn:hover {
   filter: brightness(1.05);
 }
-.usage-plan-window {
+.usage-plan-window,
+.usage-credit-grant {
   display: flex;
   flex-direction: column;
   gap: 4px;
