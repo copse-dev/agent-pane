@@ -32,3 +32,19 @@
   gap: 4px;
   vertical-align: middle;
 }
+
+/* Only true in-progress statuses spin. Settled "idle" (minus) stays static so
+   Local models "Not loaded" / onboarding "not found" don't look like a hang. */
+@keyframes ui-inline-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ui-inline-status[data-status-kind='pending'] > .ui-icon {
+  animation: ui-inline-status-spin 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-inline-status[data-status-kind='pending'] > .ui-icon {
+    animation: none;
+  }
+}

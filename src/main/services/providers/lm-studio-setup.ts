@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { PREFERRED_MODEL_IDS } from '@shared/preferred-models.ts'
 import { fetchLmStudioModelsCached, lmStudioApiKey, lmStudioOrigin } from './lm-studio-models.ts'
 import { getSetting } from '../storage/settings.ts'
-import { DEFAULT_LM_STUDIO_URL } from '@shared/lm-studio-defaults.ts'
+import { DEFAULT_LM_STUDIO_URL, preferIpv4LoopbackUrl } from '@shared/lm-studio-defaults.ts'
 import { FETCH_TIMEOUTS } from '../fetch-timeouts.ts'
 import { expectRecord } from '@shared/unknown-value.ts'
 
@@ -102,7 +102,7 @@ export async function downloadLmStudioModel(
   openAiBaseUrl: string,
   apiKey?: string,
 ): Promise<LmStudioDownloadJob> {
-  const origin = lmStudioOrigin(openAiBaseUrl)
+  const origin = lmStudioOrigin(preferIpv4LoopbackUrl(openAiBaseUrl))
   const key = lmStudioApiKey(apiKey)
   try {
     const res = await fetch(`${origin}/api/v1/models/download`, {
@@ -138,7 +138,7 @@ export async function getLmStudioDownloadStatus(
   openAiBaseUrl: string,
   apiKey?: string,
 ): Promise<LmStudioDownloadStatus> {
-  const origin = lmStudioOrigin(openAiBaseUrl)
+  const origin = lmStudioOrigin(preferIpv4LoopbackUrl(openAiBaseUrl))
   const key = lmStudioApiKey(apiKey)
   try {
     const res = await fetch(

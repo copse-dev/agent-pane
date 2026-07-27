@@ -141,10 +141,10 @@ describe('resolveExtraProviders', () => {
     for (const provider of providers) {
       assert.ok(provider.builtin)
       assert.equal(provider.prefix, `${provider.id}:`)
-      // Hosted presets use https; local presets are loopback http servers.
+      // Hosted presets use https; local presets are IPv4-loopback http servers.
       assert.ok(
         provider.local
-          ? provider.baseUrl.startsWith('http://localhost')
+          ? provider.baseUrl.startsWith('http://127.0.0.1:')
           : provider.baseUrl.startsWith('https://'),
       )
       assert.equal(provider.local, isLocalBaseUrl(provider.baseUrl))
