@@ -38,7 +38,7 @@ jobs:
         with:
           upload: false
           output: codeql-results
-      - uses: actions/upload-artifact@v7.0.0
+      - uses: actions/upload-artifact@v7
         with:
           name: codeql-results
           path: codeql-results
