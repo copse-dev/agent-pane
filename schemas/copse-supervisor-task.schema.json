@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://copse.dev/schemas/copse-supervisor-task.schema.json",
+  "title": "Copse supervised task records",
+  "description": "On-disk background supervisor task records under a project workspace (tasks/<taskId>/{meta.json,audit.jsonl}). Source of truth for runtime validation is the zod schemas in src/shared/supervisor/task-schema.ts; this file mirrors them for docs and external tooling. See docs/plans/background-supervisor.md (#1081 P1) and docs/thread-store-format.md.",
+  "$defs": {
+    "taskState": {
+      "type": "string",
+      "enum": ["queued", "running", "waiting", "blocked", "cancelled", "failed", "completed"]
+    },
+    "taskProvenance": {
+      "type": "string",
+      "enum": ["user", "agent", "system", "schedule"]
+    },
+    "taskAuditAction": {
+      "type": "string",
+      "enum": [
+        "enqueue",
+        "start",
+        "wake",
+        "suspend",
+        "block",
+        "unblock",
+        "cancel",
+        "fail",
+        "complete",
+        "retry",
+        "reassign",
+        "reconcile"
+      ]
+    },
+    "taskTrigger": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "const": "immediate" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "wakeAt"],
+          "properties": {
+            "kind": { "const": "wake_at" },
+            "wakeAt": { "type": "integer" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "event"],
+          "properties": {
+            "kind": { "const": "event" },
+            "event": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "expression"],
+          "properties": {
+            "kind": { "const": "cron" },
+            "expression": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "permissionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capturedAt", "autoRunSandboxCommands", "projectSandboxEnabled"],
+      "properties": {
+        "capturedAt": { "type": "integer" },
+        "autoRunSandboxCommands": { "type": "boolean" },
+        "projectSandboxEnabled": { "type": "boolean" },
+        "executionRoot": { "type": "string", "minLength": 1 },
+        "workspaceTargetKind": { "type": "string", "enum": ["local", "ssh"] },
+        "capabilityProfileId": { "type": "string", "minLength": 1 },
+        "extra": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "taskResultRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["spine", "blob", "handler"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "minLength": 1 }
+      }
+    },
+    "taskResourceBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxDurationMs": { "type": "integer", "minimum": 1 },
+        "maxAttempts": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "supervisedTaskMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "projectId",
+        "threadId",
+        "handler",
+        "provenance",
+        "state",
+        "createdAt",
+        "updatedAt",
+        "trigger",
+        "permissionSnapshot",
+        "reapproveOnWake",
+        "concurrencyClass",
+        "attempt",
+        "maxAttempts"
+      ],
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1 },
+        "projectId": { "type": "string", "minLength": 1 },
+        "threadId": { "type": "string", "minLength": 1 },
+        "parentTaskId": { "type": "string", "minLength": 1 },
+        "handler": { "type": "string", "minLength": 1 },
+        "provenance": { "$ref": "#/$defs/taskProvenance" },
+        "state": { "$ref": "#/$defs/taskState" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" },
+        "startedAt": { "type": "integer" },
+        "finishedAt": { "type": "integer" },
+        "trigger": { "$ref": "#/$defs/taskTrigger" },
+        "permissionSnapshot": { "$ref": "#/$defs/permissionSnapshot" },
+        "reapproveOnWake": { "type": "boolean" },
+        "concurrencyClass": { "type": "string", "minLength": 1 },
+        "resourceBudget": { "$ref": "#/$defs/taskResourceBudget" },
+        "attempt": { "type": "integer", "minimum": 0 },
+        "maxAttempts": { "type": "integer", "minimum": 1 },
+        "lastError": { "type": "string" },
+        "resultRef": { "$ref": "#/$defs/taskResultRef" },
+        "contentHash": { "type": "string", "minLength": 1 },
+        "processHandleId": { "type": "string", "minLength": 1 },
+        "turnId": { "type": "string", "minLength": 1 },
+        "agentId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "supervisedTaskAuditEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v", "id", "taskId", "action", "at", "toState"],
+      "properties": {
+        "v": { "const": 1 },
+        "id": { "type": "string", "minLength": 1 },
+        "taskId": { "type": "string", "minLength": 1 },
+        "action": { "$ref": "#/$defs/taskAuditAction" },
+        "at": { "type": "integer" },
+        "fromState": { "$ref": "#/$defs/taskState" },
+        "toState": { "$ref": "#/$defs/taskState" },
+        "actor": { "$ref": "#/$defs/taskProvenance" },
+        "reason": { "type": "string" },
+        "fromThreadId": { "type": "string", "minLength": 1 },
+        "toThreadId": { "type": "string", "minLength": 1 },
+        "detail": { "type": "object", "additionalProperties": true }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/supervisedTaskMeta" },
+    { "$ref": "#/$defs/supervisedTaskAuditEvent" }
+  ]
+}
