@@ -78,6 +78,7 @@ describe('selected pack tool discovery', () => {
             },
           ],
         },
+        browser: { origins: ['https://example.test'] },
         runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       }),
     )
@@ -98,6 +99,63 @@ describe('selected pack tool discovery', () => {
         supportsImages: true,
       },
     ])
+    assert.deepEqual(candidate.manifest.browser?.origins, ['https://example.test'])
+    assert.deepEqual(registeredPackToolSource(candidate).contributions.browserOrigins, [
+      'https://example.test',
+    ])
+  })
+
+  it('accepts exact HTTPS and loopback HTTP origins, canonicalized and deduplicated', async () => {
+    const candidate = await discoverPackToolSource(
+      await packRoot({
+        name: 'personal.browser-model',
+        models: { provides: [{ id: 'browser', label: 'Browser model' }] },
+        browser: {
+          origins: [
+            'https://two.example:8443',
+            'http://127.0.0.1:4173',
+            'https://two.example:8443',
+          ],
+        },
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+      }),
+    )
+
+    assert.deepEqual(candidate.manifest.browser?.origins, [
+      'http://127.0.0.1:4173',
+      'https://two.example:8443',
+    ])
+  })
+
+  it('rejects broad, credentialed, path-bearing, and browser-without-model declarations', async () => {
+    for (const origin of [
+      'http://example.test',
+      'https://user@example.test',
+      'https://example.test/path',
+      'https://*.example.test',
+    ]) {
+      await assert.rejects(
+        discoverPackToolSource(
+          await packRoot({
+            name: 'personal.bad-browser',
+            models: { provides: [{ id: 'browser', label: 'Browser model' }] },
+            browser: { origins: [origin] },
+            runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+          }),
+        ),
+        /browser origin/i,
+      )
+    }
+
+    await assert.rejects(
+      discoverPackToolSource(
+        await packRoot({
+          ...validManifest(),
+          browser: { origins: ['https://example.test'] },
+        }),
+      ),
+      /supported executable behavior/i,
+    )
   })
 
   it('rejects duplicate model route ids even when their labels differ', async () => {
@@ -118,7 +176,7 @@ describe('selected pack tool discovery', () => {
     )
   })
 
-  it('rejects traversal, undeclared future behaviors, and symbolic links', async () => {
+  it('rejects traversal, unknown future behaviors, and symbolic links', async () => {
     const traversal = validManifest()
     traversal['tools'] = {
       provides: ['personal_judge'],
@@ -127,9 +185,7 @@ describe('selected pack tool discovery', () => {
     await assert.rejects(discoverPackToolSource(await packRoot(traversal)), PackToolSourceError)
 
     await assert.rejects(
-      discoverPackToolSource(
-        await packRoot({ ...validManifest(), browser: { origins: ['https://example.test'] } }),
-      ),
+      discoverPackToolSource(await packRoot({ ...validManifest(), rendererSlots: ['sidebar'] })),
       /supported executable behavior/i,
     )
 

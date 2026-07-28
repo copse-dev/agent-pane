@@ -55,6 +55,7 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
     },
     browser: {
       onOpenTab: subscribe,
+      onPackTabRequest: subscribe,
     },
     security: {
       getGuardedYolo: (threadId) =>

@@ -61,6 +61,7 @@ import {
   getPackToolRuntimeController,
   setPackToolRuntimeController,
 } from './pack-tool-controller.ts'
+import { setPackBrowserPanelService } from './pack-browser-panel.ts'
 
 // P1 of #1336: selected-pack discovery is part of the production graph before
 // the isolated behavior runtime is wired by the host.
@@ -456,4 +457,5 @@ export function __resetPackServiceForTests(): void {
   singleton = null
   setDefaultPackRegistry(null)
   setPackToolRuntimeController(null)
+  setPackBrowserPanelService(null)
 }

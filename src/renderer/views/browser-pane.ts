@@ -15,6 +15,8 @@ import type { ApiClient } from '../../preload/api.d.ts'
 import { browserTabLabel, normalizeBrowserUrl } from '@shared/browser-url.ts'
 import { BROWSER_SESSION_PARTITION } from '@shared/browser-session.ts'
 import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
+import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
+import { openRightPanel } from '../controller/panels.ts'
 
 /** Minimal typing for Electron's guest `<webview>` element. */
 interface BrowserWebviewElement extends HTMLElement {
@@ -29,6 +31,7 @@ interface BrowserWebviewElement extends HTMLElement {
   getURL(): string
   getTitle(): string
   openDevTools(): void
+  getWebContentsId(): number
 }
 
 interface BrowserTab {
@@ -191,7 +194,10 @@ export function mountBrowserPane(
 
   function syncAddressBar(tab: BrowserTab): void {
     const url = displayUrl(tab)
-    if (document.activeElement !== tab.urlInput) {
+    // Opening the pane focuses its empty address bar. A host-driven navigation
+    // can finish before focus moves, so keep protecting text the user is
+    // actively editing while still reflecting a loaded URL in an empty field.
+    if (document.activeElement !== tab.urlInput || tab.urlInput.value.length === 0) {
       tab.urlInput.value = url
     }
     updateNavButtons(tab)
@@ -675,6 +681,30 @@ export function mountBrowserPane(
     if (target) setActiveTab(target)
   }
 
+  async function ensurePackBrowserTab(
+    request: PackBrowserTabRequest,
+  ): Promise<{ tabId: string; webContentsId: number }> {
+    const hadTabs = tabs.size > 0
+    openRightPanel(store, 'browser')
+    const preferred = request.preferredTabId ? tabs.get(request.preferredTabId) : undefined
+    const initialBlank = !hadTabs && activeTabId ? tabs.get(activeTabId) : undefined
+    const tabId = preferred?.id ?? initialBlank?.id ?? addTab({ activate: true })
+    setActiveTab(tabId)
+    const tab = tabs.get(tabId)
+    if (!tab) throw new Error('Browser tab could not be created.')
+    const webview = ensureWebview(tab)
+    if (tab.webviewReady) return { tabId, webContentsId: webview.getWebContentsId() }
+    return new Promise((resolve) => {
+      webview.addEventListener(
+        'dom-ready',
+        () => {
+          resolve({ tabId, webContentsId: webview.getWebContentsId() })
+        },
+        { once: true },
+      )
+    })
+  }
+
   const unregisterPopoutSeed = registerPopoutSeedHandlers('browser', {
     capture: captureBrowserSeed,
     apply: applyBrowserSeed,
@@ -688,6 +718,7 @@ export function mountBrowserPane(
     // cmd/ctrl click and target=_blank links inside a guide open as a new
     // background tab (main blocks the popup window and forwards the URL here).
     api?.browser.onOpenTab((url) => addTab({ url, activate: false })),
+    api?.browser.onPackTabRequest(ensurePackBrowserTab),
     (): void => {
       document.removeEventListener('click', onDocumentClick)
     },
@@ -698,7 +729,9 @@ export function mountBrowserPane(
 
   return () => {
     unregisterPopoutSeed()
-    unsubs.forEach((u) => u?.())
+    unsubs.forEach((unsubscribe) => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    })
     resizeObserver?.disconnect()
     for (const tab of tabs.values()) {
       tab.webview?.remove()

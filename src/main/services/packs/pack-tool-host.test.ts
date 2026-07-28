@@ -11,6 +11,7 @@ import {
   type PackToolHostDependencies,
 } from './pack-tool-host.ts'
 import { discoverPackToolSource, type PackToolSourceCandidate } from './pack-tool-source.ts'
+import { PackBrowserPanelService, type PackBrowserContents } from './pack-browser-panel.ts'
 
 const FAKE_WORKER = String.raw`
 let buffer = '';
@@ -32,12 +33,19 @@ process.stdin.on('data', (chunk) => {
     } else if (req.op === 'invoke') {
       if (req.kind === 'model') {
         pendingModel = req;
-        send({ type: 'session-call', id: 1, invocationId: req.id, op: 'set', state: { externalId: 'chat-42' } });
+        if (req.input.prompt === 'browse') {
+          send({ type: 'browser-call', id: 2, invocationId: req.id, op: 'open', url: 'https://example.test/start' });
+        } else {
+          send({ type: 'session-call', id: 1, invocationId: req.id, op: 'set', state: { externalId: 'chat-42' } });
+        }
       } else {
         send({ type: 'response', id: req.id, ok: true, result: { answer: req.input.prompt } });
       }
     } else if (req.op === 'session-result' && pendingModel) {
       send({ type: 'response', id: pendingModel.id, ok: true, result: { text: pendingModel.input.prompt } });
+      pendingModel = null;
+    } else if (req.op === 'browser-result' && pendingModel) {
+      send({ type: 'response', id: pendingModel.id, ok: true, result: req.result });
       pendingModel = null;
     } else if (req.op === 'shutdown') {
       send({ type: 'response', id: req.id, ok: true });
@@ -65,6 +73,7 @@ async function fixture(): Promise<PackToolSourceCandidate> {
       models: {
         provides: [{ id: 'judge', label: 'Judge' }],
       },
+      browser: { origins: ['https://example.test'] },
       runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
     }),
   )
@@ -143,6 +152,48 @@ describe('pack tool host', () => {
         state: { externalId: 'chat-42' },
       },
     ])
+    await host.stop()
+  })
+
+  it('binds explicit browser calls to the declared origin and active model thread', async () => {
+    let loadedUrl = 'about:blank'
+    const browserService = new PackBrowserPanelService({
+      ensureTab: (): Promise<{ tabId: string; webContentsId: number }> =>
+        Promise.resolve({ tabId: 'visible-tab', webContentsId: 7 }),
+      contentsFromId: (): PackBrowserContents => ({
+        isDestroyed: (): boolean => false,
+        getURL: (): string => loadedUrl,
+        getTitle: (): string => 'Example',
+        setAllowedOrigins: (): void => {},
+        consumeBlockedUrl: (): null => null,
+        loadURL: (url): Promise<void> => {
+          loadedUrl = url
+          return Promise.resolve()
+        },
+        stop: (): void => {},
+        executeJavaScript: (): Promise<unknown> => Promise.resolve(true),
+      }),
+    })
+    const host = await PackToolHost.start(await fixture(), {
+      ...fakeDependencies,
+      browserService,
+    })
+
+    assert.deepEqual(
+      await host.invokeModel('judge', {
+        threadId: 'thread-browser',
+        prompt: 'browse',
+        attachments: [],
+        history: [],
+      }),
+      {
+        tabId: 'visible-tab',
+        title: 'Example',
+        url: 'https://example.test/start',
+        active: true,
+      },
+    )
+    assert.equal(loadedUrl, 'https://example.test/start')
     await host.stop()
   })
 

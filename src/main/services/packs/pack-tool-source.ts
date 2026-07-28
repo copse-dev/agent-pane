@@ -26,6 +26,10 @@ const zPackModelRoute = z.strictObject({
   supportsImages: z.boolean().optional(),
 })
 
+const zPackBrowser = z.strictObject({
+  origins: z.array(z.string().min(1).max(2_048)).min(1).max(64),
+})
+
 const zPackToolSourceJson = z
   .strictObject({
     name: z.string().min(1).max(128),
@@ -45,8 +49,10 @@ const zPackToolSourceJson = z
         provides: z.array(zPackModelRoute).min(1).max(1_000),
       })
       .optional(),
+    browser: zPackBrowser.optional(),
   })
   .refine((value) => value.tools !== undefined || value.models !== undefined)
+  .refine((value) => value.browser === undefined || value.models !== undefined)
 
 type PackToolSourceJson = z.infer<typeof zPackToolSourceJson>
 
@@ -85,6 +91,41 @@ function ensureContained(root: string, candidate: string, label: string): string
     throw new PackToolSourceError(`${label} escapes the pack root.`)
   }
   return resolved
+}
+
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+}
+
+/** Validate the exact-origin allowlist used by the P4 interactive browser bridge. */
+export function normalizePackBrowserOrigins(origins: readonly string[]): readonly string[] {
+  const normalized = new Set<string>()
+  for (const value of origins) {
+    let url: URL
+    try {
+      url = new URL(value)
+    } catch {
+      throw new PackToolSourceError(`Invalid browser origin: ${JSON.stringify(value)}.`)
+    }
+    const allowedScheme =
+      url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHostname(url.hostname))
+    if (
+      !allowedScheme ||
+      url.username !== '' ||
+      url.password !== '' ||
+      url.hostname.includes('*') ||
+      url.pathname !== '/' ||
+      url.search !== '' ||
+      url.hash !== '' ||
+      value !== url.origin
+    ) {
+      throw new PackToolSourceError(
+        `Browser origin must be an exact HTTPS origin (HTTP is loopback-only): ${JSON.stringify(value)}.`,
+      )
+    }
+    normalized.add(url.origin)
+  }
+  return [...normalized].sort(compareStrings)
 }
 
 async function readManifest(manifestPath: string): Promise<PackToolSourceJson> {
@@ -191,6 +232,7 @@ export async function discoverPackToolSource(sourcePath: string): Promise<PackTo
   if (new Set(providedModels.map((route) => route.id)).size !== providedModels.length) {
     throw new PackToolSourceError('Pack model route ids must be unique.')
   }
+  const browserOrigins = normalizePackBrowserOrigins(raw.browser?.origins ?? [])
   const manifest = packManifestFromPluginJson(
     {
       name: raw.name,
@@ -198,6 +240,7 @@ export async function discoverPackToolSource(sourcePath: string): Promise<PackTo
       ...(raw.description !== undefined ? { description: raw.description } : {}),
       ...(providedTools.length > 0 ? { tools: { provides: providedTools } } : {}),
       ...(providedModels.length > 0 ? { models: { provides: providedModels } } : {}),
+      ...(browserOrigins.length > 0 ? { browser: { origins: browserOrigins } } : {}),
       runtime: {
         entrypoint: relative(root, entrypoint).split(sep).join('/'),
         apiVersion: raw.runtime.apiVersion,
@@ -222,6 +265,7 @@ export function registeredPackToolSource(candidate: PackToolSourceCandidate): Re
   return definePack(candidate.manifest, {
     toolNames: candidate.manifest.tools?.provides ?? [],
     modelRoutes: candidate.manifest.models?.provides ?? [],
+    browserOrigins: candidate.manifest.browser?.origins ?? [],
   })
 }
 

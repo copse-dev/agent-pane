@@ -84,6 +84,7 @@ function mockApi(opts: MockOpts = {}): ApiClient {
                     contributions: {
                       toolNames: [],
                       modelRoutes: opts.packModels,
+                      browserOrigins: [],
                       blockingHooks: [],
                       asyncHooks: [],
                       commandHooks: [],

@@ -6,12 +6,16 @@
 import { pathToFileURL } from 'node:url'
 import {
   PACK_TOOL_PROTOCOL_MAX_LINE_BYTES,
+  zPackBrowserTab,
   zPackToolHostRequest,
+  type PackBrowserCall,
   type PackToolWorkerMessage,
 } from './pack-tool-protocol.ts'
 import {
   activatePackTools,
+  parsePackBrowserTab,
   type ActivatedPackTools,
+  type PackBrowserApi,
   type PackModelSessionApi,
 } from './pack-tool-sdk.ts'
 import { errorMessage } from '@shared/errors.ts'
@@ -21,7 +25,12 @@ let activated: ActivatedPackTools | null = null
 let buffer = ''
 const activeInvocations = new Map<number, AbortController>()
 let nextSessionRequestId = 1
+let nextBrowserRequestId = 1
 const pendingSessionRequests = new Map<
+  number,
+  { resolve: (value: unknown) => void; reject: (error: Error) => void }
+>()
+const pendingBrowserRequests = new Map<
   number,
   { resolve: (value: unknown) => void; reject: (error: Error) => void }
 >()
@@ -84,6 +93,64 @@ function sessionApi(invocationId: number): PackModelSessionApi {
   })
 }
 
+type PackBrowserCallBody = PackBrowserCall extends infer Call
+  ? Call extends PackBrowserCall
+    ? Omit<Call, 'type' | 'id' | 'invocationId'>
+    : never
+  : never
+
+function callBrowser(invocationId: number, call: PackBrowserCallBody): Promise<unknown> {
+  const id = nextBrowserRequestId++
+  return new Promise<unknown>((resolve, reject) => {
+    pendingBrowserRequests.set(id, { resolve, reject })
+    try {
+      writeMessage({ type: 'browser-call', id, invocationId, ...call })
+    } catch (err) {
+      pendingBrowserRequests.delete(id)
+      reject(new Error(`Pack browser request is not serializable: ${errorMessage(err)}`))
+    }
+  })
+}
+
+function browserApi(invocationId: number): PackBrowserApi {
+  return Object.freeze({
+    async open(url: string, options?: { newTab?: boolean }) {
+      const result = await callBrowser(invocationId, {
+        op: 'open',
+        url,
+        ...(options?.newTab !== undefined ? { newTab: options.newTab } : {}),
+      })
+      return parsePackBrowserTab(result)
+    },
+    async navigate(tabId: string, url: string) {
+      const result = await callBrowser(invocationId, { op: 'navigate', tabId, url })
+      return parsePackBrowserTab(result)
+    },
+    async tabs() {
+      const result = await callBrowser(invocationId, { op: 'tabs' })
+      return zPackBrowserTab.array().parse(result)
+    },
+    async snapshot(tabId: string) {
+      const result = await callBrowser(invocationId, { op: 'snapshot', tabId })
+      if (typeof result !== 'string') throw new Error('Pack browser snapshot was not text.')
+      return result
+    },
+    async click(tabId: string, ref: string) {
+      await callBrowser(invocationId, { op: 'click', tabId, ref })
+    },
+    async type(tabId: string, ref: string, text: string) {
+      await callBrowser(invocationId, { op: 'type', tabId, ref, text })
+    },
+    async upload(
+      tabId: string,
+      ref: string,
+      files: readonly import('./pack-tool-protocol.ts').PackBrowserUploadFile[],
+    ) {
+      await callBrowser(invocationId, { op: 'upload', tabId, ref, files: [...files] })
+    },
+  })
+}
+
 async function dispatch(line: string): Promise<void> {
   let request
   try {
@@ -123,6 +190,7 @@ async function dispatch(line: string): Promise<void> {
                 request.input,
                 controller.signal,
                 sessionApi(request.id),
+                browserApi(request.id),
               )
         writeResponse(request.id, true, result)
       } catch (err) {
@@ -145,12 +213,24 @@ async function dispatch(line: string): Promise<void> {
       else pending.reject(new Error(request.error ?? 'Pack session request failed.'))
       return
     }
+    case 'browser-result': {
+      const pending = pendingBrowserRequests.get(request.browserRequestId)
+      if (!pending) return
+      pendingBrowserRequests.delete(request.browserRequestId)
+      if (request.ok) pending.resolve(request.result)
+      else pending.reject(new Error(request.error ?? 'Pack browser request failed.'))
+      return
+    }
     case 'shutdown': {
       for (const controller of activeInvocations.values()) controller.abort()
       for (const pending of pendingSessionRequests.values()) {
         pending.reject(new Error('Pack runtime shut down.'))
       }
       pendingSessionRequests.clear()
+      for (const pending of pendingBrowserRequests.values()) {
+        pending.reject(new Error('Pack runtime shut down.'))
+      }
+      pendingBrowserRequests.clear()
       writeResponse(request.id, true)
       setImmediate(() => process.exit(0))
       return
