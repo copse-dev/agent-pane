@@ -10,6 +10,7 @@ import {
   renderSnapshot,
 } from '../browser/snapshot-format.ts'
 import { expectBoolean } from '@shared/unknown-value.ts'
+import type { PackBrowserOwner, PackBrowserService } from './pack-browser-service.ts'
 
 const TAB_READY_TIMEOUT_MS = 15_000
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -37,12 +38,6 @@ export interface PackBrowserPanelDependencies {
   ensureTab(preferredTabId?: string): Promise<{ tabId: string; webContentsId: number }>
   contentsFromId(id: number): PackBrowserContents | null
   dispose?(): void
-}
-
-export interface PackBrowserOwner {
-  readonly packId: string
-  readonly threadId: string
-  readonly allowedOrigins: readonly string[]
 }
 
 interface OwnedTabs {
@@ -90,7 +85,7 @@ function canonicalUploadFiles(files: readonly PackBrowserUploadFile[]): PackBrow
  * a pack/thread identity and exact declared origins; tab ids and webContents are
  * resolved and checked here, never accepted as authority from the worker.
  */
-export class PackBrowserPanelService {
+export class PackBrowserPanelService implements PackBrowserService {
   private readonly owners = new Map<string, OwnedTabs>()
   private readonly dependencies: PackBrowserPanelDependencies
 
@@ -389,15 +384,4 @@ export function createPackBrowserPanelService(win: BrowserWindow): PackBrowserPa
     },
     dispose,
   })
-}
-
-let configuredService: PackBrowserPanelService | null = null
-
-export function setPackBrowserPanelService(service: PackBrowserPanelService | null): void {
-  configuredService?.dispose()
-  configuredService = service
-}
-
-export function getPackBrowserPanelService(): PackBrowserPanelService | null {
-  return configuredService
 }

@@ -42,7 +42,19 @@ describe('selected pack browser behavior', function () {
             <h1>Personal reference desk</h1>
             <p>This local page stands in for an explicitly declared website.</p>
             <button type="button">Review current task</button>
-            <label>Image evidence <input type="file" accept="image/*"></label>
+            <p id="saved-review" style="cursor: pointer">Saved personal review</p>
+            <p id="click-status"></p>
+            <label>Image evidence <input hidden type="file" accept="image/*"></label>
+            <p id="upload-status"></p>
+            <script>
+              document.querySelector('input[type="file"]').addEventListener('change', (event) => {
+                document.querySelector('#upload-status').textContent =
+                  'Received ' + event.currentTarget.files[0].name
+              })
+              document.querySelector('#saved-review').addEventListener('click', () => {
+                document.querySelector('#click-status').textContent = 'Opened saved personal review'
+              })
+            </script>
           </body>
         </html>`)
     })
@@ -59,8 +71,19 @@ describe('selected pack browser behavior', function () {
       `export function activate(api) {
         api.registerModelRoute(${JSON.stringify(MODEL_ID)}, async (_turn, context) => {
           const tab = await context.browser.open(${JSON.stringify(`${origin}/reference`)})
-          const snapshot = await context.browser.snapshot(tab.tabId)
-          return { text: 'Visible browser handoff completed.\\n\\n' + snapshot }
+          const before = await context.browser.snapshot(tab.tabId)
+          const savedRef = before.match(/- text "Saved personal review" \\[ref=(e\\d+)\\]/)?.[1]
+          if (!savedRef) throw new Error('Pointer-affordance text was not exposed by the snapshot.')
+          await context.browser.click(tab.tabId, savedRef)
+          const fileRef = before.match(/- file "Image evidence" \\[ref=(e\\d+)\\]/)?.[1]
+          if (!fileRef) throw new Error('Hidden file input was not exposed by the snapshot.')
+          await context.browser.upload(tab.tabId, fileRef, [{
+            name: 'example.png',
+            mimeType: 'image/png',
+            dataBase64: 'iVBORw0KGgo=',
+          }])
+          const after = await context.browser.snapshot(tab.tabId)
+          return { text: 'Visible browser handoff completed.\\n\\n' + after }
         })
       }
 `,
@@ -103,7 +126,11 @@ describe('selected pack browser behavior', function () {
     const response = await assistant.getText()
     assert.match(response, /Visible browser handoff completed/)
     assert.match(response, /Personal reference desk/)
+    assert.match(response, /This local page stands in for an explicitly declared website/)
     assert.match(response, /Review current task/)
+    assert.match(response, /file "Image evidence"/)
+    assert.match(response, /Opened saved personal review/)
+    assert.match(response, /Received example\.png/)
 
     await expect($('#pane-files')).toBeDisplayed()
     await expect($('.browser-tabs-tab.is-active')).toBeDisplayed()
