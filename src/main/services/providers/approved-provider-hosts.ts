@@ -78,6 +78,7 @@ export async function ensureProviderHostApproved(baseUrl: string): Promise<void>
     ].join('\n'),
     type: 'web',
     allowRemember: false,
+    showWhileSettingsOpen: true,
   })
   if (!ok) {
     throw new Error(`Provider host "${host}" was not approved.`)
