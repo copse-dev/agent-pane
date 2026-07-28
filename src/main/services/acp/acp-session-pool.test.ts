@@ -177,8 +177,8 @@ describe('acp-session-pool', () => {
     // means the session is actively serving a prompt (including one waiting on
     // session/request_permission).
     entry.open.turnStop = {
-      resolve: () => {},
-      reject: () => {},
+      resolve: (): void => {},
+      reject: (): void => {},
     }
     entry.lastUsedAt = Date.now() - 120_000
     assert.deepEqual(await reapIdleAcpSessions(Date.now(), 60_000), [])
