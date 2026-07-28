@@ -2,10 +2,10 @@
 
 Tracking: [#1081](https://github.com/copse-dev/agent-pane/issues/1081)
 
-**Status: Proposed.** This is the first delivery slice for #1081: nail the product
-contract for a durable background task supervisor before schedulers, monitors, or
-per-feature pollers. Implementation PRs should link here and keep long-horizon
-checklists (#558), dark-factory orchestration, A2A/remote delegation (#1015), and
+**Status: Active (P1).** Design contract is on `develop` via [#1170](https://github.com/copse-dev/agent-pane/pull/1170).
+P1 lands the Zod/JSON schema + pure load/reconcile helpers (no timers, no main
+service yet). Implementation PRs should link here and keep long-horizon checklists
+(#558), dark-factory orchestration, A2A/remote delegation (#1015), and
 `run_background` shell tasks as **consumers**, not alternate supervisors.
 
 Parent investigation: [`grok-build-architecture-comparison.md`](grok-build-architecture-comparison.md).
@@ -154,10 +154,14 @@ dark-factory poller implementation, and changes to `run_background`.
 
 ### P1 — Schema + persistence sketch
 
-- Zod (or JSON Schema) for task records and append-only audit events.
-- On-disk layout under `~/.copse/workspace/<projectId>/tasks/` (final path bikeshed in
-  PR; must not collide with thread dirs).
-- Exit gate: fixtures validate; pure load/reconcile helpers unit-tested without Electron.
+- [x] Zod source of truth in `src/shared/supervisor/task-schema.ts` + published
+      `schemas/copse-supervisor-task.schema.json`.
+- [x] On-disk layout under `~/.copse/workspace/<projectId>/tasks/<taskId>/`
+      (`meta.json` + append-only `audit.jsonl`) — Open Q1 resolved: beside threads under
+      the project dir; reuses `COPSE_WORKSPACE_DIR` (no sibling tree / new override).
+- [x] Pure `reconcileSupervisedTasks` helper (fake-clock / restart-shaped; no fs).
+- [x] Exit gate: fixtures under `tests/fixtures/background-supervisor/` validate;
+      unit tests cover schema + reconcile without Electron.
 
 ### P2 — Main-process supervisor service (no consumers)
 
@@ -196,16 +200,20 @@ dark-factory poller implementation, and changes to `run_background`.
   applies until revisited).
 - Marketplace/plugin distribution (#1082) — orthogonal supply chain.
 
-## Open questions (resolve in P1/P2 PRs)
+## Open questions
 
-1. Exact on-disk root: beside threads under the project dir, or a sibling `tasks/` tree
-   with its own `COPSE_*` override for tests?
+1. ~~Exact on-disk root: beside threads under the project dir, or a sibling `tasks/` tree
+   with its own `COPSE_*` override for tests?~~ **Resolved in P1:** beside threads at
+   `~/.copse/workspace/<projectId>/tasks/<taskId>/` (override via existing
+   `COPSE_WORKSPACE_DIR` only). The literal `tasks` dir is reserved and must not collide
+   with UUID thread dirs; `readThread` already skips dirs without thread `meta.json`.
 2. Should `run_background` processes automatically register as supervised tasks in P2,
-   or remain session-scoped until a consumer opts in?
+   or remain session-scoped until a consumer opts in? _(still open — P2)_
 3. For agent-turn handlers, is the wake payload a synthetic user message, a steering
-   event, or a dedicated #1079 turn kind?
+   event, or a dedicated #1079 turn kind? _(still open — P2/P3)_
 4. How do SSH / remote execution targets (#942) appear in the permission snapshot when
-   the wake fires after the workspace target changed?
+   the wake fires after the workspace target changed? _(still open — P2; P1 stores
+   `workspaceTargetKind` / `executionRoot` placeholders only)_
 
 ## References
 
