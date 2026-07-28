@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { expectRecord, isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 const ROOT = process.cwd()
 const ELECTRON_INSTALL_JS = join(ROOT, 'node_modules', 'electron', 'install.js')
@@ -32,11 +33,10 @@ describe('macOS dev bundle patch contract (Electron lazy download)', () => {
 
   it('electron npm package uses lazy download (no postinstall hook)', () => {
     if (!existsSync(ELECTRON_PKG_JSON)) return
-    const pkg = JSON.parse(readFileSync(ELECTRON_PKG_JSON, 'utf8')) as {
-      scripts?: { postinstall?: string }
-    }
+    const pkg = expectRecord(parseJsonUnknown(readFileSync(ELECTRON_PKG_JSON, 'utf8')))
+    const scripts = pkg['scripts']
     assert.equal(
-      pkg.scripts?.postinstall,
+      isRecord(scripts) ? scripts['postinstall'] : undefined,
       undefined,
       'postinstall must fetch the dist in patch-dev-name when Electron.app is missing',
     )

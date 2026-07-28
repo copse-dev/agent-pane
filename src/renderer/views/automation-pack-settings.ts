@@ -4,7 +4,8 @@ import type { AppStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import { isBestValueChatModel } from '@shared/lm-studio-defaults.ts'
 import { el, clear } from '../dom/helpers.ts'
-import { populateModelSelect, modelDisplayLabel, type ModelOptionsApi } from './model-options.ts'
+import { fetchModelOptions, modelDisplayLabel, type ModelOptionsApi } from './model-options.ts'
+import { mountModelSelectPicker } from './model-picker.ts'
 import { showConfirmDialog } from './confirm-dialog.ts'
 
 function cleanIpcError(error: unknown): string {
@@ -111,6 +112,11 @@ export function createAutomationPackSettings(
     el('div', { class: 'automation-form-actions' }, saveButton, cancelButton),
   )
   root.append(heading, scope, notice, status, list, form)
+  const modelPicker = mountModelSelectPicker(modelSelect, {
+    loadOptions: (current) => fetchModelOptions(api, current),
+    ariaLabel: 'Automation model',
+    loadOnMount: false,
+  })
 
   let schedules: AutomationSchedule[] = []
   let editingId: string | null = null
@@ -144,10 +150,12 @@ export function createAutomationPackSettings(
     // best-value sentinel into a delayed task where its eventual resolution
     // could change between configuration and trigger time.
     const defaultModel = isBestValueChatModel(configuredModel) ? '' : configuredModel
-    await populateModelSelect(modelSelect, api, defaultModel)
-    if (!modelSelect.value && modelSelect.options.length > 0) {
-      modelSelect.selectedIndex = 0
-    }
+    const options = await fetchModelOptions(api, defaultModel)
+    const selectedModel =
+      options.find((option) => option.value === defaultModel && !option.disabled)?.value ??
+      options.find((option) => option.value && !option.disabled)?.value ??
+      ''
+    await modelPicker.refresh(selectedModel)
     form.hidden = false
     nameInput.focus()
   }

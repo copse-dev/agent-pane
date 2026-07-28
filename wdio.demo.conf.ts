@@ -91,7 +91,11 @@ export const config: Options.Testrunner = {
   ],
   framework: 'mocha',
   reporters: ['spec'],
-  mochaOpts: { ui: 'bdd', timeout: 30_000 },
+  // Match wdio.ci.conf.ts headroom: under CI load the build job runs four
+  // headless Chromes while `check` is still bundling/testing on the same
+  // ~6 GB runner. A mid-suite remount that is fine locally (~1s) can stall
+  // past 30s (develop tip 3f7a2961 / chat-layout-styling.demo.ts).
+  mochaOpts: { ui: 'bdd', timeout: 90_000 },
   onPrepare: startDemoServer,
   onComplete: stopDemoServer,
   before() {

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { expectRecord } from '@shared/unknown-value.ts'
 import { normalizeCustomTool, customToolName, customToolLabel } from './custom-tools-config.ts'
 
 const signal = new AbortController().signal
@@ -16,7 +17,7 @@ describe('normalizeCustomTool', () => {
     assert.ok(tool)
     assert.equal(tool.name, 'custom__echo')
     assert.match(tool.description, /^\[custom\] /)
-    assert.equal((tool.rawParameters as { type: string }).type, 'object')
+    assert.equal(expectRecord(tool.rawParameters)['type'], 'object')
     assert.equal(await tool.execute({ msg: 'hi' }, signal), 'got hi')
   })
 
@@ -27,7 +28,7 @@ describe('normalizeCustomTool', () => {
       execute: () => 'ok',
     })
     assert.ok(withAlias.tool)
-    assert.equal((withAlias.tool.rawParameters as { type: string }).type, 'object')
+    assert.equal(expectRecord(withAlias.tool.rawParameters)['type'], 'object')
 
     const noSchema = normalizeCustomTool({ name: 'b', execute: () => 'ok' })
     assert.ok(noSchema.tool)

@@ -15,6 +15,11 @@ export interface TerminalSelectionSource {
   getSelection(): string
 }
 
+type SelectionShortcutEvent = Pick<
+  KeyboardEvent,
+  'altKey' | 'code' | 'ctrlKey' | 'metaKey' | 'shiftKey'
+>
+
 export function buildTerminalSelectionAttachment(
   term: TerminalSelectionSource,
   label: string,
@@ -41,7 +46,7 @@ export function attachTerminalSelectionToChat(
 }
 
 /** Cmd/Ctrl+L (no alt/shift), matching the Monaco selection-to-chat shortcut. */
-export function isSelectionToChatKey(event: KeyboardEvent): boolean {
+export function isSelectionToChatKey(event: SelectionShortcutEvent): boolean {
   const meta = event.ctrlKey || event.metaKey
   if (!meta || event.altKey || event.shiftKey) return false
   return event.code === 'KeyL'

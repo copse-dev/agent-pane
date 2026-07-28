@@ -90,27 +90,14 @@ async function bundleTests(testFiles: string[]): Promise<void> {
     ],
   }
 
-  // Under CI fleet load the esbuild child can die mid-bundle ("The service was
-  // stopped"). A bare retry reuses the dead JS-side service and fails instantly
-  // with "The service is no longer running" — call stop() first so the next
-  // build starts a fresh service. Two attempts after the first failure.
-  const maxAttempts = 3
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      await esbuild.build(buildOptions)
-      break
-    } catch (err) {
-      if (!isEsbuildServiceDead(err) || attempt === maxAttempts) throw err
-      const msg = err instanceof Error ? err.message : String(err)
-      console.warn(
-        `[run-tests] esbuild service stopped (${msg}); stop()+retry ${String(attempt)}/${String(maxAttempts - 1)}`,
-      )
-      try {
-        await esbuild.stop()
-      } catch {
-        // stop() can throw if the service is already gone; ignore and retry.
-      }
-    }
+  // Bundle in batches rather than handing esbuild all ~540 entry points at once.
+  // Each entry point is bundled standalone with its dependencies inlined, so a
+  // single build holds the whole ~1.7GB of output in flight and peaks around
+  // 5.7GB RSS — enough that a loaded CI runner OOM-kills the esbuild child
+  // ("The service was stopped"). Batching bounds the peak; `outbase` is pinned
+  // above, so a batched run writes exactly the same paths as a single build.
+  for (let i = 0; i < testFiles.length; i += BUNDLE_BATCH_SIZE) {
+    await buildBatch({ ...buildOptions, entryPoints: testFiles.slice(i, i + BUNDLE_BATCH_SIZE) })
   }
 
   // Warm up Electron's binary once, serially, before the parallel test run.
@@ -123,12 +110,48 @@ async function bundleTests(testFiles: string[]): Promise<void> {
   // present. Harmless (returns immediately) when Electron is already installed.
   // A filtered run that selected no main-process test has nothing to race, and
   // the warmup is a meaningful slice of a small subset's wall clock — skip it.
+  //
+  // Must stay in `bundleTests`, after every batch: it ran once per full bundle
+  // before batching, and it has to keep running exactly once, after the last
+  // build and before `runTests` spawns the parallel workers.
   if (testFiles.some((f) => f.startsWith('src/main/'))) {
     const electronWarmup = spawnSync('node', ['-e', 'require("electron")'], { stdio: 'inherit' })
     if (electronWarmup.status !== 0) {
       console.warn(
         `[run-tests] electron warmup exited ${String(electronWarmup.status)}; continuing to tests`,
       )
+    }
+  }
+}
+
+/** Entry points per `esbuild.build()` call — see the comment in {@link bundleTests}. */
+const BUNDLE_BATCH_SIZE = 48
+
+/**
+ * Build one batch, retrying if the esbuild child dies.
+ *
+ * A bare retry reuses the dead JS-side service and fails instantly with "The
+ * service is no longer running", so call `stop()` first to force a fresh
+ * service. Retrying per batch (rather than re-running the whole bundle) means a
+ * transient death costs one batch, not all ~540 entry points.
+ */
+async function buildBatch(options: esbuild.BuildOptions): Promise<void> {
+  const maxAttempts = 3
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await esbuild.build(options)
+      return
+    } catch (err) {
+      if (!isEsbuildServiceDead(err) || attempt === maxAttempts) throw err
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(
+        `[run-tests] esbuild service stopped (${msg}); stop()+retry ${String(attempt)}/${String(maxAttempts - 1)}`,
+      )
+      try {
+        await esbuild.stop()
+      } catch {
+        // stop() can throw if the service is already gone; ignore and retry.
+      }
     }
   }
 }

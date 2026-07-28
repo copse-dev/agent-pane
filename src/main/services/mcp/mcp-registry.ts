@@ -234,7 +234,38 @@ function createTransport(cfg: McpServerConfig): CreatedTransport {
       new URL(cfg.url),
       cfg.headers ? { requestInit: { headers: cfg.headers } } : undefined,
     )
-    return { transport: transport as unknown as Transport, stderrOutput: () => '' }
+    const compatible: Transport = {
+      start: () => transport.start(),
+      send: (message, options) => transport.send(message, options),
+      close: async () => {
+        await transport.close()
+      },
+      setProtocolVersion: (version) => {
+        transport.setProtocolVersion(version)
+      },
+    }
+    Object.defineProperties(compatible, {
+      onclose: {
+        get: () => transport.onclose,
+        set: (callback: () => void) => {
+          transport.onclose = callback
+        },
+      },
+      onerror: {
+        get: () => transport.onerror,
+        set: (callback: (error: Error) => void) => {
+          transport.onerror = callback
+        },
+      },
+      onmessage: {
+        get: () => transport.onmessage,
+        set: (callback: NonNullable<Transport['onmessage']>) => {
+          transport.onmessage = callback
+        },
+      },
+      sessionId: { get: () => transport.sessionId },
+    })
+    return { transport: compatible, stderrOutput: () => '' }
   }
   if (cfg.command === undefined) {
     throw new Error(`MCP server "${cfg.name}" uses stdio transport but has no command`)
@@ -276,7 +307,23 @@ async function registerClientTools(
     toolNames.push(tool.name)
     const meta: McpToolMeta = { server: serverName }
     if (bundled) meta.bundled = true
-    if (tool.annotations) meta.annotations = tool.annotations as McpToolAnnotations
+    if (tool.annotations) {
+      const annotations: McpToolAnnotations = {}
+      if (typeof tool.annotations.title === 'string') annotations.title = tool.annotations.title
+      if (typeof tool.annotations.readOnlyHint === 'boolean') {
+        annotations.readOnlyHint = tool.annotations.readOnlyHint
+      }
+      if (typeof tool.annotations.destructiveHint === 'boolean') {
+        annotations.destructiveHint = tool.annotations.destructiveHint
+      }
+      if (typeof tool.annotations.idempotentHint === 'boolean') {
+        annotations.idempotentHint = tool.annotations.idempotentHint
+      }
+      if (typeof tool.annotations.openWorldHint === 'boolean') {
+        annotations.openWorldHint = tool.annotations.openWorldHint
+      }
+      meta.annotations = annotations
+    }
     toolMeta.set(fullName, meta)
     registry.register({
       name: fullName,

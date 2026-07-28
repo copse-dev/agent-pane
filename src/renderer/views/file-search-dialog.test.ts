@@ -21,6 +21,9 @@ import {
   isFileSearchDialogOpen,
 } from './file-search-dialog.ts'
 import { qsRequired } from '../dom/helpers.ts'
+import { createFakeApi } from '../fake-api.test-support.ts'
+import type { KnowledgeNote } from '../../main/services/storage/knowledge-store.ts'
+import type { PackSummary, PacksListResult } from '@shared/types/packs.ts'
 
 function shimModal(dialog: HTMLDialogElement): void {
   let open = false
@@ -43,7 +46,7 @@ function makeRoadmapItem(
   prompt: string,
   status = 'ready',
   notes?: string,
-): Record<string, unknown> {
+): KnowledgeNote {
   return {
     id,
     type: 'Roadmap',
@@ -65,43 +68,66 @@ function stubApi(
   calls: ApiCalls,
   queryResult: () => string[],
   options?: {
-    roadmap?: Record<string, unknown>[] | (() => Promise<Record<string, unknown>[]>)
+    roadmap?: KnowledgeNote[] | (() => Promise<KnowledgeNote[]>)
     roadmapEnabled?: boolean
   },
 ): ApiClient {
-  const api = {
+  const base = createFakeApi()
+  const roadmapPack: PackSummary = {
+    id: ROADMAP_PLANS_PACK_ID,
+    trust: 'first-party',
+    name: ROADMAP_PLANS_PACK_ID,
+    enabled: options?.roadmapEnabled ?? false,
+    contributions: {
+      toolNames: [],
+      blockingHooks: [],
+      asyncHooks: [],
+      commandHooks: [],
+      promptBlocks: [],
+      ui: [],
+      capabilities: [],
+      permissions: [],
+    },
+    settings: [],
+  }
+  return {
+    ...base,
     index: {
+      ...base.index,
       query: (pattern: string): Promise<string[]> => {
         calls.queries.push(pattern)
         return Promise.resolve(queryResult())
       },
     },
     fs: {
+      ...base.fs,
       readFile: (_projectId: string, _threadId: string, path: string): Promise<string> => {
         calls.reads.push(path)
         return Promise.resolve(`contents of ${path}`)
       },
     },
     settings: {
+      ...base.settings,
       get: (): Promise<unknown> => Promise.resolve(null),
     },
     packs: {
+      ...base.packs,
       // Roadmap is gated by the `copse.roadmap-plans` pack; the dialog reads
       // enablement from `packs:list` (mirrors the pane's titlebar-button gate).
-      list: (): Promise<{ packs: { id: string; enabled: boolean }[] }> =>
+      list: (): Promise<PacksListResult> =>
         Promise.resolve({
-          packs: [{ id: ROADMAP_PLANS_PACK_ID, enabled: options?.roadmapEnabled ?? false }],
+          packs: [roadmapPack],
         }),
     },
     roadmap: {
-      list: (): Promise<Record<string, unknown>[]> => {
+      ...base.roadmap,
+      list: (): Promise<KnowledgeNote[]> => {
         calls.roadmapLists++
         const items = options?.roadmap
         return typeof items === 'function' ? items() : Promise.resolve(items ?? [])
       },
     },
   }
-  return api as unknown as ApiClient
 }
 
 const tick = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -125,7 +151,7 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
   let result: string[]
 
   function mount(options?: {
-    roadmap?: Record<string, unknown>[] | (() => Promise<Record<string, unknown>[]>)
+    roadmap?: KnowledgeNote[] | (() => Promise<KnowledgeNote[]>)
     roadmapEnabled?: boolean
   }): void {
     document.body.innerHTML = ''
@@ -273,11 +299,11 @@ describe('file search dialog (Cmd/Ctrl+P quick open)', () => {
       // Hand each open an explicitly-resolvable fetch so the race is
       // deterministic: reopen before resolving and the stale snapshot
       // (possibly another workspace's) must not render.
-      let resolveList: ((items: Record<string, unknown>[]) => void) | undefined
+      let resolveList: ((items: KnowledgeNote[]) => void) | undefined
       mount({
         roadmapEnabled: true,
         roadmap: () =>
-          new Promise<Record<string, unknown>[]>((resolve) => {
+          new Promise<KnowledgeNote[]>((resolve) => {
             resolveList = resolve
           }),
       })

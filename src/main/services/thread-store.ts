@@ -31,6 +31,7 @@ import {
   type RefResolver,
 } from '@shared/threads/fold.ts'
 import { parseOkfMessage } from '@shared/threads/okf-message.ts'
+import { parseThreadMetaValue } from '@shared/threads/thread-boundary.ts'
 import {
   parseSpine,
   parseSpineEntries,
@@ -47,6 +48,8 @@ import {
   type RemoteAgentPrIndexEntry,
 } from '@shared/remote-agent-link.ts'
 import type { GithubPrRef } from '@shared/git/github-pr-url.ts'
+import { isRemoteAgentProvider } from '@shared/remote-agent.ts'
+import { isRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { storageGet } from './storage/storage.ts'
 import { runSerialized } from './storage/write-queue.ts'
 
@@ -238,14 +241,7 @@ function parseMeta(raw: string | null): ThreadMeta | null {
   if (raw === null) return null
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      typeof (parsed as Thread).id !== 'string'
-    ) {
-      return null
-    }
-    return parsed as ThreadMeta
+    return parseThreadMetaValue(parsed)
   } catch {
     return null
   }
@@ -439,8 +435,27 @@ function readCatalog(projectId: string): Map<string, CatalogEntry> {
   for (const line of raw.split('\n')) {
     if (line.trim() === '') continue
     try {
-      const entry = JSON.parse(line) as CatalogEntry
-      if (typeof entry.id === 'string') map.set(entry.id, entry)
+      const value = parseJsonUnknown(line)
+      if (
+        !isRecord(value) ||
+        typeof value['id'] !== 'string' ||
+        typeof value['title'] !== 'string' ||
+        typeof value['createdAt'] !== 'number' ||
+        typeof value['updatedAt'] !== 'number' ||
+        typeof value['digest'] !== 'string' ||
+        typeof value['path'] !== 'string'
+      ) {
+        continue
+      }
+      const entry: CatalogEntry = {
+        id: value['id'],
+        title: value['title'],
+        createdAt: value['createdAt'],
+        updatedAt: value['updatedAt'],
+        digest: value['digest'],
+        path: value['path'],
+      }
+      map.set(entry.id, entry)
     } catch {
       // Skip malformed line; the catalog is rebuildable.
     }
@@ -534,7 +549,22 @@ function readAgentPrIndex(projectId: string): Map<string, RemoteAgentPrIndexEntr
   for (const line of raw.split('\n')) {
     if (line.trim() === '') continue
     try {
-      const entry = JSON.parse(line) as RemoteAgentPrIndexEntry
+      const value = parseJsonUnknown(line)
+      if (
+        !isRecord(value) ||
+        typeof value['prUrl'] !== 'string' ||
+        typeof value['threadId'] !== 'string' ||
+        typeof value['agentId'] !== 'string' ||
+        !isRemoteAgentProvider(value['provider'])
+      ) {
+        continue
+      }
+      const entry: RemoteAgentPrIndexEntry = {
+        prUrl: value['prUrl'],
+        threadId: value['threadId'],
+        agentId: value['agentId'],
+        provider: value['provider'],
+      }
       const key = remoteAgentPrIndexKey(entry.prUrl)
       if (key && typeof entry.threadId === 'string') map.set(key, entry)
     } catch {
@@ -1039,10 +1069,10 @@ export function listOrphanProjectStores(
  * observe a torn thread directory.
  */
 export async function loadAllProjectThreads(): Promise<Thread[]> {
-  const projects =
-    (storageGet('projects') as Array<{ id: string }> | null)?.filter(
-      (p) => typeof p.id === 'string' && p.id.length > 0,
-    ) ?? []
+  const projects = recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+    const id = project['id']
+    return typeof id === 'string' && id.length > 0 ? [{ id }] : []
+  })
   const threads: Thread[] = []
   for (const project of projects) {
     threads.push(...(await loadProjectThreads(project.id)))

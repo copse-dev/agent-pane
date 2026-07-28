@@ -154,11 +154,47 @@ export function acpTurnUsage(
   }
 }
 
+const ACP_ERROR_DETAIL_LIMIT = 2_000
+
+function truncateAcpErrorDetail(value: string): string {
+  return value.length <= ACP_ERROR_DETAIL_LIMIT
+    ? value
+    : `${value.slice(0, ACP_ERROR_DETAIL_LIMIT)}...`
+}
+
+function acpErrorDataDetail(err: unknown): string | null {
+  if (typeof err === 'object' && err !== null && 'data' in err) {
+    const data = Reflect.get(err, 'data')
+    if (typeof data === 'string') return truncateAcpErrorDetail(data)
+    if (typeof data === 'object' && data !== null && 'details' in data) {
+      const details = Reflect.get(data, 'details')
+      if (typeof details === 'string') return truncateAcpErrorDetail(details)
+    }
+    try {
+      const encoded = JSON.stringify(data)
+      return typeof encoded === 'string' ? truncateAcpErrorDetail(encoded) : null
+    } catch {
+      return null
+    }
+  }
+  if (err instanceof Error && err.cause) return acpErrorDataDetail(err.cause)
+  return null
+}
+
+export function acpErrorMessage(err: unknown): string {
+  const message = errorMessage(err)
+  const detail = acpErrorDataDetail(err)
+  if (!detail || message.includes(detail)) return message
+  return `${message}: ${detail}`
+}
+
 /**
  * A failed ACP turn, carrying whatever the turn streamed before it died so the
  * caller can keep the partial assistant text in thread history and attribute
- * the (estimated) token spend instead of silently zeroing both. `message` is
- * the underlying failure's message so `classifyAgentError` still sees it.
+ * the (estimated) token spend instead of silently zeroing both. `message` keeps
+ * JSON-RPC `error.data` details when the adapter supplies them, so
+ * `classifyAgentError` and the UI don't collapse actionable subprocess stderr
+ * into a bare "Internal error".
  */
 export class AcpTurnFailure extends Error {
   readonly partial: {
@@ -170,7 +206,7 @@ export class AcpTurnFailure extends Error {
     cause: unknown,
     partial: { assistantText: string; usage: { inputTokens: number; outputTokens: number } },
   ) {
-    super(errorMessage(cause), { cause })
+    super(acpErrorMessage(cause), { cause })
     this.name = 'AcpTurnFailure'
     this.partial = partial
   }
@@ -184,7 +220,7 @@ export class AcpTurnFailure extends Error {
  * and 5xx server errors.
  */
 export function isTransientProviderError(err: unknown): boolean {
-  const msg = errorMessage(err)
+  const msg = acpErrorMessage(err)
   if (/\boverloaded\b/i.test(msg)) return true
   if (/\brate[ _-]?limit/i.test(msg)) return true
   if (/\b(?:429|500|502|503|504|529)\b/.test(msg)) return true
@@ -204,11 +240,15 @@ export function isTransientProviderError(err: unknown): boolean {
  * user with no recovery path.
  */
 export function isAcpConnectionDropped(err: unknown): boolean {
-  const msg = errorMessage(err)
+  const msg = acpErrorMessage(err)
   if (/connection (?:closed|reset|lost)/i.test(msg)) return true
   if (/\b(?:EPIPE|ECONNRESET)\b/.test(msg)) return true
   if (/premature close/i.test(msg)) return true
   if (/write after end/i.test(msg)) return true
+  if (/process(?:transport)? is not ready for writing/i.test(msg)) return true
+  if (/query closed before response received/i.test(msg)) return true
+  if (/process exited with (?:code|signal)/i.test(msg)) return true
+  if (/ACP agent .+ exited with (?:code|signal)/i.test(msg)) return true
   return false
 }
 

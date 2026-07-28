@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import type { ApiClient, DetectedEnvKey } from '../../../preload/api.d.ts'
 import { createEnvKeyDetectSection } from './env-key-detect-section.ts'
 import { qsRequired } from '../../dom/helpers.ts'
+import { createFakeApi } from '../../fake-api.test-support.ts'
 
 interface StubState {
   settings: Record<string, unknown>
@@ -13,8 +14,11 @@ interface StubState {
 }
 
 function stubApi(state: StubState): ApiClient {
-  const api = {
+  const base = createFakeApi()
+  return {
+    ...base,
     settings: {
+      ...base.settings,
       get: async (key: string): Promise<unknown> => state.settings[key] ?? null,
       set: async (key: string, value: unknown): Promise<void> => {
         state.settings[key] = value
@@ -22,14 +26,13 @@ function stubApi(state: StubState): ApiClient {
       scanEnvKeys: async (): Promise<DetectedEnvKey[]> => state.scanResult,
       importEnvKeys: async (): Promise<{
         imported: { provider: string; source: string }[]
-        skipped: string[]
+        skipped: { provider: string; reason: string }[]
       }> => {
         state.importCalls += 1
         return { imported: state.imported, skipped: [] }
       },
     },
-  }
-  return api as unknown as ApiClient
+  } satisfies ApiClient
 }
 
 const flush = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0))
@@ -64,6 +67,7 @@ describe('env-key-detect-section', () => {
 
     const [scanBtn, importBtn] = section.root.querySelectorAll('button')
     assert.ok(scanBtn)
+    assert.ok(importBtn instanceof window.HTMLButtonElement)
     scanBtn.dispatchEvent(new Event('click'))
     await flush()
 
@@ -73,8 +77,8 @@ describe('env-key-detect-section', () => {
     assert.equal(rows.length, 2)
     assert.match(section.root.textContent, /sk-…ab/)
     // One new key → import button visible and labelled for a single key.
-    assert.equal((importBtn as HTMLButtonElement).hidden, false)
-    assert.equal((importBtn as HTMLButtonElement).textContent, 'Import 1 key')
+    assert.equal(importBtn.hidden, false)
+    assert.equal(importBtn.textContent, 'Import 1 key')
   })
 
   it('hides the import button when every detected key is already configured', async () => {
@@ -92,11 +96,12 @@ describe('env-key-detect-section', () => {
 
     const [scanBtn, importBtn] = section.root.querySelectorAll('button')
     assert.ok(scanBtn)
+    assert.ok(importBtn instanceof window.HTMLButtonElement)
     scanBtn.dispatchEvent(new Event('click'))
     await flush()
 
     assert.equal(section.root.querySelectorAll('.env-key-row').length, 1)
-    assert.equal((importBtn as HTMLButtonElement).hidden, true)
+    assert.equal(importBtn.hidden, true)
   })
 
   it('imports keys and notifies the host', async () => {

@@ -316,12 +316,13 @@ describe('subagent display (component)', () => {
     // Allow async annotateFileReferences to complete
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    const links = host.querySelectorAll('.subagent-inner-tool .tool-result a.file-reference-link')
-    assert.equal(links.length, 2)
-    assert.equal((links[0] as HTMLAnchorElement).dataset['fileReferencePath'], 'src/main/index.ts')
-    assert.equal(
-      (links[1] as HTMLAnchorElement).dataset['fileReferencePath'],
-      'src/renderer/index.ts',
+    const links = host.querySelectorAll<HTMLAnchorElement>(
+      '.subagent-inner-tool .tool-result a.file-reference-link',
     )
+    assert.equal(links.length, 2)
+    const firstLink = links.item(0)
+    const secondLink = links.item(1)
+    assert.equal(firstLink.dataset['fileReferencePath'], 'src/main/index.ts')
+    assert.equal(secondLink.dataset['fileReferencePath'], 'src/renderer/index.ts')
   })
 })

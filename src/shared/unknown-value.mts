@@ -14,6 +14,10 @@ export function expectArray(value: unknown, label = 'value'): unknown[] {
   return value
 }
 
+export function recordArrayOrEmpty(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
 export function expectString(value: unknown, label = 'value'): string {
   if (typeof value !== 'string') throw new TypeError(`${label} must be a string`)
   return value
@@ -63,6 +67,16 @@ export function optionalBoolean(value: unknown, label = 'value'): boolean | unde
   return expectBoolean(value, label)
 }
 
+export function optionalNumber(value: unknown, label = 'value'): number | undefined {
+  if (value === undefined || value === null) return undefined
+  return expectNumber(value, label)
+}
+
+export function optionalStringArray(value: unknown, label = 'value'): string[] | undefined {
+  if (value === undefined || value === null) return undefined
+  return expectStringArray(value, label)
+}
+
 export function optionalRecord(
   value: unknown,
   label = 'value',
@@ -78,6 +92,14 @@ export function nullableRecord(value: unknown, label = 'value'): Record<string, 
 
 export function parseJsonUnknown(text: string): unknown {
   return JSON.parse(text) as unknown
+}
+
+/** Narrow an untyped stored value to the runtime shape represented by a fallback value. */
+export function matchesFallbackType<T>(value: unknown, fallback: T): value is T {
+  if (fallback === null) return value === null
+  if (Array.isArray(fallback)) return Array.isArray(value)
+  if (isRecord(fallback)) return isRecord(value)
+  return typeof value === typeof fallback
 }
 
 /** Returns the first string that is present and non-empty, preserving `||` fallback semantics. */

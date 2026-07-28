@@ -1,8 +1,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomBytes } from 'node:crypto'
-import type { AddressInfo } from 'node:net'
 import { Server as McpBridgeServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { errorMessage } from '@shared/errors.ts'
 import { getSetting } from '../storage/settings.ts'
@@ -229,6 +229,42 @@ function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 /**
+ * SDK 1.29's HTTP transport declares optional callbacks as `T | undefined`,
+ * which is structurally incompatible with its own `Transport` interface under
+ * exactOptionalPropertyTypes. Forward the same live properties through an
+ * interface-correct adapter until the upstream declarations converge.
+ */
+function compatibleServerTransport(transport: StreamableHTTPServerTransport): Transport {
+  const adapter: Transport = {
+    start: () => transport.start(),
+    send: (message, options) => transport.send(message, options),
+    close: () => transport.close(),
+  }
+  Object.defineProperties(adapter, {
+    onclose: {
+      get: () => transport.onclose,
+      set: (callback: () => void) => {
+        transport.onclose = callback
+      },
+    },
+    onerror: {
+      get: () => transport.onerror,
+      set: (callback: (error: Error) => void) => {
+        transport.onerror = callback
+      },
+    },
+    onmessage: {
+      get: () => transport.onmessage,
+      set: (callback: NonNullable<Transport['onmessage']>) => {
+        transport.onmessage = callback
+      },
+    },
+    sessionId: { get: () => transport.sessionId },
+  })
+  return adapter
+}
+
+/**
  * Start the per-turn bridge server. Returns `null` when the feature is off
  * (`acpNativeBridgeEnabled`, default on) or no bridgeable tool is registered.
  * Stateless MCP: each POST gets a fresh server+transport pair, so the external
@@ -262,7 +298,7 @@ export async function startAcpNativeBridge(
         void transport.close()
         void server.close()
       })
-      await server.connect(transport as unknown as Parameters<typeof server.connect>[0])
+      await server.connect(compatibleServerTransport(transport))
       await transport.handleRequest(req, res, body)
     })().catch((err: unknown) => {
       console.error('[acp-bridge] request failed:', errorMessage(err))
@@ -276,7 +312,15 @@ export async function startAcpNativeBridge(
     httpServer.once('error', reject)
     httpServer.listen(0, '127.0.0.1', resolve)
   })
-  const address = httpServer.address() as AddressInfo
+  const address = httpServer.address()
+  if (address === null || typeof address === 'string') {
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => {
+        resolve()
+      })
+    })
+    throw new Error('ACP native bridge did not bind a TCP port')
+  }
   return {
     url: `http://127.0.0.1:${String(address.port)}/mcp`,
     token,

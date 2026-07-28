@@ -1,28 +1,48 @@
 import '../../../tests/setup-dom.ts'
 import { afterEach, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import type * as Monaco from 'monaco-editor'
 import { createStore } from '@shared/store/store.ts'
 import type { ApiClient } from '../../preload/api.d.ts'
 import type { GitFileDiff } from '@shared/types/git.ts'
 import type { OpenFile } from '@shared/types'
-import { mountContextPanel } from './context-panel.ts'
+import {
+  mountContextPanel,
+  type ContextPanelEditor,
+  type ContextPanelModel,
+  type ContextPanelMonaco,
+} from './context-panel.ts'
+import type { GitDiffEditor } from '../monaco/git-diff-viewer.ts'
 import { createFakeApi } from '../fake-api.test-support.ts'
 
 // The file viewer's "Changes" view (uncommitted HEAD → working-tree diff for
 // the open file). These tests cover the toolbar/visibility logic in happy-dom;
 // the actual Monaco diff rendering runs in the file-viewer-changes e2e spec.
 
-function makeCodeEditorStub(): Record<string, unknown> {
-  let model: unknown = null
+function makeModel(value: string): ContextPanelModel {
+  let content = value
+  return {
+    dispose(): void {},
+    getValue: () => content,
+    getValueInRange: () => content,
+    isDisposed: () => false,
+    setValue(next: string): void {
+      content = next
+    },
+  }
+}
+
+function makeCodeEditorStub(): ContextPanelEditor {
+  let model: ContextPanelModel | null = null
   return {
     addCommand(): void {},
     onKeyDown: () => ({ dispose(): void {} }),
+    getSelection: () => null,
     getModel: () => model,
-    setModel(next: unknown): void {
+    setModel(next: ContextPanelModel | null): void {
       model = next
     },
     revealLineInCenter(): void {},
+    revealLineInCenterIfOutsideViewport(): void {},
     setPosition(): void {},
     layout(): void {},
     hasTextFocus: () => false,
@@ -31,34 +51,42 @@ function makeCodeEditorStub(): Record<string, unknown> {
   }
 }
 
-function makeMonacoStub(): typeof Monaco {
+function makeDiffEditorStub(): GitDiffEditor {
+  let models: ReturnType<GitDiffEditor['getModel']> = null
+  return {
+    createViewModel: (model): ReturnType<GitDiffEditor['createViewModel']> => ({
+      model,
+      dispose(): void {},
+      waitForDiff: async (): Promise<void> => {},
+    }),
+    dispose(): void {},
+    getLineChanges: () => null,
+    getModel: () => models,
+    getModifiedEditor: makeCodeEditorStub,
+    getOriginalEditor: makeCodeEditorStub,
+    layout(): void {},
+    onDidUpdateDiff: () => ({ dispose(): void {} }),
+    setModel(next): void {
+      if (next === null) models = null
+      else if ('original' in next) models = next
+      else if (next.model) models = next.model
+    },
+    updateOptions(): void {},
+  }
+}
+
+function makeMonacoStub(): ContextPanelMonaco {
   return {
     editor: {
       create: () => makeCodeEditorStub(),
-      createDiffEditor: () => ({
-        onDidUpdateDiff: () => ({ dispose(): void {} }),
-        updateOptions(): void {},
-        layout(): void {},
-        getModel: () => null,
-        setModel(): void {},
-        createViewModel: () => ({ waitForDiff: async (): Promise<void> => {} }),
-        getLineChanges: () => null,
-        getOriginalEditor: () => makeCodeEditorStub(),
-        getModifiedEditor: () => makeCodeEditorStub(),
-        dispose(): void {},
-      }),
-      createModel: (value: string) => ({
-        isDisposed: () => false,
-        dispose(): void {},
-        getValue: () => value,
-        setValue(): void {},
-      }),
+      createDiffEditor: makeDiffEditorStub,
+      createModel: makeModel,
       setTheme(): void {},
     },
     KeyMod: { CtrlCmd: 2048 },
     KeyCode: { KeyS: 49, KeyL: 42 },
     Uri: { parse: (value: string) => value },
-  } as unknown as typeof Monaco
+  }
 }
 
 type FsChangedHandler = (

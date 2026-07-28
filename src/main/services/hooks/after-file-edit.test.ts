@@ -18,6 +18,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, rm, chmod, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import {
   userHooksConfigPath,
   resetCursorHookSessionErrorsForTest,
@@ -95,12 +96,9 @@ describe('after-file-edit (afterFileEdit diff-queue / write-tool site — B2)', 
 
     const abs = join(projectRoot, 'src/app.ts')
     await runAfterFileEditHooks(abs, { workspaceRoot: projectRoot, projectTrusted: false })
-    const stdin = JSON.parse(await readFile(captured, 'utf-8')) as {
-      file_path: string
-      hook_event_name: string
-    }
-    assert.equal(stdin.file_path, abs)
-    assert.equal(stdin.hook_event_name, 'afterFileEdit')
+    const stdin = expectRecord(parseJsonUnknown(await readFile(captured, 'utf-8')))
+    assert.equal(stdin['file_path'], abs)
+    assert.equal(stdin['hook_event_name'], 'afterFileEdit')
   })
 
   it('matcher: only hooks whose glob matches the edited path fire', async () => {

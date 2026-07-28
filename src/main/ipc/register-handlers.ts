@@ -1,11 +1,15 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { z } from 'zod'
+import { parseMessageValue, parseThreadValue } from '@shared/threads/thread-boundary.ts'
 import micromatch from 'micromatch'
+import { nonEmptyStringOr, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import { createPanePopoutWindow } from '../windows/create-popout-window.ts'
 import { takePopoutSeed } from '../services/popout-seed-store.ts'
 import {
   assertAllowedWorkspaceRoot,
+  getActiveProjectId,
   getActiveProjectSshHost,
+  getProjectById,
   getWorkspaceRoot,
   registerAllowedWorkspaceRoot,
   resolvePathWithinRoot,
@@ -169,6 +173,8 @@ import { resolveGitHubBackend } from '../services/github/backend/backend.ts'
 import { importIssuesAsRoadmapItems } from '../services/roadmap-issue-import.ts'
 import { stampRoadmapComplexity } from '../services/roadmap-complexity.ts'
 import { checkRoadmapFit } from '../services/roadmap-fit-check.ts'
+import { buildRoadmapExport } from '../services/roadmap-export.ts'
+import { ROADMAP_EXPORT_FORMATS } from '@shared/roadmap/export.ts'
 import {
   abortRoadmapReview,
   completeRoadmapReview,
@@ -267,6 +273,15 @@ const SKILLS_RELOAD_KEYS = new Set([
   'skillPluginPaths',
 ])
 
+function storedWorkspaceProjects(): WorkspaceProjectRef[] {
+  return recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+    const path = project['path']
+    const sshHost = project['sshHost']
+    if (typeof path !== 'string') return []
+    return [typeof sshHost === 'string' ? { path, sshHost } : { path }]
+  })
+}
+
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
@@ -279,7 +294,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     }
   })
   win.once('closed', stopGuardedYoloEvents)
-  const storedProjects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+  const storedProjects = storedWorkspaceProjects()
   scheduleAllowedWorkspaceRootsBootstrap(async () => {
     await seedAllowedWorkspaceRoots(storedProjects)
     const persistedRoot = getWorkspaceRoot()
@@ -312,7 +327,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     assertMainFrameSender(event, win)
     const parsedRoot = parseIpcArgs(zPathString, [root])
     const explicitSshHost = parseIpcArgs(z.string().max(128).optional(), [sshHostArg])
-    const projects = (storageGet('projects') as WorkspaceProjectRef[] | null) ?? []
+    const projects = storedWorkspaceProjects()
     await seedAllowedWorkspaceRoots(projects)
     const sshHost = resolveSshHostForWorkspaceRoot(parsedRoot, explicitSshHost)
     const canonical = await assertAllowedWorkspaceRoot(parsedRoot, sshHost)
@@ -377,7 +392,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       [projectIdArg, threadIdArg, pathArg],
     )
     const { root } = await resolveThreadExecutionContext(projectId, threadId)
-    const abs = await resolvePathWithinRoot(relPath || '.', root)
+    const abs = await resolvePathWithinRoot(nonEmptyStringOr(relPath, '.'), root)
     const dirents = await gatewayListDir(abs, root)
     return dirents
       .filter((d) => !d.name.startsWith('.') && d.name !== 'node_modules')
@@ -466,6 +481,7 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   const zRoadmapIssue = z.string().max(256)
   const zRoadmapStatus = z.enum(ROADMAP_STATUSES)
   const zRoadmapId = zNonEmptyString.max(128)
+  const zRoadmapExportFormat = z.enum(ROADMAP_EXPORT_FORMATS)
   // Attachments arrive as base64 data URLs (what the pane's paste/drop/picker
   // produce); ~14 MB of base64 ≈ 10 MB decoded per attachment.
   const zRoadmapAttachmentAdds = z
@@ -801,6 +817,27 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     return deleted
   })
 
+  // Deterministic export of the active project's roadmap (RoadmapExporter,
+  // shared/roadmap/export.ts) as a downloadable md/html/mhtml/jsonl document —
+  // zipped with its attachments under relative paths when any are present.
+  ipcMain.handle('roadmap:export', (event, rawFormat: unknown) => {
+    assertMainFrameSender(event, win)
+    const format = parseIpcArgs(zRoadmapExportFormat, [rawFormat])
+    const activeProjectId = getActiveProjectId()
+    const project = activeProjectId ? getProjectById(activeProjectId) : null
+    if (!project) {
+      throw new IpcValidationError('No active project to export a roadmap for.')
+    }
+    const result = buildRoadmapExport(project, format, new Date().toISOString())
+    return {
+      filename: result.filename,
+      mimeType: result.mimeType,
+      dataUrl: `data:${result.mimeType};base64,${Buffer.from(result.data).toString('base64')}`,
+      bundled: result.bundled,
+      files: result.files,
+    }
+  })
+
   ipcMain.handle('settings:get', (event, key: unknown) => {
     assertMainFrameSender(event, win)
     const k = parseIpcArgs(zNonEmptyString.max(128), [key])
@@ -948,7 +985,32 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   ipcMain.handle('settings:saveExtraProvider', async (event, record: unknown) => {
     assertMainFrameSender(event, win)
     const parsed = parseIpcArgs(storedExtraProviderSchema.partial({ slug: true }), [record])
-    return saveExtraProvider(parsed as Parameters<typeof saveExtraProvider>[0])
+    const provider: Parameters<typeof saveExtraProvider>[0] = {}
+    if (parsed.slug !== undefined) provider.slug = parsed.slug
+    if (parsed.label !== undefined) provider.label = parsed.label
+    if (parsed.baseUrl !== undefined) provider.baseUrl = parsed.baseUrl
+    if (parsed.keyPrefix !== undefined) provider.keyPrefix = parsed.keyPrefix
+    if (parsed.models !== undefined) {
+      provider.models = parsed.models.map((model) => {
+        const result: NonNullable<Parameters<typeof saveExtraProvider>[0]['models']>[number] = {
+          id: model.id,
+        }
+        if (model.contextWindow !== undefined) result.contextWindow = model.contextWindow
+        if (model.inputPricePerMTok !== undefined) {
+          result.inputPricePerMTok = model.inputPricePerMTok
+        }
+        if (model.outputPricePerMTok !== undefined) {
+          result.outputPricePerMTok = model.outputPricePerMTok
+        }
+        return result
+      })
+    }
+    if (parsed.fallbackContextWindow !== undefined) {
+      provider.fallbackContextWindow = parsed.fallbackContextWindow
+    }
+    if (parsed.includeUsage !== undefined) provider.includeUsage = parsed.includeUsage
+    if (parsed.extraBody !== undefined) provider.extraBody = parsed.extraBody
+    return saveExtraProvider(provider)
   })
   ipcMain.handle('settings:deleteExtraProvider', async (event, slug: unknown) => {
     assertMainFrameSender(event, win)
@@ -1051,7 +1113,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
       projectId,
       thread,
     ])
-    return createThread(id, payload as unknown as import('@shared/types').Thread)
+    const parsed = parseThreadValue(payload)
+    if (parsed === null) throw new IpcValidationError('Invalid thread payload')
+    return createThread(id, parsed)
   })
   ipcMain.handle(
     'threads:appendMessage',
@@ -1061,7 +1125,9 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
         z.tuple([zProjectId, zThreadId, z.record(z.string(), z.unknown())]),
         [projectId, threadId, message],
       )
-      return appendMessage(pid, tid, payload as unknown as import('@shared/types').Message)
+      const parsed = parseMessageValue(payload)
+      if (parsed === null) throw new IpcValidationError('Invalid message payload')
+      return appendMessage(pid, tid, parsed)
     },
   )
   ipcMain.handle(
@@ -1151,11 +1217,11 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
 
   ipcMain.handle('threads:listOrphans', (event) => {
     assertMainFrameSender(event, win)
-    const projects =
-      (storageGet('projects') as Array<{ id?: unknown }> | null)?.filter(
-        (p): p is { id: string } => typeof p.id === 'string' && p.id.length > 0,
-      ) ?? []
-    return listOrphanProjectStores(projects.map((p) => p.id))
+    const projectIds = recordArrayOrEmpty(storageGet('projects')).flatMap((project) => {
+      const id = project['id']
+      return typeof id === 'string' && id.length > 0 ? [id] : []
+    })
+    return listOrphanProjectStores(projectIds)
   })
 
   ipcMain.handle('skills:list', () => listSkills())
@@ -1636,7 +1702,12 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
     ipcMain.handle('test:setMockScript', (event, raw: unknown) => {
       assertMainFrameSender(event, win)
       const steps = parseIpcArgs(z.array(mockScriptStepSchema).max(32), [raw])
-      setMockScript(steps as MockScriptStep[])
+      const script: MockScriptStep[] = steps.map((step) => ({
+        when: step.when,
+        ...(step.tool ? { tool: step.tool } : {}),
+        ...(step.text === undefined ? {} : { text: step.text }),
+      }))
+      setMockScript(script)
       return { steps: steps.length, cursor: mockScriptCursorForTests() }
     })
     ipcMain.handle('test:clearMockScript', (event) => {

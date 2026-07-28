@@ -92,6 +92,15 @@ describe('parseGhPrChecks', () => {
     assert.equal(at(checks, 0).bucket, 'fail')
     assert.equal(at(checks, 0).link, 'https://example.com')
   })
+
+  it('normalizes nullable optional fields from gh output', () => {
+    const checks = parseGhPrChecks(
+      JSON.stringify([
+        { name: 'queued', state: 'PENDING', bucket: 'pending', link: null, workflow: null },
+      ]),
+    )
+    assert.deepEqual(checks, [{ name: 'queued', state: 'PENDING', bucket: 'pending' }])
+  })
 })
 
 describe('ghPrHasCiFailures', () => {

@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import type { BrowserWindow } from 'electron'
 import type { IDisposable, IPty } from 'node-pty'
 import { spawnPtyInProjectSandbox } from '../../project-sandbox/index.ts'
 import { envForRendererChildProcess } from './child-process-env.ts'
@@ -10,6 +9,7 @@ import {
   stripTerminalControlSequences,
 } from './subprocess-output-cap.ts'
 import { READ_TERMINAL_DEFAULT_LINES, takeLastLines } from '@shared/terminal/read-terminal.ts'
+import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 interface PtyListeners {
   onData: IDisposable
@@ -30,7 +30,7 @@ export interface TerminalSessionInfo {
 
 export interface TerminalSession {
   id: string
-  pty: IPty
+  pty: Pick<IPty, 'write' | 'resize' | 'kill' | 'onData' | 'onExit'>
   /** Identifies the renderer that created the session, for ownership checks. */
   ownerId: number
   listeners?: PtyListeners
@@ -41,6 +41,14 @@ export interface TerminalSession {
 }
 
 const sessions = new Map<string, TerminalSession>()
+
+export interface TerminalWindow {
+  isDestroyed(): boolean
+  webContents: {
+    isDestroyed(): boolean
+    send(channel: string, ...args: unknown[]): void
+  }
+}
 
 /** Per-owner focused session — the default target for `read_terminal` without an id. */
 const activeByOwner = new Map<number, string>()
@@ -63,8 +71,8 @@ const DEFAULT_COLS = 80
 const DEFAULT_ROWS = 24
 
 function defaultShell(): string {
-  if (process.platform === 'win32') return process.env['COMSPEC'] || 'cmd.exe'
-  return process.env['SHELL'] || '/bin/bash'
+  if (process.platform === 'win32') return nonEmptyStringOr(process.env['COMSPEC'], 'cmd.exe')
+  return nonEmptyStringOr(process.env['SHELL'], '/bin/bash')
 }
 
 function sessionCwd(executionRoot?: string): string {
@@ -72,7 +80,7 @@ function sessionCwd(executionRoot?: string): string {
 }
 
 function sendTerminalEvent(
-  win: BrowserWindow,
+  win: TerminalWindow,
   channel: 'terminal:output' | 'terminal:exit',
   sessionId: string,
   payload: string | number,
@@ -103,7 +111,7 @@ function disposeSession(session: TerminalSession, sessionId: string): void {
 }
 
 function attachPtyHandlers(
-  win: BrowserWindow,
+  win: TerminalWindow,
   sessionId: string,
   ptyProcess: IPty,
   session: TerminalSession,
@@ -124,7 +132,7 @@ function attachPtyHandlers(
 }
 
 async function spawnShell(
-  win: BrowserWindow,
+  win: TerminalWindow,
   ownerId: number,
   cols: number,
   rows: number,
@@ -147,7 +155,7 @@ async function spawnShell(
     pty: ptyProcess,
     ownerId,
     output: new CappedOutputAccumulator(COMMAND_OUTPUT_MAX_BYTES),
-    label: meta?.label?.trim() || 'Terminal',
+    label: nonEmptyStringOr(meta?.label?.trim(), 'Terminal'),
     threadId: meta?.threadId ?? null,
   }
   sessions.set(session.id, session)
@@ -156,7 +164,7 @@ async function spawnShell(
 }
 
 export async function createTerminalSession(
-  win: BrowserWindow,
+  win: TerminalWindow,
   ownerId: number,
   cols = DEFAULT_COLS,
   rows = DEFAULT_ROWS,
@@ -283,7 +291,7 @@ export function __testInjectTerminalSession(opts: {
       onExit(): { dispose(): void } {
         return { dispose(): void {} }
       },
-    } as unknown as IPty,
+    },
     ownerId: opts.ownerId,
     output,
     label: opts.label,

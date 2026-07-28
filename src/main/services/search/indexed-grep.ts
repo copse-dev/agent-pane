@@ -6,6 +6,7 @@ import {
 } from '../ssh-workspace/execution-target.ts'
 import { toRelativePath, toRelativePathWithinRoot } from '../workspace.ts'
 import { safeJsonParse } from '@shared/safe-json.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export type IndexedGrepBackend = 'ig' | 'trigrep' | 'instant-grep' | 'rg' | 'grep'
 
@@ -187,8 +188,8 @@ export async function parseRipgrepJson(
   const entries = stdout
     .split('\n')
     .filter(Boolean)
-    .map((line) => safeJsonParse<Record<string, unknown>>(line))
-    .filter((entry): entry is Record<string, unknown> => entry !== null)
+    .map((line) => safeJsonParse(line))
+    .filter(isRecord)
 
   // Context lines (rg --context) arrive as separate `context` events; render
   // them with a `-` separator (like rg's own output) so the model sees the
@@ -199,20 +200,29 @@ export async function parseRipgrepJson(
   for (const entry of entries) {
     const type = entry['type']
     if (type !== 'match' && type !== 'context') continue
-    const data = entry['data'] as {
-      path: { text: string }
-      line_number: number
-      lines: { text: string }
+    const data = entry['data']
+    if (!isRecord(data)) continue
+    const path = data['path']
+    const lines = data['lines']
+    const lineNumber = data['line_number']
+    if (
+      !isRecord(path) ||
+      typeof path['text'] !== 'string' ||
+      !isRecord(lines) ||
+      typeof lines['text'] !== 'string' ||
+      typeof lineNumber !== 'number'
+    ) {
+      continue
     }
     if (type === 'match') {
       if (matchCount >= maxResults) break
       matchCount++
       out.push(
-        `${await relativeDisplayPath(data.path.text, displayRoot)}:${String(data.line_number)}: ${data.lines.text.trimEnd()}`,
+        `${await relativeDisplayPath(path['text'], displayRoot)}:${String(lineNumber)}: ${lines['text'].trimEnd()}`,
       )
     } else {
       out.push(
-        `${await relativeDisplayPath(data.path.text, displayRoot)}-${String(data.line_number)}- ${data.lines.text.trimEnd()}`,
+        `${await relativeDisplayPath(path['text'], displayRoot)}-${String(lineNumber)}- ${lines['text'].trimEnd()}`,
       )
     }
   }

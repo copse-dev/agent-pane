@@ -3,6 +3,12 @@ import assert from 'node:assert/strict'
 import { at } from '@shared/array-utils.ts'
 import type { Thread } from '@shared/types'
 import { threadHasExportableContent, threadToJsonl } from './export-thread.ts'
+import {
+  expectRecord,
+  expectStringArray,
+  parseJsonUnknown,
+  recordArrayOrEmpty,
+} from '@shared/unknown-value.ts'
 
 function thread(messages: Thread['messages'] = []): Thread {
   return {
@@ -71,10 +77,7 @@ describe('export thread', () => {
     t.queuePaused = true
     t.draftPrompt = 'unsent'
 
-    const header = JSON.parse(at(threadToJsonl(t).trimEnd().split('\n'), 0)) as Record<
-      string,
-      unknown
-    >
+    const header = expectRecord(parseJsonUnknown(at(threadToJsonl(t).trimEnd().split('\n'), 0)))
     assert.equal(header['exportVersion'], 5)
     assert.equal(header['status'], 'error')
     assert.deepEqual(header['todos'], t.todos)
@@ -97,10 +100,12 @@ describe('export thread', () => {
       },
     }
 
-    const header = JSON.parse(at(threadToJsonl(t).trimEnd().split('\n'), 0)) as {
-      providers: string[]
-    }
-    assert.deepEqual([...header.providers].sort(), ['anthropic', 'lmstudio', 'openai'])
+    const header = expectRecord(parseJsonUnknown(at(threadToJsonl(t).trimEnd().split('\n'), 0)))
+    assert.deepEqual(expectStringArray(header['providers']).sort(), [
+      'anthropic',
+      'lmstudio',
+      'openai',
+    ])
   })
 
   it('exports message commandSummary and full toolCalls (editStats, subagent usage)', () => {
@@ -136,19 +141,15 @@ describe('export thread', () => {
       ]),
     )
 
-    const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as {
-      commandSummary: string
-      toolSummary: string
-      toolCalls: Array<{
-        editStats: { additions: number; deletions: number }
-        subagent: { usage: { inputTokens: number; outputTokens: number } }
-      }>
-    }
-    assert.equal(line.commandSummary, 'ran 3 shell commands')
-    assert.equal(line.toolSummary, 'Inspected the repo layout')
-    const toolCall = at(line.toolCalls, 0)
-    assert.deepEqual(toolCall.editStats, { additions: 5, deletions: 2 })
-    assert.deepEqual(toolCall.subagent.usage, { inputTokens: 10, outputTokens: 4 })
+    const line = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
+    assert.equal(line['commandSummary'], 'ran 3 shell commands')
+    assert.equal(line['toolSummary'], 'Inspected the repo layout')
+    const toolCall = at(recordArrayOrEmpty(line['toolCalls']), 0)
+    assert.deepEqual(toolCall['editStats'], { additions: 5, deletions: 2 })
+    assert.deepEqual(expectRecord(toolCall['subagent'])['usage'], {
+      inputTokens: 10,
+      outputTokens: 4,
+    })
   })
 
   it('exports assistant reasoning when present', () => {
@@ -165,8 +166,8 @@ describe('export thread', () => {
       ]),
     )
 
-    const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as { reasoning?: string }
-    assert.equal(line.reasoning, 'thinking step by step')
+    const line = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
+    assert.equal(line['reasoning'], 'thinking step by step')
   })
 
   it('exports a message-anchored post-turn review on its message line', () => {
@@ -183,10 +184,8 @@ describe('export thread', () => {
       ]),
     )
 
-    const line = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as {
-      review?: { status: string; summary: string }
-    }
-    assert.deepEqual(line.review, { status: 'done', summary: '1 likely bug.' })
+    const line = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
+    assert.deepEqual(line['review'], { status: 'done', summary: '1 likely bug.' })
   })
 
   it('exports per-message primary-chat model when present', () => {
@@ -202,7 +201,7 @@ describe('export thread', () => {
         },
       ]),
     )
-    const msg = JSON.parse(at(jsonl.trimEnd().split('\n'), 1)) as { model?: string }
-    assert.equal(msg.model, 'claude-sonnet-4-6')
+    const msg = expectRecord(parseJsonUnknown(at(jsonl.trimEnd().split('\n'), 1)))
+    assert.equal(msg['model'], 'claude-sonnet-4-6')
   })
 })

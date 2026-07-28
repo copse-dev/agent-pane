@@ -15,6 +15,7 @@ import {
 } from '@copse/plan-usage'
 import { FETCH_TIMEOUTS } from './fetch-timeouts.ts'
 import { resolveApiKey } from './storage/settings.ts'
+import { firstNonEmptyString, nonEmptyStringOr } from '@shared/unknown-value.ts'
 
 /** Env override for e2e / demos — skips network and credential discovery. */
 const MOCK_ENV = 'COPSE_PLAN_USAGE_MOCK'
@@ -252,9 +253,9 @@ function discoverHuggingFaceToken(
 ): string | undefined {
   const fromStored = resolveStored()?.trim()
   if (fromStored) return fromStored
-  const fromEnv = env['HF_TOKEN']?.trim() || env['HUGGINGFACE_API_KEY']?.trim() || undefined
+  const fromEnv = firstNonEmptyString(env['HF_TOKEN']?.trim(), env['HUGGINGFACE_API_KEY']?.trim())
   if (fromEnv) return fromEnv
-  const hfHome = env['HF_HOME']?.trim() || join(home, '.cache', 'huggingface')
+  const hfHome = nonEmptyStringOr(env['HF_HOME']?.trim(), join(home, '.cache', 'huggingface'))
   return parseHuggingFaceToken(readTextFile(join(hfHome, 'token'))) ?? undefined
 }
 
@@ -264,9 +265,10 @@ async function discoverCursorSessionToken(
   readKeychain: () => Promise<string | null>,
   readStateDb: (dbPath: string) => Promise<string | null>,
 ): Promise<string | undefined> {
-  const fromEnv =
-    parseCursorSessionToken(env['CURSOR_SESSION_TOKEN'] ?? null) ||
-    parseCursorSessionToken(env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null)
+  const fromEnv = firstNonEmptyString(
+    parseCursorSessionToken(env['CURSOR_SESSION_TOKEN'] ?? null),
+    parseCursorSessionToken(env['WORKOS_CURSOR_SESSION_TOKEN'] ?? null),
+  )
   if (fromEnv) return fromEnv
   const fromKeychain = await readKeychain()
   if (fromKeychain) return fromKeychain
@@ -408,6 +410,11 @@ function mockSnapshot(): PlanUsageSnapshot {
         usage: {
           provider: 'cursor',
           plan: "You've used 2% of your included total usage · Hard limit $50",
+          creditGrant: {
+            remainingCents: 6703,
+            totalCents: 10000,
+            usedCents: 3297,
+          },
           windows: [
             {
               id: 'total',

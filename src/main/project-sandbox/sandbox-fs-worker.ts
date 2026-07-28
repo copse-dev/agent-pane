@@ -14,6 +14,7 @@
 import { errorMessage } from '@shared/errors.ts'
 import * as fsp from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { isRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 
 type ReadFileReq = { op: 'readFile'; path: string; encoding: 'utf-8' }
 type WriteFileReq = { op: 'writeFile'; path: string; content: string; encoding: 'utf-8' }
@@ -28,6 +29,30 @@ type ResponseBody =
 
 const REQUEST_ENV = 'COPSE_SANDBOX_FS_REQUEST'
 const SERVER_ENV = 'COPSE_SANDBOX_FS_SERVER'
+
+function parseRequest(value: unknown): Request | null {
+  if (!isRecord(value) || typeof value['path'] !== 'string') return null
+  switch (value['op']) {
+    case 'readFile':
+      return value['encoding'] === 'utf-8'
+        ? { op: value['op'], path: value['path'], encoding: value['encoding'] }
+        : null
+    case 'writeFile':
+      return value['encoding'] === 'utf-8' && typeof value['content'] === 'string'
+        ? {
+            op: value['op'],
+            path: value['path'],
+            content: value['content'],
+            encoding: value['encoding'],
+          }
+        : null
+    case 'readdir':
+    case 'statDir':
+      return { op: value['op'], path: value['path'] }
+    default:
+      return null
+  }
+}
 
 async function handle(req: Request): Promise<ResponseBody> {
   switch (req.op) {
@@ -48,8 +73,6 @@ async function handle(req: Request): Promise<ResponseBody> {
       const dirents = await fsp.readdir(req.path, { withFileTypes: true })
       return { ok: true, dirents: dirents.map((d) => ({ name: d.name, isDir: d.isDirectory() })) }
     }
-    default:
-      return { ok: false, error: `unknown op: ${(req as { op: string }).op}` }
   }
 }
 
@@ -63,11 +86,15 @@ function oneShot(): void {
     process.stdout.write(JSON.stringify({ ok: false, error: 'missing request argument' }))
     process.exit(1)
   }
-  let req: Request
+  let req: Request | null
   try {
-    req = JSON.parse(raw) as Request
+    req = parseRequest(parseJsonUnknown(raw))
   } catch {
     process.stdout.write(JSON.stringify({ ok: false, error: 'invalid JSON request' }))
+    process.exit(1)
+  }
+  if (!req) {
+    process.stdout.write(JSON.stringify({ ok: false, error: 'invalid request' }))
     process.exit(1)
   }
   handle(req)
@@ -94,14 +121,21 @@ function server(): void {
   const dispatch = (line: string): void => {
     const trimmed = line.trim()
     if (!trimmed) return
-    let parsed: { id: number } & Request
+    let id: number
+    let req: Request | null
     try {
-      parsed = JSON.parse(trimmed) as { id: number } & Request
+      const parsed = parseJsonUnknown(trimmed)
+      if (!isRecord(parsed) || typeof parsed['id'] !== 'number') return
+      id = parsed['id']
+      req = parseRequest(parsed)
     } catch {
       // Unframed/garbled line — nothing to correlate it to, so drop it.
       return
     }
-    const { id, ...req } = parsed
+    if (!req) {
+      writeResponse(id, { ok: false, error: 'invalid request' })
+      return
+    }
     handle(req)
       .then((body) => {
         writeResponse(id, body)

@@ -38,11 +38,9 @@ describe('index-ignore', () => {
   it('excludes the heavy gitignored dirs from the gortex ignore list (#517 follow-up)', () => {
     // gortex does not honor .gitignore, so these must be listed explicitly or a
     // dev checkout's ~3 GB of node_modules/dist/worktrees gets indexed.
+    const exclusions: readonly string[] = GORTEX_EXCLUDE_PATTERNS
     for (const dir of ['node_modules/', 'dist/', 'vendor/', '.git/', '.claude/']) {
-      assert.ok(
-        GORTEX_EXCLUDE_PATTERNS.includes(dir as (typeof GORTEX_EXCLUDE_PATTERNS)[number]),
-        `expected gortex excludes to contain ${dir}`,
-      )
+      assert.ok(exclusions.includes(dir), `expected gortex excludes to contain ${dir}`)
     }
   })
 })

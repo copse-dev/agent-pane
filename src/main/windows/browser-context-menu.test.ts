@@ -77,8 +77,7 @@ function invokeItemClick(template: Electron.MenuItemConstructorOptions[], label:
   assert.ok(item)
   const click = item.click
   assert.ok(click)
-  const event: Electron.KeyboardEvent = {}
-  click({} as Electron.MenuItem, undefined, event)
+  Reflect.apply(click, undefined, [])
 }
 
 describe('buildBrowserContextMenuTemplate', () => {

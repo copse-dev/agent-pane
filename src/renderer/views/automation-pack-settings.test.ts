@@ -137,6 +137,11 @@ describe('automation pack settings detail', () => {
     root.querySelector<HTMLButtonElement>('.automation-add-btn')?.click()
     await tick()
 
+    assert.match(
+      root.querySelector('.automation-form .model-picker-label')?.textContent ?? '',
+      /gpt-5\.4/i,
+    )
+    assert.ok(root.querySelector('.automation-form .model-picker-filter'))
     const name = root.querySelector<HTMLInputElement>('.automation-name-input')
     const cron = root.querySelector<HTMLInputElement>('.automation-cron-input')
     const prompt = root.querySelector<HTMLTextAreaElement>('.automation-prompt-input')

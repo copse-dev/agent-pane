@@ -264,30 +264,32 @@ function parseCopseEntry(
   warn: (message: string, event?: string) => void,
 ): DiscoveredCopseHook | null {
   const position = `"${event}" entry ${String(index + 1)}`
-  // entry is an element of a parsed JSON array and can be null.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const command = (entry as { command?: unknown })?.command
+  if (!isRecord(entry)) {
+    warn(`${position} has a missing or empty "command" — skipped`, event)
+    return null
+  }
+  const command = entry['command']
   if (typeof command !== 'string' || !command.trim()) {
     warn(`${position} has a missing or empty "command" — skipped`, event)
     return null
   }
 
   // onFailure — default open (fail-open), `closed` blocks on failure (decision 9).
-  const onFailureRaw = (entry as { onFailure?: unknown }).onFailure
+  const onFailureRaw = entry['onFailure']
   let onFailure: CommandHookFailureMode = 'open'
   if (onFailureRaw === 'closed' || onFailureRaw === 'open') onFailure = onFailureRaw
   else if (onFailureRaw !== undefined)
     warn(`${position} "onFailure" must be "open" or "closed" — defaulting to "open"`, event)
 
   // sandbox — default true (sandbox-by-default, decision 7); `false` is the escape.
-  const sandboxRaw = (entry as { sandbox?: unknown }).sandbox
+  const sandboxRaw = entry['sandbox']
   let sandbox = true
   if (typeof sandboxRaw === 'boolean') sandbox = sandboxRaw
   else if (sandboxRaw !== undefined)
     warn(`${position} "sandbox" must be a boolean — defaulting to sandboxed (true)`, event)
 
   // async — opt-in detached dispatch, honoured only on asyncOptIn events (decision 2).
-  const asyncRaw = (entry as { async?: unknown }).async
+  const asyncRaw = entry['async']
   let async = false
   if (typeof asyncRaw === 'boolean') async = asyncRaw
   else if (asyncRaw !== undefined) warn(`${position} "async" must be a boolean — ignored`, event)
@@ -301,7 +303,7 @@ function parseCopseEntry(
 
   // loop_limit — tighten-only (decision 5). A non-negative integer, or null
   // (unlimited → clamped to the global budget with a warning).
-  const loopLimitRaw = (entry as { loop_limit?: unknown }).loop_limit
+  const loopLimitRaw = entry['loop_limit']
   let loopLimit: number | null | undefined
   if (loopLimitRaw === null) {
     loopLimit = null
@@ -316,9 +318,9 @@ function parseCopseEntry(
     warn(`${position} "loop_limit" must be a non-negative integer or null — ignored`, event)
   }
 
-  const timeoutMs = normalizeTimeoutField((entry as { timeout?: unknown }).timeout)
-  const glob = normalizeGlobField((entry as { glob?: unknown }).glob)
-  const matcherRaw = (entry as { matcher?: unknown }).matcher
+  const timeoutMs = normalizeTimeoutField(entry['timeout'])
+  const glob = normalizeGlobField(entry['glob'])
+  const matcherRaw = entry['matcher']
   const matcher =
     typeof matcherRaw === 'string' && matcherRaw.trim().length > 0 ? matcherRaw.trim() : undefined
 

@@ -30,11 +30,23 @@ export interface PlanWindow {
   limitDollars?: number
 }
 
+/** Account credit grant reported alongside a provider's subscription limits. */
+export interface PlanCreditGrant {
+  /** Credit still available, in USD cents. */
+  remainingCents: number
+  /** Original credit grant value, in USD cents. */
+  totalCents: number
+  /** Credit already consumed, in USD cents. */
+  usedCents: number
+}
+
 export interface ProviderPlanUsage {
   provider: PlanProviderId
   /** Plan name when the provider reports one (`Max 5x`, `plus`, …). */
   plan: string | null
   windows: PlanWindow[]
+  /** Promotional/account credits when the provider reports a grant. */
+  creditGrant?: PlanCreditGrant
   checkedAt: string
 }
 

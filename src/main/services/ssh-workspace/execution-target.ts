@@ -6,6 +6,7 @@ import {
   resolveSshHostForWorkspaceRoot,
 } from '../workspace.ts'
 import { findConfiguredSshHost } from './hosts.ts'
+import { isRecord } from '@shared/unknown-value.ts'
 
 export type ExecutionTarget =
   { kind: 'local' } | { kind: 'ssh'; hostId: string; remoteRoot: string }
@@ -37,9 +38,9 @@ function findActiveStoredProject(): StoredProject | null {
   if (!Array.isArray(projects)) return null
 
   const active = projects.find((project): project is StoredProject => {
-    if (!project || typeof project !== 'object') return false
-    const candidate = project as StoredProject
-    return candidate.id === activeProjectId && typeof candidate.path === 'string'
+    return (
+      isRecord(project) && project['id'] === activeProjectId && typeof project['path'] === 'string'
+    )
   })
   return active ?? null
 }
@@ -48,10 +49,9 @@ function findStoredProjectPathForHost(sshHost: string): string | undefined {
   const projects = storageGet('projects')
   if (!Array.isArray(projects)) return undefined
   for (const project of projects) {
-    if (!project || typeof project !== 'object') continue
-    const candidate = project as StoredProject
-    if (candidate.sshHost === sshHost && typeof candidate.path === 'string') {
-      return candidate.path
+    if (!isRecord(project)) continue
+    if (project['sshHost'] === sshHost && typeof project['path'] === 'string') {
+      return project['path']
     }
   }
   return undefined

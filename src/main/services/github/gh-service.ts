@@ -1,60 +1,75 @@
 import { runCommand } from '../exec/command-runner.ts'
 import { getWorkspaceRoot } from '../workspace.ts'
 import { isGhAvailable } from '../tool-availability.ts'
-import { safeJsonParse } from '@shared/safe-json.ts'
+import { decodeWithSchema, safeJsonParse, type JsonDecoder } from '@shared/safe-json.ts'
+import { z } from 'zod'
+import { optionalAuthorSchema, optionalNumber, optionalString } from './gh-json-schemas.ts'
 
-export interface GhPrListEntry {
-  number: number
-  title: string
-  url: string
-  state: string
-  headRefName?: string
-  author?: { login?: string }
-  createdAt?: string
-  updatedAt?: string
-}
+const ghPrListEntrySchema = z.object({
+  number: z.number(),
+  title: z.string(),
+  url: z.string(),
+  state: z.string(),
+  headRefName: optionalString,
+  author: optionalAuthorSchema,
+  createdAt: optionalString,
+  updatedAt: optionalString,
+})
+const ghPrListSchema = z.array(ghPrListEntrySchema)
+export type GhPrListEntry = z.infer<typeof ghPrListEntrySchema>
 
-export interface GhPrViewDetails {
-  state?: string
-  number?: number
-  title?: string
-  url?: string
-  body?: string
-  headRefName?: string
-  baseRefName?: string
-  author?: { login?: string }
-  mergeable?: string
-  mergeStateStatus?: string
-  additions?: number
-  deletions?: number
-  changedFiles?: number
-  files?: Array<{
-    path?: string
-    additions?: number
-    deletions?: number
-    changeType?: string
-  }>
-  statusCheckRollup?: Array<{
-    name?: string
-    conclusion?: string
-    state?: string
-    status?: string
-  }>
-}
+const ghPrViewDetailsSchema = z.object({
+  state: optionalString,
+  number: optionalNumber,
+  title: optionalString,
+  url: optionalString,
+  body: optionalString,
+  headRefName: optionalString,
+  baseRefName: optionalString,
+  author: optionalAuthorSchema,
+  mergeable: optionalString,
+  mergeStateStatus: optionalString,
+  additions: optionalNumber,
+  deletions: optionalNumber,
+  changedFiles: optionalNumber,
+  files: z
+    .array(
+      z.object({
+        path: optionalString,
+        additions: optionalNumber,
+        deletions: optionalNumber,
+        changeType: optionalString,
+      }),
+    )
+    .optional(),
+  statusCheckRollup: z
+    .array(
+      z.object({
+        name: optionalString,
+        conclusion: optionalString,
+        state: optionalString,
+        status: optionalString,
+      }),
+    )
+    .optional(),
+})
+export type GhPrViewDetails = z.infer<typeof ghPrViewDetailsSchema>
 
-export interface GhRunEntry {
-  databaseId?: number
-  workflowName?: string
-  name?: string
-  displayTitle?: string
-  headBranch?: string
-  headSha?: string
-  conclusion?: string
-  status?: string
-  event?: string
-  createdAt?: string
-  url?: string
-}
+const ghRunEntrySchema = z.object({
+  databaseId: optionalNumber,
+  workflowName: optionalString,
+  name: optionalString,
+  displayTitle: optionalString,
+  headBranch: optionalString,
+  headSha: optionalString,
+  conclusion: optionalString,
+  status: optionalString,
+  event: optionalString,
+  createdAt: optionalString,
+  url: optionalString,
+})
+const ghRunListSchema = z.array(ghRunEntrySchema)
+export type GhRunEntry = z.infer<typeof ghRunEntrySchema>
 
 /**
  * GitHub check/run conclusions that count as a CI failure. Shared so the
@@ -205,16 +220,12 @@ export async function runGh(
 /**
  * Parse JSON stdout from `gh`, or null when empty/invalid.
  *
- * The `T` type parameter is a caller-supplied cast for the parsed value relied
- * on by call sites (e.g. `parseGhJson<GhPrView>(raw)`); removing it would change
- * this exported signature and break those callers, so the single-use type
- * parameter is intentional here.
+ * The decoder owns validation and determines the result type.
  */
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
-export function parseGhJson<T = unknown>(stdout: string): T | null {
+export function parseGhJson<T>(stdout: string, decoder: JsonDecoder<T>): T | null {
   const trimmed = stdout.trim()
   if (!trimmed) return null
-  return safeJsonParse<T>(trimmed)
+  return safeJsonParse(trimmed, decoder)
 }
 
 function formatGhError(stderr: string, code: number): string {
@@ -292,7 +303,7 @@ export async function getGhPrListText(opts: {
   if (opts.head) args.push('--head', opts.head)
   const { stdout, stderr, code } = await runGh(args)
   if (code !== 0) return formatGhError(stderr, code)
-  const list = safeJsonParse<GhPrListEntry[]>(stdout.trim())
+  const list = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrListSchema))
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
   return formatGhPrList(list)
 }
@@ -353,7 +364,7 @@ export async function getGhRunListText(opts: {
   if (branch) args.push('--branch', branch)
   const { stdout, stderr, code } = await runGh(args)
   if (code !== 0) return formatGhError(stderr, code)
-  let list = safeJsonParse<GhRunEntry[]>(stdout.trim())
+  let list = safeJsonParse(stdout.trim(), decodeWithSchema(ghRunListSchema))
   if (!Array.isArray(list)) return stdout.trim() || '(no output)'
   if (opts.failedOnly) list = list.filter((run) => isFailingConclusion(run.conclusion))
   return formatGhRunList(list)
@@ -406,7 +417,7 @@ export async function getGhPrViewText(opts: {
   if (opts.number !== undefined) args.push(String(opts.number))
   const { stdout, stderr, code } = await runGh(args)
   if (code !== 0) return formatGhError(stderr, code)
-  const pr = safeJsonParse<GhPrViewDetails>(stdout.trim())
+  const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
   if (!pr) return stdout.trim() || '(no output)'
   return formatGhPrView(pr)
 }
@@ -442,7 +453,7 @@ export async function getGhPrFilesText(opts: { number?: number | undefined }): P
   if (opts.number !== undefined) args.push(String(opts.number))
   const { stdout, stderr, code } = await runGh(args)
   if (code !== 0) return formatGhError(stderr, code)
-  const pr = safeJsonParse<GhPrViewDetails>(stdout.trim())
+  const pr = safeJsonParse(stdout.trim(), decodeWithSchema(ghPrViewDetailsSchema))
   if (!pr) return stdout.trim() || '(no output)'
   return formatGhPrFiles(pr)
 }

@@ -81,6 +81,7 @@ describe('settings automations pack', function () {
     // the complete create/edit surface with its dynamic model picker.
     await detail.$('.automation-add-btn').click()
     await expect(detail.$('.automation-form')).toBeDisplayed()
+    await expect(detail.$('.automation-form .model-picker-field')).toBeDisplayed()
     await detail.$('.automation-form').scrollIntoView({ block: 'center' })
     await saveElementScreenshot('.automation-pack-settings', 'settings-automations.png')
   })

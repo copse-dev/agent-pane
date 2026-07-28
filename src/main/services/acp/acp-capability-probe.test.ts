@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { expectRecord, parseJsonUnknown, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import {
   agent,
   methods,
@@ -289,7 +290,11 @@ describe('renderMatrixMarkdown / buildMatrixJson', () => {
     assert.equal(json.reports.length, 2)
     assert.equal(json.generatedBy, 'npm run probe:acp')
     // Round-trips through JSON without loss.
-    const roundTripped = JSON.parse(JSON.stringify(json)) as typeof json
-    assert.equal(roundTripped.reports[0]?.snapshot?.loadSession, true)
+    const roundTripped = expectRecord(parseJsonUnknown(JSON.stringify(json)))
+    const reports = recordArrayOrEmpty(roundTripped['reports'])
+    const firstReport = reports[0]
+    assert.ok(firstReport)
+    const snapshot = expectRecord(firstReport['snapshot'])
+    assert.equal(snapshot['loadSession'], true)
   })
 })

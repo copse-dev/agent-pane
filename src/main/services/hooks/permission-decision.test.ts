@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { expectRecord, parseJsonUnknown } from '@shared/unknown-value.ts'
 import { asTurnTreeId } from '@copse/agent/hooks/turn-tree.ts'
 import {
   userCopseHooksConfigPath,
@@ -80,12 +81,9 @@ describe('permissionDecision (F2, Copse-native observation)', () => {
     // Detached: await completion (a test affordance) before inspecting stdin.
     await result.settled
     assert.equal(existsSync(stdinFile), true)
-    const stdin = JSON.parse(readFileSync(stdinFile, 'utf-8')) as {
-      tool_name?: string
-      decision?: string
-    }
-    assert.equal(stdin.tool_name, 'run_shell')
-    assert.equal(stdin.decision, 'ask')
+    const stdin = expectRecord(parseJsonUnknown(readFileSync(stdinFile, 'utf-8')))
+    assert.equal(stdin['tool_name'], 'run_shell')
+    assert.equal(stdin['decision'], 'ask')
   })
 
   it('honours a matcher on the tool name', async () => {
