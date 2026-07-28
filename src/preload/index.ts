@@ -745,10 +745,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('packs:setEnabled', id, enabled),
     setSetting: (id: string, key: string, value: unknown) =>
       ipcRenderer.invoke('packs:setSetting', id, key, value),
-    addLocalNativeSource: () => ipcRenderer.invoke('packs:addLocalNativeSource'),
-    approveLocalNative: (id: string, contentHash: string) =>
-      ipcRenderer.invoke('packs:approveLocalNative', id, contentHash),
-    revokeLocalNative: (id: string) => ipcRenderer.invoke('packs:revokeLocalNative', id),
+    addSource: () => ipcRenderer.invoke('packs:addSource'),
   },
   automations: {
     list: (projectId: string) => ipcRenderer.invoke('automations:list', projectId),

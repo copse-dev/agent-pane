@@ -19,9 +19,7 @@ import { createPendingApi } from '../fake-api.test-support.ts'
 interface StubApiSpy {
   lastSetEnabled: { id: string; enabled: boolean } | null
   lastSetSetting: { id: string; key: string; value: unknown } | null
-  approvedLocalNative: { id: string; contentHash: string } | null
-  revokedLocalNative: string | null
-  addLocalNativeCalls: number
+  addSourceCalls: number
 }
 
 function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
@@ -63,28 +61,8 @@ function stubApi(initial: PacksListResult, spy: StubApiSpy): ApiClient {
       }
       return Promise.resolve(current)
     },
-    'packs.addLocalNativeSource': () => {
-      spy.addLocalNativeCalls += 1
-      return Promise.resolve(current)
-    },
-    'packs.approveLocalNative': (id: string, contentHash: string) => {
-      spy.approvedLocalNative = { id, contentHash }
-      current = {
-        packs: current.packs.map((pack) =>
-          pack.id === id
-            ? { ...pack, approval: { status: 'approved' as const, approvedAt: 123 } }
-            : pack,
-        ),
-      }
-      return Promise.resolve(current)
-    },
-    'packs.revokeLocalNative': (id: string) => {
-      spy.revokedLocalNative = id
-      current = {
-        packs: current.packs.map((pack) =>
-          pack.id === id ? { ...pack, approval: { status: 'required' as const } } : pack,
-        ),
-      }
+    'packs.addSource': () => {
+      spy.addSourceCalls += 1
       return Promise.resolve(current)
     },
   })
@@ -170,24 +148,18 @@ const disabledUserPack: PackSummary = {
   settings: [],
 }
 
-const localNativePack: PackSummary = {
+const selectedToolPack: PackSummary = {
   id: 'personal.local-model',
-  trust: 'local-native',
+  trust: 'user',
   name: 'personal.local-model',
   version: '0.1.0',
   description: 'A personal local model route.',
   enabled: false,
   source: {
-    kind: 'local-native',
+    kind: 'directory',
     path: '/Users/example/private-packs/personal.local-model',
     contentHash: `sha256:${'a'.repeat(64)}`,
-    entrypoint: 'dist/index.mjs',
-    sdkVersion: 1,
-    capabilities: ['native-tools'],
-    origins: [],
-    rendererSlots: [],
   },
-  approval: { status: 'required' },
   contributions: {
     toolNames: ['ask_local_model'],
     blockingHooks: [],
@@ -200,11 +172,6 @@ const localNativePack: PackSummary = {
     storageNamespace: 'personal.local-model',
   },
   settings: [],
-}
-
-const approvedLocalNativePack: PackSummary = {
-  ...localNativePack,
-  approval: { status: 'approved', approvedAt: 1_756_000_000_000 },
 }
 
 async function openPacks(
@@ -232,9 +199,7 @@ describe('settings → packs list', () => {
     spy = {
       lastSetEnabled: null,
       lastSetSetting: null,
-      approvedLocalNative: null,
-      revokedLocalNative: null,
-      addLocalNativeCalls: 0,
+      addSourceCalls: 0,
     }
   })
 
@@ -288,45 +253,24 @@ describe('settings → packs list', () => {
     assert.equal(second.querySelector<HTMLInputElement>('input.pack-toggle-input')?.checked, false)
   })
 
-  it('shows exact local-native authority and keeps it inert until approval', async () => {
-    const list = await openPacks({ packs: [localNativePack] }, spy)
+  it('shows selected-directory provenance and ordinary pack controls', async () => {
+    const list = await openPacks({ packs: [selectedToolPack] }, spy)
     const row = list.querySelector<HTMLElement>('[data-pack-id="personal.local-model"]')
     assert.ok(row)
-    assert.equal(row.classList.contains('pack-row-disabled'), false)
-    assert.equal(row.querySelector('.pack-badge-local-native')?.textContent, 'local-native')
-    assert.equal(row.querySelector<HTMLInputElement>('.pack-toggle-input')?.disabled, true)
-    assert.match(row.textContent, /Approval required/)
-    assert.match(row.textContent, /native-tools/)
+    assert.equal(row.classList.contains('pack-row-disabled'), true)
+    assert.equal(row.querySelector('.pack-badge-user')?.textContent, 'user')
+    assert.equal(row.querySelector<HTMLInputElement>('.pack-toggle-input')?.disabled, false)
+    assert.match(row.textContent, /executable tools run in isolation/i)
     assert.match(row.textContent, /sha256:a{64}/)
-
-    const approve = row.querySelector<HTMLButtonElement>('.pack-native-approval-btn')
-    assert.ok(approve)
-    assert.equal(approve.textContent, 'Approve exact version')
-    approve.click()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.deepEqual(spy.approvedLocalNative, {
-      id: 'personal.local-model',
-      contentHash: `sha256:${'a'.repeat(64)}`,
-    })
   })
 
-  it('allows an exactly approved local-native pack to be enabled', async () => {
-    const list = await openPacks({ packs: [approvedLocalNativePack] }, spy)
-    const toggle = list.querySelector<HTMLInputElement>(
-      '[data-pack-id="personal.local-model"] .pack-toggle-input',
-    )
-    assert.ok(toggle)
-    assert.equal(toggle.disabled, false)
-    assert.match(toggle.closest('label')?.title ?? '', /isolated runtime/i)
-  })
-
-  it('opens the host-owned local pack chooser from Settings', async () => {
+  it('opens the host-owned pack chooser from Settings', async () => {
     await openPacks({ packs: [] }, spy)
-    const add = document.querySelector<HTMLButtonElement>('#packs-add-local-btn')
+    const add = document.querySelector<HTMLButtonElement>('#packs-add-btn')
     assert.ok(add)
     add.click()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    assert.equal(spy.addLocalNativeCalls, 1)
+    assert.equal(spy.addSourceCalls, 1)
   })
 
   it('enumerates tools / hooks / prompt / UI as chips with counts', async () => {

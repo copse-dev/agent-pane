@@ -3,19 +3,19 @@ import * as fsp from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
-  discoverLocalNativePack,
-  type LocalNativePackCandidate,
-  LocalNativePackError,
-} from './local-native-pack.ts'
+  discoverPackToolSource,
+  type PackToolSourceCandidate,
+  PackToolSourceError,
+} from './pack-tool-source.ts'
 
 const SKIPPED_DIRECTORIES = new Set(['.git', 'node_modules'])
 const SKIPPED_FILES = new Set(['.DS_Store'])
 
 function snapshotRoot(): string {
-  const override = process.env['COPSE_LOCAL_NATIVE_PACK_SNAPSHOT_DIR']?.trim()
+  const override = process.env['COPSE_PACK_TOOL_SNAPSHOT_DIR']?.trim()
   return override && override.length > 0
     ? override
-    : join(homedir(), '.copse', 'local-native-packs')
+    : join(homedir(), '.copse', 'pack-tool-snapshots')
 }
 
 function packDirectoryName(packId: string): string {
@@ -31,8 +31,8 @@ async function copyReviewedTree(source: string, destination: string): Promise<vo
     const sourcePath = join(source, entry.name)
     const destinationPath = join(destination, entry.name)
     if (entry.isSymbolicLink()) {
-      throw new LocalNativePackError(
-        `Local native pack contains a symbolic link while snapshotting: ${entry.name}`,
+      throw new PackToolSourceError(
+        `Pack contains a symbolic link while snapshotting: ${entry.name}`,
       )
     }
     if (entry.isDirectory()) {
@@ -40,8 +40,8 @@ async function copyReviewedTree(source: string, destination: string): Promise<vo
       continue
     }
     if (!entry.isFile()) {
-      throw new LocalNativePackError(
-        `Local native pack contains an unsupported file while snapshotting: ${entry.name}`,
+      throw new PackToolSourceError(
+        `Pack contains an unsupported file while snapshotting: ${entry.name}`,
       )
     }
     await fsp.copyFile(sourcePath, destinationPath)
@@ -53,28 +53,24 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
 }
 
 function isExactSnapshot(
-  source: LocalNativePackCandidate,
-  snapshot: LocalNativePackCandidate,
+  source: PackToolSourceCandidate,
+  snapshot: PackToolSourceCandidate,
 ): boolean {
   return (
     snapshot.manifest.name === source.manifest.name &&
     snapshot.contentHash === source.contentHash &&
-    snapshot.runtime.entrypoint === source.runtime.entrypoint &&
-    sameStrings(snapshot.runtime.capabilities, source.runtime.capabilities) &&
-    sameStrings(snapshot.runtime.origins, source.runtime.origins) &&
-    sameStrings(snapshot.runtime.rendererSlots, source.runtime.rendererSlots)
+    snapshot.toolRuntime.entrypoint === source.toolRuntime.entrypoint &&
+    sameStrings(snapshot.manifest.tools?.provides ?? [], source.manifest.tools?.provides ?? [])
   )
 }
 
 async function validateSnapshot(
-  source: LocalNativePackCandidate,
+  source: PackToolSourceCandidate,
   path: string,
-): Promise<LocalNativePackCandidate> {
-  const snapshot = await discoverLocalNativePack(path)
+): Promise<PackToolSourceCandidate> {
+  const snapshot = await discoverPackToolSource(path)
   if (!isExactSnapshot(source, snapshot)) {
-    throw new LocalNativePackError(
-      'Local native pack snapshot does not match the reviewed source content.',
-    )
+    throw new PackToolSourceError('Pack tool snapshot does not match the selected source content.')
   }
   return snapshot
 }
@@ -84,17 +80,17 @@ async function validateSnapshot(
  * Unhashed development directories never enter the executable snapshot, and
  * the copied tree is re-hashed before it can be launched.
  */
-export async function materializeLocalNativePackSnapshot(
-  source: LocalNativePackCandidate,
+export async function materializePackToolSnapshot(
+  source: PackToolSourceCandidate,
   root = snapshotRoot(),
-): Promise<LocalNativePackCandidate> {
+): Promise<PackToolSourceCandidate> {
   const hash = source.contentHash.slice('sha256:'.length)
   const parent = join(root, packDirectoryName(source.manifest.name))
   const destination = join(parent, hash)
   const existing = await fsp.stat(destination).catch(() => null)
   if (existing) {
     if (!existing.isDirectory()) {
-      throw new LocalNativePackError('Local native pack snapshot path is not a directory.')
+      throw new PackToolSourceError('Pack tool snapshot path is not a directory.')
     }
     return await validateSnapshot(source, destination)
   }

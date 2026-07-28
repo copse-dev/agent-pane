@@ -1,47 +1,31 @@
-import type { LocalNativePackCandidate, LocalNativePackTrustRecord } from './local-native-pack.ts'
-import {
-  LocalNativePackHost,
-  type LocalNativePackHostCallHandler,
-} from './local-native-pack-host.ts'
-import type { LocalNativeRegistrations } from './local-native-pack-protocol.ts'
+import type { PackToolSourceCandidate } from './pack-tool-source.ts'
+import { PackToolHost } from './pack-tool-host.ts'
+import type { PackToolRegistrations } from './pack-tool-protocol.ts'
 import { z } from 'zod'
 import { defineTool } from '@shared/types'
 import type { ToolRegistry } from '../tool-registry.ts'
 
-export interface LocalNativePackRuntimeController {
-  enable(
-    candidate: LocalNativePackCandidate,
-    trustRecord: LocalNativePackTrustRecord,
-  ): Promise<void>
+export interface PackToolRuntimeController {
+  enable(candidate: PackToolSourceCandidate): Promise<void>
   disable(packId: string): Promise<void>
   isRunning(packId: string): boolean
-  registrations(packId: string): LocalNativeRegistrations | null
+  registrations(packId: string): PackToolRegistrations | null
   invoke(
     packId: string,
-    kind: 'tool',
     registrationId: string,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<unknown>
 }
 
-/** Owns one isolated worker per enabled local-native pack. */
-export class DefaultLocalNativePackRuntimeController implements LocalNativePackRuntimeController {
-  private readonly hosts = new Map<string, LocalNativePackHost>()
-  private readonly hostCallHandler: LocalNativePackHostCallHandler
+/** Owns one isolated worker for the tool behavior of each enabled selected pack. */
+export class DefaultPackToolRuntimeController implements PackToolRuntimeController {
+  private readonly hosts = new Map<string, PackToolHost>()
 
-  constructor(hostCallHandler: LocalNativePackHostCallHandler) {
-    this.hostCallHandler = hostCallHandler
-  }
-
-  async enable(
-    candidate: LocalNativePackCandidate,
-    trustRecord: LocalNativePackTrustRecord,
-  ): Promise<void> {
+  async enable(candidate: PackToolSourceCandidate): Promise<void> {
     const packId = candidate.manifest.name
     if (this.hosts.has(packId)) return
-    const host = await LocalNativePackHost.start(candidate, trustRecord, this.hostCallHandler)
-    this.hosts.set(packId, host)
+    this.hosts.set(packId, await PackToolHost.start(candidate))
   }
 
   async disable(packId: string): Promise<void> {
@@ -55,24 +39,23 @@ export class DefaultLocalNativePackRuntimeController implements LocalNativePackR
     return this.hosts.has(packId)
   }
 
-  registrations(packId: string): LocalNativeRegistrations | null {
+  registrations(packId: string): PackToolRegistrations | null {
     return this.hosts.get(packId)?.registrations ?? null
   }
 
   invoke(
     packId: string,
-    kind: 'tool',
     registrationId: string,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<unknown> {
     const host = this.hosts.get(packId)
-    if (!host) return Promise.reject(new Error(`Local native pack "${packId}" is not running.`))
-    return host.invoke(kind, registrationId, input, signal)
+    if (!host) return Promise.reject(new Error(`Pack "${packId}" tools are not running.`))
+    return host.invoke(registrationId, input, signal)
   }
 }
 
-const zLocalNativeToolResult = z.union([
+const zPackToolResult = z.union([
   z.string(),
   z.strictObject({
     result: z.string(),
@@ -80,45 +63,38 @@ const zLocalNativeToolResult = z.union([
   }),
 ])
 
-/** Adds/removes isolated worker tools in the live agent registry. */
-export class ToolingLocalNativePackRuntimeController implements LocalNativePackRuntimeController {
-  private readonly runtime: LocalNativePackRuntimeController
+/** Adds and removes isolated pack tools in the live agent registry. */
+export class ToolingPackToolRuntimeController implements PackToolRuntimeController {
+  private readonly runtime: PackToolRuntimeController
   private readonly toolRegistry: ToolRegistry
   private readonly toolNamesByPack = new Map<string, string[]>()
 
   constructor(
     toolRegistry: ToolRegistry,
-    hostCallHandler: LocalNativePackHostCallHandler,
-    runtime: LocalNativePackRuntimeController = new DefaultLocalNativePackRuntimeController(
-      hostCallHandler,
-    ),
+    runtime: PackToolRuntimeController = new DefaultPackToolRuntimeController(),
   ) {
     this.toolRegistry = toolRegistry
     this.runtime = runtime
   }
 
-  async enable(
-    candidate: LocalNativePackCandidate,
-    trustRecord: LocalNativePackTrustRecord,
-  ): Promise<void> {
+  async enable(candidate: PackToolSourceCandidate): Promise<void> {
     const packId = candidate.manifest.name
     if (this.runtime.isRunning(packId)) return
-    await this.runtime.enable(candidate, trustRecord)
+    await this.runtime.enable(candidate)
     try {
       const registrations = this.runtime.registrations(packId)
-      if (!registrations)
-        throw new Error(`Local native pack "${packId}" returned no registrations.`)
-      const declaredNames = [...(candidate.manifest.tools?.native ?? [])].sort()
+      if (!registrations) throw new Error(`Pack "${packId}" returned no tool registrations.`)
+      const declaredNames = [...(candidate.manifest.tools?.provides ?? [])].sort()
       const registeredNames = registrations.tools.map((tool) => tool.name).sort()
       if (
         declaredNames.length !== registeredNames.length ||
         declaredNames.some((name, index) => name !== registeredNames[index])
       ) {
-        throw new Error(`Local native pack "${packId}" registered tools not shown in its manifest.`)
+        throw new Error(`Pack "${packId}" registered tools not declared by its tools behavior.`)
       }
       for (const tool of registrations.tools) {
         if (this.toolRegistry.has(tool.name)) {
-          throw new Error(`Local native tool name is already registered: ${tool.name}`)
+          throw new Error(`Pack tool name is already registered: ${tool.name}`)
         }
       }
       for (const tool of registrations.tools) {
@@ -129,8 +105,8 @@ export class ToolingLocalNativePackRuntimeController implements LocalNativePackR
             parameters: z.record(z.string(), z.unknown()),
             rawParameters: tool.inputSchema,
             execute: async (args, signal) => {
-              const result = zLocalNativeToolResult.parse(
-                await this.runtime.invoke(packId, 'tool', tool.name, args, signal),
+              const result = zPackToolResult.parse(
+                await this.runtime.invoke(packId, tool.name, args, signal),
               )
               if (typeof result === 'string') return result
               return {
@@ -167,29 +143,26 @@ export class ToolingLocalNativePackRuntimeController implements LocalNativePackR
     return this.runtime.isRunning(packId)
   }
 
-  registrations(packId: string): LocalNativeRegistrations | null {
+  registrations(packId: string): PackToolRegistrations | null {
     return this.runtime.registrations(packId)
   }
 
   invoke(
     packId: string,
-    kind: 'tool',
     registrationId: string,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.runtime.invoke(packId, kind, registrationId, input, signal)
+    return this.runtime.invoke(packId, registrationId, input, signal)
   }
 }
 
-let configuredController: LocalNativePackRuntimeController | null = null
+let configuredController: PackToolRuntimeController | null = null
 
-export function setLocalNativePackRuntimeController(
-  controller: LocalNativePackRuntimeController | null,
-): void {
+export function setPackToolRuntimeController(controller: PackToolRuntimeController | null): void {
   configuredController = controller
 }
 
-export function getLocalNativePackRuntimeController(): LocalNativePackRuntimeController | null {
+export function getPackToolRuntimeController(): PackToolRuntimeController | null {
   return configuredController
 }

@@ -3,13 +3,13 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
-import { discoverLocalNativePack } from './local-native-pack.ts'
-import { materializeLocalNativePackSnapshot } from './local-native-pack-snapshot.ts'
+import { discoverPackToolSource } from './pack-tool-source.ts'
+import { materializePackToolSnapshot } from './pack-tool-snapshot.ts'
 
 const roots: string[] = []
 
 async function fixture(): Promise<{ source: string; snapshots: string }> {
-  const root = await mkdtemp(join(tmpdir(), 'copse-local-native-snapshot-'))
+  const root = await mkdtemp(join(tmpdir(), 'copse-pack-tool-snapshot-'))
   roots.push(root)
   const source = join(root, 'source')
   const snapshots = join(root, 'snapshots')
@@ -24,10 +24,9 @@ async function fixture(): Promise<{ source: string; snapshots: string }> {
     join(source, 'copse-pack.json'),
     JSON.stringify({
       name: 'personal.snapshot-test',
-      localNative: {
-        entrypoint: 'dist/index.mjs',
-        sdkVersion: 1,
-        capabilities: ['native-tools'],
+      tools: {
+        provides: ['snapshot_tool'],
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
     }),
   )
@@ -38,12 +37,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-describe('local native pack snapshots', () => {
+describe('pack tool snapshots', () => {
   it('copies only reviewed bytes and reuses the content-addressed snapshot', async () => {
     const { source, snapshots } = await fixture()
-    const candidate = await discoverLocalNativePack(source)
-    const first = await materializeLocalNativePackSnapshot(candidate, snapshots)
-    const second = await materializeLocalNativePackSnapshot(candidate, snapshots)
+    const candidate = await discoverPackToolSource(source)
+    const first = await materializePackToolSnapshot(candidate, snapshots)
+    const second = await materializePackToolSnapshot(candidate, snapshots)
 
     assert.equal(first.sourcePath, second.sourcePath)
     assert.notEqual(first.sourcePath, candidate.sourcePath)
@@ -59,13 +58,13 @@ describe('local native pack snapshots', () => {
 
   it('rejects a previously materialized snapshot whose bytes were changed', async () => {
     const { source, snapshots } = await fixture()
-    const candidate = await discoverLocalNativePack(source)
-    const snapshot = await materializeLocalNativePackSnapshot(candidate, snapshots)
+    const candidate = await discoverPackToolSource(source)
+    const snapshot = await materializePackToolSnapshot(candidate, snapshots)
     await writeFile(join(snapshot.sourcePath, 'dist', 'index.mjs'), 'changed\n')
 
     await assert.rejects(
-      materializeLocalNativePackSnapshot(candidate, snapshots),
-      /does not match the reviewed source content/i,
+      materializePackToolSnapshot(candidate, snapshots),
+      /does not match the selected source content/i,
     )
   })
 })

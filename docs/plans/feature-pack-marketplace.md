@@ -112,11 +112,11 @@ Names illustrative; schema lands in P1:
 Storage: Copse-owned under userData or `~/.copse/` (exact root bikeshed in P1),
 human-inspectable JSON preferred. Not electron-store blobs for payload bytes.
 
-This portable install record is intentionally separate from the personal
-`local-native` elevation described in the binding feature-pack plan. Native
-sources are selected explicitly, remain outside marketplace discovery, and use
-a host-owned trust record bound to canonical path, content hash, capabilities,
-origins, and renderer slots. A manifest cannot promote itself into that class.
+This portable install record is intentionally separate from explicitly selected
+development directories. Selected directories remain ordinary user packs,
+stay outside marketplace discovery, and currently support only isolated
+executable tool behavior. The content hash protects snapshot consistency; it is
+not a separate trust class.
 
 ### Verification policy (v1)
 
@@ -160,11 +160,11 @@ client, Settings marketplace browser, and changes to Cursor plugin discovery.
 - Exit gate: unit/integration test registers a fixture user pack, enable/disable
   is atomic, prompt trust forced untrusted; no network.
 
-The private local-native prerequisite now exercises the stricter half of this
+The selected-directory prerequisite now exercises the stricter half of this
 boundary: explicit-path discovery, fail-closed validation, deterministic hash,
-inert registration, exact authority review, and revocation. General portable
-user-pack discovery remains outstanding; approved native execution waits for
-the isolated host rather than importing code into Electron main.
+ordinary user-pack registration, and isolated tool execution. General portable
+user-pack discovery remains outstanding; executable behavior uses the isolated
+host rather than importing code into Electron main.
 
 ### P2 — Install record + path/URL install
 
