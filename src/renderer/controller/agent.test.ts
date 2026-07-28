@@ -1,3 +1,4 @@
+import '../../../tests/setup-dom.ts'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { ApiClient } from '../../preload/api.d.ts'
@@ -222,6 +223,42 @@ test('diff events stay scoped to their owning project and thread', () => {
     after: 'after',
     language: 'typescript',
   })
+})
+
+test('opening Changes for a staged diff unhides the pane before panel sync events', () => {
+  // Layout must win the race against Monaco's whenDiffHostVisible wait: emit
+  // right_panel_mode_changed / files_pane_changed (and sync #pane-files) before
+  // panel_changed / staged_diffs_changed, which kick the Changes viewer.
+  const { store, showDiff, queueDiffs } = setup()
+  const pane = document.createElement('div')
+  pane.id = 'pane-files'
+  pane.hidden = true
+  document.body.append(pane)
+
+  const events: string[] = []
+  store.on('right_panel_mode_changed', () => {
+    events.push(`mode:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+  store.on('files_pane_changed', () => {
+    events.push(`files:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+  store.on('staged_diffs_changed', () => {
+    events.push(`staged:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+  store.on('panel_changed', () => {
+    events.push(`panel:${pane.hidden ? 'hidden' : 'open'}`)
+  })
+
+  showDiff('project-1', 't1', 'a.ts', 'before', 'after', 'typescript')
+  assert.equal(pane.hidden, false)
+  assert.deepEqual(events, ['mode:open', 'files:open', 'panel:open'])
+
+  events.length = 0
+  queueDiffs('project-1', 't1', [{ path: 'a.ts', language: 'typescript' }])
+  assert.equal(pane.hidden, false)
+  assert.deepEqual(events, ['mode:open', 'files:open', 'staged:open', 'panel:open'])
+
+  pane.remove()
 })
 
 test('text chunks create one assistant message and accumulate tokens', () => {
