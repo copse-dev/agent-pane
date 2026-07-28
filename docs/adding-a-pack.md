@@ -168,6 +168,9 @@ Snapshots include bounded meaningful visible leaf text, semantic interactive
 roles, pointer-affordance refs, and hidden file inputs that back visible
 attachment controls. Hidden inputs are exposed only as upload refs; the bridge
 still does not expose selectors or arbitrary page scripting.
+Native and ARIA-disabled controls are marked `[disabled]` so handlers can wait
+for a real interactive state instead of treating mounted inactive controls as
+ready.
 
 Origins are exact: HTTPS scheme + host + optional port, with HTTP allowed only
 for loopback development. Paths, credentials, wildcards, undeclared origins,

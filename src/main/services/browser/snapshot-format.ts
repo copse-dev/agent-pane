@@ -17,6 +17,8 @@ export interface AxNode {
   depth: number
   /** Current value for inputs, if any. */
   value?: string
+  /** Native or ARIA disabled state for interactive controls. */
+  disabled?: boolean
 }
 
 export interface PageSnapshot {
@@ -45,6 +47,7 @@ export function parsePageSnapshot(value: unknown): PageSnapshot {
       depth,
       ...(typeof rawNode['ref'] === 'string' ? { ref: rawNode['ref'] } : {}),
       ...(typeof rawNode['value'] === 'string' ? { value: rawNode['value'] } : {}),
+      ...(rawNode['disabled'] === true ? { disabled: true } : {}),
     })
   }
   return {
@@ -77,6 +80,7 @@ export function renderSnapshot(snapshot: PageSnapshot): string {
     const parts = [`- ${node.role}`]
     if (node.name) parts.push(quote(node.name, MAX_NODE_NAME_CHARS))
     if (node.value) parts.push(`= ${quote(node.value)}`)
+    if (node.disabled) parts.push('[disabled]')
     if (node.ref) parts.push(`[ref=${node.ref}]`)
     const line = `${indent}${parts.join(' ')}`
     if (renderedChars + line.length + 1 > MAX_RENDERED_CHARS) {
@@ -172,6 +176,9 @@ export const DOM_SNAPSHOT_SCRIPT = `(() => {
       if (ref) node.ref = ref;
       if ((el.tagName === 'INPUT' && el.type !== 'file') || el.tagName === 'TEXTAREA') {
         if (el.value) node.value = String(el.value).slice(0, 120);
+      }
+      if (el.disabled === true || el.getAttribute('aria-disabled') === 'true') {
+        node.disabled = true;
       }
       nodes.push(node);
       nextDepth = depth + 1;
