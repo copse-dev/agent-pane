@@ -507,11 +507,48 @@ export function seedOpenRouterFixture(
   options?: { apiBase?: string; freeMode?: boolean },
 ): void {
   const projectId = 'e2e-openrouter-project'
+  const now = Date.parse('2026-07-28T10:00:00.000Z')
   mkdirSync(USER_DATA, { recursive: true })
   writeSeedConfig({
     projects: [{ id: projectId, path: workspaceRoot, name: 'workspace' }],
     activeProjectId: projectId,
-    [`threads:${projectId}`]: [],
+    activeThreadId: 'e2e-openrouter-qwen',
+    [`threads:${projectId}`]: [
+      {
+        id: 'e2e-openrouter-qwen',
+        title: 'Current Qwen thread',
+        status: 'idle',
+        messages: [
+          {
+            id: 'e2e-openrouter-qwen-message',
+            role: 'user',
+            content: 'Use Qwen for this task.',
+            createdAt: now,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        model: 'openrouter:qwen/qwen3-235b-a22b:free',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'e2e-openrouter-claude',
+        title: 'Previous Claude thread',
+        status: 'idle',
+        messages: [
+          {
+            id: 'e2e-openrouter-claude-message',
+            role: 'user',
+            content: 'Use Claude for this task.',
+            createdAt: now - 1_000,
+          },
+        ],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        model: 'openrouter:anthropic/claude-3.5-sonnet',
+        createdAt: now - 1_000,
+        updatedAt: now - 1_000,
+      },
+    ],
   })
   writeSettings({
     model: 'openrouter:qwen/qwen3-235b-a22b:free',
