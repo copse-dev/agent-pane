@@ -1,0 +1,32 @@
+{
+  "name": "fixture.demo-notes",
+  "version": "0.1.0",
+  "description": "Fixture user pack for marketplace P1 discovery",
+  "skills": "skills",
+  "tools": { "mcpServers": ".mcp.json" },
+  "hooks": [{ "event": "stop", "command": "./hooks/on-stop.sh" }],
+  "prompt": [
+    {
+      "id": "notes-steering",
+      "text": "Prefer capturing durable notes when the user finishes a task.",
+      "trust": "untrusted"
+    }
+  ],
+  "ui": [
+    {
+      "id": "notes",
+      "level": 2,
+      "slot": "conversation-panel",
+      "title": "Notes",
+      "panel": { "kind": "list", "header": "Notes", "ariaLabel": "Notes" }
+    }
+  ],
+  "settings": {
+    "captureEnabled": {
+      "kind": "boolean",
+      "title": "Capture notes on stop",
+      "default": true
+    }
+  },
+  "storage": { "namespace": "fixture.demo-notes" }
+}

@@ -211,7 +211,8 @@ disable is pinned by
   (`electron-store` under `packDisabled` and `pack.<packId>.settings`), the
   shared `PackRegistry` singleton, and the Settings pack list UI landed in P3
   (`src/main/services/packs/pack-service.ts` + `src/renderer/views/settings-dialog.ts`).
-  Host disk-discovery of user packs into that registry is still outstanding.
+  Host disk-discovery of user packs under `~/.copse/packs/` lands in marketplace
+  P1 (`src/main/services/packs/discover-user-packs.ts`).
 
 ## Related
 

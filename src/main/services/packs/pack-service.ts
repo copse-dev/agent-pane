@@ -1,9 +1,11 @@
-// Pack service — P3 of docs/plans/hooks-and-feature-packs.md.
+// Pack service — P3 of docs/plans/hooks-and-feature-packs.md (+ marketplace P1).
 //
 // The host wiring for the feature-pack layer:
 //  - owns the **shared** `PackRegistry` (first-party packs registered), and
 //    installs it via `setDefaultPackRegistry` so `createHookRegistry` (called
 //    every turn) reads through the same instance the Settings UI toggles;
+//  - discovers local **user** packs under `~/.copse/packs/` (or `COPSE_PACKS_DIR`)
+//    and registers them before applying the disable set (marketplace P1);
 //  - applies the persisted disable set from `electron-store` before wiring the
 //    provider, so a pack the user turned off stays off across relaunches;
 //  - persists pack-scoped settings values under a namespaced storage key so
@@ -29,6 +31,7 @@ import type { PackRegistry } from '@copse/agent/packs/pack-registry.ts'
 import { createFirstPartyPackRegistry } from '@copse/agent/packs/first-party-packs.ts'
 import { setDefaultPackRegistry } from '@copse/agent/packs/default-pack-registry.ts'
 import { summarizePacks, type PackSummaryOut } from '@copse/agent/packs/pack-summary.ts'
+import { discoverAndRegisterUserPacks } from './discover-user-packs.ts'
 import {
   MODEL_COMPARISON_PACK_ID,
   COMPARISON_MODEL_A_SETTING_ID,
@@ -303,6 +306,10 @@ export function getPackService(): PackService {
   migratePackModelSettings()
   migrateAutomationsEnablement()
   const registry = createFirstPartyPackRegistry()
+  // Marketplace P1: local user-pack discovery before disable-set apply so a
+  // previously disabled user pack stays off across relaunch. Missing packs root
+  // is inert. Duplicate ids / bad manifests are skipped per-entry.
+  discoverAndRegisterUserPacks(registry)
   const service = createPackService(registry)
   setDefaultPackRegistry(registry)
   singleton = service

@@ -2,9 +2,9 @@
 
 Tracking: [#1082](https://github.com/copse-dev/agent-pane/issues/1082)
 
-**Status: Proposed.** This is the first delivery slice for #1082: nail the product
-contract for Copse-native pack distribution (discover → install → pin → update →
-disable → uninstall) before a public index, signing ceremony, or Settings chrome.
+**Status: Active (P1).** Design contract is on `develop` via [#1203](https://github.com/copse-dev/agent-pane/pull/1203).
+P1 wires local user-pack discovery under `~/.copse/packs/` into the shared
+`PackRegistry` / Settings → Packs list (no install lifecycle, no network index).
 Implementation PRs should link here and keep [`hooks-and-feature-packs.md`](hooks-and-feature-packs.md),
 [`../packs.md`](../packs.md), and Cursor plugin import
 ([`../cursor-plugins.md`](../cursor-plugins.md)) as **foundations/consumers**, not
@@ -109,8 +109,11 @@ Names illustrative; schema lands in P1:
 - `enabled` mirror or pointer into existing pack disable-set persistence
 - `conflicts[]` when another installed pack claims overlapping contribution ids
 
-Storage: Copse-owned under userData or `~/.copse/` (exact root bikeshed in P1),
-human-inspectable JSON preferred. Not electron-store blobs for payload bytes.
+Storage: Copse-owned under `~/.copse/packs/` (Open Q1 resolved in P1 — beside the
+workspace thread store, overridable with `COPSE_PACKS_DIR` for tests). Human-
+inspectable JSON preferred. Not electron-store blobs for payload bytes. P2 will
+add content-addressed payload dirs under the same root; P1 only scans immediate
+child directories that already contain a manifest.
 
 ### Verification policy (v1)
 
@@ -146,13 +149,20 @@ client, Settings marketplace browser, and changes to Cursor plugin discovery.
 
 ## Later phases
 
-### P1 — Local user-pack discovery (prerequisite)
+### P1 — Local user-pack discovery (prerequisite) ✅
 
-- Wire host disk discovery so a `plugin.json` / pack manifest on a configured
-  local root registers as a **user** pack row in Settings → Packs (closes the gap
-  documented in [`../adding-a-pack.md`](../adding-a-pack.md)).
+- Wire host disk discovery so a `plugin.json` / `copse-pack.json` (or
+  `.cursor-plugin/plugin.json`) on the configured local root registers as a
+  **user** pack row in Settings → Packs (closes the gap documented in
+  [`../adding-a-pack.md`](../adding-a-pack.md)).
+- Root: `~/.copse/packs/<packDir>/` (`COPSE_PACKS_DIR` override). Missing root is
+  inert. Duplicate ids and bad manifests are skipped per-entry (never crash boot).
+- Trust hardening at registration: `trust: 'user'`, prompt blocks forced
+  `untrusted`, `tools.native` stripped, level-3 UI dropped.
 - Exit gate: unit/integration test registers a fixture user pack, enable/disable
   is atomic, prompt trust forced untrusted; no network.
+- **Still deferred from P1:** runtime wiring of user-pack command hooks / MCP into
+  the live loop (Settings row + registry membership only).
 
 ### P2 — Install record + path/URL install
 
@@ -194,10 +204,13 @@ client, Settings marketplace browser, and changes to Cursor plugin discovery.
 
 ## Open questions (resolve in P1/P2 PRs)
 
-1. Should Copse-owned pack storage live under `~/Library/Application Support/copse-panel/packs/`
-   (userData) or `~/.copse/packs/` next to the workspace thread store?
+1. ~~Should Copse-owned pack storage live under `~/Library/Application Support/copse-panel/packs/`
+   (userData) or `~/.copse/packs/` next to the workspace thread store?~~ **Resolved in P1:**
+   `~/.copse/packs/` (override `COPSE_PACKS_DIR`). Matches thread/supervisor workspace
+   layout; keeps pack bits out of Electron userData.
 2. Do Cursor-imported plugins ever gain install records, or do they stay a separate
-   read-only source indefinitely?
+   read-only source indefinitely? _(P1 lean: stay separate — discovery does not
+   register `~/.cursor/plugins/` as pack rows.)_
 3. Is the first signing PKI a simple embedded first-party key list, or an offline
    root + intermediate model from day one?
 4. Should unknown capability/permission names hard-block enable, or allow enable

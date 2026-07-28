@@ -30,6 +30,9 @@ import { parseStringList } from '../storage/storage-schema.ts'
 import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const PACK_DISABLED_KEY = 'packDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
@@ -72,13 +75,23 @@ function clearStorage(): void {
 }
 
 describe('PackService', () => {
+  let previousPacksDir: string | undefined
+  let tempPacksRoot: string
+
   beforeEach(() => {
     __resetPackServiceForTests()
     clearStorage()
+    // Isolate marketplace P1 discovery from the developer's real ~/.copse/packs.
+    previousPacksDir = process.env['COPSE_PACKS_DIR']
+    tempPacksRoot = mkdtempSync(join(tmpdir(), 'copse-pack-service-'))
+    process.env['COPSE_PACKS_DIR'] = tempPacksRoot
   })
 
   afterEach(() => {
     __resetPackServiceForTests()
+    if (previousPacksDir === undefined) delete process.env['COPSE_PACKS_DIR']
+    else process.env['COPSE_PACKS_DIR'] = previousPacksDir
+    rmSync(tempPacksRoot, { recursive: true, force: true })
   })
 
   it('lists every registered pack with its enablement + settings values', () => {
@@ -267,5 +280,28 @@ describe('PackService', () => {
 
     assert.equal(service.registry.isEnabled(FORCED_PLANNING_PACK_ID), true)
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [PII_REDACTION_PACK_ID])
+  })
+
+  it('getPackService() discovers a local user pack under COPSE_PACKS_DIR', () => {
+    const packDir = join(tempPacksRoot, 'local-notes')
+    mkdirSync(packDir)
+    writeFileSync(
+      join(packDir, 'plugin.json'),
+      JSON.stringify({
+        name: 'fixture.from-service',
+        prompt: [{ id: 'p', text: 'hi', trust: 'trusted' }],
+      }),
+    )
+
+    const service = getPackService()
+    assert.equal(service.registry.has('fixture.from-service'), true)
+    assert.equal(service.registry.get('fixture.from-service')?.trust, 'user')
+    const row = service.list().find((p) => p.id === 'fixture.from-service')
+    assert.ok(row)
+    assert.equal(row.enabled, true)
+    assert.deepEqual(
+      row.contributions.promptBlocks.map((b) => b.trust),
+      ['untrusted'],
+    )
   })
 })

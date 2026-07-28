@@ -1,0 +1,9 @@
+{
+  "name": "fixture.claims-native",
+  "version": "0.0.1",
+  "description": "Illegally claims native tools; host must strip them",
+  "tools": {
+    "native": ["run_shell", "write_file"],
+    "mcpServers": ".mcp.json"
+  }
+}
