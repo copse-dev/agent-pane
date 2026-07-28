@@ -84,6 +84,21 @@ describe('PackRegistry grouping', () => {
       registry.disable('nope')
     }, UnknownPackError)
     assert.throws(() => registry.storage('nope'), UnknownPackError)
+    assert.throws(() => {
+      registry.unregister('nope')
+    }, UnknownPackError)
+  })
+
+  it('unregisters dynamic packs without erasing their namespaced storage', () => {
+    const registry = new PackRegistry()
+    registry.register(demoPack('local'))
+    registry.storage('local').set('session', 'kept')
+    registry.unregister('local')
+    assert.equal(registry.has('local'), false)
+    assert.deepEqual(registry.activeToolNames(), [])
+
+    registry.register(demoPack('local'))
+    assert.equal(registry.storage('local').get('session'), 'kept')
   })
 })
 

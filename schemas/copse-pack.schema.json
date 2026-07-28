@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://copse.dev/schemas/copse-pack.schema.json",
   "title": "Copse feature-pack manifest",
-  "description": "The declarative manifest for a Copse feature pack. A pack bundles a feature via slots (tools/hooks/prompt/ui/settings/storage) on top of the plugin.json shape Copse already loads (name/version/description/skills/mcpServers). First-party and user packs share this manifest (decision 15); first-party packs additionally supply typed runtime contributions (native tools, in-process function hooks, real renderer views) that are defined in code, not on disk. See docs/packs.md and docs/plans/hooks-and-feature-packs.md (P1).",
+  "description": "The declarative manifest for a Copse feature pack. A pack bundles a feature via slots (tools/hooks/prompt/ui/settings/storage) on top of the plugin.json shape Copse already loads (name/version/description/skills/mcpServers). Portable user packs remain declarative. An explicitly selected local-native source may additionally request a versioned native runtime, but the host assigns that trust class only after an exact content-hash and authority approval; manifest text cannot self-grant it. See docs/packs.md and docs/plans/hooks-and-feature-packs.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name"],
@@ -21,8 +21,45 @@
       "type": "string"
     },
     "trust": {
-      "description": "Whether the pack is shipped by Copse or user-installed (decision 15). A discovered plugin.json is always `user`; first-party packs declare `first-party` in code.",
-      "enum": ["first-party", "user"]
+      "description": "Descriptive trust claim only. A discovered plugin.json is always `user`; first-party and local-native trust are assigned by the host and cannot be self-granted by this field.",
+      "enum": ["first-party", "user", "local-native"]
+    },
+    "localNative": {
+      "description": "Requested native runtime for an explicitly selected personal pack source. The pack remains inert until Copse validates its tree, computes a content hash, and the user approves the exact requested authority. Any source or authority change invalidates approval.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entrypoint", "sdkVersion", "capabilities"],
+      "properties": {
+        "entrypoint": {
+          "description": "Relative path to the native runtime entrypoint. Absolute paths and paths escaping the pack root are rejected.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sdkVersion": {
+          "description": "Version of the isolated host SDK requested by the pack.",
+          "const": 1
+        },
+        "capabilities": {
+          "description": "Exact native host capabilities requested by this pack. Unknown values fail closed.",
+          "type": "array",
+          "items": {
+            "const": "native-tools"
+          },
+          "uniqueItems": true
+        },
+        "origins": {
+          "description": "Reserved for P4. P1/P2 discovery rejects non-empty origin requests.",
+          "type": "array",
+          "items": { "type": "string", "format": "uri" },
+          "uniqueItems": true
+        },
+        "rendererSlots": {
+          "description": "Reserved for P4. P1/P2 discovery rejects non-empty renderer slot requests.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
     },
     "skills": {
       "description": "Existing plugin.json slot: relative path to a skills directory.",

@@ -1369,6 +1369,48 @@ dialog.settings-overlay::backdrop {
   color: var(--warning, #d29922);
   border-color: var(--warning, #d29922);
 }
+.pack-badge-local-native {
+  color: var(--warning, #d29922);
+  border-color: var(--warning, #d29922);
+}
+.pack-native-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.pack-native-status {
+  font-size: 11px;
+  font-weight: 600;
+}
+.pack-native-status-required {
+  color: var(--warning, #d29922);
+}
+.pack-native-status-approved {
+  color: var(--success, #3fb950);
+}
+.pack-native-details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px var(--spacing-sm);
+  margin: 0;
+  font-size: 11px;
+}
+.pack-native-details dt {
+  color: var(--text-muted);
+}
+.pack-native-details dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.pack-native-actions {
+  display: flex;
+  justify-content: flex-end;
+}
 .pack-row-desc {
   font-size: var(--font-size-sm);
   color: var(--text-secondary);

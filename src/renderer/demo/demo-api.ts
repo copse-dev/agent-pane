@@ -412,6 +412,9 @@ export function createDemoApi(scenario: DemoScenario): ApiClient {
       list: () => resolved({ packs: [] }),
       setEnabled: () => resolved({ packs: [] }),
       setSetting: () => resolved({ packs: [] }),
+      addLocalNativeSource: () => resolved({ packs: [] }),
+      approveLocalNative: () => resolved({ packs: [] }),
+      revokeLocalNative: () => resolved({ packs: [] }),
     },
     automations: {
       list: emptyArray,

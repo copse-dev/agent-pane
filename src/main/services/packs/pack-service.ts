@@ -52,12 +52,41 @@ import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { storageGet, storageSet, storageUpdate } from '../storage/storage.ts'
 import { getSetting } from '../storage/settings.ts'
 import { parseStringList } from '../storage/storage-schema.ts'
+import {
+  createLocalNativePackTrustRecord,
+  discoverLocalNativePack,
+  localNativePackTrustMatches,
+  parseLocalNativePackTrustRecords,
+  registeredLocalNativePack,
+  type LocalNativePackCandidate,
+  type LocalNativePackTrustRecord,
+} from './local-native-pack.ts'
+import {
+  getLocalNativePackRuntimeController,
+  setLocalNativePackRuntimeController,
+} from './local-native-pack-controller.ts'
+
+// P1 of #1336: imported here so the local-native discovery/trust contract is
+// part of the production pack-service graph before Settings installation is
+// wired. Execution remains inert until an exact persisted approval matches.
+export {
+  createLocalNativePackTrustRecord,
+  discoverLocalNativePack,
+  hashLocalNativePack,
+  localNativePackTrustMatches,
+} from './local-native-pack.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by packs. */
 const PACK_MODEL_SETTINGS_MIGRATION_KEY = 'packMigration.packModelSettings'
 
 /** Storage key holding the ids of packs the user disabled. */
 const PACK_DISABLED_KEY = 'packDisabled'
+
+/** Explicitly user-selected local-native source directories (#1336 P1). */
+const LOCAL_NATIVE_PACK_SOURCES_KEY = 'localNativePackSources'
+
+/** Exact hash/capability-bound approvals for local-native sources. */
+const LOCAL_NATIVE_PACK_TRUST_KEY = 'localNativePackTrust'
 
 /**
  * Packs that ship registered but off.
@@ -115,6 +144,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Read the persisted disable set. */
 function readDisabledIds(): Set<string> {
   return new Set(parseStringList(storageGet(PACK_DISABLED_KEY)))
+}
+
+function readLocalNativeTrustRecords(): LocalNativePackTrustRecord[] {
+  return [...parseLocalNativePackTrustRecords(storageGet(LOCAL_NATIVE_PACK_TRUST_KEY))]
+}
+
+function localNativeTrustRecordById(packId: string): LocalNativePackTrustRecord | null {
+  return readLocalNativeTrustRecords().find((record) => record.packId === packId) ?? null
 }
 
 /**
@@ -241,6 +278,14 @@ export interface PackService {
   getSetting(packId: string, key: string): unknown
   /** Persist one pack-scoped setting value under the pack's namespaced bag. */
   setSetting(packId: string, key: string, value: unknown): Promise<void>
+  /** Reconcile explicitly selected local-native sources into the registry, disabled by default. */
+  refreshLocalNativePacks(): Promise<void>
+  /** Persist and discover one directory selected through the host-owned native dialog. */
+  addLocalNativeSource(sourcePath: string): Promise<void>
+  /** Bind approval to the currently discovered hash and requested authority. */
+  approveLocalNativePack(packId: string, expectedContentHash: string): Promise<void>
+  /** Revoke native authority immediately; source and pack storage remain installed. */
+  revokeLocalNativePack(packId: string): Promise<void>
 }
 
 /**
@@ -251,17 +296,137 @@ export interface PackService {
  */
 export function createPackService(registry: PackRegistry): PackService {
   const disabled = readDisabledIds()
+  const localNativeCandidates = new Map<string, LocalNativePackCandidate>()
   for (const id of disabled) {
     if (registry.has(id)) registry.disable(id)
+  }
+
+  async function refreshLocalNativePacks(): Promise<void> {
+    const sources = parseStringList(storageGet(LOCAL_NATIVE_PACK_SOURCES_KEY))
+    const discovered: LocalNativePackCandidate[] = []
+    for (const source of sources) {
+      try {
+        discovered.push(await discoverLocalNativePack(source))
+      } catch (error) {
+        console.warn(`[packs] local-native source ${JSON.stringify(source)} is inert:`, error)
+      }
+    }
+
+    const controller = getLocalNativePackRuntimeController()
+    const discoveredById = new Map(
+      discovered.map((candidate) => [candidate.manifest.name, candidate]),
+    )
+    for (const [id, previous] of localNativeCandidates) {
+      const next = discoveredById.get(id)
+      if (
+        next &&
+        next.sourcePath === previous.sourcePath &&
+        next.contentHash === previous.contentHash
+      ) {
+        continue
+      }
+      registry.disable(id)
+      if (controller?.isRunning(id)) await controller.disable(id)
+      if (registry.get(id)?.trust === 'local-native') registry.unregister(id)
+      localNativeCandidates.delete(id)
+    }
+
+    for (const candidate of discovered) {
+      const id = candidate.manifest.name
+      const existing = localNativeCandidates.get(id)
+      if (!existing && registry.has(id)) {
+        console.warn(
+          `[packs] local-native pack id ${JSON.stringify(id)} conflicts with a registered pack.`,
+        )
+        continue
+      }
+      if (!existing) {
+        registry.register(registeredLocalNativePack(candidate))
+        localNativeCandidates.set(id, candidate)
+      }
+      const current = localNativeCandidates.get(id)
+      if (!current) continue
+      const record = localNativeTrustRecordById(id)
+      const shouldRun = !readDisabledIds().has(id) && localNativePackTrustMatches(current, record)
+      if (shouldRun && record && controller) {
+        try {
+          await controller.enable(current, record)
+          registry.enable(id)
+        } catch (error) {
+          registry.disable(id)
+          console.warn(`[packs] local-native pack ${JSON.stringify(id)} could not start:`, error)
+        }
+      } else {
+        registry.disable(id)
+        if (controller?.isRunning(id)) await controller.disable(id)
+      }
+    }
   }
 
   return {
     registry,
     list(): readonly PackSummaryOut[] {
-      return summarizePacks(registry, (packId, key) => readPackSettings(packId)[key])
+      return summarizePacks(registry, (packId, key) => readPackSettings(packId)[key]).map(
+        (summary) => {
+          const candidate = localNativeCandidates.get(summary.id)
+          if (!candidate) return summary
+          const record = localNativeTrustRecordById(summary.id)
+          const approved = localNativePackTrustMatches(candidate, record)
+          return {
+            ...summary,
+            source: {
+              kind: 'local-native' as const,
+              path: candidate.sourcePath,
+              contentHash: candidate.contentHash,
+              entrypoint: candidate.runtime.entrypoint,
+              sdkVersion: candidate.runtime.sdkVersion,
+              capabilities: candidate.runtime.capabilities,
+              origins: candidate.runtime.origins,
+              rendererSlots: candidate.runtime.rendererSlots,
+            },
+            approval:
+              approved && record
+                ? { status: 'approved' as const, approvedAt: record.approvedAt }
+                : { status: 'required' as const },
+          }
+        },
+      )
     },
     async setEnabled(packId: string, enabled: boolean): Promise<void> {
       if (!registry.has(packId)) return
+      if (registry.get(packId)?.trust === 'local-native') {
+        if (!enabled) {
+          registry.disable(packId)
+          const controller = getLocalNativePackRuntimeController()
+          if (controller?.isRunning(packId)) await controller.disable(packId)
+          await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+            const set = new Set(parseStringList(raw))
+            set.add(packId)
+            return [...set].sort()
+          })
+          return
+        }
+        const candidate = localNativeCandidates.get(packId)
+        if (
+          !candidate ||
+          !localNativePackTrustMatches(candidate, localNativeTrustRecordById(packId))
+        ) {
+          throw new Error(`local-native pack "${packId}" requires approval for its current content`)
+        }
+        const record = localNativeTrustRecordById(packId)
+        const controller = getLocalNativePackRuntimeController()
+        if (!record || !controller) {
+          throw new Error(`local-native pack "${packId}" runtime host is not available yet`)
+        }
+        await controller.enable(candidate, record)
+        registry.enable(packId)
+        await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+          const set = new Set(parseStringList(raw))
+          set.delete(packId)
+          return [...set].sort()
+        })
+        return
+      }
       if (enabled) registry.enable(packId)
       else registry.disable(packId)
       await storageUpdate(PACK_DISABLED_KEY, (raw) => {
@@ -289,6 +454,55 @@ export function createPackService(registry: PackRegistry): PackService {
         return current
       })
     },
+    refreshLocalNativePacks,
+    async addLocalNativeSource(sourcePath: string): Promise<void> {
+      const candidate = await discoverLocalNativePack(sourcePath)
+      if (
+        registry.has(candidate.manifest.name) &&
+        !localNativeCandidates.has(candidate.manifest.name)
+      ) {
+        throw new Error(`pack id "${candidate.manifest.name}" is already registered`)
+      }
+      await storageUpdate(LOCAL_NATIVE_PACK_SOURCES_KEY, (raw) => {
+        const sources = new Set(parseStringList(raw))
+        sources.add(candidate.sourcePath)
+        return [...sources].sort()
+      })
+      await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+        const ids = new Set(parseStringList(raw))
+        ids.add(candidate.manifest.name)
+        return [...ids].sort()
+      })
+      await refreshLocalNativePacks()
+    },
+    async approveLocalNativePack(packId: string, expectedContentHash: string): Promise<void> {
+      const candidate = localNativeCandidates.get(packId)
+      if (!candidate || candidate.contentHash !== expectedContentHash) {
+        throw new Error(`local-native pack "${packId}" changed before approval`)
+      }
+      const replacement = createLocalNativePackTrustRecord(candidate)
+      await storageUpdate(LOCAL_NATIVE_PACK_TRUST_KEY, (raw) => {
+        const records = parseLocalNativePackTrustRecords(raw).filter(
+          (record) => record.packId !== packId,
+        )
+        return [...records, replacement].sort((a, b) => a.packId.localeCompare(b.packId))
+      })
+    },
+    async revokeLocalNativePack(packId: string): Promise<void> {
+      const candidate = localNativeCandidates.get(packId)
+      if (!candidate) return
+      registry.disable(packId)
+      const controller = getLocalNativePackRuntimeController()
+      if (controller?.isRunning(packId)) await controller.disable(packId)
+      await storageUpdate(LOCAL_NATIVE_PACK_TRUST_KEY, (raw) =>
+        parseLocalNativePackTrustRecords(raw).filter((record) => record.packId !== packId),
+      )
+      await storageUpdate(PACK_DISABLED_KEY, (raw) => {
+        const ids = new Set(parseStringList(raw))
+        ids.add(packId)
+        return [...ids].sort()
+      })
+    },
   }
 }
 
@@ -313,4 +527,5 @@ export function getPackService(): PackService {
 export function __resetPackServiceForTests(): void {
   singleton = null
   setDefaultPackRegistry(null)
+  setLocalNativePackRuntimeController(null)
 }
