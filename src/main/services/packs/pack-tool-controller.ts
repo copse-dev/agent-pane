@@ -10,7 +10,13 @@ export interface PackToolRuntimeController {
   disable(packId: string): Promise<void>
   isRunning(packId: string): boolean
   registrations(packId: string): PackToolRegistrations | null
-  invoke(
+  invokeTool(
+    packId: string,
+    registrationId: string,
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown>
+  invokeModel(
     packId: string,
     registrationId: string,
     input: unknown,
@@ -18,7 +24,7 @@ export interface PackToolRuntimeController {
   ): Promise<unknown>
 }
 
-/** Owns one isolated worker for the tool behavior of each enabled selected pack. */
+/** Owns one isolated behavior worker for each enabled selected pack. */
 export class DefaultPackToolRuntimeController implements PackToolRuntimeController {
   private readonly hosts = new Map<string, PackToolHost>()
 
@@ -43,7 +49,7 @@ export class DefaultPackToolRuntimeController implements PackToolRuntimeControll
     return this.hosts.get(packId)?.registrations ?? null
   }
 
-  invoke(
+  invokeTool(
     packId: string,
     registrationId: string,
     input: unknown,
@@ -51,7 +57,18 @@ export class DefaultPackToolRuntimeController implements PackToolRuntimeControll
   ): Promise<unknown> {
     const host = this.hosts.get(packId)
     if (!host) return Promise.reject(new Error(`Pack "${packId}" tools are not running.`))
-    return host.invoke(registrationId, input, signal)
+    return host.invokeTool(registrationId, input, signal)
+  }
+
+  invokeModel(
+    packId: string,
+    registrationId: string,
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const host = this.hosts.get(packId)
+    if (!host) return Promise.reject(new Error(`Pack "${packId}" runtime is not running.`))
+    return host.invokeModel(registrationId, input, signal)
   }
 }
 
@@ -92,6 +109,16 @@ export class ToolingPackToolRuntimeController implements PackToolRuntimeControll
       ) {
         throw new Error(`Pack "${packId}" registered tools not declared by its tools behavior.`)
       }
+      const declaredModels = [...(candidate.manifest.models?.provides ?? [])]
+        .map((route) => route.id)
+        .sort()
+      const registeredModels = registrations.models.map((route) => route.id).sort()
+      if (
+        declaredModels.length !== registeredModels.length ||
+        declaredModels.some((id, index) => id !== registeredModels[index])
+      ) {
+        throw new Error(`Pack "${packId}" registered models not declared by its models behavior.`)
+      }
       for (const tool of registrations.tools) {
         if (this.toolRegistry.has(tool.name)) {
           throw new Error(`Pack tool name is already registered: ${tool.name}`)
@@ -106,7 +133,7 @@ export class ToolingPackToolRuntimeController implements PackToolRuntimeControll
             rawParameters: tool.inputSchema,
             execute: async (args, signal) => {
               const result = zPackToolResult.parse(
-                await this.runtime.invoke(packId, tool.name, args, signal),
+                await this.runtime.invokeTool(packId, tool.name, args, signal),
               )
               if (typeof result === 'string') return result
               return {
@@ -147,13 +174,22 @@ export class ToolingPackToolRuntimeController implements PackToolRuntimeControll
     return this.runtime.registrations(packId)
   }
 
-  invoke(
+  invokeTool(
     packId: string,
     registrationId: string,
     input: unknown,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    return this.runtime.invoke(packId, registrationId, input, signal)
+    return this.runtime.invokeTool(packId, registrationId, input, signal)
+  }
+
+  invokeModel(
+    packId: string,
+    registrationId: string,
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.runtime.invokeModel(packId, registrationId, input, signal)
   }
 }
 

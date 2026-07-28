@@ -155,6 +155,9 @@ import { parseAcpModelSelection } from '@shared/acp.ts'
 import { AcpTurnFailure, runAcpAgentFromSettings } from './acp/acp-agent-service.ts'
 import { SUBAGENTS_ENABLED_DEFAULT, SUBAGENTS_ENABLED_SETTING } from './subagents-setting.ts'
 import { isRecord } from '@shared/unknown-value.ts'
+import { parsePackModelSelection } from '@shared/pack-model.ts'
+import { getPackToolRuntimeController } from './packs/pack-tool-controller.ts'
+import { buildPackModelTurn } from './packs/pack-model-turn.ts'
 
 // Re-export the public surface so existing IPC/test imports stay stable while the
 // implementation lives in focused modules.
@@ -173,6 +176,26 @@ export {
 } from './title-generator.ts'
 
 const abortMap = new Map<string, AbortController>()
+
+function packModelResult(raw: unknown): {
+  text: string
+  inputTokens: number
+  outputTokens: number
+} {
+  if (typeof raw === 'string') return { text: raw, inputTokens: 0, outputTokens: 0 }
+  if (!isRecord(raw) || typeof raw['text'] !== 'string') {
+    throw new Error('Pack model route returned no text.')
+  }
+  const inputTokens =
+    typeof raw['inputTokens'] === 'number' && Number.isFinite(raw['inputTokens'])
+      ? Math.max(0, raw['inputTokens'])
+      : 0
+  const outputTokens =
+    typeof raw['outputTokens'] === 'number' && Number.isFinite(raw['outputTokens'])
+      ? Math.max(0, raw['outputTokens'])
+      : 0
+  return { text: raw['text'], inputTokens, outputTokens }
+}
 
 // LM Studio models advertise smaller tool-schema budgets than cloud providers,
 // so reserve more of the window for their tool definitions. Shared by the turn
@@ -561,6 +584,7 @@ export async function runAgent(
   const remoteSelection = parseRemoteAgentModelSelection(model)
   const acpSelection = parseAcpModelSelection(model)
   const acpAgentId = acpSelection?.id ?? null
+  const packModel = parsePackModelSelection(model)
 
   const sendChunk = createAgentChunkSink(threadId, host)
 
@@ -601,6 +625,60 @@ export async function runAgent(
 
   if (resolved.fallbackNotice) {
     sendChunk({ type: 'text', text: resolved.fallbackNotice })
+  }
+
+  if (packModel) {
+    const controller = new AbortController()
+    abortMap.set(threadId, controller)
+    setActiveRunThread(threadId)
+    beginHookRunRecording(threadId)
+    try {
+      const packs = getDefaultPackRegistry()
+      const runtime = getPackToolRuntimeController()
+      if (!packs.isEnabled(packModel.packId) || !runtime?.isRunning(packModel.packId)) {
+        throw new Error(`The selected pack "${packModel.packId}" is disabled.`)
+      }
+      const route = packs
+        .get(packModel.packId)
+        ?.contributions.modelRoutes.find((candidate) => candidate.id === packModel.routeId)
+      if (!route) throw new Error(`Pack model route "${packModel.routeId}" is unavailable.`)
+
+      const result = packModelResult(
+        await runtime.invokeModel(
+          packModel.packId,
+          packModel.routeId,
+          buildPackModelTurn({
+            threadId,
+            prompt: outboundPrompt,
+            priorMessages,
+            supportsImages: route.supportsImages === true,
+          }),
+          controller.signal,
+        ),
+      )
+      sendChunk({ type: 'text', text: result.text })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens },
+        messages: [
+          ...priorMessages,
+          { role: 'user', content: outboundPrompt },
+          { role: 'assistant', content: result.text },
+        ],
+      }
+    } catch (err) {
+      sendChunk({ type: 'text', text: errorMessage(err) })
+      sendChunk({ type: 'done' })
+      return {
+        usage: { inputTokens: 0, outputTokens: 0 },
+        messages: [...priorMessages, { role: 'user', content: outboundPrompt }],
+      }
+    } finally {
+      fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
+      endHookRunRecording(threadId)
+      clearActiveRunThread(threadId)
+      abortMap.delete(threadId)
+    }
   }
 
   // Running an ACP turn is reachable two ways: the user picked an `acp:<id>`

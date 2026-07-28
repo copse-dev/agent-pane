@@ -16,6 +16,11 @@ describe('pack tool SDK contract', () => {
             },
             (input) => ({ echoed: input }),
           )
+          api.registerModelRoute('judge', async (turn, context) => {
+            const prior = await context.session.get()
+            await context.session.set({ externalId: 'chat-42' })
+            return { prompt: turn.prompt, prior }
+          })
         },
       },
       'personal.example',
@@ -27,9 +32,31 @@ describe('pack tool SDK contract', () => {
       ['personal_judge'],
     )
     assert.deepEqual(
-      await activated.invoke('personal_judge', { prompt: 'review' }, new AbortController().signal),
+      await activated.invokeTool(
+        'personal_judge',
+        { prompt: 'review' },
+        new AbortController().signal,
+      ),
       { echoed: { prompt: 'review' } },
     )
+    let stored: unknown = null
+    assert.deepEqual(
+      await activated.invokeModel(
+        'judge',
+        { threadId: 'thread-1', prompt: 'review', attachments: [], history: [] },
+        new AbortController().signal,
+        {
+          get: () => Promise.resolve(stored),
+          set: (state) => {
+            stored = state
+            return Promise.resolve()
+          },
+          delete: () => Promise.resolve(),
+        },
+      ),
+      { prompt: 'review', prior: null },
+    )
+    assert.deepEqual(stored, { externalId: 'chat-42' })
   })
 
   it('rejects duplicate tool registrations', async () => {
@@ -46,6 +73,22 @@ describe('pack tool SDK contract', () => {
         1,
       ),
       /duplicate pack tool/i,
+    )
+  })
+
+  it('rejects duplicate model route registrations', async () => {
+    await assert.rejects(
+      activatePackTools(
+        {
+          activate(api: PackToolActivationApi) {
+            api.registerModelRoute('duplicate', () => 'one')
+            api.registerModelRoute('duplicate', () => 'two')
+          },
+        },
+        'personal.example',
+        1,
+      ),
+      /duplicate pack model route/i,
     )
   })
 })

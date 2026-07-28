@@ -14,6 +14,7 @@ import { discoverPackToolSource, type PackToolSourceCandidate } from './pack-too
 
 const FAKE_WORKER = String.raw`
 let buffer = '';
+let pendingModel = null;
 const send = (body) => process.stdout.write(JSON.stringify(body) + '\n');
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
@@ -26,9 +27,18 @@ process.stdin.on('data', (chunk) => {
     if (req.op === 'initialize') {
       send({ type: 'response', id: req.id, ok: true, result: {
         tools: [{ name: 'personal_judge', description: 'Judge input', inputSchema: { type: 'object' } }],
+        models: [{ id: 'judge' }],
       }});
     } else if (req.op === 'invoke') {
-      send({ type: 'response', id: req.id, ok: true, result: { answer: req.input.prompt } });
+      if (req.kind === 'model') {
+        pendingModel = req;
+        send({ type: 'session-call', id: 1, invocationId: req.id, op: 'set', state: { externalId: 'chat-42' } });
+      } else {
+        send({ type: 'response', id: req.id, ok: true, result: { answer: req.input.prompt } });
+      }
+    } else if (req.op === 'session-result' && pendingModel) {
+      send({ type: 'response', id: pendingModel.id, ok: true, result: { text: pendingModel.input.prompt } });
+      pendingModel = null;
     } else if (req.op === 'shutdown') {
       send({ type: 'response', id: req.id, ok: true });
     }
@@ -51,8 +61,11 @@ async function fixture(): Promise<PackToolSourceCandidate> {
       version: '0.1.0',
       tools: {
         provides: ['personal_judge'],
-        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
+      models: {
+        provides: [{ id: 'judge', label: 'Judge' }],
+      },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
     }),
   )
   return discoverPackToolSource(root)
@@ -94,9 +107,42 @@ describe('pack tool host', () => {
       host.registrations.tools.map((tool) => tool.name),
       ['personal_judge'],
     )
-    assert.deepEqual(await host.invoke('personal_judge', { prompt: 'review this' }), {
+    assert.deepEqual(await host.invokeTool('personal_judge', { prompt: 'review this' }), {
       answer: 'review this',
     })
+    await host.stop()
+  })
+
+  it('binds durable session calls to the active pack model and thread', async () => {
+    const writes: unknown[] = []
+    const host = await PackToolHost.start(await fixture(), {
+      ...fakeDependencies,
+      sessionStore: {
+        get: () => Promise.resolve(null),
+        set: (packId, threadId, state) => {
+          writes.push({ packId, threadId, state })
+          return Promise.resolve()
+        },
+        delete: () => Promise.resolve(),
+      },
+    })
+
+    assert.deepEqual(
+      await host.invokeModel('judge', {
+        threadId: 'thread-7',
+        prompt: 'review this',
+        attachments: [],
+        history: [],
+      }),
+      { text: 'review this' },
+    )
+    assert.deepEqual(writes, [
+      {
+        packId: 'personal.host-test',
+        threadId: 'thread-7',
+        state: { externalId: 'chat-42' },
+      },
+    ])
     await host.stop()
   })
 

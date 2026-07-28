@@ -80,6 +80,7 @@ function stubApi(
     enabled: options?.roadmapEnabled ?? false,
     contributions: {
       toolNames: [],
+      modelRoutes: [],
       blockingHooks: [],
       asyncHooks: [],
       commandHooks: [],

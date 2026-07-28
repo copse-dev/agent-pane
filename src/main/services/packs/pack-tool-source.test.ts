@@ -32,8 +32,8 @@ function validManifest(): Record<string, unknown> {
     description: 'A personal review tool pack.',
     tools: {
       provides: ['personal_judge'],
-      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
     },
+    runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
   }
 }
 
@@ -45,7 +45,7 @@ describe('selected pack tool discovery', () => {
     assert.equal(candidate.manifest.name, 'personal.review-tools')
     assert.equal(candidate.manifest.trust, 'user')
     assert.deepEqual(candidate.manifest.tools?.provides, ['personal_judge'])
-    assert.deepEqual(candidate.toolRuntime, {
+    assert.deepEqual(candidate.runtime, {
       entrypoint: 'dist/index.mjs',
       apiVersion: 1,
     })
@@ -64,19 +64,73 @@ describe('selected pack tool discovery', () => {
     assert.equal(samePackToolSource(before, after), false)
   })
 
+  it('accepts a model-only behavior and registers its manifest-owned metadata', async () => {
+    const candidate = await discoverPackToolSource(
+      await packRoot({
+        name: 'personal.reference-model',
+        models: {
+          provides: [
+            {
+              id: 'judge',
+              label: 'Reference judge',
+              group: 'Personal models',
+              supportsImages: true,
+            },
+          ],
+        },
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+      }),
+    )
+
+    assert.deepEqual(candidate.manifest.models?.provides, [
+      {
+        id: 'judge',
+        label: 'Reference judge',
+        group: 'Personal models',
+        supportsImages: true,
+      },
+    ])
+    assert.deepEqual(registeredPackToolSource(candidate).contributions.modelRoutes, [
+      {
+        id: 'judge',
+        label: 'Reference judge',
+        group: 'Personal models',
+        supportsImages: true,
+      },
+    ])
+  })
+
+  it('rejects duplicate model route ids even when their labels differ', async () => {
+    await assert.rejects(
+      discoverPackToolSource(
+        await packRoot({
+          name: 'personal.duplicate-models',
+          models: {
+            provides: [
+              { id: 'judge', label: 'Judge one' },
+              { id: 'judge', label: 'Judge two' },
+            ],
+          },
+          runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+        }),
+      ),
+      /model route ids must be unique/i,
+    )
+  })
+
   it('rejects traversal, undeclared future behaviors, and symbolic links', async () => {
     const traversal = validManifest()
     traversal['tools'] = {
       provides: ['personal_judge'],
-      runtime: { entrypoint: '../outside.mjs', apiVersion: 1 },
     }
+    traversal['runtime'] = { entrypoint: '../outside.mjs', apiVersion: 1 }
     await assert.rejects(discoverPackToolSource(await packRoot(traversal)), PackToolSourceError)
 
     await assert.rejects(
       discoverPackToolSource(
         await packRoot({ ...validManifest(), browser: { origins: ['https://example.test'] } }),
       ),
-      /exactly one supported behavior/i,
+      /supported executable behavior/i,
     )
 
     const linkedRoot = await packRoot(validManifest())
@@ -86,6 +140,6 @@ describe('selected pack tool discovery', () => {
 
   it('fails closed on malformed or unknown manifest fields', async () => {
     const root = await packRoot({ ...validManifest(), unexpected: true })
-    await assert.rejects(discoverPackToolSource(root), /exactly one supported behavior/i)
+    await assert.rejects(discoverPackToolSource(root), /supported executable behavior/i)
   })
 })

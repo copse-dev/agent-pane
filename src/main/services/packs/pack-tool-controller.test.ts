@@ -24,8 +24,24 @@ async function candidate(toolNames = ['personal_judge']): Promise<PackToolSource
       name: 'personal.controller-test',
       tools: {
         provides: toolNames,
-        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+    }),
+  )
+  return discoverPackToolSource(root)
+}
+
+async function modelCandidate(): Promise<PackToolSourceCandidate> {
+  const root = await mkdtemp(join(tmpdir(), 'copse-pack-model-controller-'))
+  roots.push(root)
+  await mkdir(join(root, 'dist'))
+  await writeFile(join(root, 'dist', 'index.mjs'), 'export function activate() {}\n')
+  await writeFile(
+    join(root, 'copse-pack.json'),
+    JSON.stringify({
+      name: 'personal.controller-model',
+      models: { provides: [{ id: 'judge', label: 'Judge' }] },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
     }),
   )
   return discoverPackToolSource(root)
@@ -49,7 +65,9 @@ function fakeRuntime(registrations: PackToolRegistrations): PackToolRuntimeContr
     },
     isRunning: () => running,
     registrations: () => registrations,
-    invoke: (_packId, _registrationId, input) => Promise.resolve({ result: JSON.stringify(input) }),
+    invokeTool: (_packId, _registrationId, input) =>
+      Promise.resolve({ result: JSON.stringify(input) }),
+    invokeModel: (_packId, _registrationId, input) => Promise.resolve(input),
   }
 }
 
@@ -69,6 +87,7 @@ describe('ToolingPackToolRuntimeController', () => {
           inputSchema: { type: 'object' },
         },
       ],
+      models: [],
     })
     const registry = new ToolRegistry()
     const controller = new ToolingPackToolRuntimeController(registry, runtime)
@@ -90,10 +109,44 @@ describe('ToolingPackToolRuntimeController', () => {
     const pack = await candidate(['declared_tool'])
     const runtime = fakeRuntime({
       tools: [{ name: 'other_tool', description: 'Unexpected.', inputSchema: {} }],
+      models: [],
     })
     const controller = new ToolingPackToolRuntimeController(new ToolRegistry(), runtime)
 
     await assert.rejects(controller.enable(pack), /registered tools not declared/i)
     assert.deepEqual(runtime.disables, ['personal.controller-test'])
+  })
+
+  it('fails closed when model handlers differ from the manifest', async () => {
+    const pack = await modelCandidate()
+    const runtime = fakeRuntime({ tools: [], models: [{ id: 'other' }] })
+    const controller = new ToolingPackToolRuntimeController(new ToolRegistry(), runtime)
+
+    await assert.rejects(controller.enable(pack), /registered models not declared/i)
+    assert.deepEqual(runtime.disables, ['personal.controller-model'])
+  })
+
+  it('accepts an exact declared model handler without adding a tool', async () => {
+    const pack = await modelCandidate()
+    const runtime = fakeRuntime({ tools: [], models: [{ id: 'judge' }] })
+    const registry = new ToolRegistry()
+    const controller = new ToolingPackToolRuntimeController(registry, runtime)
+
+    await controller.enable(pack)
+    assert.equal(registry.toLLMTools().length, 0)
+    assert.deepEqual(
+      await controller.invokeModel('personal.controller-model', 'judge', {
+        threadId: 'thread-1',
+        prompt: 'review',
+        attachments: [],
+        history: [],
+      }),
+      {
+        threadId: 'thread-1',
+        prompt: 'review',
+        attachments: [],
+        history: [],
+      },
+    )
   })
 })

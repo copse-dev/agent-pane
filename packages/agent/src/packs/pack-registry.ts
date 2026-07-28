@@ -186,6 +186,21 @@ export class PackRegistry {
     return this.collectActive((c) => c.toolNames)
   }
 
+  /** Thread-model routes paired with their owning enabled pack. */
+  activeModelRoutes(): readonly {
+    readonly packId: string
+    readonly route: RegisteredPack['contributions']['modelRoutes'][number]
+  }[] {
+    const out: Array<{
+      packId: string
+      route: RegisteredPack['contributions']['modelRoutes'][number]
+    }> = []
+    for (const pack of this.enabledPacks()) {
+      for (const route of pack.contributions.modelRoutes) out.push({ packId: pack.id, route })
+    }
+    return out
+  }
+
   /** Blocking function hooks to register for new work (enabled packs only). */
   activeBlockingHooks(): readonly BlockingHook[] {
     return this.collectActive((c) => c.blockingHooks)

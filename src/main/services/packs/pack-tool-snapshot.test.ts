@@ -26,8 +26,8 @@ async function fixture(): Promise<{ source: string; snapshots: string }> {
       name: 'personal.snapshot-test',
       tools: {
         provides: ['snapshot_tool'],
-        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
     }),
   )
   return { source, snapshots }

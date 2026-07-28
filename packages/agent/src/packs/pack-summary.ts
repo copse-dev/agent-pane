@@ -68,6 +68,13 @@ export interface PackPermissionOut {
 /** Contributions snapshot for one pack (renderer-facing plain data). */
 export interface PackContributionsOut {
   toolNames: readonly string[]
+  modelRoutes: readonly {
+    id: string
+    label: string
+    group?: string
+    description?: string
+    supportsImages?: boolean
+  }[]
   mcpServersPath?: string
   blockingHooks: readonly { id: string; event: string }[]
   asyncHooks: readonly { id: string; event: string }[]
@@ -187,6 +194,7 @@ export function packToSummary(
   })
   const contributionsOut: PackContributionsOut = {
     toolNames: contributions.toolNames.slice(),
+    modelRoutes: contributions.modelRoutes.map((route) => ({ ...route })),
     blockingHooks: contributions.blockingHooks.map((h) => ({ id: h.id, event: h.event })),
     asyncHooks: contributions.asyncHooks.map((h) => ({ id: h.id, event: h.event })),
     commandHooks,

@@ -1830,7 +1830,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
 
       const status = document.createElement('div')
       status.className = 'pack-source-status'
-      status.textContent = 'Selected directory · executable tools run in isolation'
+      status.textContent = 'Selected directory · executable behaviors run in isolation'
       review.append(status)
 
       const details: Array<[string, string]> = [
@@ -1859,6 +1859,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         label: 'Tools',
         count: contributions.toolNames.length,
         title: contributions.toolNames.join(', '),
+      })
+    }
+    if (contributions.modelRoutes.length > 0) {
+      chips.push({
+        label: 'Models',
+        count: contributions.modelRoutes.length,
+        title: contributions.modelRoutes.map((route) => `${route.label} (${route.id})`).join(', '),
       })
     }
     if (contributions.mcpServersPath) {
@@ -1994,8 +2001,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // Disabling greys the whole row so the effect of the toggle is immediately
     // visible; individual pack-scoped settings stay editable so users can
     // configure a disabled pack before re-enabling it.
-    // Local-native packs are necessarily disabled during P1, but their exact
-    // authority review must remain full-contrast and easy to audit.
     if (!pack.enabled) row.classList.add('pack-row-disabled')
 
     return row

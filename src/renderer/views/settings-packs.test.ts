@@ -77,6 +77,7 @@ const demoPack: PackSummary = {
   enabled: true,
   contributions: {
     toolNames: ['demo_tool'],
+    modelRoutes: [],
     blockingHooks: [{ id: 'demo-hook', event: 'turnStart' }],
     asyncHooks: [],
     commandHooks: [],
@@ -111,6 +112,7 @@ const modelFieldPack: PackSummary = {
   enabled: true,
   contributions: {
     toolNames: [],
+    modelRoutes: [],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [],
@@ -137,6 +139,7 @@ const disabledUserPack: PackSummary = {
   enabled: false,
   contributions: {
     toolNames: [],
+    modelRoutes: [],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [{ event: 'toolGate', command: './guard.sh' }],
@@ -162,6 +165,15 @@ const selectedToolPack: PackSummary = {
   },
   contributions: {
     toolNames: ['ask_local_model'],
+    modelRoutes: [
+      {
+        id: 'reference-judge',
+        label: 'Reference judge',
+        group: 'Personal models',
+        description: 'A second-opinion model.',
+        supportsImages: true,
+      },
+    ],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [],
@@ -260,8 +272,9 @@ describe('settings → packs list', () => {
     assert.equal(row.classList.contains('pack-row-disabled'), true)
     assert.equal(row.querySelector('.pack-badge-user')?.textContent, 'user')
     assert.equal(row.querySelector<HTMLInputElement>('.pack-toggle-input')?.disabled, false)
-    assert.match(row.textContent, /executable tools run in isolation/i)
+    assert.match(row.textContent, /executable behaviors run in isolation/i)
     assert.match(row.textContent, /sha256:a{64}/)
+    assert.match(row.textContent, /Models × 1/)
   })
 
   it('opens the host-owned pack chooser from Settings', async () => {
@@ -288,6 +301,7 @@ describe('settings → packs list', () => {
       enabled: false,
       contributions: {
         toolNames: [],
+        modelRoutes: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],
@@ -313,6 +327,7 @@ describe('settings → packs list', () => {
       enabled: false,
       contributions: {
         toolNames: ['run_background'],
+        modelRoutes: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],
@@ -334,6 +349,7 @@ describe('settings → packs list', () => {
       id: 'copse.skeleton',
       contributions: {
         toolNames: [],
+        modelRoutes: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],

@@ -6,8 +6,9 @@
 // slots: hooks / prompt / ui / settings / storage. Following decision 15, the
 // *declarative* manifest is shared by first-party and user packs. First-party
 // packs may supply executable typed contributions in-process; an explicitly
-// selected user pack may instead provide tools through the isolated runtime
-// described inside its `tools` behavior.
+// selected user pack may instead provide tools and thread models through one
+// isolated runtime. The manifest describes those concrete behaviors; the host
+// supplies only their bounded invocation contracts.
 //
 // This module lives in `packages/agent` and imports nothing from the host app —
 // only hook *types* (execution-guidance rule 4). The published JSON schema
@@ -151,8 +152,8 @@ export interface PackStorageDecl {
 /**
  * How a pack declares its tools in the manifest (decision 15):
  *  - `native`: in-process tool names contributed by first-party code.
- *  - `provides` + `runtime`: executable tools from an explicitly selected user
- *    pack, loaded through Copse's isolated, versioned worker protocol.
+ *  - `provides`: tool ids implemented by an explicitly selected user pack's
+ *    shared top-level runtime.
  *  - `mcpServers`: a path to an MCP config file (user packs), like the existing
  *    plugin.json `mcpServers` field.
  */
@@ -164,8 +165,20 @@ export interface PackToolRuntimeDecl {
 export interface PackToolsDecl {
   native?: readonly string[]
   provides?: readonly string[]
-  runtime?: PackToolRuntimeDecl
   mcpServers?: string
+}
+
+/** One whole-thread model route an explicitly selected pack contributes. */
+export interface PackModelRouteDecl {
+  id: string
+  label: string
+  group?: string
+  description?: string
+  supportsImages?: boolean
+}
+
+export interface PackModelsDecl {
+  provides: readonly PackModelRouteDecl[]
 }
 
 /**
@@ -183,8 +196,8 @@ export interface PackCommandHookDecl {
  * The declarative pack manifest — a superset of the plugin.json shape Copse
  * already loads. This is the JSON-serializable contract the published schema
  * validates. First-party function hooks and in-process tools live on
- * {@link RegisteredPack.contributions}; a selected user pack may declare only
- * the isolated runtime for its `tools` behavior here.
+ * {@link RegisteredPack.contributions}; a selected user pack may declare the
+ * isolated runtime shared by its tool and model behaviors here.
  */
 export interface PackManifest {
   /** Pack id / name (plugin.json `name`). */
@@ -197,6 +210,10 @@ export interface PackManifest {
   skills?: string
   /** Tools behavior: first-party names, selected-pack runtime, or MCP config. */
   tools?: PackToolsDecl
+  /** Thread-model behavior supplied by an explicitly selected pack. */
+  models?: PackModelsDecl
+  /** Shared isolated runtime for selected-pack executable behaviors. */
+  runtime?: PackToolRuntimeDecl
   /** Command-hook declarations (user packs). */
   hooks?: readonly PackCommandHookDecl[]
   prompt?: readonly PackPromptBlock[]
@@ -219,6 +236,8 @@ export interface PackManifest {
 export interface PackContributions {
   /** Native tool names added to the model tool list while enabled. */
   readonly toolNames: readonly string[]
+  /** Thread models offered in the footer while this pack is enabled. */
+  readonly modelRoutes: readonly PackModelRouteDecl[]
   /** Blocking function hooks registered while enabled (first-party). */
   readonly blockingHooks: readonly BlockingHook[]
   /** Async (detached) function hooks registered while enabled (first-party). */
@@ -247,6 +266,7 @@ export interface PackContributions {
 /** Contributions a pack with nothing to offer registers (the P1 skeleton). */
 export const EMPTY_PACK_CONTRIBUTIONS: PackContributions = {
   toolNames: [],
+  modelRoutes: [],
   blockingHooks: [],
   asyncHooks: [],
   promptBlocks: [],
@@ -300,6 +320,8 @@ export function packManifestFromPluginJson(
     skills?: string
     mcpServers?: string
     tools?: PackToolsDecl
+    models?: PackModelsDecl
+    runtime?: PackToolRuntimeDecl
     hooks?: readonly PackCommandHookDecl[]
     prompt?: readonly PackPromptBlock[]
     ui?: readonly PackUiContribution[]
@@ -334,11 +356,12 @@ export function packManifestFromPluginJson(
   if (
     tools.native !== undefined ||
     tools.provides !== undefined ||
-    tools.runtime !== undefined ||
     tools.mcpServers !== undefined
   ) {
     manifest.tools = tools
   }
+  if (raw.models) manifest.models = raw.models
+  if (raw.runtime) manifest.runtime = raw.runtime
   if (raw.hooks) manifest.hooks = raw.hooks
   // A user pack's prompt blocks are NEVER trusted, whatever the file claims:
   // `trust: 'trusted'` means verbatim injection past the untrusted-data
