@@ -31,10 +31,10 @@ import {
 } from './pack-thread-session-store.ts'
 import { materializePackToolSnapshot } from './pack-tool-snapshot.ts'
 import {
-  getPackBrowserPanelService,
-  type PackBrowserPanelService,
+  getPackBrowserService,
   type PackBrowserOwner,
-} from './pack-browser-panel.ts'
+  type PackBrowserService,
+} from './pack-browser-service.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { parseJsonUnknown } from '@shared/unknown-value.ts'
 
@@ -63,7 +63,7 @@ export interface PackToolHostDependencies {
   materialize(candidate: PackToolSourceCandidate): Promise<PackToolSourceCandidate>
   spawn(candidate: PackToolSourceCandidate, workerPath: string): Promise<ChildProcess>
   sessionStore?: PackThreadSessionStore
-  browserService?: PackBrowserPanelService | null
+  browserService?: PackBrowserService | null
 }
 
 function protectedReadRoots(): string[] {
@@ -119,7 +119,7 @@ export class PackToolHost {
   private readonly proc: ChildProcess
   private readonly packId: string
   private readonly sessionStore: PackThreadSessionStore
-  private readonly browserService: PackBrowserPanelService | null
+  private readonly browserService: PackBrowserService | null
   private readonly allowedBrowserOrigins: readonly string[]
   private buffer = ''
   private nextId = 1
@@ -129,7 +129,7 @@ export class PackToolHost {
     proc: ChildProcess,
     packId: string,
     sessionStore: PackThreadSessionStore,
-    browserService: PackBrowserPanelService | null,
+    browserService: PackBrowserService | null,
     allowedBrowserOrigins: readonly string[],
   ) {
     this.proc = proc
@@ -172,7 +172,7 @@ export class PackToolHost {
       snapshot.manifest.name,
       dependencies.sessionStore ?? persistentPackThreadSessionStore,
       dependencies.browserService === undefined
-        ? getPackBrowserPanelService()
+        ? getPackBrowserService()
         : dependencies.browserService,
       snapshot.manifest.browser?.origins ?? [],
     )

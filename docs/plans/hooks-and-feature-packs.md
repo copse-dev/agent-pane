@@ -176,10 +176,12 @@ revisiting this document, not silently diverging in an implementation PR.
     pack/thread-owned tabs in the visible persistent browser pane through
     explicit open/navigate/tabs/snapshot/click/type/upload operations. Exact
     origins, redirects, tab ownership, attachment count, and decoded bytes are
-    host-validated; disabling the pack stops the worker while its visible tabs
-    and durable session remain. Direct network, arbitrary IPC/Electron access,
-    generic host calls, and unused renderer contribution placeholders remain
-    unavailable.
+    host-validated. Accessibility snapshots include bounded meaningful visible
+    leaf text, semantic and pointer-affordance refs, and hidden file-input
+    upload refs without exposing selectors or arbitrary scripts; disabling the
+    pack stops the worker while its visible tabs and durable session remain.
+    Direct network, arbitrary IPC/Electron access, generic host calls, and unused renderer
+    contribution placeholders remain unavailable.
 16. **Async hook outputs are epoch-scoped to their emitting turn tree.** Send-now
     currently aborts the active local run (`sendQueuedMessageNow` in
     `src/renderer/controller/message-queue.ts`), so a late async hook from a completed

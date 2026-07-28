@@ -164,6 +164,11 @@ snapshot, click/type by snapshot ref, and upload validated images to a
 referenced file input. Upload uses in-page `File`/`DataTransfer` injection, so
 no native file chooser opens.
 
+Snapshots include bounded meaningful visible leaf text, semantic interactive
+roles, pointer-affordance refs, and hidden file inputs that back visible
+attachment controls. Hidden inputs are exposed only as upload refs; the bridge
+still does not expose selectors or arbitrary page scripting.
+
 Origins are exact: HTTPS scheme + host + optional port, with HTTP allowed only
 for loopback development. Paths, credentials, wildcards, undeclared origins,
 cross-thread tab ids, and redirects outside the declaration fail closed. The
