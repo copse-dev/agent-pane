@@ -317,32 +317,6 @@ export async function runWithAcpRetry<T>(
   }
 }
 
-/**
- * Visible assistant output that must not paint under an open approval modal.
- * Cursor ACP streams thoughts as `agent_thought_chunk` → `{ type: 'reasoning' }`;
- * holding only `text` left the "Reasoning…" disclosure updating under the prompt.
- */
-export type HeldVisibleAssistantChunk = Extract<StreamChunk, { type: 'text' | 'reasoning' }>
-
-export function isHoldableVisibleAssistantChunk(
-  chunk: StreamChunk,
-): chunk is HeldVisibleAssistantChunk {
-  return chunk.type === 'text' || chunk.type === 'reasoning'
-}
-
-/** Coalesce consecutive same-type fragments so a flush emits one chunk per burst. */
-export function pushHeldVisibleAssistantChunk(
-  held: HeldVisibleAssistantChunk[],
-  chunk: HeldVisibleAssistantChunk,
-): void {
-  const last = held.at(-1)
-  if (last?.type === chunk.type) {
-    last.text += chunk.text
-    return
-  }
-  held.push({ type: chunk.type, text: chunk.text })
-}
-
 export async function runAcpAgentFromSettings(
   options: RunAcpAgentOptions,
 ): Promise<RunAcpAgentResult> {
@@ -405,15 +379,15 @@ export async function runAcpAgentFromSettings(
   // duplicate streamed text and re-execute tool calls.
   let assistantText = ''
   let sawChunk = false
-  // Assistant answer text *and* thought/reasoning streams while an approval
-  // modal is open — hold both so the agent cannot appear to keep working under
-  // the prompt (Cursor ACP maps agent_thought_chunk → `{ type: 'reasoning' }`).
-  // Flush in order when the last pending approval settles (or the turn ends).
-  const heldVisible: HeldVisibleAssistantChunk[] = []
-  const flushHeldVisible = (): void => {
-    if (heldVisible.length === 0) return
-    const flush = heldVisible.splice(0)
-    for (const held of flush) options.onChunk(held)
+  // Text streamed while an approval modal is open for this thread — hold it so
+  // the agent cannot appear to "reason underneath" the prompt. Flush when the
+  // last pending approval settles (or the turn ends).
+  let heldText = ''
+  const flushHeldText = (): void => {
+    if (!heldText) return
+    const flush = heldText
+    heldText = ''
+    options.onChunk({ type: 'text', text: flush })
   }
   const onChunk = (chunk: StreamChunk): void => {
     sawChunk = true
@@ -422,15 +396,15 @@ export async function runAcpAgentFromSettings(
       // — dismiss that specific modal now, not at turn end.
       cancelApprovalsForAcpToolCall(chunk.toolCallId)
     }
-    if (isHoldableVisibleAssistantChunk(chunk)) {
-      if (chunk.type === 'text') assistantText += chunk.text
+    if (chunk.type === 'text') {
+      assistantText += chunk.text
       if (pendingApprovalCountForThread(options.threadId) > 0) {
-        pushHeldVisibleAssistantChunk(heldVisible, chunk)
+        heldText += chunk.text
         return
       }
-      flushHeldVisible()
+      flushHeldText()
     } else if (pendingApprovalCountForThread(options.threadId) === 0) {
-      flushHeldVisible()
+      flushHeldText()
     }
     options.onChunk(chunk)
   }
@@ -527,7 +501,7 @@ export async function runAcpAgentFromSettings(
       hasProgress: () => sawChunk,
     }))
   } catch (err) {
-    flushHeldVisible()
+    flushHeldText()
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
@@ -554,7 +528,7 @@ export async function runAcpAgentFromSettings(
     })
   }
 
-  flushHeldVisible()
+  flushHeldText()
   emitNetworkDenialAudit(denialMark, options.onChunk)
   await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
 
