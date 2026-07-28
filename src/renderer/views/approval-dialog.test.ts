@@ -1,7 +1,7 @@
-// Verifies the approval dialog stays *behind* the settings dialog (issue #501):
-// while Settings is open, an approval request arriving from a background chat is
-// queued rather than stacked on top of the settings modal, and is surfaced once
-// the user leaves Settings.
+// Verifies ordinary approvals stay *behind* the settings dialog (issue #501),
+// while the provider-host approval caused by a Settings save is the deliberate
+// exception: it stacks above Settings without pulling unrelated queued requests
+// into the same prompt.
 //
 // happy-dom has no modal-dialog implementation, so we shim showModal/close/open
 // on both dialogs. The shim's close() dispatches the native `close` event the
@@ -26,13 +26,14 @@ type ApprovalHandler = (req: {
   type: string
   allowRemember?: boolean
   rememberLabel?: string
+  showWhileSettingsOpen?: boolean
 }) => void
 
 // Recursive never-settling stub for the settings dialog's background loads, with
 // the two approval surfaces the approval dialog actually touches captured.
 function makeApi(): {
   api: ApiClient
-  emit: (req: { id: string; threadId?: string }) => void
+  emit: (req: { id: string; threadId?: string; showWhileSettingsOpen?: boolean }) => void
 } {
   let handler: ApprovalHandler = () => {}
   const overrides = {
@@ -46,7 +47,14 @@ function makeApi(): {
   return {
     api,
     emit: (req): void => {
-      handler({ id: req.id, threadId: req.threadId, title: 't', body: 'b', type: 'shell' })
+      handler({
+        id: req.id,
+        threadId: req.threadId,
+        title: req.showWhileSettingsOpen ? 'Provider host' : 'Shell command',
+        body: req.showWhileSettingsOpen ? 'provider.example' : 'echo hello',
+        type: req.showWhileSettingsOpen ? 'web' : 'shell',
+        ...(req.showWhileSettingsOpen ? { showWhileSettingsOpen: true } : {}),
+      })
     },
   }
 }
@@ -80,7 +88,7 @@ function shimModal(dialog: HTMLDialogElement): { showModalCalls: number } {
 describe('approval dialog vs settings (issue #501)', () => {
   let approvalDialog: HTMLDialogElement
   let approvalSpy: { showModalCalls: number }
-  let emit: (req: { id: string }) => void
+  let emit: (req: { id: string; showWhileSettingsOpen?: boolean }) => void
 
   beforeEach(() => {
     document.body.innerHTML = ''
@@ -125,5 +133,23 @@ describe('approval dialog vs settings (issue #501)', () => {
     closeSettingsDialog()
     assert.equal(approvalSpy.showModalCalls, 1)
     assert.equal(approvalDialog.open, true)
+  })
+
+  it('shows a provider-host approval above settings without surfacing unrelated requests', () => {
+    openSettingsDialog()
+    emit({ id: 'shell' })
+    emit({ id: 'provider', showWhileSettingsOpen: true })
+
+    assert.equal(approvalSpy.showModalCalls, 1)
+    assert.equal(approvalDialog.open, true)
+    assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Provider host')
+    assert.equal(qsRequired(approvalDialog, '.approval-body').textContent, 'provider.example')
+
+    qsRequired<HTMLButtonElement>(approvalDialog, '.approval-reject').click()
+    assert.equal(approvalDialog.open, false)
+
+    closeSettingsDialog()
+    assert.equal(approvalSpy.showModalCalls, 2)
+    assert.equal(qsRequired(approvalDialog, '.approval-heading').textContent, 'Shell command')
   })
 })

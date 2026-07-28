@@ -419,6 +419,7 @@ export interface IpcEventMap {
       type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
       allowRemember?: boolean
       rememberLabel?: string
+      showWhileSettingsOpen?: boolean
       comparisonModels?: { a: string; b: string; judge: string }
     },
   ]

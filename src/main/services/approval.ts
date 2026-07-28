@@ -22,6 +22,8 @@ export interface ApprovalRequest {
   type: 'shell' | 'mcp' | 'web' | 'pii' | 'model-compare' | 'review-spend'
   allowRemember?: boolean
   rememberLabel?: string
+  /** Intentional Settings-owned flow that must prompt above the open Settings dialog. */
+  showWhileSettingsOpen?: boolean
   /** Initial reviewer/judge ids when `type === 'model-compare'` (renderer shows pickers). */
   comparisonModels?: ComparisonModelSelection
 }
