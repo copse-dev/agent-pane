@@ -42,6 +42,7 @@ describe('selected pack browser behavior', function () {
             <h1>Personal reference desk</h1>
             <p>This local page stands in for an explicitly declared website.</p>
             <button type="button">Review current task</button>
+            <button type="button" disabled>Awaiting reviewer</button>
             <p id="saved-review" style="cursor: pointer">Saved personal review</p>
             <p id="click-status"></p>
             <label>Image evidence <input hidden type="file" accept="image/*"></label>
@@ -128,6 +129,7 @@ describe('selected pack browser behavior', function () {
     assert.match(response, /Personal reference desk/)
     assert.match(response, /This local page stands in for an explicitly declared website/)
     assert.match(response, /Review current task/)
+    assert.match(response, /button "Awaiting reviewer" \[disabled\]/)
     assert.match(response, /file "Image evidence"/)
     assert.match(response, /Opened saved personal review/)
     assert.match(response, /Received example\.png/)
