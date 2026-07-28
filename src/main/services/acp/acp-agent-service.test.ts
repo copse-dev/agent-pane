@@ -11,15 +11,18 @@ import {
   buildAcpPrompt,
   buildAcpPromptContent,
   isAcpConnectionDropped,
+  isHoldableVisibleAssistantChunk,
   isRetryableAcpError,
   isTransientProviderError,
   probeAcpAgentForSettings,
   permissionResponseFor,
+  pushHeldVisibleAssistantChunk,
   mergeAcpPermissionAbortSignals,
   runAcpAgentFromSettings,
   shouldAutoApproveLowRiskAcpPermission,
   runWithAcpRetry,
   sliceLines,
+  type HeldVisibleAssistantChunk,
 } from './acp-agent-service.ts'
 
 const ALLOW_ONCE: PermissionOption = { optionId: 'a1', name: 'Allow once', kind: 'allow_once' }
@@ -545,5 +548,36 @@ describe('ACP on SSH workspaces', () => {
         }),
       (err: unknown) => err instanceof Error && err.message !== ACP_UNSUPPORTED_ON_SSH_MESSAGE,
     )
+  })
+})
+
+describe('hold visible assistant chunks under an open approval', () => {
+  it('treats reasoning the same as text (Cursor thought chunks)', () => {
+    assert.equal(isHoldableVisibleAssistantChunk({ type: 'text', text: 'hi' }), true)
+    assert.equal(
+      isHoldableVisibleAssistantChunk({ type: 'reasoning', text: 'I need to figure out' }),
+      true,
+    )
+    assert.equal(
+      isHoldableVisibleAssistantChunk({
+        type: 'tool_call',
+        toolCall: { id: 't1', name: 'run_shell', args: {} },
+      }),
+      false,
+    )
+  })
+
+  it('coalesces consecutive same-type fragments and keeps order across types', () => {
+    const held: HeldVisibleAssistantChunk[] = []
+    pushHeldVisibleAssistantChunk(held, { type: 'reasoning', text: 'I need to ' })
+    pushHeldVisibleAssistantChunk(held, { type: 'reasoning', text: 'figure out the root commit,' })
+    pushHeldVisibleAssistantChunk(held, { type: 'text', text: 'Root cause: ' })
+    pushHeldVisibleAssistantChunk(held, { type: 'text', text: 'stale submodule.' })
+    pushHeldVisibleAssistantChunk(held, { type: 'reasoning', text: 'next thought' })
+    assert.deepEqual(held, [
+      { type: 'reasoning', text: 'I need to figure out the root commit,' },
+      { type: 'text', text: 'Root cause: stale submodule.' },
+      { type: 'reasoning', text: 'next thought' },
+    ])
   })
 })
