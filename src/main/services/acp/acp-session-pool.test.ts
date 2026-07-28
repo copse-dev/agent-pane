@@ -168,7 +168,11 @@ describe('acp-session-pool', () => {
   it('does not idle-reap a session with an in-flight turn (blocked on permission)', async () => {
     const log: AgentLog = { spawns: 0, promptSessions: [] }
     const createTransport = makeTransportFactory(log)
-    const { entry } = await acquireAcpSession({ threadId: 't-busy', config: CONFIG, createTransport })
+    const { entry } = await acquireAcpSession({
+      threadId: 't-busy',
+      config: CONFIG,
+      createTransport,
+    })
     // Simulate an open turn the way runAcpSessionPrompt does — turnStop non-null
     // means the session is actively serving a prompt (including one waiting on
     // session/request_permission).

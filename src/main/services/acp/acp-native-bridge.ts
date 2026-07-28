@@ -305,12 +305,7 @@ export async function startAcpNativeBridge(
       const body = await readBody(req).catch(() => undefined)
       // No sessionIdGenerator → stateless mode: every POST is self-contained.
       const transport = new StreamableHTTPServerTransport({})
-      const server = buildMcpServer(
-        registry,
-        signal,
-        advisorContext,
-        networkScopeAlreadyApplies,
-      )
+      const server = buildMcpServer(registry, signal, advisorContext, networkScopeAlreadyApplies)
       res.on('close', () => {
         void transport.close()
         void server.close()
