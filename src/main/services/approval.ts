@@ -8,6 +8,7 @@ import {
   parseIpcArgs,
 } from '../ipc/ipc-guards.ts'
 import { getActiveRunThread } from './thread-models.ts'
+import { withRunDeadlinePaused } from './hooks/run-deadline.ts'
 
 /** Model ids for a two-reviewer + judge comparison run. */
 export interface ComparisonModelSelection {
@@ -35,9 +36,24 @@ export interface ApprovalResponse {
   comparisonModels?: ComparisonModelSelection
 }
 
-// Pending approvals never auto-resolve, so a tool call would hang forever if the
-// window is closed before the user answers. Bound the wait and deny on timeout.
-const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000
+const DENIED: ApprovalResponse = { approved: false, remember: false }
+
+/**
+ * Fingerprint for coalescing identical in-flight approval prompts. Parallel tool
+ * calls (and ACP `session/request_permission` bursts) often ask the same question
+ * twice; one dialog row should answer every waiter.
+ */
+export function approvalDedupeKey(req: ApprovalRequest): string {
+  return JSON.stringify({
+    title: req.title,
+    body: req.body,
+    type: req.type,
+    allowRemember: req.allowRemember ?? false,
+    rememberLabel: req.rememberLabel ?? '',
+    showWhileSettingsOpen: req.showWhileSettingsOpen ?? false,
+    comparisonModels: req.comparisonModels ?? null,
+  })
+}
 
 /**
  * Transport that actually asks for approval. The GUI registers a
@@ -52,16 +68,128 @@ export type ApprovalHandler = (
 
 let handler: ApprovalHandler | null = null
 
-export function setApprovalHandler(next: ApprovalHandler | null): void {
-  handler = next
+/** In-flight coalesced approvals keyed by {@link approvalDedupeKey}. */
+interface InflightApproval {
+  /** Aborts the underlying handler prompt once every waiter has left. */
+  controller: AbortController
+  waiters: Set<InflightWaiter>
 }
 
+interface InflightWaiter {
+  resolve: (response: ApprovalResponse) => void
+  signal: AbortSignal | undefined
+  onAbort: () => void
+}
+
+const inflight = new Map<string, InflightApproval>()
+
+export function setApprovalHandler(next: ApprovalHandler | null): void {
+  handler = next
+  // Drop coalesced waiters when the transport is torn down (tests / shutdown) so
+  // the next handler never inherits a stale shared prompt.
+  if (!next) {
+    for (const entry of inflight.values()) {
+      entry.controller.abort()
+      for (const waiter of entry.waiters) {
+        waiter.signal?.removeEventListener('abort', waiter.onAbort)
+        waiter.resolve(DENIED)
+      }
+    }
+    inflight.clear()
+  }
+}
+
+function settleInflight(key: string, entry: InflightApproval, response: ApprovalResponse): void {
+  if (inflight.get(key) !== entry) return
+  inflight.delete(key)
+  for (const waiter of entry.waiters) {
+    waiter.signal?.removeEventListener('abort', waiter.onAbort)
+    waiter.resolve(response)
+  }
+  entry.waiters.clear()
+}
+
+/**
+ * Ask the user (or registered handler) for approval. Identical in-flight requests
+ * share one underlying prompt — the first call opens it; later duplicates wait on
+ * the same answer. The prompt stays open until the user responds, the window
+ * closes, or every waiter aborts (e.g. Stop / ACP `$/cancel_request`). There is
+ * no wall-clock timeout: auto-denying after a few minutes let the agent continue
+ * underneath an still-open dialog and was a common source of "Approve all (N)"
+ * growth plus ACP session drops after long waits.
+ *
+ * While the prompt is open the active run's sliding idle deadline is paused so a
+ * long think-before-click cannot abort the turn (and cancel the dialog) underneath
+ * the user.
+ */
 export function requestApproval(
   req: ApprovalRequest,
   signal?: AbortSignal,
 ): Promise<ApprovalResponse> {
-  if (signal?.aborted) return Promise.resolve({ approved: false, remember: false })
-  return handler ? handler(req, signal) : Promise.resolve({ approved: false, remember: false })
+  if (signal?.aborted) return Promise.resolve(DENIED)
+  const activeHandler = handler
+  if (!activeHandler) return Promise.resolve(DENIED)
+
+  const threadId = getActiveRunThread() ?? undefined
+  return withRunDeadlinePaused(threadId, () => requestApprovalUnpaused(req, activeHandler, signal))
+}
+
+function requestApprovalUnpaused(
+  req: ApprovalRequest,
+  activeHandler: ApprovalHandler,
+  signal?: AbortSignal,
+): Promise<ApprovalResponse> {
+  if (signal?.aborted) return Promise.resolve(DENIED)
+
+  const key = approvalDedupeKey(req)
+
+  return new Promise<ApprovalResponse>((resolve) => {
+    // Register the waiter before invoking the handler so a synchronous settle
+    // (tests, immediate deny) still reaches this caller.
+    if (signal?.aborted) {
+      resolve(DENIED)
+      return
+    }
+
+    let entry = inflight.get(key)
+    const isLeader = !entry
+    if (!entry) {
+      entry = { controller: new AbortController(), waiters: new Set() }
+      inflight.set(key, entry)
+    }
+    const active = entry
+
+    const waiter: InflightWaiter = {
+      resolve,
+      signal,
+      onAbort: () => {
+        if (!active.waiters.has(waiter)) return
+        active.waiters.delete(waiter)
+        signal?.removeEventListener('abort', waiter.onAbort)
+        resolve(DENIED)
+        // Only tear down the shared prompt once nobody is left waiting — a
+        // sibling tool call may still need the user's answer.
+        if (active.waiters.size === 0 && inflight.get(key) === active) {
+          inflight.delete(key)
+          active.controller.abort()
+        }
+      },
+    }
+    active.waiters.add(waiter)
+    signal?.addEventListener('abort', waiter.onAbort, { once: true })
+
+    if (!isLeader) return
+
+    void activeHandler(req, active.controller.signal).then(
+      (response) => {
+        settleInflight(key, active, response)
+      },
+      () => {
+        // Handler rejection must not hang waiters (treat as deny).
+        settleInflight(key, active, DENIED)
+      },
+    )
+  })
 }
 
 /**
@@ -139,10 +267,10 @@ export function initApproval(win: BrowserWindow): void {
         // is undefined elsewhere). macOS auto-stops the bounce on focus, and we
         // also stop it when the approval settles for any reason.
         const stopDockAttention = startDockAttention(app.dock)
-        const timer = setTimeout(() => {
-          settle(id, { approved: false, remember: false })
-        }, APPROVAL_TIMEOUT_MS)
-        if (typeof timer.unref === 'function') timer.unref()
+        // No wall-clock timeout: the prompt stays until the user answers, the
+        // window closes, or the caller's abort signal fires (Stop / cancel).
+        // Auto-deny after 5 minutes previously let the agent keep turning under
+        // a still-visible dialog (timeout never sent approval_cancelled).
         const onAbort = (): void => {
           if (!pending.has(id)) return
           win.webContents.send('agent:approval_cancelled', { id })
@@ -151,7 +279,6 @@ export function initApproval(win: BrowserWindow): void {
         signal?.addEventListener('abort', onAbort, { once: true })
         pending.set(id, (response) => {
           signal?.removeEventListener('abort', onAbort)
-          clearTimeout(timer)
           stopDockAttention()
           resolve(response)
         })

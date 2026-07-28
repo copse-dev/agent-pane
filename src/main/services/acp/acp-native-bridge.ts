@@ -9,6 +9,7 @@ import { getSetting } from '../storage/settings.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 import type { AdvisorRunnerContext } from '../advisor-runner-context.ts'
 import { runWithAdvisorContext } from '../advisor-runner-context.ts'
+import { runWithAcpBridgePermissionContext } from './acp-bridge-permission-context.ts'
 import { unwrapInlineCode } from './session-update-adapter.ts'
 
 /**
@@ -177,6 +178,7 @@ function buildMcpServer(
   registry: ToolRegistry,
   signal: AbortSignal,
   advisorContext: AdvisorRunnerContext | null,
+  networkScopeAlreadyApplies: boolean,
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- low-level Server is the right fit: bridge tools carry pre-built JSON schemas from ToolRegistry.toMcpTools(), while the high-level McpServer wants zod shapes it converts itself
 ): McpBridgeServer {
   // eslint-disable-next-line @typescript-eslint/no-deprecated -- see the note on the signature
@@ -196,10 +198,14 @@ function buildMcpServer(
     try {
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         registry.executeNormalized(name, request.params.arguments, signal)
+      const runExecute = (): ReturnType<ToolRegistry['executeNormalized']> =>
+        networkScopeAlreadyApplies
+          ? runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, execute)
+          : execute()
       const { result } =
         name === 'advisor' && advisorContext
-          ? await runWithAdvisorContext(advisorContext, execute)
-          : await execute()
+          ? await runWithAdvisorContext(advisorContext, runExecute)
+          : await runExecute()
       return { content: [{ type: 'text', text: result }] }
     } catch (err) {
       return { content: [{ type: 'text', text: errorMessage(err) }], isError: true }
@@ -269,15 +275,21 @@ function compatibleServerTransport(transport: StreamableHTTPServerTransport): Tr
  * (`acpNativeBridgeEnabled`, default on) or no bridgeable tool is registered.
  * Stateless MCP: each POST gets a fresh server+transport pair, so the external
  * agent needs no session handshake and GET/DELETE degrade per spec.
+ *
+ * @param networkScopeAlreadyApplies - when the owning ACP session is sandboxed,
+ *   bridged shell calls share that session's widened network scope instead of
+ *   prompting as if they were an unrelated overlapping process (#803).
  */
 export async function startAcpNativeBridge(
   registry: ToolRegistry,
   signal: AbortSignal,
+  opts: { networkScopeAlreadyApplies?: boolean } = {},
 ): Promise<AcpNativeBridge | null> {
   if (!getSetting<boolean>('acpNativeBridgeEnabled', true)) return null
   if (bridgedTools(registry).length === 0) return null
 
   const token = randomBytes(32).toString('hex')
+  const networkScopeAlreadyApplies = opts.networkScopeAlreadyApplies === true
   // The server is pooled per ACP thread, so its context is also per bridge.
   // Capture it at request start and bind it with AsyncLocalStorage during the
   // advisor call; simultaneous bridges can never see one another's transcript.
@@ -293,7 +305,12 @@ export async function startAcpNativeBridge(
       const body = await readBody(req).catch(() => undefined)
       // No sessionIdGenerator → stateless mode: every POST is self-contained.
       const transport = new StreamableHTTPServerTransport({})
-      const server = buildMcpServer(registry, signal, advisorContext)
+      const server = buildMcpServer(
+        registry,
+        signal,
+        advisorContext,
+        networkScopeAlreadyApplies,
+      )
       res.on('close', () => {
         void transport.close()
         void server.close()

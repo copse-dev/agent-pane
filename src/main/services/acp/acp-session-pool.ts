@@ -1,5 +1,5 @@
 import type { AcpAgentSpawnConfig, AcpTransportFactory, OpenAcpSession } from './acp-client.ts'
-import { openAcpSession } from './acp-client.ts'
+import { openAcpSession, willSandboxAcpAgent } from './acp-client.ts'
 import { startAcpNativeBridge, type AcpNativeBridge } from './acp-native-bridge.ts'
 import type { ToolRegistry } from '../tool-registry.ts'
 
@@ -102,6 +102,10 @@ function rememberResumeCandidate(threadId: string, entry: PooledAcpSession): voi
 export async function reapIdleAcpSessions(now = Date.now(), idleMs = IDLE_MS): Promise<string[]> {
   const reaped: string[] = []
   for (const [threadId, entry] of pool) {
+    // An in-flight turn (including one blocked on session/request_permission)
+    // is not idle — reaping it closes the transport under the open approval
+    // dialog and surfaces as "ACP connection closed" after a long wait.
+    if (entry.open.turnStop !== null) continue
     if (now - entry.lastUsedAt >= idleMs) {
       // Tear down the live process, but keep the opaque session ID when the
       // agent can resume — the next acquire spawns a fresh transport and calls
@@ -151,8 +155,11 @@ export async function acquireAcpSession(
   // loopback at spawn time when the bridge will be offered (#602). The abort
   // controller cancels in-flight bridge tool executions at dispose.
   const bridgeAbort = new AbortController()
+  const shareNetworkScope = willSandboxAcpAgent(opts.config.sandbox)
   const bridge = opts.registry
-    ? await startAcpNativeBridge(opts.registry, bridgeAbort.signal).catch(() => null)
+    ? await startAcpNativeBridge(opts.registry, bridgeAbort.signal, {
+        networkScopeAlreadyApplies: shareNetworkScope,
+      }).catch(() => null)
     : null
   const config: AcpAgentSpawnConfig = {
     ...opts.config,

@@ -623,6 +623,10 @@ export async function runAgent(
     beginHookRunRecording(threadId)
     const runAbort = createAgentRunAbortScheduler(controller)
     runAbort.schedule()
+    // Same idle-deadline registry as the local loop: pause while approval dialogs
+    // (and other host-side waits) are open so a long user think cannot abort the
+    // ACP turn underneath the still-visible prompt.
+    registerRunDeadline(threadId, runAbort.deadline)
     // The advisor works both ways for ACP: an external executor can consult it
     // through the native-tool bridge. Unlike the native loop (context set around
     // each call), bridged calls arrive over HTTP at any point in the turn, so
@@ -700,6 +704,7 @@ export async function runAgent(
       // B3: agent work has stopped (turn end or abort) — fire `stop` detached.
       fireStopHook(threadId, controller.signal.aborted ? 'aborted' : 'completed', turnTreeId)
       runAbort.clear()
+      clearRunDeadline(threadId, runAbort.deadline)
       endHookRunRecording(threadId)
       clearActiveRunThread(threadId)
       abortMap.delete(threadId)

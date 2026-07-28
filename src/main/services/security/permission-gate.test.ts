@@ -26,6 +26,7 @@ import { setWorkspaceRootForTest } from '../workspace.ts'
 import { runWithAgentRunReadonly } from '../agent-run-readonly.ts'
 import { setApprovalHandler } from '../approval.ts'
 import { acquireSandboxNetworkScope } from '../../project-sandbox/network-scope.ts'
+import { runWithAcpBridgePermissionContext } from '../acp/acp-bridge-permission-context.ts'
 import {
   rememberCustomTool,
   setCustomToolRequiresApprovalForTests,
@@ -170,6 +171,36 @@ describe('ensureToolPermitted', () => {
           autoRun: true,
           networkScopeAlreadyApplies: true,
         }),
+        true,
+      )
+      assert.equal(prompted, false)
+    } finally {
+      setApprovalHandler(null)
+      release()
+      restore()
+    }
+  })
+
+  it('shares the active network scope with sandboxed ACP bridge shell calls', async () => {
+    setPermissionGateForTests(null)
+    const restore = setWorkspaceRootForTest('/tmp/acp-bridge-network-scope-project')
+    const release = acquireSandboxNetworkScope({
+      domains: ['vendor.example'],
+      allowLocalBinding: false,
+    })
+    let prompted = false
+    setApprovalHandler(async () => {
+      prompted = true
+      return { approved: false, remember: false }
+    })
+    try {
+      assert.equal(
+        await runWithAcpBridgePermissionContext({ networkScopeAlreadyApplies: true }, () =>
+          ensureShellCommandPermitted('git status --short', {
+            sandboxEnabled: true,
+            autoRun: true,
+          }),
+        ),
         true,
       )
       assert.equal(prompted, false)
