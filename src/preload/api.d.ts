@@ -42,6 +42,7 @@ import type {
   ThreadWorktreeChoice,
 } from '@shared/types/worktree.ts'
 import type { GuardedYoloState } from '@shared/types/guarded-yolo.ts'
+import type { PackBrowserTabRequest } from '@shared/types/pack-browser.ts'
 
 export type { DetectedAcpAgent }
 
@@ -77,6 +78,11 @@ export interface ApiClient {
   }
   browser: {
     onOpenTab: (handler: (url: string) => void) => () => void
+    onPackTabRequest: (
+      handler: (
+        request: PackBrowserTabRequest,
+      ) => Promise<{ tabId: string; webContentsId: number }>,
+    ) => () => void
   }
   security: {
     getGuardedYolo: (threadId: string) => Promise<GuardedYoloState>

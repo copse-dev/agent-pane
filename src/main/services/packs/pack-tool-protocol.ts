@@ -31,6 +31,69 @@ export const zPackModelTurn = z.strictObject({
   history: z.array(zPackModelHistoryMessage).max(64),
 })
 
+export const zPackBrowserTab = z.strictObject({
+  tabId: z.string().min(1).max(128),
+  title: z.string().max(2_048),
+  url: z.string().max(16_384),
+  active: z.boolean(),
+})
+
+export const zPackBrowserUploadFile = z.strictObject({
+  name: z.string().min(1).max(256),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+  dataBase64: z
+    .string()
+    .min(1)
+    .max(12 * 1024 * 1024),
+})
+
+const zPackBrowserCallBase = {
+  type: z.literal('browser-call'),
+  id: zRequestId,
+  invocationId: zRequestId,
+}
+
+export const zPackBrowserCall = z.discriminatedUnion('op', [
+  z.strictObject({
+    ...zPackBrowserCallBase,
+    op: z.literal('open'),
+    url: z.string().min(1).max(16_384),
+    newTab: z.boolean().optional(),
+  }),
+  z.strictObject({
+    ...zPackBrowserCallBase,
+    op: z.literal('navigate'),
+    tabId: z.string().min(1).max(128),
+    url: z.string().min(1).max(16_384),
+  }),
+  z.strictObject({ ...zPackBrowserCallBase, op: z.literal('tabs') }),
+  z.strictObject({
+    ...zPackBrowserCallBase,
+    op: z.literal('snapshot'),
+    tabId: z.string().min(1).max(128),
+  }),
+  z.strictObject({
+    ...zPackBrowserCallBase,
+    op: z.literal('click'),
+    tabId: z.string().min(1).max(128),
+    ref: z.string().min(1).max(128),
+  }),
+  z.strictObject({
+    ...zPackBrowserCallBase,
+    op: z.literal('type'),
+    tabId: z.string().min(1).max(128),
+    ref: z.string().min(1).max(128),
+    text: z.string().max(256 * 1024),
+  }),
+  z.strictObject({
+    ...zPackBrowserCallBase,
+    op: z.literal('upload'),
+    tabId: z.string().min(1).max(128),
+    ref: z.string().min(1).max(128),
+    files: z.array(zPackBrowserUploadFile).min(1).max(8),
+  }),
+])
+
 export const zPackToolRegistrations = z.strictObject({
   tools: z.array(zPackToolRegistration).max(1_000),
   models: z.array(zPackModelRegistration).max(1_000),
@@ -41,6 +104,9 @@ export type PackModelRegistration = z.infer<typeof zPackModelRegistration>
 export type PackModelAttachment = z.infer<typeof zPackModelAttachment>
 export type PackModelHistoryMessage = z.infer<typeof zPackModelHistoryMessage>
 export type PackModelTurn = z.infer<typeof zPackModelTurn>
+export type PackBrowserTab = z.infer<typeof zPackBrowserTab>
+export type PackBrowserUploadFile = z.infer<typeof zPackBrowserUploadFile>
+export type PackBrowserCall = z.infer<typeof zPackBrowserCall>
 export type PackToolRegistrations = z.infer<typeof zPackToolRegistrations>
 
 export const zPackToolHostRequest = z.discriminatedUnion('op', [
@@ -72,11 +138,19 @@ export const zPackToolHostRequest = z.discriminatedUnion('op', [
     result: z.unknown().optional(),
     error: z.string().max(8_192).optional(),
   }),
+  z.strictObject({
+    id: zRequestId,
+    op: z.literal('browser-result'),
+    browserRequestId: zRequestId,
+    ok: z.boolean(),
+    result: z.unknown().optional(),
+    error: z.string().max(8_192).optional(),
+  }),
 ])
 
 export type PackToolHostRequest = z.infer<typeof zPackToolHostRequest>
 
-export const zPackToolWorkerMessage = z.discriminatedUnion('type', [
+export const zPackToolWorkerMessage = z.union([
   z.strictObject({
     type: z.literal('response'),
     id: zRequestId,
@@ -91,6 +165,7 @@ export const zPackToolWorkerMessage = z.discriminatedUnion('type', [
     op: z.enum(['get', 'set', 'delete']),
     state: z.unknown().optional(),
   }),
+  zPackBrowserCall,
 ])
 
 export type PackToolWorkerMessage = z.infer<typeof zPackToolWorkerMessage>

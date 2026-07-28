@@ -26,7 +26,8 @@ contract is `PackManifest` in
 pack manifest
 ├── tools      native tool names (first-party) or an MCP config path (user packs)
 ├── models     selected-pack whole-thread routes shown in the thread picker
-├── runtime    shared isolated entrypoint for selected-pack tools/models
+├── browser    exact visible-browser origins for selected-pack model routes
+├── runtime    shared isolated entrypoint for selected-pack executable behavior
 ├── hooks      command-hook declarations (user packs); first-party function hooks are typed runtime contributions
 ├── prompt     skills / steering blocks (with trust framing: trusted vs untrusted)
 ├── ui         contributions — level 1 (cards) / 2 (named panel slot) / 3 (real renderer view)
@@ -75,9 +76,23 @@ external conversation id and use the transcript handoff only when rebuilding a
 missing session. Disabling the pack removes its routes from new selections while
 preserving the stored session and a disabled current selection's display metadata.
 
-The worker has no generic `host.call`, origin grant, browser-panel access, or
-renderer slot. Those remain P4 behaviors and will be added only with concrete
-host-owned gateways and consent semantics.
+P4 adds one concrete host-owned gateway: a selected pack with
+`browser.origins` can operate pack-and-thread owned tabs in the visible browser
+panel through explicit `open`, `navigate`, `tabs`, `snapshot`, `click`, `type`,
+and `upload` operations. Exact-origin checks happen before navigation and every
+interaction; redirects outside the declaration fail closed. Tabs use the
+panel's persistent interactive profile and are revealed to the user, so this is
+appropriate for workflows that need an existing site login or occasional human
+interaction. The bridge never returns a webview/Electron object to the worker.
+
+Image upload converts validated base64 image data supplied by the model handler
+into an in-page `File` and assigns it to a referenced file input with
+`DataTransfer`, then dispatches `input`/`change`; it never opens a native file
+chooser. Each upload operation is capped at eight files and 8 MB decoded total.
+
+There is still no direct worker network, generic `host.call`, arbitrary IPC, or
+user-pack renderer code. Renderer contribution machinery remains deferred until
+a concrete behavior needs it rather than landing as an unused slot.
 
 ## Registry and lifecycle
 
@@ -88,7 +103,7 @@ groups every pack's contributions by pack id and owns the lifecycle:
 - **Grouping** — `all()` / `grouping()` enumerate packs (Settings, P3); the
   `active*()` getters (`activeToolNames`, `activeBlockingHooks`,
   `activeAsyncHooks`, `activePromptBlocks`, `activeUiContributions`,
-  `activeCapabilities`, `activePermissions`) return the contributions of
+  `activeBrowserOrigins`, `activeCapabilities`, `activePermissions`) return the contributions of
   **enabled** packs only, for **new work**.
 - **Capabilities** — a pack may declare named **capability** flags: pure
   cross-cutting behaviour with no tool/hook/prompt/panel (e.g. the MCP-UI canvas,
@@ -203,7 +218,7 @@ settings the manifest declares. This is the `about:addons` of Copse.
 - **Renderer.** The Settings dialog gains a `Packs` nav section
   (`src/renderer/views/settings-dialog.ts`). Each row shows the pack's name +
   version + trust badge, an enable toggle, a description, contribution chips
-  (`Tools × N`, `Models × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
+  (`Tools × N`, `Models × N`, `Browser origins × N`, `Hooks × N`, `Prompt blocks × N`, `UI × N`) with the underlying
   identifiers in a hover title, and generic form fields for the manifest's
   `settings` schema. Disabled rows are visually greyed via `pack-row-disabled`
   so the effect of the toggle is immediately visible; per-pack settings stay

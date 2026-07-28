@@ -12,6 +12,10 @@
       "then": { "required": ["runtime"] }
     },
     {
+      "if": { "required": ["browser"] },
+      "then": { "required": ["models", "runtime"] }
+    },
+    {
       "if": {
         "required": ["tools"],
         "properties": { "tools": { "required": ["provides"] } }
@@ -84,6 +88,26 @@
               "description": { "type": "string" },
               "supportsImages": { "type": "boolean" }
             }
+          }
+        }
+      }
+    },
+    "browser": {
+      "description": "Exact origins an explicitly selected model pack may operate in the visible interactive browser pane. This grants only the bounded browser operations in runtime API v1, not direct network or Electron access.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["origins"],
+      "properties": {
+        "origins": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "pattern": "^https?://"
           }
         }
       }

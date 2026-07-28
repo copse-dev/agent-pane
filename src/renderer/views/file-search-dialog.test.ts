@@ -81,6 +81,7 @@ function stubApi(
     contributions: {
       toolNames: [],
       modelRoutes: [],
+      browserOrigins: [],
       blockingHooks: [],
       asyncHooks: [],
       commandHooks: [],

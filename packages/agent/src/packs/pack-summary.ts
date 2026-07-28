@@ -75,6 +75,7 @@ export interface PackContributionsOut {
     description?: string
     supportsImages?: boolean
   }[]
+  browserOrigins: readonly string[]
   mcpServersPath?: string
   blockingHooks: readonly { id: string; event: string }[]
   asyncHooks: readonly { id: string; event: string }[]
@@ -195,6 +196,7 @@ export function packToSummary(
   const contributionsOut: PackContributionsOut = {
     toolNames: contributions.toolNames.slice(),
     modelRoutes: contributions.modelRoutes.map((route) => ({ ...route })),
+    browserOrigins: contributions.browserOrigins.slice(),
     blockingHooks: contributions.blockingHooks.map((h) => ({ id: h.id, event: h.event })),
     asyncHooks: contributions.asyncHooks.map((h) => ({ id: h.id, event: h.event })),
     commandHooks,

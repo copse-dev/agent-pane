@@ -201,6 +201,15 @@ export class PackRegistry {
     return out
   }
 
+  /** Interactive browser origins paired with their owning enabled pack. */
+  activeBrowserOrigins(): readonly { readonly packId: string; readonly origin: string }[] {
+    const out: Array<{ packId: string; origin: string }> = []
+    for (const pack of this.enabledPacks()) {
+      for (const origin of pack.contributions.browserOrigins) out.push({ packId: pack.id, origin })
+    }
+    return out
+  }
+
   /** Blocking function hooks to register for new work (enabled packs only). */
   activeBlockingHooks(): readonly BlockingHook[] {
     return this.collectActive((c) => c.blockingHooks)

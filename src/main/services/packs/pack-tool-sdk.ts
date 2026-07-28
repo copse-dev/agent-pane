@@ -1,7 +1,10 @@
 import {
   zPackModelTurn,
+  zPackBrowserTab,
   zPackToolRegistration,
   type PackModelTurn,
+  type PackBrowserTab,
+  type PackBrowserUploadFile,
   type PackToolRegistration,
   type PackToolRegistrations,
 } from './pack-tool-protocol.ts'
@@ -16,9 +19,21 @@ export interface PackModelSessionApi {
   delete(): Promise<void>
 }
 
+/** Narrow P4 bridge into Copse's visible, tabbed browser pane. */
+export interface PackBrowserApi {
+  open(url: string, options?: { newTab?: boolean }): Promise<PackBrowserTab>
+  navigate(tabId: string, url: string): Promise<PackBrowserTab>
+  tabs(): Promise<readonly PackBrowserTab[]>
+  snapshot(tabId: string): Promise<string>
+  click(tabId: string, ref: string): Promise<void>
+  type(tabId: string, ref: string, text: string): Promise<void>
+  upload(tabId: string, ref: string, files: readonly PackBrowserUploadFile[]): Promise<void>
+}
+
 export interface PackModelInvocationContext {
   readonly signal: AbortSignal
   readonly session: PackModelSessionApi
+  readonly browser: PackBrowserApi
 }
 
 export type PackToolInvocationHandler = (
@@ -50,6 +65,7 @@ export interface ActivatedPackTools {
     input: unknown,
     signal: AbortSignal,
     session: PackModelSessionApi,
+    browser: PackBrowserApi,
   ): Promise<unknown>
 }
 
@@ -114,10 +130,14 @@ export async function activatePackTools(
       if (!entry) throw new Error(`Unknown pack tool: ${registrationId}`)
       return await entry.handler(input, { signal })
     },
-    async invokeModel(registrationId, input, signal, session): Promise<unknown> {
+    async invokeModel(registrationId, input, signal, session, browser): Promise<unknown> {
       const handler = models.get(registrationId)
       if (!handler) throw new Error(`Unknown pack model route: ${registrationId}`)
-      return await handler(zPackModelTurn.parse(input), { signal, session })
+      return await handler(zPackModelTurn.parse(input), { signal, session, browser })
     },
   }
+}
+
+export function parsePackBrowserTab(value: unknown): PackBrowserTab {
+  return zPackBrowserTab.parse(value)
 }

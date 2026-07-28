@@ -182,6 +182,16 @@ export interface PackModelsDecl {
 }
 
 /**
+ * Interactive browser-pane behavior for an explicitly selected pack. Origins
+ * are exact URL origins (scheme + host + optional port), validated host-side.
+ * The runtime receives only named browser operations scoped to these origins;
+ * this is not a network grant or generic host gateway.
+ */
+export interface PackBrowserDecl {
+  origins: readonly string[]
+}
+
+/**
  * A command-hook declaration in a user pack's manifest (scaffold for user packs;
  * the concrete dialect wiring already exists under `src/main/services/hooks/`).
  * First-party function hooks are not declared here — they are typed runtime
@@ -212,6 +222,8 @@ export interface PackManifest {
   tools?: PackToolsDecl
   /** Thread-model behavior supplied by an explicitly selected pack. */
   models?: PackModelsDecl
+  /** Exact origins the pack may operate in the visible browser pane. */
+  browser?: PackBrowserDecl
   /** Shared isolated runtime for selected-pack executable behaviors. */
   runtime?: PackToolRuntimeDecl
   /** Command-hook declarations (user packs). */
@@ -238,6 +250,8 @@ export interface PackContributions {
   readonly toolNames: readonly string[]
   /** Thread models offered in the footer while this pack is enabled. */
   readonly modelRoutes: readonly PackModelRouteDecl[]
+  /** Exact interactive browser origins available while this pack is enabled. */
+  readonly browserOrigins: readonly string[]
   /** Blocking function hooks registered while enabled (first-party). */
   readonly blockingHooks: readonly BlockingHook[]
   /** Async (detached) function hooks registered while enabled (first-party). */
@@ -267,6 +281,7 @@ export interface PackContributions {
 export const EMPTY_PACK_CONTRIBUTIONS: PackContributions = {
   toolNames: [],
   modelRoutes: [],
+  browserOrigins: [],
   blockingHooks: [],
   asyncHooks: [],
   promptBlocks: [],
@@ -321,6 +336,7 @@ export function packManifestFromPluginJson(
     mcpServers?: string
     tools?: PackToolsDecl
     models?: PackModelsDecl
+    browser?: PackBrowserDecl
     runtime?: PackToolRuntimeDecl
     hooks?: readonly PackCommandHookDecl[]
     prompt?: readonly PackPromptBlock[]
@@ -361,6 +377,7 @@ export function packManifestFromPluginJson(
     manifest.tools = tools
   }
   if (raw.models) manifest.models = raw.models
+  if (raw.browser) manifest.browser = raw.browser
   if (raw.runtime) manifest.runtime = raw.runtime
   if (raw.hooks) manifest.hooks = raw.hooks
   // A user pack's prompt blocks are NEVER trusted, whatever the file claims:
