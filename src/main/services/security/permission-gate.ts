@@ -20,6 +20,7 @@ import { errorMessage } from '@shared/errors.ts'
 import { nonEmptyStringOr } from '@shared/unknown-value.ts'
 import { isProjectSandboxEnabled } from '../../project-sandbox/index.ts'
 import { isSandboxNetworkScopeActive } from '../../project-sandbox/network-scope.ts'
+import { acpBridgeNetworkScopeAlreadyApplies } from '../acp/acp-bridge-permission-context.ts'
 import { classifyShellScope } from './safety-classifier.ts'
 import { requestApproval } from '../approval.ts'
 import { getSetting, setSetting } from '../storage/settings.ts'
@@ -193,11 +194,16 @@ function readScriptForHarm(path: string): string | null {
 }
 
 /** Prompt when a sandboxed command failed and may succeed unsandboxed. */
-export async function promptUnsandboxedShell(command: string, reasons: string[]): Promise<boolean> {
+export async function promptUnsandboxedShell(
+  command: string,
+  reasons: string[],
+  signal?: AbortSignal,
+): Promise<boolean> {
   return requestEscalationApproval(
     command,
     'Run outside sandbox?',
     formatUnsandboxedPromptBody(command, reasons),
+    signal,
   )
 }
 
@@ -209,12 +215,16 @@ export async function promptUnsandboxedShell(command: string, reasons: string[])
 export async function promptExpectedSandboxBlock(
   command: string,
   reasons: string[],
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  const { approved } = await requestApproval({
-    title: 'Run outside sandbox?',
-    body: formatExpectedSandboxBlockPromptBody(command, reasons),
-    type: 'shell',
-  })
+  const { approved } = await requestApproval(
+    {
+      title: 'Run outside sandbox?',
+      body: formatExpectedSandboxBlockPromptBody(command, reasons),
+      type: 'shell',
+    },
+    signal,
+  )
   return approved
 }
 
@@ -421,7 +431,13 @@ export async function ensureShellCommandPermitted(
   // command could inherit that egress. Suspend every auto-run path — including
   // explicit trusted-command routing — until the scope releases. Manual approval
   // is still available for deliberate overlapping work. (#803)
-  if (!guardedYolo && isSandboxNetworkScopeActive() && !opts.networkScopeAlreadyApplies) {
+  //
+  // Exception: the sandboxed ACP agent's own bridged `run_shell` / direct
+  // execute path opts in via `networkScopeAlreadyApplies` (or the bridge ALS) —
+  // that scope exists *for* those calls, so they must not see the overlap prompt.
+  const shareActiveNetworkScope =
+    opts.networkScopeAlreadyApplies === true || acpBridgeNetworkScopeAlreadyApplies()
+  if (!guardedYolo && isSandboxNetworkScopeActive() && !shareActiveNetworkScope) {
     return promptShell(
       command,
       ['sandbox network access is temporarily widened for another process'],
