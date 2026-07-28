@@ -200,7 +200,7 @@ async function maybeRetryUnsandboxed(
     spawnFailed: result.spawnFailed ?? false,
   })
   if (!detection.likely) return null
-  const approved = guardedYolo || (await promptUnsandboxedShell(command, detection.reasons))
+  const approved = guardedYolo || (await promptUnsandboxedShell(command, detection.reasons, signal))
   if (!approved) return 'declined'
   return runShellOnce(command, cwd, timeout_ms, signal, true, env)
 }
@@ -339,7 +339,10 @@ export const runShellTool = defineTool({
     if (!outsideSandbox && expects_sandbox_block === true) {
       const escalation = shellExpectedBlockEscalation(command, cwd, sandboxEnabled)
       if (escalation.eligible) {
-        if (guardedYolo || (await promptExpectedSandboxBlock(command, escalation.reasons))) {
+        if (
+          guardedYolo ||
+          (await promptExpectedSandboxBlock(command, escalation.reasons, signal))
+        ) {
           outsideSandbox = true
         } else {
           // The user declined the up-front escalation. Still run the command inside

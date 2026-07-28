@@ -45,7 +45,12 @@ import {
   presentPermissionRequest,
 } from './acp-approval-presentation.ts'
 import { isBridgedNativeToolTitle } from './acp-native-bridge.ts'
-import { requestApproval } from '../approval.ts'
+import {
+  requestApproval,
+  trackAcpPermissionToolCall,
+  pendingApprovalCountForThread,
+  cancelApprovalsForAcpToolCall,
+} from '../approval.ts'
 import {
   awaitStagedDiffDecision,
   captureWorktreeBaseline,
@@ -114,6 +119,13 @@ export interface RunAcpAgentOptions {
    * relying on the agent to already know the skill.
    */
   invokedSkills?: string[]
+  /**
+   * Aborted when the Copse turn ends (success, error, or Stop). Merged into
+   * bridged tool execution so an agent that abandons an MCP call and finishes
+   * the prompt cannot leave Copse's approval modal orphaned underneath a
+   * completed transcript.
+   */
+  bridgeTurnSignal?: AbortSignal
 }
 
 export interface RunAcpAgentResult {
@@ -367,9 +379,33 @@ export async function runAcpAgentFromSettings(
   // duplicate streamed text and re-execute tool calls.
   let assistantText = ''
   let sawChunk = false
+  // Text streamed while an approval modal is open for this thread — hold it so
+  // the agent cannot appear to "reason underneath" the prompt. Flush when the
+  // last pending approval settles (or the turn ends).
+  let heldText = ''
+  const flushHeldText = (): void => {
+    if (!heldText) return
+    const flush = heldText
+    heldText = ''
+    options.onChunk({ type: 'text', text: flush })
+  }
   const onChunk = (chunk: StreamChunk): void => {
     sawChunk = true
-    if (chunk.type === 'text') assistantText += chunk.text
+    if (chunk.type === 'tool_result') {
+      // Agent finished/failed this tool without waiting for our permission answer
+      // — dismiss that specific modal now, not at turn end.
+      cancelApprovalsForAcpToolCall(chunk.toolCallId)
+    }
+    if (chunk.type === 'text') {
+      assistantText += chunk.text
+      if (pendingApprovalCountForThread(options.threadId) > 0) {
+        heldText += chunk.text
+        return
+      }
+      flushHeldText()
+    } else if (pendingApprovalCountForThread(options.threadId) === 0) {
+      flushHeldText()
+    }
     options.onChunk(chunk)
   }
 
@@ -420,6 +456,7 @@ export async function runAcpAgentFromSettings(
       registry: options.registry,
     })
     entry.bridge?.setAdvisorContext(options.advisorContext ?? null)
+    entry.bridge?.setTurnSignal(options.bridgeTurnSignal ?? options.signal)
     entry.open.handlers.current = handlers
     // Issue #831: only attach image content blocks when the agent advertised
     // `promptCapabilities.image`. Agents without it keep the prior text-only
@@ -451,6 +488,7 @@ export async function runAcpAgentFromSettings(
       throw err
     } finally {
       entry.bridge?.setAdvisorContext(null)
+      entry.bridge?.setTurnSignal(null)
       entry.lastUsedAt = Date.now()
     }
   }
@@ -463,6 +501,7 @@ export async function runAcpAgentFromSettings(
       hasProgress: () => sawChunk,
     }))
   } catch (err) {
+    flushHeldText()
     // The turn died mid-flight. Attribute what it visibly consumed (estimated —
     // the agent never got to report usage) and hand the partial transcript to
     // the caller so history and the usage panel don't pretend it never ran.
@@ -489,6 +528,7 @@ export async function runAcpAgentFromSettings(
     })
   }
 
+  flushHeldText()
   emitNetworkDenialAudit(denialMark, options.onChunk)
   await emitBypassedWriteAudit(baseline, queueWrites, options.onChunk)
 
@@ -636,14 +676,25 @@ async function respondToPermission(
     return permissionResponseFor(req.options, true)
   }
   if (kind === 'execute') {
-    const executeResponse = await respondToAcpExecutePermission(
-      agent,
-      req,
-      root,
-      projectRoot,
-      signal,
-    )
-    if (executeResponse) return executeResponse
+    const toolCallId = req.toolCall.toolCallId
+    const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
+    const approvalSignal = tracked
+      ? signal
+        ? AbortSignal.any([signal, tracked.signal])
+        : tracked.signal
+      : signal
+    try {
+      const executeResponse = await respondToAcpExecutePermission(
+        agent,
+        req,
+        root,
+        projectRoot,
+        approvalSignal,
+      )
+      if (executeResponse) return executeResponse
+    } finally {
+      tracked?.unregister()
+    }
   }
   // File-mutating kinds (edit/delete/move) are auto-approved once a durable
   // backup of the user's worktree exists — the same safety net the native tools
@@ -655,18 +706,30 @@ async function respondToPermission(
       return permissionResponseFor(req.options, true)
     }
   }
-  const presentation = presentPermissionRequest(agent.title, req)
-  const { approved, remember } = await requestApproval(
-    {
-      ...presentation,
-      allowRemember: true,
-      rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
-    },
-    signal,
-  )
   if (signal?.aborted) return { outcome: { outcome: 'cancelled' } }
-  if (approved && remember) void rememberAcpPermission(agent.id, kind)
-  return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+  const toolCallId = req.toolCall.toolCallId
+  const tracked = toolCallId ? trackAcpPermissionToolCall(toolCallId) : null
+  const approvalSignal = tracked
+    ? signal
+      ? AbortSignal.any([signal, tracked.signal])
+      : tracked.signal
+    : signal
+  try {
+    const presentation = presentPermissionRequest(agent.title, req)
+    const { approved, remember } = await requestApproval(
+      {
+        ...presentation,
+        allowRemember: true,
+        rememberLabel: `Always allow ${agent.title} ${permissionKindLabel(kind)}`,
+      },
+      approvalSignal,
+    )
+    if (approvalSignal?.aborted) return { outcome: { outcome: 'cancelled' } }
+    if (approved && remember) void rememberAcpPermission(agent.id, kind)
+    return permissionResponseFor(req.options, approved, { preferAlways: approved && remember })
+  } finally {
+    tracked?.unregister()
+  }
 }
 
 /**
