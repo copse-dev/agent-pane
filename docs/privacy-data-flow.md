@@ -26,6 +26,13 @@ OpenAI `store: false`).
 | Automatic updates              | GitHub Releases configured in the packaged macOS app                                                  | The normal metadata of a GitHub update request, including network address and current app/version information required by the updater                                                                                                                                                                                                                       | Packaged macOS builds check on launch. Copse asks before downloading; a downloaded update installs on restart or the next quit. Development builds do not check the feed.                                                                                 |
 | Custom tools and hooks         | User-installed JavaScript modules or configured command processes                                     | Whatever the module or command is written to read or transmit                                                                                                                                                                                                                                                                                               | Custom tools always prompt before execution. Hooks and tools can run local code with the documented trust and permission boundaries; their authors control any additional network or storage behavior.                                                    |
 
+Personal local-native packs are selected explicitly and remain inert until the
+user approves the exact source hash and requested authority. The P1/P2 runtime
+executes a revalidated Copse-owned snapshot in the macOS sandbox with direct
+network and filesystem writes denied; only manifest-declared native tools are
+available. Later remote model, browser, attachment, session, and renderer data
+flows are not part of this phase.
+
 ## Provider requests
 
 The built-in agent loop sends more than the text visible in the composer. A

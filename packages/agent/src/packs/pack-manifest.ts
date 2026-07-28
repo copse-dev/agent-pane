@@ -14,8 +14,15 @@
 import type { AsyncHook, BlockingHook } from '../hooks/canonical-events.ts'
 import type { PanelContributionDecl } from './pack-panel.ts'
 
-/** Whether a pack is shipped by Copse or installed by the user (decision 15). */
-export type PackTrust = 'first-party' | 'user'
+/**
+ * Host-assigned pack trust class.
+ *
+ * `local-native` is never accepted from a manifest by the ordinary user-pack
+ * mapper. It is assigned only after the host discovers an explicitly selected
+ * local source, hashes it, and binds approval to the exact requested authority
+ * (#1336). It remains distinct from code shipped by Copse.
+ */
+export type PackTrust = 'first-party' | 'user' | 'local-native'
 
 /**
  * UI contribution levels (Feature packs section of the plan):

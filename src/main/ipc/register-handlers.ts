@@ -109,6 +109,10 @@ import {
 } from '../services/hooks/copse-adapter.ts'
 import { dryRunHook } from '../services/hooks/dry-run.ts'
 import { getPackService } from '../services/packs/pack-service.ts'
+import {
+  setLocalNativePackRuntimeController,
+  ToolingLocalNativePackRuntimeController,
+} from '../services/packs/local-native-pack-controller.ts'
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -283,6 +287,15 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
 }
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
+  const packService = getPackService()
+  setLocalNativePackRuntimeController(
+    new ToolingLocalNativePackRuntimeController(registry, () =>
+      Promise.reject(new Error('Local-native host gateways are not available in P1/P2.')),
+    ),
+  )
+  void packService.refreshLocalNativePacks().catch((error: unknown) => {
+    console.warn('[packs] local-native startup reconciliation failed:', error)
+  })
   // Register the DevTools shortcut at boot iff the `copse.devtools-shortcut`
   // pack is enabled. The pack ships off (`defaultEnabled: false`) and
   // getPackService() has already layered the user's explicit choices on top, so
@@ -1262,8 +1275,37 @@ export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry):
   // Settings pack list ("about:addons") calls these to enumerate every
   // registered pack, toggle enablement atomically (P1 contract), and read /
   // write pack-scoped settings values under the manifest's declared schema.
-  ipcMain.handle('packs:list', (event) => {
+  ipcMain.handle('packs:list', async (event) => {
     assertMainFrameSender(event, win)
+    await getPackService().refreshLocalNativePacks()
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle('packs:addLocalNativeSource', async (event) => {
+    assertMainFrameSender(event, win)
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Add local native pack',
+      properties: ['openDirectory'],
+    })
+    const sourcePath = result.filePaths[0]
+    if (!result.canceled && sourcePath) {
+      await getPackService().addLocalNativeSource(sourcePath)
+    }
+    return { packs: getPackService().list() }
+  })
+  ipcMain.handle(
+    'packs:approveLocalNative',
+    async (event, rawId: unknown, rawContentHash: unknown) => {
+      assertMainFrameSender(event, win)
+      const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+      const contentHash = parseIpcArgs(z.string().regex(/^sha256:[a-f0-9]{64}$/), [rawContentHash])
+      await getPackService().approveLocalNativePack(id, contentHash)
+      return { packs: getPackService().list() }
+    },
+  )
+  ipcMain.handle('packs:revokeLocalNative', async (event, rawId: unknown) => {
+    assertMainFrameSender(event, win)
+    const id = parseIpcArgs(zNonEmptyString.max(128), [rawId])
+    await getPackService().revokeLocalNativePack(id)
     return { packs: getPackService().list() }
   })
   ipcMain.handle('packs:setEnabled', async (event, rawId: unknown, rawEnabled: unknown) => {

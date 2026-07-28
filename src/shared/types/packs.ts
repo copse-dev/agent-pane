@@ -15,8 +15,24 @@
  * renderer never sees a `RegisteredPack` directly; it renders these summaries.
  */
 
-/** Trust tier of a pack (first-party = shipped by Copse; user = disk-loaded). */
-export type PackTrustLevel = 'first-party' | 'user'
+/** Trust tier assigned by the host; disk manifests cannot self-promote. */
+export type PackTrustLevel = 'first-party' | 'user' | 'local-native'
+
+export interface LocalNativePackSourceSummary {
+  kind: 'local-native'
+  path: string
+  contentHash: string
+  entrypoint: string
+  sdkVersion: 1
+  capabilities: readonly string[]
+  origins: readonly string[]
+  rendererSlots: readonly string[]
+}
+
+export interface LocalNativePackApprovalSummary {
+  status: 'required' | 'approved'
+  approvedAt?: number
+}
 
 /** UI contribution levels from the plan (1 = card, 2 = named panel, 3 = real view). */
 export type PackUiLevel = 1 | 2 | 3
@@ -135,6 +151,10 @@ export interface PackSummary {
   version?: string
   description?: string
   enabled: boolean
+  /** Present only for an explicitly selected local-native source. */
+  source?: LocalNativePackSourceSummary
+  /** Native contributions remain inert unless this exact hash/authority is approved. */
+  approval?: LocalNativePackApprovalSummary
   contributions: PackContributionsSummary
   /** Pack-scoped settings the manifest declares, each carrying its current value. */
   settings: readonly PackSettingFieldSummary[]

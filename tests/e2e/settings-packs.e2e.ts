@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { $, browser, expect } from '@wdio/globals'
 import { E2E_SCREENSHOT_DIR, saveElementScreenshot } from './helpers/screenshot.ts'
 import { resetUserData, seedEmptyProject } from './helpers/seed-config.ts'
@@ -25,16 +27,37 @@ function settingsSection(section: string) {
 
 describe('settings packs (about:addons)', function () {
   this.timeout(60_000)
+  let localPackRoot = ''
 
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    seedEmptyProject(process.cwd(), 'e2e-settings-packs')
+    localPackRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-local-native-pack-'))
+    mkdirSync(join(localPackRoot, 'dist'))
+    writeFileSync(join(localPackRoot, 'dist', 'index.mjs'), 'export default {}\n')
+    writeFileSync(
+      join(localPackRoot, 'copse-pack.json'),
+      JSON.stringify({
+        name: 'personal.reference-tools',
+        version: '0.1.0',
+        description: 'A local-native reference tool pack.',
+        tools: { native: ['personal_reference_judge'] },
+        localNative: {
+          entrypoint: 'dist/index.mjs',
+          sdkVersion: 1,
+          capabilities: ['native-tools'],
+        },
+      }),
+    )
+    seedEmptyProject(process.cwd(), 'e2e-settings-packs', {
+      localNativePackSources: [localPackRoot],
+    })
     await browser.reloadSession()
   })
 
   after(() => {
     resetUserData()
+    if (localPackRoot) rmSync(localPackRoot, { recursive: true, force: true })
   })
 
   it('lists installed packs with an enable toggle + contribution enumeration', async () => {
@@ -119,6 +142,36 @@ describe('settings packs (about:addons)', function () {
     const automationsRow = packs.$('.pack-row[data-pack-id="copse.automations"]')
     await expect(automationsRow).toBeDisplayed()
     assert.equal(await automationsRow.getAttribute('data-enabled'), 'false')
+
+    // Local-native sources are host-assigned, hash-bound, and inert until the
+    // exact authority request is approved. The executable P2 toggle becomes
+    // available only after the exact content and authority are accepted.
+    const localNativeRow = packs.$('.pack-row[data-pack-id="personal.reference-tools"]')
+    await expect(localNativeRow).toBeDisplayed()
+    await expect(localNativeRow.$('.pack-badge-local-native')).toBeDisplayed()
+    assert.equal(await localNativeRow.getAttribute('data-enabled'), 'false')
+    assert.equal(await localNativeRow.$('input.pack-toggle-input').isEnabled(), false)
+    const localText = await localNativeRow.getText()
+    assert.match(localText, /Approval required/)
+    assert.match(localText, /native-tools/)
+    assert.match(localText, /sha256:[a-f0-9]{64}/)
+
+    await localNativeRow.scrollIntoView()
+    await saveElementScreenshot(
+      '.pack-row[data-pack-id="personal.reference-tools"]',
+      'settings-local-native-pack.png',
+    )
+
+    await localNativeRow.$('.pack-native-approval-btn').click()
+    await browser.waitUntil(
+      async () => /Approved for this exact content/.test(await localNativeRow.getText()),
+      { timeout: 5_000, timeoutMsg: 'expected exact local-native approval to persist' },
+    )
+    assert.equal(await localNativeRow.$('input.pack-toggle-input').isEnabled(), true)
+    await saveElementScreenshot(
+      '.pack-row[data-pack-id="personal.reference-tools"]',
+      'settings-local-native-pack-approved.png',
+    )
 
     // Post-turn review pack: its pack-scoped `maxReviewCycles` setting renders
     // as a generic number field seeded with the manifest default. This is the

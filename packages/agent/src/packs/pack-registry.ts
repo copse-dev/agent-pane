@@ -133,6 +133,17 @@ export class PackRegistry {
     return this.packs.has(id)
   }
 
+  /**
+   * Remove a dynamically discovered pack from new work while retaining its
+   * namespaced storage bag. First-party packs are static and never call this;
+   * local/user discovery uses it when a source disappears or its hash changes.
+   */
+  unregister(id: string): void {
+    if (!this.packs.has(id)) throw new UnknownPackError(id)
+    this.packs.delete(id)
+    this.disabledIds.delete(id)
+  }
+
   /** True when the pack is registered and not disabled. */
   isEnabled(id: string): boolean {
     return this.packs.has(id) && !this.disabledIds.has(id)

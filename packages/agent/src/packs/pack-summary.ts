@@ -89,6 +89,17 @@ export interface PackSummaryOut {
   version?: string
   description?: string
   enabled: boolean
+  source?: {
+    kind: 'local-native'
+    path: string
+    contentHash: string
+    entrypoint: string
+    sdkVersion: 1
+    capabilities: readonly string[]
+    origins: readonly string[]
+    rendererSlots: readonly string[]
+  }
+  approval?: { status: 'required' | 'approved'; approvedAt?: number }
   contributions: PackContributionsOut
   settings: readonly PackSettingFieldOut[]
 }
