@@ -63,6 +63,32 @@ describe('ci.yml workflow invariants', () => {
   })
 })
 
+describe('promote-develop.yml workflow invariants', () => {
+  const workflow = readFileSync(resolve('.github/workflows/promote-develop.yml'), 'utf8')
+
+  it('runs daily and only opens a PR when develop has commits to promote', () => {
+    assert.match(workflow, /- cron: '[^']+ \* \* \*'/)
+    assert.match(workflow, /const base = 'main'/)
+    assert.match(workflow, /const head = 'develop'/)
+
+    const noChangesExit = workflow.indexOf(
+      'baseCommit.data.commit.tree.sha === headCommit.data.commit.tree.sha',
+    )
+    const pullRequestLookup = workflow.indexOf('github.paginate')
+    assert.ok(noChangesExit >= 0, 'expected an explicit equal-tree exit')
+    assert.ok(
+      noChangesExit < pullRequestLookup,
+      'the no-changes exit must run before looking up or creating a promotion PR',
+    )
+  })
+
+  it('enables squash auto-merge through the existing required CI gate', () => {
+    assert.match(workflow, /enablePullRequestAutoMerge/)
+    assert.match(workflow, /mergeMethod: SQUASH/)
+    assert.match(workflow, /github-token: \$\{\{ secrets\.SYNC_PR_TOKEN \}\}/)
+  })
+})
+
 describe('reconcile-screenshots.yml workflow invariants', () => {
   const workflow = readFileSync(resolve('.github/workflows/reconcile-screenshots.yml'), 'utf8')
 

@@ -1,0 +1,115 @@
+name: Promote develop to main
+
+# `develop` is the integration branch; `main` is the release-ready branch.
+# Open one daily promotion PR and let the main ruleset's required `CI Passed`
+# check decide when it is safe to merge. A red run leaves the PR open for a
+# human to diagnose; a later fix on develop re-runs the promotion CI.
+on:
+  schedule:
+    # After the 06:17 UTC nightly full run, and off the top of the hour to avoid
+    # GitHub Actions' busiest cron window.
+    - cron: '17 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: promote-develop-to-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require promotion token
+        env:
+          PROMOTION_TOKEN: ${{ secrets.SYNC_PR_TOKEN }}
+        run: |
+          if [ -z "$PROMOTION_TOKEN" ]; then
+            echo "SYNC_PR_TOKEN is required to open promotion PRs and trigger CI" >&2
+            exit 1
+          fi
+
+      - name: Open promotion PR and enable auto-merge
+        uses: actions/github-script@v9
+        with:
+          # GITHUB_TOKEN-created PRs do not trigger downstream workflows, and
+          # this organization blocks that token from creating PRs. Reuse the
+          # existing repo-scoped automation token used by the sync workflows.
+          github-token: ${{ secrets.SYNC_PR_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const base = 'main';
+            const head = 'develop';
+
+            const [baseCommit, headCommit] = await Promise.all([
+              github.rest.repos.getCommit({ owner, repo, ref: base }),
+              github.rest.repos.getCommit({ owner, repo, ref: head }),
+            ]);
+
+            // Promotions are squash-merged, so the two branches intentionally
+            // have different commit IDs after a successful promotion. Compare
+            // their trees instead: equal trees mean there is no content to PR.
+            if (baseCommit.data.commit.tree.sha === headCommit.data.commit.tree.sha) {
+              core.info(`${head} has no content to promote.`);
+              return;
+            }
+
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              base,
+              head: `${owner}:${head}`,
+              per_page: 100,
+            });
+            if (open.length > 1) {
+              core.setFailed(`Found ${open.length} open ${head} -> ${base} pull requests.`);
+              return;
+            }
+
+            let pull = open[0];
+            if (!pull) {
+              const created = await github.rest.pulls.create({
+                owner,
+                repo,
+                base,
+                head,
+                title: 'Promote develop to main',
+                body: [
+                  'Daily automated promotion of `develop` to the release-ready `main` branch.',
+                  '',
+                  'The repository ruleset requires the full `CI Passed` gate. This PR will',
+                  'squash-merge automatically when that gate is green; failures leave it open',
+                  'until the underlying issue is fixed on `develop`.',
+                ].join('\n'),
+              });
+              pull = created.data;
+              core.info(`Opened promotion PR #${pull.number}.`);
+            } else {
+              core.info(`Reusing promotion PR #${pull.number}.`);
+            }
+
+            if (pull.draft) {
+              core.setFailed(`Promotion PR #${pull.number} is unexpectedly a draft.`);
+              return;
+            }
+            if (pull.auto_merge) {
+              core.info(`Auto-merge is already enabled on PR #${pull.number}.`);
+              return;
+            }
+
+            await github.graphql(
+              `mutation EnablePromotionAutoMerge($pullRequestId: ID!) {
+                enablePullRequestAutoMerge(input: {
+                  pullRequestId: $pullRequestId
+                  mergeMethod: SQUASH
+                }) {
+                  pullRequest { number }
+                }
+              }`,
+              { pullRequestId: pull.node_id },
+            );
+            core.info(`Enabled squash auto-merge on PR #${pull.number}.`);
