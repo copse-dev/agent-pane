@@ -5,20 +5,16 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { ToolRegistry, setPermissionGateForTests } from '../tool-registry.ts'
 import {
-  ToolingLocalNativePackRuntimeController,
-  type LocalNativePackRuntimeController,
-} from './local-native-pack-controller.ts'
-import {
-  createLocalNativePackTrustRecord,
-  discoverLocalNativePack,
-  type LocalNativePackCandidate,
-} from './local-native-pack.ts'
-import type { LocalNativeRegistrations } from './local-native-pack-protocol.ts'
+  ToolingPackToolRuntimeController,
+  type PackToolRuntimeController,
+} from './pack-tool-controller.ts'
+import { discoverPackToolSource, type PackToolSourceCandidate } from './pack-tool-source.ts'
+import type { PackToolRegistrations } from './pack-tool-protocol.ts'
 
 const roots: string[] = []
 
-async function candidate(toolNames = ['personal_judge']): Promise<LocalNativePackCandidate> {
-  const root = await mkdtemp(join(tmpdir(), 'copse-local-native-controller-'))
+async function candidate(toolNames = ['personal_judge']): Promise<PackToolSourceCandidate> {
+  const root = await mkdtemp(join(tmpdir(), 'copse-pack-tool-controller-'))
   roots.push(root)
   await mkdir(join(root, 'dist'))
   await writeFile(join(root, 'dist', 'index.mjs'), 'export function activate() {}\n')
@@ -26,18 +22,16 @@ async function candidate(toolNames = ['personal_judge']): Promise<LocalNativePac
     join(root, 'copse-pack.json'),
     JSON.stringify({
       name: 'personal.controller-test',
-      tools: { native: toolNames },
-      localNative: {
-        entrypoint: 'dist/index.mjs',
-        sdkVersion: 1,
-        capabilities: ['native-tools'],
+      tools: {
+        provides: toolNames,
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
     }),
   )
-  return discoverLocalNativePack(root)
+  return discoverPackToolSource(root)
 }
 
-function fakeRuntime(registrations: LocalNativeRegistrations): LocalNativePackRuntimeController & {
+function fakeRuntime(registrations: PackToolRegistrations): PackToolRuntimeController & {
   disables: string[]
 } {
   let running = false
@@ -55,8 +49,7 @@ function fakeRuntime(registrations: LocalNativeRegistrations): LocalNativePackRu
     },
     isRunning: () => running,
     registrations: () => registrations,
-    invoke: (_packId, _kind, _registrationId, input) =>
-      Promise.resolve({ result: JSON.stringify(input) }),
+    invoke: (_packId, _registrationId, input) => Promise.resolve({ result: JSON.stringify(input) }),
   }
 }
 
@@ -65,8 +58,8 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-describe('ToolingLocalNativePackRuntimeController', () => {
-  it('registers exact manifest tools, invokes them, and unregisters on disable', async () => {
+describe('ToolingPackToolRuntimeController', () => {
+  it('registers exact declared tools, invokes them, and unregisters on disable', async () => {
     const pack = await candidate()
     const runtime = fakeRuntime({
       tools: [
@@ -78,13 +71,9 @@ describe('ToolingLocalNativePackRuntimeController', () => {
       ],
     })
     const registry = new ToolRegistry()
-    const controller = new ToolingLocalNativePackRuntimeController(
-      registry,
-      () => Promise.reject(new Error('unused')),
-      runtime,
-    )
+    const controller = new ToolingPackToolRuntimeController(registry, runtime)
 
-    await controller.enable(pack, createLocalNativePackTrustRecord(pack))
+    await controller.enable(pack)
     assert.equal(registry.has('personal_judge'), true)
     setPermissionGateForTests(() => Promise.resolve(true))
     assert.deepEqual(
@@ -102,16 +91,9 @@ describe('ToolingLocalNativePackRuntimeController', () => {
     const runtime = fakeRuntime({
       tools: [{ name: 'other_tool', description: 'Unexpected.', inputSchema: {} }],
     })
-    const controller = new ToolingLocalNativePackRuntimeController(
-      new ToolRegistry(),
-      () => Promise.reject(new Error('unused')),
-      runtime,
-    )
+    const controller = new ToolingPackToolRuntimeController(new ToolRegistry(), runtime)
 
-    await assert.rejects(
-      controller.enable(pack, createLocalNativePackTrustRecord(pack)),
-      /registered tools not shown in its manifest/,
-    )
+    await assert.rejects(controller.enable(pack), /registered tools not declared/i)
     assert.deepEqual(runtime.disables, ['personal.controller-test'])
   })
 })

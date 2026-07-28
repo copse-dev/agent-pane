@@ -622,12 +622,8 @@ export interface ApiClient {
     setEnabled: (id: string, enabled: boolean) => Promise<PacksListResult>
     /** Persist one pack-scoped setting value under the manifest's declared schema (P3). */
     setSetting: (id: string, key: string, value: unknown) => Promise<PacksListResult>
-    /** Choose and register one local-native pack directory through a native host dialog. */
-    addLocalNativeSource: () => Promise<PacksListResult>
-    /** Approve exactly the currently displayed content hash and requested authority. */
-    approveLocalNative: (id: string, contentHash: string) => Promise<PacksListResult>
-    /** Revoke native authority while retaining the installed source and storage. */
-    revokeLocalNative: (id: string) => Promise<PacksListResult>
+    /** Choose and register one pack directory through a native host dialog. */
+    addSource: () => Promise<PacksListResult>
   }
   automations: {
     list: (projectId: string) => Promise<AutomationSchedule[]>

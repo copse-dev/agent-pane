@@ -152,4 +152,20 @@ describe('packManifestFromPluginJson — user-pack trust hardening (P1 review)',
     assert.notEqual(a.name, b.name)
     assert.equal(a.name, 'unnamed-pack-dir-a')
   })
+
+  it('preserves an explicitly selected pack tool behavior without changing its trust tier', () => {
+    const manifest = packManifestFromPluginJson({
+      name: 'personal.review-tools',
+      tools: {
+        provides: ['personal_judge'],
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+      },
+    })
+
+    assert.equal(manifest.trust, 'user')
+    assert.deepEqual(manifest.tools, {
+      provides: ['personal_judge'],
+      runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
+    })
+  })
 })

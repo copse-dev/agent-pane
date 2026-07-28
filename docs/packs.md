@@ -37,8 +37,9 @@ user packs share the manifest, registry, Settings surface, and disable semantics
 First-party packs additionally supply typed runtime contributions —
 `AgentStreamChunk` emission, live loop-state access, real renderer views — which
 is why the executable bits (function hooks, native tool registrations) live on
-the runtime `RegisteredPack.contributions`, not in the serializable manifest. A
-user pack can never smuggle code through its `plugin.json`.
+the runtime `RegisteredPack.contributions`, not in the serializable manifest.
+The one user-code exception is an explicitly selected pack's isolated
+`tools.runtime`; it never imports code into Electron main.
 
 `packManifestFromPluginJson()` maps a discovered `plugin.json` into a
 `PackManifest` (a user pack): the existing top-level `skills` / `mcpServers`
@@ -49,20 +50,18 @@ packs into the registry is **not wired yet** — until it is, skills/MCP from a
 `plugin.json` still load via Cursor plugin discovery (see
 [`docs/adding-a-pack.md`](adding-a-pack.md)).
 
-An explicitly selected **local-native** source is a distinct host-assigned
-elevation, not general plugin discovery. Its `copse-pack.json` may request a
-versioned native runtime. The host validates the manifest/tree, rejects
-symlinks and escaping entrypoints, computes a deterministic content hash, and
-registers the pack disabled. Settings records approval only for the canonical
-path, hash, capabilities, origins, and renderer slots shown to the user; a
-change to any of them invalidates the match. P1 keeps even an approved pack
-inert; the landed P2 macOS host starts it only after explicit enablement. The
-host re-hashes the source, materializes and validates a content-addressed snapshot,
-and executes only that snapshot in a standalone SDK-v1 worker. The sandbox
-denies direct network and filesystem writes. P1/P2 permits only the
-`native-tools` capability; later model-route, browser, attachment, session, and
-renderer authority is rejected until the corresponding #1336 phases land.
-Without the OS sandbox, execution fails closed.
+An explicitly selected pack directory is an ordinary **user** pack, not a new
+trust tier. Its `copse-pack.json` can currently declare one supported behavior:
+tool names under `tools.provides`, implemented by a versioned `tools.runtime`.
+The host validates the manifest/tree, rejects symlinks and escaping entrypoints,
+and computes a deterministic content hash. Adding the directory is the current
+explicit opt-in; behavior-derived installation consent is future product work.
+At startup the host re-hashes the source, materializes and validates a
+content-addressed snapshot, and executes only that snapshot in a standalone
+API-v1 worker. The sandbox denies direct network and filesystem writes, and the
+worker can register only the tool names declared by the manifest. Model routes,
+browser access, attachments, sessions, renderer contributions, and host gateways
+have no declarations in this phase. Without the OS sandbox, execution fails closed.
 
 ## Registry and lifecycle
 
@@ -100,9 +99,9 @@ groups every pack's contributions by pack id and owns the lifecycle:
   revoked. There is no partial state.
 - **Storage survives disable** — `storage(id)` is a namespaced bag that is never
   cleared on disable (decision 17), like a disabled browser extension's data.
-- **Dynamic local source removal** — `unregister(id)` removes a reconciled
-  local-native registration while retaining its namespaced storage. Reopening
-  or refreshing revalidates the selected source before registering it disabled.
+- **Dynamic selected-source reconciliation** — `unregister(id)` removes a
+  selected pack whose directory disappears or changes, while retaining its
+  namespaced storage. The refreshed manifest is validated before registration.
 
 First-party packs are the static list in
 [`packages/agent/src/packs/first-party-packs.ts`](../packages/agent/src/packs/first-party-packs.ts).
@@ -182,11 +181,9 @@ settings the manifest declares. This is the `about:addons` of Copse.
   surface: `api.packs.*` in the preload). Values are validated to
   `boolean` / `number` / `string ≤ 8192` so a compromised renderer cannot
   stuff arbitrary payloads.
-- **Local-native review IPC.** Source selection is owned by the main process's
-  native directory picker. `packs:addLocalNativeSource`,
-  `packs:approveLocalNative`, and `packs:revokeLocalNative` expose only validated
-  candidates and exact hash approvals; the renderer never supplies a path to
-  approve indirectly.
+- **Selected-pack IPC.** Source selection is owned by the main process's native
+  directory picker. `packs:addSource` exposes only a host-validated candidate;
+  the renderer never supplies a path directly.
 - **Renderer.** The Settings dialog gains a `Packs` nav section
   (`src/renderer/views/settings-dialog.ts`). Each row shows the pack's name +
   version + trust badge, an enable toggle, a description, contribution chips
@@ -195,8 +192,7 @@ settings the manifest declares. This is the `about:addons` of Copse.
   `settings` schema. Disabled rows are visually greyed via `pack-row-disabled`
   so the effect of the toggle is immediately visible; per-pack settings stay
   editable so a user can configure a disabled pack before re-enabling it.
-  Local-native review rows stay full-contrast while inert so their requested
-  authority remains legible.
+  Selected-directory rows additionally show their source path and content hash.
 - **Projection helper.**
   [`packages/agent/src/packs/pack-summary.ts`](../packages/agent/src/packs/pack-summary.ts)
   is the pure `summarizePacks(registry, readSetting)` that projects the shared

@@ -5,20 +5,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import {
-  LocalNativePackHost,
-  LocalNativePackHostUnavailable,
-  localNativePackSandboxOverlay,
-  type LocalNativePackHostDependencies,
-} from './local-native-pack-host.ts'
-import {
-  createLocalNativePackTrustRecord,
-  discoverLocalNativePack,
-  type LocalNativePackCandidate,
-} from './local-native-pack.ts'
+  PackToolHost,
+  PackToolHostUnavailable,
+  packToolSandboxOverlay,
+  type PackToolHostDependencies,
+} from './pack-tool-host.ts'
+import { discoverPackToolSource, type PackToolSourceCandidate } from './pack-tool-source.ts'
 
 const FAKE_WORKER = String.raw`
 let buffer = '';
-let invokeId = 0;
 const send = (body) => process.stdout.write(JSON.stringify(body) + '\n');
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
@@ -33,10 +28,7 @@ process.stdin.on('data', (chunk) => {
         tools: [{ name: 'personal_judge', description: 'Judge input', inputSchema: { type: 'object' } }],
       }});
     } else if (req.op === 'invoke') {
-      invokeId = req.id;
-      send({ type: 'host-call', id: 41, capability: 'native-tools', method: 'fixture', args: req.input });
-    } else if (req.op === 'host-call-result') {
-      send({ type: 'response', id: invokeId, ok: req.ok, result: req.result, error: req.error });
+      send({ type: 'response', id: req.id, ok: true, result: { answer: req.input.prompt } });
     } else if (req.op === 'shutdown') {
       send({ type: 'response', id: req.id, ok: true });
     }
@@ -47,8 +39,8 @@ process.stdin.on('data', (chunk) => {
 
 const tempRoots: string[] = []
 
-async function fixture(): Promise<LocalNativePackCandidate> {
-  const root = await mkdtemp(join(tmpdir(), 'copse-local-native-host-'))
+async function fixture(): Promise<PackToolSourceCandidate> {
+  const root = await mkdtemp(join(tmpdir(), 'copse-pack-tool-host-'))
   tempRoots.push(root)
   await mkdir(join(root, 'dist'))
   await writeFile(join(root, 'dist', 'index.mjs'), 'export async function activate() {}\n')
@@ -57,17 +49,16 @@ async function fixture(): Promise<LocalNativePackCandidate> {
     JSON.stringify({
       name: 'personal.host-test',
       version: '0.1.0',
-      localNative: {
-        entrypoint: 'dist/index.mjs',
-        sdkVersion: 1,
-        capabilities: ['native-tools'],
+      tools: {
+        provides: ['personal_judge'],
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
     }),
   )
-  return discoverLocalNativePack(root)
+  return discoverPackToolSource(root)
 }
 
-const fakeDependencies: LocalNativePackHostDependencies = {
+const fakeDependencies: PackToolHostDependencies = {
   sandboxAvailable: () => true,
   materialize: (candidate) => Promise.resolve(candidate),
   spawn: () => Promise.resolve(spawn(process.execPath, ['-e', FAKE_WORKER], { stdio: 'pipe' })),
@@ -77,76 +68,77 @@ afterEach(async () => {
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-describe('local native pack host', () => {
+describe('pack tool host', () => {
   it('fails closed before spawning when the OS sandbox is unavailable', async () => {
     const candidate = await fixture()
     let spawned = false
     await assert.rejects(
-      LocalNativePackHost.start(
-        candidate,
-        createLocalNativePackTrustRecord(candidate),
-        () => Promise.resolve(null),
-        {
-          sandboxAvailable: () => false,
-          materialize: (value) => Promise.resolve(value),
-          spawn: () => {
-            spawned = true
-            return fakeDependencies.spawn(candidate, 'unused')
-          },
+      PackToolHost.start(candidate, {
+        sandboxAvailable: () => false,
+        materialize: (value) => Promise.resolve(value),
+        spawn: () => {
+          spawned = true
+          return fakeDependencies.spawn(candidate, 'unused')
         },
-      ),
+      }),
       (error: unknown) =>
-        error instanceof LocalNativePackHostUnavailable && /failed closed/i.test(error.message),
+        error instanceof PackToolHostUnavailable && /failed closed/i.test(error.message),
     )
     assert.equal(spawned, false)
   })
 
-  it('re-hashes approval, registers contributions, and re-checks host calls', async () => {
-    const candidate = await fixture()
-    const calls: unknown[] = []
-    const host = await LocalNativePackHost.start(
-      candidate,
-      createLocalNativePackTrustRecord(candidate),
-      (call) => {
-        calls.push(call)
-        return Promise.resolve({ answer: 'ok' })
-      },
-      fakeDependencies,
-    )
+  it('registers and invokes tools through the bounded worker protocol', async () => {
+    const host = await PackToolHost.start(await fixture(), fakeDependencies)
 
     assert.deepEqual(
       host.registrations.tools.map((tool) => tool.name),
       ['personal_judge'],
     )
-    assert.deepEqual(await host.invoke('tool', 'personal_judge', { prompt: 'review this' }), {
-      answer: 'ok',
+    assert.deepEqual(await host.invoke('personal_judge', { prompt: 'review this' }), {
+      answer: 'review this',
     })
-    assert.deepEqual(calls, [
-      {
-        packId: 'personal.host-test',
-        capability: 'native-tools',
-        method: 'fixture',
-        args: { prompt: 'review this' },
-      },
-    ])
     await host.stop()
   })
 
-  it('invalidates approval before spawn when source bytes change', async () => {
+  it('fails closed when the worker emits malformed protocol data', async () => {
     const candidate = await fixture()
-    const trust = createLocalNativePackTrustRecord(candidate)
+    await assert.rejects(
+      PackToolHost.start(candidate, {
+        ...fakeDependencies,
+        spawn: () =>
+          Promise.resolve(
+            spawn(process.execPath, ['-e', "process.stdout.write('not-json\\n')"], {
+              stdio: 'pipe',
+            }),
+          ),
+      }),
+      /invalid JSON/i,
+    )
+  })
+
+  it('rejects startup when the worker exits before initialization', async () => {
+    const candidate = await fixture()
+    await assert.rejects(
+      PackToolHost.start(candidate, {
+        ...fakeDependencies,
+        spawn: () =>
+          Promise.resolve(spawn(process.execPath, ['-e', 'process.exit(2)'], { stdio: 'pipe' })),
+      }),
+      /worker exited/i,
+    )
+  })
+
+  it('stops before spawn when source bytes change during startup', async () => {
+    const candidate = await fixture()
     await writeFile(
       join(candidate.sourcePath, 'dist', 'index.mjs'),
       'export const changed = true\n',
     )
-    await assert.rejects(
-      LocalNativePackHost.start(candidate, trust, () => Promise.resolve(null), fakeDependencies),
-      /changed after approval/i,
-    )
+    await assert.rejects(PackToolHost.start(candidate, fakeDependencies), /changed while/i)
   })
 
-  it('denies direct network and writes while allowing only pack/worker reads', () => {
-    const overlay = localNativePackSandboxOverlay(
+  it('denies direct network and writes while allowing only pack and worker reads', () => {
+    const overlay = packToolSandboxOverlay(
       '/Users/me/packs/example',
       '/Applications/Copse/worker.js',
     )

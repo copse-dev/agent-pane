@@ -15,7 +15,7 @@ lifecycle and internal design, see [`docs/packs.md`](./packs.md).
 | Add skills and/or MCP servers            | A Cursor-style plugin under `~/.cursor/plugins/`                                    | **Sources → Plugins** (and **MCP servers**) |
 | Add command hooks                        | Cursor / Claude / Copse hooks files                                                 | **Sources → Hooks**                         |
 | Add an in-process custom tool            | `<userData>/tools/*.mjs`                                                            | Used by the agent (approval-gated)          |
-| Add a personal local-native pack source  | Explicit folder selected in **Settings → Packs**                                    | **Packs** (inert review row)                |
+| Add a personal pack that provides tools  | Explicit folder selected in **Settings → Packs**                                    | **Packs** (ordinary user-pack row)          |
 | Author a full user pack row in **Packs** | Manifest shape exists (`plugin.json` + pack slots); host discovery is not wired yet | Not yet — see [Status](#status-user-packs)  |
 
 So: you can extend Copse today with the same _kinds_ of contributions a pack
@@ -62,20 +62,14 @@ Then restart Copse, or use **Settings → Sources → Reload** / reload MCP from
 
 Details and trust rules: [`docs/cursor-plugins.md`](./cursor-plugins.md).
 
-## Add a personal local-native source
+## Add a personal pack that provides tools
 
-The local-native slice is deliberately explicit: Copse does not scan arbitrary
-plugin directories for executable code. Choose **Settings → Packs → Add local
-native pack…** and select a folder containing `copse-pack.json`. Copse validates
-the manifest and source tree, computes a content hash, and shows the requested
-capabilities, origins, renderer slots, entrypoint, and SDK version before an
-approval can be recorded.
-
-The manifest's `trust` field cannot grant authority. The host assigns
-`local-native` only to a selected source, and binds approval to its canonical
-path, content hash, and exact requested authority. Editing any hashed file or
-changing the request makes the previous approval stop matching. Revocation
-keeps the source and pack storage but disables it.
+Executable tool behavior is deliberately explicit: Copse does not scan
+arbitrary plugin directories for code. Choose **Settings → Packs → Add pack…**
+and select a folder containing `copse-pack.json`. Selecting the folder is the
+current opt-in. Copse validates the manifest and source tree and computes a
+content hash used to create a consistent executable snapshot; the hash is not a
+separate trust tier or approval identity.
 
 Minimal manifest:
 
@@ -83,26 +77,27 @@ Minimal manifest:
 {
   "name": "personal.example",
   "version": "0.1.0",
-  "description": "A personal native pack",
-  "localNative": {
-    "entrypoint": "dist/index.mjs",
-    "sdkVersion": 1,
-    "capabilities": ["native-tools"]
-  },
-  "storage": { "namespace": "personal.example" }
+  "description": "A personal review-tool pack",
+  "tools": {
+    "provides": ["personal_judge"],
+    "runtime": {
+      "entrypoint": "dist/index.mjs",
+      "apiVersion": 1
+    }
+  }
 }
 ```
 
-After approval, enabling starts a standalone SDK-v1 worker. Copse re-hashes the
-selected source, copies only reviewed files into a content-addressed snapshot,
+Adding or enabling starts a standalone API-v1 worker. Copse re-hashes the
+selected source, copies the selected files into a content-addressed snapshot,
 validates the snapshot again, and runs it with direct network and filesystem
 writes denied. The runtime fails closed when Copse's macOS OS sandbox is not
 active; Windows and Linux execution are not supported by this slice.
 
-The P1/P2 SDK can register only reviewed native tool names. Model routes,
-attachments, browser-panel access, durable thread sessions, and renderer slots
-remain later phases of #1336 and are rejected by this runtime rather than being
-silently granted.
+The P1/P2 SDK can register only the tool names declared by `tools.provides`.
+Model routes, attachments, browser-panel access, durable thread sessions,
+renderer contributions, network origins, and host gateways return in later
+phases of #1336 when their concrete behavior and consent contracts are designed.
 
 ## Add hooks (command hooks)
 
@@ -189,11 +184,9 @@ until host discovery lands):
   ship in-process function hooks, native Copse tools, or level-3 renderer views
   — those stay first-party only.
 
-Local-native personal packs are a separate, host-assigned elevation. They share
-the registry and disable/history semantics, but may receive only the capabilities
-and origins in their matching approval record through the versioned isolated
-host API. They never become first-party and do not receive raw Electron or Node
-authority from their manifest.
+Explicitly selected personal packs remain ordinary user packs. Their executable
+tool behavior runs through the isolated versioned worker and never receives raw
+Electron authority from the manifest.
 
 ## Status: user packs
 
@@ -202,8 +195,8 @@ authority from their manifest.
 | Manifest types + JSON schema                       | Landed                     |
 | `packManifestFromPluginJson()` mapper              | Landed                     |
 | Settings → Packs list + enable/disable             | Landed (first-party packs) |
-| Explicit local-native source + exact review        | Landed                     |
-| Isolated native tools/model routes/browser gateway | Landed (macOS P2 slice)    |
+| Explicit selected-pack tool behavior               | Landed                     |
+| Isolated executable tools                          | Landed (macOS P2 slice)    |
 | Host disk discovery → register user packs          | **Not wired yet**          |
 | Runtime wiring of user-pack hooks/MCP via registry | Follows discovery          |
 

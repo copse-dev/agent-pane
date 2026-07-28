@@ -133,10 +133,10 @@ if (!isDemo) {
   })
   await esbuild.build({
     ...nodeOpts,
-    entryPoints: ['src/main/services/packs/local-native-pack-worker.ts'],
-    outfile: 'dist/main/local-native-pack-worker.js',
+    entryPoints: ['src/main/services/packs/pack-tool-worker.ts'],
+    outfile: 'dist/main/pack-tool-worker.js',
   })
-  assertParses('dist/main/local-native-pack-worker.js')
+  assertParses('dist/main/pack-tool-worker.js')
   // No `banner` here: askpass-helper.ts already starts with `#!/usr/bin/env node`
   // and esbuild preserves a source hashbang verbatim. Adding the banner too put a
   // second `#!…` on line 2 of the bundle, where it is not a hashbang but a syntax

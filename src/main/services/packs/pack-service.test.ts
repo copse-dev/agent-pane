@@ -34,18 +34,17 @@ import { AUTOMATIONS_PACK_ID } from '@copse/agent/packs/automations-pack.ts'
 import { storageDelete, storageGet, storageSet } from '../storage/storage.ts'
 import { __resetPackServiceForTests, createPackService, getPackService } from './pack-service.ts'
 import {
-  setLocalNativePackRuntimeController,
-  type LocalNativePackRuntimeController,
-} from './local-native-pack-controller.ts'
+  setPackToolRuntimeController,
+  type PackToolRuntimeController,
+} from './pack-tool-controller.ts'
 
 const PACK_DISABLED_KEY = 'packDisabled'
 const AUTOMATIONS_ENABLEMENT_MIGRATION_KEY = 'packMigration.automationsEnablement'
-const LOCAL_NATIVE_PACK_SOURCES_KEY = 'localNativePackSources'
-const LOCAL_NATIVE_PACK_TRUST_KEY = 'localNativePackTrust'
+const PACK_SOURCES_KEY = 'packSources'
 const packSettingsKey = (id: string): string => `pack.${id}.settings`
 const localPackRoots: string[] = []
 
-async function makeLocalNativePack(): Promise<string> {
+async function makeToolPack(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'copse-pack-service-local-'))
   localPackRoots.push(root)
   await mkdir(join(root, 'dist'))
@@ -54,12 +53,9 @@ async function makeLocalNativePack(): Promise<string> {
     join(root, 'copse-pack.json'),
     JSON.stringify({
       name: 'personal.local-tools',
-      tools: { native: ['personal_judge'] },
-      prompt: [{ id: 'local-steering', text: 'Use the adapter.', trust: 'trusted' }],
-      localNative: {
-        entrypoint: 'dist/index.mjs',
-        sdkVersion: 1,
-        capabilities: ['native-tools'],
+      tools: {
+        provides: ['personal_judge'],
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       },
     }),
   )
@@ -98,8 +94,7 @@ function clearStorage(): void {
   // Keep the prototype's one-time default-off migration out of unrelated cases;
   // its dedicated test below deletes this marker explicitly.
   storageSet(AUTOMATIONS_ENABLEMENT_MIGRATION_KEY, true)
-  storageSet(LOCAL_NATIVE_PACK_SOURCES_KEY, [])
-  storageSet(LOCAL_NATIVE_PACK_TRUST_KEY, [])
+  storageSet(PACK_SOURCES_KEY, [])
   storageSet(packSettingsKey('demo.pack'), {})
   storageSet(packSettingsKey('copse.other'), {})
 }
@@ -194,64 +189,35 @@ describe('PackService', () => {
     assert.deepEqual(storageGet(PACK_DISABLED_KEY), [])
   })
 
-  it('discovers local-native packs inert and binds approval to the exact content hash', async () => {
+  it('discovers selected tool packs as ordinary user packs and refreshes their hash', async () => {
     const registry = makeRegistry()
     const service = createPackService(registry)
-    const source = await makeLocalNativePack()
+    const source = await makeToolPack()
 
-    await service.addLocalNativeSource(source)
+    await service.addPackSource(source)
     const discovered = service.list().find((pack) => pack.id === 'personal.local-tools')
     assert.ok(discovered)
-    assert.equal(discovered.trust, 'local-native')
+    assert.equal(discovered.trust, 'user')
     assert.equal(discovered.enabled, false)
-    assert.equal(discovered.approval?.status, 'required')
     assert.ok(discovered.source)
     assert.equal(discovered.source.path, await realpath(source))
     assert.match(discovered.source.contentHash, /^sha256:[a-f0-9]{64}$/)
     assert.deepEqual(discovered.contributions.toolNames, ['personal_judge'])
     assert.equal(registry.activeToolNames().includes('personal_judge'), false)
-    assert.ok(parseStringList(storageGet(PACK_DISABLED_KEY)).includes('personal.local-tools'))
-
-    await assert.rejects(
-      service.setEnabled('personal.local-tools', true),
-      /requires approval for its current content/,
-    )
-    await service.approveLocalNativePack('personal.local-tools', discovered.source.contentHash)
-    const approved = service.list().find((pack) => pack.id === 'personal.local-tools')
-    assert.ok(approved)
-    assert.equal(approved.approval?.status, 'approved')
-    await assert.rejects(
-      service.setEnabled('personal.local-tools', true),
-      /runtime host is not available yet/,
-    )
+    assert.equal(parseStringList(storageGet(PACK_DISABLED_KEY)).includes(discovered.id), false)
 
     await writeFile(join(source, 'dist', 'index.mjs'), 'export default { changed: true }\n')
-    await service.refreshLocalNativePacks()
+    await service.refreshPackSources()
     const changed = service.list().find((pack) => pack.id === 'personal.local-tools')
     assert.ok(changed)
     assert.ok(changed.source)
-    assert.equal(changed.approval?.status, 'required')
     assert.notEqual(changed.source.contentHash, discovered.source.contentHash)
   })
 
-  it('revokes a local-native approval without deleting its source or storage', async () => {
-    const service = createPackService(makeRegistry())
-    await service.addLocalNativeSource(await makeLocalNativePack())
-    const pack = service.list().find((candidate) => candidate.id === 'personal.local-tools')
-    assert.ok(pack?.source)
-    await service.approveLocalNativePack(pack.id, pack.source.contentHash)
-    await service.revokeLocalNativePack(pack.id)
-    assert.equal(
-      service.list().find((candidate) => candidate.id === pack.id)?.approval?.status,
-      'required',
-    )
-    assert.deepEqual(storageGet(LOCAL_NATIVE_PACK_TRUST_KEY), [])
-  })
-
-  it('starts and stops the isolated runtime before flipping local-native enablement', async () => {
+  it('starts selected tool behavior on add and stops it before disabling the pack', async () => {
     const calls: string[] = []
     let running = false
-    const controller: LocalNativePackRuntimeController = {
+    const controller: PackToolRuntimeController = {
       enable(candidate) {
         calls.push(`enable:${candidate.manifest.name}`)
         running = true
@@ -266,15 +232,12 @@ describe('PackService', () => {
       registrations: () => null,
       invoke: () => Promise.resolve(null),
     }
-    setLocalNativePackRuntimeController(controller)
+    setPackToolRuntimeController(controller)
     const registry = makeRegistry()
     const service = createPackService(registry)
-    await service.addLocalNativeSource(await makeLocalNativePack())
+    await service.addPackSource(await makeToolPack())
     const pack = service.list().find((candidate) => candidate.id === 'personal.local-tools')
     assert.ok(pack?.source)
-    await service.approveLocalNativePack(pack.id, pack.source.contentHash)
-
-    await service.setEnabled(pack.id, true)
     assert.equal(registry.isEnabled(pack.id), true)
     assert.equal(parseStringList(storageGet(PACK_DISABLED_KEY)).includes(pack.id), false)
 
