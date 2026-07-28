@@ -9,13 +9,22 @@ import {
   zPackToolHostRequest,
   type PackToolWorkerMessage,
 } from './pack-tool-protocol.ts'
-import { activatePackTools, type ActivatedPackTools } from './pack-tool-sdk.ts'
+import {
+  activatePackTools,
+  type ActivatedPackTools,
+  type PackModelSessionApi,
+} from './pack-tool-sdk.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { parseJsonUnknown } from '@shared/unknown-value.ts'
 
 let activated: ActivatedPackTools | null = null
 let buffer = ''
 const activeInvocations = new Map<number, AbortController>()
+let nextSessionRequestId = 1
+const pendingSessionRequests = new Map<
+  number,
+  { resolve: (value: unknown) => void; reject: (error: Error) => void }
+>()
 
 function writeMessage(message: PackToolWorkerMessage): void {
   process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -38,6 +47,41 @@ function writeResponse(id: number, ok: boolean, result?: unknown, error?: string
       error: `Pack tool returned a non-serializable result: ${errorMessage(err)}`,
     })
   }
+}
+
+function callSession(
+  invocationId: number,
+  op: 'get' | 'set' | 'delete',
+  state?: unknown,
+): Promise<unknown> {
+  const id = nextSessionRequestId++
+  return new Promise<unknown>((resolve, reject) => {
+    pendingSessionRequests.set(id, { resolve, reject })
+    try {
+      writeMessage({
+        type: 'session-call',
+        id,
+        invocationId,
+        op,
+        ...(state !== undefined ? { state } : {}),
+      })
+    } catch (err) {
+      pendingSessionRequests.delete(id)
+      reject(new Error(`Pack session request is not serializable: ${errorMessage(err)}`))
+    }
+  })
+}
+
+function sessionApi(invocationId: number): PackModelSessionApi {
+  return Object.freeze({
+    get: () => callSession(invocationId, 'get'),
+    async set(state: unknown) {
+      await callSession(invocationId, 'set', state)
+    },
+    async delete() {
+      await callSession(invocationId, 'delete')
+    },
+  })
 }
 
 async function dispatch(line: string): Promise<void> {
@@ -71,11 +115,15 @@ async function dispatch(line: string): Promise<void> {
       const controller = new AbortController()
       activeInvocations.set(request.id, controller)
       try {
-        const result = await activated.invoke(
-          request.registrationId,
-          request.input,
-          controller.signal,
-        )
+        const result =
+          request.kind === 'tool'
+            ? await activated.invokeTool(request.registrationId, request.input, controller.signal)
+            : await activated.invokeModel(
+                request.registrationId,
+                request.input,
+                controller.signal,
+                sessionApi(request.id),
+              )
         writeResponse(request.id, true, result)
       } catch (err) {
         writeResponse(request.id, false, undefined, errorMessage(err))
@@ -89,8 +137,20 @@ async function dispatch(line: string): Promise<void> {
       writeResponse(request.id, true)
       return
     }
+    case 'session-result': {
+      const pending = pendingSessionRequests.get(request.sessionRequestId)
+      if (!pending) return
+      pendingSessionRequests.delete(request.sessionRequestId)
+      if (request.ok) pending.resolve(request.result)
+      else pending.reject(new Error(request.error ?? 'Pack session request failed.'))
+      return
+    }
     case 'shutdown': {
       for (const controller of activeInvocations.values()) controller.abort()
+      for (const pending of pendingSessionRequests.values()) {
+        pending.reject(new Error('Pack runtime shut down.'))
+      }
+      pendingSessionRequests.clear()
       writeResponse(request.id, true)
       setImmediate(() => process.exit(0))
       return

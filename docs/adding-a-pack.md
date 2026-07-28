@@ -1,7 +1,7 @@
 # Adding a pack to Copse
 
-A **pack** bundles related agent capabilities — tools, hooks, prompt blocks, UI
-panels, and pack-scoped settings — behind one enable/disable toggle in
+A **pack** bundles related agent capabilities — tools, whole-thread model routes,
+hooks, prompt blocks, UI panels, and pack-scoped settings — behind one enable/disable toggle in
 **Settings → Packs**.
 
 This is the practical guide for installing or authoring one. For the registry
@@ -9,14 +9,14 @@ lifecycle and internal design, see [`docs/packs.md`](./packs.md).
 
 ## What you can do today
 
-| Goal                                     | Where it lives today                                                                | Shows up in Settings…                       |
-| ---------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
-| Turn a shipped Copse feature on or off   | First-party packs (`copse.todos`, `copse.pii-redaction`, …)                         | **Packs** (toggle per row)                  |
-| Add skills and/or MCP servers            | A Cursor-style plugin under `~/.cursor/plugins/`                                    | **Sources → Plugins** (and **MCP servers**) |
-| Add command hooks                        | Cursor / Claude / Copse hooks files                                                 | **Sources → Hooks**                         |
-| Add an in-process custom tool            | `<userData>/tools/*.mjs`                                                            | Used by the agent (approval-gated)          |
-| Add a personal pack that provides tools  | Explicit folder selected in **Settings → Packs**                                    | **Packs** (ordinary user-pack row)          |
-| Author a full user pack row in **Packs** | Manifest shape exists (`plugin.json` + pack slots); host discovery is not wired yet | Not yet — see [Status](#status-user-packs)  |
+| Goal                                         | Where it lives today                                                                | Shows up in Settings…                       |
+| -------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
+| Turn a shipped Copse feature on or off       | First-party packs (`copse.todos`, `copse.pii-redaction`, …)                         | **Packs** (toggle per row)                  |
+| Add skills and/or MCP servers                | A Cursor-style plugin under `~/.cursor/plugins/`                                    | **Sources → Plugins** (and **MCP servers**) |
+| Add command hooks                            | Cursor / Claude / Copse hooks files                                                 | **Sources → Hooks**                         |
+| Add an in-process custom tool                | `<userData>/tools/*.mjs`                                                            | Used by the agent (approval-gated)          |
+| Add a personal pack with executable behavior | Explicit folder selected in **Settings → Packs**                                    | **Packs** (ordinary user-pack row)          |
+| Author a full user pack row in **Packs**     | Manifest shape exists (`plugin.json` + pack slots); host discovery is not wired yet | Not yet — see [Status](#status-user-packs)  |
 
 So: you can extend Copse today with the same _kinds_ of contributions a pack
 owns, but a third-party bundle does **not** yet appear as its own row under
@@ -62,9 +62,9 @@ Then restart Copse, or use **Settings → Sources → Reload** / reload MCP from
 
 Details and trust rules: [`docs/cursor-plugins.md`](./cursor-plugins.md).
 
-## Add a personal pack that provides tools
+## Add a personal pack with executable behavior
 
-Executable tool behavior is deliberately explicit: Copse does not scan
+Executable pack behavior is deliberately explicit: Copse does not scan
 arbitrary plugin directories for code. Choose **Settings → Packs → Add pack…**
 and select a folder containing `copse-pack.json`. Selecting the folder is the
 current opt-in. Copse validates the manifest and source tree and computes a
@@ -77,13 +77,23 @@ Minimal manifest:
 {
   "name": "personal.example",
   "version": "0.1.0",
-  "description": "A personal review-tool pack",
+  "description": "A personal review pack",
   "tools": {
-    "provides": ["personal_judge"],
-    "runtime": {
-      "entrypoint": "dist/index.mjs",
-      "apiVersion": 1
-    }
+    "provides": ["personal_judge"]
+  },
+  "models": {
+    "provides": [
+      {
+        "id": "reference-judge",
+        "label": "Reference judge",
+        "group": "Personal models",
+        "supportsImages": true
+      }
+    ]
+  },
+  "runtime": {
+    "entrypoint": "dist/index.mjs",
+    "apiVersion": 1
   }
 }
 ```
@@ -94,10 +104,57 @@ validates the snapshot again, and runs it with direct network and filesystem
 writes denied. The runtime fails closed when Copse's macOS OS sandbox is not
 active; Windows and Linux execution are not supported by this slice.
 
-The P1/P2 SDK can register only the tool names declared by `tools.provides`.
-Model routes, attachments, browser-panel access, durable thread sessions,
-renderer contributions, network origins, and host gateways return in later
-phases of #1336 when their concrete behavior and consent contracts are designed.
+The runtime must register exactly the tool names in `tools.provides` and model
+route ids in `models.provides`. A pack may declare either behavior or both.
+Enabling it once makes those contributions available for new work; invoking a
+declared route does not add a second per-turn pack approval.
+
+Model routes appear in the thread's model picker. Each invocation receives:
+
+- the current prompt;
+- up to eight validated current-turn PNG, JPEG, WebP, or GIF attachments as
+  base64 (8 MB decoded total), when the route declares `supportsImages`;
+- a newest-biased, text-only handoff of up to 32 prior messages and
+  64 KiB; and
+- a session API durably scoped by Copse to this pack id and thread id.
+
+The session API lets a handler remember an opaque remote conversation id. A
+handler can therefore reuse an intact external conversation and consume the
+bounded history only when it has to recreate one. Copse binds the identity; the
+worker cannot select another pack's or thread's session.
+
+Minimal `dist/index.mjs`:
+
+```js
+export function activate(api) {
+  api.registerTool(
+    {
+      name: 'personal_judge',
+      description: 'Review a prompt with the personal judge.',
+      inputSchema: { type: 'object', additionalProperties: true },
+    },
+    (input) => ({ result: `Received ${JSON.stringify(input)}` }),
+  )
+
+  api.registerModelRoute('reference-judge', async (turn, { session, signal }) => {
+    const previous = await session.get()
+    if (signal.aborted) throw new Error('Cancelled')
+
+    // A later browser/network behavior can replace this local example and save
+    // its external conversation id here.
+    await session.set(previous ?? { createdAt: new Date().toISOString() })
+    return { text: `Received: ${turn.prompt}` }
+  })
+}
+```
+
+The model result is either a string or `{ text, inputTokens?, outputTokens? }`.
+Session state must be JSON and is capped at 256 KiB per thread.
+
+P3 deliberately adds no generic host gateway. The isolated worker still has no
+direct network or browser-panel access, so a route that delegates to a website
+needs the concrete P4 browser behavior. Renderer contributions, origin grants,
+and arbitrary `host.call` machinery are also not exposed yet.
 
 ## Add hooks (command hooks)
 
@@ -128,7 +185,9 @@ slots. JSON Schema:
 pack manifest
 ├── name / version / description
 ├── skills      relative skills directory (same as plugin.json)
-├── tools       { "mcpServers": ".mcp.json" }   # user packs — not native tools
+├── tools       MCP config and/or selected-pack tool ids
+├── models      selected-pack whole-thread model routes
+├── runtime     shared isolated worker entrypoint for tools/models
 ├── hooks       [ { "event", "command" }, … ]   # command hooks
 ├── prompt      steering blocks (always treated as untrusted for user packs)
 ├── ui          level-1 cards / level-2 list|tree panels
@@ -185,7 +244,7 @@ until host discovery lands):
   — those stay first-party only.
 
 Explicitly selected personal packs remain ordinary user packs. Their executable
-tool behavior runs through the isolated versioned worker and never receives raw
+behavior runs through the isolated versioned worker and never receives raw
 Electron authority from the manifest.
 
 ## Status: user packs
@@ -195,8 +254,10 @@ Electron authority from the manifest.
 | Manifest types + JSON schema                       | Landed                     |
 | `packManifestFromPluginJson()` mapper              | Landed                     |
 | Settings → Packs list + enable/disable             | Landed (first-party packs) |
-| Explicit selected-pack tool behavior               | Landed                     |
-| Isolated executable tools                          | Landed (macOS P2 slice)    |
+| Explicit selected-pack tools and model routes      | Landed                     |
+| Isolated executable behavior                       | Landed (macOS P2/P3 slice) |
+| Bounded image/transcript handoff + thread sessions | Landed                     |
+| Browser/network/renderer behavior gateways         | **Not wired yet (P4)**     |
 | Host disk discovery → register user packs          | **Not wired yet**          |
 | Runtime wiring of user-pack hooks/MCP via registry | Follows discovery          |
 

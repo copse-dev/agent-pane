@@ -43,12 +43,24 @@ describe('settings packs (about:addons)', function () {
         description: 'A selected reference tool pack.',
         tools: {
           provides: ['personal_reference_judge'],
-          runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
         },
+        models: {
+          provides: [
+            {
+              id: 'reference-judge',
+              label: 'Reference judge',
+              group: 'Personal models',
+              description: 'A private second-opinion route.',
+              supportsImages: true,
+            },
+          ],
+        },
+        runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       }),
     )
     seedEmptyProject(process.cwd(), 'e2e-settings-packs', {
       packSources: [localPackRoot],
+      model: 'pack-model:personal.reference-tools:reference-judge',
     })
     await browser.reloadSession()
   })
@@ -150,8 +162,9 @@ describe('settings packs (about:addons)', function () {
     assert.equal(await packToolRow.getAttribute('data-enabled'), 'false')
     assert.equal(await packToolRow.$('input.pack-toggle-input').isEnabled(), true)
     const localText = await packToolRow.getText()
-    assert.match(localText, /executable tools run in isolation/i)
+    assert.match(localText, /executable behaviors run in isolation/i)
     assert.match(localText, /Tools × 1/)
+    assert.match(localText, /Models × 1/)
     assert.match(localText, /sha256:[a-f0-9]{64}/)
 
     await packToolRow.scrollIntoView()
@@ -199,5 +212,23 @@ describe('settings packs (about:addons)', function () {
     assert.ok(cls.includes('pack-row-disabled'), 'disabled row must be visually greyed')
 
     await saveElementScreenshot('#settings-dialog', 'settings-packs.png')
+
+    // The same manifest metadata is represented in the thread model picker.
+    // This fixture deliberately registers no handlers, so the selected route
+    // remains visible with its friendly label but cannot be run.
+    await browser.keys('Escape')
+    await dialog.waitForDisplayed({ reverse: true })
+    const footerPicker = $('.footer-model-host')
+    await footerPicker.$('.model-picker-trigger').click()
+    const personalModel = footerPicker.$(
+      '.model-picker-option[data-value="pack-model:personal.reference-tools:reference-judge"]',
+    )
+    await personalModel.waitForExist({ timeout: 15_000 })
+    assert.equal(await personalModel.getText(), 'Reference judge (pack disabled)')
+    assert.equal(await personalModel.isEnabled(), false)
+    await saveElementScreenshot(
+      '.footer-model-host .model-picker-menu',
+      'personal-pack-thread-model-picker.png',
+    )
   })
 })

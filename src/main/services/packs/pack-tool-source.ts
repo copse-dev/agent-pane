@@ -18,18 +18,35 @@ const MAX_HASHED_BYTES = 100 * 1024 * 1024
 const SKIPPED_DIRECTORIES = new Set(['.git', 'node_modules'])
 const SKIPPED_FILES = new Set(['.DS_Store'])
 
-const zPackToolSourceJson = z.strictObject({
-  name: z.string().min(1).max(128),
-  version: z.string().max(128).optional(),
-  description: z.string().max(4_000).optional(),
-  tools: z.strictObject({
-    provides: z.array(z.string().min(1).max(128)).min(1).max(1_000),
+const zPackModelRoute = z.strictObject({
+  id: z.string().min(1).max(128),
+  label: z.string().min(1).max(256),
+  group: z.string().min(1).max(256).optional(),
+  description: z.string().max(2_000).optional(),
+  supportsImages: z.boolean().optional(),
+})
+
+const zPackToolSourceJson = z
+  .strictObject({
+    name: z.string().min(1).max(128),
+    version: z.string().max(128).optional(),
+    description: z.string().max(4_000).optional(),
     runtime: z.strictObject({
       entrypoint: z.string().min(1).max(1_000),
       apiVersion: z.literal(1),
     }),
-  }),
-})
+    tools: z
+      .strictObject({
+        provides: z.array(z.string().min(1).max(128)).min(1).max(1_000),
+      })
+      .optional(),
+    models: z
+      .strictObject({
+        provides: z.array(zPackModelRoute).min(1).max(1_000),
+      })
+      .optional(),
+  })
+  .refine((value) => value.tools !== undefined || value.models !== undefined)
 
 type PackToolSourceJson = z.infer<typeof zPackToolSourceJson>
 
@@ -38,13 +55,13 @@ export interface PackToolRuntimeRequest {
   readonly apiVersion: 1
 }
 
-/** A validated, explicitly selected pack directory that provides executable tools. */
+/** A validated, explicitly selected pack directory with executable behavior. */
 export interface PackToolSourceCandidate {
   readonly sourcePath: string
   readonly manifestPath: string
   readonly contentHash: string
   readonly manifest: PackManifest
-  readonly toolRuntime: PackToolRuntimeRequest
+  readonly runtime: PackToolRuntimeRequest
 }
 
 export class PackToolSourceError extends Error {
@@ -85,7 +102,7 @@ async function readManifest(manifestPath: string): Promise<PackToolSourceJson> {
   const decoded = safeJsonParse(bytes.toString('utf8'), decodeWithSchema(zPackToolSourceJson))
   if (!decoded) {
     throw new PackToolSourceError(
-      `${PACK_MANIFEST_FILE} must declare exactly one supported behavior: executable tools.`,
+      `${PACK_MANIFEST_FILE} must declare a supported executable behavior.`,
     )
   }
   return decoded
@@ -155,24 +172,35 @@ export async function discoverPackToolSource(sourcePath: string): Promise<PackTo
 
   const manifestPath = join(root, PACK_MANIFEST_FILE)
   const raw = await readManifest(manifestPath)
-  const entrypoint = ensureContained(root, raw.tools.runtime.entrypoint, 'Tool entrypoint')
+  const entrypoint = ensureContained(root, raw.runtime.entrypoint, 'Runtime entrypoint')
   const entrypointStat = await fsp.stat(entrypoint).catch(() => null)
   if (!entrypointStat?.isFile()) {
-    throw new PackToolSourceError('Pack tool entrypoint does not exist or is not a file.')
+    throw new PackToolSourceError('Pack runtime entrypoint does not exist or is not a file.')
   }
 
-  const providedTools = [...new Set(raw.tools.provides)].sort(compareStrings)
+  const providedTools = [...new Set(raw.tools?.provides ?? [])].sort(compareStrings)
+  const providedModels = [...(raw.models?.provides ?? [])]
+    .map((route) => ({
+      id: route.id,
+      label: route.label,
+      ...(route.group !== undefined ? { group: route.group } : {}),
+      ...(route.description !== undefined ? { description: route.description } : {}),
+      ...(route.supportsImages !== undefined ? { supportsImages: route.supportsImages } : {}),
+    }))
+    .sort((left, right) => compareStrings(left.id, right.id))
+  if (new Set(providedModels.map((route) => route.id)).size !== providedModels.length) {
+    throw new PackToolSourceError('Pack model route ids must be unique.')
+  }
   const manifest = packManifestFromPluginJson(
     {
       name: raw.name,
       ...(raw.version !== undefined ? { version: raw.version } : {}),
       ...(raw.description !== undefined ? { description: raw.description } : {}),
-      tools: {
-        provides: providedTools,
-        runtime: {
-          entrypoint: relative(root, entrypoint).split(sep).join('/'),
-          apiVersion: raw.tools.runtime.apiVersion,
-        },
+      ...(providedTools.length > 0 ? { tools: { provides: providedTools } } : {}),
+      ...(providedModels.length > 0 ? { models: { provides: providedModels } } : {}),
+      runtime: {
+        entrypoint: relative(root, entrypoint).split(sep).join('/'),
+        apiVersion: raw.runtime.apiVersion,
       },
     },
     { sourceHint: basename(root) },
@@ -182,17 +210,18 @@ export async function discoverPackToolSource(sourcePath: string): Promise<PackTo
     manifestPath,
     contentHash: await hashPackToolSource(root),
     manifest,
-    toolRuntime: {
+    runtime: {
       entrypoint: relative(root, entrypoint).split(sep).join('/'),
-      apiVersion: raw.tools.runtime.apiVersion,
+      apiVersion: raw.runtime.apiVersion,
     },
   }
 }
 
-/** Convert a selected tool-providing source into the ordinary user-pack registry shape. */
+/** Convert a selected executable source into the ordinary user-pack registry shape. */
 export function registeredPackToolSource(candidate: PackToolSourceCandidate): RegisteredPack {
   return definePack(candidate.manifest, {
     toolNames: candidate.manifest.tools?.provides ?? [],
+    modelRoutes: candidate.manifest.models?.provides ?? [],
   })
 }
 

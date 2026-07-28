@@ -63,7 +63,7 @@ import {
 } from './pack-tool-controller.ts'
 
 // P1 of #1336: selected-pack discovery is part of the production graph before
-// the isolated tool runtime is wired by the host.
+// the isolated behavior runtime is wired by the host.
 export { discoverPackToolSource, hashPackToolSource } from './pack-tool-source.ts'
 
 /** One-time bridge from the retired top-level model settings now owned by packs. */
@@ -372,7 +372,7 @@ export function createPackService(registry: PackRegistry): PackService {
         }
         const controller = getPackToolRuntimeController()
         if (!controller) {
-          throw new Error(`pack "${packId}" tool runtime is unavailable`)
+          throw new Error(`pack "${packId}" runtime is unavailable`)
         }
         await controller.enable(selected)
         registry.enable(packId)

@@ -3,7 +3,7 @@
 // The Settings pack list renders `PackSummaryOut` snapshots that
 // `summarizePacks` produces from the shared `PackRegistry` + a per-key reader.
 // The invariants this pins:
-//  - contributions carry through with the right shapes (tools / hooks / prompt
+//  - contributions carry through with the right shapes (tools / models / hooks / prompt
 //    / panel-kind / storage namespace);
 //  - the `enabled` flag reflects the registry's current state;
 //  - setting values are coerced to their declared kind, falling back to the
@@ -53,6 +53,14 @@ function demoPack(id: string): RegisteredPack {
     },
     {
       toolNames: [`${id}_tool`],
+      modelRoutes: [
+        {
+          id: `${id}-judge`,
+          label: 'Reference judge',
+          group: 'Personal models',
+          supportsImages: true,
+        },
+      ],
       blockingHooks: [stepHook],
       promptBlocks: [{ id: `${id}-prompt`, text: 'steer', trust: 'trusted' }],
       uiContributions: [
@@ -83,6 +91,14 @@ describe('packToSummary', () => {
     assert.equal(summary.version, '1.2.3')
     assert.equal(summary.description, 'demo alpha')
     assert.deepEqual(summary.contributions.toolNames, ['alpha_tool'])
+    assert.deepEqual(summary.contributions.modelRoutes, [
+      {
+        id: 'alpha-judge',
+        label: 'Reference judge',
+        group: 'Personal models',
+        supportsImages: true,
+      },
+    ])
     assert.deepEqual(summary.contributions.blockingHooks, [
       { id: 'demo-turn-start', event: 'turnStart' },
     ])
