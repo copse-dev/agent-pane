@@ -85,6 +85,14 @@ interface InflightWaiter {
 
 const inflight = new Map<string, InflightApproval>()
 
+/**
+ * ACP `session/request_permission` toolCallIds currently blocked in the approval
+ * dialog. When the agent later marks that tool call completed/failed/cancelled
+ * without waiting for our answer, we abort the matching waiter so the modal
+ * dismisses at the tool boundary — not only at turn end.
+ */
+const acpPermissionByToolCallId = new Map<string, AbortController>()
+
 export function setApprovalHandler(next: ApprovalHandler | null): void {
   handler = next
   // Drop coalesced waiters when the transport is torn down (tests / shutdown) so
@@ -98,6 +106,8 @@ export function setApprovalHandler(next: ApprovalHandler | null): void {
       }
     }
     inflight.clear()
+    for (const controller of acpPermissionByToolCallId.values()) controller.abort()
+    acpPermissionByToolCallId.clear()
   }
 }
 
@@ -131,6 +141,52 @@ export function cancelApprovalsForThread(threadId: string): number {
     }
   }
   return cancelled
+}
+
+/** How many in-flight approval waiters are attributed to `threadId`. */
+export function pendingApprovalCountForThread(threadId: string): number {
+  let count = 0
+  for (const entry of inflight.values()) {
+    for (const waiter of entry.waiters) {
+      if (waiter.threadId === threadId) count++
+    }
+  }
+  return count
+}
+
+/**
+ * Register that an ACP permission prompt is open for `toolCallId`. Returns a
+ * signal aborted when {@link cancelApprovalsForAcpToolCall} runs, and an
+ * unregister function for the normal settle path.
+ */
+export function trackAcpPermissionToolCall(toolCallId: string): {
+  signal: AbortSignal
+  unregister: () => void
+} {
+  // Replace any stale registration for the same id (agent retried the call).
+  acpPermissionByToolCallId.get(toolCallId)?.abort()
+  const controller = new AbortController()
+  acpPermissionByToolCallId.set(toolCallId, controller)
+  return {
+    signal: controller.signal,
+    unregister: (): void => {
+      if (acpPermissionByToolCallId.get(toolCallId) === controller) {
+        acpPermissionByToolCallId.delete(toolCallId)
+      }
+    },
+  }
+}
+
+/**
+ * Dismiss the approval tied to an ACP tool call that reached a terminal status
+ * (or was abandoned) before the user answered.
+ */
+export function cancelApprovalsForAcpToolCall(toolCallId: string): boolean {
+  const controller = acpPermissionByToolCallId.get(toolCallId)
+  if (!controller) return false
+  acpPermissionByToolCallId.delete(toolCallId)
+  controller.abort()
+  return true
 }
 
 /**

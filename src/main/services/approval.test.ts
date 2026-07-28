@@ -3,9 +3,12 @@ import assert from 'node:assert/strict'
 import {
   approvalDedupeKey,
   cancelApprovalsForThread,
+  cancelApprovalsForAcpToolCall,
+  pendingApprovalCountForThread,
   requestApproval,
   setApprovalHandler,
   startDockAttention,
+  trackAcpPermissionToolCall,
   type ApprovalRequest,
   type DockAttention,
 } from './approval.ts'
@@ -187,6 +190,32 @@ describe('requestApproval pluggable transport', () => {
     assert.deepEqual(await orphaned, { approved: false, remember: false })
     releaseOther({ approved: true, remember: false })
     assert.deepEqual(await other, { approved: true, remember: false })
+  })
+
+  it('cancelApprovalsForAcpToolCall aborts the tracked permission signal', async () => {
+    const tracked = trackAcpPermissionToolCall('call-1')
+    assert.equal(tracked.signal.aborted, false)
+    assert.equal(cancelApprovalsForAcpToolCall('call-1'), true)
+    assert.equal(tracked.signal.aborted, true)
+    assert.equal(cancelApprovalsForAcpToolCall('call-1'), false)
+    tracked.unregister()
+  })
+
+  it('pendingApprovalCountForThread reflects in-flight waiters', async () => {
+    let release!: (response: { approved: boolean; remember: boolean }) => void
+    setApprovalHandler(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    const pending = runWithActiveRunIdentity('count-thread', () => requestApproval(req))
+    await Promise.resolve()
+    assert.equal(pendingApprovalCountForThread('count-thread'), 1)
+    assert.equal(pendingApprovalCountForThread('other'), 0)
+    release({ approved: true, remember: false })
+    await pending
+    assert.equal(pendingApprovalCountForThread('count-thread'), 0)
   })
 })
 

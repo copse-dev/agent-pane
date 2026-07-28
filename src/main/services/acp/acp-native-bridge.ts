@@ -186,6 +186,8 @@ interface BridgeExecuteContext {
   sessionSignal: AbortSignal
   /** Live reader for the in-flight turn abort; null between turns. */
   getTurnSignal: () => AbortSignal | null
+  /** Live reader for this HTTP MCP call's abort (agent disconnect). */
+  getCallSignal: () => AbortSignal
   /** Owning Copse thread — rebound into ALS so approvals attribute correctly. */
   threadId: string
   networkScopeAlreadyApplies: boolean
@@ -194,11 +196,16 @@ interface BridgeExecuteContext {
 function mergeBridgeExecuteSignal(
   sessionSignal: AbortSignal,
   turnSignal: AbortSignal | null,
+  callSignal?: AbortSignal,
 ): AbortSignal {
-  if (!turnSignal) return sessionSignal
-  if (turnSignal.aborted) return turnSignal
-  if (sessionSignal.aborted) return sessionSignal
-  return AbortSignal.any([sessionSignal, turnSignal])
+  const parts: AbortSignal[] = [sessionSignal]
+  if (turnSignal) parts.push(turnSignal)
+  if (callSignal) parts.push(callSignal)
+  if (parts.some((part) => part.aborted)) {
+    return parts.find((part) => part.aborted) ?? sessionSignal
+  }
+  if (parts.length === 1) return sessionSignal
+  return AbortSignal.any(parts)
 }
 
 function buildMcpServer(
@@ -222,7 +229,11 @@ function buildMcpServer(
       }
     }
     try {
-      const executeSignal = mergeBridgeExecuteSignal(ctx.sessionSignal, ctx.getTurnSignal())
+      const executeSignal = mergeBridgeExecuteSignal(
+        ctx.sessionSignal,
+        ctx.getTurnSignal(),
+        ctx.getCallSignal(),
+      )
       const execute = (): ReturnType<ToolRegistry['executeNormalized']> =>
         registry.executeNormalized(name, request.params.arguments, executeSignal)
       const withPermissionContext = (): ReturnType<ToolRegistry['executeNormalized']> =>
@@ -341,13 +352,23 @@ export async function startAcpNativeBridge(
       const body = await readBody(req).catch(() => undefined)
       // No sessionIdGenerator → stateless mode: every POST is self-contained.
       const transport = new StreamableHTTPServerTransport({})
+      // Per-HTTP-call abort: when the agent abandons this MCP request (timeout /
+      // disconnect) while Copse is blocked on an approval, cancel that prompt
+      // immediately instead of waiting for turn end.
+      const callAbort = new AbortController()
+      const onHttpClose = (): void => {
+        callAbort.abort()
+      }
+      req.on('close', onHttpClose)
       const server = buildMcpServer(registry, advisorContext, {
         sessionSignal: signal,
         getTurnSignal: () => turnSignal,
+        getCallSignal: () => callAbort.signal,
         threadId: opts.threadId,
         networkScopeAlreadyApplies,
       })
       res.on('close', () => {
+        onHttpClose()
         void transport.close()
         void server.close()
       })

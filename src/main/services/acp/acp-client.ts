@@ -36,6 +36,7 @@ import type {
 import { isRecord, recordArrayOrEmpty } from '@shared/unknown-value.ts'
 import type { McpServerConfig } from '@shared/types/mcp.ts'
 import { sessionUpdateToStreamChunk } from './session-update-adapter.ts'
+import { cancelApprovalsForAcpToolCall } from '../approval.ts'
 import { acpSshTarget, spawnRemoteAcpTransport } from './acp-ssh-transport.ts'
 import { BRIDGE_MCP_SERVER_NAME } from './acp-native-bridge.ts'
 import { envForRendererChildProcess } from '../exec/child-process-env.ts'
@@ -584,6 +585,16 @@ function startAcpUpdatePump(open: OpenAcpSession): void {
       }
       if (open.suppressChunks) continue
       try {
+        // Dismiss a permission modal as soon as the agent marks that tool call
+        // terminal — including `cancelled`, which has no UI chunk.
+        if (
+          update.sessionUpdate === 'tool_call_update' &&
+          (update.status === 'completed' ||
+            update.status === 'failed' ||
+            update.status === 'cancelled')
+        ) {
+          cancelApprovalsForAcpToolCall(update.toolCallId)
+        }
         const chunk = sessionUpdateToStreamChunk(update)
         if (chunk) open.handlers.current?.onChunk(chunk)
       } catch {
