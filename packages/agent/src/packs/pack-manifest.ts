@@ -279,8 +279,9 @@ export function definePack(
  * Map a raw `plugin.json`-shaped object into a {@link PackManifest} (scaffold for
  * user packs). The existing top-level `skills` / `mcpServers` fields fold into
  * the pack slots (`mcpServers` → `tools.mcpServers`); the new pack slots are
- * carried through when present. Pure and Electron-free — the host disk discovery
- * that feeds this a parsed plugin.json lands in a later phase (P3/P4).
+ * carried through when present. Pure and Electron-free — host disk discovery
+ * that feeds this a parsed manifest lives in
+ * `src/main/services/packs/discover-user-packs.ts` (marketplace P1).
  */
 export function packManifestFromPluginJson(
   raw: {

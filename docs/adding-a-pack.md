@@ -9,17 +9,40 @@ lifecycle and internal design, see [`docs/packs.md`](./packs.md).
 
 ## What you can do today
 
-| Goal                                     | Where it lives today                                                                | Shows up in Settings…                       |
-| ---------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------- |
-| Turn a shipped Copse feature on or off   | First-party packs (`copse.todos`, `copse.pii-redaction`, …)                         | **Packs** (toggle per row)                  |
-| Add skills and/or MCP servers            | A Cursor-style plugin under `~/.cursor/plugins/`                                    | **Sources → Plugins** (and **MCP servers**) |
-| Add command hooks                        | Cursor / Claude / Copse hooks files                                                 | **Sources → Hooks**                         |
-| Add an in-process custom tool            | `<userData>/tools/*.mjs`                                                            | Used by the agent (approval-gated)          |
-| Author a full user pack row in **Packs** | Manifest shape exists (`plugin.json` + pack slots); host discovery is not wired yet | Not yet — see [Status](#status-user-packs)  |
+| Goal                                     | Where it lives today                                        | Shows up in Settings…                         |
+| ---------------------------------------- | ----------------------------------------------------------- | --------------------------------------------- |
+| Turn a shipped Copse feature on or off   | First-party packs (`copse.todos`, `copse.pii-redaction`, …) | **Packs** (toggle per row)                    |
+| Add skills and/or MCP servers            | A Cursor-style plugin under `~/.cursor/plugins/`            | **Sources → Plugins** (and **MCP servers**)   |
+| Add command hooks                        | Cursor / Claude / Copse hooks files                         | **Sources → Hooks**                           |
+| Add an in-process custom tool            | `<userData>/tools/*.mjs`                                    | Used by the agent (approval-gated)            |
+| Author a full user pack row in **Packs** | Drop a manifest under `~/.copse/packs/<dir>/`               | Yes — Settings → Packs lists it after restart |
 
-So: you can extend Copse today with the same _kinds_ of contributions a pack
-owns, but a third-party bundle does **not** yet appear as its own row under
-**Settings → Packs**. First-party packs are the rows you see there now.
+So: you can ship a full **user** pack row under **Settings → Packs** by dropping a
+manifest under `~/.copse/packs/`, or keep using the older Cursor-plugin / hooks /
+custom-tool paths when you only need skills, MCP, or command hooks.
+
+## Install a local user pack (Settings → Packs)
+
+Marketplace P1 discovers packs from a Copse-owned root (not Cursor's plugin cache):
+
+```
+~/.copse/packs/
+└── my-notes/
+    ├── plugin.json          # or copse-pack.json / .cursor-plugin/plugin.json
+    ├── skills/              # optional
+    └── .mcp.json            # optional, referenced from tools.mcpServers
+```
+
+1. Create `~/.copse/packs/<your-pack-dir>/`.
+2. Add a `plugin.json` or `copse-pack.json` (see sketch below).
+3. Restart Copse (or relaunch so `PackService` reboots).
+4. Open **Settings → Packs** — the pack appears as a **user** row; enable/disable
+   is the same atomic toggle as first-party packs.
+
+Override the root with `COPSE_PACKS_DIR` (tests / relocation). A missing root is
+inert — no network, no timers. Cursor Marketplace plugins under `~/.cursor/plugins/`
+remain a separate import path (skills + MCP only); they are **not** auto-registered
+as Packs rows.
 
 ## Install skills + MCP (closest thing to a user pack today)
 
@@ -80,7 +103,7 @@ For a privileged in-process tool without standing up MCP, drop a module under
 the app's userData `tools/` directory. See
 [`docs/custom-tools.md`](./custom-tools.md).
 
-## Authoring a pack manifest (for when user packs land)
+## Authoring a pack manifest
 
 The declarative pack manifest **extends** `plugin.json` with the remaining
 slots. JSON Schema:
@@ -98,8 +121,8 @@ pack manifest
 └── storage     namespaced bag that survives disable
 ```
 
-Example sketch (valid against the schema; **not** registered as a Packs row
-until host discovery lands):
+Example sketch (valid against the schema; place under `~/.copse/packs/<dir>/`
+as `plugin.json` or `copse-pack.json` to register a Packs row):
 
 ```json
 {
@@ -148,17 +171,17 @@ until host discovery lands):
 
 ## Status: user packs
 
-| Piece                                              | Status                     |
-| -------------------------------------------------- | -------------------------- |
-| Manifest types + JSON schema                       | Landed                     |
-| `packManifestFromPluginJson()` mapper              | Landed                     |
-| Settings → Packs list + enable/disable             | Landed (first-party packs) |
-| Host disk discovery → register user packs          | **Not wired yet**          |
-| Runtime wiring of user-pack hooks/MCP via registry | Follows discovery          |
+| Piece                                              | Status                                       |
+| -------------------------------------------------- | -------------------------------------------- |
+| Manifest types + JSON schema                       | Landed                                       |
+| `packManifestFromPluginJson()` mapper              | Landed                                       |
+| Settings → Packs list + enable/disable             | Landed (first-party + discovered user packs) |
+| Host disk discovery → register user packs          | Landed (marketplace P1 — `~/.copse/packs/`)  |
+| Runtime wiring of user-pack hooks/MCP via registry | Follows discovery (Settings row only in P1)  |
 
-Until discovery lands, put skills/MCP in a Cursor plugin (above) and hooks in
-the dialect files. When user packs are discovered, the same `plugin.json`
-(optionally with the extra slots) is the intended on-disk unit.
+Cursor plugins under `~/.cursor/plugins/` remain a separate skills/MCP import.
+Discovered user packs share the same `plugin.json` / `copse-pack.json` shape
+(optionally with the extra pack slots).
 
 ## Contributing a first-party pack (Copse developers)
 
