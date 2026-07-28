@@ -264,7 +264,8 @@ Recorded so a future trim does not over-reach:
 - `SHARED_WORKING_STYLE`. Its comment (`agent-prompt.ts:8-11`) states the intent: "Copse runs many
   providers, and these rules are the lever that pulls all of them toward the same working contract."
   This is product context in the post's sense — the part a harness builder is told to spend time on.
-  A candidate for the per-provider split below, not for deletion.
+  A candidate for varying — by model capability, and separately by output-style preference (both
+  below) — not for deletion.
 
 ### F10 — Where Copse is already aligned
 
@@ -337,6 +338,69 @@ Recorded now, not acted on.
   prompt for strong ones" split — an intellect threshold rather than a provider check, since the
   axis is capability, not vendor.
 - **`docs/plans/model-roles-and-defaults.md`** is the design doc such a split should extend.
+
+## A second axis: output style as a preference
+
+The split above varies the prompt by _model capability_. There is a second, independent axis —
+varying it by _reader preference_ — and the two should not be conflated.
+
+The prompt for it is the [`i-have-adhd` skill](https://github.com/ayghri/i-have-adhd/blob/main/skills/i-have-adhd/SKILL.md),
+which restructures output around action rather than prose. Its rules: lead with the next action
+(a command, path, or snippet before any explanation); numbered single-action steps; end on one
+sub-two-minute action; no tangents until the current issue is closed; restate position ("step 3 of
+5"); concrete time units; matter-of-fact errors; cap ranked lists at five; no preamble or recap. It
+ships `model-invocation: disabled`, i.e. user-invoked only, and carries explicit override
+conditions — explanations, destructive actions, debug spirals, and genuine ambiguity.
+
+### It contradicts `SHARED_WORKING_STYLE`, and that matters
+
+This is not a drop-in addition. The current doctrine says:
+
+> Be readable over terse: complete sentences, no fragment or arrow-chain summaries.
+
+That directly contradicts the action-first, numbered-step, capped-list rules. `SHARED_WORKING_STYLE`
+also says "lead with the outcome" where the skill says "lead with the next action" — a real
+difference, not a rewording: outcome-first suits a report, action-first suits a task handoff.
+
+If both are in context the model must arbitrate before doing any work, which is precisely the cost
+the Claude 5 post attributes to conflicting instructions, and the same defect F5 records elsewhere
+in this repo. **Any adoption must replace those lines in that mode, not stack on top of them.**
+
+### Where it belongs
+
+Not in the base prompt. This is a preference, not a correctness constraint, so putting it in
+`SHARED_WORKING_STYLE` would charge every user on every provider for one reader's style. The
+existing seams already fit:
+
+- As a **pack**, its text is a `promptBlocks` contribution gated on enablement — the same mechanism
+  that already keeps memory, PII, and roadmap text out of a default profile (F10).
+- As a **skill**, it needs no code at all. Copse's skills registry already honours
+  `disable-model-invocation`, which is exactly what the source skill declares, so the `SKILL.md`
+  can be dropped into a skills directory and evaluated as-is.
+
+The skill route is the cheap experiment and should come first.
+
+### Scope: doing versus explaining
+
+The style suits _execution_ — implementing, fixing, iterating — where the deliverable is a changed
+workspace and the next action is the point. It suits _explanation_ badly, and this document is the
+counterexample: a findings report compressed to action-first bullets with a five-item cap would
+lose the evidence that makes the findings checkable. The source skill concedes this itself by
+listing explanations among its override conditions.
+
+So the axis is not "this style versus terse" but **doing versus explaining**, and a coding agent
+does both in the same session. That is another argument for a toggle rather than a rewrite.
+
+### Open question, and how to settle it
+
+The claim that this is cheaper to emit is plausible but unverified, and partly self-cancelling:
+action-first phrasing and capped lists remove tokens, while "restate progress" and numbered
+scaffolding add them. Do not adopt it on the assumption of a saving.
+
+`scripts/lib/terminal-bench-profiles.mts` exists to swap a system prompt and measure the result, and
+`docs/spikes/terminal-bench-2.1-profile-ablation.md` is the precedent for reporting it — median
+total tokens, median tool calls, and solve rate with a task-bootstrap interval. One extra profile
+answers this properly, in the same shape as the evidence already cited above.
 
 ## Appendix: measurement
 
