@@ -49,6 +49,21 @@ packs into the registry is **not wired yet** — until it is, skills/MCP from a
 `plugin.json` still load via Cursor plugin discovery (see
 [`docs/adding-a-pack.md`](adding-a-pack.md)).
 
+An explicitly selected **local-native** source is a distinct host-assigned
+elevation, not general plugin discovery. Its `copse-pack.json` may request a
+versioned native runtime. The host validates the manifest/tree, rejects
+symlinks and escaping entrypoints, computes a deterministic content hash, and
+registers the pack disabled. Settings records approval only for the canonical
+path, hash, capabilities, origins, and renderer slots shown to the user; a
+change to any of them invalidates the match. P1 keeps even an approved pack
+inert; the landed P2 macOS host starts it only after explicit enablement. The
+host re-hashes the source, materializes and validates a content-addressed snapshot,
+and executes only that snapshot in a standalone SDK-v1 worker. The sandbox
+denies direct network and filesystem writes. P1/P2 permits only the
+`native-tools` capability; later model-route, browser, attachment, session, and
+renderer authority is rejected until the corresponding #1336 phases land.
+Without the OS sandbox, execution fails closed.
+
 ## Registry and lifecycle
 
 `PackRegistry`
@@ -85,6 +100,9 @@ groups every pack's contributions by pack id and owns the lifecycle:
   revoked. There is no partial state.
 - **Storage survives disable** — `storage(id)` is a namespaced bag that is never
   cleared on disable (decision 17), like a disabled browser extension's data.
+- **Dynamic local source removal** — `unregister(id)` removes a reconciled
+  local-native registration while retaining its namespaced storage. Reopening
+  or refreshing revalidates the selected source before registering it disabled.
 
 First-party packs are the static list in
 [`packages/agent/src/packs/first-party-packs.ts`](../packages/agent/src/packs/first-party-packs.ts).
@@ -164,6 +182,11 @@ settings the manifest declares. This is the `about:addons` of Copse.
   surface: `api.packs.*` in the preload). Values are validated to
   `boolean` / `number` / `string ≤ 8192` so a compromised renderer cannot
   stuff arbitrary payloads.
+- **Local-native review IPC.** Source selection is owned by the main process's
+  native directory picker. `packs:addLocalNativeSource`,
+  `packs:approveLocalNative`, and `packs:revokeLocalNative` expose only validated
+  candidates and exact hash approvals; the renderer never supplies a path to
+  approve indirectly.
 - **Renderer.** The Settings dialog gains a `Packs` nav section
   (`src/renderer/views/settings-dialog.ts`). Each row shows the pack's name +
   version + trust badge, an enable toggle, a description, contribution chips
@@ -172,6 +195,8 @@ settings the manifest declares. This is the `about:addons` of Copse.
   `settings` schema. Disabled rows are visually greyed via `pack-row-disabled`
   so the effect of the toggle is immediately visible; per-pack settings stay
   editable so a user can configure a disabled pack before re-enabling it.
+  Local-native review rows stay full-contrast while inert so their requested
+  authority remains legible.
 - **Projection helper.**
   [`packages/agent/src/packs/pack-summary.ts`](../packages/agent/src/packs/pack-summary.ts)
   is the pure `summarizePacks(registry, readSetting)` that projects the shared

@@ -111,6 +111,14 @@ const mainCtx = await esbuild.context({
   plugins: [onEndPlugin(startElectron)],
 })
 buildContexts.push(mainCtx)
+const localNativePackWorkerCtx = await esbuild.context({
+  ...nodeOpts,
+  entryPoints: ['src/main/services/packs/local-native-pack-worker.ts'],
+  outfile: 'dist/main/local-native-pack-worker.js',
+  alias: sharedAlias,
+  plugins: [onEndPlugin(startElectron)],
+})
+buildContexts.push(localNativePackWorkerCtx)
 const preloadCtx = await esbuild.context({
   ...nodeOpts,
   entryPoints: ['src/preload/index.ts'],
