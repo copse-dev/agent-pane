@@ -16,22 +16,12 @@
  */
 
 /** Trust tier assigned by the host; disk manifests cannot self-promote. */
-export type PackTrustLevel = 'first-party' | 'user' | 'local-native'
+export type PackTrustLevel = 'first-party' | 'user'
 
-export interface LocalNativePackSourceSummary {
-  kind: 'local-native'
+export interface PackDirectorySourceSummary {
+  kind: 'directory'
   path: string
   contentHash: string
-  entrypoint: string
-  sdkVersion: 1
-  capabilities: readonly string[]
-  origins: readonly string[]
-  rendererSlots: readonly string[]
-}
-
-export interface LocalNativePackApprovalSummary {
-  status: 'required' | 'approved'
-  approvedAt?: number
 }
 
 /** UI contribution levels from the plan (1 = card, 2 = named panel, 3 = real view). */
@@ -151,10 +141,8 @@ export interface PackSummary {
   version?: string
   description?: string
   enabled: boolean
-  /** Present only for an explicitly selected local-native source. */
-  source?: LocalNativePackSourceSummary
-  /** Native contributions remain inert unless this exact hash/authority is approved. */
-  approval?: LocalNativePackApprovalSummary
+  /** Present only for a pack explicitly selected from a directory. */
+  source?: PackDirectorySourceSummary
   contributions: PackContributionsSummary
   /** Pack-scoped settings the manifest declares, each carrying its current value. */
   settings: readonly PackSettingFieldSummary[]

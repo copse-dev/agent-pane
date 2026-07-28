@@ -32,7 +32,7 @@ describe('settings packs (about:addons)', function () {
   before(async () => {
     mkdirSync(E2E_SCREENSHOT_DIR, { recursive: true })
     resetUserData()
-    localPackRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-local-native-pack-'))
+    localPackRoot = mkdtempSync(join(tmpdir(), 'copse-e2e-selected-pack-'))
     mkdirSync(join(localPackRoot, 'dist'))
     writeFileSync(join(localPackRoot, 'dist', 'index.mjs'), 'export default {}\n')
     writeFileSync(
@@ -40,17 +40,15 @@ describe('settings packs (about:addons)', function () {
       JSON.stringify({
         name: 'personal.reference-tools',
         version: '0.1.0',
-        description: 'A local-native reference tool pack.',
-        tools: { native: ['personal_reference_judge'] },
-        localNative: {
-          entrypoint: 'dist/index.mjs',
-          sdkVersion: 1,
-          capabilities: ['native-tools'],
+        description: 'A selected reference tool pack.',
+        tools: {
+          provides: ['personal_reference_judge'],
+          runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
         },
       }),
     )
     seedEmptyProject(process.cwd(), 'e2e-settings-packs', {
-      localNativePackSources: [localPackRoot],
+      packSources: [localPackRoot],
     })
     await browser.reloadSession()
   })
@@ -143,34 +141,23 @@ describe('settings packs (about:addons)', function () {
     await expect(automationsRow).toBeDisplayed()
     assert.equal(await automationsRow.getAttribute('data-enabled'), 'false')
 
-    // Local-native sources are host-assigned, hash-bound, and inert until the
-    // exact authority request is approved. The executable P2 toggle becomes
-    // available only after the exact content and authority are accepted.
-    const localNativeRow = packs.$('.pack-row[data-pack-id="personal.reference-tools"]')
-    await expect(localNativeRow).toBeDisplayed()
-    await expect(localNativeRow.$('.pack-badge-local-native')).toBeDisplayed()
-    assert.equal(await localNativeRow.getAttribute('data-enabled'), 'false')
-    assert.equal(await localNativeRow.$('input.pack-toggle-input').isEnabled(), false)
-    const localText = await localNativeRow.getText()
-    assert.match(localText, /Approval required/)
-    assert.match(localText, /native-tools/)
+    // A selected directory remains an ordinary user pack. Its declared tool
+    // behavior is visible even when this platform cannot start the macOS-only
+    // isolated worker and therefore leaves the pack disabled.
+    const packToolRow = packs.$('.pack-row[data-pack-id="personal.reference-tools"]')
+    await expect(packToolRow).toBeDisplayed()
+    await expect(packToolRow.$('.pack-badge-user')).toBeDisplayed()
+    assert.equal(await packToolRow.getAttribute('data-enabled'), 'false')
+    assert.equal(await packToolRow.$('input.pack-toggle-input').isEnabled(), true)
+    const localText = await packToolRow.getText()
+    assert.match(localText, /executable tools run in isolation/i)
+    assert.match(localText, /Tools × 1/)
     assert.match(localText, /sha256:[a-f0-9]{64}/)
 
-    await localNativeRow.scrollIntoView()
+    await packToolRow.scrollIntoView()
     await saveElementScreenshot(
       '.pack-row[data-pack-id="personal.reference-tools"]',
-      'settings-local-native-pack.png',
-    )
-
-    await localNativeRow.$('.pack-native-approval-btn').click()
-    await browser.waitUntil(
-      async () => /Approved for this exact content/.test(await localNativeRow.getText()),
-      { timeout: 5_000, timeoutMsg: 'expected exact local-native approval to persist' },
-    )
-    assert.equal(await localNativeRow.$('input.pack-toggle-input').isEnabled(), true)
-    await saveElementScreenshot(
-      '.pack-row[data-pack-id="personal.reference-tools"]',
-      'settings-local-native-pack-approved.png',
+      'settings-selected-pack.png',
     )
 
     // Post-turn review pack: its pack-scoped `maxReviewCycles` setting renders

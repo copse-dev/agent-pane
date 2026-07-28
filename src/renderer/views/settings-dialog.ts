@@ -927,7 +927,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
               for authoring and install steps.
             </p>
             <div class="lmstudio-test-row">
-              <button type="button" id="packs-add-local-btn">Add local native pack…</button>
+              <button type="button" id="packs-add-btn">Add pack…</button>
               <button type="button" id="packs-reload-btn">Reload</button>
               <span class="lmstudio-test-status" id="packs-reload-status"></span>
             </div>
@@ -1769,15 +1769,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     toggle.checked = pack.enabled
     toggle.className = 'pack-toggle-input'
     toggle.setAttribute('aria-label', `${pack.name} pack enabled`)
-    if (pack.trust === 'local-native') {
-      toggle.disabled = pack.approval?.status !== 'approved'
-      toggleLabel.title =
-        pack.approval?.status === 'approved'
-          ? pack.enabled
-            ? 'Turn off this approved local-native pack'
-            : 'Turn on this approved local-native pack in its isolated runtime'
-          : 'Review and approve this exact local-native pack before activation'
-    }
     const track = document.createElement('span')
     track.className = 'toggle-switch-track'
     track.setAttribute('aria-hidden', 'true')
@@ -1819,9 +1810,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     trustBadge.className =
       pack.trust === 'first-party'
         ? 'pack-badge pack-badge-first-party'
-        : pack.trust === 'local-native'
-          ? 'pack-badge pack-badge-local-native'
-          : 'pack-badge pack-badge-user'
+        : 'pack-badge pack-badge-user'
     trustBadge.textContent = pack.trust
     title.append(trustBadge)
 
@@ -1835,29 +1824,21 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
       row.append(desc)
     }
 
-    if (pack.source?.kind === 'local-native' && pack.approval) {
+    if (pack.source?.kind === 'directory') {
       const review = document.createElement('div')
-      review.className = 'pack-native-review'
+      review.className = 'pack-source-review'
 
       const status = document.createElement('div')
-      status.className = `pack-native-status pack-native-status-${pack.approval.status}`
-      status.textContent =
-        pack.approval.status === 'approved'
-          ? 'Approved for this exact content and authority request'
-          : 'Approval required — executable contributions are inert'
+      status.className = 'pack-source-status'
+      status.textContent = 'Selected directory · executable tools run in isolation'
       review.append(status)
 
       const details: Array<[string, string]> = [
         ['Source', pack.source.path],
         ['Content', pack.source.contentHash],
-        ['Entrypoint', pack.source.entrypoint],
-        ['SDK', String(pack.source.sdkVersion)],
-        ['Native capabilities', pack.source.capabilities.join(', ') || 'None'],
-        ['Network origins', pack.source.origins.join(', ') || 'None'],
-        ['Renderer slots', pack.source.rendererSlots.join(', ') || 'None'],
       ]
       const detailList = document.createElement('dl')
-      detailList.className = 'pack-native-details'
+      detailList.className = 'pack-source-details'
       for (const [term, value] of details) {
         const dt = document.createElement('dt')
         dt.textContent = term
@@ -1866,32 +1847,6 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         detailList.append(dt, dd)
       }
       review.append(detailList)
-
-      const actions = document.createElement('div')
-      actions.className = 'pack-native-actions'
-      const action = document.createElement('button')
-      action.type = 'button'
-      action.className = 'pack-native-approval-btn'
-      action.textContent =
-        pack.approval.status === 'approved' ? 'Revoke approval' : 'Approve exact version'
-      action.addEventListener('click', () => {
-        action.disabled = true
-        const request =
-          pack.approval?.status === 'approved'
-            ? api.packs.revokeLocalNative(pack.id)
-            : api.packs.approveLocalNative(pack.id, pack.source?.contentHash ?? '')
-        void request
-          .then(() => refreshPacks())
-          .catch((error: unknown) => {
-            const statusEl = qsRequired(overlay, '#packs-reload-status')
-            statusEl.textContent = errorMessage(error)
-          })
-          .finally(() => {
-            action.disabled = false
-          })
-      })
-      actions.append(action)
-      review.append(actions)
       row.append(review)
     }
 
@@ -2041,7 +1996,7 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     // configure a disabled pack before re-enabling it.
     // Local-native packs are necessarily disabled during P1, but their exact
     // authority review must remain full-contrast and easy to audit.
-    if (!pack.enabled && pack.trust !== 'local-native') row.classList.add('pack-row-disabled')
+    if (!pack.enabled) row.classList.add('pack-row-disabled')
 
     return row
   }
@@ -2432,13 +2387,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
     void refreshPacks()
   })
 
-  qsRequired(overlay, '#packs-add-local-btn').addEventListener('click', () => {
-    const button = qsRequired<HTMLButtonElement>(overlay, '#packs-add-local-btn')
+  qsRequired(overlay, '#packs-add-btn').addEventListener('click', () => {
+    const button = qsRequired<HTMLButtonElement>(overlay, '#packs-add-btn')
     const status = qsRequired(overlay, '#packs-reload-status')
     button.disabled = true
     status.textContent = 'Choose a folder containing copse-pack.json…'
     void api.packs
-      .addLocalNativeSource()
+      .addSource()
       .then(() => refreshPacks())
       .catch((error: unknown) => {
         status.textContent = errorMessage(error)

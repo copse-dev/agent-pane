@@ -325,8 +325,8 @@ export function seedEmptyProject(
      * that needs the Memories pane visible must lift it out of `packDisabled`.
      */
     okfMemoriesEnabled?: boolean
-    /** Explicit local-native pack directories discovered inert at Settings load. */
-    localNativePackSources?: readonly string[]
+    /** Explicit pack directories discovered at Settings load. */
+    packSources?: readonly string[]
     /**
      * Opt into the `copse.roadmap-plans` pack (its `roadmap_plan` tool + the
      * Roadmap pane). Ships off, like the other experimental packs.
@@ -373,8 +373,8 @@ export function seedEmptyProject(
   if (options?.okfMemoriesEnabled) enabledPacks.push('copse.okf-memories')
   seedConfig.packDisabled =
     options?.packDisabled !== undefined ? [...options.packDisabled] : packDisabledSeed(enabledPacks)
-  if (options?.localNativePackSources) {
-    seedConfig.localNativePackSources = [...options.localNativePackSources]
+  if (options?.packSources) {
+    seedConfig.packSources = [...options.packSources]
   }
   writeSeedConfig(seedConfig)
   const settings: Record<string, unknown> = {}

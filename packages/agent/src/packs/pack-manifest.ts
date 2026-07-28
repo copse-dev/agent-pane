@@ -4,9 +4,10 @@
 // "Feature packs"). Its manifest extends the `plugin.json` shape Copse already
 // loads (name / version / description / skills / mcpServers) with the remaining
 // slots: hooks / prompt / ui / settings / storage. Following decision 15, the
-// *declarative* manifest is shared by first-party and user packs; only
-// first-party packs additionally supply the executable, typed contributions
-// (native tools, in-process function hooks, real renderer views).
+// *declarative* manifest is shared by first-party and user packs. First-party
+// packs may supply executable typed contributions in-process; an explicitly
+// selected user pack may instead provide tools through the isolated runtime
+// described inside its `tools` behavior.
 //
 // This module lives in `packages/agent` and imports nothing from the host app —
 // only hook *types* (execution-guidance rule 4). The published JSON schema
@@ -14,15 +15,8 @@
 import type { AsyncHook, BlockingHook } from '../hooks/canonical-events.ts'
 import type { PanelContributionDecl } from './pack-panel.ts'
 
-/**
- * Host-assigned pack trust class.
- *
- * `local-native` is never accepted from a manifest by the ordinary user-pack
- * mapper. It is assigned only after the host discovers an explicitly selected
- * local source, hashes it, and binds approval to the exact requested authority
- * (#1336). It remains distinct from code shipped by Copse.
- */
-export type PackTrust = 'first-party' | 'user' | 'local-native'
+/** Host-assigned pack trust class; disk manifests cannot self-promote. */
+export type PackTrust = 'first-party' | 'user'
 
 /**
  * UI contribution levels (Feature packs section of the plan):
@@ -156,12 +150,21 @@ export interface PackStorageDecl {
 
 /**
  * How a pack declares its tools in the manifest (decision 15):
- *  - `native`: native tool names contributed to the model tool list (first-party).
+ *  - `native`: in-process tool names contributed by first-party code.
+ *  - `provides` + `runtime`: executable tools from an explicitly selected user
+ *    pack, loaded through Copse's isolated, versioned worker protocol.
  *  - `mcpServers`: a path to an MCP config file (user packs), like the existing
  *    plugin.json `mcpServers` field.
  */
+export interface PackToolRuntimeDecl {
+  entrypoint: string
+  apiVersion: 1
+}
+
 export interface PackToolsDecl {
   native?: readonly string[]
+  provides?: readonly string[]
+  runtime?: PackToolRuntimeDecl
   mcpServers?: string
 }
 
@@ -179,9 +182,9 @@ export interface PackCommandHookDecl {
 /**
  * The declarative pack manifest — a superset of the plugin.json shape Copse
  * already loads. This is the JSON-serializable contract the published schema
- * validates. The *executable* first-party contributions (function hooks, native
- * tool registrations) live on {@link RegisteredPack.contributions}, never here,
- * so a manifest stays serializable and a user pack can never smuggle code.
+ * validates. First-party function hooks and in-process tools live on
+ * {@link RegisteredPack.contributions}; a selected user pack may declare only
+ * the isolated runtime for its `tools` behavior here.
  */
 export interface PackManifest {
   /** Pack id / name (plugin.json `name`). */
@@ -192,7 +195,7 @@ export interface PackManifest {
   trust: PackTrust
   /** Existing plugin.json slot: relative skills directory. */
   skills?: string
-  /** Tools slot: native names (first-party) or an MCP config path (user). */
+  /** Tools behavior: first-party names, selected-pack runtime, or MCP config. */
   tools?: PackToolsDecl
   /** Command-hook declarations (user packs). */
   hooks?: readonly PackCommandHookDecl[]
@@ -328,7 +331,14 @@ export function packManifestFromPluginJson(
   if (raw.version) manifest.version = raw.version
   if (raw.description) manifest.description = raw.description
   if (raw.skills) manifest.skills = raw.skills
-  if (tools.native !== undefined || tools.mcpServers !== undefined) manifest.tools = tools
+  if (
+    tools.native !== undefined ||
+    tools.provides !== undefined ||
+    tools.runtime !== undefined ||
+    tools.mcpServers !== undefined
+  ) {
+    manifest.tools = tools
+  }
   if (raw.hooks) manifest.hooks = raw.hooks
   // A user pack's prompt blocks are NEVER trusted, whatever the file claims:
   // `trust: 'trusted'` means verbatim injection past the untrusted-data
