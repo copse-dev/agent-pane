@@ -53,6 +53,25 @@ describe('pack tool SDK contract', () => {
           },
           delete: () => Promise.resolve(),
         },
+        {
+          open: async () => ({
+            tabId: 'tab-1',
+            title: '',
+            url: 'https://example.test',
+            active: true,
+          }),
+          navigate: async () => ({
+            tabId: 'tab-1',
+            title: '',
+            url: 'https://example.test',
+            active: true,
+          }),
+          tabs: async () => [],
+          snapshot: async () => '',
+          click: async () => {},
+          type: async () => {},
+          upload: async () => {},
+        },
       ),
       { prompt: 'review', prior: null },
     )

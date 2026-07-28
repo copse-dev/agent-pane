@@ -61,6 +61,7 @@ function demoPack(id: string): RegisteredPack {
           supportsImages: true,
         },
       ],
+      browserOrigins: ['https://example.test'],
       blockingHooks: [stepHook],
       promptBlocks: [{ id: `${id}-prompt`, text: 'steer', trust: 'trusted' }],
       uiContributions: [
@@ -99,6 +100,7 @@ describe('packToSummary', () => {
         supportsImages: true,
       },
     ])
+    assert.deepEqual(summary.contributions.browserOrigins, ['https://example.test'])
     assert.deepEqual(summary.contributions.blockingHooks, [
       { id: 'demo-turn-start', event: 'turnStart' },
     ])

@@ -119,6 +119,8 @@ export interface PackContributionsSummary {
     description?: string
     supportsImages?: boolean
   }[]
+  /** Exact origins this pack may operate in the visible interactive browser pane. */
+  browserOrigins: readonly string[]
   /** MCP config path a user pack pulls its tools from (mirrors `plugin.json`). */
   mcpServersPath?: string
   /** Blocking (in-loop) function hooks the pack registers, by canonical event. */

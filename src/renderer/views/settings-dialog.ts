@@ -1868,6 +1868,13 @@ export function mountSettingsDialog(store: AppStore, api: ApiClient): void {
         title: contributions.modelRoutes.map((route) => `${route.label} (${route.id})`).join(', '),
       })
     }
+    if (contributions.browserOrigins.length > 0) {
+      chips.push({
+        label: 'Browser origins',
+        count: contributions.browserOrigins.length,
+        title: contributions.browserOrigins.join(', '),
+      })
+    }
     if (contributions.mcpServersPath) {
       chips.push({ label: 'MCP config', count: 1, title: contributions.mcpServersPath })
     }

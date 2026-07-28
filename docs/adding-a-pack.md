@@ -91,6 +91,9 @@ Minimal manifest:
       }
     ]
   },
+  "browser": {
+    "origins": ["https://example.test"]
+  },
   "runtime": {
     "entrypoint": "dist/index.mjs",
     "apiVersion": 1
@@ -136,14 +139,17 @@ export function activate(api) {
     (input) => ({ result: `Received ${JSON.stringify(input)}` }),
   )
 
-  api.registerModelRoute('reference-judge', async (turn, { session, signal }) => {
+  api.registerModelRoute('reference-judge', async (turn, { session, browser, signal }) => {
     const previous = await session.get()
     if (signal.aborted) throw new Error('Cancelled')
 
-    // A later browser/network behavior can replace this local example and save
-    // its external conversation id here.
+    const tab = await browser.open('https://example.test/')
+    const page = await browser.snapshot(tab.tabId)
+
+    // A real pack can find refs in `page`, then call browser.click/type/upload.
+    // Save only the external conversation identity needed for recovery.
     await session.set(previous ?? { createdAt: new Date().toISOString() })
-    return { text: `Received: ${turn.prompt}` }
+    return { text: `Opened ${tab.url}\n\n${page}` }
   })
 }
 ```
@@ -151,10 +157,23 @@ export function activate(api) {
 The model result is either a string or `{ text, inputTokens?, outputTokens? }`.
 Session state must be JSON and is capped at 256 KiB per thread.
 
-P3 deliberately adds no generic host gateway. The isolated worker still has no
-direct network or browser-panel access, so a route that delegates to a website
-needs the concrete P4 browser behavior. Renderer contributions, origin grants,
-and arbitrary `host.call` machinery are also not exposed yet.
+When `browser.origins` is present, model handlers receive a narrow P4 bridge to
+Copse's **visible browser panel**. The bridge can open/reuse a pack-and-thread
+owned tab, open a new tab, list owned tabs, navigate, take an accessibility
+snapshot, click/type by snapshot ref, and upload validated images to a
+referenced file input. Upload uses in-page `File`/`DataTransfer` injection, so
+no native file chooser opens.
+
+Origins are exact: HTTPS scheme + host + optional port, with HTTP allowed only
+for loopback development. Paths, credentials, wildcards, undeclared origins,
+cross-thread tab ids, and redirects outside the declaration fail closed. The
+browser panel uses its persistent interactive profile, so the page can see the
+cookies and site storage the user established there. Calls visibly open/reveal
+the panel and use tabs rather than separate windows.
+
+The worker still has no direct network, raw Electron/webview objects, arbitrary
+IPC, renderer code, or generic `host.call`. A browser declaration is supported
+only with a model route in API v1; tool handlers do not receive browser access.
 
 ## Add hooks (command hooks)
 
@@ -187,7 +206,8 @@ pack manifest
 ├── skills      relative skills directory (same as plugin.json)
 ├── tools       MCP config and/or selected-pack tool ids
 ├── models      selected-pack whole-thread model routes
-├── runtime     shared isolated worker entrypoint for tools/models
+├── browser     exact visible-browser origins for selected-pack model routes
+├── runtime     shared isolated worker entrypoint for executable behavior
 ├── hooks       [ { "event", "command" }, … ]   # command hooks
 ├── prompt      steering blocks (always treated as untrusted for user packs)
 ├── ui          level-1 cards / level-2 list|tree panels
@@ -257,7 +277,9 @@ Electron authority from the manifest.
 | Explicit selected-pack tools and model routes      | Landed                     |
 | Isolated executable behavior                       | Landed (macOS P2/P3 slice) |
 | Bounded image/transcript handoff + thread sessions | Landed                     |
-| Browser/network/renderer behavior gateways         | **Not wired yet (P4)**     |
+| Origin-scoped visible browser tabs + image upload  | Landed (macOS P4 slice)    |
+| Direct network or generic host gateway             | Intentionally unavailable  |
+| User-pack renderer code                            | **Not wired**              |
 | Host disk discovery → register user packs          | **Not wired yet**          |
 | Runtime wiring of user-pack hooks/MCP via registry | Follows discovery          |
 

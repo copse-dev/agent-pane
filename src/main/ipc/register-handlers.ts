@@ -113,6 +113,10 @@ import {
   setPackToolRuntimeController,
   ToolingPackToolRuntimeController,
 } from '../services/packs/pack-tool-controller.ts'
+import {
+  createPackBrowserPanelService,
+  setPackBrowserPanelService,
+} from '../services/packs/pack-browser-panel.ts'
 import { discoverCursorRules, toCursorRuleSummaries } from '../services/skills/cursor-rules.ts'
 import { loadProjectInstructionSources } from '../services/project-instructions.ts'
 import {
@@ -288,6 +292,7 @@ function storedWorkspaceProjects(): WorkspaceProjectRef[] {
 
 export function registerAllHandlers(win: BrowserWindow, registry: ToolRegistry): void {
   const packService = getPackService()
+  setPackBrowserPanelService(createPackBrowserPanelService(win))
   setPackToolRuntimeController(new ToolingPackToolRuntimeController(registry))
   void packService.refreshPackSources().catch((error: unknown) => {
     console.warn('[packs] selected-pack startup reconciliation failed:', error)

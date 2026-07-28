@@ -23,12 +23,18 @@ import {
   zPackToolRegistrations,
   zPackToolWorkerMessage,
   type PackToolRegistrations,
+  type PackBrowserCall,
 } from './pack-tool-protocol.ts'
 import {
   persistentPackThreadSessionStore,
   type PackThreadSessionStore,
 } from './pack-thread-session-store.ts'
 import { materializePackToolSnapshot } from './pack-tool-snapshot.ts'
+import {
+  getPackBrowserPanelService,
+  type PackBrowserPanelService,
+  type PackBrowserOwner,
+} from './pack-browser-panel.ts'
 import { errorMessage } from '@shared/errors.ts'
 import { parseJsonUnknown } from '@shared/unknown-value.ts'
 
@@ -57,6 +63,7 @@ export interface PackToolHostDependencies {
   materialize(candidate: PackToolSourceCandidate): Promise<PackToolSourceCandidate>
   spawn(candidate: PackToolSourceCandidate, workerPath: string): Promise<ChildProcess>
   sessionStore?: PackThreadSessionStore
+  browserService?: PackBrowserPanelService | null
 }
 
 function protectedReadRoots(): string[] {
@@ -112,14 +119,24 @@ export class PackToolHost {
   private readonly proc: ChildProcess
   private readonly packId: string
   private readonly sessionStore: PackThreadSessionStore
+  private readonly browserService: PackBrowserPanelService | null
+  private readonly allowedBrowserOrigins: readonly string[]
   private buffer = ''
   private nextId = 1
   private alive = true
 
-  private constructor(proc: ChildProcess, packId: string, sessionStore: PackThreadSessionStore) {
+  private constructor(
+    proc: ChildProcess,
+    packId: string,
+    sessionStore: PackThreadSessionStore,
+    browserService: PackBrowserPanelService | null,
+    allowedBrowserOrigins: readonly string[],
+  ) {
     this.proc = proc
     this.packId = packId
     this.sessionStore = sessionStore
+    this.browserService = browserService
+    this.allowedBrowserOrigins = allowedBrowserOrigins
   }
 
   static async start(
@@ -154,6 +171,10 @@ export class PackToolHost {
       proc,
       snapshot.manifest.name,
       dependencies.sessionStore ?? persistentPackThreadSessionStore,
+      dependencies.browserService === undefined
+        ? getPackBrowserPanelService()
+        : dependencies.browserService,
+      snapshot.manifest.browser?.origins ?? [],
     )
     host.attach()
     try {
@@ -233,7 +254,93 @@ export class PackToolHost {
       else pending.reject(new Error(message.error ?? 'Pack runtime request failed.'))
       return
     }
-    void this.handleSessionCall(message.id, message.invocationId, message.op, message.state)
+    if (message.type === 'session-call') {
+      void this.handleSessionCall(message.id, message.invocationId, message.op, message.state)
+      return
+    }
+    void this.handleBrowserCall(message)
+  }
+
+  private browserOwner(invocationId: number): PackBrowserOwner {
+    const invocation = this.pending.get(invocationId)
+    if (!invocation?.threadId) throw new Error('No active model thread for browser access.')
+    if (this.allowedBrowserOrigins.length === 0) {
+      throw new Error('This pack declares no interactive browser origins.')
+    }
+    return {
+      packId: this.packId,
+      threadId: invocation.threadId,
+      allowedOrigins: this.allowedBrowserOrigins,
+    }
+  }
+
+  private async handleBrowserCall(call: PackBrowserCall): Promise<void> {
+    const service = this.browserService
+    if (!service) {
+      this.writeBrowserResult(
+        call.id,
+        false,
+        undefined,
+        'The interactive browser pane is unavailable.',
+      )
+      return
+    }
+    try {
+      const owner = this.browserOwner(call.invocationId)
+      let result: unknown
+      switch (call.op) {
+        case 'open':
+          result = await service.open(owner, call.url, call.newTab)
+          break
+        case 'navigate':
+          result = await service.navigate(owner, call.tabId, call.url)
+          break
+        case 'tabs':
+          result = service.tabs(owner)
+          break
+        case 'snapshot':
+          result = await service.snapshot(owner, call.tabId)
+          break
+        case 'click':
+          await service.click(owner, call.tabId, call.ref)
+          result = null
+          break
+        case 'type':
+          await service.type(owner, call.tabId, call.ref, call.text)
+          result = null
+          break
+        case 'upload':
+          await service.upload(owner, call.tabId, call.ref, call.files)
+          result = null
+          break
+      }
+      this.writeBrowserResult(call.id, true, result)
+    } catch (error) {
+      this.writeBrowserResult(call.id, false, undefined, errorMessage(error))
+    }
+  }
+
+  private writeBrowserResult(
+    browserRequestId: number,
+    ok: boolean,
+    result?: unknown,
+    error?: string,
+  ): void {
+    if (!this.alive || !this.proc.stdin || this.proc.stdin.destroyed) return
+    try {
+      this.proc.stdin.write(
+        `${JSON.stringify({
+          id: this.nextId++,
+          op: 'browser-result',
+          browserRequestId,
+          ok,
+          ...(result !== undefined ? { result } : {}),
+          ...(error !== undefined ? { error: error.slice(0, 8_192) } : {}),
+        })}\n`,
+      )
+    } catch (writeError) {
+      this.fail(new PackToolHostUnavailable(errorMessage(writeError)))
+    }
   }
 
   private async handleSessionCall(

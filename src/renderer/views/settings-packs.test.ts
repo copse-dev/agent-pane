@@ -78,6 +78,7 @@ const demoPack: PackSummary = {
   contributions: {
     toolNames: ['demo_tool'],
     modelRoutes: [],
+    browserOrigins: [],
     blockingHooks: [{ id: 'demo-hook', event: 'turnStart' }],
     asyncHooks: [],
     commandHooks: [],
@@ -113,6 +114,7 @@ const modelFieldPack: PackSummary = {
   contributions: {
     toolNames: [],
     modelRoutes: [],
+    browserOrigins: [],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [],
@@ -140,6 +142,7 @@ const disabledUserPack: PackSummary = {
   contributions: {
     toolNames: [],
     modelRoutes: [],
+    browserOrigins: [],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [{ event: 'toolGate', command: './guard.sh' }],
@@ -174,6 +177,7 @@ const selectedToolPack: PackSummary = {
         supportsImages: true,
       },
     ],
+    browserOrigins: ['https://example.test'],
     blockingHooks: [],
     asyncHooks: [],
     commandHooks: [],
@@ -275,6 +279,7 @@ describe('settings → packs list', () => {
     assert.match(row.textContent, /executable behaviors run in isolation/i)
     assert.match(row.textContent, /sha256:a{64}/)
     assert.match(row.textContent, /Models × 1/)
+    assert.match(row.textContent, /Browser origins × 1/)
   })
 
   it('opens the host-owned pack chooser from Settings', async () => {
@@ -302,6 +307,7 @@ describe('settings → packs list', () => {
       contributions: {
         toolNames: [],
         modelRoutes: [],
+        browserOrigins: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],
@@ -328,6 +334,7 @@ describe('settings → packs list', () => {
       contributions: {
         toolNames: ['run_background'],
         modelRoutes: [],
+        browserOrigins: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],
@@ -350,6 +357,7 @@ describe('settings → packs list', () => {
       contributions: {
         toolNames: [],
         modelRoutes: [],
+        browserOrigins: [],
         blockingHooks: [],
         asyncHooks: [],
         commandHooks: [],

@@ -55,6 +55,7 @@ describe('settings packs (about:addons)', function () {
             },
           ],
         },
+        browser: { origins: ['https://example.test'] },
         runtime: { entrypoint: 'dist/index.mjs', apiVersion: 1 },
       }),
     )
@@ -165,6 +166,7 @@ describe('settings packs (about:addons)', function () {
     assert.match(localText, /executable behaviors run in isolation/i)
     assert.match(localText, /Tools × 1/)
     assert.match(localText, /Models × 1/)
+    assert.match(localText, /Browser origins × 1/)
     assert.match(localText, /sha256:[a-f0-9]{64}/)
 
     await packToolRow.scrollIntoView()
